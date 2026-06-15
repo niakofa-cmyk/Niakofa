@@ -1,9 +1,11 @@
-[phases.setup]
-nixPkgs = ["nodejs_22"]
-
 [phases.install]
-cmds = ["corepack enable && corepack prepare pnpm@latest --activate && pnpm install --no-frozen-lockfile"]
+cmds = [
+  "curl -fsSL https://get.pnpm.io/install.sh | SHELL=bash sh -",
+  "export PATH=\"/root/.local/share/pnpm:$PATH\"",
+  "pnpm install --no-frozen-lockfile"
+]
 
 [variables]
 NODE_ENV = "production"
 SERVE_FRONTEND = "true"
+NIXPACKS_NODE_VERSION = "22"
