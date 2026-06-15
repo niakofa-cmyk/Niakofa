@@ -1,7 +1,6 @@
-# Nixpacks build configuration for Railway deployment
-
 [phases.setup]
 nixPkgs = ["nodejs_22"]
+cmds = ["npm install -g pnpm"]
 
 [phases.install]
 cmds = ["pnpm install --no-frozen-lockfile"]
