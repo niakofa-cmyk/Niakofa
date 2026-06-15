@@ -1,0 +1,28 @@
+import { Router, type IRouter } from "express";
+import healthRouter from "./health";
+import usersRouter from "./users";
+import requestsRouter from "./requests";
+import helpersRouter from "./helpers";
+import navigationRouter from "./navigation";
+import pushRouter from "./push";
+import stripeRouter from "./stripe";
+import leaderboardRouter from "./leaderboard";
+import gratitudeRouter from "./gratitude";
+import reportsRouter from "./reports";
+import civicRouter from "./civic";
+
+const router: IRouter = Router();
+
+router.use(healthRouter);
+router.use(usersRouter);
+router.use(requestsRouter);
+router.use(helpersRouter);
+router.use(navigationRouter);
+router.use(pushRouter);
+router.use(stripeRouter);
+router.use(leaderboardRouter);
+router.use(gratitudeRouter);
+router.use(reportsRouter);
+router.use(civicRouter);
+
+export default router;

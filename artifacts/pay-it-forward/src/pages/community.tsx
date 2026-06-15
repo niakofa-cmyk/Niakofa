@@ -1,0 +1,415 @@
+import { useState, useEffect } from "react";
+import LiveLeaderboard from "@/components/LiveLeaderboard";
+import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield } from "lucide-react";
+import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey } from "@workspace/api-client-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useWebSocket } from "@/lib/useWebSocket";
+
+interface GratitudePost {
+  id: number;
+  author_name: string;
+  author_avatar?: string | null;
+  helper_name?: string | null;
+  message: string;
+  request_title?: string | null;
+  likes: number;
+  created_at: string;
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  groceries: "🛒 Groceries",
+  transportation: "🚗 Transportation",
+  errands: "📦 Errands",
+  home_repair: "🔧 Home Repair",
+  medical: "🏥 Medical",
+  emergency: "🚨 Emergency",
+  other: "💙 Other",
+};
+
+const FUND_POOLS = [
+  { label: "Emergency Fund", description: "Covers helpers for urgent requests when users can't pay", pct: 62, color: "bg-destructive" },
+  { label: "Medical Assist", description: "Prescription pickups, medical transport", pct: 21, color: "bg-primary" },
+  { label: "General Pool", description: "Everyday help — groceries, errands, transport", pct: 17, color: "bg-green-500" },
+];
+
+type Tab = "feed" | "heroes" | "pool" | "impact";
+
+export default function CommunityScreen() {
+  const [tab, setTab] = useState<Tab>("feed");
+  const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
+  const [posts, setPosts] = useState<GratitudePost[]>([]);
+  const [postsLoading, setPostsLoading] = useState(true);
+
+  // Load initial gratitude posts from API
+  useEffect(() => {
+    fetch("/api/gratitude")
+      .then(r => r.json())
+      .then((data: GratitudePost[]) => {
+        setPosts(data);
+        setPostsLoading(false);
+      })
+      .catch(() => setPostsLoading(false));
+  }, []);
+
+  // Real-time: new gratitude post arrives
+  useWebSocket("new_gratitude", (event) => {
+    const post = event.payload as GratitudePost;
+    setPosts(prev => [post, ...prev.slice(0, 49)]);
+  });
+
+  // Real-time: like count update
+  useWebSocket("gratitude_liked", (event) => {
+    const { id, likes } = event.payload as { id: number; likes: number };
+    setPosts(prev => prev.map(p => p.id === id ? { ...p, likes } : p));
+  });
+
+  const { data: recentCompleted = [] } = useGetRequests(
+    { status: "completed" },
+    { query: { queryKey: getGetRequestsQueryKey({ status: "completed" }), staleTime: 60000 } }
+  );
+
+  const { data: stats } = useGetRequestStats({
+    query: { queryKey: getGetRequestStatsQueryKey(), staleTime: 30000 }
+  });
+
+  const totalPledgeVolume = stats?.total_pledge_volume ?? 0;
+  const poolTarget = 500;
+  const poolPct = Math.min(Math.round((totalPledgeVolume / poolTarget) * 100), 100);
+
+  const toggleLike = (id: number) => {
+    setLikedPosts(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        // Fire-and-forget — WS event will broadcast the updated count
+        fetch(`/api/gratitude/${id}/like`, { method: "POST" }).catch(() => {});
+      }
+      return next;
+    });
+  };
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: "feed", label: "💙 Feed" },
+    { key: "heroes", label: "⭐ Heroes" },
+    { key: "pool", label: "🏦 Pool" },
+    { key: "impact", label: "📊 Impact" },
+  ];
+
+  return (
+    <div className="min-h-screen bg-background text-foreground flex flex-col pb-24">
+      <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-xl border-b border-border p-4 pt-safe">
+        <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2">
+          <Users className="w-5 h-5 text-primary" /> Community
+        </h1>
+        <div className="flex gap-1 mt-3">
+          {tabs.map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                tab === t.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex-1 p-4 max-w-lg mx-auto w-full">
+
+        {/* FEED TAB */}
+        {tab === "feed" && (
+          <div className="space-y-4">
+            {recentCompleted.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2">Recent Help</h3>
+                {recentCompleted.slice(0, 3).map(req => (
+                  <div key={req.id} className="bg-card border border-border rounded-xl p-3.5 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
+                      <Heart className="w-4 h-4 text-green-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold truncate">{req.title}</div>
+                      <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <span className="text-green-400 font-bold">✓ Completed</span>
+                        <span>·</span>
+                        <span>{req.requester_name}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Gratitude &amp; Stories</h3>
+            {postsLoading ? (
+              <div className="flex justify-center items-center py-10">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
+                >
+                  <Heart className="w-6 h-6 text-primary/40" />
+                </motion.div>
+              </div>
+            ) : posts.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 py-10 text-center">
+                <Heart className="w-8 h-8 text-muted-foreground/30" />
+                <div className="text-sm text-muted-foreground leading-relaxed">
+                  No gratitude posts yet.<br />
+                  <span className="text-primary font-semibold">Complete a request</span> to add the first one!
+                </div>
+              </div>
+            ) : (
+              <AnimatePresence initial={false}>
+                {posts.map(post => (
+                  <motion.div
+                    key={post.id}
+                    initial={{ opacity: 0, y: -16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="bg-card border border-border rounded-2xl p-4"
+                  >
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center border border-border shrink-0">
+                        <span className="text-sm font-black text-muted-foreground">
+                          {post.author_name[0]?.toUpperCase() ?? "?"}
+                        </span>
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm">{post.author_name}</div>
+                        <div className="text-[10px] text-muted-foreground flex items-center gap-1 flex-wrap">
+                          {post.helper_name && (
+                            <>
+                              <span className="text-primary font-medium">Thanks to {post.helper_name}</span>
+                              <span>·</span>
+                            </>
+                          )}
+                          <span>{new Date(post.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {post.request_title && (
+                      <div className="text-[10px] font-semibold text-primary/80 bg-primary/10 rounded-lg px-2 py-1 mb-2.5 inline-block max-w-full truncate">
+                        📋 {post.request_title}
+                      </div>
+                    )}
+                    <p className="text-sm text-muted-foreground leading-relaxed mb-3">"{post.message}"</p>
+                    <button
+                      onClick={() => toggleLike(post.id)}
+                      className={`flex items-center gap-1.5 text-xs transition-colors ${likedPosts.has(post.id) ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
+                    >
+                      <Heart className={`w-4 h-4 ${likedPosts.has(post.id) ? "fill-current" : ""}`} />
+                      {post.likes + (likedPosts.has(post.id) ? 1 : 0)}
+                    </button>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            )}
+          </div>
+        )}
+
+        {/* HEROES TAB — Live Leaderboard */}
+        {tab === "heroes" && <LiveLeaderboard />}
+
+        {/* PAY IT FORWARD POOL TAB */}
+        {tab === "pool" && (
+          <div className="space-y-4">
+
+            {/* Live pool balance card */}
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/40 rounded-3xl p-6 shadow-[0_0_40px_rgba(0,212,255,0.12)] flex flex-col items-center gap-3"
+            >
+              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                <DollarSign className="w-6 h-6 text-primary" />
+              </div>
+              <div className="text-center">
+                <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Community Pool</div>
+                <div className="text-4xl font-black text-primary mt-1">${totalPledgeVolume.toFixed(2)}</div>
+                <div className="text-xs text-muted-foreground mt-1">Total paid forward by neighbors</div>
+              </div>
+
+              {/* Progress to milestone */}
+              <div className="w-full">
+                <div className="flex justify-between text-[10px] text-muted-foreground mb-1.5">
+                  <span>Community milestone</span>
+                  <span className="font-bold text-primary">{poolPct}% to ${poolTarget}</span>
+                </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${poolPct}%` }}
+                    transition={{ duration: 1, ease: "easeOut" }}
+                    className="h-full bg-gradient-to-r from-primary to-cyan-400 rounded-full"
+                  />
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-1.5 text-center">
+                  When we hit $500, we unlock the Emergency Assistance Reserve 🏦
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Pool breakdown */}
+            <div className="bg-card border border-border rounded-2xl p-4 space-y-4">
+              <h3 className="font-black text-sm flex items-center gap-2">
+                <Shield className="w-4 h-4 text-primary" /> How the Pool is Allocated
+              </h3>
+              {FUND_POOLS.map((pool, i) => (
+                <motion.div
+                  key={pool.label}
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                >
+                  <div className="flex items-center justify-between text-sm mb-1.5">
+                    <span className="font-bold">{pool.label}</span>
+                    <span className="text-muted-foreground font-mono text-xs">{pool.pct}%</span>
+                  </div>
+                  <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-1">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${pool.pct}%` }}
+                      transition={{ duration: 0.8, delay: i * 0.1, ease: "easeOut" }}
+                      className={`h-full ${pool.color} rounded-full`}
+                    />
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">{pool.description}</div>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* How it works */}
+            <div className="bg-card/50 border border-border/50 rounded-2xl p-4">
+              <h3 className="font-bold text-sm mb-3 flex items-center gap-2">
+                <Heart className="w-4 h-4 text-primary" /> How Niakofa Works
+              </h3>
+              <div className="space-y-3">
+                {[
+                  { step: "1", title: "Get help now", desc: "When you need help, a neighbor shows up — no payment required upfront." },
+                  { step: "2", title: "Pay when you're able", desc: "When life gets better, contribute back any amount. 2 days, 2 weeks, or 2 years." },
+                  { step: "3", title: "Strengthen the pool", desc: "Every dollar flows into the community reserve, funding future helpers." },
+                ].map(item => (
+                  <div key={item.step} className="flex gap-3">
+                    <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="text-[10px] font-black text-primary">{item.step}</span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold">{item.title}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{item.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4">
+              <div className="flex items-start gap-3">
+                <Sparkles className="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
+                <div>
+                  <div className="font-bold text-sm text-yellow-400">Sponsor a Neighbor</div>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    Businesses and individuals can sponsor the community pool directly. Coming soon.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* IMPACT TAB — real stats from /api/requests/stats */}
+        {tab === "impact" && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <Heart className="w-5 h-5 text-primary" />
+                </div>
+                <div className="text-3xl font-black text-primary">
+                  {stats ? stats.total_completed.toLocaleString() : "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Requests Fulfilled</div>
+              </div>
+              <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <Users className="w-5 h-5 text-green-400" />
+                </div>
+                <div className="text-3xl font-black text-green-400">
+                  {stats ? stats.total_helpers_online : "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Active Helpers</div>
+              </div>
+              <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <Activity className="w-5 h-5 text-yellow-400" />
+                </div>
+                <div className="text-3xl font-black text-yellow-400">
+                  {stats ? stats.total_open : "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Open Requests</div>
+              </div>
+              <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <DollarSign className="w-5 h-5 text-primary" />
+                </div>
+                <div className="text-3xl font-black text-primary">
+                  ${stats?.total_pledge_volume?.toFixed(0) ?? "0"}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Paid Forward</div>
+              </div>
+            </div>
+
+            {stats && stats.requests_by_category.length > 0 && (
+              <div className="bg-card border border-border rounded-2xl p-4">
+                <h3 className="font-black text-sm mb-3 flex items-center gap-2">
+                  <Star className="w-4 h-4 text-yellow-400" /> By Category
+                </h3>
+                <div className="space-y-2">
+                  {[...stats.requests_by_category]
+                    .sort((a, b) => b.count - a.count)
+                    .map(({ category, count }) => {
+                      const total = stats.requests_by_category.reduce((s, c) => s + c.count, 0);
+                      const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                      return (
+                        <div key={category}>
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="font-medium">{CATEGORY_LABELS[category] ?? category}</span>
+                            <span className="text-muted-foreground">{count} ({pct}%)</span>
+                          </div>
+                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-gradient-to-br from-primary/20 to-background border border-primary/30 rounded-2xl p-5">
+              <h3 className="font-black text-base mb-2">About Niakofa</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                This isn't charity — it's neighbors helping neighbors. Every act of help strengthens our community network. When you're able, give back. When you need help, ask. That's how communities thrive.
+              </p>
+              <div className="mt-4 space-y-2">
+                {[
+                  ["Immediate Pay", "Compensate your helper right away"],
+                  ["Niakofa", "Contribute back when you're ready"],
+                  ["Goodwill", "Pure community — no payment needed"],
+                ].map(([title, desc]) => (
+                  <div key={title} className="flex items-center gap-2 text-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                    <span className="font-semibold">{title}</span>
+                    <span className="text-muted-foreground">— {desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
