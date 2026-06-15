@@ -1,11 +1,6 @@
 [phases.install]
-cmds = [
-  "curl -fsSL https://get.pnpm.io/install.sh | SHELL=bash sh -",
-  "export PATH=\"/root/.local/share/pnpm:$PATH\"",
-  "pnpm install --no-frozen-lockfile"
-]
+cmds = ["pnpm install --no-frozen-lockfile"]
 
 [variables]
 NODE_ENV = "production"
 SERVE_FRONTEND = "true"
-NIXPACKS_NODE_VERSION = "22"
