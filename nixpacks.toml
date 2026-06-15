@@ -1,36 +1,7 @@
 # Nixpacks build configuration for Railway deployment
-#
-# WHY this file exists:
-# Nixpacks auto-generates a `pnpm install --frozen-lockfile` step that runs
-# BEFORE any custom buildCommand. Our pnpm-workspace.yaml defines `overrides:`
-# that cause the lockfile to diverge from what --frozen-lockfile expects, so
-# that step always fails before our buildCommand even has a chance to run.
-#
-# This file replaces the auto-generated install step with --no-frozen-lockfile
-# so Nixpacks can regenerate the lockfile correctly, then our build proceeds.
-#
-# ── REQUIRED RAILWAY SERVICE VARIABLES ───────────────────────────────────────
-# Set all of these in Railway dashboard → Variables.  NEVER hardcode them here.
-#
-#   DATABASE_URL          — PostgreSQL connection string (Railway Postgres plugin)
-#   REDIS_URL             — Redis connection string (Railway Redis plugin, optional)
-#   STRIPE_SECRET_KEY     — Stripe secret key for payment processing
-#   STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret (whsec_...)
-#   ADMIN_SECRET          — Secret token for /admin route protection
-#   SESSION_SECRET        — Secret for HMAC auth token signing (min 32 random chars)
-#   VAPID_PUBLIC_KEY      — Web push VAPID public key
-#   VAPID_PRIVATE_KEY     — Web push VAPID private key
-#   APP_URL               — Full public URL of this service (e.g. https://niakofa.railway.app)
-#   ALLOWED_ORIGIN        — Frontend origin for CORS (e.g. https://niakofa.railway.app)
-#   VITE_MAPBOX_TOKEN          — Mapbox public token (build-time; baked into the React bundle)
-#   MAPBOX_TOKEN               — Mapbox public token (runtime server-side geocoding + directions)
-#   VITE_STRIPE_PUBLISHABLE_KEY — Stripe publishable key (build-time; powers the payment UI in the React bundle)
-#   NODE_ENV              — Set to "production"
-#   SERVE_FRONTEND        — Set to "true" so Express serves the built frontend
-#
-# IMPORTANT: VITE_MAPBOX_TOKEN and MAPBOX_TOKEN must be set as Railway Variables.
-# They are NOT included below because hardcoding tokens in committed config files
-# exposes them publicly if the repo is ever pushed or shared.
+
+[phases.setup]
+nixPkgs = ["nodejs_22"]
 
 [phases.install]
 cmds = ["pnpm install --no-frozen-lockfile"]
@@ -38,5 +9,3 @@ cmds = ["pnpm install --no-frozen-lockfile"]
 [variables]
 NODE_ENV = "production"
 SERVE_FRONTEND = "true"
-# Do NOT add VITE_MAPBOX_TOKEN or MAPBOX_TOKEN here.
-# Set them in Railway → Variables (dashboard) instead.
