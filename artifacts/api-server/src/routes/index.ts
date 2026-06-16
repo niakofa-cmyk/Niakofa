@@ -14,6 +14,7 @@ import civicRouter from "./civic";
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(chatRouter);
 router.use(usersRouter);
 router.use(requestsRouter);
 router.use(helpersRouter);

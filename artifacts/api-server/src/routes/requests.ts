@@ -23,6 +23,7 @@ import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToAllHelpers } from "./push";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { logger } from "../lib/logger";
+import { sendReceipt } from "../lib/mailer";
 import Stripe from "stripe";
 
 // Lazy Stripe client — null when STRIPE_SECRET_KEY is not configured
@@ -410,6 +411,22 @@ router.post("/requests/:id/complete", async (req, res) => {
     helperBefore?.trust_score ?? 0
   ).catch(() => {});
 
+
+  // Fire receipt email async (non-blocking)
+  const [requester] = await db.select({ email: usersTable.email, name: usersTable.name })
+    .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1).catch(() => [null]);
+  if (requester?.email) {
+    sendReceipt({
+      to: requester.email,
+      helperName: helperBefore?.name ?? "Your helper",
+      requesterName: requester.name,
+      requestTitle: request.title,
+      amount: request.payment_type === "immediate" ? (request.pay_it_forward_amount ?? undefined) : undefined,
+      paymentType: request.payment_type,
+      completedAt: new Date(),
+    }).catch(() => {});
+  }
+
   // Prompt the requester to write a public thank-you post
   broadcast({
     type: "new_gratitude_prompt",
@@ -423,6 +440,44 @@ router.post("/requests/:id/complete", async (req, res) => {
   });
 
   return res.json(enriched);
+});
+
+
+router.post("/requests/:id/tip", async (req, res) => {
+  const requestId = parseInt(req.params.id);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+
+  const { requester_id, tip_amount } = req.body as { requester_id: number; tip_amount: number };
+  if (!requester_id || !tip_amount || tip_amount <= 0) {
+    return res.status(400).json({ error: "requester_id and tip_amount > 0 required" });
+  }
+
+  const [request] = await db.select().from(requestsTable)
+    .where(and(eq(requestsTable.id, requestId), eq(requestsTable.requester_id, requester_id)))
+    .limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.status !== "completed") return res.status(409).json({ error: "Can only tip completed requests" });
+  if (!request.helper_id) return res.status(400).json({ error: "No helper to tip" });
+
+  // Credit tip to helper benevolence_wallet
+  await db.update(usersTable)
+    .set({ benevolence_wallet: sql\`\${usersTable.benevolence_wallet} + \${tip_amount}\` })
+    .where(eq(usersTable.id, request.helper_id));
+
+  await db.insert(transactionsTable).values({
+    user_id: request.helper_id,
+    request_id: requestId,
+    type: "tip_received",
+    amount: tip_amount,
+    description: \`Tip for: \${request.title}\`,
+  });
+
+  broadcast({
+    type: "payout_sent" as any,
+    payload: { helper_id: request.helper_id, amount: tip_amount, type: "tip" },
+  });
+
+  return res.status(201).json({ ok: true, tip_amount, helper_id: request.helper_id });
 });
 
 export default router;

@@ -91,3 +91,16 @@ export const generalApiLimiter = rateLimit({
       "Please slow down and try again in a few minutes.",
   },
 });
+
+// ── 6. Chat Messages (30 / min per user) ─────────────────────────────────────
+export const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const body = req.body as Record<string, unknown>;
+    return `chat-${String(body?.sender_id ?? req.ip)}`;
+  },
+  message: { error: "You're sending messages too fast. Slow down a little." },
+});
