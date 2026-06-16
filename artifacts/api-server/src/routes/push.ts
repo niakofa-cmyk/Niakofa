@@ -1,10 +1,10 @@
 import { Router } from "express";
 import webpush from "web-push";
-import { db, pushSubscriptionsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
-import { logger } from "../lib/logger";
 
 const router = Router();
+
+// In-memory subscription store (in production: persist to DB)
+const subscriptions: Map<number, webpush.PushSubscription[]> = new Map();
 
 const VAPID_PUBLIC = process.env["VAPID_PUBLIC_KEY"] ?? "";
 const VAPID_PRIVATE = process.env["VAPID_PRIVATE_KEY"] ?? "";
@@ -21,55 +21,23 @@ router.get("/push/vapid-public-key", (_req, res) => {
   res.json({ publicKey: VAPID_PUBLIC });
 });
 
-router.post("/push/subscribe", async (req, res) => {
+router.post("/push/subscribe", (req, res) => {
   const { userId, subscription } = req.body as { userId: number; subscription: webpush.PushSubscription };
   if (!userId || !subscription?.endpoint) return res.status(400).json({ error: "userId and subscription required" });
 
-  try {
-    // Upsert — if the endpoint already exists, update its user_id binding.
-    const existing = await db
-      .select({ id: pushSubscriptionsTable.id })
-      .from(pushSubscriptionsTable)
-      .where(eq(pushSubscriptionsTable.endpoint, subscription.endpoint))
-      .limit(1);
-
-    if (existing.length > 0) {
-      await db
-        .update(pushSubscriptionsTable)
-        .set({ user_id: userId, subscription: subscription as unknown as Record<string, unknown>, updated_at: new Date() })
-        .where(eq(pushSubscriptionsTable.endpoint, subscription.endpoint));
-    } else {
-      await db.insert(pushSubscriptionsTable).values({
-        user_id: userId,
-        endpoint: subscription.endpoint,
-        subscription: subscription as unknown as Record<string, unknown>,
-      });
-    }
-  } catch (err) {
-    logger.error({ err }, "push: failed to persist subscription");
-    return res.status(500).json({ error: "Failed to save subscription" });
+  const existing = subscriptions.get(userId) ?? [];
+  const alreadyExists = existing.some(s => s.endpoint === subscription.endpoint);
+  if (!alreadyExists) {
+    subscriptions.set(userId, [...existing, subscription]);
   }
-
   return res.json({ ok: true });
 });
 
-router.post("/push/unsubscribe", async (req, res) => {
+router.post("/push/unsubscribe", (req, res) => {
   const { userId, endpoint } = req.body as { userId: number; endpoint: string };
-  if (!userId || !endpoint) return res.status(400).json({ error: "userId and endpoint required" });
-
-  try {
-    await db
-      .delete(pushSubscriptionsTable)
-      .where(
-        and(
-          eq(pushSubscriptionsTable.user_id, userId),
-          eq(pushSubscriptionsTable.endpoint, endpoint)
-        )
-      );
-  } catch (err) {
-    logger.warn({ err }, "push: failed to remove subscription");
-  }
-
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  const existing = subscriptions.get(userId) ?? [];
+  subscriptions.set(userId, existing.filter(s => s.endpoint !== endpoint));
   return res.json({ ok: true });
 });
 
@@ -88,30 +56,14 @@ function pushOptions(urgency?: string): webpush.RequestOptions {
   };
 }
 
-async function getSubscriptionsForUser(userId: number): Promise<webpush.PushSubscription[]> {
-  const rows = await db
-    .select({ subscription: pushSubscriptionsTable.subscription })
-    .from(pushSubscriptionsTable)
-    .where(eq(pushSubscriptionsTable.user_id, userId));
-  return rows.map(r => r.subscription as unknown as webpush.PushSubscription);
-}
-
-async function getAllSubscriptions(): Promise<webpush.PushSubscription[]> {
-  const rows = await db.select({ subscription: pushSubscriptionsTable.subscription }).from(pushSubscriptionsTable);
-  return rows.map(r => r.subscription as unknown as webpush.PushSubscription);
-}
-
-/** Send a push notification to all registered subscribers */
+/** Send a push notification to all registered subscribers (for broadcast events) */
 export async function sendPushToAllHelpers(payload: PushPayload): Promise<void> {
   if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
-  let allSubs: webpush.PushSubscription[];
-  try {
-    allSubs = await getAllSubscriptions();
-  } catch (err) {
-    logger.warn({ err }, "push: could not load subscriptions");
-    return;
-  }
+
+  const allSubs: webpush.PushSubscription[] = [];
+  for (const subs of subscriptions.values()) allSubs.push(...subs);
   if (allSubs.length === 0) return;
+
   const data = JSON.stringify(payload);
   await Promise.allSettled(
     allSubs.map(sub =>
@@ -120,17 +72,11 @@ export async function sendPushToAllHelpers(payload: PushPayload): Promise<void> 
   );
 }
 
-/** Send a push notification to a specific user */
+/** Send a push notification to a specific user by userId */
 export async function sendPushToUser(userId: number, payload: PushPayload): Promise<void> {
   if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
-  let userSubs: webpush.PushSubscription[];
-  try {
-    userSubs = await getSubscriptionsForUser(userId);
-  } catch (err) {
-    logger.warn({ err }, "push: could not load user subscriptions");
-    return;
-  }
-  if (userSubs.length === 0) return;
+  const userSubs = subscriptions.get(userId);
+  if (!userSubs || userSubs.length === 0) return;
   const data = JSON.stringify(payload);
   await Promise.allSettled(
     userSubs.map(sub =>

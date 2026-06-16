@@ -43,8 +43,6 @@ export interface UserUpdate {
 export interface UserRegistration {
   name: string;
   email: string;
-  /** Account password — minimum 8 characters. Never returned in responses. */
-  password: string;
   avatar_url?: string;
   is_helper?: boolean;
   neighborhood?: string;

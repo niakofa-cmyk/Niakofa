@@ -4,7 +4,7 @@ import { usePushNotifications } from "@/lib/usePushNotifications";
 import {
   User as UserIcon, Shield, MapPin, Settings, Wallet, Heart, Star,
   DollarSign, Gift, Clock, ChevronRight, AlertCircle, CheckCircle2,
-  ExternalLink, BookOpen, Bell, Lock, Trash2, X, Phone, FileText, LogOut,
+  ExternalLink, BookOpen, Bell, Lock, Trash2, X, Phone, FileText,
   Eye, Users, Info, ChevronLeft, Flag,
   Camera, Sliders, CreditCard, Activity, Loader2, Building2
 } from "lucide-react";
@@ -719,7 +719,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 export default function ProfileScreen() {
   const [, setLocation] = useLocation();
-  const { currentUser, helperModeActive, setHelperModeActive, myLocation, logout } = useAppContext();
+  const { currentUser, helperModeActive, setHelperModeActive, myLocation } = useAppContext();
   const [tab, setTab] = useState<ProfileTab>("overview");
 
   // Settings dialog state
@@ -1168,16 +1168,6 @@ export default function ProfileScreen() {
                   <div className="flex items-center gap-2">
                     <Lock className="w-4 h-4 text-muted-foreground" />
                     <span>Account privacy</span>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                </button>
-                <button
-                  onClick={() => logout()}
-                  className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors text-orange-400"
-                >
-                  <div className="flex items-center gap-2">
-                    <LogOut className="w-4 h-4" />
-                    <span>Sign out</span>
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>

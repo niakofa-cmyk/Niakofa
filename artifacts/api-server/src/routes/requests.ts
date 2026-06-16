@@ -336,13 +336,12 @@ router.post("/requests/:id/complete", async (req, res) => {
     request.pay_it_forward_amount > 0 &&
     _stripe
   ) {
-    let stripeAcct: (typeof stripeAccountsTable.$inferSelect) | undefined;
     try {
-      ([stripeAcct] = await db
+      const [stripeAcct] = await db
         .select()
         .from(stripeAccountsTable)
         .where(eq(stripeAccountsTable.user_id, bParsed.data.helper_id))
-        .limit(1));
+        .limit(1);
 
       if (stripeAcct?.payouts_enabled && stripeAcct.stripe_account_id) {
         const amountCents = Math.round(request.pay_it_forward_amount * 100);

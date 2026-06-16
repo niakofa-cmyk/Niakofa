@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import Map, { Marker, Source, Layer } from "react-map-gl/mapbox";
-import type { MapRef } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useAppContext } from "@/lib/AppContext";
 import {
@@ -17,7 +16,7 @@ import { BottomSheet } from "@/components/BottomSheet";
 import { RequestMarker } from "@/components/RequestMarker";
 import { HelperMarker } from "@/components/HelperMarker";
 import { DispatchIntelligenceCard } from "@/components/DispatchIntelligenceCard";
-import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2, Locate } from "lucide-react";
+import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
 
@@ -41,13 +40,6 @@ export default function MapScreen() {
   const [statsVisible, setStatsVisible] = useState(true);
   const [bestMatchDismissed, setBestMatchDismissed] = useState<number | null>(null);
   const prevHelperMode = useRef(false);
-  const mapRef = useRef<MapRef>(null);
-
-  const handleRecenter = useCallback(() => {
-    if (myLocation && mapRef.current) {
-      mapRef.current.flyTo({ center: [myLocation.lng, myLocation.lat], zoom: 14, duration: 800 });
-    }
-  }, [myLocation]);
 
   const onMapError = useCallback((e: unknown) => {
     const msg = (e as { error?: { message?: string } })?.error?.message ?? "Map failed to load";
@@ -234,7 +226,7 @@ export default function MapScreen() {
             Open in Chrome or Firefox for the full live map. Requests listed below.
           </p>
           <div className="w-full max-w-sm space-y-2 mt-2">
-            {openRequests.filter(r => r.lng != null && r.lat != null).map(r => (
+            {openRequests.map(r => (
               <button
                 key={r.id}
                 onClick={() => helperModeActive && handleClaim(r)}
@@ -263,7 +255,6 @@ export default function MapScreen() {
         mapStyle="mapbox://styles/mapbox/dark-v11"
         attributionControl={false}
         onError={onMapError}
-        ref={mapRef}
       >
         {/* My location dot with accuracy ring */}
         {myLocation && (
@@ -277,14 +268,14 @@ export default function MapScreen() {
         )}
 
         {/* Online helpers — animated dots */}
-        {displayHelpers.filter(h => h.lng != null && h.lat != null).map(h => (
+        {displayHelpers.map(h => (
           <Marker key={h.id} longitude={h.lng} latitude={h.lat} anchor="center">
             <HelperMarker helper={h} />
           </Marker>
         ))}
 
         {/* Open request markers with emergency pulse rings */}
-        {openRequests.filter(r => r.lng != null && r.lat != null).map(r => (
+        {openRequests.map(r => (
           <Marker key={r.id} longitude={r.lng} latitude={r.lat} anchor="bottom">
             <RequestMarker request={r} />
           </Marker>
@@ -333,16 +324,6 @@ export default function MapScreen() {
             <p className="text-sm font-medium">Online — waiting for nearby requests...</p>
           </div>
         </div>
-      )}
-      {/* Re-center button */}
-      {myLocation && !mapError && (
-        <button
-          onClick={handleRecenter}
-          className="absolute bottom-24 right-4 z-10 w-10 h-10 bg-card/90 backdrop-blur-md border border-border rounded-full shadow-lg flex items-center justify-center hover:bg-card transition-colors"
-          aria-label="Re-center map"
-        >
-          <Locate className="w-4 h-4 text-primary" />
-        </button>
       )}
     </div>
   );

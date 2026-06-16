@@ -1,20 +1,11 @@
 import { Router } from "express";
 import { db, civicResourcesTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, isNull } from "drizzle-orm";
 import { logger } from "../lib/logger";
 
 const router = Router();
 
-// MAPBOX_TOKEN must be set as an environment variable — never hardcoded.
-// The server will return a 500 if this is missing rather than silently using
-// a committed token that may be rotated or abused.
-function getMapboxToken(): string {
-  const token = process.env.MAPBOX_TOKEN;
-  if (!token) {
-    throw new Error("MAPBOX_TOKEN environment variable is not set. Set it in Railway → Variables.");
-  }
-  return token;
-}
+const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN ?? "pk.eyJ1IjoiaGYxMDEiLCJhIjoiY2tjYzVqNmFhMDFmMTJwcWUza2pmZzVtMSJ9.THxYY3Ic2MFylIONeZI_Xw";
 
 interface MapboxFeature {
   place_type: string[];
@@ -36,15 +27,7 @@ interface ResolvedPlace {
 }
 
 async function reverseGeocode(lat: number, lng: number): Promise<ResolvedPlace | null> {
-  let token: string;
-  try {
-    token = getMapboxToken();
-  } catch (err) {
-    logger.error({ err }, "Mapbox token not configured — reverse geocode skipped");
-    return null;
-  }
-
-  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?types=place,district,region&access_token=${token}`;
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?types=place,district,region&access_token=${MAPBOX_TOKEN}`;
   try {
     const res = await fetch(url);
     if (!res.ok) {
@@ -129,7 +112,7 @@ router.get("/civic/resources", async (req, res) => {
   const city = place.city;
 
   let matchLevel: "city" | "county" | "state" | "fallback" = "fallback";
-  let resources: (typeof civicResourcesTable.$inferSelect)[] = [];
+  let resources = [];
 
   if (city && county) {
     resources = await db

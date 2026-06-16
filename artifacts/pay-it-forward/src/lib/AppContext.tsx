@@ -1,55 +1,8 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import type { User } from "@workspace/api-client-react";
 import { useUpdateUserLocation, useUpdateHelperMode } from "@workspace/api-client-react";
-import { setAuthTokenGetter } from "@workspace/api-client-react";
 import { useWebSocket } from "./useWebSocket";
 import { GratitudeModal } from "../components/GratitudeModal";
-
-// ── Auth token persistence ──────────────────────────────────────────────────
-// Token is stored in localStorage under "niakofa_auth_token".
-// The api-client-react customFetch will call getStoredToken() before every
-// protected API request and attach it as "Authorization: Bearer <token>".
-
-export const AUTH_TOKEN_KEY = "niakofa_auth_token";
-export const AUTH_USER_KEY = "niakofa_user";
-
-export function getStoredToken(): string | null {
-  try {
-    return localStorage.getItem(AUTH_TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setStoredAuth(user: User, token: string): void {
-  try {
-    localStorage.setItem(AUTH_TOKEN_KEY, token);
-    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-  } catch { /* storage unavailable */ }
-}
-
-export function clearStoredAuth(): void {
-  try {
-    localStorage.removeItem(AUTH_TOKEN_KEY);
-    localStorage.removeItem(AUTH_USER_KEY);
-  } catch { /* storage unavailable */ }
-}
-
-function loadStoredUser(): User | null {
-  try {
-    const raw = localStorage.getItem(AUTH_USER_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as User;
-  } catch {
-    return null;
-  }
-}
-
-// Register the token getter with the API client so all generated hooks
-// automatically include the Bearer token on every request.
-setAuthTokenGetter(getStoredToken);
-
-// ── Types ───────────────────────────────────────────────────────────────────
 
 interface Location {
   lat: number;
@@ -67,13 +20,11 @@ interface AppContextType {
   myLocation: Location | null;
   activeRequestId: number | null;
   setActiveRequestId: (id: number | null) => void;
-  logout: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// ── Utility math ─────────────────────────────────────────────────────────────
-
+// Calculate heading between two lat/lng positions (degrees, 0=North)
 function calcHeading(from: Location, to: Location): number {
   const dLng = (to.lng - from.lng) * (Math.PI / 180);
   const lat1 = from.lat * (Math.PI / 180);
@@ -83,6 +34,7 @@ function calcHeading(from: Location, to: Location): number {
   return ((Math.atan2(x, y) * 180) / Math.PI + 360) % 360;
 }
 
+// Haversine distance in meters
 function distanceMeters(a: Location, b: Location): number {
   const R = 6371000;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;
@@ -94,17 +46,26 @@ function distanceMeters(a: Location, b: Location): number {
   return R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
 }
 
+// Exponential moving average — smooths GPS jitter
 function emaSmooth(prev: number, next: number, alpha = 0.3): number {
   return alpha * next + (1 - alpha) * prev;
 }
 
-// ── Provider ──────────────────────────────────────────────────────────────────
-
 export function AppProvider({ children }: { children: ReactNode }) {
-  // Bootstrap from localStorage — null means not logged in yet (shows <LoginPage>)
-  const [currentUser, setCurrentUserState] = useState<User | null>(loadStoredUser);
+  const [currentUser, setCurrentUser] = useState<User | null>({
+    id: 1,
+    name: "Alex Helper",
+    email: "alex@example.com",
+    is_helper: true,
+    helper_mode_active: false,
+    trust_score: 98,
+    help_count: 14,
+    benevolence_wallet: 0,
+    goodwill_score: 0,
+  });
+
   const [helperModeActive, setHelperModeActiveState] = useState(false);
-  const [myLocation, setMyLocation] = useState<Location | null>(null);
+  const [myLocation, setMyLocation] = useState<Location | null>({ lat: 32.75, lng: -97.33 });
   const [gratitudePrompt, setGratitudePrompt] = useState<{
     requestId: number;
     requestTitle: string;
@@ -116,7 +77,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   const [activeRequestId, setActiveRequestId] = useState<number | null>(null);
 
-  const locationRef = useRef<Location | null>(null);
+  // Refs for GPS broadcasting (avoids stale closures)
+  const locationRef = useRef<Location | null>({ lat: 32.75, lng: -97.33 });
   const prevBroadcastRef = useRef<Location | null>(null);
   const prevLocationRef = useRef<Location | null>(null);
   const smoothedRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -124,20 +86,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateLocation = useUpdateUserLocation();
   const updateHelperMode = useUpdateHelperMode();
 
-  const setCurrentUser = (user: User | null) => {
-    setCurrentUserState(user);
-    if (!user) clearStoredAuth();
-  };
-
-  const logout = () => {
-    clearStoredAuth();
-    setCurrentUserState(null);
-    setHelperModeActiveState(false);
-  };
-
   const setHelperModeActive = (active: boolean) => {
     setHelperModeActiveState(active);
-    setCurrentUserState(u => u ? { ...u, helper_mode_active: active } : u);
+    setCurrentUser(u => u ? { ...u, helper_mode_active: active } : u);
     if (currentUser) {
       updateHelperMode.mutate(
         { id: currentUser.id, data: { active } },
@@ -146,16 +97,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Keep localStorage user data fresh when setCurrentUser is called externally
-  useEffect(() => {
-    if (currentUser) {
-      try {
-        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(currentUser));
-      } catch { /* storage unavailable */ }
-    }
-  }, [currentUser]);
-
   // Show gratitude prompt when the current user's request is completed
+  // Fixed: useWebSocket now supports (eventType, handler) overload
   useWebSocket("new_gratitude_prompt", (event) => {
     const p = event.payload as {
       request_id: number;
@@ -177,9 +120,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   });
 
-  // GPS watchPosition — only when logged in
+  // GPS watchPosition — high-accuracy continuous stream
   useEffect(() => {
-    if (!currentUser || !navigator.geolocation) return;
+    if (!navigator.geolocation) return;
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
@@ -191,6 +134,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           accuracy: pos.coords.accuracy,
         };
 
+        // Compute derived heading if device doesn't provide one
         let heading = raw.heading;
         if ((heading == null || isNaN(heading)) && prevLocationRef.current) {
           const d = distanceMeters(prevLocationRef.current, raw);
@@ -201,6 +145,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         }
 
+        // Smooth lat/lng with EMA to reduce GPS jitter
+        // alpha = 0.4: responsive but smooth (lower = smoother, higher = more responsive)
         const alpha = 0.4;
         const smoothed = smoothedRef.current
           ? {
@@ -218,7 +164,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           accuracy: raw.accuracy,
         };
 
-        prevLocationRef.current = raw;
+        prevLocationRef.current = raw; // raw for heading calc
         locationRef.current = newLoc;
         setMyLocation(newLoc);
       },
@@ -226,14 +172,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       {
         enableHighAccuracy: true,
         timeout: 8000,
-        maximumAge: 1000,
+        maximumAge: 1000, // accept positions up to 1s old
       }
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [currentUser?.id]); // re-subscribe on login/logout
+  }, []);
 
-  // Smart GPS broadcast loop
+  // Smart GPS broadcast loop:
+  // - 2s when actively navigating (activeRequestId set)
+  // - 15s when helper mode on (per spec requirement for live map dots)
+  // - 30s otherwise (battery conservation)
+  // - Skip broadcast if position hasn't moved enough (threshold-gated)
   useEffect(() => {
     if (!currentUser) return;
 
@@ -273,7 +223,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       myLocation,
       activeRequestId,
       setActiveRequestId,
-      logout,
     }}>
       {children}
       <GratitudeModal

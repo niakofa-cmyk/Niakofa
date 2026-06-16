@@ -755,16 +755,12 @@ components:
 
     UserRegistration:
       type: object
-      required: [name, email, password]
+      required: [name, email]
       properties:
         name:
           type: string
         email:
           type: string
-        password:
-          type: string
-          minLength: 8
-          description: "Account password — minimum 8 characters. Never returned in responses."
         avatar_url:
           type: string
         is_helper:

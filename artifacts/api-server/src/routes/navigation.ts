@@ -14,12 +14,8 @@ router.get("/navigation/route", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "start_lat, start_lng, end_lat, end_lng required" });
 
   const { start_lat, start_lng, end_lat, end_lng } = parsed.data;
-
-  // Use MAPBOX_TOKEN (server-side runtime env var), NOT VITE_MAPBOX_TOKEN.
-  // VITE_ prefixed variables are baked into the frontend bundle at build time
-  // and are NOT available in the Node.js process at runtime.
-  const token = process.env.MAPBOX_TOKEN;
-  if (!token) return res.status(500).json({ error: "MAPBOX_TOKEN environment variable is not set. Set it in Railway → Variables." });
+  const token = process.env.VITE_MAPBOX_TOKEN;
+  if (!token) return res.status(500).json({ error: "Mapbox token not configured" });
 
   try {
     const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${start_lng},${start_lat};${end_lng},${end_lat}?steps=true&geometries=geojson&access_token=${token}`;

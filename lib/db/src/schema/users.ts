@@ -6,9 +6,6 @@ export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
-  // bcrypt hash of the user's password (nullable — accounts created before
-  // password auth was introduced will have null until they reset).
-  password_hash: text("password_hash"),
   avatar_url: text("avatar_url"),
   is_helper: boolean("is_helper").notNull().default(false),
   helper_mode_active: boolean("helper_mode_active").notNull().default(false),
@@ -22,7 +19,6 @@ export const usersTable = pgTable("users", {
   city: text("city"),
   benevolence_wallet: real("benevolence_wallet").notNull().default(0),
   goodwill_score: integer("goodwill_score").notNull().default(0),
-  is_admin: boolean("is_admin").notNull().default(false),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 });

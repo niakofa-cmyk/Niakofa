@@ -1,5 +1,3 @@
-import { getStoredToken } from "./AppContext";
-
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY;
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -21,11 +19,6 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
     console.warn("SW registration failed:", err);
     return null;
   }
-}
-
-function authHeaders(): Record<string, string> {
-  const token = getStoredToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export async function subscribeToPush(userId: number): Promise<boolean> {
@@ -63,25 +56,15 @@ async function sendSubscriptionToServer(userId: number, sub: PushSubscription): 
   const base = import.meta.env.BASE_URL.replace(/\/$/, "");
   await fetch(`${base}/api/push/subscribe`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ userId, subscription: sub.toJSON() }),
   });
 }
 
-export async function unsubscribeFromPush(userId?: number): Promise<void> {
+export async function unsubscribeFromPush(): Promise<void> {
   if (!("serviceWorker" in navigator)) return;
   const reg = await navigator.serviceWorker.getRegistration();
   if (!reg) return;
   const sub = await reg.pushManager.getSubscription();
-  if (sub) {
-    if (userId) {
-      const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-      await fetch(`${base}/api/push/unsubscribe`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ userId, endpoint: sub.endpoint }),
-      }).catch(() => {});
-    }
-    await sub.unsubscribe();
-  }
+  if (sub) await sub.unsubscribe();
 }
