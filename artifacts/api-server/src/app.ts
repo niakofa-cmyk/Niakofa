@@ -69,7 +69,7 @@ if (process.env.NODE_ENV === "production" && process.env.SERVE_FRONTEND === "tru
   app.use(express.static(frontendDist));
   logger.info({ frontendDist }, "serving frontend static files");
 
-  app.get("*", (req, res) => {
+  app.get("*path", (req, res) => {
     if (!req.path.startsWith("/api") && !req.path.startsWith("/ws")) {
       res.sendFile(path.join(frontendDist, "index.html"));
     }
