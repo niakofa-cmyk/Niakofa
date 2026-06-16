@@ -25,6 +25,9 @@ function AppShell() {
   const [isActiveRequest] = useRoute("/request/:id");
   const [isAdmin] = useRoute("/admin");
 
+  // Admin page has its own auth — don't redirect it to login
+  if (isAdmin) return <AdminScreen />;
+
   // Show login/register screen if no authenticated user is stored
   if (!currentUser) {
     return <LoginPage />;
