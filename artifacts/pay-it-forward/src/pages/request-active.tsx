@@ -9,6 +9,8 @@ import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { NavigationOverlay } from "@/components/NavigationOverlay";
+import { InAppChat } from "@/components/InAppChat";
+import { TipModal } from "@/components/TipModal";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { motion } from "framer-motion";
 
@@ -101,6 +103,8 @@ export default function ActiveRequestScreen() {
   const [isOffRoute, setIsOffRoute] = useState(false);
   const [safetyAlertShown, setSafetyAlertShown] = useState(false);
   const [shareVisible, setShareVisible] = useState(false);
+  const [showTip, setShowTip] = useState(false);
+  const [tipShown, setTipShown] = useState(false);
 
   const enRouteRef = useRef(false);
   const offRouteCooldownRef = useRef(false);
@@ -244,6 +248,7 @@ export default function ActiveRequestScreen() {
             ? `+$${request.pay_it_forward_amount.toFixed(2)} added to your wallet`
             : request.payment_type === "goodwill" ? "+1 goodwill point earned" : "Thank you for helping!";
           toast({ title: "🎉 Request Completed!", description: earned });
+          setTimeout(() => setShowTip(true), 1500);
           queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
           queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
           setLocation("/");
@@ -502,7 +507,25 @@ export default function ActiveRequestScreen() {
             ✨ Goodwill mission — +1 community goodwill point
           </p>
         )}
+
+        {/* In-app chat */}
+        <div className="mt-4">
+          <InAppChat
+            requestId={requestId}
+            helperName={request.helper_name ?? "Helper"}
+            requesterName={request.requester_name ?? "Requester"}
+          />
+        </div>
       </div>
+
+      {/* Tip modal */}
+      {showTip && request.helper_name && (
+        <TipModal
+          requestId={requestId}
+          helperName={request.helper_name}
+          onClose={() => setShowTip(false)}
+        />
+      )}
     </div>
   );
 }
