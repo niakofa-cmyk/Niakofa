@@ -226,7 +226,7 @@ export default function MapScreen() {
             Open in Chrome or Firefox for the full live map. Requests listed below.
           </p>
           <div className="w-full max-w-sm space-y-2 mt-2">
-            {openRequests.map(r => (
+            {openRequests.filter(r => r.lng != null && r.lat != null).map(r => (
               <button
                 key={r.id}
                 onClick={() => helperModeActive && handleClaim(r)}
@@ -268,14 +268,14 @@ export default function MapScreen() {
         )}
 
         {/* Online helpers — animated dots */}
-        {displayHelpers.map(h => (
+        {displayHelpers.filter(h => h.lng != null && h.lat != null).map(h => (
           <Marker key={h.id} longitude={h.lng} latitude={h.lat} anchor="center">
             <HelperMarker helper={h} />
           </Marker>
         ))}
 
         {/* Open request markers with emergency pulse rings */}
-        {openRequests.map(r => (
+        {openRequests.filter(r => r.lng != null && r.lat != null).map(r => (
           <Marker key={r.id} longitude={r.lng} latitude={r.lat} anchor="bottom">
             <RequestMarker request={r} />
           </Marker>
