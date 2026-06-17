@@ -1,6 +1,11 @@
+[phases.setup]
+nixPkgs = ["nodejs_22", "pnpm-9_x", "openssl"]
+
 [phases.install]
 cmds = ["pnpm install --no-frozen-lockfile"]
 
-[variables]
-NODE_ENV = "production"
-SERVE_FRONTEND = "true"
+[phases.build]
+cmds = ["pnpm run typecheck:libs && pnpm --filter @workspace/api-spec run codegen && pnpm --filter @workspace/api-server run build && BASE_PATH=/ pnpm --filter @workspace/pay-it-forward run build"]
+
+[start]
+cmd = "node --enable-source-maps artifacts/api-server/dist/index.mjs"
