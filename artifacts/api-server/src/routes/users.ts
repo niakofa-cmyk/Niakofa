@@ -25,6 +25,15 @@ router.get("/users/register", (_req, res) => {
   res.json({ message: "Use POST /api/users/register" });
 });
 
+router.post("/users/login", authLimiter, async (req, res) => {
+  const { email, password } = req.body as { email: string; password: string };
+  if (!email) return res.status(400).json({ error: "Email required" });
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
+  if (!user) return res.status(401).json({ error: "No account found with that email" });
+  const token = `${user.id}.${Buffer.from(user.email).toString("base64url")}`;
+  return res.json({ user, token });
+});
+
 router.post("/users/register", authLimiter, async (req, res) => {
   const parsed = RegisterUserBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
