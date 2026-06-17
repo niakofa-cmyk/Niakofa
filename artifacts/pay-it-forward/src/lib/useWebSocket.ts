@@ -29,6 +29,7 @@ export type WsEventType =
   // Trust & safety (admin events)
   | "new_report"
   | "report_reviewed"
+  | "chat_message"
   // Presence system
   | "presence_update"
   // Connection management
