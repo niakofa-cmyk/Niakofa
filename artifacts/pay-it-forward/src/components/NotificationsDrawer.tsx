@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Bell, AlertTriangle, Heart, CheckCircle, MapPin, DollarSign, Calendar, Users } from "lucide-react";
+import { X, Bell, AlertTriangle, Heart, CheckCircle, MapPin, DollarSign, Calendar, Users, MessageCircle } from "lucide-react";
 import { Button } from "./ui/button";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { useLocation } from "wouter";
@@ -13,7 +13,7 @@ interface Props {
 
 interface LiveNotification {
   id: string;
-  type: "emergency" | "new_request" | "completed" | "pledge" | "nearby" | "helper_accepted" | "pledge_scheduled";
+  type: "emergency" | "new_request" | "completed" | "pledge" | "nearby" | "helper_accepted" | "pledge_scheduled" | "chat";
   title: string;
   body: string;
   time: Date;
@@ -27,6 +27,7 @@ function notifIcon(type: LiveNotification["type"]) {
     case "nearby": return { Icon: MapPin, color: "text-yellow-400", bg: "bg-yellow-400/10" };
     case "helper_accepted": return { Icon: Users, color: "text-green-400", bg: "bg-green-400/10" };
     case "pledge_scheduled": return { Icon: Calendar, color: "text-purple-400", bg: "bg-purple-400/10" };
+    case "chat": return { Icon: MessageCircle, color: "text-primary", bg: "bg-primary/10" };
     default: return { Icon: Heart, color: "text-primary", bg: "bg-primary/10" };
   }
 }
@@ -79,6 +80,18 @@ export function NotificationsDrawer({ open, onClose }: Props) {
     seenIds.current.add(n.id);
     setNotifications(prev => [n, ...prev].slice(0, 50));
   };
+
+  // Chat message notifications
+  useWebSocket("chat_message" as any, (event) => {
+    const msg = event.payload as { request_id: number; content: string; sender_id: number };
+    setNotifications(prev => [{
+      id: `chat-${Date.now()}`,
+      type: "chat",
+      title: "💬 New message",
+      body: msg.content.length > 60 ? msg.content.slice(0, 60) + "…" : msg.content,
+      time: new Date(),
+    }, ...prev.slice(0, 49)]);
+  });
 
   useWebSocket((event) => {
     if (event.type === "new_request") {
