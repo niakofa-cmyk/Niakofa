@@ -52,13 +52,32 @@ router.get("/navigation/route", async (req, res) => {
     const durationMin = Math.round(route.duration / 60);
     const etaText = durationMin < 60 ? `${durationMin} min` : `${Math.floor(durationMin / 60)}h ${durationMin % 60}m`;
 
+    // Compute initial bearing from start to first waypoint
+    const coords = (route.geometry as { coordinates: number[][] }).coordinates;
+    let initialBearing = 0;
+    if (coords.length >= 2) {
+      const [lng1, lat1] = coords[0];
+      const [lng2, lat2] = coords[1];
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const lat1R = lat1 * Math.PI / 180;
+      const lat2R = lat2 * Math.PI / 180;
+      const x = Math.sin(dLng) * Math.cos(lat2R);
+      const y = Math.cos(lat1R) * Math.sin(lat2R) - Math.sin(lat1R) * Math.cos(lat2R) * Math.cos(dLng);
+      initialBearing = ((Math.atan2(x, y) * 180 / Math.PI) + 360) % 360;
+    }
+
+    const speedMph = route.distance / 1609.34 / (route.duration / 3600);
+
     return res.json({
       geometry: route.geometry,
       distance_meters: route.distance,
       duration_seconds: route.duration,
       steps,
       eta_text: etaText,
-      distance_text: `${distanceMiles} mi`,
+      distance_text: \`\${distanceMiles} mi\`,
+      initial_bearing: Math.round(initialBearing),
+      speed_mph: Math.round(speedMph),
+      waypoints: coords.length,
     });
   } catch (err) {
     logger.error({ err }, "Mapbox directions API error");

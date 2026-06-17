@@ -10,6 +10,8 @@ interface NavigationOverlayProps {
   totalSteps: number;
   currentStepIndex: number;
   isOffRoute?: boolean;
+  speedMph?: number | null;
+  bearing?: number | null;
 }
 
 function ManeuverIcon({ type, direction }: { type?: string | null; direction?: string | null }) {
@@ -36,6 +38,8 @@ export function NavigationOverlay({
   totalSteps,
   currentStepIndex,
   isOffRoute = false,
+  speedMph,
+  bearing,
 }: NavigationOverlayProps) {
   const isArrived = status === "arrived";
 
@@ -101,6 +105,9 @@ export function NavigationOverlay({
                 <span className="text-sm text-muted-foreground flex items-center gap-1">
                   <Navigation className="w-3 h-3" /> {eta}
                 </span>
+                {speedMph != null && speedMph > 0 && (
+                  <span className="text-xs font-bold text-yellow-400">{speedMph} mph</span>
+                )}
               </div>
             </div>
           </div>

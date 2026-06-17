@@ -19,6 +19,9 @@ export const usersTable = pgTable("users", {
   city: text("city"),
   benevolence_wallet: real("benevolence_wallet").notNull().default(0),
   goodwill_score: integer("goodwill_score").notNull().default(0),
+  specialties: text("specialties").array(),
+  phone_masked: text("phone_masked"),
+  quick_replies: text("quick_replies").array(),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 });

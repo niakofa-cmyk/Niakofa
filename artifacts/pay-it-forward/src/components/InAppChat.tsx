@@ -94,6 +94,19 @@ export function InAppChat({ requestId, helperName, requesterName }: InAppChatPro
         <div ref={bottomRef} />
       </div>
 
+
+      {/* Quick reply chips */}
+      <div className="flex gap-2 px-3 pt-2 overflow-x-auto pb-1 scrollbar-none">
+        {["I'm on my way!", "Be there in 5 min", "Running a bit late", "Arrived!", "Can you clarify?"].map(reply => (
+          <button
+            key={reply}
+            onClick={() => setInput(reply)}
+            className="shrink-0 text-xs bg-muted hover:bg-primary/20 border border-border hover:border-primary/50 rounded-full px-3 py-1.5 transition-all text-muted-foreground hover:text-primary font-medium"
+          >
+            {reply}
+          </button>
+        ))}
+      </div>
       <div className="flex items-center gap-2 p-3 border-t border-border">
         <input
           className="flex-1 bg-muted rounded-full px-4 py-2 text-sm outline-none placeholder:text-muted-foreground"

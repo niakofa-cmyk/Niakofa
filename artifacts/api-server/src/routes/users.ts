@@ -58,6 +58,10 @@ router.patch("/users/:id", async (req, res) => {
   if (avatar_url !== undefined) updates.avatar_url = avatar_url;
   if (neighborhood !== undefined) updates.neighborhood = neighborhood;
   if (is_helper !== undefined) updates.is_helper = is_helper;
+  const { specialties, phone_masked, quick_replies } = bParsed.data as any;
+  if (specialties !== undefined) (updates as any).specialties = specialties;
+  if (phone_masked !== undefined) (updates as any).phone_masked = phone_masked;
+  if (quick_replies !== undefined) (updates as any).quick_replies = quick_replies;
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });
   return res.json(user);

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
-import Map, { Marker, Source, Layer } from "react-map-gl/mapbox";
+import Map, { Marker, Source, Layer, useMap } from "react-map-gl/mapbox";
+import type { MapRef } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useAppContext } from "@/lib/AppContext";
 import { useGetRequest, useGetRoute, useCompleteRequest, useMarkEnRoute, useMarkArrived, getGetRequestQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey } from "@workspace/api-client-react";
@@ -103,6 +104,7 @@ export default function ActiveRequestScreen() {
   const [isOffRoute, setIsOffRoute] = useState(false);
   const [safetyAlertShown, setSafetyAlertShown] = useState(false);
   const [shareVisible, setShareVisible] = useState(false);
+  const mapRef = useRef<MapRef>(null);
   const [showTip, setShowTip] = useState(false);
   const [tipShown, setTipShown] = useState(false);
 
@@ -227,6 +229,41 @@ export default function ActiveRequestScreen() {
     );
     setCurrentStepIndex(newStep);
   }, [myLocation, routeData, request]);
+
+
+  // Auto-zoom to route when routeData arrives
+  useEffect(() => {
+    if (!routeData?.geometry || !mapRef.current) return;
+    const coords = (routeData.geometry as { coordinates: number[][] }).coordinates;
+    if (coords.length < 2) return;
+    const lngs = coords.map(c => c[0]);
+    const lats = coords.map(c => c[1]);
+    const bounds: [[number, number], [number, number]] = [
+      [Math.min(...lngs), Math.min(...lats)],
+      [Math.max(...lngs), Math.max(...lats)],
+    ];
+    mapRef.current.fitBounds(bounds, { padding: 80, duration: 1200, pitch: 55, maxZoom: 17 });
+  }, [routeData?.geometry]);
+
+  // Rotate map to match travel heading
+  useEffect(() => {
+    if (!myLocation?.heading || !mapRef.current || isArrived) return;
+    mapRef.current.easeTo({
+      bearing: myLocation.heading,
+      duration: 800,
+      easing: (t: number) => t,
+    });
+  }, [myLocation?.heading, isArrived]);
+
+  // Re-center on user position while navigating
+  useEffect(() => {
+    if (!myLocation || !mapRef.current || isArrived || autoArrived) return;
+    mapRef.current.easeTo({
+      center: [myLocation.lng, myLocation.lat],
+      duration: 600,
+      zoom: 16,
+    });
+  }, [myLocation?.lat, myLocation?.lng]);
 
   // WebSocket: real-time request updates
   useWebSocket(useCallback((event) => {
@@ -377,6 +414,8 @@ export default function ActiveRequestScreen() {
           totalSteps={routeData?.steps?.length ?? 0}
           currentStepIndex={currentStepIndex}
           isOffRoute={isOffRoute}
+          speedMph={myLocation?.speed ? Math.round((myLocation.speed ?? 0) * 2.237) : null}
+          bearing={myLocation?.heading ?? null}
         />
       </div>
 
@@ -393,6 +432,7 @@ export default function ActiveRequestScreen() {
         style={{ width: "100%", height: "100%" }}
         mapStyle="mapbox://styles/mapbox/dark-v11"
         attributionControl={false}
+        ref={mapRef}
       >
         {/* Me (helper) — animated position dot */}
         <Marker longitude={myLocation.lng} latitude={myLocation.lat} anchor="center">
