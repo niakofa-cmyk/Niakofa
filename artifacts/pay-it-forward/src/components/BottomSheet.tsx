@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { useLocation } from "wouter";
 import type { HelpRequest } from "@workspace/api-client-react";
 import { Button } from "./ui/button";
 import { MapPin, Clock, ShieldAlert, HeartPulse, ShoppingBag, Car, Hammer, MoreHorizontal, AlertTriangle, Heart, DollarSign, Gift } from "lucide-react";
@@ -53,6 +54,7 @@ function PaymentBadge({ type }: { type: string }) {
 }
 
 export function BottomSheet({ requests, onClaim, isClaiming }: BottomSheetProps) {
+  const [, setLocation] = useLocation();
   const sorted = [...requests].sort((a, b) => {
     const urgencyOrder: Record<string, number> = { emergency: 0, high: 1, medium: 2, low: 3 };
     const urgencyDiff = (urgencyOrder[a.urgency ?? 'low'] ?? 3) - (urgencyOrder[b.urgency ?? 'low'] ?? 3);
@@ -144,14 +146,23 @@ export function BottomSheet({ requests, onClaim, isClaiming }: BottomSheetProps)
               )}
             </div>
 
-            <Button
-              className={`w-full font-bold uppercase tracking-wider h-12 ${request.urgency === 'emergency' ? 'bg-destructive hover:bg-destructive/90 text-white' : ''}`}
-              variant={request.urgency === 'emergency' ? 'destructive' : 'default'}
-              onClick={() => onClaim(request)}
-              disabled={isClaiming}
-            >
-              {request.urgency === 'emergency' ? '🚨 Help Now' : 'Accept Request'}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="h-12 px-4 shrink-0"
+                onClick={() => setLocation(`/request/${request.id}/view`)}
+              >
+                Details
+              </Button>
+              <Button
+                className={`flex-1 font-bold uppercase tracking-wider h-12 ${request.urgency === 'emergency' ? 'bg-destructive hover:bg-destructive/90 text-white' : ''}`}
+                variant={request.urgency === 'emergency' ? 'destructive' : 'default'}
+                onClick={() => onClaim(request)}
+                disabled={isClaiming}
+              >
+                {request.urgency === 'emergency' ? '🚨 Help Now' : 'Accept'}
+              </Button>
+            </div>
           </div>
         ))}
       </div>

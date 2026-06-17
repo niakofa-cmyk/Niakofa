@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
+import { useLocation } from "wouter";
 import { Zap, MapPin, Clock, AlertTriangle, ChevronRight, X } from "lucide-react";
 import type { HelpRequest } from "@workspace/api-client-react";
 import { Button } from "./ui/button";
@@ -16,6 +17,7 @@ export function DispatchIntelligenceCard({
   onDismiss,
   isClaiming,
 }: DispatchIntelligenceCardProps) {
+  const [, setLocation] = useLocation();
   if (!bestMatch) return null;
 
   const isEmergency = bestMatch.urgency === "emergency";

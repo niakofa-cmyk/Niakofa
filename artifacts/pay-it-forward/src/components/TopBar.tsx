@@ -145,6 +145,7 @@ function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
 
 export function TopBar() {
   const { helperModeActive, setHelperModeActive, currentUser } = useAppContext();
+  const [, setLocation] = useLocation();
   const [sosOpen, setSosOpen] = useState(false);
 
   useEffect(() => {
@@ -187,6 +188,20 @@ export function TopBar() {
               className="data-[state=checked]:bg-green-500"
             />
           </div>
+
+          {/* Profile avatar */}
+          <button
+            onClick={() => setLocation("/profile")}
+            className="w-9 h-9 rounded-full overflow-hidden border-2 border-border bg-card/80 backdrop-blur-sm flex items-center justify-center active:scale-95 transition-all shadow-lg"
+          >
+            {currentUser?.avatar_url ? (
+              <img src={currentUser.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-xs font-black text-foreground">
+                {currentUser?.name?.[0] ?? "?"}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 

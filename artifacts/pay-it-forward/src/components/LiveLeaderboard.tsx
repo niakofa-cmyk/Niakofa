@@ -4,6 +4,7 @@ import { useWebSocket } from "@/lib/useWebSocket";
 import type { WsEvent } from "@/lib/useWebSocket";
 import { TrustTierBadge } from "@/components/TrustTierBadge";
 import { MapPin, Trophy, Flame, Star, TrendingUp, ChevronDown } from "lucide-react";
+import { useLocation } from "wouter";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ function LeaderboardSkeleton() {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function LiveLeaderboard() {
+  const [, setLocation] = useLocation();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
