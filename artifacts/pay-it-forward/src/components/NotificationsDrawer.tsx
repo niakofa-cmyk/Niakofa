@@ -1,22 +1,19 @@
-import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Bell, AlertTriangle, Heart, CheckCircle, MapPin, DollarSign, Calendar, Users, MessageCircle } from "lucide-react";
 import { Button } from "./ui/button";
-import { useWebSocket } from "@/lib/useWebSocket";
-import { useLocation } from "wouter";
-import type { HelpRequest } from "@workspace/api-client-react";
 
-interface Props {
-  open: boolean;
-  onClose: () => void;
-}
-
-interface LiveNotification {
+export interface LiveNotification {
   id: string;
   type: "emergency" | "new_request" | "completed" | "pledge" | "nearby" | "helper_accepted" | "pledge_scheduled" | "chat";
   title: string;
   body: string;
   time: Date;
+}
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  notifications: LiveNotification[];
 }
 
 function notifIcon(type: LiveNotification["type"]) {
@@ -40,111 +37,7 @@ function timeAgo(d: Date): string {
   return d.toLocaleDateString();
 }
 
-const SEED_NOTIFICATIONS: LiveNotification[] = [
-  {
-    id: "seed-1",
-    type: "emergency",
-    title: "🚨 Emergency nearby",
-    body: "Sarah Chen needs immediate help — power out, needs phone charge",
-    time: new Date(Date.now() - 2 * 60 * 1000),
-  },
-  {
-    id: "seed-2",
-    type: "completed",
-    title: "✅ Request completed",
-    body: "You helped DeShawn Moore with grocery pickup",
-    time: new Date(Date.now() - 60 * 60 * 1000),
-  },
-  {
-    id: "seed-3",
-    type: "pledge",
-    title: "💙 Niakofa received",
-    body: "Maria G. contributed $5 toward your help last week",
-    time: new Date(Date.now() - 3 * 60 * 60 * 1000),
-  },
-  {
-    id: "seed-4",
-    type: "nearby",
-    title: "📍 New request 0.3 mi away",
-    body: "Airport drop-off at 6am — transportation needed",
-    time: new Date(Date.now() - 5 * 60 * 60 * 1000),
-  },
-];
-
-export function NotificationsDrawer({ open, onClose }: Props) {
-  const [notifications, setNotifications] = useState<LiveNotification[]>(SEED_NOTIFICATIONS);
-  const seenIds = useRef(new Set<string>());
-
-  const addNotif = (n: LiveNotification) => {
-    if (seenIds.current.has(n.id)) return;
-    seenIds.current.add(n.id);
-    setNotifications(prev => [n, ...prev].slice(0, 50));
-  };
-
-  // Chat message notifications
-  useWebSocket("chat_message" as any, (event) => {
-    const msg = event.payload as { request_id: number; content: string; sender_id: number };
-    setNotifications(prev => [{
-      id: `chat-${Date.now()}`,
-      type: "chat",
-      title: "💬 New message",
-      body: msg.content.length > 60 ? msg.content.slice(0, 60) + "…" : msg.content,
-      time: new Date(),
-    }, ...prev.slice(0, 49)]);
-  });
-
-  useWebSocket((event) => {
-    if (event.type === "new_request") {
-      const req = event.payload as HelpRequest;
-      const isEmergency = req.urgency === "emergency";
-      addNotif({
-        id: `req-${req.id}`,
-        type: (isEmergency ? "emergency" : "nearby") as LiveNotification["type"],
-        title: isEmergency ? "🚨 Emergency nearby" : "📍 New request nearby",
-        body: req.title,
-        time: new Date(),
-      });
-    } else if (event.type === "request_updated") {
-      const req = event.payload as HelpRequest;
-      if (req.status === "claimed" && req.helper_name) {
-        addNotif({
-          id: `claimed-${req.id}`,
-          type: "helper_accepted",
-          title: "✋ Helper accepted your request",
-          body: `${req.helper_name} is on the way for: ${req.title}`,
-          time: new Date(),
-        });
-      } else if (req.status === "completed") {
-        addNotif({
-          id: `complete-${req.id}`,
-          type: "completed",
-          title: "✅ Request completed",
-          body: req.title,
-          time: new Date(),
-        });
-      }
-    } else if (event.type === "pledge_paid") {
-      const p = event.payload as { amount: number; request_title: string };
-      addNotif({
-        id: `pledge-paid-${Date.now()}`,
-        type: "pledge",
-        title: "💙 Niakofa sent",
-        body: `$${p.amount.toFixed(2)} paid forward for: ${p.request_title}`,
-        time: new Date(),
-      });
-    } else if (event.type === "pledge_scheduled") {
-      const p = event.payload as { amount: number; scheduled_date: string };
-      const d = new Date(p.scheduled_date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      addNotif({
-        id: `pledge-sched-${Date.now()}`,
-        type: "pledge_scheduled",
-        title: "📅 Payment scheduled",
-        body: `$${p.amount.toFixed(2)} saved for ${d} — we'll remind you`,
-        time: new Date(),
-      });
-    }
-  });
-
+export function NotificationsDrawer({ open, onClose, notifications }: Props) {
   return (
     <AnimatePresence>
       {open && (

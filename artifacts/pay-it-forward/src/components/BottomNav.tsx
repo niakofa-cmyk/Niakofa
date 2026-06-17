@@ -1,7 +1,10 @@
 import { useLocation, Link } from "wouter";
 import { Map, Users, Plus, Wallet, User, Bell } from "lucide-react";
-import { useState } from "react";
-import { NotificationsDrawer } from "./NotificationsDrawer";
+import { useState, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { NotificationsDrawer, type LiveNotification } from "./NotificationsDrawer";
+import { useWebSocket } from "@/lib/useWebSocket";
+import type { HelpRequest } from "@workspace/api-client-react";
 
 const tabs = [
   { path: "/", icon: Map, label: "Map" },
@@ -11,9 +14,119 @@ const tabs = [
   { path: "/profile", icon: User, label: "Profile" },
 ];
 
+const SEED_NOTIFICATIONS: LiveNotification[] = [
+  {
+    id: "seed-1",
+    type: "emergency",
+    title: "🚨 Emergency nearby",
+    body: "Sarah Chen needs immediate help — power out, needs phone charge",
+    time: new Date(Date.now() - 2 * 60 * 1000),
+  },
+  {
+    id: "seed-2",
+    type: "completed",
+    title: "✅ Request completed",
+    body: "You helped DeShawn Moore with grocery pickup",
+    time: new Date(Date.now() - 60 * 60 * 1000),
+  },
+  {
+    id: "seed-3",
+    type: "pledge",
+    title: "💙 Niakofa received",
+    body: "Maria G. contributed $5 toward your help last week",
+    time: new Date(Date.now() - 3 * 60 * 60 * 1000),
+  },
+  {
+    id: "seed-4",
+    type: "nearby",
+    title: "📍 New request 0.3 mi away",
+    body: "Airport drop-off at 6am — transportation needed",
+    time: new Date(Date.now() - 5 * 60 * 60 * 1000),
+  },
+];
+
 export function BottomNav() {
   const [location] = useLocation();
   const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<LiveNotification[]>(SEED_NOTIFICATIONS);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const seenIds = useRef(new Set<string>());
+
+  const addNotif = (n: LiveNotification) => {
+    if (seenIds.current.has(n.id)) return;
+    seenIds.current.add(n.id);
+    setNotifications(prev => [n, ...prev].slice(0, 50));
+    setUnreadCount(prev => Math.min(prev + 1, 99));
+  };
+
+  // Chat message notifications
+  useWebSocket("chat_message" as any, (event) => {
+    const msg = event.payload as { request_id: number; content: string; sender_id: number };
+    addNotif({
+      id: `chat-${Date.now()}`,
+      type: "chat",
+      title: "💬 New message",
+      body: msg.content.length > 60 ? msg.content.slice(0, 60) + "…" : msg.content,
+      time: new Date(),
+    });
+  });
+
+  useWebSocket((event) => {
+    if (event.type === "new_request") {
+      const req = event.payload as HelpRequest;
+      const isEmergency = req.urgency === "emergency";
+      addNotif({
+        id: `req-${req.id}`,
+        type: (isEmergency ? "emergency" : "nearby") as LiveNotification["type"],
+        title: isEmergency ? "🚨 Emergency nearby" : "📍 New request nearby",
+        body: req.title,
+        time: new Date(),
+      });
+    } else if (event.type === "request_updated") {
+      const req = event.payload as HelpRequest;
+      if (req.status === "claimed" && req.helper_name) {
+        addNotif({
+          id: `claimed-${req.id}`,
+          type: "helper_accepted",
+          title: "✋ Helper accepted your request",
+          body: `${req.helper_name} is on the way for: ${req.title}`,
+          time: new Date(),
+        });
+      } else if (req.status === "completed") {
+        addNotif({
+          id: `complete-${req.id}`,
+          type: "completed",
+          title: "✅ Request completed",
+          body: req.title,
+          time: new Date(),
+        });
+      }
+    } else if (event.type === "pledge_paid") {
+      const p = event.payload as { amount: number; request_title: string };
+      addNotif({
+        id: `pledge-paid-${Date.now()}`,
+        type: "pledge",
+        title: "💙 Niakofa sent",
+        body: `$${p.amount.toFixed(2)} paid forward for: ${p.request_title}`,
+        time: new Date(),
+      });
+    } else if (event.type === "pledge_scheduled") {
+      const p = event.payload as { amount: number; scheduled_date: string };
+      const d = new Date(p.scheduled_date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      addNotif({
+        id: `pledge-sched-${Date.now()}`,
+        type: "pledge_scheduled",
+        title: "📅 Payment scheduled",
+        body: `$${p.amount.toFixed(2)} saved for ${d} — we'll remind you`,
+        time: new Date(),
+      });
+    }
+  });
+
+  const openNotifications = () => {
+    setNotifOpen(true);
+    setUnreadCount(0);
+  };
 
   return (
     <>
@@ -52,17 +165,36 @@ export function BottomNav() {
 
           {/* Notifications icon */}
           <button
-            onClick={() => setNotifOpen(true)}
-            className="flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all min-w-[52px] relative"
+            onClick={openNotifications}
+            className="flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all min-w-[52px] relative active:scale-95"
           >
-            <Bell className="w-5 h-5 text-muted-foreground" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Alerts</span>
-            <span className="absolute top-0 right-1 w-2 h-2 bg-destructive rounded-full" />
+            <div className="relative">
+              <Bell className={`w-5 h-5 transition-colors ${unreadCount > 0 ? "text-primary" : "text-muted-foreground"}`} />
+              <AnimatePresence>
+                {unreadCount > 0 && (
+                  <motion.span
+                    key="badge"
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0, opacity: 0 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                    className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 flex items-center justify-center bg-destructive rounded-full shadow-[0_0_8px_rgba(255,50,50,0.6)] border border-background"
+                  >
+                    <span className="text-[9px] font-black text-white leading-none">
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </div>
+            <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${unreadCount > 0 ? "text-primary" : "text-muted-foreground"}`}>
+              Alerts
+            </span>
           </button>
         </div>
       </nav>
 
-      <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} />
+      <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} notifications={notifications} />
     </>
   );
 }
