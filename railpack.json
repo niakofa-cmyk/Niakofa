@@ -1,4 +1,8 @@
 {
-  "start": "node --enable-source-maps artifacts/api-server/dist/index.mjs",
-  "build": "pnpm install --no-frozen-lockfile && pnpm run typecheck:libs && pnpm --filter @workspace/api-spec run codegen && pnpm --filter @workspace/api-server run build && BASE_PATH=/ pnpm --filter @workspace/pay-it-forward run build"
+  "build": {
+    "cmd": "pnpm run typecheck:libs && pnpm --filter @workspace/api-spec run codegen && pnpm --filter @workspace/api-server run build && BASE_PATH=/ pnpm --filter @workspace/pay-it-forward run build"
+  },
+  "deploy": {
+    "startCmd": "node --enable-source-maps artifacts/api-server/dist/index.mjs"
+  }
 }
