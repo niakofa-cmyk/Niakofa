@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import chatRouter from "./chat";
 import usersRouter from "./users";
 import requestsRouter from "./requests";
 import helpersRouter from "./helpers";
