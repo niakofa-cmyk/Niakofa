@@ -106,7 +106,7 @@ export function NavigationOverlay({
                   <Navigation className="w-3 h-3" /> {eta}
                 </span>
                 {speedMph != null && speedMph > 0 && (
-                  <span className="text-xs font-bold text-yellow-400">{speedMph} mph</span>
+                  <span className="flex items-center gap-1 text-xs font-black text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-2 py-0.5 rounded-full">{speedMph} mph</span>
                 )}
               </div>
             </div>

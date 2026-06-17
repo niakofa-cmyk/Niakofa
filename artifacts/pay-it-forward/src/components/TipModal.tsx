@@ -52,7 +52,8 @@ export function TipModal({ requestId, helperName, onClose }: TipModalProps) {
         <motion.div
           initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
           transition={{ type: "spring", damping: 26, stiffness: 220 }}
-          className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl p-6 pb-safe"
+          className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl p-6"
+          style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
           onClick={e => e.stopPropagation()}
         >
           <div className="flex items-center justify-between mb-6">
@@ -69,7 +70,7 @@ export function TipModal({ requestId, helperName, onClose }: TipModalProps) {
             Show <strong className="text-foreground">{helperName}</strong> some extra love. 100% goes to them.
           </p>
 
-          <div className="grid grid-cols-5 gap-2 mb-4">
+          <div className="grid grid-cols-5 gap-2 mb-4 min-w-0">
             {TIP_AMOUNTS.map(amt => (
               <button
                 key={amt}
@@ -92,7 +93,7 @@ export function TipModal({ requestId, helperName, onClose }: TipModalProps) {
               placeholder="Custom amount"
               value={custom}
               onChange={e => { setCustom(e.target.value); setSelected(null); }}
-              className="w-full bg-muted border border-border rounded-xl pl-9 pr-4 py-3 text-sm outline-none focus:border-green-500 transition-colors"
+              className="w-full bg-muted border border-border rounded-xl pl-9 pr-4 py-3 text-sm outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
               min="0.50"
               step="0.50"
             />

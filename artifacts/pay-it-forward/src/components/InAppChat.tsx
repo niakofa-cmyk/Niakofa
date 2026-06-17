@@ -66,7 +66,7 @@ export function InAppChat({ requestId, helperName, requesterName }: InAppChatPro
   };
 
   return (
-    <div className="flex flex-col h-full max-h-80 bg-card border border-border rounded-2xl overflow-hidden">
+    <div className="flex flex-col bg-card border border-border rounded-2xl overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-card/80">
         <MessageCircle className="w-4 h-4 text-primary" />
         <span className="text-sm font-bold">Chat</span>
@@ -101,7 +101,7 @@ export function InAppChat({ requestId, helperName, requesterName }: InAppChatPro
           <button
             key={reply}
             onClick={() => setInput(reply)}
-            className="shrink-0 text-xs bg-muted hover:bg-primary/20 border border-border hover:border-primary/50 rounded-full px-3 py-1.5 transition-all text-muted-foreground hover:text-primary font-medium"
+            className="shrink-0 text-xs bg-muted active:bg-primary/20 border border-border active:border-primary/50 rounded-full px-3 py-1.5 transition-all text-muted-foreground active:text-primary font-medium select-none"
           >
             {reply}
           </button>
@@ -109,7 +109,7 @@ export function InAppChat({ requestId, helperName, requesterName }: InAppChatPro
       </div>
       <div className="flex items-center gap-2 p-3 border-t border-border">
         <input
-          className="flex-1 bg-muted rounded-full px-4 py-2 text-sm outline-none placeholder:text-muted-foreground"
+          className="flex-1 bg-muted rounded-full px-4 py-2 text-sm outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground transition-all"
           placeholder="Type a message..."
           value={input}
           onChange={e => setInput(e.target.value)}
