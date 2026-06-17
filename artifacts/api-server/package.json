@@ -27,7 +27,8 @@
     "twilio": "^6.0.2",
     "web-push": "^3.6.7",
     "ws": "^8.21.0",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "@workspace/api-zod": "workspace:*"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",

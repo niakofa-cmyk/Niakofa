@@ -170,6 +170,9 @@ importers:
       '@workspace/api-spec':
         specifier: workspace:*
         version: link:../../lib/api-spec
+      '@workspace/api-zod':
+        specifier: workspace:*
+        version: link:../../lib/api-zod
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
