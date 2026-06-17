@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import type mapboxgl from "mapbox-gl";
 import { useLocation } from "wouter";
 import Map, { Marker, Source, Layer } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -19,6 +20,10 @@ import { DispatchIntelligenceCard } from "@/components/DispatchIntelligenceCard"
 import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
+import { useTerrain } from "@/hooks/useTerrain";
+import { useDeviceHeading } from "@/hooks/useDeviceHeading";
+import { useMapOrientation } from "@/hooks/useMapOrientation";
+import { OrientationToggle } from "@/components/OrientationToggle";
 
 function pickBestMatch(requests: HelpRequest[]): HelpRequest | null {
   if (requests.length === 0) return null;
@@ -150,6 +155,11 @@ export default function MapScreen() {
   });
 
   const claimMutation = useClaimRequest();
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  useTerrain(mapRef);
+  const deviceHeading = useDeviceHeading();
+  const { mode: orientMode, setMode: setOrientMode, applyHeading } = useMapOrientation(mapRef);
+  useEffect(() => { if (deviceHeading !== null) applyHeading(deviceHeading); }, [deviceHeading, applyHeading]);
   const handleClaim = useCallback((request: HelpRequest) => {
     if (!currentUser) return;
     claimMutation.mutate(
@@ -246,15 +256,18 @@ export default function MapScreen() {
 
       <Map
         mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
-        initialViewState={{
-          longitude: myLocation?.lng ?? -97.33,
-          latitude: myLocation?.lat ?? 32.75,
-          zoom: 13.5,
-        }}
         style={{ width: "100%", height: "100%" }}
         mapStyle="mapbox://styles/mapbox/dark-v11"
         attributionControl={false}
         onError={onMapError}
+        initialViewState={{
+          longitude: myLocation?.lng ?? -97.33,
+          latitude: myLocation?.lat ?? 32.75,
+          zoom: 13.5,
+          pitch: 45,
+          bearing: 0,
+        }}
+        ref={(ref) => { if (ref) (mapRef as React.MutableRefObject<mapboxgl.Map | null>).current = ref.getMap(); }}
       >
         {/* My location dot with accuracy ring */}
         {myLocation && (
@@ -298,6 +311,7 @@ export default function MapScreen() {
             />
           </Source>
         )}
+        <OrientationToggle mode={orientMode} onToggle={() => setOrientMode(orientMode === "heading-up" ? "north-up" : "heading-up")} />
       </Map>
 
       {/* Dispatch Intelligence — Best Match card */}
