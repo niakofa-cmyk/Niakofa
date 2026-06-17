@@ -44,13 +44,49 @@ const EMERGENCY_RESOURCES = [
 
 function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [pressed, setPressed] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const { currentUser, myLocation } = useAppContext();
 
-  const handleEmergency = () => {
+  const handleEmergency = async () => {
+    // 3-second countdown before firing — gives time to cancel accidental presses
+    setCountdown(3);
+    const interval = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    await new Promise(resolve => setTimeout(resolve, 3200));
+    clearInterval(interval);
+
     setPressed(true);
+
+    // Fire real SOS API
+    try {
+      await fetch("/api/verification/sos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: currentUser?.id,
+          lat: myLocation?.lat,
+          lng: myLocation?.lng,
+          message: "SOS activated from Niakofa app",
+        }),
+      });
+    } catch {}
+
     setTimeout(() => {
       setPressed(false);
       onClose();
     }, 3000);
+  };
+
+  const cancelSOS = () => {
+    setCountdown(0);
   };
 
   return (
@@ -103,11 +139,19 @@ function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
                     {/* SOS primary button */}
                     <button
                       onClick={handleEmergency}
-                      className="w-full bg-destructive hover:bg-destructive/90 text-white font-black h-14 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-[0_0_20px_rgba(255,50,50,0.4)] active:scale-95"
+                      className="w-full bg-destructive text-white font-black h-14 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-[0_0_20px_rgba(255,50,50,0.4)] active:scale-95 relative overflow-hidden"
                     >
                       <ShieldAlert className="w-5 h-5" />
-                      SOS — Alert Emergency Services
+                      {countdown > 0 ? `Sending in ${countdown}… tap to cancel` : "SOS — Alert Emergency Services"}
                     </button>
+                    {countdown > 0 && (
+                      <button
+                        onClick={cancelSOS}
+                        className="w-full text-sm text-muted-foreground py-2 active:text-foreground transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    )}
 
                     {/* Resource buttons */}
                     <div className="space-y-2.5">

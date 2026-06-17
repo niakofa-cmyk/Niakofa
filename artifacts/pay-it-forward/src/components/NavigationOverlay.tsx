@@ -12,6 +12,7 @@ interface NavigationOverlayProps {
   isOffRoute?: boolean;
   speedMph?: number | null;
   bearing?: number | null;
+  etaSeconds?: number | null;
 }
 
 function ManeuverIcon({ type, direction }: { type?: string | null; direction?: string | null }) {
@@ -40,6 +41,7 @@ export function NavigationOverlay({
   isOffRoute = false,
   speedMph,
   bearing,
+  etaSeconds,
 }: NavigationOverlayProps) {
   const isArrived = status === "arrived";
 
@@ -103,7 +105,10 @@ export function NavigationOverlay({
                 <span className="text-lg font-black text-primary">{formatDistance(step.distance_meters)}</span>
                 <span className="text-xs text-muted-foreground">•</span>
                 <span className="text-sm text-muted-foreground flex items-center gap-1">
-                  <Navigation className="w-3 h-3" /> {eta}
+                  <Navigation className="w-3 h-3" />
+                  {etaSeconds != null && etaSeconds <= 60
+                    ? <span className="font-black text-green-400">{etaSeconds}s</span>
+                    : eta}
                 </span>
                 {speedMph != null && speedMph > 0 && (
                   <span className="flex items-center gap-1 text-xs font-black text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-2 py-0.5 rounded-full">{speedMph} mph</span>

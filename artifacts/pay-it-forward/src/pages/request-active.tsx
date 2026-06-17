@@ -206,6 +206,7 @@ export default function ActiveRequestScreen() {
       toast({
         title: "🔄 Off route — recalculating…",
         description: "You've deviated from the route. Fetching updated directions.",
+        variant: "destructive",
       });
       // Force new route by invalidating the query — new start position triggers fresh fetch
       queryClient.invalidateQueries({ queryKey: getGetRouteQueryKey(routeParams) });
@@ -264,6 +265,18 @@ export default function ActiveRequestScreen() {
       zoom: 16,
     });
   }, [myLocation?.lat, myLocation?.lng]);
+
+
+  // Passive safety check-in — pings server every 5min so moderators know helper is active
+  useEffect(() => {
+    if (!currentUser || isArrived || isCompleted) return;
+    const id = setInterval(async () => {
+      try {
+        await fetch(`/api/verification/safety-checkin/${currentUser.id}`, { method: "POST" });
+      } catch {}
+    }, 5 * 60 * 1000); // every 5 minutes
+    return () => clearInterval(id);
+  }, [currentUser?.id, isArrived]);
 
   // WebSocket: real-time request updates
   useWebSocket(useCallback((event) => {
@@ -367,7 +380,9 @@ export default function ActiveRequestScreen() {
         {etaCountdown > 0 && !isArrived && (
           <div className="flex items-center gap-1.5 bg-card/90 backdrop-blur-md border border-border px-3 py-1.5 rounded-full shadow-lg">
             <Navigation2 className="w-3 h-3 text-yellow-400" />
-            <span className="text-xs font-black text-yellow-400">{Math.ceil(etaCountdown / 60)} min</span>
+            <span className="text-xs font-black text-yellow-400">
+              {etaCountdown <= 60 ? `${etaCountdown}s` : `${Math.ceil(etaCountdown / 60)} min`}
+            </span>
           </div>
         )}
 
@@ -416,6 +431,7 @@ export default function ActiveRequestScreen() {
           isOffRoute={isOffRoute}
           speedMph={myLocation?.speed ? Math.round((myLocation.speed ?? 0) * 2.237) : null}
           bearing={myLocation?.heading ?? null}
+          etaSeconds={etaCountdown > 0 ? etaCountdown : null}
         />
       </div>
 

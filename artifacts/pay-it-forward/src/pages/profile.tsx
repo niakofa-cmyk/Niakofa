@@ -20,6 +20,7 @@ import {
 import type { Transaction } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TrustTierBadge, getTrustTier } from "@/components/TrustTierBadge";
+import { IdentityVerificationCard } from "@/components/IdentityVerificationCard";
 
 type ProfileTab = "overview" | "history" | "settings";
 

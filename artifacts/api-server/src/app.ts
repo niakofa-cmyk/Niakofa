@@ -53,6 +53,7 @@ app.use(
 // Stripe webhooks require the raw request body (Buffer) for signature verification.
 // This MUST come before express.json() so the /stripe/webhook route gets the raw body.
 app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
+app.use("/api/verification/identity/webhook", express.raw({ type: "application/json" }));
 
 app.use(express.json({ limit: "10mb" })); // 10mb to allow base64 avatar uploads
 app.use(express.urlencoded({ extended: true }));

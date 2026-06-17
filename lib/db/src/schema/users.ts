@@ -22,6 +22,13 @@ export const usersTable = pgTable("users", {
   specialties: text("specialties").array(),
   phone_masked: text("phone_masked"),
   quick_replies: text("quick_replies").array(),
+  identity_verified: boolean("identity_verified").notNull().default(false),
+  identity_verification_status: text("identity_verification_status").default("unverified"),
+  background_check_status: text("background_check_status").default("not_started"),
+  background_check_completed_at: timestamp("background_check_completed_at"),
+  stripe_identity_session_id: text("stripe_identity_session_id"),
+  panic_contacts: text("panic_contacts").array(),
+  passive_check_interval_min: integer("passive_check_interval_min").default(30),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 });
