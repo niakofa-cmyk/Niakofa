@@ -74,7 +74,7 @@ router.get("/navigation/route", async (req, res) => {
       duration_seconds: route.duration,
       steps,
       eta_text: etaText,
-      distance_text: \`\${distanceMiles} mi\`,
+      distance_text: `${distanceMiles} mi`,
       initial_bearing: Math.round(initialBearing),
       speed_mph: Math.round(speedMph),
       waypoints: coords.length,

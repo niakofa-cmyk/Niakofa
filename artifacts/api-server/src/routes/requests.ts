@@ -461,7 +461,7 @@ router.post("/requests/:id/tip", async (req, res) => {
 
   // Credit tip to helper benevolence_wallet
   await db.update(usersTable)
-    .set({ benevolence_wallet: sql\`\${usersTable.benevolence_wallet} + \${tip_amount}\` })
+    .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${tip_amount}` })
     .where(eq(usersTable.id, request.helper_id));
 
   await db.insert(transactionsTable).values({
@@ -469,7 +469,7 @@ router.post("/requests/:id/tip", async (req, res) => {
     request_id: requestId,
     type: "tip_received",
     amount: tip_amount,
-    description: \`Tip for: \${request.title}\`,
+    description: `Tip for: ${request.title}`,
   });
 
   broadcast({
