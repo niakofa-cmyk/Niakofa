@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
+import { useLocation } from "wouter";
 import type { User } from "@workspace/api-client-react";
 import { useUpdateUserLocation, useUpdateHelperMode } from "@workspace/api-client-react";
 import { useWebSocket } from "./useWebSocket";
@@ -52,17 +53,22 @@ function emaSmooth(prev: number, next: number, alpha = 0.3): number {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<User | null>({
-    id: 1,
-    name: "Alex Helper",
-    email: "alex@example.com",
-    is_helper: true,
-    helper_mode_active: false,
-    trust_score: 98,
-    help_count: 14,
-    benevolence_wallet: 0,
-    goodwill_score: 0,
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    try {
+      const stored = localStorage.getItem("niakofa_user");
+      if (stored) return JSON.parse(stored) as User;
+    } catch {}
+    return null;
   });
+
+  const [location, setLocation] = useLocation();
+
+  // Redirect to login if no user — except already on /login
+  useEffect(() => {
+    if (!currentUser && location !== "/login") {
+      setLocation("/login");
+    }
+  }, [currentUser, location, setLocation]);
 
   const [helperModeActive, setHelperModeActiveState] = useState(false);
   const [myLocation, setMyLocation] = useState<Location | null>({ lat: 32.75, lng: -97.33 });

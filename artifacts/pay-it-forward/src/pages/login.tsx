@@ -1,264 +1,223 @@
 import { useState } from "react";
-import { useAppContext, setStoredAuth } from "@/lib/AppContext";
-import type { User } from "@workspace/api-client-react";
+import { useLocation } from "wouter";
+import { motion, AnimatePresence } from "framer-motion";
+import { Heart, Mail, User, Lock, Eye, EyeOff, Loader2, MapPin, Shield } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useAppContext } from "@/lib/AppContext";
+import { toast } from "@/hooks/use-toast";
 
 type Mode = "login" | "register";
 
-interface AuthResponse {
-  user: User;
-  token: string;
-}
-
-export default function LoginPage() {
+export default function LoginScreen() {
+  const [, setLocation] = useLocation();
   const { setCurrentUser } = useAppContext();
   const [mode, setMode] = useState<Mode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const [isHelper, setIsHelper] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-
-  const switchMode = (newMode: Mode) => {
-    setMode(newMode);
-    setError(null);
-    setPassword("");
-    setConfirmPassword("");
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    if (mode === "register") {
-      if (!name.trim()) {
-        setError("Please enter your name.");
-        return;
-      }
-      if (password.length < 8) {
-        setError("Password must be at least 8 characters.");
-        return;
-      }
-      if (password !== confirmPassword) {
-        setError("Passwords do not match.");
-        return;
-      }
-    } else {
-      if (!password) {
-        setError("Please enter your password.");
-        return;
-      }
-    }
-
+  const handleSubmit = async () => {
+    if (!email.trim()) return;
+    if (mode === "register" && !name.trim()) return;
     setLoading(true);
+
     try {
-      const endpoint = mode === "register" ? "/api/users/register" : "/api/users/login";
-      const body = mode === "register"
-        ? {
-            name: name.trim(),
-            email: email.trim().toLowerCase(),
-            password,
-            is_helper: isHelper,
-          }
-        : {
-            email: email.trim().toLowerCase(),
-            password,
-          };
-
-      const res = await fetch(`${base}${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const errBody = await res.json() as { error?: string };
-        setError(errBody.error ?? "Something went wrong. Please try again.");
-        return;
+      if (mode === "register") {
+        const res = await fetch("/api/users/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name.trim(), email: email.trim(), password, is_helper: isHelper }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Registration failed");
+        const user = data.user ?? data;
+        setCurrentUser(user);
+        localStorage.setItem("niakofa_user", JSON.stringify(user));
+        toast({ title: `Welcome to Niakofa, ${user.name}! 💙` });
+        setLocation("/");
+      } else {
+        const res = await fetch("/api/users/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.trim(), password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Login failed");
+        const user = data.user ?? data;
+        setCurrentUser(user);
+        localStorage.setItem("niakofa_user", JSON.stringify(user));
+        toast({ title: `Welcome back, ${user.name}!` });
+        setLocation("/");
       }
-
-      const data = await res.json() as AuthResponse;
-      setStoredAuth(data.user, data.token);
-      setCurrentUser(data.user);
-    } catch {
-      setError("Network error — please check your connection and try again.");
+    } catch (err) {
+      toast({ title: err instanceof Error ? err.message : "Something went wrong", variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 py-12">
-      <div className="w-full max-w-sm">
-        {/* Logo / wordmark */}
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 mb-4">
-            <span className="text-3xl">💙</span>
+    <div className="min-h-[100dvh] bg-background flex flex-col">
+      {/* Hero header */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-16 pb-8">
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 200, damping: 20 }}
+          className="flex flex-col items-center mb-10"
+        >
+          <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center mb-5 shadow-[0_0_40px_rgba(0,212,255,0.15)]">
+            <Heart className="w-10 h-10 text-primary" />
           </div>
-          <h1 className="text-3xl font-black tracking-tight">Niakofa</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {mode === "register"
-              ? "Create your account to get started"
-              : "Welcome back — sign in to continue"}
+          <h1 className="text-3xl font-black tracking-tight text-foreground">Niakofa</h1>
+          <p className="text-sm text-muted-foreground mt-1 text-center max-w-xs">
+            Help Today. Pay It Forward Tomorrow.
           </p>
+        </motion.div>
+
+        {/* Mode toggle */}
+        <div className="flex bg-muted rounded-2xl p-1 mb-6 w-full max-w-sm">
+          {(["login", "register"] as Mode[]).map(m => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`flex-1 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider transition-all ${
+                mode === m
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground"
+              }`}
+            >
+              {m === "login" ? "Sign In" : "Join"}
+            </button>
+          ))}
         </div>
 
-        {/* Mode tabs */}
-        <div className="flex rounded-xl border border-border overflow-hidden mb-6">
-          <button
-            onClick={() => switchMode("login")}
-            className={`flex-1 py-2.5 text-sm font-bold transition-colors ${
-              mode === "login"
-                ? "bg-primary text-primary-foreground"
-                : "bg-background text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            Sign in
-          </button>
-          <button
-            onClick={() => switchMode("register")}
-            className={`flex-1 py-2.5 text-sm font-bold transition-colors ${
-              mode === "register"
-                ? "bg-primary text-primary-foreground"
-                : "bg-background text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            Create account
-          </button>
-        </div>
+        <div className="w-full max-w-sm space-y-3">
+          <AnimatePresence mode="wait">
+            {mode === "register" && (
+              <motion.div
+                key="name"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Your name"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    className="w-full bg-card border border-border rounded-2xl pl-11 pr-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                    autoComplete="name"
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Name — register only */}
-          {mode === "register" && (
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-                Your name
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="Alex Helper"
-                required
-                autoComplete="name"
-                className="w-full bg-card border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors"
-              />
-            </div>
-          )}
-
-          {/* Email */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-              Email address
-            </label>
+          <div className="relative">
+            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="email"
+              placeholder="Email address"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
+              className="w-full bg-card border border-border rounded-2xl pl-11 pr-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
               autoComplete="email"
-              className="w-full bg-card border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors"
             />
           </div>
 
-          {/* Password */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-              Password
-            </label>
+          <div className="relative">
+            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
-              type="password"
+              type={showPass ? "text" : "password"}
+              placeholder="Password"
               value={password}
               onChange={e => setPassword(e.target.value)}
-              placeholder={mode === "register" ? "Min. 8 characters" : "Your password"}
-              required
-              autoComplete={mode === "register" ? "new-password" : "current-password"}
-              className="w-full bg-card border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors"
+              onKeyDown={e => e.key === "Enter" && handleSubmit()}
+              className="w-full bg-card border border-border rounded-2xl pl-11 pr-12 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
             />
+            <button
+              onClick={() => setShowPass(p => !p)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground active:text-foreground transition-colors"
+            >
+              {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
           </div>
 
-          {/* Confirm Password — register only */}
-          {mode === "register" && (
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-                Confirm password
-              </label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                placeholder="Repeat your password"
-                required
-                autoComplete="new-password"
-                className="w-full bg-card border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors"
-              />
-            </div>
-          )}
-
-          {/* Helper toggle — register only */}
-          {mode === "register" && (
-            <label className="flex items-center gap-3 p-4 bg-card border border-border rounded-xl cursor-pointer hover:border-primary/50 transition-colors">
-              <input
-                type="checkbox"
-                checked={isHelper}
-                onChange={e => setIsHelper(e.target.checked)}
-                className="w-4 h-4 accent-primary"
-              />
-              <div>
-                <div className="text-sm font-semibold">I want to help others</div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  Toggle Helper Mode to see and accept nearby requests
+          <AnimatePresence mode="wait">
+            {mode === "register" && (
+              <motion.button
+                key="helper-toggle"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                type="button"
+                onClick={() => setIsHelper(p => !p)}
+                className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 transition-all text-left overflow-hidden ${
+                  isHelper
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-card"
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                  isHelper ? "bg-primary/20" : "bg-muted"
+                }`}>
+                  <MapPin className={`w-5 h-5 ${isHelper ? "text-primary" : "text-muted-foreground"}`} />
                 </div>
-              </div>
-            </label>
-          )}
+                <div className="flex-1 min-w-0">
+                  <div className={`font-black text-sm ${isHelper ? "text-primary" : "text-foreground"}`}>
+                    I want to be a helper
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    Receive requests, earn goodwill &amp; pay
+                  </div>
+                </div>
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                  isHelper ? "bg-primary border-primary" : "border-border"
+                }`}>
+                  {isHelper && <div className="w-2 h-2 rounded-full bg-primary-foreground" />}
+                </div>
+              </motion.button>
+            )}
+          </AnimatePresence>
 
-          {/* Error message */}
-          {error && (
-            <div className="bg-destructive/10 border border-destructive/30 rounded-xl px-4 py-3 text-sm text-destructive">
-              {error}
-            </div>
-          )}
-
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-primary text-primary-foreground font-black rounded-xl py-3.5 text-sm transition-opacity disabled:opacity-60 hover:opacity-90"
+          <Button
+            className="w-full h-13 font-black text-base mt-2"
+            onClick={handleSubmit}
+            disabled={loading || !email.trim() || (mode === "register" && !name.trim())}
           >
-            {loading
-              ? (mode === "login" ? "Signing in…" : "Creating account…")
-              : (mode === "login" ? "Sign in" : "Create account")}
-          </button>
-        </form>
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {mode === "login" ? "Signing in…" : "Creating account…"}
+              </span>
+            ) : (
+              mode === "login" ? "Sign In" : "Create Account"
+            )}
+          </Button>
+        </div>
 
-        {/* Mode switch hint */}
-        <p className="text-xs text-muted-foreground text-center mt-5 leading-relaxed">
-          {mode === "login" ? (
-            <>
-              Don&apos;t have an account?{" "}
-              <button
-                onClick={() => switchMode("register")}
-                className="text-primary font-semibold hover:underline"
-              >
-                Create one
-              </button>
-            </>
-          ) : (
-            <>
-              Already have an account?{" "}
-              <button
-                onClick={() => switchMode("login")}
-                className="text-primary font-semibold hover:underline"
-              >
-                Sign in
-              </button>
-            </>
-          )}
+        {/* Trust note */}
+        <div className="flex items-center gap-2 mt-6 text-muted-foreground">
+          <Shield className="w-3.5 h-3.5" />
+          <span className="text-xs">No tracking, no ads, community-owned</span>
+        </div>
+      </div>
+
+      {/* Bottom city tag */}
+      <div className="px-6 pb-safe pb-6 text-center">
+        <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+          <MapPin className="w-3 h-3" />
+          Fort Worth, TX · Building community one act of kindness at a time
         </p>
       </div>
     </div>
