@@ -248,7 +248,7 @@ export default function ActiveRequestScreen() {
             ? `+$${request.pay_it_forward_amount.toFixed(2)} added to your wallet`
             : request.payment_type === "goodwill" ? "+1 goodwill point earned" : "Thank you for helping!";
           toast({ title: "🎉 Request Completed!", description: earned });
-          setTimeout(() => setShowTip(true), 1500);
+          if (!tipShown) { setTipShown(true); setTimeout(() => setShowTip(true), 1500); }
           queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
           queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
           setLocation("/");

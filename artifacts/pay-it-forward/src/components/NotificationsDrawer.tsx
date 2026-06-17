@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Bell, AlertTriangle, Heart, CheckCircle, MapPin, DollarSign, Calendar, Users } from "lucide-react";
 import { Button } from "./ui/button";
 import { useWebSocket } from "@/lib/useWebSocket";
+import { useLocation } from "wouter";
 import type { HelpRequest } from "@workspace/api-client-react";
 
 interface Props {
