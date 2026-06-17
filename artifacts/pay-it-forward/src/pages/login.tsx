@@ -37,7 +37,8 @@ export default function LoginScreen() {
         setCurrentUser(user);
         localStorage.setItem("niakofa_user", JSON.stringify(user));
         toast({ title: `Welcome to Niakofa, ${user.name}! 💙` });
-        setLocation("/");
+        const onboarded = localStorage.getItem("niakofa_onboarded");
+        setLocation(onboarded ? "/" : "/onboarding");
       } else {
         const res = await fetch("/api/users/login", {
           method: "POST",

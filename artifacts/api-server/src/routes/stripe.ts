@@ -389,7 +389,7 @@ router.get("/stripe/connect/status/:userId", async (req, res) => {
 // ── CONNECT REDIRECTS ───────────────────────────────────────────────────────
 router.get("/stripe/connect/return", (_req, res) => {
   // After successful onboarding — redirect to wallet
-  res.redirect("/?stripe_connected=1");
+  res.redirect("/wallet/connected");
 });
 
 router.get("/stripe/connect/refresh", (_req, res) => {
