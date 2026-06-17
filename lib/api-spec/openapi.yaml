@@ -1035,6 +1035,13 @@ components:
         eta_text:
           type: string
         distance_text:
+        initial_bearing:
+          type: number
+          description: Compass bearing (0-359) from start toward first waypoint
+        speed_mph:
+          type: number
+        waypoints:
+          type: integer
           type: string
 
     Transaction:
