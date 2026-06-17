@@ -4,5 +4,8 @@
     "builder": "NIXPACKS",
     "buildCommand": "echo \"build-Wed Jun 17 15:13:20 CDT 2026\" && pnpm run typecheck:libs && pnpm --filter @workspace/api-spec run codegen && pnpm --filter @workspace/api-server run build && BASE_PATH=/ pnpm --filter @workspace/pay-it-forward run build"
   },
-  "_cache_bust": 1781728396
+  "_cache_bust": 1781728533,
+  "deploy": {
+    "startCommand": "node --enable-source-maps artifacts/api-server/dist/index.mjs"
+  }
 }
