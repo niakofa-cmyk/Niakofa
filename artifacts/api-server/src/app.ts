@@ -65,7 +65,7 @@ app.use("/api", router);
 
 // ── Production: serve built frontend static files ─────────────────────────────
 if (process.env.NODE_ENV === "production" && process.env.SERVE_FRONTEND === "true") {
-  const frontendDist = path.join(process.cwd(), "artifacts", "pay-it-forward", "dist", "public");
+  const frontendDist = path.join(import.meta.dirname, "..", "..", "pay-it-forward", "dist", "public");
 
   app.use(express.static(frontendDist));
   logger.info({ frontendDist }, "serving frontend static files");
