@@ -39,7 +39,7 @@ function AppShell() {
 
   // Show login/register screen if no authenticated user is stored
   if (!currentUser) {
-    return <LoginPage />;
+    return <LoginScreen />;
   }
 
   return (
