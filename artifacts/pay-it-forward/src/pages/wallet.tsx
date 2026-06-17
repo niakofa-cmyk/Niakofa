@@ -337,15 +337,15 @@ export default function WalletScreen() {
           <div className="grid grid-cols-3 gap-3 w-full">
             <div className="bg-background/40 rounded-xl p-3 text-center">
               <div className="text-xl font-black text-green-400">${totalEarned.toFixed(0)}</div>
-              <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Earned</div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Earned</div>
             </div>
             <div className="bg-background/40 rounded-xl p-3 text-center">
               <div className="text-xl font-black text-primary">${totalReceived.toFixed(0)}</div>
-              <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Received</div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Received</div>
             </div>
             <div className="bg-background/40 rounded-xl p-3 text-center">
               <div className="text-xl font-black text-purple-400">{goodwill}</div>
-              <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Goodwill</div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Goodwill</div>
             </div>
           </div>
         </div>

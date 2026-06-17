@@ -1,7 +1,9 @@
 import type { HelpRequest } from "@workspace/api-client-react";
 import { AlertTriangle, Heart, DollarSign, Gift } from "lucide-react";
+import { useState } from "react";
 
 export function RequestMarker({ request }: { request: HelpRequest }) {
+  const [tapped, setTapped] = useState(false);
   const getColors = () => {
     switch (request.urgency) {
       case 'emergency': return { fill: 'fill-destructive', pulse: 'bg-destructive', glow: 'shadow-[0_0_20px_rgba(255,50,50,0.8)]' };
@@ -23,7 +25,7 @@ export function RequestMarker({ request }: { request: HelpRequest }) {
   const isEmergency = request.urgency === 'emergency';
 
   return (
-    <div className="relative group cursor-pointer">
+    <div className="relative cursor-pointer" onClick={() => setTapped(p => !p)} onMouseEnter={() => setTapped(true)} onMouseLeave={() => setTapped(false)}>
       {isEmergency && (
         <>
           <div className={`absolute -inset-5 ${pulse} rounded-full opacity-20 animate-ping`} />
@@ -56,12 +58,12 @@ export function RequestMarker({ request }: { request: HelpRequest }) {
         )}
       </div>
 
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 w-max max-w-[160px]">
+      {tapped && <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 pointer-events-none z-50 w-max max-w-[160px]">
         <div className="bg-card/95 backdrop-blur-md border border-border rounded-lg px-2.5 py-1.5 shadow-xl">
           <div className="text-xs font-bold truncate">{request.title}</div>
           <div className="text-[10px] text-muted-foreground truncate">{request.requester_name}</div>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

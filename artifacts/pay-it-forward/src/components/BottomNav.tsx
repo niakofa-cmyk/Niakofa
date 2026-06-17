@@ -32,7 +32,7 @@ export function BottomNav() {
                     }`}>
                       <tab.icon className="w-7 h-7 text-primary-foreground" />
                     </div>
-                    <span className="text-[9px] font-bold uppercase tracking-wider mt-1 text-muted-foreground">{tab.label}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-muted-foreground">{tab.label}</span>
                   </div>
                 </Link>
               );
@@ -41,7 +41,7 @@ export function BottomNav() {
               <Link key={tab.path} href={tab.path}>
                 <div className="flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all min-w-[52px]">
                   <tab.icon className={`w-5 h-5 transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`} />
-                  <span className={`text-[9px] font-bold uppercase tracking-wider transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`}>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`}>
                     {tab.label}
                   </span>
                   {isActive && <div className="w-1 h-1 rounded-full bg-primary" />}
@@ -56,7 +56,7 @@ export function BottomNav() {
             className="flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all min-w-[52px] relative"
           >
             <Bell className="w-5 h-5 text-muted-foreground" />
-            <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Alerts</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Alerts</span>
             <span className="absolute top-0 right-1 w-2 h-2 bg-destructive rounded-full" />
           </button>
         </div>

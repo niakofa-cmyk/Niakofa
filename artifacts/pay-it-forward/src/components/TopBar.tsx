@@ -159,7 +159,7 @@ export function TopBar() {
         <div className="flex items-center justify-between pointer-events-auto">
           <button
             onClick={() => setSosOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-destructive/15 border border-destructive/40 text-destructive hover:bg-destructive/25 active:scale-95 transition-all shadow-lg"
+            className="flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-full bg-destructive/15 border border-destructive/40 text-destructive active:bg-destructive/25 active:scale-95 transition-all shadow-lg"
           >
             <ShieldAlert className="w-4 h-4" />
             <span className="text-[10px] font-black uppercase tracking-wider">SOS</span>

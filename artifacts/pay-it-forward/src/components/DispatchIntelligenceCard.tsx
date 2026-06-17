@@ -100,6 +100,7 @@ export function DispatchIntelligenceCard({
             variant={isEmergency ? "destructive" : "default"}
             onClick={() => onAccept(bestMatch)}
             disabled={isClaiming}
+            className="active:scale-[0.97]"
           >
             {isEmergency ? "🚨 Respond Now" : "Accept Request"}
             <ChevronRight className="w-4 h-4 ml-1" />

@@ -272,13 +272,13 @@ export default function LiveLeaderboard() {
                 <div className="text-[11px] font-black text-center truncate w-full leading-tight">
                   {entry.name.split(" ")[0]}
                 </div>
-                <div className="text-[9px] text-muted-foreground mt-0.5 tabular-nums">
+                <div className="text-[10px] text-muted-foreground mt-0.5 tabular-nums">
                   {entry.help_count} helped
                 </div>
 
                 {/* Monthly contributions */}
                 {entry.monthly_contributions > 0 && (
-                  <div className="text-[9px] text-primary font-bold mt-0.5 tabular-nums">
+                  <div className="text-[10px] text-primary font-bold mt-0.5 tabular-nums">
                     +{entry.monthly_contributions} this month
                   </div>
                 )}
@@ -292,7 +292,7 @@ export default function LiveLeaderboard() {
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
-                    className="mt-1.5 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-[8px] font-black px-1.5 py-0.5 rounded-full text-center leading-tight"
+                    className="mt-1.5 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-[10px] font-black px-1.5 py-0.5 rounded-full text-center leading-tight"
                   >
                     #1 in {entry.neighborhood.length > 10 ? entry.neighborhood.slice(0, 10) + "…" : entry.neighborhood}
                   </motion.div>
@@ -304,7 +304,7 @@ export default function LiveLeaderboard() {
                       initial={{ scale: 0, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
                       exit={{ scale: 0, opacity: 0 }}
-                      className="mt-1.5 bg-primary/20 text-primary text-[9px] font-black px-1.5 py-0.5 rounded-full"
+                      className="mt-1.5 bg-primary/20 text-primary text-[10px] font-black px-1.5 py-0.5 rounded-full"
                     >
                       ⚡ Just helped!
                     </motion.div>
@@ -356,7 +356,7 @@ export default function LiveLeaderboard() {
                     <div className="flex items-center gap-1.5">
                       <div className="font-black text-sm truncate leading-tight">{entry.name}</div>
                       {entry.is_neighborhood_top && entry.neighborhood && (
-                        <div className="bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-[8px] font-black px-1 py-px rounded-full shrink-0">
+                        <div className="bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-[10px] font-black px-1 py-px rounded-full shrink-0">
                           #1
                         </div>
                       )}
@@ -385,7 +385,7 @@ export default function LiveLeaderboard() {
                           initial={{ scale: 0, opacity: 0 }}
                           animate={{ scale: 1, opacity: 1 }}
                           exit={{ scale: 0, opacity: 0 }}
-                          className="text-[9px] font-black text-primary bg-primary/10 px-1.5 py-0.5 rounded-full"
+                          className="text-[10px] font-black text-primary bg-primary/10 px-1.5 py-0.5 rounded-full"
                         >
                           ⚡ Just helped!
                         </motion.span>

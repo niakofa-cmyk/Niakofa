@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { useId } from "react";
 
 interface KindnessImpactRingProps {
   livesImpacted: number;
@@ -13,6 +14,7 @@ export function KindnessImpactRing({
   goodwillScore,
   size = 160,
 }: KindnessImpactRingProps) {
+  const uid = useId().replace(/:/g, "");
   const r = (size / 2) * 0.78;
   const cx = size / 2;
   const cy = size / 2;
@@ -27,12 +29,12 @@ export function KindnessImpactRing({
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="rotate-[-90deg]">
           <defs>
-            <linearGradient id="ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <linearGradient id={`${uid}-grad`} x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="hsl(190,100%,55%)" />
               <stop offset="50%" stopColor="hsl(210,100%,60%)" />
               <stop offset="100%" stopColor="hsl(270,80%,65%)" />
             </linearGradient>
-            <filter id="ring-glow">
+            <filter id={`${uid}-glow`}>
               <feGaussianBlur stdDeviation="3" result="coloredBlur" />
               <feMerge>
                 <feMergeNode in="coloredBlur" />
@@ -53,14 +55,14 @@ export function KindnessImpactRing({
             cy={cy}
             r={r}
             fill="none"
-            stroke="url(#ring-grad)"
+            stroke={`url(#${uid}-grad)`}
             strokeWidth={size * 0.075}
             strokeLinecap="round"
             strokeDasharray={circumference}
             strokeDashoffset={circumference}
             animate={{ strokeDashoffset: offset }}
             transition={{ duration: 1.8, ease: "easeOut", delay: 0.3 }}
-            filter="url(#ring-glow)"
+            filter={`url(#${uid}-glow)`}
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -72,19 +74,19 @@ export function KindnessImpactRing({
           >
             {livesImpacted}
           </motion.div>
-          <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Lives</div>
-          <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Touched</div>
+          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Lives</div>
+          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Touched</div>
         </div>
       </div>
       <div className="flex gap-4 text-center">
         <div>
           <div className="text-sm font-black text-green-400">{helpCount}</div>
-          <div className="text-[8px] text-muted-foreground uppercase tracking-wider">Helped</div>
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Helped</div>
         </div>
         <div className="w-px bg-border" />
         <div>
           <div className="text-sm font-black text-purple-400">{goodwillScore}</div>
-          <div className="text-[8px] text-muted-foreground uppercase tracking-wider">Goodwill</div>
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Goodwill</div>
         </div>
       </div>
     </div>

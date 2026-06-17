@@ -854,17 +854,17 @@ export default function ProfileScreen() {
               <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
                 <Shield className="w-4 h-4 text-blue-400 mb-1.5" />
                 <div className="text-xl font-black">{currentUser.trust_score?.toFixed(0) ?? 0}%</div>
-                <div className="text-[9px] text-muted-foreground uppercase tracking-wider">Trust</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Trust</div>
               </div>
               <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
                 <Heart className="w-4 h-4 text-primary mb-1.5" />
                 <div className="text-xl font-black">{currentUser.help_count ?? 0}</div>
-                <div className="text-[9px] text-muted-foreground uppercase tracking-wider">Helped</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Helped</div>
               </div>
               <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
                 <Star className="w-4 h-4 text-yellow-400 mb-1.5" />
                 <div className="text-xl font-black">{goodwill}</div>
-                <div className="text-[9px] text-muted-foreground uppercase tracking-wider">Goodwill</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Goodwill</div>
               </div>
             </div>
 
