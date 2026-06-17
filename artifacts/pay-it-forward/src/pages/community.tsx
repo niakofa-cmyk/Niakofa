@@ -32,7 +32,106 @@ const FUND_POOLS = [
   { label: "General Pool", description: "Everyday help — groceries, errands, transport", pct: 17, color: "bg-green-500" },
 ];
 
-type Tab = "feed" | "heroes" | "pool" | "impact";
+type Tab = "feed" | "heroes" | "pool" | "impact" | "resources";
+
+
+interface CivicResource {
+  id: number;
+  name: string;
+  category: string;
+  description: string | null;
+  address: string | null;
+  phone: string | null;
+  website: string | null;
+  hours: string | null;
+}
+
+const CIVIC_ICONS: Record<string, string> = {
+  shelter: "🏠", food: "🍱", medical: "💊", mental_health: "🧠",
+  legal: "⚖️", financial: "💰", employment: "💼", transportation: "🚌",
+  childcare: "👶", education: "📚", other: "💙",
+};
+
+function CivicResourcesTab() {
+  const [resources, setResources] = useState<CivicResource[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [category, setCategory] = useState("all");
+
+  useEffect(() => {
+    fetch("/api/civic/resources")
+      .then(r => r.json())
+      .then((data) => { if (Array.isArray(data)) setResources(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const categories = ["all", ...Array.from(new Set(resources.map(r => r.category)))];
+  const filtered = category === "all" ? resources : resources.filter(r => r.category === category);
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
+      <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  if (resources.length === 0) return (
+    <div className="text-center py-16 px-4">
+      <div className="text-4xl mb-3">🏛️</div>
+      <div className="font-bold text-sm text-muted-foreground">No resources listed yet</div>
+      <div className="text-xs text-muted-foreground/60 mt-1">Community resources will appear here</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Category filter */}
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+        {categories.map(cat => (
+          <button
+            key={cat}
+            onClick={() => setCategory(cat)}
+            className={`shrink-0 text-xs font-bold px-3 py-1.5 rounded-full border transition-all capitalize ${
+              category === cat
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-muted border-border text-muted-foreground"
+            }`}
+          >
+            {cat === "all" ? "All" : cat.replace("_", " ")}
+          </button>
+        ))}
+      </div>
+
+      {filtered.map(r => (
+        <div key={r.id} className="bg-card border border-border rounded-2xl p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-lg shrink-0">
+              {CIVIC_ICONS[r.category] ?? "💙"}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-black text-sm">{r.name}</div>
+              {r.description && <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{r.description}</p>}
+              <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+                {r.address && <span className="text-[10px] text-muted-foreground">📍 {r.address}</span>}
+                {r.hours && <span className="text-[10px] text-muted-foreground">🕐 {r.hours}</span>}
+              </div>
+              <div className="flex gap-2 mt-3">
+                {r.phone && (
+                  <a href={`tel:${r.phone}`} className="flex items-center gap-1 text-xs text-primary font-bold bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-full active:scale-95 transition-all">
+                    📞 Call
+                  </a>
+                )}
+                {r.website && (
+                  <a href={r.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-muted-foreground font-bold bg-muted border border-border px-3 py-1.5 rounded-full active:scale-95 transition-all">
+                    🌐 Website
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function CommunityScreen() {
   const [tab, setTab] = useState<Tab>("feed");
@@ -91,6 +190,7 @@ export default function CommunityScreen() {
   };
 
   const tabs: { key: Tab; label: string }[] = [
+    { key: "resources", label: "Resources" },
     { key: "feed", label: "💙 Feed" },
     { key: "heroes", label: "⭐ Heroes" },
     { key: "pool", label: "🏦 Pool" },
@@ -320,6 +420,10 @@ export default function CommunityScreen() {
         )}
 
         {/* IMPACT TAB — real stats from /api/requests/stats */}
+        {tab === "resources" && (
+          <CivicResourcesTab />
+        )}
+
         {tab === "impact" && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">

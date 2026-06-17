@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   Shield, AlertCircle, CheckCircle2, Clock, X, ChevronLeft,
-  Eye, Flag, User as UserIcon, RefreshCw, Filter, ExternalLink
+  Eye, Flag, User as UserIcon, RefreshCw, Filter, ExternalLink,
+  Users, Search, Ban, AlertTriangle, Star
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -188,6 +189,166 @@ function ReportDetailSheet({ report, onClose, onReviewed }: {
 }
 
 const STATUS_FILTERS = ["all", "pending", "under_review", "resolved_dismissed", "resolved_warned", "resolved_banned"];
+
+
+interface AdminUser {
+  id: number;
+  name: string;
+  email: string;
+  is_helper: boolean;
+  trust_score: number | null;
+  help_count: number;
+  created_at: string;
+}
+
+function UsersTab() {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [actionUser, setActionUser] = useState<AdminUser | null>(null);
+
+  useEffect(() => {
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/users?limit=100`)
+      .then(r => r.json())
+      .then((data) => { if (Array.isArray(data)) setUsers(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const filtered = users.filter(u =>
+    u.name.toLowerCase().includes(search.toLowerCase()) ||
+    u.email.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const handleAction = async (userId: number, action: "warn" | "ban") => {
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    try {
+      await fetch(`${base}/api/users/${userId}/moderation`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      toast({ title: action === "ban" ? "User banned" : "Warning issued" });
+      setActionUser(null);
+    } catch {
+      toast({ title: "Action failed", variant: "destructive" });
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <input
+          type="search"
+          placeholder="Search users..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full bg-card border border-border rounded-xl pl-10 pr-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all"
+        />
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
+          <RefreshCw className="w-5 h-5 animate-spin" />
+          <span className="text-sm">Loading users…</span>
+        </div>
+      )}
+
+      {filtered.map(user => (
+        <motion.div
+          key={user.id}
+          layout
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-card border border-border rounded-2xl p-4"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 font-black text-primary">
+              {user.name[0]}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-black text-sm truncate">{user.name}</div>
+              <div className="text-[10px] text-muted-foreground truncate">{user.email}</div>
+              <div className="flex items-center gap-2 mt-1">
+                {user.is_helper && (
+                  <span className="text-[10px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full font-bold">Helper</span>
+                )}
+                <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                  <Star className="w-3 h-3" />{(user.trust_score ?? 0).toFixed(0)}%
+                </span>
+                <span className="text-[10px] text-muted-foreground">{user.help_count} helps</span>
+              </div>
+            </div>
+            <button
+              onClick={() => setActionUser(user)}
+              className="p-2 rounded-xl border border-border active:bg-muted transition-colors"
+            >
+              <AlertTriangle className="w-4 h-4 text-muted-foreground" />
+            </button>
+          </div>
+        </motion.div>
+      ))}
+
+      {/* Action sheet */}
+      <AnimatePresence>
+        {actionUser && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 z-50 backdrop-blur-sm"
+              onClick={() => setActionUser(null)}
+            />
+            <motion.div
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 26, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl p-5"
+              style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="text-center mb-5">
+                <div className="w-12 h-12 rounded-full bg-muted mx-auto flex items-center justify-center font-black text-lg mb-2">
+                  {actionUser.name[0]}
+                </div>
+                <div className="font-black">{actionUser.name}</div>
+                <div className="text-xs text-muted-foreground">{actionUser.email}</div>
+              </div>
+              <div className="space-y-2">
+                <button
+                  onClick={() => handleAction(actionUser.id, "warn")}
+                  className="w-full flex items-center gap-3 p-4 bg-orange-500/10 border border-orange-500/30 rounded-2xl active:scale-[0.98] transition-all"
+                >
+                  <AlertTriangle className="w-5 h-5 text-orange-400" />
+                  <div className="text-left">
+                    <div className="font-black text-sm text-orange-400">Issue Warning</div>
+                    <div className="text-xs text-muted-foreground">User receives a community guidelines warning</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => handleAction(actionUser.id, "ban")}
+                  className="w-full flex items-center gap-3 p-4 bg-destructive/10 border border-destructive/30 rounded-2xl active:scale-[0.98] transition-all"
+                >
+                  <Ban className="w-5 h-5 text-destructive" />
+                  <div className="text-left">
+                    <div className="font-black text-sm text-destructive">Ban User</div>
+                    <div className="text-xs text-muted-foreground">Remove from platform permanently</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setActionUser(null)}
+                  className="w-full p-3 text-sm text-muted-foreground active:text-foreground transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 export default function AdminScreen() {
   const [, setLocation] = useLocation();
@@ -381,6 +542,7 @@ export default function AdminScreen() {
           onReviewed={handleReviewed}
         />
       )}
+      </> }
     </div>
   );
 }

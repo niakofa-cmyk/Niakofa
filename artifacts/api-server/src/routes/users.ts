@@ -295,4 +295,40 @@ router.put("/users/:id/settings", async (req, res) => {
   }
 });
 
+
+// Admin moderation actions
+router.patch("/users/:id/moderation", async (req, res) => {
+  const userId = parseInt(req.params.id);
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+  const { action } = req.body as { action: "warn" | "ban" };
+  if (!["warn", "ban"].includes(action)) return res.status(400).json({ error: "Invalid action" });
+
+  if (action === "ban") {
+    // Set trust_score to -1 as banned flag
+    await db.update(usersTable)
+      .set({ trust_score: -1, helper_mode_active: false })
+      .where(eq(usersTable.id, userId));
+  } else {
+    // Reduce trust score by 10 for a warning
+    await db.update(usersTable)
+      .set({ trust_score: sql`GREATEST(0, ${usersTable.trust_score} - 10)` })
+      .where(eq(usersTable.id, userId));
+  }
+  return res.json({ ok: true, action, user_id: userId });
+});
+
+// GET all users (admin)
+router.get("/users", async (_req, res) => {
+  const users = await db.select({
+    id: usersTable.id,
+    name: usersTable.name,
+    email: usersTable.email,
+    is_helper: usersTable.is_helper,
+    trust_score: usersTable.trust_score,
+    help_count: usersTable.help_count,
+    created_at: usersTable.created_at,
+  }).from(usersTable).limit(200);
+  return res.json(users);
+});
+
 export default router;
