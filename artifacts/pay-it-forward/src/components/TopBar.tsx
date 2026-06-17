@@ -35,7 +35,7 @@ const EMERGENCY_RESOURCES = [
     Icon: MapPin,
   },
   {
-    id: "support",
+    id: "support", href: "mailto:safety@niakofa.community?subject=Safety%20Report", target: "_blank",
     label: "Community Support",
     sub: "Report unsafe behavior to moderators",
     color: "bg-primary/10 border-primary/30 hover:border-primary/60 text-primary",

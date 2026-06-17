@@ -36,7 +36,7 @@ async function main() {
     console.log("seed-if-empty: table is empty — running civic seed...");
 
     // Dynamically import and run the full seed
-    const { default: runSeed } = await import("./seed-fort-worth.js");
+    const mod = await import("./seed-fort-worth.js") as { default?: () => Promise<void> }; const runSeed = mod.default;
     if (typeof runSeed === "function") {
       await runSeed();
     } else {

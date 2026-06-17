@@ -141,7 +141,8 @@ export default function CommunityScreen() {
 
   // Load initial gratitude posts from API
   useEffect(() => {
-    fetch("/api/gratitude")
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/gratitude`)
       .then(r => r.json())
       .then((data: GratitudePost[]) => {
         setPosts(data);
@@ -183,7 +184,7 @@ export default function CommunityScreen() {
       } else {
         next.add(id);
         // Fire-and-forget — WS event will broadcast the updated count
-        fetch(`/api/gratitude/${id}/like`, { method: "POST" }).catch(() => {});
+        fetch(`${base}/api/gratitude/${id}/like`, { method: "POST" }).catch(() => {});
       }
       return next;
     });
