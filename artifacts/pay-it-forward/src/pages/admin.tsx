@@ -351,6 +351,9 @@ function UsersTab() {
 }
 
 export default function AdminScreen() {
+  const [authed, setAuthed] = useState(false);
+  const [adminInput, setAdminInput] = useState("");
+  const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET ?? "niakofa-admin-2026";
   const [, setLocation] = useLocation();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
@@ -377,7 +380,35 @@ export default function AdminScreen() {
     }
   };
 
-  useEffect(() => { fetchReports(statusFilter); }, [statusFilter]);
+  useEffect(() => { if (authed) fetchReports(statusFilter); }, [statusFilter, authed]);
+
+    return (
+      <div className="fixed inset-0 bg-background flex flex-col items-center justify-center p-8 gap-6">
+        <Shield className="w-12 h-12 text-primary" />
+        <div className="text-center">
+          <h1 className="text-2xl font-black">Admin Access</h1>
+          <p className="text-sm text-muted-foreground mt-1">Enter the admin secret to continue</p>
+        </div>
+        <div className="w-full max-w-xs space-y-3">
+          <input
+            type="password"
+            placeholder="Admin secret"
+            value={adminInput}
+            onChange={e => setAdminInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && adminInput === ADMIN_SECRET) setAuthed(true); }}
+            className="w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            autoFocus
+          />
+          <button
+            onClick={() => { if (adminInput === ADMIN_SECRET) setAuthed(true); else alert("Incorrect secret"); }}
+            className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-black text-sm"
+          >
+            Enter Admin
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const openDetail = async (report: Report) => {
     setDetailLoading(true);
