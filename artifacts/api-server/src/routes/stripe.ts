@@ -18,7 +18,7 @@ const stripe = STRIPE_SECRET_KEY
   ? new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion })
   : null;
 
-function stripeRequired(res: Parameters<Parameters<typeof router.post>[1]>[1]): stripe is Stripe {
+function stripeRequired(res: Parameters<Parameters<typeof router.post>[1]>[1]): boolean {
   if (!stripe) {
     res.status(503).json({
       error: "Stripe is not configured.",

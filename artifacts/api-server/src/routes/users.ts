@@ -77,7 +77,7 @@ router.patch("/users/:id", async (req, res) => {
 });
 
 router.patch("/users/:id/location", gpsLimiter, async (req, res) => {
-  const pParsed = UpdateUserLocationParams.safeParse({ id: parseInt(req.params.id) });
+  const pParsed = UpdateUserLocationParams.safeParse({ id: parseInt(req.params.id as string) });
   const bParsed = UpdateUserLocationBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { lat, lng, heading, speed } = bParsed.data;

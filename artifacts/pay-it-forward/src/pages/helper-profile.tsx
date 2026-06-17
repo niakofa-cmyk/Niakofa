@@ -101,10 +101,10 @@ export default function HelperProfileScreen() {
           </div>
           <div>
             <h1 className="text-2xl font-black">{helper.name}</h1>
-            {(helper.neighborhood || helper.city) && (
+            {(helper.neighborhood) && (
               <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground mt-1">
                 <MapPin className="w-3.5 h-3.5" />
-                {[helper.neighborhood, helper.city].filter(Boolean).join(", ")}
+                {[helper.neighborhood].filter(Boolean).join(", ")}
               </div>
             )}
           </div>

@@ -110,11 +110,6 @@ export default function RequesterTrackingScreen() {
       if (req.id === requestId) {
         queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
       }
-    } else if (event.type === "REQUEST_COMPLETED" || event.type === "request_updated") {
-      const req = event.payload as { id: number; status?: string };
-      if (req.id === requestId && req.status === "completed") {
-        toast({ title: "✅ Your request is complete!", description: "Your helper finished. Time to pay it forward." });
-      }
     }
   }, [requestId, request?.helper_id, queryClient]));
 

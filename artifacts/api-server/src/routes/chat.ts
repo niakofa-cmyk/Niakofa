@@ -10,7 +10,7 @@ const router = Router();
 // GET /requests/:id/chat?before=<sent_at ISO>&limit=50
 // Cursor pagination on sent_at (stable with timestamps)
 router.get("/requests/:id/chat", async (req, res) => {
-  const requestId = parseInt(req.params.id);
+  const requestId = parseInt(req.params.id as string);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 
   const limit = Math.min(parseInt(req.query.limit as string || "50"), 100);
@@ -32,7 +32,7 @@ router.get("/requests/:id/chat", async (req, res) => {
 
 // POST /requests/:id/chat
 router.post("/requests/:id/chat", chatLimiter, async (req, res) => {
-  const requestId = parseInt(req.params.id);
+  const requestId = parseInt(req.params.id as string);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 
   const { sender_id, content } = req.body as { sender_id: number; content: string };
@@ -58,7 +58,7 @@ router.post("/requests/:id/chat", chatLimiter, async (req, res) => {
 
 // PATCH /requests/:id/chat/read — mark messages read
 router.patch("/requests/:id/chat/read", async (req, res) => {
-  const requestId = parseInt(req.params.id);
+  const requestId = parseInt(req.params.id as string);
   const { reader_id } = req.body as { reader_id: number };
   if (isNaN(requestId) || !reader_id) return res.status(400).json({ error: "Invalid" });
 

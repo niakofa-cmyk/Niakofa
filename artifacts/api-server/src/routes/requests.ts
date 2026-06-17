@@ -337,8 +337,9 @@ router.post("/requests/:id/complete", async (req, res) => {
     request.pay_it_forward_amount > 0 &&
     _stripe
   ) {
+    let stripeAcct: typeof stripeAccountsTable.$inferSelect | undefined;
     try {
-      const [stripeAcct] = await db
+      [stripeAcct] = await db
         .select()
         .from(stripeAccountsTable)
         .where(eq(stripeAccountsTable.user_id, bParsed.data.helper_id))

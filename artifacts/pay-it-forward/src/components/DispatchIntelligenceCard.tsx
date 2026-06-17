@@ -96,13 +96,12 @@ export function DispatchIntelligenceCard({
           </div>
 
           <Button
-            className={`w-full h-10 font-black text-xs uppercase tracking-wider ${
+            className={`w-full h-10 font-black text-xs uppercase tracking-wider active:scale-[0.97] ${
               isEmergency ? "bg-destructive hover:bg-destructive/90 text-white" : ""
             }`}
             variant={isEmergency ? "destructive" : "default"}
             onClick={() => onAccept(bestMatch)}
             disabled={isClaiming}
-            className="active:scale-[0.97]"
           >
             {isEmergency ? "🚨 Respond Now" : "Accept Request"}
             <ChevronRight className="w-4 h-4 ml-1" />

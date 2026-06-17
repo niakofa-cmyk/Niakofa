@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRoute, useLocation } from "wouter";
-import Map, { Marker, Source, Layer, useMap } from "react-map-gl/mapbox";
+import Map, { Marker, Source, Layer } from "react-map-gl/mapbox";
 import type { MapRef } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
+import type mapboxgl from "mapbox-gl";
 import { useAppContext } from "@/lib/AppContext";
 import { useGetRequest, useGetRoute, useCompleteRequest, useMarkEnRoute, useMarkArrived, getGetRequestQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -12,12 +13,17 @@ import { toast } from "@/hooks/use-toast";
 import { NavigationOverlay } from "@/components/NavigationOverlay";
 import { InAppChat } from "@/components/InAppChat";
 import { TipModal } from "@/components/TipModal";
+import { TurnArrowHUD } from "@/components/TurnArrowHUD";
+import { OrientationToggle } from "@/components/OrientationToggle";
 import { useWebSocket } from "@/lib/useWebSocket";
+import { useDeviceHeading } from "@/hooks/useDeviceHeading";
+import { useMapOrientation } from "@/hooks/useMapOrientation";
+import { useTerrain } from "@/hooks/useTerrain";
 import { motion } from "framer-motion";
 
 const ARRIVAL_THRESHOLD_METERS = 80;
 const OFF_ROUTE_THRESHOLD_METERS = 150;
-const SAFETY_TIMER_SECONDS = 1200; // 20 minutes
+const SAFETY_TIMER_SECONDS = 1200;
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -27,7 +33,6 @@ function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number):
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Parse ETA text into seconds for countdown
 function parseEtaSeconds(etaText: string): number {
   const minMatch = etaText.match(/(\d+)\s*min/i);
   const hrMatch = etaText.match(/(\d+)\s*hr/i);
@@ -37,7 +42,6 @@ function parseEtaSeconds(etaText: string): number {
   return s || 0;
 }
 
-// Flat-earth point-to-segment distance in meters (accurate enough for navigation)
 function ptToSegDist(
   lat: number, lng: number,
   lat1: number, lng1: number,
@@ -56,7 +60,6 @@ function ptToSegDist(
   return Math.sqrt(rx * rx + ry * ry);
 }
 
-// Distance from point to nearest point on route polyline
 function distToRoute(
   lat: number, lng: number,
   geometry: { type: string; coordinates: number[][] } | null,
@@ -73,7 +76,6 @@ function distToRoute(
   return min;
 }
 
-// Step advancement: find which step the user is currently on based on distance remaining
 function computeCurrentStep(
   lat: number, lng: number,
   steps: { distance_meters: number }[],
@@ -112,9 +114,33 @@ export default function ActiveRequestScreen() {
   const offRouteCooldownRef = useRef(false);
   const startTimeRef = useRef<number>(Date.now());
 
+  // ── Directional map UX ─────────────────────────────────────────────────
+  // rawMapRef holds the mapboxgl.Map instance, resolved only after mount
+  // via the onLoad callback — never at render time (where it would be null).
+  const rawMapRef = useRef<mapboxgl.Map | null>(null);
+  const syncRawMap = useCallback(() => {
+    rawMapRef.current = mapRef.current?.getMap?.() ?? null;
+  }, []);
+
+  const deviceHeading = useDeviceHeading();
+  const { mode, setMode, applyHeading } = useMapOrientation(rawMapRef);
+  useTerrain(rawMapRef);
+
+  useEffect(() => {
+    if (deviceHeading != null) applyHeading(deviceHeading);
+  }, [deviceHeading, applyHeading]);
+
+  // ── Data ───────────────────────────────────────────────────────────────
+
   const { data: request, isLoading: requestLoading } = useGetRequest(requestId, {
     query: { enabled: !!requestId, queryKey: getGetRequestQueryKey(requestId) }
   });
+
+  // Declared early (before any effect references them) to avoid a
+  // temporal-dead-zone crash. Guarded with ?. since `request` can
+  // still be undefined here on first render, before data loads.
+  const isArrived = request?.status === "arrived" || autoArrived;
+  const isCompleted = request?.status === "completed";
 
   const routeParams = {
     start_lat: myLocation?.lat || 0,
@@ -125,7 +151,6 @@ export default function ActiveRequestScreen() {
   const { data: routeData } = useGetRoute(routeParams, {
     query: {
       enabled: !!myLocation && !!request,
-      // Refetch every 15s normally; when off-route, the key changes to force reroute
       refetchInterval: isOffRoute ? 5000 : 15000,
       queryKey: getGetRouteQueryKey(routeParams),
     }
@@ -143,7 +168,7 @@ export default function ActiveRequestScreen() {
     return () => clearInterval(id);
   }, []);
 
-  // Safety timer — gentle check-in after 20 minutes
+  // Safety timer
   useEffect(() => {
     if (autoArrived || safetyAlertShown) return;
     if (elapsedSeconds >= SAFETY_TIMER_SECONDS) {
@@ -192,7 +217,7 @@ export default function ActiveRequestScreen() {
     }
   }, [myLocation, request, autoArrived, currentUser]);
 
-  // Off-route detection + auto-reroute
+  // Off-route detection
   useEffect(() => {
     if (!myLocation || !routeData?.geometry || autoArrived) return;
     if (offRouteCooldownRef.current) return;
@@ -208,9 +233,7 @@ export default function ActiveRequestScreen() {
         description: "You've deviated from the route. Fetching updated directions.",
         variant: "destructive",
       });
-      // Force new route by invalidating the query — new start position triggers fresh fetch
       queryClient.invalidateQueries({ queryKey: getGetRouteQueryKey(routeParams) });
-      // Cool down: don't re-trigger for 30 seconds
       setTimeout(() => {
         offRouteCooldownRef.current = false;
         setIsOffRoute(false);
@@ -220,7 +243,7 @@ export default function ActiveRequestScreen() {
     }
   }, [myLocation, routeData]);
 
-  // Step advancement — compute which step based on distance remaining
+  // Step advancement
   useEffect(() => {
     if (!routeData?.steps || !myLocation || !request) return;
     const newStep = computeCurrentStep(
@@ -231,8 +254,7 @@ export default function ActiveRequestScreen() {
     setCurrentStepIndex(newStep);
   }, [myLocation, routeData, request]);
 
-
-  // Auto-zoom to route when routeData arrives
+  // Auto-zoom to route
   useEffect(() => {
     if (!routeData?.geometry || !mapRef.current) return;
     const coords = (routeData.geometry as { coordinates: number[][] }).coordinates;
@@ -246,17 +268,19 @@ export default function ActiveRequestScreen() {
     mapRef.current.fitBounds(bounds, { padding: 80, duration: 1200, pitch: 55, maxZoom: 17 });
   }, [routeData?.geometry]);
 
-  // Rotate map to match travel heading
+  // GPS heading fallback (only fires when device compass is unavailable)
   useEffect(() => {
+    if (deviceHeading != null) return;
     if (!myLocation?.heading || !mapRef.current || isArrived) return;
+    if (mode !== "heading-up") return;
     mapRef.current.easeTo({
       bearing: myLocation.heading,
       duration: 800,
       easing: (t: number) => t,
     });
-  }, [myLocation?.heading, isArrived]);
+  }, [myLocation?.heading, isArrived, deviceHeading, mode]);
 
-  // Re-center on user position while navigating
+  // Re-center on user
   useEffect(() => {
     if (!myLocation || !mapRef.current || isArrived || autoArrived) return;
     mapRef.current.easeTo({
@@ -266,19 +290,18 @@ export default function ActiveRequestScreen() {
     });
   }, [myLocation?.lat, myLocation?.lng]);
 
-
-  // Passive safety check-in — pings server every 5min so moderators know helper is active
+  // Passive safety check-in
   useEffect(() => {
     if (!currentUser || isArrived || isCompleted) return;
     const id = setInterval(async () => {
       try {
         await fetch(`/api/verification/safety-checkin/${currentUser.id}`, { method: "POST" });
       } catch {}
-    }, 5 * 60 * 1000); // every 5 minutes
+    }, 5 * 60 * 1000);
     return () => clearInterval(id);
   }, [currentUser?.id, isArrived]);
 
-  // WebSocket: real-time request updates
+  // WebSocket updates
   useWebSocket(useCallback((event) => {
     if (event.type === "request_updated") {
       const req = event.payload as { id: number };
@@ -345,10 +368,12 @@ export default function ActiveRequestScreen() {
   );
 
   const currentStep = routeData?.steps?.[currentStepIndex] ?? null;
-  const isArrived = request.status === "arrived" || autoArrived;
-  const isCompleted = request.status === "completed";
   const earnAmount = request.payment_type === "immediate" && request.pay_it_forward_amount
     ? request.pay_it_forward_amount : null;
+
+  const distanceToNextTurn = myLocation && request
+    ? distanceMeters(myLocation.lat, myLocation.lng, request.lat, request.lng)
+    : 999;
 
   return (
     <div className="relative w-full h-[100dvh] overflow-hidden bg-background">
@@ -364,7 +389,6 @@ export default function ActiveRequestScreen() {
         initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }}
         className="absolute top-4 right-4 z-30 flex flex-col gap-2 items-end"
       >
-        {/* Trip timer */}
         <div className={`flex items-center gap-1.5 backdrop-blur-md border px-3 py-1.5 rounded-full shadow-lg transition-colors ${
           elapsedSeconds >= SAFETY_TIMER_SECONDS
             ? "bg-yellow-500/20 border-yellow-500/40"
@@ -376,7 +400,6 @@ export default function ActiveRequestScreen() {
           </span>
         </div>
 
-        {/* ETA countdown */}
         {etaCountdown > 0 && !isArrived && (
           <div className="flex items-center gap-1.5 bg-card/90 backdrop-blur-md border border-border px-3 py-1.5 rounded-full shadow-lg">
             <Navigation2 className="w-3 h-3 text-yellow-400" />
@@ -386,7 +409,6 @@ export default function ActiveRequestScreen() {
           </div>
         )}
 
-        {/* Off-route indicator */}
         {isOffRoute && (
           <div className="flex items-center gap-1.5 bg-orange-500/20 backdrop-blur-md border border-orange-500/40 px-3 py-1.5 rounded-full shadow-lg animate-pulse">
             <AlertTriangle className="w-3 h-3 text-orange-400" />
@@ -394,7 +416,6 @@ export default function ActiveRequestScreen() {
           </div>
         )}
 
-        {/* Earnings badge */}
         {earnAmount && (
           <div className="flex items-center gap-1.5 bg-green-500/20 backdrop-blur-md border border-green-500/40 px-3 py-1.5 rounded-full shadow-lg">
             <DollarSign className="w-3 h-3 text-green-400" />
@@ -408,7 +429,6 @@ export default function ActiveRequestScreen() {
           </div>
         )}
 
-        {/* Share trip button */}
         <button
           onClick={handleShare}
           className="flex items-center gap-1.5 bg-card/90 backdrop-blur-md border border-border px-3 py-1.5 rounded-full shadow-lg hover:border-primary/50 transition-colors"
@@ -435,7 +455,23 @@ export default function ActiveRequestScreen() {
         />
       </div>
 
-      {/* Mapbox */}
+      {/* Turn arrow HUD — bottom-left lane guidance, hidden on arrival */}
+      {!isArrived && (
+        <TurnArrowHUD
+          step={currentStep}
+          distanceToTurn={distanceToNextTurn}
+        />
+      )}
+
+      {/* Orientation toggle — heading-up / north-up, hidden on arrival */}
+      {!isArrived && (
+        <OrientationToggle
+          mode={mode}
+          onToggle={() => setMode(mode === "north-up" ? "heading-up" : "north-up")}
+        />
+      )}
+
+      {/* Mapbox — onLoad syncs rawMapRef for terrain + orientation hooks */}
       <Map
         mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
         initialViewState={{
@@ -449,8 +485,8 @@ export default function ActiveRequestScreen() {
         mapStyle="mapbox://styles/mapbox/dark-v11"
         attributionControl={false}
         ref={mapRef}
+        onLoad={syncRawMap}
       >
-        {/* Me (helper) — animated position dot */}
         <Marker longitude={myLocation.lng} latitude={myLocation.lat} anchor="center">
           <div className="relative flex items-center justify-center w-10 h-10">
             <div className="absolute w-10 h-10 bg-primary rounded-full opacity-20 animate-ping" style={{ animationDuration: "2s" }} />
@@ -459,7 +495,6 @@ export default function ActiveRequestScreen() {
           </div>
         </Marker>
 
-        {/* Destination */}
         <Marker longitude={request.lng} latitude={request.lat} anchor="bottom">
           <div className="relative">
             <svg width="44" height="44" viewBox="0 0 24 24" className={`drop-shadow-[0_0_12px_rgba(0,212,255,0.7)] ${isArrived ? "fill-green-500" : "fill-primary"}`}>
@@ -473,7 +508,6 @@ export default function ActiveRequestScreen() {
           </div>
         </Marker>
 
-        {/* Route line */}
         {routeData?.geometry && (
           <Source id="route" type="geojson" data={routeData.geometry as unknown as GeoJSON.FeatureCollection}>
             <Layer
@@ -518,7 +552,6 @@ export default function ActiveRequestScreen() {
           </div>
         </div>
 
-        {/* Navigation progress bar */}
         {routeData?.steps && routeData.steps.length > 0 && !isArrived && (
           <div className="mb-3">
             <div className="flex gap-0.5">
@@ -564,7 +597,6 @@ export default function ActiveRequestScreen() {
           </p>
         )}
 
-        {/* In-app chat */}
         <div className="mt-4">
           <InAppChat
             requestId={requestId}
@@ -574,7 +606,6 @@ export default function ActiveRequestScreen() {
         </div>
       </div>
 
-      {/* Tip modal */}
       {showTip && request.helper_name && (
         <TipModal
           requestId={requestId}

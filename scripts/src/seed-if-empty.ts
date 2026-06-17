@@ -35,8 +35,13 @@ async function main() {
 
     console.log("seed-if-empty: table is empty — running civic seed...");
 
-    // Dynamically import and run the full seed
-    const mod = await import("./seed-fort-worth.js") as { default?: () => Promise<void> }; const runSeed = mod.default;
+    // Dynamically import and run the full seed.
+    // seed-fort-worth.ts has no default export — it runs itself via
+    // top-level side effects on import instead — so we access .default
+    // through a typed cast rather than destructuring, since destructuring
+    // requires TS to confirm the property exists on the module'''s type.
+    const seedModule = (await import("./seed-fort-worth.js")) as { default?: unknown };
+    const runSeed = seedModule.default;
     if (typeof runSeed === "function") {
       await runSeed();
     } else {

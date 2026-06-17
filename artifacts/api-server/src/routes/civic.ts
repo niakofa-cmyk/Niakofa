@@ -112,7 +112,7 @@ router.get("/civic/resources", async (req, res) => {
   const city = place.city;
 
   let matchLevel: "city" | "county" | "state" | "fallback" = "fallback";
-  let resources = [];
+  let resources: (typeof civicResourcesTable.$inferSelect)[] = [];
 
   if (city && county) {
     resources = await db
