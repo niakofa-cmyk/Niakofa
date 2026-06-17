@@ -3,7 +3,7 @@ nixPkgs = ["nodejs_22", "pnpm-9_x", "openssl"]
 
 [phases.install]
 cmds = ["pnpm install --no-frozen-lockfile"]
-cacheDirectories = ["/root/.local/share/pnpm/store/v10-1781728027"]
+cacheDirectories = ["/root/.local/share/pnpm/store/v10-1781728396"]
 
 [phases.build]
 cmds = [
