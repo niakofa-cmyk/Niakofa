@@ -97,16 +97,14 @@ router.post("/reports", async (req, res) => {
 router.get("/reports", async (req, res) => {
   const status = req.query.status as string | undefined;
   const validStatuses = ["pending", "under_review", "resolved_dismissed", "resolved_warned", "resolved_banned"];
+  const validStatus = status && validStatuses.includes(status) ? status : undefined;
 
-  let rows = await db
+  const rows = await db
     .select()
     .from(reportsTable)
+    .where(validStatus ? eq(reportsTable.status, validStatus) : undefined)
     .orderBy(desc(reportsTable.created_at))
     .limit(200);
-
-  if (status && validStatuses.includes(status)) {
-    rows = rows.filter(r => r.status === status);
-  }
 
   return res.json(rows);
 });

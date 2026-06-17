@@ -125,7 +125,7 @@ export default function WalletScreen() {
         body: JSON.stringify({ userId: currentUser.id }),
       });
       if (!res.ok) {
-        const err = await res.json() as { setup?: string };
+        const err = await res.json().catch(() => ({})) as { setup?: string };
         toast({ title: err.setup ?? "Stripe not configured by admin yet", variant: "destructive" });
         return;
       }

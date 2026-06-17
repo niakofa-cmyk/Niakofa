@@ -61,6 +61,17 @@ export default defineConfig({
       strict: true,
       allow: [path.resolve(import.meta.dirname, "..", "..")],
     },
+    proxy: {
+      "/api": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+      },
+      "/ws": {
+        target: "ws://localhost:8080",
+        changeOrigin: true,
+        ws: true,
+      },
+    },
   },
   preview: {
     port,

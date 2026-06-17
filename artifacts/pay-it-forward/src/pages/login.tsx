@@ -31,7 +31,7 @@ export default function LoginScreen() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: name.trim(), email: email.trim(), password, is_helper: isHelper }),
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({})) as any;
         if (!res.ok) throw new Error(data.error ?? "Registration failed");
         const user = data.user ?? data;
         setCurrentUser(user);
@@ -45,7 +45,7 @@ export default function LoginScreen() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: email.trim(), password }),
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({})) as any;
         if (!res.ok) throw new Error(data.error ?? "Login failed");
         const user = data.user ?? data;
         setCurrentUser(user);
