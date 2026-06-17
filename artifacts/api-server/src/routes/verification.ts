@@ -67,7 +67,7 @@ router.post("/verification/identity/webhook", async (req, res) => {
         })
         .where(eq(usersTable.id, userId));
 
-      broadcast({ type: "presence_update" as any, payload: { user_id: userId, identity_verified: true } });
+      broadcast({ type: "presence_update", payload: { user_id: userId, identity_verified: true } });
       logger.info({ user_id: userId }, "identity verified");
     }
   } else if (event.type === "identity.verification_session.requires_input") {
@@ -118,7 +118,7 @@ router.post("/verification/sos", async (req, res) => {
 
   // Broadcast to all moderators via WebSocket
   broadcast({
-    type: "new_report" as any,
+    type: "new_report",
     payload: {
       type: "sos",
       user_id,

@@ -382,6 +382,7 @@ export default function AdminScreen() {
 
   useEffect(() => { if (authed) fetchReports(statusFilter); }, [statusFilter, authed]);
 
+  if (!authed) {
     return (
       <div className="fixed inset-0 bg-background flex flex-col items-center justify-center p-8 gap-6">
         <Shield className="w-12 h-12 text-primary" />

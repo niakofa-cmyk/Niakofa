@@ -139,9 +139,10 @@ export default function CommunityScreen() {
   const [posts, setPosts] = useState<GratitudePost[]>([]);
   const [postsLoading, setPostsLoading] = useState(true);
 
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
   // Load initial gratitude posts from API
   useEffect(() => {
-    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
     fetch(`${base}/api/gratitude`)
       .then(r => r.json())
       .then((data: GratitudePost[]) => {

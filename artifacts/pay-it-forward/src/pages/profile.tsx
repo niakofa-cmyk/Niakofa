@@ -1001,8 +1001,8 @@ export default function ProfileScreen() {
                 {[
                   { label: "Phone number", done: true, desc: "Verified" },
                   { label: "Email address", done: true, desc: "Verified" },
-                  { label: "Government ID", done: currentUser.identity_verified, desc: currentUser.identity_verified ? "Verified" : "Required for emergency helper status" },
-                  { label: "Background check", done: currentUser.background_check_status === "completed", desc: currentUser.background_check_status === "completed" ? "Completed" : "Required for Trusted Helper badge" },
+                  { label: "Government ID", done: (currentUser as any).identity_verified, desc: (currentUser as any).identity_verified ? "Verified" : "Required for emergency helper status" },
+                  { label: "Background check", done: (currentUser as any).background_check_status === "completed", desc: (currentUser as any).background_check_status === "completed" ? "Completed" : "Required for Trusted Helper badge" },
                 ].map(item => (
                   <div key={item.label} className="flex items-center justify-between gap-2">
                     <div className="flex-1 min-w-0">

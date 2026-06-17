@@ -310,6 +310,7 @@ router.patch("/users/:id/panic-contacts", async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const { contacts } = req.body as { contacts?: string[] };
+  if (!Array.isArray(contacts)) return res.status(400).json({ error: "contacts must be an array" });
   if (contacts.length > 5) return res.status(400).json({ error: "Max 5 panic contacts" });
   const [user] = await db.update(usersTable)
     .set({ panic_contacts: contacts })

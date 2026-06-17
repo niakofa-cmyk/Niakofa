@@ -474,7 +474,7 @@ router.post("/requests/:id/tip", async (req, res) => {
   });
 
   broadcast({
-    type: "payout_sent" as any,
+    type: "payout_sent",
     payload: { helper_id: request.helper_id, amount: tip_amount, type: "tip" },
   });
 

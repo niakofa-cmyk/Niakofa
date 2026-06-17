@@ -50,7 +50,7 @@ router.post("/requests/:id/chat", chatLimiter, async (req, res) => {
   }).returning();
 
   // Real-time broadcast to both parties
-  broadcast({ type: "chat_message" as any, payload: { ...msg, request_id: requestId } });
+  broadcast({ type: "chat_message", payload: { ...msg, request_id: requestId } });
   logger.info({ request_id: requestId, sender_id }, "chat: message sent");
 
   return res.status(201).json(msg);
