@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, chatMessagesTable, requestsTable } from "@workspace/db";
-import { eq, and, lt, desc } from "drizzle-orm";
+import { eq, and, lt, desc, isNull } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { chatLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
@@ -50,7 +50,7 @@ router.post("/requests/:id/chat", chatLimiter, async (req, res) => {
   }).returning();
 
   // Real-time broadcast to both parties
-  broadcast({ type: "chat_message" as any, payload: msg });
+  broadcast({ type: "chat_message" as any, payload: { ...msg, request_id: requestId } });
   logger.info({ request_id: requestId, sender_id }, "chat: message sent");
 
   return res.status(201).json(msg);
@@ -68,7 +68,7 @@ router.patch("/requests/:id/chat/read", async (req, res) => {
     .where(
       and(
         eq(chatMessagesTable.request_id, requestId),
-        eq(chatMessagesTable.read_at, null as any)
+        isNull(chatMessagesTable.read_at)
       )
     );
 

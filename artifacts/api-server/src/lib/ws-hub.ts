@@ -41,7 +41,8 @@ export type WsEventType =
   | "pong"
   | "ping"
   | "new_report"
-  | "report_reviewed";
+  | "report_reviewed"
+  | "chat_message";
 
 export interface WsEvent {
   type: WsEventType;
