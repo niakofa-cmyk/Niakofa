@@ -542,7 +542,6 @@ export default function AdminScreen() {
           onReviewed={handleReviewed}
         />
       )}
-      </> }
     </div>
   );
 }
