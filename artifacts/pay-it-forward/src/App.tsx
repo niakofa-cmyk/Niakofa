@@ -15,6 +15,7 @@ import WalletScreen from "@/pages/wallet";
 import CommunityScreen from "@/pages/community";
 import AdminScreen from "@/pages/admin";
 import NotFound from "@/pages/not-found";
+import RequesterTrackingScreen from "@/pages/request-track";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30000, retry: 1 } },
@@ -23,6 +24,7 @@ const queryClient = new QueryClient({
 function AppShell() {
   const { currentUser } = useAppContext();
   const [isActiveRequest] = useRoute("/request/:id");
+  const [isTrackingRequest] = useRoute("/request/:id/track");
   const [isAdmin] = useRoute("/admin");
 
   // Admin page has its own auth — don't redirect it to login
@@ -39,13 +41,14 @@ function AppShell() {
         <Route path="/" component={MapScreen} />
         <Route path="/community" component={CommunityScreen} />
         <Route path="/request/new" component={NewRequestScreen} />
+        <Route path="/request/:id/track" component={RequesterTrackingScreen} />
         <Route path="/request/:id" component={ActiveRequestScreen} />
         <Route path="/wallet" component={WalletScreen} />
         <Route path="/profile" component={ProfileScreen} />
         <Route path="/admin" component={AdminScreen} />
         <Route component={NotFound} />
       </Switch>
-      {!isActiveRequest && !isAdmin && <BottomNav />}
+      {!isActiveRequest && !isTrackingRequest && !isAdmin && <BottomNav />}
     </>
   );
 }
