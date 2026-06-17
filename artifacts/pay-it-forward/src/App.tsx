@@ -5,7 +5,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppProvider, useAppContext } from "@/lib/AppContext";
 import { BottomNav } from "@/components/BottomNav";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import LoginPage from "@/pages/login";
 
 import MapScreen from "@/pages/map";
 import NewRequestScreen from "@/pages/request-new";
@@ -16,6 +15,11 @@ import CommunityScreen from "@/pages/community";
 import AdminScreen from "@/pages/admin";
 import NotFound from "@/pages/not-found";
 import RequesterTrackingScreen from "@/pages/request-track";
+import LoginScreen from "@/pages/login";
+import HelperProfileScreen from "@/pages/helper-profile";
+import RequestDetailScreen from "@/pages/request-detail";
+import OnboardingScreen from "@/pages/onboarding";
+import StripeConnectedScreen from "@/pages/stripe-connected";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30000, retry: 1 } },
@@ -26,6 +30,9 @@ function AppShell() {
   const [isActiveRequest] = useRoute("/request/:id");
   const [isTrackingRequest] = useRoute("/request/:id/track");
   const [isAdmin] = useRoute("/admin");
+  const [isLogin] = useRoute("/login");
+  const [isOnboarding] = useRoute("/onboarding");
+  const [isStripeConnected] = useRoute("/wallet/connected");
 
   // Admin page has its own auth — don't redirect it to login
   if (isAdmin) return <AdminScreen />;
@@ -38,6 +45,11 @@ function AppShell() {
   return (
     <>
       <Switch>
+        <Route path="/login" component={LoginScreen} />
+        <Route path="/onboarding" component={OnboardingScreen} />
+        <Route path="/helper/:id" component={HelperProfileScreen} />
+        <Route path="/request/:id/view" component={RequestDetailScreen} />
+        <Route path="/wallet/connected" component={StripeConnectedScreen} />
         <Route path="/" component={MapScreen} />
         <Route path="/community" component={CommunityScreen} />
         <Route path="/request/new" component={NewRequestScreen} />
@@ -48,7 +60,7 @@ function AppShell() {
         <Route path="/admin" component={AdminScreen} />
         <Route component={NotFound} />
       </Switch>
-      {!isActiveRequest && !isTrackingRequest && !isAdmin && <BottomNav />}
+      {!isActiveRequest && !isTrackingRequest && !isAdmin && !isLogin && !isOnboarding && !isStripeConnected && <BottomNav />}
     </>
   );
 }
