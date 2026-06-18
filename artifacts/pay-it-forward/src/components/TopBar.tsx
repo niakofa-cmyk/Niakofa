@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppContext } from "@/lib/AppContext";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { useEffect } from "react";
 import { subscribeToPush } from "@/lib/push";
 import { ShieldAlert, X, Phone, AlertTriangle, Heart, MapPin, MessageSquare } from "lucide-react";
 
@@ -47,9 +46,10 @@ function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [pressed, setPressed] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const { currentUser, myLocation } = useAppContext();
+  const cancelledRef = useRef(false);
 
   const handleEmergency = async () => {
-    // 3-second countdown before firing — gives time to cancel accidental presses
+    cancelledRef.current = false;
     setCountdown(3);
     const interval = setInterval(() => {
       setCountdown(prev => {
@@ -63,6 +63,8 @@ function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
 
     await new Promise(resolve => setTimeout(resolve, 3200));
     clearInterval(interval);
+
+    if (cancelledRef.current) return;
 
     setPressed(true);
 
@@ -87,6 +89,7 @@ function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   };
 
   const cancelSOS = () => {
+    cancelledRef.current = true;
     setCountdown(0);
   };
 

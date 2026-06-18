@@ -18,6 +18,7 @@ import {
 } from "@workspace/api-zod";
 import { broadcast } from "../lib/ws-hub";
 import { authLimiter, gpsLimiter } from "../middlewares/rate-limit";
+import { signTokenById } from "../middlewares/auth";
 
 const router = Router();
 
@@ -30,7 +31,7 @@ router.post("/users/login", authLimiter, async (req, res) => {
   if (!email) return res.status(400).json({ error: "Email required" });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
   if (!user) return res.status(401).json({ error: "No account found with that email" });
-  const token = `${user.id}.${Buffer.from(user.email).toString("base64url")}`;
+  const token = signTokenById(user.id);
   return res.json({ user, token });
 });
 

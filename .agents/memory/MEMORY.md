@@ -1,3 +1,5 @@
 - [Niakofa shared-lib builds](niakofa-lib-builds.md) — tsc --build fixes TS6305 errors; lib packages have no "build" script, use tsc directly.
 - [Niakofa code-review fixes](niakofa-code-review.md) — bugs fixed across admin.tsx, users.ts, leaderboard.ts, profile.tsx during full line-by-line review.
 - [Niakofa Vite proxy](niakofa-vite-proxy.md) — vite.config.ts had no /api or /ws proxy; all fetch("/api/…") calls hit Vite and returned HTML → JSON parse crash.
+- [Niakofa env var override](niakofa-env-override.md) — [userenv.shared] placeholder vars override real Replit secrets; delete placeholders so secrets take effect.
+- [Niakofa login token](niakofa-login-token.md) — login route was issuing email-based tokens incompatible with HMAC verifier; fixed to use signTokenById.

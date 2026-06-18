@@ -5,7 +5,7 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
-const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN ?? "pk.eyJ1IjoiaGYxMDEiLCJhIjoiY2tjYzVqNmFhMDFmMTJwcWUza2pmZzVtMSJ9.THxYY3Ic2MFylIONeZI_Xw";
+const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN ?? process.env.VITE_MAPBOX_TOKEN ?? "";
 
 interface MapboxFeature {
   place_type: string[];
@@ -88,13 +88,14 @@ async function reverseGeocode(lat: number, lng: number): Promise<ResolvedPlace |
   }
 }
 
-// GET /civic/resources?lat=X&lng=Y
+// GET /civic/resources?lat=X&lng=Y  (lat/lng are optional — falls back to full list)
 router.get("/civic/resources", async (req, res) => {
   const lat = parseFloat(req.query.lat as string);
   const lng = parseFloat(req.query.lng as string);
 
   if (isNaN(lat) || isNaN(lng)) {
-    return res.status(400).json({ error: "lat and lng query params required" });
+    const all = await db.select().from(civicResourcesTable).limit(50);
+    return res.json(all);
   }
 
   const place = await reverseGeocode(lat, lng);
