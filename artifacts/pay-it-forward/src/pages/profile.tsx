@@ -1253,7 +1253,7 @@ export default function ProfileScreen() {
               </div>
               <div className="divide-y divide-border">
                 <button
-                  onClick={() => setOpenDialog("notification_prefs")}
+                  onClick={() => setLocation("/settings?section=notifications")}
                   className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-2">
@@ -1263,7 +1263,7 @@ export default function ProfileScreen() {
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
                 <button
-                  onClick={() => setOpenDialog("account_privacy")}
+                  onClick={() => setLocation("/settings?section=privacy")}
                   className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-2">
@@ -1273,7 +1273,7 @@ export default function ProfileScreen() {
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
                 <button
-                  onClick={() => setOpenDialog("delete_account")}
+                  onClick={() => setLocation("/settings?section=delete-account")}
                   className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors text-destructive"
                 >
                   <div className="flex items-center gap-2">
@@ -1318,7 +1318,7 @@ export default function ProfileScreen() {
                 </div>
                 <div className="divide-y divide-border">
                   <button
-                    onClick={() => setOpenDialog("helper_settings")}
+                    onClick={() => setLocation("/settings?section=helper-settings")}
                     className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-center gap-2">
@@ -1328,7 +1328,7 @@ export default function ProfileScreen() {
                     <ChevronRight className="w-4 h-4 text-muted-foreground" />
                   </button>
                   <button
-                    onClick={() => setOpenDialog("payout_setup")}
+                    onClick={() => setLocation("/settings?section=payout-setup")}
                     className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-center gap-2">

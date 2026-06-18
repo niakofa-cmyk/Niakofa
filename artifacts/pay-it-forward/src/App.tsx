@@ -10,6 +10,7 @@ import MapScreen from "@/pages/map";
 import NewRequestScreen from "@/pages/request-new";
 import ActiveRequestScreen from "@/pages/request-active";
 import ProfileScreen from "@/pages/profile";
+import SettingsPage from "@/pages/settings";
 import WalletScreen from "@/pages/wallet";
 import CommunityScreen from "@/pages/community";
 import AdminScreen from "@/pages/admin";
@@ -57,6 +58,7 @@ function AppShell() {
         <Route path="/request/:id" component={ActiveRequestScreen} />
         <Route path="/wallet" component={WalletScreen} />
         <Route path="/profile" component={ProfileScreen} />
+        <Route path="/settings" component={SettingsPage} />
         <Route path="/admin" component={AdminScreen} />
         <Route component={NotFound} />
       </Switch>
