@@ -3,3 +3,5 @@
 - [Niakofa Vite proxy](niakofa-vite-proxy.md) — vite.config.ts had no /api or /ws proxy; all fetch("/api/…") calls hit Vite and returned HTML → JSON parse crash.
 - [Niakofa env var override](niakofa-env-override.md) — [userenv.shared] placeholder vars override real Replit secrets; delete placeholders so secrets take effect.
 - [Niakofa login token](niakofa-login-token.md) — login route was issuing email-based tokens incompatible with HMAC verifier; fixed to use signTokenById.
+- [Niakofa push notifications](niakofa-push-notifications.md) — push subscriptions were in-memory; switched to DB (pushSubscriptionsTable); added geolocation-targeted sendPushToNearbyHelpers.
+- [Niakofa DB schema exports](niakofa-db-schema-exports.md) — lib/db/src/schema/index.ts must explicitly export every schema file; push-subscriptions.ts was missing, causing build failure.

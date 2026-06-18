@@ -716,6 +716,117 @@ const CATEGORY_LABELS: Record<string, string> = {
   housing: "Housing",
 };
 
+// ── Recent Helpers Section ─────────────────────────────────────────────────
+
+interface CompletedRequest {
+  id: number;
+  title: string;
+  helper_id: number | null;
+  helper_name: string | null;
+  helper_avatar?: string | null;
+  completed_at: string | null;
+  category: string;
+}
+
+function RecentHelpersSection({
+  transactions,
+  onNavigate,
+}: {
+  transactions: Transaction[];
+  onNavigate: (path: string) => void;
+}) {
+  const [helpers, setHelpers] = useState<CompletedRequest[]>([]);
+  const [loading, setLoading] = useState(false);
+  const { currentUser } = useAppContext();
+  const userId = currentUser?.id;
+
+  useEffect(() => {
+    if (!userId) return;
+    setLoading(true);
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/requests?requester_id=${userId}&status=completed&limit=6`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((rows: CompletedRequest[]) => {
+        // Deduplicate by helper_id, only include rows where a helper completed the job
+        const seen = new Set<number>();
+        const unique: CompletedRequest[] = [];
+        for (const r of rows) {
+          if (r.helper_id && !seen.has(r.helper_id)) {
+            seen.add(r.helper_id);
+            unique.push(r);
+          }
+        }
+        setHelpers(unique.slice(0, 5));
+      })
+      .catch(() => setHelpers([]))
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  // Count of "helped me" transactions (pledge_received = pay-it-forward chain coming back)
+  const helpReceived = transactions.filter(t => t.type === "pledge_received").length;
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-4">
+      <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
+        <Users className="w-3.5 h-3.5" /> Helpers Who've Helped You
+      </h3>
+
+      {loading && (
+        <div className="flex items-center justify-center py-4 gap-2 text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-xs">Loading…</span>
+        </div>
+      )}
+
+      {!loading && helpers.length === 0 && (
+        <div className="bg-muted/40 border border-border/60 rounded-xl p-4 text-center">
+          <div className="text-2xl mb-2">💙</div>
+          <div className="font-bold text-sm">No completed requests yet</div>
+          <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
+            Helpers who complete your requests will appear here.
+          </div>
+        </div>
+      )}
+
+      {!loading && helpers.length > 0 && (
+        <div className="space-y-2">
+          {helpers.map(r => (
+            <button
+              key={r.id}
+              onClick={() => r.helper_id && onNavigate(`/helper/${r.helper_id}`)}
+              className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-muted/30 hover:bg-muted/60 border border-border/50 hover:border-primary/30 transition-all text-left group"
+            >
+              <div className="w-9 h-9 rounded-full bg-muted border border-border flex items-center justify-center shrink-0 overflow-hidden">
+                {r.helper_avatar ? (
+                  <img src={r.helper_avatar} alt={r.helper_name ?? "Helper"} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-xs font-black text-muted-foreground">
+                    {r.helper_name?.[0] ?? "?"}
+                  </span>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm truncate group-hover:text-primary transition-colors">
+                  {r.helper_name ?? "Anonymous Helper"}
+                </div>
+                <div className="text-[10px] text-muted-foreground truncate capitalize">
+                  {r.category.replace(/_/g, " ")} · {r.completed_at ? fmtDate(r.completed_at) : "Completed"}
+                </div>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+            </button>
+          ))}
+          {helpReceived > 0 && (
+            <div className="text-[10px] text-muted-foreground text-center pt-1">
+              You've received help {helpReceived} time{helpReceived !== 1 ? "s" : ""} through Niakofa
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
@@ -903,19 +1014,8 @@ export default function ProfileScreen() {
               />
             </div>
 
-            {/* Community Connections — honest placeholder */}
-            <div className="bg-card border border-border rounded-2xl p-4">
-              <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5" /> Saved Helpers
-              </h3>
-              <div className="bg-muted/40 border border-border/60 rounded-xl p-4 text-center">
-                <div className="text-2xl mb-2">💙</div>
-                <div className="font-bold text-sm">Coming Soon</div>
-                <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                  Save trusted helpers from your past help exchanges. Feature launching soon.
-                </div>
-              </div>
-            </div>
+            {/* Recent Helpers — derived from transaction history */}
+            <RecentHelpersSection transactions={transactions} onNavigate={setLocation} />
 
             <div className="bg-card/50 border border-border/50 rounded-2xl p-4">
               <p className="text-xs text-muted-foreground leading-relaxed text-center">

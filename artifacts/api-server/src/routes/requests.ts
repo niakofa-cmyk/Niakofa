@@ -20,7 +20,7 @@ import {
 import { broadcast, broadcastRequestEvent } from "../lib/ws-hub";
 import { requestCreationLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
-import { sendPushToAllHelpers } from "./push";
+import { sendPushToNearbyHelpers, sendPushToAllHelpers } from "./push";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { logger } from "../lib/logger";
 import { sendReceipt } from "../lib/mailer";
@@ -127,18 +127,34 @@ router.get("/requests", async (req, res) => {
     radius_miles: req.query.radius_miles ? parseFloat(req.query.radius_miles as string) : undefined,
   });
 
+  // Optional helper_id filter — used by helper profile page
+  const helperId = req.query.helper_id ? parseInt(req.query.helper_id as string) : null;
+  // Optional requester_id filter — used by profile page to fetch user's own requests
+  const requesterId = req.query.requester_id ? parseInt(req.query.requester_id as string) : null;
+  // Optional limit
+  const limitParam = req.query.limit ? parseInt(req.query.limit as string) : null;
+
   let rows = await db.select().from(requestsTable);
+  if (helperId) rows = rows.filter(r => r.helper_id === helperId);
+  if (requesterId) rows = rows.filter(r => r.requester_id === requesterId);
   if (params.success && params.data.status) rows = rows.filter(r => r.status === params.data.status);
   if (params.success && params.data.lat && params.data.lng) {
     const radius = params.data.radius_miles ?? 10;
     rows = rows.filter(r => distanceMiles(params.data.lat!, params.data.lng!, r.lat, r.lng) <= radius);
   }
+  // Sort newest first, then apply limit
+  rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  if (limitParam && limitParam > 0) rows = rows.slice(0, limitParam);
 
-  const userIds = [...new Set(rows.map(r => r.requester_id))];
-  const users = userIds.length > 0
+  // Collect all relevant user IDs (requesters + helpers) for a single batch fetch
+  const allUserIds = [...new Set([
+    ...rows.map(r => r.requester_id),
+    ...rows.map(r => r.helper_id).filter((id): id is number => id != null),
+  ])];
+  const users = allUserIds.length > 0
     ? await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url })
         .from(usersTable)
-        .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(userIds.map(id => sql`${id}`), sql`, `)}]::int[])`)
+        .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(allUserIds.map(id => sql`${id}`), sql`, `)}]::int[])`)
     : [];
   const userMap = Object.fromEntries(users.map(u => [u.id, u]));
 
@@ -146,7 +162,8 @@ router.get("/requests", async (req, res) => {
     ...r,
     requester_name: userMap[r.requester_id]?.name ?? null,
     requester_avatar: userMap[r.requester_id]?.avatar_url ?? null,
-    helper_name: null,
+    helper_name: r.helper_id ? (userMap[r.helper_id]?.name ?? null) : null,
+    helper_avatar: r.helper_id ? (userMap[r.helper_id]?.avatar_url ?? null) : null,
     distance_miles: null,
     estimated_duration_min: null,
   })));
@@ -192,10 +209,23 @@ router.post("/requests", requestCreationLimiter, async (req, res) => {
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
   broadcastRequestEvent("REQUEST_CREATED", "new_request", enriched);
 
+  // Push notifications — geolocation-targeted when request has coordinates
   if (request.urgency === "emergency" || request.urgency === "high") {
     const isEmergency = request.urgency === "emergency";
-    sendPushToAllHelpers({
+    const payload = {
       title: isEmergency ? "🚨 EMERGENCY — Help Needed Now!" : "🔴 Urgent Request Nearby",
+      body: request.title,
+      urgency: request.urgency,
+      requestId: request.id,
+    };
+    // Notify helpers within 15 miles of the request; fall back to all helpers if no nearby ones found
+    sendPushToNearbyHelpers(request.lat, request.lng, 15, payload).catch(() => {
+      sendPushToAllHelpers(payload).catch(() => {});
+    });
+  } else {
+    // For medium/low urgency, notify helpers within 5 miles
+    sendPushToNearbyHelpers(request.lat, request.lng, 5, {
+      title: "💙 Help Request Near You",
       body: request.title,
       urgency: request.urgency,
       requestId: request.id,
