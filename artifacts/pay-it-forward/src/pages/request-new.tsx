@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin } from "lucide-react";
+import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -104,6 +104,8 @@ export default function NewRequestScreen() {
   const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
   const [creatingPaymentIntent, setCreatingPaymentIntent] = useState(false);
   const [webGLSupported] = useState(checkWebGL);
+  const [checklistItems, setChecklistItems] = useState<string[]>([]);
+  const [accessibilityNeeds, setAccessibilityNeeds] = useState<string[]>([]);
   const [pinLocation, setPinLocation] = useState<{ lat: number; lng: number } | null>(
     myLocation ? { lat: myLocation.lat, lng: myLocation.lng } : null
   );
@@ -142,10 +144,27 @@ export default function NewRequestScreen() {
       return;
     }
 
+    // Append checklist and accessibility needs to description
+    const extras: string[] = [];
+    const filledItems = checklistItems.filter(i => i.trim());
+    if (filledItems.length > 0) {
+      extras.push("Items needed:\n" + filledItems.map(i => `• ${i}`).join("\n"));
+    }
+    if (accessibilityNeeds.length > 0) {
+      const labels: Record<string, string> = {
+        wheelchair: "Wheelchair accessible location",
+        female_helper: "Prefer female helper",
+        pet_friendly: "Pet-friendly",
+        non_smoking: "Non-smoking",
+      };
+      extras.push("Needs: " + accessibilityNeeds.map(n => labels[n] ?? n).join(", "));
+    }
+    const fullDescription = [values.description, ...extras].filter(Boolean).join("\n\n");
+
     createMutation.mutate({
       data: {
         title: values.title,
-        description: values.description,
+        description: fullDescription || undefined,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         category: values.category as any,
         urgency: values.urgency as any,
@@ -308,7 +327,7 @@ export default function NewRequestScreen() {
                     <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Details (optional)</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Specific instructions, building code, accessibility needs..."
+                        placeholder="Specific instructions, building code, special considerations..."
                         className="bg-card border-border min-h-[90px] resize-none"
                         {...field}
                       />
@@ -317,6 +336,74 @@ export default function NewRequestScreen() {
                   </FormItem>
                 )}
               />
+
+              {/* Item Checklist — §3.1.4 Request specificity */}
+              {checklistItems.length > 0 || true ? (
+                <div>
+                  <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">Item Checklist (optional)</div>
+                  <div className="space-y-2">
+                    {checklistItems.map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={item}
+                          onChange={e => setChecklistItems(prev => prev.map((v, j) => j === i ? e.target.value : v))}
+                          placeholder={`Item ${i + 1}`}
+                          className="flex-1 bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-primary transition-colors"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setChecklistItems(prev => prev.filter((_, j) => j !== i))}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-muted hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-all"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {checklistItems.length < 8 && (
+                      <button
+                        type="button"
+                        onClick={() => setChecklistItems(prev => [...prev, ""])}
+                        className="flex items-center gap-1.5 text-xs text-primary/70 hover:text-primary transition-colors py-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Add item
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Accessibility Needs — §4.5 */}
+              <div>
+                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">Accessibility Needs</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: "wheelchair", label: "♿ Wheelchair access" },
+                    { id: "female_helper", label: "👩 Prefer female helper" },
+                    { id: "pet_friendly", label: "🐾 Pet-friendly" },
+                    { id: "non_smoking", label: "🚭 Non-smoking" },
+                  ].map(opt => (
+                    <label
+                      key={opt.id}
+                      className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all text-xs font-medium ${
+                        accessibilityNeeds.includes(opt.id)
+                          ? "border-primary/60 bg-primary/10 text-primary"
+                          : "border-border bg-card text-muted-foreground"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={accessibilityNeeds.includes(opt.id)}
+                        onChange={e => setAccessibilityNeeds(prev =>
+                          e.target.checked ? [...prev, opt.id] : prev.filter(v => v !== opt.id)
+                        )}
+                      />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
 
               {/* ── Location Picker ─────────────────────────────────────── */}
               <div>

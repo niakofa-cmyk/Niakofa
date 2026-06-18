@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import LiveLeaderboard from "@/components/LiveLeaderboard";
-import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield } from "lucide-react";
+import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown } from "lucide-react";
 import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
@@ -52,10 +52,37 @@ const CIVIC_ICONS: Record<string, string> = {
   childcare: "👶", education: "📚", other: "💙",
 };
 
+interface SuggestionForm {
+  name: string;
+  category: string;
+  description: string;
+  phone: string;
+  website: string;
+}
+
 function CivicResourcesTab() {
   const [resources, setResources] = useState<CivicResource[]>([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("all");
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [suggestionSent, setSuggestionSent] = useState(false);
+  const [suggestion, setSuggestion] = useState<SuggestionForm>({
+    name: "", category: "other", description: "", phone: "", website: "",
+  });
+
+  const submitSuggestion = async () => {
+    if (!suggestion.name.trim()) return;
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      await fetch(`${base}/api/civic/suggestions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(suggestion),
+      });
+    } catch {}
+    setSuggestionSent(true);
+    setTimeout(() => { setShowSuggest(false); setSuggestionSent(false); setSuggestion({ name: "", category: "other", description: "", phone: "", website: "" }); }, 2000);
+  };
 
   useEffect(() => {
     fetch("/api/civic/resources")
@@ -129,6 +156,114 @@ function CivicResourcesTab() {
           </div>
         </div>
       ))}
+
+      {/* Suggest a resource — §3.3.2 */}
+      <button
+        onClick={() => setShowSuggest(true)}
+        className="w-full flex items-center justify-center gap-2 p-3 border border-dashed border-primary/30 rounded-2xl text-sm text-primary/70 hover:text-primary hover:border-primary/60 transition-all"
+      >
+        <PlusCircle className="w-4 h-4" />
+        Know a resource we're missing? Suggest it
+      </button>
+
+      {/* Suggestion modal */}
+      <AnimatePresence>
+        {showSuggest && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 z-50 backdrop-blur-sm"
+              onClick={() => setShowSuggest(false)}
+            />
+            <motion.div
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 26, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl max-h-[80dvh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-5 pb-3 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <PlusCircle className="w-5 h-5 text-primary" />
+                  <h3 className="font-black text-lg">Suggest a Resource</h3>
+                </div>
+                <button onClick={() => setShowSuggest(false)} className="p-2 rounded-full hover:bg-muted transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                {suggestionSent ? (
+                  <div className="text-center py-8">
+                    <div className="text-4xl mb-3">🙏</div>
+                    <div className="font-black text-lg">Thank you!</div>
+                    <p className="text-sm text-muted-foreground mt-1">Your suggestion will be reviewed by the Niakofa team.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Organization Name *</label>
+                      <input
+                        className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                        placeholder="e.g. Tarrant County Food Bank"
+                        value={suggestion.name}
+                        onChange={e => setSuggestion(s => ({ ...s, name: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Category</label>
+                      <select
+                        className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                        value={suggestion.category}
+                        onChange={e => setSuggestion(s => ({ ...s, category: e.target.value }))}
+                      >
+                        {Object.entries(CIVIC_ICONS).map(([k, icon]) => (
+                          <option key={k} value={k}>{icon} {k.replace(/_/g, " ")}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Description</label>
+                      <textarea
+                        className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors min-h-[80px] resize-none"
+                        placeholder="What services do they provide?"
+                        value={suggestion.description}
+                        onChange={e => setSuggestion(s => ({ ...s, description: e.target.value }))}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Phone</label>
+                        <input
+                          className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                          placeholder="(817) 555-0000"
+                          value={suggestion.phone}
+                          onChange={e => setSuggestion(s => ({ ...s, phone: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Website</label>
+                        <input
+                          className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                          placeholder="https://..."
+                          value={suggestion.website}
+                          onChange={e => setSuggestion(s => ({ ...s, website: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={submitSuggestion}
+                      disabled={!suggestion.name.trim()}
+                      className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground font-bold py-3.5 rounded-xl disabled:opacity-40 transition-all active:scale-[0.98]"
+                    >
+                      <Send className="w-4 h-4" />
+                      Submit Suggestion
+                    </button>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

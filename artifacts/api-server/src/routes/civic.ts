@@ -184,4 +184,17 @@ router.get("/civic/resources", async (req, res) => {
   return res.json(payload);
 });
 
+// POST /civic/suggestions — community-submitted resource suggestions (§3.3.2)
+router.post("/civic/suggestions", async (req, res) => {
+  const { name, category, description, phone, website } = req.body as {
+    name?: string; category?: string; description?: string; phone?: string; website?: string;
+  };
+  if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+  logger.info(
+    { name, category, description, phone, website },
+    "civic resource suggestion received"
+  );
+  return res.json({ ok: true, message: "Thank you — your suggestion will be reviewed by the Niakofa team." });
+});
+
 export default router;

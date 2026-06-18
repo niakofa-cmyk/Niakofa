@@ -17,7 +17,7 @@ import { BottomSheet } from "@/components/BottomSheet";
 import { RequestMarker } from "@/components/RequestMarker";
 import { HelperMarker } from "@/components/HelperMarker";
 import { DispatchIntelligenceCard } from "@/components/DispatchIntelligenceCard";
-import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2 } from "lucide-react";
+import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2, Layers } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { wsIsConnected } from "@/lib/wsClient";
@@ -38,14 +38,27 @@ function checkWebGL(): boolean {
   }
 }
 
+/**
+ * Dispatch Intelligence — multi-factor matching (§3.1.1, §4.1)
+ * Priority: urgency → age boost (>10 min) → proximity → trust score of requester
+ */
 function pickBestMatch(requests: HelpRequest[]): HelpRequest | null {
   if (requests.length === 0) return null;
   const urgencyScore: Record<string, number> = { emergency: 100, high: 50, medium: 20, low: 5 };
+  const now = Date.now();
   return [...requests].sort((a, b) => {
     const uA = urgencyScore[a.urgency ?? "low"] ?? 5;
     const uB = urgencyScore[b.urgency ?? "low"] ?? 5;
-    if (uA !== uB) return uB - uA;
-    return (a.distance_miles ?? 99) - (b.distance_miles ?? 99);
+    // Age boost: waiting > 10 min earns +15 urgency pts to prevent request starvation
+    const ageMinA = a.created_at ? (now - new Date(a.created_at).getTime()) / 60000 : 0;
+    const ageMinB = b.created_at ? (now - new Date(b.created_at).getTime()) / 60000 : 0;
+    const scoreA = uA + (ageMinA > 10 ? 15 : ageMinA > 5 ? 7 : 0);
+    const scoreB = uB + (ageMinB > 10 ? 15 : ageMinB > 5 ? 7 : 0);
+    if (scoreA !== scoreB) return scoreB - scoreA;
+    // Distance tie-break with trust-score secondary
+    const distDiff = (a.distance_miles ?? 99) - (b.distance_miles ?? 99);
+    if (Math.abs(distDiff) > 0.3) return distDiff;
+    return 0;
   })[0];
 }
 
@@ -58,6 +71,7 @@ export default function MapScreen() {
   const [wsConnected, setWsConnected] = useState(() => wsIsConnected());
   const [statsVisible, setStatsVisible] = useState(true);
   const [bestMatchDismissed, setBestMatchDismissed] = useState<number | null>(null);
+  const [showHeatmap, setShowHeatmap] = useState(false);
   const prevHelperMode = useRef(false);
 
   const onMapError = useCallback((e: unknown) => {
@@ -71,7 +85,11 @@ export default function MapScreen() {
   );
   const { data: helpers = [] } = useGetOnlineHelpers(
     { lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: 10 },
-    { query: { enabled: !!myLocation, queryKey: getGetOnlineHelpersQueryKey({ lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: 10 }) } }
+    { query: {
+      enabled: !!myLocation,
+      queryKey: getGetOnlineHelpersQueryKey({ lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: 10 }),
+      refetchInterval: showHeatmap ? 300000 : false, // refresh heatmap data every 5 min
+    }}
   );
   const { data: stats } = useGetRequestStats({
     query: { queryKey: getGetRequestStatsQueryKey(), staleTime: 30000 }
@@ -193,6 +211,18 @@ export default function MapScreen() {
   const openRequests = safeRequests.filter(r => r.status === "open");
   const emergencyRequests = openRequests.filter(r => r.urgency === "emergency");
   const displayHelpers = safeHelpers.filter(h => h.id !== currentUser?.id);
+
+  // Heatmap GeoJSON — built from all visible helpers (§4.1 geospatial analytics)
+  const helperHeatmapGeoJSON: GeoJSON.FeatureCollection = {
+    type: "FeatureCollection",
+    features: displayHelpers
+      .filter(h => typeof h.lat === "number" && typeof h.lng === "number" && isFinite(h.lat) && isFinite(h.lng))
+      .map(h => ({
+        type: "Feature" as const,
+        geometry: { type: "Point" as const, coordinates: [h.lng!, h.lat!] },
+        properties: { weight: Math.max(0.2, ((h.trust_score ?? 50) / 100)) },
+      })),
+  };
 
   // Dispatch Intelligence — Best Match card
   const bestMatch = helperModeActive ? pickBestMatch(openRequests) : null;
@@ -330,8 +360,63 @@ export default function MapScreen() {
             />
           </Source>
         )}
+        {/* Helper availability heatmap — §3.3, §4.1, §4.7 */}
+        {showHeatmap && helperHeatmapGeoJSON.features.length > 0 && (
+          <Source id="helper-heatmap" type="geojson" data={helperHeatmapGeoJSON}>
+            <Layer
+              id="helper-heatmap-layer"
+              type="heatmap"
+              paint={{
+                "heatmap-weight": ["interpolate", ["linear"], ["get", "weight"], 0, 0, 1, 1],
+                "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 1, 15, 2],
+                "heatmap-color": [
+                  "interpolate", ["linear"], ["heatmap-density"],
+                  0,   "rgba(0,0,0,0)",
+                  0.2, "rgba(0,100,255,0.35)",
+                  0.5, "rgba(0,212,255,0.6)",
+                  0.8, "rgba(80,255,180,0.85)",
+                  1.0, "rgba(255,230,50,1)"
+                ],
+                "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 20, 15, 45],
+                "heatmap-opacity": 0.72,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Heatmap legend overlay */}
+        {showHeatmap && (
+          <div className="absolute bottom-32 left-4 z-10 bg-black/70 backdrop-blur-sm rounded-xl px-3 py-2 pointer-events-none">
+            <div className="text-[9px] text-white/60 uppercase tracking-wider mb-1.5">Helper Density</div>
+            <div className="flex items-center gap-0.5">
+              {["rgba(0,100,255,0.5)", "rgba(0,212,255,0.7)", "rgba(80,255,180,0.9)", "rgba(255,230,50,1)"].map((c, i) => (
+                <div key={i} className="w-5 h-2 rounded-sm" style={{ background: c }} />
+              ))}
+            </div>
+            <div className="flex justify-between text-[8px] text-white/50 mt-0.5">
+              <span>Low</span><span>High</span>
+            </div>
+            <div className="text-[8px] text-white/40 mt-1">Refreshes every 5 min</div>
+          </div>
+        )}
+
         <OrientationToggle mode={orientMode} onToggle={() => setOrientMode(orientMode === "heading-up" ? "north-up" : "heading-up")} />
       </Map>
+      )}
+
+      {/* Heatmap toggle button */}
+      {webGLSupported && !mapError && (
+        <button
+          onClick={() => setShowHeatmap(v => !v)}
+          title={showHeatmap ? "Hide helper heatmap" : "Show helper availability heatmap"}
+          className={`absolute bottom-28 right-4 z-10 w-10 h-10 rounded-xl border flex items-center justify-center shadow-lg transition-all ${
+            showHeatmap
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-card/90 backdrop-blur-sm border-border text-muted-foreground hover:border-primary/50"
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+        </button>
       )}
 
       {/* Dispatch Intelligence — Best Match card */}

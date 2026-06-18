@@ -1026,6 +1026,46 @@ export default function ProfileScreen() {
               </div>
             </div>
 
+            {/* Achievement Badges — §3.3.1 Gamification */}
+            {(() => {
+              const hc = currentUser.help_count ?? 0;
+              const ts = currentUser.trust_score ?? 0;
+              const gs = currentUser.goodwill_score ?? 0;
+              const earned = [
+                hc >= 1   && { id: "first",    icon: "🌱", label: "First Help",       desc: "Completed your first request" },
+                hc >= 5   && { id: "five",     icon: "💙", label: "5 Helped",         desc: "Helped 5 neighbors" },
+                hc >= 25  && { id: "pillar",   icon: "🏛️", label: "Community Pillar", desc: "25 completed requests" },
+                hc >= 100 && { id: "legend",   icon: "🌟", label: "Legend",           desc: "100 requests fulfilled" },
+                ts >= 80  && { id: "trusted",  icon: "🛡️", label: "Trusted",          desc: "Trust score above 80%" },
+                ts >= 95  && { id: "guardian", icon: "⭐", label: "Guardian",         desc: "Trust score above 95%" },
+                gs >= 10  && { id: "goodwill", icon: "🙏", label: "Goodwill Hero",    desc: "10+ goodwill points earned" },
+                currentUser.is_helper && { id: "helper", icon: "🤝", label: "Helper",  desc: "Registered community helper" },
+              ].filter(Boolean) as { id: string; icon: string; label: string; desc: string }[];
+              if (earned.length === 0) return null;
+              return (
+                <div className="bg-card border border-border rounded-2xl p-4">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
+                    <Star className="w-3.5 h-3.5 text-yellow-400" /> Achievements
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {earned.map(b => (
+                      <div
+                        key={b.id}
+                        title={b.desc}
+                        className="flex items-center gap-1.5 bg-primary/10 border border-primary/20 rounded-full px-3 py-1.5 cursor-default"
+                      >
+                        <span className="text-sm">{b.icon}</span>
+                        <span className="text-xs font-bold">{b.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {earned.length < 4 && (
+                    <p className="text-[10px] text-muted-foreground mt-3">Keep helping to unlock more achievements</p>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Wallet Summary */}
             <button
               onClick={() => setLocation("/wallet")}
@@ -1043,6 +1083,53 @@ export default function ProfileScreen() {
                 <ChevronRight className="w-4 h-4" />
               </div>
             </button>
+
+            {/* Helper Performance Dashboard — §3.1.3, §4.7 */}
+            {currentUser.is_helper && (
+              <div className="bg-card border border-border rounded-2xl p-4">
+                <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-primary" /> Helper Performance
+                </h3>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="bg-muted/40 rounded-xl p-3 text-center">
+                    <div className="text-xl font-black">{currentUser.help_count ?? 0}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Completed</div>
+                  </div>
+                  <div className="bg-muted/40 rounded-xl p-3 text-center">
+                    <div className="text-xl font-black text-primary">{(currentUser.trust_score ?? 0).toFixed(0)}%</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Trust Score</div>
+                  </div>
+                  <div className="bg-muted/40 rounded-xl p-3 text-center">
+                    <div className="text-xl font-black text-yellow-400">{currentUser.goodwill_score ?? 0}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Goodwill Pts</div>
+                  </div>
+                  <div className="bg-muted/40 rounded-xl p-3 text-center">
+                    <div className="text-xl font-black text-green-400">${(currentUser.benevolence_wallet ?? 0).toFixed(0)}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Earned</div>
+                  </div>
+                </div>
+                {/* Trust tier progress */}
+                {(() => {
+                  const hc = currentUser.help_count ?? 0;
+                  const milestones = [5, 25, 100, 250];
+                  const next = milestones.find(m => m > hc);
+                  const prev = milestones.filter(m => m <= hc).at(-1) ?? 0;
+                  if (!next) return <p className="text-[10px] text-primary font-bold mt-3 text-center">🌟 Max tier achieved!</p>;
+                  const pct = Math.round(((hc - prev) / (next - prev)) * 100);
+                  return (
+                    <div className="mt-3">
+                      <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+                        <span>{hc} helps completed</span>
+                        <span>{next - hc} more to next milestone</span>
+                      </div>
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
 
             {/* Helper Mode */}
             <div className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between">
