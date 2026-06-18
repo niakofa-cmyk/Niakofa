@@ -51,4 +51,6 @@ export interface HelpRequest {
   arrived_at?: string | null;
   /** @nullable */
   completed_at?: string | null;
+  /** @nullable */
+  cancelled_at?: string | null;
 }

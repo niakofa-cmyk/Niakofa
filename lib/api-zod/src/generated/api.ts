@@ -173,7 +173,8 @@ export const MakePledgePaymentResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish()
+  "completed_at": zod.string().nullish(),
+  "cancelled_at": zod.string().nullish()
 })
 
 
@@ -243,7 +244,8 @@ export const GetRequestsResponseItem = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish()
+  "completed_at": zod.string().nullish(),
+  "cancelled_at": zod.string().nullish()
 })
 export const GetRequestsResponse = zod.array(GetRequestsResponseItem)
 
@@ -301,7 +303,8 @@ export const CreateRequestResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish()
+  "completed_at": zod.string().nullish(),
+  "cancelled_at": zod.string().nullish()
 })
 
 
@@ -343,7 +346,8 @@ export const GetNearbyRequestsResponseItem = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish()
+  "completed_at": zod.string().nullish(),
+  "cancelled_at": zod.string().nullish()
 })
 export const GetNearbyRequestsResponse = zod.array(GetNearbyRequestsResponseItem)
 
@@ -398,7 +402,8 @@ export const GetRequestResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish()
+  "completed_at": zod.string().nullish(),
+  "cancelled_at": zod.string().nullish()
 })
 
 
@@ -442,7 +447,8 @@ export const UpdateRequestResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish()
+  "completed_at": zod.string().nullish(),
+  "cancelled_at": zod.string().nullish()
 })
 
 
@@ -484,7 +490,8 @@ export const ClaimRequestResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish()
+  "completed_at": zod.string().nullish(),
+  "cancelled_at": zod.string().nullish()
 })
 
 
@@ -526,7 +533,8 @@ export const MarkEnRouteResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish()
+  "completed_at": zod.string().nullish(),
+  "cancelled_at": zod.string().nullish()
 })
 
 
@@ -568,7 +576,8 @@ export const MarkArrivedResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish()
+  "completed_at": zod.string().nullish(),
+  "cancelled_at": zod.string().nullish()
 })
 
 
@@ -611,7 +620,8 @@ export const CompleteRequestResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish()
+  "completed_at": zod.string().nullish(),
+  "cancelled_at": zod.string().nullish()
 })
 
 
@@ -626,7 +636,7 @@ export const GetUserTransactionsResponseItem = zod.object({
   "id": zod.number(),
   "user_id": zod.number(),
   "request_id": zod.number().nullish(),
-  "type": zod.enum(['earned', 'pledge_received', 'pledge_sent', 'goodwill']).describe('earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act'),
+  "type": zod.enum(['earned', 'pledge_received', 'pledge_sent', 'goodwill', 'tip_received']).describe('earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester'),
   "amount": zod.number(),
   "description": zod.string().nullish(),
   "created_at": zod.string()
@@ -714,7 +724,8 @@ export const GetUserOutstandingPledgesResponseItem = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish()
+  "completed_at": zod.string().nullish(),
+  "cancelled_at": zod.string().nullish()
 })
 export const GetUserOutstandingPledgesResponse = zod.array(GetUserOutstandingPledgesResponseItem)
 
@@ -942,5 +953,112 @@ export const GetUserReportsResponseItem = zod.object({
   "updated_at": zod.string().optional()
 })
 export const GetUserReportsResponse = zod.array(GetUserReportsResponseItem)
+
+
+/**
+ * @summary Cancel a request — helper unclaims (re-opens to pool) or requester withdraws (marks cancelled)
+ */
+export const CancelRequestParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const cancelRequestResponsePledgePaidDefault = 0;
+
+export const CancelRequestResponse = zod.object({
+  "id": zod.number(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
+  "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
+  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
+  "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
+  "requester_id": zod.number(),
+  "requester_name": zod.string().nullish(),
+  "requester_avatar": zod.string().nullish(),
+  "helper_id": zod.number().nullish(),
+  "helper_name": zod.string().nullish(),
+  "lat": zod.number(),
+  "lng": zod.number(),
+  "neighborhood": zod.string().nullish(),
+  "distance_miles": zod.number().nullish(),
+  "estimated_duration_min": zod.number().nullish(),
+  "pay_it_forward_amount": zod.number().nullish(),
+  "pledge_amount": zod.number().nullish(),
+  "pledge_paid": zod.number().default(cancelRequestResponsePledgePaidDefault),
+  "created_at": zod.string(),
+  "claimed_at": zod.string().nullish(),
+  "en_route_at": zod.string().nullish(),
+  "arrived_at": zod.string().nullish(),
+  "completed_at": zod.string().nullish(),
+  "cancelled_at": zod.string().nullish()
+})
+
+
+/**
+ * @summary Rate the other participant after a completed request (1–5 stars + optional review)
+ */
+export const RateRequestParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const rateRequestBodyStarsMax = 5;
+
+export const rateRequestBodyReviewMax = 500;
+
+
+
+export const RateRequestBody = zod.object({
+  "stars": zod.number().min(1).max(rateRequestBodyStarsMax),
+  "review": zod.string().max(rateRequestBodyReviewMax).optional()
+})
+
+export const rateRequestResponseStarsMax = 5;
+
+
+
+export const RateRequestResponse = zod.object({
+  "id": zod.number(),
+  "request_id": zod.number(),
+  "rater_id": zod.number(),
+  "ratee_id": zod.number(),
+  "stars": zod.number().min(1).max(rateRequestResponseStarsMax),
+  "review": zod.string().nullish(),
+  "role": zod.enum(['requester', 'helper']),
+  "created_at": zod.string()
+})
+
+
+/**
+ * @summary One-time password setup for legacy accounts that pre-date passwords (unauthenticated, rate-limited)
+ */
+export const setInitialPasswordBodyNewPasswordMin = 8;
+
+
+
+export const SetInitialPasswordBody = zod.object({
+  "user_id": zod.number(),
+  "email": zod.string(),
+  "new_password": zod.string().min(setInitialPasswordBodyNewPasswordMin)
+})
+
+export const SetInitialPasswordResponse = zod.object({
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "avatar_url": zod.string().nullish(),
+  "is_helper": zod.boolean(),
+  "helper_mode_active": zod.boolean(),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "trust_score": zod.number().nullish(),
+  "help_count": zod.number(),
+  "neighborhood": zod.string().nullish(),
+  "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
+  "goodwill_score": zod.number().describe('Community reputation score'),
+  "created_at": zod.string().optional()
+}),
+  "token": zod.string()
+})
 
 

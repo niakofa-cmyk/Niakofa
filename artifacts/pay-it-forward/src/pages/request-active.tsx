@@ -13,13 +13,15 @@ import { toast } from "@/hooks/use-toast";
 import { NavigationOverlay } from "@/components/NavigationOverlay";
 import { InAppChat } from "@/components/InAppChat";
 import { TipModal } from "@/components/TipModal";
+import { RatingModal } from "@/components/RatingModal";
+import { getToken } from "@/lib/auth";
 import { TurnArrowHUD } from "@/components/TurnArrowHUD";
 import { OrientationToggle } from "@/components/OrientationToggle";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { useDeviceHeading } from "@/hooks/useDeviceHeading";
 import { useMapOrientation } from "@/hooks/useMapOrientation";
 import { useTerrain } from "@/hooks/useTerrain";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 const ARRIVAL_THRESHOLD_METERS = 80;
 const OFF_ROUTE_THRESHOLD_METERS = 150;
@@ -110,6 +112,8 @@ export default function ActiveRequestScreen() {
   const mapRef = useRef<MapRef>(null);
   const [showTip, setShowTip] = useState(false);
   const [tipShown, setTipShown] = useState(false);
+  const [showRating, setShowRating] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   const enRouteRef = useRef(false);
   const offRouteCooldownRef = useRef(false);
@@ -354,14 +358,48 @@ export default function ActiveRequestScreen() {
             ? `+$${request.pay_it_forward_amount.toFixed(2)} added to your wallet`
             : request.payment_type === "goodwill" ? "+1 goodwill point earned" : "Thank you for helping!";
           toast({ title: "🎉 Request Completed!", description: earned });
-          if (!tipShown) { setTipShown(true); setTimeout(() => setShowTip(true), 1500); }
           queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
           queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
-          setLocation("/");
+          // Show rating modal before navigating away
+          setTimeout(() => setShowRating(true), 900);
         },
         onError: () => toast({ title: "Failed to complete", variant: "destructive" })
       }
     );
+  };
+
+  const handleCancel = async () => {
+    if (!currentUser || !request) return;
+    const isHelper = request.helper_id === currentUser.id;
+    const msg = isHelper
+      ? "Cancel your claim? The request will re-open for another helper."
+      : "Withdraw your request? This cannot be undone.";
+    if (!window.confirm(msg)) return;
+    setCancelLoading(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/requests/${requestId}/cancel`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? "Failed to cancel");
+      }
+      queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
+      queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
+      toast({
+        title: isHelper ? "Claim cancelled — request is back in the pool" : "Request withdrawn",
+      });
+      setLocation("/");
+    } catch (err) {
+      toast({ title: err instanceof Error ? err.message : "Failed to cancel", variant: "destructive" });
+    } finally {
+      setCancelLoading(false);
+    }
   };
 
   const handleShare = async () => {
@@ -683,6 +721,29 @@ export default function ActiveRequestScreen() {
           </p>
         )}
 
+        {/* Cancel / Withdraw button — only visible when request is not terminal */}
+        {!isCompleted && !["cancelled"].includes(request.status) && currentUser && (
+          <button
+            onClick={handleCancel}
+            disabled={cancelLoading}
+            className="w-full mt-2 text-sm text-muted-foreground hover:text-destructive transition-colors py-2 flex items-center justify-center gap-1"
+            aria-label={request.helper_id === currentUser.id ? "Cancel claim" : "Withdraw request"}
+          >
+            {cancelLoading ? (
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Cancelling…
+              </span>
+            ) : (
+              request.helper_id === currentUser.id
+                ? "Cancel Claim"
+                : request.requester_id === currentUser.id
+                ? "Withdraw Request"
+                : null
+            )}
+          </button>
+        )}
+
         <div className="mt-4">
           <InAppChat
             requestId={requestId}
@@ -699,6 +760,21 @@ export default function ActiveRequestScreen() {
           onClose={() => setShowTip(false)}
         />
       )}
+
+      <AnimatePresence>
+        {showRating && currentUser && (
+          <RatingModal
+            requestId={requestId}
+            role={request.helper_id === currentUser.id ? "helper" : "requester"}
+            helperName={request.helper_name}
+            requesterName={request.requester_name}
+            onClose={() => {
+              setShowRating(false);
+              setLocation("/");
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

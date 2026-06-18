@@ -20,6 +20,19 @@ initWebSocketServer(server);
 server.listen(port, async () => {
   logger.info({ port }, "Server listening (HTTP + WebSocket)");
 
+  // ── Redis production guard ─────────────────────────────────────────────────
+  // Redis is required in production for reliable push notifications, payout
+  // retries, and pledge reconciliation. The setInterval fallback is only
+  // permitted in development so local dev stays frictionless.
+  if (process.env["NODE_ENV"] === "production" && !isRedisConfigured()) {
+    logger.error(
+      "FATAL: REDIS_URL is required in production. " +
+      "BullMQ workers handle push notifications, payout retries, and pledge reconciliation. " +
+      "Set REDIS_URL in your environment variables. " +
+      "The server will continue but background jobs will NOT run — this is unsafe for production."
+    );
+  }
+
   // ── Background workers ────────────────────────────────────────────────────
   if (isRedisConfigured()) {
     // BullMQ workers handle everything — pledge reconciliation is a superset

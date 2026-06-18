@@ -23,7 +23,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   // ── Set-Password flow for legacy accounts ────────────────────────────────────
-  const [pendingLegacyUser, setPendingLegacyUser] = useState<{ id: number; token: string; name: string } | null>(null);
+  const [pendingLegacyUser, setPendingLegacyUser] = useState<{ id: number; email: string; name: string } | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNewPass, setShowNewPass] = useState(false);
@@ -61,23 +61,23 @@ export default function LoginScreen() {
           body: JSON.stringify({ email: email.trim(), password }),
         });
         const data = await res.json().catch(() => ({})) as any;
+
+        // Legacy account — server returns 403 with LEGACY_PASSWORD_REQUIRED.
+        // No token is issued. The user must set a password before gaining access.
+        if (!res.ok && res.status === 403 && data.error_code === "LEGACY_PASSWORD_REQUIRED") {
+          setPendingLegacyUser({ id: data.user_id, email: data.user_email, name: data.user_name });
+          return;
+        }
+
         if (!res.ok) {
           const msgKey =
             data.error === "Incorrect password" ? "auth.wrong_password" :
             data.error === "No account found with that email" ? "auth.no_account" : null;
           throw new Error(msgKey ? t(msgKey) : (data.error ?? t("common.error")));
         }
+
         const user = data.user ?? data;
         if (data.token) setToken(data.token);
-
-        // Legacy account — prompt to set a password before entering the app
-        if (data.password_reset_required === true) {
-          setCurrentUser(user);
-          localStorage.setItem("niakofa_user", JSON.stringify(user));
-          setPendingLegacyUser({ id: user.id, token: data.token, name: user.name });
-          return;
-        }
-
         setCurrentUser(user);
         localStorage.setItem("niakofa_user", JSON.stringify(user));
         toast({ title: `Welcome back, ${user.name}!` });
@@ -102,16 +102,23 @@ export default function LoginScreen() {
     }
     setSavingPassword(true);
     try {
-      const res = await fetch(`/api/users/${pendingLegacyUser.id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${pendingLegacyUser.token}`,
-        },
-        body: JSON.stringify({ new_password: newPassword }),
+      // Use the dedicated legacy-account endpoint — no pre-existing token required.
+      // Ownership is proved by matching user_id + email.
+      const res = await fetch("/api/users/set-initial-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: pendingLegacyUser.id,
+          email: pendingLegacyUser.email,
+          new_password: newPassword,
+        }),
       });
       const data = await res.json().catch(() => ({})) as any;
       if (!res.ok) throw new Error(data.error ?? "Failed to save password");
+      // Server returns a full auth token — log in normally
+      if (data.token) setToken(data.token);
+      setCurrentUser(data.user);
+      localStorage.setItem("niakofa_user", JSON.stringify(data.user));
       setPasswordSaved(true);
       setTimeout(() => {
         toast({ title: "Password set — welcome, " + pendingLegacyUser.name + "!" });
@@ -221,15 +228,6 @@ export default function LoginScreen() {
                     )}
                   </Button>
 
-                  <button
-                    onClick={() => {
-                      toast({ title: `Welcome back, ${pendingLegacyUser.name}!` });
-                      setLocation("/");
-                    }}
-                    className="w-full text-sm text-muted-foreground py-2 hover:text-foreground transition-colors"
-                  >
-                    Skip for now
-                  </button>
                 </motion.div>
               )}
             </AnimatePresence>

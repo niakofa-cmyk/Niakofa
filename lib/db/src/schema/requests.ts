@@ -23,11 +23,13 @@ export const requestsTable = pgTable("help_requests", {
   en_route_at: timestamp("en_route_at"),
   arrived_at: timestamp("arrived_at"),
   completed_at: timestamp("completed_at"),
+  cancelled_at: timestamp("cancelled_at"),
 }, (t) => [
   index("help_requests_status_idx").on(t.status),
   index("help_requests_requester_id_idx").on(t.requester_id),
   index("help_requests_helper_id_idx").on(t.helper_id),
   index("help_requests_created_at_idx").on(t.created_at),
+  index("help_requests_lat_lng_idx").on(t.lat, t.lng),
 ]);
 
 export const insertRequestSchema = createInsertSchema(requestsTable).omit({

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
-import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable } from "@workspace/db";
+import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, ratingsTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -21,7 +21,7 @@ import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers } from "./push";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { logger } from "../lib/logger";
-import { sendReceipt } from "../lib/mailer";
+import { sendReceipt, sendAlertEmail } from "../lib/mailer";
 import Stripe from "stripe";
 
 // Lazy Stripe client — null when STRIPE_SECRET_KEY is not configured
@@ -307,6 +307,19 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
   const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, helperId)).limit(1);
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: helper?.name ?? null, distance_miles: null, estimated_duration_min: null };
   broadcastRequestEvent("REQUEST_ACCEPTED", "request_updated", enriched);
+
+  // Notify requester that their request has been claimed
+  const [requesterRow] = await db.select({ email: usersTable.email, name: usersTable.name })
+    .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1);
+  if (requesterRow?.email) {
+    sendAlertEmail({
+      to: requesterRow.email,
+      subject: "Your request was claimed!",
+      title: "A helper is coming 💙",
+      body: `Great news, ${requesterRow.name}! ${helper?.name ?? "A helper"} just claimed your request: "${request.title}". They should be on their way shortly.`,
+    }).catch(err => logger.warn({ err }, "claim: sendAlertEmail failed"));
+  }
+
   return res.json(enriched);
 });
 
@@ -328,6 +341,21 @@ router.post("/requests/:id/en-route", requireAuth, async (req, res) => {
   if (!request) return res.status(404).json({ error: "Not found" });
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
   broadcastRequestEvent("HELPER_MOVING", "request_updated", enriched);
+
+  // Notify requester that their helper is en route
+  const [reqRow] = await db.select({ email: usersTable.email, name: usersTable.name })
+    .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1);
+  const [helperRow] = await db.select({ name: usersTable.name })
+    .from(usersTable).where(eq(usersTable.id, callerId)).limit(1);
+  if (reqRow?.email) {
+    sendAlertEmail({
+      to: reqRow.email,
+      subject: "Your helper is on the way!",
+      title: "En route! 🚗",
+      body: `${helperRow?.name ?? "Your helper"} is now on the way to help with "${request.title}". They should arrive soon — keep an eye out!`,
+    }).catch(err => logger.warn({ err }, "en-route: sendAlertEmail failed"));
+  }
+
   return res.json(enriched);
 });
 
@@ -562,6 +590,162 @@ router.post("/requests/:id/tip", requireAuth, async (req, res) => {
   });
 
   return res.status(201).json({ ok: true, tip_amount, helper_id: request.helper_id });
+});
+
+// POST /requests/:id/cancel
+// Helper cancels → request re-opens to the pool (another helper can pick it up).
+// Requester withdraws → request marked "cancelled" permanently.
+router.post("/requests/:id/cancel", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id));
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  const [request] = await db.select()
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+
+  if (!request) return res.status(404).json({ error: "Request not found" });
+
+  if (["completed", "cancelled"].includes(request.status)) {
+    return res.status(409).json({ error: `Request is already ${request.status}` });
+  }
+
+  const isRequester = request.requester_id === callerId;
+  const isHelper = request.helper_id === callerId;
+
+  if (!isRequester && !isHelper) {
+    return res.status(403).json({ error: "Not authorized to cancel this request" });
+  }
+
+  let updated: typeof requestsTable.$inferSelect | undefined;
+
+  if (isRequester) {
+    // Requester permanently withdraws their request
+    const [row] = await db.update(requestsTable)
+      .set({ status: "cancelled", cancelled_at: new Date() })
+      .where(eq(requestsTable.id, requestId))
+      .returning();
+    updated = row;
+  } else {
+    // Helper unclaims — re-opens to the pool so another helper can take it
+    if (!["claimed", "en_route", "arrived"].includes(request.status)) {
+      return res.status(409).json({ error: "Can only cancel an active claim" });
+    }
+    const [row] = await db.update(requestsTable)
+      .set({
+        status: "open",
+        helper_id: null,
+        claimed_at: null,
+        en_route_at: null,
+        arrived_at: null,
+      })
+      .where(eq(requestsTable.id, requestId))
+      .returning();
+    updated = row;
+  }
+
+  if (!updated) return res.status(500).json({ error: "Failed to cancel request" });
+
+  const enriched = {
+    ...updated,
+    requester_name: null, requester_avatar: null, helper_name: null,
+    distance_miles: null, estimated_duration_min: null,
+  };
+  broadcast({ type: "request_updated", payload: enriched });
+
+  // Email the other party
+  const notifyId = isRequester ? (request.helper_id ?? null) : request.requester_id;
+  if (notifyId) {
+    const [notifyUser] = await db.select({ email: usersTable.email, name: usersTable.name })
+      .from(usersTable).where(eq(usersTable.id, notifyId)).limit(1);
+    const [actor] = await db.select({ name: usersTable.name })
+      .from(usersTable).where(eq(usersTable.id, callerId)).limit(1);
+    if (notifyUser?.email) {
+      sendAlertEmail({
+        to: notifyUser.email,
+        subject: isRequester
+          ? "A request you were helping has been withdrawn"
+          : "A request is back in the pool",
+        title: isRequester ? "Request withdrawn" : "Back to open 💙",
+        body: isRequester
+          ? `${actor?.name ?? "The requester"} has withdrawn their request "${request.title}". No further action is needed from you.`
+          : `${actor?.name ?? "The helper"} is no longer available for "${request.title}". The request is now open for another helper to claim.`,
+      }).catch(err => logger.warn({ err }, "cancel: sendAlertEmail failed"));
+    }
+  }
+
+  return res.json(enriched);
+});
+
+// POST /requests/:id/rate
+// Either participant (requester or helper) can rate the other after completion.
+// Stars 1–5 are required; a short review text is optional.
+// Recomputes the ratee's trust_score as a scaled average across all received ratings.
+router.post("/requests/:id/rate", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id));
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  const { stars, review } = req.body as { stars?: number; review?: string };
+  const starsNum = Number(stars);
+  if (!starsNum || starsNum < 1 || starsNum > 5 || !Number.isInteger(starsNum)) {
+    return res.status(400).json({ error: "stars must be an integer from 1 to 5" });
+  }
+
+  const [request] = await db.select()
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.status !== "completed") {
+    return res.status(409).json({ error: "Can only rate completed requests" });
+  }
+
+  const isRequester = request.requester_id === callerId;
+  const isHelper = request.helper_id === callerId;
+
+  if (!isRequester && !isHelper) {
+    return res.status(403).json({ error: "Only participants can rate this request" });
+  }
+  if (!request.helper_id) {
+    return res.status(400).json({ error: "No helper to rate" });
+  }
+
+  const role = isRequester ? "requester" : "helper";
+  const rateeId = isRequester ? request.helper_id : request.requester_id;
+
+  // One rating per person per request
+  const [existing] = await db.select({ id: ratingsTable.id })
+    .from(ratingsTable)
+    .where(and(eq(ratingsTable.request_id, requestId), eq(ratingsTable.rater_id, callerId)))
+    .limit(1);
+  if (existing) return res.status(409).json({ error: "You have already rated this request" });
+
+  const [rating] = await db.insert(ratingsTable).values({
+    request_id: requestId,
+    rater_id: callerId,
+    ratee_id: rateeId,
+    stars: starsNum,
+    review: typeof review === "string" && review.trim() ? review.trim() : null,
+    role,
+  }).returning();
+
+  // Recompute trust_score for ratee: average-stars × 20 (1 star = 20, 5 stars = 100)
+  const allRatings = await db.select({ stars: ratingsTable.stars })
+    .from(ratingsTable)
+    .where(eq(ratingsTable.ratee_id, rateeId));
+  const avgStars = allRatings.reduce((s, r) => s + r.stars, 0) / allRatings.length;
+  const newTrustScore = Math.round(avgStars * 20);
+
+  await db.update(usersTable)
+    .set({ trust_score: newTrustScore })
+    .where(eq(usersTable.id, rateeId));
+
+  logger.info({ request_id: requestId, rater_id: callerId, ratee_id: rateeId, stars: starsNum }, "rate: submitted");
+
+  return res.status(201).json(rating);
 });
 
 export default router;

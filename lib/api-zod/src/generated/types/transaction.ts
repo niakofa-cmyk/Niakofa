@@ -12,7 +12,7 @@ export interface Transaction {
   user_id: number;
   /** @nullable */
   request_id?: number | null;
-  /** earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act */
+  /** earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester */
   type: TransactionType;
   amount: number;
   /** @nullable */

@@ -703,6 +703,93 @@ paths:
                 items:
                   $ref: "#/components/schemas/Report"
 
+  /requests/{id}/cancel:
+    post:
+      operationId: cancelRequest
+      tags: [requests]
+      summary: Cancel a request — helper unclaims (re-opens to pool) or requester withdraws (marks cancelled)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HelpRequest"
+        "403":
+          description: Not authorized to cancel this request
+        "404":
+          description: Request not found
+        "409":
+          description: Request is already completed or cancelled
+
+  /requests/{id}/rate:
+    post:
+      operationId: rateRequest
+      tags: [requests]
+      summary: Rate the other participant after a completed request (1–5 stars + optional review)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RateInput"
+      responses:
+        "201":
+          description: Rating created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rating"
+        "403":
+          description: Only participants can rate
+        "404":
+          description: Request not found
+        "409":
+          description: Already rated or request not completed
+
+  /users/set-initial-password:
+    post:
+      operationId: setInitialPassword
+      tags: [users]
+      summary: One-time password setup for legacy accounts that pre-date passwords (unauthenticated, rate-limited)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetInitialPasswordInput"
+      responses:
+        "200":
+          description: Password set — returns full auth token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Missing fields or password too short
+        "403":
+          description: Email does not match account
+        "404":
+          description: User not found
+        "409":
+          description: Account already has a password — use normal login
+
 components:
   schemas:
     HealthStatus:
@@ -864,6 +951,8 @@ components:
         arrived_at:
           type: ["string", "null"]
         completed_at:
+          type: ["string", "null"]
+        cancelled_at:
           type: ["string", "null"]
 
     HelpRequestInput:
@@ -1067,8 +1156,8 @@ components:
           type: ["integer", "null"]
         type:
           type: string
-          enum: [earned, pledge_received, pledge_sent, goodwill]
-          description: earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act
+          enum: [earned, pledge_received, pledge_sent, goodwill, tip_received]
+          description: earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester
         amount:
           type: number
         description:
@@ -1191,6 +1280,63 @@ components:
         category:
           type: ["string", "null"]
           description: "social_services | shelter | food | medical | housing"
+
+    Rating:
+      type: object
+      required: [id, request_id, rater_id, ratee_id, stars, role, created_at]
+      properties:
+        id:
+          type: integer
+        request_id:
+          type: integer
+        rater_id:
+          type: integer
+        ratee_id:
+          type: integer
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
+        review:
+          type: ["string", "null"]
+        role:
+          type: string
+          enum: [requester, helper]
+        created_at:
+          type: string
+
+    RateInput:
+      type: object
+      required: [stars]
+      properties:
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
+        review:
+          type: string
+          maxLength: 500
+
+    SetInitialPasswordInput:
+      type: object
+      required: [user_id, email, new_password]
+      properties:
+        user_id:
+          type: integer
+        email:
+          type: string
+        new_password:
+          type: string
+          minLength: 8
+
+    AuthResponse:
+      type: object
+      required: [user, token]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        token:
+          type: string
 
     CivicResourcesResponse:
       type: object

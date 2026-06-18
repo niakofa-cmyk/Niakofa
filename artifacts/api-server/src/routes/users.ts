@@ -51,20 +51,82 @@ router.post("/users/login", authLimiter, async (req, res) => {
 
   if (!user) return res.status(401).json({ error: "No account found with that email" });
 
-  // If user has a password hash, verify it; otherwise it's a legacy account
-  let password_reset_required = false;
   if (user.password_hash) {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: "Incorrect password" });
   } else {
-    // Legacy account (registered before passwords were required) — allow with warning
-    // Flag the client so it can prompt the user to set a password
-    logger.warn({ user_id: user.id }, "login: user has no password_hash — legacy account access");
-    password_reset_required = true;
+    // Legacy account (no password set) — do NOT issue a token.
+    // The client must call POST /users/set-initial-password to create a
+    // password before gaining access. There is no "skip" path.
+    logger.warn({ user_id: user.id }, "login: legacy account must set password");
+    return res.status(403).json({
+      error_code: "LEGACY_PASSWORD_REQUIRED",
+      error: "Please create a password to continue. Your account was created before passwords were required.",
+      user_id: user.id,
+      user_name: user.name,
+      user_email: user.email,
+    });
   }
 
   const token = signTokenById(user.id);
-  return res.json({ user, token, password_reset_required });
+  const { password_hash: _ph, ...safeUser } = user as any;
+  return res.json({ user: safeUser, token });
+});
+
+// POST /users/set-initial-password — unauthenticated, rate-limited one-time password setup.
+// ONLY works for legacy accounts where password_hash is NULL (pre-password-era accounts).
+// Verifies user_id + email match before allowing the change — proves account ownership.
+// On success, returns a full auth token so the user lands directly in the app.
+router.post("/users/set-initial-password", authLimiter, async (req, res) => {
+  const { user_id, email, new_password } = req.body as {
+    user_id?: number;
+    email?: string;
+    new_password?: string;
+  };
+
+  if (!user_id || !email || !new_password) {
+    return res.status(400).json({ error: "user_id, email, and new_password are required" });
+  }
+  if (typeof new_password !== "string" || new_password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+
+  let user: typeof usersTable.$inferSelect | undefined;
+  try {
+    const rows = await db.select().from(usersTable).where(eq(usersTable.id, Number(user_id))).limit(1);
+    user = rows[0];
+  } catch (err) {
+    logger.error({ err }, "set-initial-password: database error");
+    return res.status(500).json({ error: "Database error — please try again" });
+  }
+
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  // Email must match to prove account ownership — no additional token needed
+  if (user.email.toLowerCase() !== String(email).trim().toLowerCase()) {
+    return res.status(403).json({ error: "Email does not match account" });
+  }
+
+  // This endpoint is only for legacy (no-password) accounts
+  if (user.password_hash) {
+    return res.status(409).json({
+      error: "This account already has a password. Use the normal sign-in form.",
+    });
+  }
+
+  const password_hash = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
+  const [updated] = await db
+    .update(usersTable)
+    .set({ password_hash, updated_at: new Date() })
+    .where(eq(usersTable.id, user.id))
+    .returning();
+
+  if (!updated) return res.status(500).json({ error: "Failed to update password" });
+
+  logger.info({ user_id: user.id }, "users: legacy account initial password set");
+  const token = signTokenById(updated.id);
+  const { password_hash: _ph, ...safeUser } = updated as any;
+  return res.json({ user: safeUser, token });
 });
 
 router.post("/users/register", authLimiter, async (req, res) => {

@@ -156,6 +156,8 @@ export interface HelpRequest {
   arrived_at?: string | null;
   /** @nullable */
   completed_at?: string | null;
+  /** @nullable */
+  cancelled_at?: string | null;
 }
 
 export type HelpRequestInputCategory = typeof HelpRequestInputCategory[keyof typeof HelpRequestInputCategory];
@@ -346,7 +348,7 @@ export interface RouteData {
 }
 
 /**
- * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act
+ * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester
  */
 export type TransactionType = typeof TransactionType[keyof typeof TransactionType];
 
@@ -356,6 +358,7 @@ export const TransactionType = {
   pledge_received: 'pledge_received',
   pledge_sent: 'pledge_sent',
   goodwill: 'goodwill',
+  tip_received: 'tip_received',
 } as const;
 
 export interface Transaction {
@@ -363,7 +366,7 @@ export interface Transaction {
   user_id: number;
   /** @nullable */
   request_id?: number | null;
-  /** earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act */
+  /** earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester */
   type: TransactionType;
   amount: number;
   /** @nullable */
@@ -492,6 +495,52 @@ export interface CivicResource {
      * @nullable
      */
   category?: string | null;
+}
+
+export type RatingRole = typeof RatingRole[keyof typeof RatingRole];
+
+
+export const RatingRole = {
+  requester: 'requester',
+  helper: 'helper',
+} as const;
+
+export interface Rating {
+  id: number;
+  request_id: number;
+  rater_id: number;
+  ratee_id: number;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  stars: number;
+  /** @nullable */
+  review?: string | null;
+  role: RatingRole;
+  created_at: string;
+}
+
+export interface RateInput {
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  stars: number;
+  /** @maxLength 500 */
+  review?: string;
+}
+
+export interface SetInitialPasswordInput {
+  user_id: number;
+  email: string;
+  /** @minLength 8 */
+  new_password: string;
+}
+
+export interface AuthResponse {
+  user: User;
+  token: string;
 }
 
 /**

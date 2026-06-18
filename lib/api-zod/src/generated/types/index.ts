@@ -8,6 +8,7 @@
 
 export * from './adminReviewInput';
 export * from './adminReviewInputStatus';
+export * from './authResponse';
 export * from './categoryCount';
 export * from './civicResource';
 export * from './civicResourcesResponse';
@@ -43,6 +44,9 @@ export * from './helpRequestUpdateUrgency';
 export * from './helpRequestUrgency';
 export * from './locationUpdate';
 export * from './pledgePayment';
+export * from './rateInput';
+export * from './rating';
+export * from './ratingRole';
 export * from './report';
 export * from './reportDetail';
 export * from './reportStatus';
@@ -54,6 +58,7 @@ export * from './routeStep';
 export * from './scheduledPayment';
 export * from './scheduledPaymentInput';
 export * from './scheduledPaymentStatus';
+export * from './setInitialPasswordInput';
 export * from './transaction';
 export * from './transactionType';
 export * from './user';

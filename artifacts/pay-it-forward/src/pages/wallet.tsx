@@ -30,6 +30,7 @@ function txIcon(type: Transaction["type"]) {
   if (type === "pledge_received") return { Icon: Heart, color: "text-primary" };
   if (type === "pledge_sent") return { Icon: ArrowUpRight, color: "text-yellow-400" };
   if (type === "goodwill") return { Icon: Gift, color: "text-purple-400" };
+  if ((type as string) === "tip_received") return { Icon: DollarSign, color: "text-yellow-400" };
   return { Icon: DollarSign, color: "text-muted-foreground" };
 }
 
@@ -61,6 +62,7 @@ async function cancelScheduledPaymentFetch(userId: number, paymentId: number): P
 export default function WalletScreen() {
   const { currentUser } = useAppContext();
   const queryClient = useQueryClient();
+  const [walletTab, setWalletTab] = useState<"activity" | "earnings">("activity");
   const [pledgeOpen, setPledgeOpen] = useState(false);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
   const [schedulerRequest, setSchedulerRequest] = useState<HelpRequest | null>(null);
@@ -145,6 +147,8 @@ export default function WalletScreen() {
 
   const totalEarned = transactions.filter(t => t.type === "earned").reduce((s, t) => s + t.amount, 0);
   const totalReceived = transactions.filter(t => t.type === "pledge_received").reduce((s, t) => s + t.amount, 0);
+  const totalTips = transactions.filter(t => (t.type as string) === "tip_received").reduce((s, t) => s + t.amount, 0);
+  const earningsTransactions = transactions.filter(t => t.type === "earned" || (t.type as string) === "tip_received");
 
   const livesImpacted = helpCount + goodwill;
 
@@ -394,6 +398,25 @@ export default function WalletScreen() {
           )
         )}
 
+        {/* Activity / Earnings tab switcher — helpers only */}
+        {currentUser?.is_helper && (
+          <div className="flex bg-muted rounded-2xl p-1">
+            {(["activity", "earnings"] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setWalletTab(tab)}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider transition-all ${
+                  walletTab === tab
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground"
+                }`}
+              >
+                {tab === "activity" ? "Activity" : "Earnings"}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Action Buttons */}
         <div className="grid grid-cols-2 gap-3">
           <button
@@ -532,46 +555,131 @@ export default function WalletScreen() {
           </div>
         </div>
 
-        {/* Activity History */}
-        <div>
-          <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
-            <Clock className="w-4 h-4" /> Activity History
-          </h2>
-          {txLoading && (
-            <div className="flex items-center justify-center py-8 text-muted-foreground gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm">Loading history...</span>
-            </div>
-          )}
-          {!txLoading && transactions.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              No transactions yet. Complete a job to see earnings here.
-            </div>
-          )}
-          <div className="space-y-2">
-            {transactions.map(tx => {
-              const { Icon, color } = txIcon(tx.type);
-              return (
-                <div key={tx.id} className="flex items-center gap-3 bg-card border border-border rounded-xl p-3.5">
-                  <div className="w-8 h-8 rounded-full bg-card flex items-center justify-center border border-border shrink-0">
-                    <Icon className={`w-4 h-4 ${color}`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold truncate">{tx.description ?? tx.type}</div>
-                    <div className="text-[10px] text-muted-foreground">{fmtDate(tx.created_at)}</div>
-                  </div>
-                  {tx.type === "goodwill" ? (
-                    <div className="text-[10px] text-purple-400 font-bold shrink-0">GOODWILL</div>
-                  ) : (
-                    <div className={`font-black text-sm shrink-0 ${tx.amount > 0 ? "text-green-400" : "text-muted-foreground"}`}>
-                      {tx.amount > 0 ? "+" : ""}${Math.abs(tx.amount).toFixed(2)}
+        {/* Activity History — hidden on Earnings tab for helpers */}
+        {(!currentUser?.is_helper || walletTab === "activity") && (
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
+              <Clock className="w-4 h-4" /> Activity History
+            </h2>
+            {txLoading && (
+              <div className="flex items-center justify-center py-8 text-muted-foreground gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">Loading history...</span>
+              </div>
+            )}
+            {!txLoading && transactions.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                No transactions yet. Complete a job to see earnings here.
+              </div>
+            )}
+            <div className="space-y-2">
+              {transactions.map(tx => {
+                const { Icon, color } = txIcon(tx.type);
+                return (
+                  <div key={tx.id} className="flex items-center gap-3 bg-card border border-border rounded-xl p-3.5">
+                    <div className="w-8 h-8 rounded-full bg-card flex items-center justify-center border border-border shrink-0">
+                      <Icon className={`w-4 h-4 ${color}`} />
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold truncate">{tx.description ?? tx.type}</div>
+                      <div className="text-[10px] text-muted-foreground">{fmtDate(tx.created_at)}</div>
+                    </div>
+                    {tx.type === "goodwill" ? (
+                      <div className="text-[10px] text-purple-400 font-bold shrink-0">GOODWILL</div>
+                    ) : (
+                      <div className={`font-black text-sm shrink-0 ${tx.amount > 0 ? "text-green-400" : "text-muted-foreground"}`}>
+                        {tx.amount > 0 ? "+" : ""}${Math.abs(tx.amount).toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Helper Earnings Tab */}
+        {currentUser?.is_helper && walletTab === "earnings" && (
+          <div className="space-y-4">
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-4 text-center">
+                <div className="text-2xl font-black text-green-400">${totalEarned.toFixed(2)}</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Paid Jobs</div>
+              </div>
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 text-center">
+                <div className="text-2xl font-black text-yellow-400">${totalTips.toFixed(2)}</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Tips Received</div>
+              </div>
+            </div>
+            <div className="bg-primary/10 border border-primary/30 rounded-2xl p-4 text-center">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Total Lifetime Earnings</div>
+              <div className="text-3xl font-black text-primary">${(totalEarned + totalTips).toFixed(2)}</div>
+            </div>
+
+            {/* Payout status */}
+            {stripeStatus !== null && (
+              stripeStatus.payoutsEnabled ? (
+                <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3.5 flex items-center gap-3">
+                  <CheckCircle className="w-4 h-4 text-green-400 shrink-0" />
+                  <div className="text-sm font-bold text-green-400">Bank payouts active via Stripe Connect</div>
+                </div>
+              ) : (
+                <div className="bg-card border border-primary/30 rounded-xl p-3.5 space-y-2">
+                  <div className="text-sm font-bold">Connect your bank to receive payouts</div>
+                  <p className="text-xs text-muted-foreground">
+                    Immediate-pay earnings stay in your goodwill balance until you connect a bank account via Stripe.
+                  </p>
+                  <Button className="w-full h-10 font-black text-sm" onClick={handleStripeOnboard} disabled={stripeOnboarding}>
+                    {stripeOnboarding ? (
+                      <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Opening…</span>
+                    ) : (
+                      <span className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />Set Up Payouts</span>
+                    )}
+                  </Button>
+                </div>
+              )
+            )}
+
+            {/* Earnings transaction list */}
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-green-400" /> Earnings History
+              </h2>
+              {txLoading && (
+                <div className="flex items-center justify-center py-8 text-muted-foreground gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">Loading…</span>
+                </div>
+              )}
+              {!txLoading && earningsTransactions.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  No earnings yet. Complete a paid job to see them here.
+                </div>
+              )}
+              <div className="space-y-2">
+                {earningsTransactions.map(tx => {
+                  const { Icon, color } = txIcon(tx.type);
+                  const label = (tx.type as string) === "tip_received" ? "Tip" : "Earned";
+                  return (
+                    <div key={tx.id} className="flex items-center gap-3 bg-card border border-border rounded-xl p-3.5">
+                      <div className="w-8 h-8 rounded-full bg-card flex items-center justify-center border border-border shrink-0">
+                        <Icon className={`w-4 h-4 ${color}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold truncate">{tx.description ?? tx.type}</div>
+                        <div className="text-[10px] text-muted-foreground">{fmtDate(tx.created_at)} · {label}</div>
+                      </div>
+                      <div className="font-black text-sm text-green-400 shrink-0">
+                        +${Math.abs(tx.amount).toFixed(2)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="bg-card/50 border border-border/50 rounded-2xl p-4">
           <div className="flex items-start gap-3">
