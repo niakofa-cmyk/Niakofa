@@ -192,7 +192,7 @@ export default function CommunityScreen() {
   };
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: "resources", label: "Resources" },
+    { key: "resources", label: "🏛️ Resources" },
     { key: "feed", label: "💙 Feed" },
     { key: "heroes", label: "⭐ Heroes" },
     { key: "pool", label: "🏦 Pool" },
