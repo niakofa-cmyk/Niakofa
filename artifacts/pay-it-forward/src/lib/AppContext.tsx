@@ -228,16 +228,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
           localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify({ lat: smoothed.lat, lng: smoothed.lng }));
         } catch {}
       },
-      (err) => {
+      async (err) => {
         const msgs: Record<number, string> = {
           1: "Location access denied. Enable it in your browser settings to use navigation.",
           2: "Location unavailable. Move to an open area or check your device settings.",
           3: "Location request timed out. Check your GPS signal.",
         };
         const msg = msgs[err.code] ?? "Unable to determine your location.";
-        import("sonner").then(({ toast: sonnerToast }) => {
-          sonnerToast.warning("GPS issue", { description: msg, id: "gps-error", duration: 8000 });
-        });
+        const { toast: sonnerToast } = await import("sonner");
+        sonnerToast.warning("GPS issue", { description: msg, id: "gps-error", duration: 8000 });
+
+        // IP-based geolocation fallback (very coarse, ~city-level)
+        if (err.code !== 1 && !locationRef.current) {
+          try {
+            const ipRes = await fetch("https://ipapi.co/json/");
+            if (ipRes.ok) {
+              const ipData = await ipRes.json() as { latitude?: number; longitude?: number };
+              if (ipData.latitude && ipData.longitude) {
+                const fallbackLoc: Location = { lat: ipData.latitude, lng: ipData.longitude };
+                locationRef.current = fallbackLoc;
+                setMyLocation(fallbackLoc);
+                sonnerToast.info("Using approximate location", {
+                  description: "GPS unavailable — using IP-based location. Accuracy is limited.",
+                  id: "ip-fallback",
+                  duration: 6000,
+                });
+              }
+            }
+          } catch {}
+        }
       },
       gpsOpts
     );
@@ -262,6 +281,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const prev = prevBroadcastRef.current;
       const movedEnough = !prev || distanceMeters(prev, loc) >= MOVEMENT_THRESHOLD_M;
       if (!movedEnough) return;
+
+      // Speed-based stationary suppression: skip broadcast when helper is
+      // stationary (speed < 0.5 m/s ≈ 1mph) and NOT in an active request.
+      // This reduces battery drain during idle waits.
+      if (!activeRequestId && loc.speed != null && loc.speed < 0.5) return;
 
       prevBroadcastRef.current = loc;
       updateLocation.mutate(

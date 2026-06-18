@@ -12,12 +12,13 @@
  *  - API requests (/api/) : network-only — never cache, let the app handle errors
  */
 
-const CACHE_NAME = "niakofa-v2";
+const CACHE_NAME = "niakofa-v3";
 
-// Assets to pre-cache during install so offline.html is always available
+// Assets to pre-cache during install — ensures core app shell works offline
 const PRECACHE_ASSETS = [
   "/offline.html",
   "/favicon.svg",
+  "/manifest.json",
 ];
 
 // ── Install ───────────────────────────────────────────────────────────────────

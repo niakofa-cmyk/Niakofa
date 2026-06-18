@@ -2,6 +2,9 @@ import { Router } from "express";
 import { db, civicResourcesTable } from "@workspace/db";
 import { eq, and, or, isNull } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { cacheGet, cacheSet } from "../lib/cache";
+
+const CIVIC_TTL = 3600; // 1 hour — civic resources change rarely
 
 const router = Router();
 
@@ -94,9 +97,19 @@ router.get("/civic/resources", async (req, res) => {
   const lng = parseFloat(req.query.lng as string);
 
   if (isNaN(lat) || isNaN(lng)) {
+    const cacheKey = "civic:all";
+    const cached = await cacheGet(cacheKey);
+    if (cached) return res.json(cached);
     const all = await db.select().from(civicResourcesTable).limit(50);
+    await cacheSet(cacheKey, all, CIVIC_TTL);
     return res.json(all);
   }
+
+  const latRounded = Math.round(lat * 10) / 10;
+  const lngRounded = Math.round(lng * 10) / 10;
+  const locationCacheKey = `civic:loc:${latRounded}:${lngRounded}`;
+  const locationCached = await cacheGet(locationCacheKey);
+  if (locationCached) return res.json(locationCached);
 
   const place = await reverseGeocode(lat, lng);
 
@@ -105,7 +118,9 @@ router.get("/civic/resources", async (req, res) => {
       .select()
       .from(civicResourcesTable)
       .limit(6);
-    return res.json({ resources: statewide, place_name: "your area", match_level: "fallback" });
+    const result = { resources: statewide, place_name: "your area", match_level: "fallback" };
+    await cacheSet(locationCacheKey, result, CIVIC_TTL);
+    return res.json(result);
   }
 
   const state = place.state_short.toUpperCase();
@@ -157,14 +172,16 @@ router.get("/civic/resources", async (req, res) => {
 
   logger.info({ lat, lng, state, county, city, matchLevel, count: resources.length }, "civic resources resolved");
 
-  return res.json({
+  const payload = {
     resources,
     place_name: place.place_name,
     city: place.city,
     county: place.county ? `${place.county} County` : null,
     state: place.state_short,
     match_level: matchLevel,
-  });
+  };
+  await cacheSet(locationCacheKey, payload, CIVIC_TTL);
+  return res.json(payload);
 });
 
 export default router;
