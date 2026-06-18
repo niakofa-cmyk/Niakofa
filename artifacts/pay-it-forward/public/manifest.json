@@ -1,0 +1,39 @@
+{
+  "name": "Niakofa — Community Help",
+  "short_name": "Niakofa",
+  "description": "Help Today. Pay It Forward Tomorrow. Real-time mutual aid for Tarrant County, TX.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0f1e",
+  "theme_color": "#0a0f1e",
+  "orientation": "portrait-primary",
+  "lang": "en-US",
+  "categories": ["social", "utilities"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Request Help",
+      "url": "/request/new",
+      "description": "Create a new help request"
+    },
+    {
+      "name": "Community",
+      "url": "/community",
+      "description": "See the community leaderboard and gratitude feed"
+    }
+  ]
+}

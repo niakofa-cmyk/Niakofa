@@ -7,7 +7,7 @@
         "pnpm run typecheck:libs",
         "pnpm --filter @workspace/api-spec run codegen",
         "pnpm --filter @workspace/api-server run build",
-        "BASE_PATH=/ pnpm --filter @workspace/pay-it-forward run build"
+        "NODE_ENV=production BASE_PATH=/ pnpm --filter @workspace/pay-it-forward run build"
       ]
     }
   },

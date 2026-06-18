@@ -20,6 +20,7 @@ import { DispatchIntelligenceCard } from "@/components/DispatchIntelligenceCard"
 import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
+import { wsIsConnected } from "@/lib/wsClient";
 import { useTerrain } from "@/hooks/useTerrain";
 import { useDeviceHeading } from "@/hooks/useDeviceHeading";
 import { useMapOrientation } from "@/hooks/useMapOrientation";
@@ -41,7 +42,7 @@ export default function MapScreen() {
   const { currentUser, helperModeActive, myLocation } = useAppContext();
   const queryClient = useQueryClient();
   const [mapError, setMapError] = useState<string | null>(null);
-  const [wsConnected, setWsConnected] = useState(false);
+  const [wsConnected, setWsConnected] = useState(() => wsIsConnected());
   const [statsVisible, setStatsVisible] = useState(true);
   const [bestMatchDismissed, setBestMatchDismissed] = useState<number | null>(null);
   const prevHelperMode = useRef(false);

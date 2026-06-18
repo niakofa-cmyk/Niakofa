@@ -5,3 +5,5 @@
 - [Niakofa login token](niakofa-login-token.md) — login route was issuing email-based tokens incompatible with HMAC verifier; fixed to use signTokenById.
 - [Niakofa push notifications](niakofa-push-notifications.md) — push subscriptions were in-memory; switched to DB (pushSubscriptionsTable); added geolocation-targeted sendPushToNearbyHelpers.
 - [Niakofa DB schema exports](niakofa-db-schema-exports.md) — lib/db/src/schema/index.ts must explicitly export every schema file; push-subscriptions.ts was missing, causing build failure.
+- [Niakofa Railway deploy](niakofa-railway-deploy.md) — railpack.json drives build; SERVE_FRONTEND=true makes Express serve the SPA; ALLOWED_ORIGIN is comma-separated for multi-domain CORS.
+- [Niakofa AppContext HMR](niakofa-appctext-hmr.md) — AppContext exports both component+hook so Vite can't fast-refresh it (expected warning); new hooks must always be added LAST to preserve hook order across HMR cycles.

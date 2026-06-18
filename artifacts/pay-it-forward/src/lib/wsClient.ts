@@ -147,3 +147,11 @@ export function wsSubscribe(handler: Handler): () => void {
   handlers.add(handler);
   return () => handlers.delete(handler);
 }
+
+/**
+ * Returns true if the shared socket is currently open.
+ * Use this to initialise UI state — e.g. useState(() => wsIsConnected()).
+ */
+export function wsIsConnected(): boolean {
+  return socket?.readyState === WebSocket.OPEN;
+}

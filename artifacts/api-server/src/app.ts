@@ -35,15 +35,26 @@ app.use(
   }),
 );
 
-// CORS — restrict to the declared frontend origin in production.
-// Set ALLOWED_ORIGIN in Railway Variables (e.g. https://niakofa.railway.app).
+// CORS — restrict to the declared frontend origin(s) in production.
+// Set ALLOWED_ORIGIN in Railway Variables as a comma-separated list, e.g.
+//   https://niakofa.com,https://zesty-ambition-production-f6a1.up.railway.app
 // Falls back to permissive in development so local dev stays frictionless.
-const allowedOrigin = process.env.ALLOWED_ORIGIN;
+const rawAllowedOrigin = process.env.ALLOWED_ORIGIN;
+const allowedOrigins = rawAllowedOrigin
+  ? rawAllowedOrigin.split(",").map((o) => o.trim()).filter(Boolean)
+  : null;
 app.use(
   cors(
-    allowedOrigin
+    allowedOrigins
       ? {
-          origin: allowedOrigin,
+          origin: (origin, callback) => {
+            // Same-origin requests (e.g. Express serving the SPA) have no Origin header
+            if (!origin || allowedOrigins.includes(origin)) {
+              callback(null, true);
+            } else {
+              callback(new Error(`CORS: origin ${origin} not allowed`));
+            }
+          },
           credentials: true,
         }
       : undefined // permissive in dev (no ALLOWED_ORIGIN set)
