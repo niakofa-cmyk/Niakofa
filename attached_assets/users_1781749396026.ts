@@ -18,8 +18,9 @@ import {
 } from "@workspace/api-zod";
 import { broadcast } from "../lib/ws-hub";
 import { authLimiter, gpsLimiter } from "../middlewares/rate-limit";
-import { requireAuth, signTokenById } from "../middlewares/auth";
+import { requireAuth } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
+import { signTokenById } from "../middlewares/auth";
 
 const router = Router();
 
@@ -149,6 +150,9 @@ router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, re
     description: request.title,
   });
 
+  // Record payment_transactions row so this pledge appears in the financial ledger.
+  // state = "pending_contribution" — a real Stripe charge may have already been confirmed
+  // by the frontend (PaymentIntent flow) or will be fulfilled on the honor system.
   await db.insert(paymentTransactionsTable).values({
     request_id: request_id,
     helper_id: request.helper_id ?? null,
@@ -255,6 +259,7 @@ router.post("/users/:id/avatar", requireAuth, requireOwnership(), async (req, re
   if (!dataUrl || !dataUrl.startsWith("data:image/")) {
     return res.status(400).json({ error: "Invalid image data — must be a base64 data URL starting with data:image/" });
   }
+  // Enforce reasonable size limit (~5 MB base64)
   if (dataUrl.length > 7 * 1024 * 1024) {
     return res.status(413).json({ error: "Image too large — max 5 MB" });
   }
@@ -273,6 +278,7 @@ router.get("/users/:id/settings", requireAuth, requireOwnership(), async (req, r
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const [existing] = await db.select().from(userSettingsTable).where(eq(userSettingsTable.user_id, id)).limit(1);
   if (existing) return res.json(existing);
+  // First visit — create defaults
   const [created] = await db.insert(userSettingsTable).values({ user_id: id }).returning();
   return res.status(201).json(created);
 });
@@ -291,6 +297,7 @@ router.put("/users/:id/settings", requireAuth, requireOwnership(), async (req, r
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
   }
+  // Upsert
   const [existing] = await db.select().from(userSettingsTable).where(eq(userSettingsTable.user_id, id)).limit(1);
   if (existing) {
     const [updated] = await db.update(userSettingsTable).set(updates).where(eq(userSettingsTable.user_id, id)).returning();
@@ -300,6 +307,7 @@ router.put("/users/:id/settings", requireAuth, requireOwnership(), async (req, r
     return res.json(created);
   }
 });
+
 
 // PATCH /users/:id/panic-contacts — update emergency contacts
 router.patch("/users/:id/panic-contacts", requireAuth, requireOwnership(), async (req, res) => {
@@ -315,15 +323,18 @@ router.patch("/users/:id/panic-contacts", requireAuth, requireOwnership(), async
   return res.json(user);
 });
 
-// DELETE /users/:id — permanently delete a user and all their data
+// Admin moderation actions
 router.delete("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
   const userId = parseInt(req.params.id);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
 
   try {
+    // Delete user from all related tables
     await db.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
     await db.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
     await db.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
+    // requestsTable and transactionsTable should handle CASCADE DELETE if configured in schema
+    // Otherwise, explicit deletion would be needed here.
     await db.delete(usersTable).where(eq(usersTable.id, userId));
 
     return res.json({ ok: true, message: "Account deleted successfully" });
@@ -333,7 +344,6 @@ router.delete("/users/:id", requireAuth, requireOwnership(), async (req, res) =>
   }
 });
 
-// PATCH /users/:id/moderation — admin moderation actions
 router.patch("/users/:id/moderation", requireAuth, requireAdmin(), async (req, res) => {
   const userId = parseInt(req.params.id);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
@@ -341,10 +351,12 @@ router.patch("/users/:id/moderation", requireAuth, requireAdmin(), async (req, r
   if (!["warn", "ban"].includes(action)) return res.status(400).json({ error: "Invalid action" });
 
   if (action === "ban") {
+    // Set trust_score to -1 as banned flag
     await db.update(usersTable)
       .set({ trust_score: -1, helper_mode_active: false })
       .where(eq(usersTable.id, userId));
   } else {
+    // Reduce trust score by 10 for a warning
     await db.update(usersTable)
       .set({ trust_score: sql`GREATEST(0, ${usersTable.trust_score} - 10)` })
       .where(eq(usersTable.id, userId));

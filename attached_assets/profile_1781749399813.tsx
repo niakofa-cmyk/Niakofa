@@ -141,8 +141,8 @@ function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId:
                 toast({ title: "Account deleted successfully", description: "You will be logged out." });
                 localStorage.removeItem("token");
                 localStorage.removeItem("user");
-                window.location.href = "/";
-              } catch {
+                window.location.href = "/"; // Redirect to home page after deletion
+              } catch (err) {
                 toast({ title: "Could not delete account — please try again", variant: "destructive" });
               }
               onClose();
@@ -860,31 +860,15 @@ export default function ProfileScreen() {
   const queryClient = useQueryClient();
 
   const userId = currentUser?.id;
+  const userIsVerified = currentUser?.identity_verified;
 
   const startIdentityVerification = useCallback(async () => {
     if (!userId) return;
     setIsVerifyingIdentity(true);
-    try {
-      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-      const res = await fetch(`${base}/api/verification/identity/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: userId }),
-      });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        toast({ title: data.error ?? "Verification unavailable", variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Verification failed — please try again", variant: "destructive" });
-    } finally {
-      setIsVerifyingIdentity(false);
-    }
-  }, [userId]);
 
-  const { data: transactions = [], isLoading: txLoading } = useGetUserTransactions(userId ?? 0, {
+
+
+  const { data: transactions = [], isLoading: txLoading } = useGetUserTransactions(userId, {
     query: { enabled: !!userId, queryKey: getGetUserTransactionsQueryKey(userId), staleTime: 30000 }
   });
 
@@ -1164,7 +1148,7 @@ export default function ProfileScreen() {
                           onClick={startIdentityVerification}
                           disabled={isVerifyingIdentity}
                         >
-                          {isVerifyingIdentity ? "Starting…" : "Verify"}
+                          Verify
                         </Button>
                       )
                     }
@@ -1296,7 +1280,7 @@ export default function ProfileScreen() {
               </div>
               <div className="divide-y divide-border">
                 <button
-                  onClick={() => setLocation("/settings?section=notifications")}
+                  onClick={() => setOpenDialog("notification_prefs")}
                   className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-2">
@@ -1306,7 +1290,7 @@ export default function ProfileScreen() {
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
                 <button
-                  onClick={() => setLocation("/settings?section=privacy")}
+                  onClick={() => setOpenDialog("account_privacy")}
                   className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-2">
@@ -1316,7 +1300,7 @@ export default function ProfileScreen() {
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
                 <button
-                  onClick={() => setLocation("/settings?section=delete-account")}
+                  onClick={() => setOpenDialog("delete_account")}
                   className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors text-destructive"
                 >
                   <div className="flex items-center gap-2">
@@ -1361,7 +1345,7 @@ export default function ProfileScreen() {
                 </div>
                 <div className="divide-y divide-border">
                   <button
-                    onClick={() => setLocation("/settings?section=helper-settings")}
+                    onClick={() => setOpenDialog("helper_settings")}
                     className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-center gap-2">
@@ -1371,7 +1355,7 @@ export default function ProfileScreen() {
                     <ChevronRight className="w-4 h-4 text-muted-foreground" />
                   </button>
                   <button
-                    onClick={() => setLocation("/settings?section=payout-setup")}
+                    onClick={() => setOpenDialog("payout_setup")}
                     className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-center gap-2">
@@ -1388,7 +1372,7 @@ export default function ProfileScreen() {
       </div>
 
       {/* ── Dialogs ── */}
-      {openDialog === "delete_account" && <DeleteAccountDialog onClose={closeDialog} userId={userId ?? 0} />}
+      {openDialog === "delete_account" && currentUser?.id && <DeleteAccountDialog onClose={closeDialog} userId={currentUser.id} />}
       {openDialog === "notification_prefs" && <NotificationPrefsDialog onClose={closeDialog} userId={currentUser.id} />}
       {openDialog === "account_privacy" && <AccountPrivacyDialog onClose={closeDialog} userId={currentUser.id} />}
       {openDialog === "helper_settings" && currentUser.is_helper && (
