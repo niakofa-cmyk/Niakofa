@@ -29,6 +29,7 @@ export const usersTable = pgTable("users", {
   stripe_identity_session_id: text("stripe_identity_session_id"),
   panic_contacts: text("panic_contacts").array(),
   passive_check_interval_min: integer("passive_check_interval_min").default(30),
+  is_admin: boolean("is_admin").notNull().default(false),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 });

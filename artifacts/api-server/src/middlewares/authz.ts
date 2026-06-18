@@ -1,4 +1,6 @@
 import { Request, Response, NextFunction } from "express";
+import { db, usersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 /**
  * Ownership guard — ensures the authenticated user matches the target resource ID.
@@ -34,21 +36,29 @@ export function requireOwnership(paramName: string = "id") {
 }
 
 /**
- * Admin guard — only allows the designated admin user through.
+ * Admin guard — checks the `is_admin` flag on the authenticated user's DB row.
  *
- * NOTE: Admin status is currently determined by a hardcoded user ID (1).
- * This should be migrated to a role/flag column in the users table when
- * the team is ready to support multiple admins.
+ * Uses Role-Based Access Control (RBAC) via the `is_admin` column on `usersTable`,
+ * replacing the previous hardcoded user-ID check. Set `is_admin = true` on any
+ * user row to grant admin access without a redeploy.
  */
 export function requireAdmin() {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     const authenticatedUserId = (req as any).authenticatedUserId;
     if (!authenticatedUserId) {
       return res.status(401).json({ error: "Authentication required" });
     }
-    if (authenticatedUserId !== 1) {
+
+    const [user] = await db
+      .select({ is_admin: usersTable.is_admin })
+      .from(usersTable)
+      .where(eq(usersTable.id, authenticatedUserId))
+      .limit(1);
+
+    if (!user?.is_admin) {
       return res.status(403).json({ error: "Forbidden: Admin access required" });
     }
+
     return next();
   };
 }
