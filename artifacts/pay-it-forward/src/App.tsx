@@ -24,6 +24,7 @@ const HelperProfileScreen = lazy(() => import("@/pages/helper-profile"));
 const RequestDetailScreen = lazy(() => import("@/pages/request-detail"));
 const OnboardingScreen = lazy(() => import("@/pages/onboarding"));
 const StripeConnectedScreen = lazy(() => import("@/pages/stripe-connected"));
+const HelperDashboardScreen = lazy(() => import("@/pages/helper-dashboard"));
 
 function PageLoader() {
   return (
@@ -63,6 +64,7 @@ function AppShell() {
           <Route path="/helper/:id" component={HelperProfileScreen} />
           <Route path="/request/:id/view" component={RequestDetailScreen} />
           <Route path="/wallet/connected" component={StripeConnectedScreen} />
+          <Route path="/helper-dashboard" component={HelperDashboardScreen} />
           <Route path="/" component={MapScreen} />
           <Route path="/community" component={CommunityScreen} />
           <Route path="/request/new" component={NewRequestScreen} />

@@ -77,6 +77,8 @@ const PAYMENT_OPTIONS: { type: PaymentType; label: string; desc: string; color: 
 const COMMUNITY_CATS = CATEGORIES.filter(c => c.group === "Community");
 const BUSINESS_CATS = CATEGORIES.filter(c => c.group === "Business");
 
+const DRAFT_KEY = "niakofa_request_draft";
+
 interface PendingPayment {
   clientSecret: string;
   amount: number;
@@ -121,6 +123,33 @@ export default function NewRequestScreen() {
   });
 
   const urgency = form.watch("urgency");
+
+  // Offline draft: restore on mount, auto-save on every change, clear on successful submit
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const vals = JSON.parse(saved) as Record<string, unknown>;
+        form.reset({
+          title:       String(vals.title ?? ""),
+          description: String(vals.description ?? ""),
+          category:    String(vals.category ?? "other"),
+          urgency:     (vals.urgency as "low" | "medium" | "high" | "emergency") ?? "medium",
+        });
+        toast({ title: "✏️ Draft restored", description: "Your previous unfinished request has been loaded." });
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const sub = form.watch(vals => {
+      if (vals.title) {
+        try { localStorage.setItem(DRAFT_KEY, JSON.stringify(vals)); } catch {}
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [form]);
 
   // Sync pinLocation from GPS when it first becomes available
   useEffect(() => {
@@ -177,6 +206,7 @@ export default function NewRequestScreen() {
       }
     }, {
       onSuccess: async (request) => {
+        localStorage.removeItem(DRAFT_KEY);
         toast({ title: "📍 Request posted!", description: "Nearby helpers have been notified in real time." });
 
         // ── Pay Now: create PaymentIntent and show Stripe checkout ──────────

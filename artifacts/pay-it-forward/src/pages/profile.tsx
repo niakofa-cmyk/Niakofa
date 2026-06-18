@@ -6,7 +6,7 @@ import {
   DollarSign, Gift, Clock, ChevronRight, AlertCircle, CheckCircle2,
   ExternalLink, BookOpen, Bell, Lock, Trash2, X, Phone, FileText,
   Eye, Users, Info, ChevronLeft, Flag,
-  Camera, Sliders, CreditCard, Activity, Loader2, Building2
+  Camera, Sliders, CreditCard, Activity, Loader2, Building2, Award, Wrench
 } from "lucide-react";
 import { ReportModal } from "@/components/ReportModal";
 import { Button } from "@/components/ui/button";
@@ -1090,6 +1090,18 @@ export default function ProfileScreen() {
                 <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
                   <Activity className="w-3.5 h-3.5 text-primary" /> Helper Performance
                 </h3>
+
+                {/* Anchor Helper badge — 50+ helps, 97%+ trust score */}
+                {(currentUser.help_count ?? 0) >= 50 && (currentUser.trust_score ?? 0) >= 97 && (
+                  <div className="mb-3 flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
+                    <span className="text-lg">⚓</span>
+                    <div className="flex-1">
+                      <div className="text-xs font-black text-amber-400">Anchor Helper</div>
+                      <div className="text-[10px] text-muted-foreground">Elite community pillar · Mentor status</div>
+                    </div>
+                    <Award className="w-3.5 h-3.5 text-amber-400" />
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="bg-muted/40 rounded-xl p-3 text-center">
                     <div className="text-xl font-black">{currentUser.help_count ?? 0}</div>

@@ -904,7 +904,7 @@ components:
           type: ["string", "null"]
         category:
           type: string
-          enum: [groceries, transportation, errands, home_repair, medical, emergency, other]
+          enum: [groceries, transportation, errands, home_repair, medical, emergency, other, stock_shelves, event_setup, delivery_run, tech_support]
         urgency:
           type: string
           enum: [low, medium, high, emergency]
@@ -968,7 +968,7 @@ components:
           maxLength: 2000
         category:
           type: string
-          enum: [groceries, transportation, errands, home_repair, medical, emergency, other]
+          enum: [groceries, transportation, errands, home_repair, medical, emergency, other, stock_shelves, event_setup, delivery_run, tech_support]
         urgency:
           type: string
           enum: [low, medium, high, emergency]

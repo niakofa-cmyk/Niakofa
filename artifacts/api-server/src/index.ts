@@ -8,6 +8,7 @@ import { startPayoutWorker } from "./workers/payout-worker";
 import { startPledgeWorker } from "./workers/pledge-worker";
 import { startCleanupWorker } from "./workers/cleanup-worker";
 import { startNotificationWorker } from "./workers/notification-worker";
+import { startAnomalyDetectionWorker } from "./workers/anomaly-worker";
 
 const rawPort = process.env["PORT"];
 if (!rawPort) throw new Error("PORT environment variable is required but was not provided.");
@@ -56,6 +57,9 @@ server.listen(port, async () => {
     );
     startScheduledPaymentReminder();
   }
+
+  // Anomaly detection — runs regardless of Redis; lightweight DB polling
+  startAnomalyDetectionWorker();
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────

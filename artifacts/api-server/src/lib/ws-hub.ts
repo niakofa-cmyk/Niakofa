@@ -33,6 +33,7 @@ export type WsEventType =
   | "new_gratitude"
   | "new_gratitude_prompt"
   | "gratitude_liked"
+  | "crisis_update"
   | "payment_completed"
   | "payouts_enabled"
   | "payout_sent"

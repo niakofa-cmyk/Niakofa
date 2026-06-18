@@ -18,7 +18,7 @@ import {
 import { broadcast, broadcastRequestEvent } from "../lib/ws-hub";
 import { requestCreationLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
-import { sendPushToNearbyHelpers, sendPushToAllHelpers } from "./push";
+import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser } from "./push";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { logger } from "../lib/logger";
 import { sendReceipt, sendAlertEmail } from "../lib/mailer";
@@ -653,6 +653,23 @@ router.post("/requests/:id/cancel", requireAuth, async (req, res) => {
     distance_miles: null, estimated_duration_min: null,
   };
   broadcast({ type: "request_updated", payload: enriched });
+
+  // Push notification: when a helper cancels, immediately alert the requester so they know to look for a new helper
+  if (!isRequester) {
+    const [helperUser] = await db.select({ name: usersTable.name })
+      .from(usersTable).where(eq(usersTable.id, callerId)).limit(1);
+    const [requesterUser] = await db.select({ email: usersTable.email })
+      .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1);
+    sendPushToUser(request.requester_id, {
+      title: "Your helper cancelled",
+      body: `${helperUser?.name ?? "Your helper"} can no longer help with "${request.title}". Your request is back in the pool — a new helper will be notified.`,
+      urgency: request.urgency === "emergency" ? "high" : "normal",
+      requestId: requestId,
+    }, {
+      fallbackEmail: requesterUser?.email,
+      fallbackEmailSubject: "Your helper cancelled — look for a new helper",
+    }).catch(err => logger.warn({ err }, "cancel: sendPushToUser to requester failed"));
+  }
 
   // Email the other party
   const notifyId = isRequester ? (request.helper_id ?? null) : request.requester_id;

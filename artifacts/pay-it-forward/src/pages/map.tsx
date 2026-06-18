@@ -17,7 +17,7 @@ import { BottomSheet } from "@/components/BottomSheet";
 import { RequestMarker } from "@/components/RequestMarker";
 import { HelperMarker } from "@/components/HelperMarker";
 import { DispatchIntelligenceCard } from "@/components/DispatchIntelligenceCard";
-import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2, Layers } from "lucide-react";
+import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2, Layers, X, Siren } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { wsIsConnected } from "@/lib/wsClient";
@@ -39,27 +39,77 @@ function checkWebGL(): boolean {
 }
 
 /**
- * Dispatch Intelligence — multi-factor matching (§3.1.1, §4.1)
- * Priority: urgency → age boost (>10 min) → proximity → trust score of requester
+ * Multi-factor Dispatch Intelligence (enhanced §3.2.1):
+ * Urgency → age boost → category weight → skill match → distance
+ * Skill match awards a +20 bonus when the helper has a specialty that maps to the request category.
  */
-function pickBestMatch(requests: HelpRequest[]): HelpRequest | null {
+const SKILL_CATEGORY_MAP: Record<string, string[]> = {
+  truck_owner:          ["transportation", "delivery_run", "stock_shelves", "errands"],
+  medical_background:   ["medical", "emergency"],
+  bilingual:            ["groceries", "errands", "medical", "other"],
+  licensed_electrician: ["home_repair"],
+  licensed_plumber:     ["home_repair"],
+  carpenter:            ["home_repair", "event_setup"],
+  tech_support:         ["tech_support"],
+};
+
+const CATEGORY_WEIGHT: Record<string, number> = {
+  emergency: 30, medical: 20, home_repair: 5, groceries: 3,
+  transportation: 3, errands: 2, stock_shelves: 2, event_setup: 2,
+  delivery_run: 2, tech_support: 2, other: 0,
+};
+
+function pickBestMatch(
+  requests: HelpRequest[],
+  helperSpecialties?: string[] | null
+): HelpRequest | null {
   if (requests.length === 0) return null;
   const urgencyScore: Record<string, number> = { emergency: 100, high: 50, medium: 20, low: 5 };
   const now = Date.now();
+  const specs = (helperSpecialties ?? []).map(s => s.toLowerCase().replace(/\s+/g, "_"));
+
   return [...requests].sort((a, b) => {
     const uA = urgencyScore[a.urgency ?? "low"] ?? 5;
     const uB = urgencyScore[b.urgency ?? "low"] ?? 5;
-    // Age boost: waiting > 10 min earns +15 urgency pts to prevent request starvation
-    const ageMinA = a.created_at ? (now - new Date(a.created_at).getTime()) / 60000 : 0;
-    const ageMinB = b.created_at ? (now - new Date(b.created_at).getTime()) / 60000 : 0;
-    const scoreA = uA + (ageMinA > 10 ? 15 : ageMinA > 5 ? 7 : 0);
-    const scoreB = uB + (ageMinB > 10 ? 15 : ageMinB > 5 ? 7 : 0);
+
+    // Age boost: waiting > 10 min earns +15 pts, > 5 min earns +7 pts
+    const ageA = a.created_at ? (now - new Date(a.created_at).getTime()) / 60000 : 0;
+    const ageB = b.created_at ? (now - new Date(b.created_at).getTime()) / 60000 : 0;
+    const ageBoostA = ageA > 10 ? 15 : ageA > 5 ? 7 : 0;
+    const ageBoostB = ageB > 10 ? 15 : ageB > 5 ? 7 : 0;
+
+    // Category weight — emergency/medical get priority bonus
+    const catA = CATEGORY_WEIGHT[a.category ?? "other"] ?? 0;
+    const catB = CATEGORY_WEIGHT[b.category ?? "other"] ?? 0;
+
+    // Skill match — +20 if this helper has a specialty relevant to the request category
+    let skillA = 0, skillB = 0;
+    if (specs.length > 0) {
+      for (const [skill, cats] of Object.entries(SKILL_CATEGORY_MAP)) {
+        if (specs.includes(skill)) {
+          if (cats.includes(a.category ?? "")) skillA = 20;
+          if (cats.includes(b.category ?? "")) skillB = 20;
+        }
+      }
+    }
+
+    const scoreA = uA + ageBoostA + catA + skillA;
+    const scoreB = uB + ageBoostB + catB + skillB;
     if (scoreA !== scoreB) return scoreB - scoreA;
-    // Distance tie-break with trust-score secondary
+
+    // Distance tie-break
     const distDiff = (a.distance_miles ?? 99) - (b.distance_miles ?? 99);
     if (Math.abs(distDiff) > 0.3) return distDiff;
     return 0;
   })[0];
+}
+
+interface CrisisState {
+  active: boolean;
+  message: string;
+  level: "info" | "warning" | "critical";
+  activatedAt?: string;
+  resources?: Array<{ label: string; phone?: string; url?: string }>;
 }
 
 export default function MapScreen() {
@@ -73,6 +123,16 @@ export default function MapScreen() {
   const [bestMatchDismissed, setBestMatchDismissed] = useState<number | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const prevHelperMode = useRef(false);
+  const [crisis, setCrisis] = useState<CrisisState | null>(null);
+  const [crisisDismissed, setCrisisDismissed] = useState(false);
+
+  useEffect(() => {
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/crisis/status`)
+      .then(r => r.json())
+      .then((data: CrisisState) => { if (data.active) setCrisis(data); })
+      .catch(() => {});
+  }, []);
 
   const onMapError = useCallback((e: unknown) => {
     const msg = (e as { error?: { message?: string } })?.error?.message ?? "Map failed to load";
@@ -156,6 +216,15 @@ export default function MapScreen() {
         if (!exists) return prev;
         return prev.map(h => h.id === loc.id ? { ...h, lat: loc.lat, lng: loc.lng, heading: loc.heading ?? h.heading } : h);
       });
+    } else if (event.type === "crisis_update") {
+      const state = event.payload as CrisisState;
+      if (state.active) {
+        setCrisis(state);
+        setCrisisDismissed(false);
+        toast({ title: "⚠️ Community Alert", description: state.message, variant: "destructive" });
+      } else {
+        setCrisis(null);
+      }
     } else if (event.type === "helper_online") {
       setWsConnected(true);
     } else if (event.type === "helper_offline") {
@@ -225,12 +294,57 @@ export default function MapScreen() {
   };
 
   // Dispatch Intelligence — Best Match card
-  const bestMatch = helperModeActive ? pickBestMatch(openRequests) : null;
+  const bestMatch = helperModeActive ? pickBestMatch(openRequests, currentUser?.specialties) : null;
   const showBestMatch = bestMatch && bestMatch.id !== bestMatchDismissed;
+
+  const showCrisisBanner = crisis?.active && !crisisDismissed;
 
   return (
     <div className="relative w-full h-[100dvh] overflow-hidden bg-background">
       <TopBar />
+
+      {/* Crisis Mode Banner — admin-triggered for emergencies, tornados, floods */}
+      {showCrisisBanner && (
+        <div className={`absolute top-14 left-3 right-3 z-30 rounded-2xl border p-3 shadow-2xl backdrop-blur-sm ${
+          crisis.level === "critical"
+            ? "bg-destructive/95 border-destructive/60 text-destructive-foreground"
+            : crisis.level === "warning"
+            ? "bg-yellow-900/95 border-yellow-500/60 text-yellow-100"
+            : "bg-primary/95 border-primary/60 text-primary-foreground"
+        }`}>
+          <div className="flex items-start gap-2">
+            <Siren className="w-4 h-4 mt-0.5 shrink-0 animate-pulse" />
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">
+                Community Emergency Alert · Tarrant County
+              </div>
+              <p className="text-xs leading-relaxed font-medium">{crisis.message}</p>
+              {crisis.resources && crisis.resources.length > 0 && (
+                <div className="flex gap-2 mt-2 flex-wrap">
+                  {crisis.resources.map((r, i) => (
+                    <a
+                      key={i}
+                      href={r.phone ? `tel:${r.phone}` : r.url}
+                      target={r.url ? "_blank" : undefined}
+                      rel="noopener noreferrer"
+                      className="text-[10px] font-bold bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-full transition-colors"
+                    >
+                      {r.phone ? `📞 ${r.label}` : `🌐 ${r.label}`}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => setCrisisDismissed(true)}
+              className="p-1 rounded-full hover:bg-white/20 transition-colors shrink-0"
+              aria-label="Dismiss alert"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Live stats overlay */}
       {statsVisible && (
