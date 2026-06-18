@@ -282,18 +282,22 @@ export default function MapScreen() {
         )}
 
         {/* Online helpers — animated dots */}
-        {displayHelpers.map(h => (
-          <Marker key={h.id} longitude={h.lng} latitude={h.lat} anchor="center">
-            <HelperMarker helper={h} />
-          </Marker>
-        ))}
+        {displayHelpers
+          .filter(h => typeof h.lat === "number" && typeof h.lng === "number" && isFinite(h.lat) && isFinite(h.lng))
+          .map(h => (
+            <Marker key={h.id} longitude={h.lng} latitude={h.lat} anchor="center">
+              <HelperMarker helper={h} />
+            </Marker>
+          ))}
 
         {/* Open request markers with emergency pulse rings */}
-        {openRequests.map(r => (
-          <Marker key={r.id} longitude={r.lng} latitude={r.lat} anchor="bottom">
-            <RequestMarker request={r} />
-          </Marker>
-        ))}
+        {openRequests
+          .filter(r => typeof r.lat === "number" && typeof r.lng === "number" && isFinite(r.lat) && isFinite(r.lng))
+          .map(r => (
+            <Marker key={r.id} longitude={r.lng} latitude={r.lat} anchor="bottom">
+              <RequestMarker request={r} />
+            </Marker>
+          ))}
 
         {/* Live route line */}
         {activeHelperRouteData?.geometry && (
