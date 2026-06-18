@@ -2,6 +2,9 @@ import { Request, Response, NextFunction } from "express";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
+// Ensure the global Express.Request type extension is loaded
+import "../types/express.d";
+
 /**
  * Ownership guard — ensures the authenticated user matches the target resource ID.
  *
@@ -10,7 +13,7 @@ import { eq } from "drizzle-orm";
  */
 export function requireOwnership(paramName: string = "id") {
   return (req: Request, res: Response, next: NextFunction) => {
-    const authenticatedUserId = (req as any).authenticatedUserId;
+    const authenticatedUserId = req.authenticatedUserId;
     if (!authenticatedUserId) {
       return res.status(401).json({ error: "Authentication required" });
     }
@@ -44,7 +47,7 @@ export function requireOwnership(paramName: string = "id") {
  */
 export function requireAdmin() {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const authenticatedUserId = (req as any).authenticatedUserId;
+    const authenticatedUserId = req.authenticatedUserId;
     if (!authenticatedUserId) {
       return res.status(401).json({ error: "Authentication required" });
     }

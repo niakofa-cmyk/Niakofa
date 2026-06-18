@@ -12,6 +12,7 @@ import leaderboardRouter from "./leaderboard";
 import gratitudeRouter from "./gratitude";
 import reportsRouter from "./reports";
 import civicRouter from "./civic";
+import adminAnalyticsRouter from "./admin-analytics";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(leaderboardRouter);
 router.use(gratitudeRouter);
 router.use(reportsRouter);
 router.use(civicRouter);
+router.use(adminAnalyticsRouter);
 
 export default router;

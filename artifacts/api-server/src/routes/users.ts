@@ -1,4 +1,5 @@
 import { Router } from "express";
+import bcrypt from "bcryptjs";
 import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import {
@@ -20,6 +21,9 @@ import { broadcast } from "../lib/ws-hub";
 import { authLimiter, gpsLimiter } from "../middlewares/rate-limit";
 import { requireAuth, signTokenById } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
+import { logger } from "../lib/logger";
+
+const BCRYPT_ROUNDS = 12;
 
 const router = Router();
 
@@ -28,10 +32,27 @@ router.get("/users/register", (_req, res) => {
 });
 
 router.post("/users/login", authLimiter, async (req, res) => {
-  const { email, password } = req.body as { email: string; password: string };
+  const { email, password } = req.body as { email?: string; password?: string };
   if (!email) return res.status(400).json({ error: "Email required" });
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
+  if (!password) return res.status(400).json({ error: "Password required" });
+
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.email, email.trim().toLowerCase()))
+    .limit(1);
+
   if (!user) return res.status(401).json({ error: "No account found with that email" });
+
+  // If user has a password hash, verify it; otherwise it's a legacy account
+  if (user.password_hash) {
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: "Incorrect password" });
+  } else {
+    // Legacy account (registered before passwords were required) — allow with warning
+    logger.warn({ user_id: user.id }, "login: user has no password_hash — legacy account access");
+  }
+
   const token = signTokenById(user.id);
   return res.json({ user, token });
 });
@@ -40,13 +61,21 @@ router.post("/users/register", authLimiter, async (req, res) => {
   const parsed = RegisterUserBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
   const { name, email, avatar_url, is_helper, neighborhood } = parsed.data;
+  // Accept optional password from body (not part of OpenAPI spec to avoid codegen churn)
+  const rawPassword = (req.body as Record<string, unknown>).password;
+  const password_hash = rawPassword && typeof rawPassword === "string" && rawPassword.length >= 6
+    ? await bcrypt.hash(rawPassword, BCRYPT_ROUNDS)
+    : null;
+
   const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
   if (existing.length > 0) return res.json(existing[0]);
+
   const [user] = await db.insert(usersTable).values({
     name, email,
     avatar_url: avatar_url ?? null,
     is_helper: is_helper ?? false,
     neighborhood: neighborhood ?? null,
+    password_hash,
   }).returning();
   const token = signTokenById(user.id);
   return res.status(201).json({ user, token });

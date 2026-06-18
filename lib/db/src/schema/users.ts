@@ -30,6 +30,7 @@ export const usersTable = pgTable("users", {
   panic_contacts: text("panic_contacts").array(),
   passive_check_interval_min: integer("passive_check_interval_min").default(30),
   is_admin: boolean("is_admin").notNull().default(false),
+  password_hash: text("password_hash"),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 });

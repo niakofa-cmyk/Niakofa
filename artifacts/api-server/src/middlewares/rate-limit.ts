@@ -34,9 +34,11 @@ export const requestCreationLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req) => {
-    const body = req.body as Record<string, unknown>;
-    const userId = body?.requester_id;
-    return userId ? `req-create-${String(userId)}` : `req-create-ip-${req.ip ?? "unknown"}`;
+    // Key on the authenticated userId set by parseAuth (runs before all routes).
+    // Never key on req.body.requester_id — unauthenticated body data can be spoofed
+    // to rotate around the limit.
+    const userId = req.authenticatedUserId;
+    return userId ? `req-create-${userId}` : `req-create-ip-${req.ip ?? "unknown"}`;
   },
   message: {
     error:

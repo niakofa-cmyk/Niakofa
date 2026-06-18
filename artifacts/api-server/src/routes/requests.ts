@@ -59,28 +59,46 @@ function enrichRequest(r: typeof requestsTable.$inferSelect, userMap: Record<num
 }
 
 router.get("/requests/stats", async (_req, res) => {
-  const allRequests = await db.select().from(requestsTable);
-  const open = allRequests.filter(r => r.status === "open").length;
-  const completed = allRequests.filter(r => r.status === "completed").length;
-  const recentCompletions = allRequests.filter(r => {
-    if (!r.completed_at) return false;
-    return Date.now() - new Date(r.completed_at).getTime() < 86400000;
-  }).length;
-  const onlineHelpers = await db.select().from(usersTable).where(eq(usersTable.helper_mode_active, true));
-  const catMap: Record<string, number> = {};
-  for (const r of allRequests) catMap[r.category] = (catMap[r.category] ?? 0) + 1;
-  const requests_by_category = Object.entries(catMap).map(([category, count]) => ({ category, count }));
+  // All aggregations done at the DB level — no full table scan into memory
+  const [statusCounts, categoryCounts, recentCompletions, pledgeVolume, onlineHelpers] =
+    await Promise.all([
+      db
+        .select({ status: requestsTable.status, count: sql<number>`COUNT(*)::int` })
+        .from(requestsTable)
+        .groupBy(requestsTable.status),
 
-  // Total pay-it-forward pledge volume
-  const pledgeVolume = allRequests.reduce((s, r) => s + (r.pledge_paid || 0), 0);
+      db
+        .select({ category: requestsTable.category, count: sql<number>`COUNT(*)::int` })
+        .from(requestsTable)
+        .groupBy(requestsTable.category),
+
+      db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(requestsTable)
+        .where(
+          and(
+            eq(requestsTable.status, "completed"),
+            sql`${requestsTable.completed_at} > NOW() - INTERVAL '24 hours'`
+          )
+        ),
+
+      db
+        .select({ total: sql<number>`COALESCE(SUM(${requestsTable.pledge_paid}), 0)::float` })
+        .from(requestsTable),
+
+      db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(usersTable)
+        .where(eq(usersTable.helper_mode_active, true)),
+    ]);
 
   return res.json({
-    total_open: open,
-    total_completed: completed,
-    total_helpers_online: onlineHelpers.length,
-    requests_by_category,
-    recent_completions: recentCompletions,
-    total_pledge_volume: pledgeVolume,
+    total_open:             statusCounts.find(s => s.status === "open")?.count ?? 0,
+    total_completed:        statusCounts.find(s => s.status === "completed")?.count ?? 0,
+    total_helpers_online:   onlineHelpers[0]?.count ?? 0,
+    requests_by_category:   categoryCounts,
+    recent_completions:     recentCompletions[0]?.count ?? 0,
+    total_pledge_volume:    pledgeVolume[0]?.total ?? 0,
   });
 });
 
