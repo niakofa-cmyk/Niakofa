@@ -558,7 +558,17 @@ start_lat: number;
 start_lng: number;
 end_lat: number;
 end_lng: number;
+profile?: GetRouteProfile;
 };
+
+export type GetRouteProfile = typeof GetRouteProfile[keyof typeof GetRouteProfile];
+
+
+export const GetRouteProfile = {
+  driving: 'driving',
+  walking: 'walking',
+  cycling: 'cycling',
+} as const;
 
 export type GetCivicResourcesParams = {
 lat: number;

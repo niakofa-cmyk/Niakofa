@@ -1721,7 +1721,7 @@ export const getGetRouteUrl = (params: GetRouteParams,) => {
 }
 
 /**
- * @summary Get driving route between two coordinates
+ * @summary Get route between two coordinates
  */
 export const getRoute = async (params: GetRouteParams, options?: RequestInit): Promise<RouteData> => {
 
@@ -1768,7 +1768,7 @@ export type GetRouteQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get driving route between two coordinates
+ * @summary Get route between two coordinates
  */
 
 export function useGetRoute<TData = Awaited<ReturnType<typeof getRoute>>, TError = ErrorType<unknown>>(

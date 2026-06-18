@@ -36,11 +36,18 @@ router.post("/users/login", authLimiter, async (req, res) => {
   if (!email) return res.status(400).json({ error: "Email required" });
   if (!password) return res.status(400).json({ error: "Password required" });
 
-  const [user] = await db
-    .select()
-    .from(usersTable)
-    .where(eq(usersTable.email, email.trim().toLowerCase()))
-    .limit(1);
+  let user: typeof usersTable.$inferSelect | undefined;
+  try {
+    const rows = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.email, email.trim().toLowerCase()))
+      .limit(1);
+    user = rows[0];
+  } catch (err) {
+    logger.error({ err }, "login: database error");
+    return res.status(500).json({ error: "Database error — please try again" });
+  }
 
   if (!user) return res.status(401).json({ error: "No account found with that email" });
 
@@ -70,18 +77,23 @@ router.post("/users/register", authLimiter, async (req, res) => {
     ? await bcrypt.hash(rawPassword, BCRYPT_ROUNDS)
     : null;
 
-  const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
-  if (existing.length > 0) return res.status(409).json({ error: "Email already registered" });
+  try {
+    const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
+    if (existing.length > 0) return res.status(409).json({ error: "Email already registered" });
 
-  const [user] = await db.insert(usersTable).values({
-    name, email,
-    avatar_url: avatar_url ?? null,
-    is_helper: is_helper ?? false,
-    neighborhood: neighborhood ?? null,
-    password_hash,
-  }).returning();
-  const token = signTokenById(user.id);
-  return res.status(201).json({ user, token });
+    const [user] = await db.insert(usersTable).values({
+      name, email: email.trim().toLowerCase(),
+      avatar_url: avatar_url ?? null,
+      is_helper: is_helper ?? false,
+      neighborhood: neighborhood ?? null,
+      password_hash,
+    }).returning();
+    const token = signTokenById(user.id);
+    return res.status(201).json({ user, token });
+  } catch (err) {
+    logger.error({ err }, "register: database error");
+    return res.status(500).json({ error: "Registration failed — please try again" });
+  }
 });
 
 router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {

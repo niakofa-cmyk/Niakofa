@@ -12,3 +12,5 @@
 - [Niakofa lifecycle auth](niakofa-lifecycle-auth.md) — /claim, /en-route, /arrived, /complete, /tip all require requireAuth; helper_id derived from token, DB pre-fetch verifies ownership before any mutation.
 - [Niakofa openapi codegen](niakofa-openapi-codegen.md) — orval runs via root node_modules; duplicate YAML keys and null-valued properties silently break codegen with cryptic errors.
 - [Niakofa test setup](niakofa-test-setup.md) — Jest+Supertest in ESM mode (ts-jest esm preset); __tests__ excluded from main tsconfig to avoid type conflicts with jest globals.
+- [Niakofa auth flow](niakofa-auth-flow.md) — DB tables caused all 500s; logout used wrong localStorage keys; AppContext must own centralized logout(); last-known location persisted to localStorage as niakofa_last_location.
+- [Niakofa rate limiter](niakofa-rate-limit.md) — authLimiter is 10 req/15 min; rapid test loops hit 429; this is expected security behavior, not a bug.

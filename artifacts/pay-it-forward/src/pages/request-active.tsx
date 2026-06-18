@@ -7,7 +7,7 @@ import type mapboxgl from "mapbox-gl";
 import { useAppContext } from "@/lib/AppContext";
 import { useGetRequest, useGetRoute, useCompleteRequest, useMarkEnRoute, useMarkArrived, getGetRequestQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share2, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share2, CheckCircle2, Car, PersonStanding, Bike } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { NavigationOverlay } from "@/components/NavigationOverlay";
@@ -106,6 +106,7 @@ export default function ActiveRequestScreen() {
   const [isOffRoute, setIsOffRoute] = useState(false);
   const [safetyAlertShown, setSafetyAlertShown] = useState(false);
   const [shareVisible, setShareVisible] = useState(false);
+  const [routingProfile, setRoutingProfile] = useState<"driving" | "walking" | "cycling">("driving");
   const mapRef = useRef<MapRef>(null);
   const [showTip, setShowTip] = useState(false);
   const [tipShown, setTipShown] = useState(false);
@@ -147,6 +148,7 @@ export default function ActiveRequestScreen() {
     start_lng: myLocation?.lng || 0,
     end_lat: request?.lat || 0,
     end_lng: request?.lng || 0,
+    profile: routingProfile,
   };
   const { data: routeData } = useGetRoute(routeParams, {
     query: {
@@ -568,6 +570,36 @@ export default function ActiveRequestScreen() {
               <span>Step {currentStepIndex + 1} of {routeData.steps.length}</span>
               <span>{routeData.distance_text}</span>
             </div>
+          </div>
+        )}
+
+        {/* Routing profile selector — driving / walking / cycling */}
+        {!isArrived && !isCompleted && (
+          <div className="flex gap-2 mb-3">
+            {(["driving", "walking", "cycling"] as const).map((p) => {
+              const Icon = p === "driving" ? Car : p === "walking" ? PersonStanding : Bike;
+              const label = p === "driving" ? "Drive" : p === "walking" ? "Walk" : "Bike";
+              const active = routingProfile === p;
+              return (
+                <button
+                  key={p}
+                  onClick={() => {
+                    if (routingProfile !== p) {
+                      setRoutingProfile(p);
+                      queryClient.invalidateQueries({ queryKey: getGetRouteQueryKey(routeParams) });
+                    }
+                  }}
+                  className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-xl border transition-all text-xs font-black ${
+                    active
+                      ? "bg-primary/15 border-primary text-primary"
+                      : "bg-muted/50 border-border text-muted-foreground hover:border-primary/40"
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {label}
+                </button>
+              );
+            })}
           </div>
         )}
 

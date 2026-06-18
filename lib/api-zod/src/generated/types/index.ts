@@ -24,6 +24,7 @@ export * from './getReportsStatus';
 export * from './getRequestsParams';
 export * from './getRequestsStatus';
 export * from './getRouteParams';
+export * from './getRouteProfile';
 export * from './healthStatus';
 export * from './helperIdInput';
 export * from './helperLocation';

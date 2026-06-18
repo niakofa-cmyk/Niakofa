@@ -139,8 +139,9 @@ function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId:
                   return;
                 }
                 toast({ title: "Account deleted successfully", description: "You will be logged out." });
-                localStorage.removeItem("token");
-                localStorage.removeItem("user");
+                localStorage.removeItem("niakofa_token");
+                localStorage.removeItem("niakofa_user");
+                localStorage.removeItem("niakofa_last_location");
                 window.location.href = "/";
               } catch {
                 toast({ title: "Could not delete account — please try again", variant: "destructive" });
@@ -850,7 +851,7 @@ function RecentHelpersSection({
 
 export default function ProfileScreen() {
   const [, setLocation] = useLocation();
-  const { currentUser, helperModeActive, setHelperModeActive, myLocation } = useAppContext();
+  const { currentUser, helperModeActive, setHelperModeActive, myLocation, logout } = useAppContext();
   const [tab, setTab] = useState<ProfileTab>("overview");
 
   // Settings dialog state
@@ -1348,6 +1349,20 @@ export default function ProfileScreen() {
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
               </div>
+            </div>
+
+            {/* Sign Out */}
+            <div className="bg-card border border-border rounded-2xl overflow-hidden">
+              <button
+                onClick={() => {
+                  toast({ title: "Signed out" });
+                  logout();
+                }}
+                className="w-full flex items-center gap-3 p-4 text-sm text-destructive hover:bg-destructive/5 transition-colors"
+              >
+                <Lock className="w-4 h-4" />
+                <span className="font-semibold">Sign Out</span>
+              </button>
             </div>
 
             {/* Helper Profile — service radius, specialties, payout setup */}

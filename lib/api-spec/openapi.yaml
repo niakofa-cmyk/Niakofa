@@ -529,7 +529,7 @@ paths:
     get:
       operationId: getRoute
       tags: [navigation]
-      summary: Get driving route between two coordinates
+      summary: Get route between two coordinates
       parameters:
         - name: start_lat
           in: query
@@ -551,6 +551,13 @@ paths:
           required: true
           schema:
             type: number
+        - name: profile
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [driving, walking, cycling]
+            default: driving
       responses:
         "200":
           description: Route data with turn-by-turn steps

@@ -747,13 +747,16 @@ export const GetOnlineHelpersResponse = zod.array(GetOnlineHelpersResponseItem)
 
 
 /**
- * @summary Get driving route between two coordinates
+ * @summary Get route between two coordinates
  */
+export const getRouteQueryProfileDefault = `driving`;
+
 export const GetRouteQueryParams = zod.object({
   "start_lat": zod.coerce.number(),
   "start_lng": zod.coerce.number(),
   "end_lat": zod.coerce.number(),
-  "end_lng": zod.coerce.number()
+  "end_lng": zod.coerce.number(),
+  "profile": zod.enum(['driving', 'walking', 'cycling']).default(getRouteQueryProfileDefault)
 })
 
 export const GetRouteResponse = zod.object({

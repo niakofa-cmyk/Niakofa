@@ -5,6 +5,7 @@ import { useUpdateUserLocation, useUpdateHelperMode } from "@workspace/api-clien
 import { useWebSocket } from "./useWebSocket";
 import { wsStart, wsRegister, wsUnregister } from "./wsClient";
 import { GratitudeModal } from "../components/GratitudeModal";
+import { clearToken } from "./auth";
 
 interface Location {
   lat: number;
@@ -14,9 +15,12 @@ interface Location {
   accuracy?: number | null;
 }
 
+const LAST_LOCATION_KEY = "niakofa_last_location";
+
 interface AppContextType {
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
+  logout: () => void;
   helperModeActive: boolean;
   setHelperModeActive: (active: boolean) => void;
   myLocation: Location | null;
@@ -53,9 +57,18 @@ function emaSmooth(prev: number, next: number, alpha = 0.3): number {
   return alpha * next + (1 - alpha) * prev;
 }
 
+// Load last-known location from localStorage (avoids hardcoded default)
+function loadLastLocation(): Location | null {
+  try {
+    const stored = localStorage.getItem(LAST_LOCATION_KEY);
+    if (stored) return JSON.parse(stored) as Location;
+  } catch {}
+  return null;
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   // ── All useState calls first ─────────────────────────────────────────────
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+  const [currentUser, setCurrentUserState] = useState<User | null>(() => {
     try {
       const stored = localStorage.getItem("niakofa_user");
       if (stored) return JSON.parse(stored) as User;
@@ -66,7 +79,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
 
   const [helperModeActive, setHelperModeActiveState] = useState(false);
-  const [myLocation, setMyLocation] = useState<Location | null>({ lat: 32.75, lng: -97.33 });
+  // Use last-known location from localStorage; fall back to null (not a hardcoded city)
+  const [myLocation, setMyLocation] = useState<Location | null>(loadLastLocation);
   const [gratitudePrompt, setGratitudePrompt] = useState<{
     requestId: number;
     requestTitle: string;
@@ -79,7 +93,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activeRequestId, setActiveRequestId] = useState<number | null>(null);
 
   // ── All useRef calls ─────────────────────────────────────────────────────
-  const locationRef = useRef<Location | null>({ lat: 32.75, lng: -97.33 });
+  const locationRef = useRef<Location | null>(loadLastLocation());
   const prevBroadcastRef = useRef<Location | null>(null);
   const prevLocationRef = useRef<Location | null>(null);
   const smoothedRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -88,10 +102,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateLocation = useUpdateUserLocation();
   const updateHelperMode = useUpdateHelperMode();
 
+  // ── Centralized setCurrentUser — persists to localStorage ────────────────
+  const setCurrentUser = (user: User | null) => {
+    setCurrentUserState(user);
+    if (user) {
+      localStorage.setItem("niakofa_user", JSON.stringify(user));
+    } else {
+      localStorage.removeItem("niakofa_user");
+    }
+  };
+
+  // ── Centralized logout — clears all auth state ───────────────────────────
+  const logout = () => {
+    clearToken();
+    localStorage.removeItem("niakofa_user");
+    setCurrentUserState(null);
+    wsUnregister();
+    setLocation("/login");
+  };
+
   // ── Non-hook helper ──────────────────────────────────────────────────────
   const setHelperModeActive = (active: boolean) => {
     setHelperModeActiveState(active);
-    setCurrentUser(u => u ? { ...u, helper_mode_active: active } : u);
+    setCurrentUserState(u => {
+      if (!u) return u;
+      const updated = { ...u, helper_mode_active: active };
+      localStorage.setItem("niakofa_user", JSON.stringify(updated));
+      return updated;
+    });
     if (currentUser) {
       updateHelperMode.mutate(
         { id: currentUser.id, data: { active } },
@@ -178,22 +216,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
         prevLocationRef.current = raw;
         locationRef.current = newLoc;
         setMyLocation(newLoc);
+
+        // Persist last-known location so next session starts near here
+        try {
+          localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify({ lat: smoothed.lat, lng: smoothed.lng }));
+        } catch {}
       },
       () => {},
       {
         enableHighAccuracy: true,
-        timeout: 8000,
-        maximumAge: 1000,
+        timeout: 10000,
+        maximumAge: 5000,
       }
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
-  // Smart GPS broadcast loop
+  // Smart GPS broadcast loop — adaptive intervals based on activity state
   useEffect(() => {
     if (!currentUser) return;
 
+    // Adaptive polling: most aggressive during active request, light otherwise
     const interval = activeRequestId ? 2000 : helperModeActive ? 15000 : 30000;
     const MOVEMENT_THRESHOLD_M = activeRequestId ? 2 : helperModeActive ? 3 : 10;
 
@@ -206,15 +250,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!movedEnough) return;
 
       prevBroadcastRef.current = loc;
-      updateLocation.mutate({
-        id: currentUser.id,
-        data: {
-          lat: loc.lat,
-          lng: loc.lng,
-          heading: loc.heading ?? null,
-          speed: loc.speed ?? null,
+      updateLocation.mutate(
+        {
+          id: currentUser.id,
+          data: {
+            lat: loc.lat,
+            lng: loc.lng,
+            heading: loc.heading ?? null,
+            speed: loc.speed ?? null,
+          },
         },
-      });
+        { onError: () => {} }
+      );
     }, interval);
 
     return () => clearInterval(id);
@@ -236,6 +283,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     <AppContext.Provider value={{
       currentUser,
       setCurrentUser,
+      logout,
       helperModeActive,
       setHelperModeActive,
       myLocation,
