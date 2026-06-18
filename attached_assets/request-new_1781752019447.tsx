@@ -1,9 +1,9 @@
-import { useState, useEffect, type ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin } from "lucide-react";
+import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -14,8 +14,6 @@ import { useCreateRequest, getGetRequestsQueryKey, getGetNearbyRequestsQueryKey 
 import { useAppContext } from "@/lib/AppContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
-import "mapbox-gl/dist/mapbox-gl.css";
-import MapboxMap, { Marker } from "react-map-gl/mapbox";
 
 type PaymentType = "immediate" | "pay_it_forward" | "goodwill";
 
@@ -83,18 +81,6 @@ interface PendingPayment {
   requestTitle: string;
 }
 
-function checkWebGL(): boolean {
-  try {
-    const canvas = document.createElement("canvas");
-    return !!(
-      window.WebGLRenderingContext &&
-      (canvas.getContext("webgl") || canvas.getContext("experimental-webgl"))
-    );
-  } catch {
-    return false;
-  }
-}
-
 export default function NewRequestScreen() {
   const [, setLocation] = useLocation();
   const { currentUser, myLocation } = useAppContext();
@@ -103,10 +89,6 @@ export default function NewRequestScreen() {
   const [paymentType, setPaymentType] = useState<PaymentType>("pay_it_forward");
   const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
   const [creatingPaymentIntent, setCreatingPaymentIntent] = useState(false);
-  const [webGLSupported] = useState(checkWebGL);
-  const [pinLocation, setPinLocation] = useState<{ lat: number; lng: number } | null>(
-    myLocation ? { lat: myLocation.lat, lng: myLocation.lng } : null
-  );
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -120,25 +102,16 @@ export default function NewRequestScreen() {
 
   const urgency = form.watch("urgency");
 
-  // Sync pinLocation from GPS when it first becomes available
-  useEffect(() => {
-    if (myLocation && !pinLocation) {
-      setPinLocation({ lat: myLocation.lat, lng: myLocation.lng });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myLocation]);
-
   const finishAndNavigate = () => {
+    if (!myLocation) { setLocation("/"); return; }
     queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
-    if (myLocation) {
-      queryClient.invalidateQueries({ queryKey: getGetNearbyRequestsQueryKey({ lat: myLocation.lat, lng: myLocation.lng }) });
-    }
+    queryClient.invalidateQueries({ queryKey: getGetNearbyRequestsQueryKey({ lat: myLocation.lat, lng: myLocation.lng }) });
     setLocation("/");
   };
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    if (!currentUser || !pinLocation) {
-      toast({ title: "Error", description: "Please confirm your pickup location on the map", variant: "destructive" });
+    if (!currentUser || !myLocation) {
+      toast({ title: "Error", description: "Missing user or location data", variant: "destructive" });
       return;
     }
 
@@ -151,8 +124,8 @@ export default function NewRequestScreen() {
         urgency: values.urgency as any,
         payment_type: paymentType,
         requester_id: currentUser.id,
-        lat: pinLocation.lat,
-        lng: pinLocation.lng,
+        lat: myLocation.lat,
+        lng: myLocation.lng,
         pay_it_forward_amount: values.pay_it_forward_amount,
         pledge_amount: values.pledge_amount,
       }
@@ -318,61 +291,6 @@ export default function NewRequestScreen() {
                 )}
               />
 
-              {/* ── Location Picker ─────────────────────────────────────── */}
-              <div>
-                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5" />
-                  Pickup Location
-                  <span className="ml-1 text-[10px] text-muted-foreground/60 normal-case font-normal tracking-normal">Tap or drag pin to adjust</span>
-                </div>
-                <div className="relative rounded-xl overflow-hidden border border-border bg-card" style={{ height: 180 }}>
-                  {webGLSupported && pinLocation ? (
-                    <MapboxMap
-                      mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
-                      initialViewState={{ longitude: pinLocation.lng, latitude: pinLocation.lat, zoom: 14 }}
-                      style={{ width: "100%", height: "100%" }}
-                      mapStyle="mapbox://styles/mapbox/dark-v11"
-                      attributionControl={false}
-                      onClick={(e) => setPinLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng })}
-                    >
-                      <Marker
-                        longitude={pinLocation.lng}
-                        latitude={pinLocation.lat}
-                        anchor="bottom"
-                        draggable
-                        onDragEnd={(e) => setPinLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng })}
-                      >
-                        <div className="text-2xl drop-shadow-lg select-none">📍</div>
-                      </Marker>
-                    </MapboxMap>
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                      <MapPin className="w-8 h-8 text-primary" />
-                      <span className="text-xs">
-                        {pinLocation
-                          ? `${pinLocation.lat.toFixed(5)}, ${pinLocation.lng.toFixed(5)}`
-                          : "Waiting for GPS…"}
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center justify-between mt-1.5 min-h-[16px]">
-                  <span className="text-[10px] text-muted-foreground">
-                    {pinLocation ? `📍 ${pinLocation.lat.toFixed(5)}, ${pinLocation.lng.toFixed(5)}` : ""}
-                  </span>
-                  {myLocation && pinLocation &&
-                    (Math.abs(pinLocation.lat - myLocation.lat) > 0.00001 || Math.abs(pinLocation.lng - myLocation.lng) > 0.00001) && (
-                    <button
-                      type="button"
-                      onClick={() => setPinLocation({ lat: myLocation.lat, lng: myLocation.lng })}
-                      className="text-[10px] text-primary underline"
-                    >
-                      Reset to my GPS
-                    </button>
-                  )}
-                </div>
-              </div>
-
               {/* Three-Tier Payment Selector */}
               <div>
                 <div className="uppercase tracking-wider text-xs text-muted-foreground mb-3 font-medium">Assistance Type</div>
@@ -452,12 +370,12 @@ export default function NewRequestScreen() {
               <Button
                 type="submit"
                 className="w-full h-13 text-base font-black tracking-widest uppercase"
-                disabled={!pinLocation || createMutation.isPending || creatingPaymentIntent}
+                disabled={!myLocation || createMutation.isPending || creatingPaymentIntent}
               >
                 {createMutation.isPending || creatingPaymentIntent ? "Posting..." : "📍 Post Request"}
               </Button>
 
-              {!pinLocation && (
+              {!myLocation && (
                 <p className="text-xs text-yellow-500 text-center">Waiting for GPS to set your location...</p>
               )}
             </form>

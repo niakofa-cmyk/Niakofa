@@ -88,7 +88,7 @@ router.post("/verification/identity/webhook", async (req, res) => {
 // ── Passive safety check-in ───────────────────────────────────────────────────
 // Called periodically during active requests to confirm helper is safe
 router.post("/verification/safety-checkin/:userId", async (req, res) => {
-  const userId = parseInt(req.params.userId);
+  const userId = parseInt(req.params.userId as string);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
   // Update last_seen (use updated_at as proxy)
@@ -143,7 +143,7 @@ router.post("/verification/sos", requireAuth, requireOwnership("user_id"), async
 
 // ── Update panic contacts ─────────────────────────────────────────────────────
 router.patch("/verification/panic-contacts/:userId", requireAuth, requireOwnership("userId"), async (req, res) => {
-  const userId = parseInt(req.params.userId);
+  const userId = parseInt(req.params.userId as string);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
   const { contacts } = req.body as { contacts: string[] };

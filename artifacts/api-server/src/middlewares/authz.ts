@@ -17,7 +17,7 @@ export function requireOwnership(paramName: string = "id") {
 
     // Check params first
     if (req.params[paramName]) {
-      targetId = parseInt(req.params[paramName]);
+      targetId = parseInt(req.params[paramName] as string);
     }
 
     // If not in params, check body (e.g. for SOS or pledge)
@@ -29,7 +29,7 @@ export function requireOwnership(paramName: string = "id") {
       return res.status(403).json({ error: "Forbidden: You can only access your own resources" });
     }
 
-    next();
+    return next();
   };
 }
 
@@ -49,6 +49,6 @@ export function requireAdmin() {
     if (authenticatedUserId !== 1) {
       return res.status(403).json({ error: "Forbidden: Admin access required" });
     }
-    next();
+    return next();
   };
 }

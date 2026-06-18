@@ -238,7 +238,7 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
 });
 
 router.get("/requests/:id", requireAuth, async (req, res) => {
-  const parsed = GetRequestParams.safeParse({ id: parseInt(req.params.id) });
+  const parsed = GetRequestParams.safeParse({ id: parseInt(req.params.id as string) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, parsed.data.id)).limit(1);
   if (!request) return res.status(404).json({ error: "Not found" });
@@ -254,7 +254,7 @@ router.get("/requests/:id", requireAuth, async (req, res) => {
 
 router.patch("/requests/:id", requireAuth, async (req, res) => {
   const authenticatedUserId = (req as any).authenticatedUserId;
-  const requestId = parseInt(req.params.id);
+  const requestId = parseInt(req.params.id as string);
   const [existing] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
   if (!existing) return res.status(404).json({ error: "Request not found" });
   if (existing.requester_id !== authenticatedUserId) {
@@ -484,7 +484,7 @@ router.post("/requests/:id/complete", async (req, res) => {
 
 
 router.post("/requests/:id/tip", async (req, res) => {
-  const requestId = parseInt(req.params.id);
+  const requestId = parseInt(req.params.id as string);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 
   const { requester_id, tip_amount } = req.body as { requester_id: number; tip_amount: number };

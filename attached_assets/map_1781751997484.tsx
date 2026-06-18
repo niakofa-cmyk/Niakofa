@@ -26,18 +26,6 @@ import { useDeviceHeading } from "@/hooks/useDeviceHeading";
 import { useMapOrientation } from "@/hooks/useMapOrientation";
 import { OrientationToggle } from "@/components/OrientationToggle";
 
-function checkWebGL(): boolean {
-  try {
-    const canvas = document.createElement("canvas");
-    return !!(
-      window.WebGLRenderingContext &&
-      (canvas.getContext("webgl") || canvas.getContext("experimental-webgl"))
-    );
-  } catch {
-    return false;
-  }
-}
-
 function pickBestMatch(requests: HelpRequest[]): HelpRequest | null {
   if (requests.length === 0) return null;
   const urgencyScore: Record<string, number> = { emergency: 100, high: 50, medium: 20, low: 5 };
@@ -53,7 +41,6 @@ export default function MapScreen() {
   const [, setLocation] = useLocation();
   const { currentUser, helperModeActive, myLocation } = useAppContext();
   const queryClient = useQueryClient();
-  const [webGLSupported] = useState(checkWebGL);
   const [mapError, setMapError] = useState<string | null>(null);
   const [wsConnected, setWsConnected] = useState(() => wsIsConnected());
   const [statsVisible, setStatsVisible] = useState(true);
@@ -239,9 +226,9 @@ export default function MapScreen() {
         </div>
       )}
 
-      {/* Map fallback — shown immediately when WebGL unavailable, or after a GL error */}
-      {(!webGLSupported || !!mapError) && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-background z-20 gap-3 px-6 pt-20 pb-28">
+      {/* Map fallback */}
+      {mapError && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-background z-0 gap-3 px-6 pt-20 pb-28">
           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-2">
             <MapPin className="w-8 h-8 text-primary" />
           </div>
@@ -268,7 +255,6 @@ export default function MapScreen() {
         </div>
       )}
 
-      {webGLSupported && (
       <Map
         mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
         style={{ width: "100%", height: "100%" }}
@@ -296,22 +282,18 @@ export default function MapScreen() {
         )}
 
         {/* Online helpers — animated dots */}
-        {displayHelpers
-          .filter(h => typeof h.lat === "number" && typeof h.lng === "number" && isFinite(h.lat) && isFinite(h.lng))
-          .map(h => (
-            <Marker key={h.id} longitude={h.lng} latitude={h.lat} anchor="center">
-              <HelperMarker helper={h} />
-            </Marker>
-          ))}
+        {displayHelpers.map(h => (
+          <Marker key={h.id} longitude={h.lng} latitude={h.lat} anchor="center">
+            <HelperMarker helper={h} />
+          </Marker>
+        ))}
 
         {/* Open request markers with emergency pulse rings */}
-        {openRequests
-          .filter(r => typeof r.lat === "number" && typeof r.lng === "number" && isFinite(r.lat) && isFinite(r.lng))
-          .map(r => (
-            <Marker key={r.id} longitude={r.lng} latitude={r.lat} anchor="bottom">
-              <RequestMarker request={r} />
-            </Marker>
-          ))}
+        {openRequests.map(r => (
+          <Marker key={r.id} longitude={r.lng} latitude={r.lat} anchor="bottom">
+            <RequestMarker request={r} />
+          </Marker>
+        ))}
 
         {/* Live route line */}
         {activeHelperRouteData?.geometry && (
@@ -332,10 +314,9 @@ export default function MapScreen() {
         )}
         <OrientationToggle mode={orientMode} onToggle={() => setOrientMode(orientMode === "heading-up" ? "north-up" : "heading-up")} />
       </Map>
-      )}
 
       {/* Dispatch Intelligence — Best Match card */}
-      {showBestMatch && webGLSupported && !mapError && (
+      {showBestMatch && !mapError && (
         <DispatchIntelligenceCard
           bestMatch={bestMatch}
           onAccept={handleClaim}
@@ -345,13 +326,13 @@ export default function MapScreen() {
       )}
 
       {/* Helper mode bottom sheet */}
-      {helperModeActive && openRequests.length > 0 && webGLSupported && !mapError && !showBestMatch && (
+      {helperModeActive && openRequests.length > 0 && !mapError && !showBestMatch && (
         <div className="pb-20">
           <BottomSheet requests={openRequests} onClaim={handleClaim} isClaiming={claimMutation.isPending} />
         </div>
       )}
 
-      {helperModeActive && openRequests.length === 0 && webGLSupported && (
+      {helperModeActive && openRequests.length === 0 && (
         <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-10 bg-card/90 backdrop-blur-sm border border-border px-6 py-3 rounded-full shadow-lg w-[90%] max-w-sm">
           <div className="flex items-center justify-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />

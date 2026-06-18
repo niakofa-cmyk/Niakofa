@@ -885,7 +885,7 @@ export default function ProfileScreen() {
   }, [userId]);
 
   const { data: transactions = [], isLoading: txLoading } = useGetUserTransactions(userId ?? 0, {
-    query: { enabled: !!userId, queryKey: getGetUserTransactionsQueryKey(userId), staleTime: 30000 }
+    query: { enabled: !!userId, queryKey: getGetUserTransactionsQueryKey(userId ?? 0), staleTime: 30000 }
   });
 
   const { data: civicData, loading: civicLoading } = useCivicResources(myLocation?.lat, myLocation?.lng);

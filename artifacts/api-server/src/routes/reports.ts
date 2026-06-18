@@ -102,7 +102,7 @@ router.get("/reports", async (req, res) => {
   const rows = await db
     .select()
     .from(reportsTable)
-    .where(validStatus ? eq(reportsTable.status, validStatus) : undefined)
+    .where(validStatus ? eq(reportsTable.status, validStatus as "pending" | "under_review" | "resolved_dismissed" | "resolved_warned" | "resolved_banned") : undefined)
     .orderBy(desc(reportsTable.created_at))
     .limit(200);
 
