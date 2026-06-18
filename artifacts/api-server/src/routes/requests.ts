@@ -10,14 +10,10 @@ import {
   UpdateRequestParams,
   UpdateRequestBody,
   ClaimRequestParams,
-  ClaimRequestBody,
   CompleteRequestParams,
-  CompleteRequestBody,
   GetNearbyRequestsQueryParams,
   MarkEnRouteParams,
-  MarkEnRouteBody,
   MarkArrivedParams,
-  MarkArrivedBody,
 } from "@workspace/api-zod";
 import { broadcast, broadcastRequestEvent } from "../lib/ws-hub";
 import { requestCreationLimiter } from "../middlewares/rate-limit";
@@ -292,28 +288,42 @@ router.patch("/requests/:id", requireAuth, async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/claim", async (req, res) => {
-  const pParsed = ClaimRequestParams.safeParse({ id: parseInt(req.params.id) });
-  const bParsed = ClaimRequestBody.safeParse(req.body);
-  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
+router.post("/requests/:id/claim", requireAuth, async (req, res) => {
+  const helperId = req.authenticatedUserId!;
+  const pParsed = ClaimRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });
+
+  // Prevent requester from claiming their own request
+  const [existing] = await db.select({ requester_id: requestsTable.requester_id })
+    .from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
+  if (!existing) return res.status(404).json({ error: "Request not found" });
+  if (existing.requester_id === helperId) return res.status(403).json({ error: "Cannot claim your own request" });
+
   const [request] = await db.update(requestsTable)
-    .set({ status: "claimed", helper_id: bParsed.data.helper_id, claimed_at: new Date() })
+    .set({ status: "claimed", helper_id: helperId, claimed_at: new Date() })
     .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.status, "open")))
     .returning();
   if (!request) return res.status(409).json({ error: "Request already claimed or not found" });
-  const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, bParsed.data.helper_id)).limit(1);
+  const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, helperId)).limit(1);
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: helper?.name ?? null, distance_miles: null, estimated_duration_min: null };
   broadcastRequestEvent("REQUEST_ACCEPTED", "request_updated", enriched);
   return res.json(enriched);
 });
 
-router.post("/requests/:id/en-route", async (req, res) => {
-  const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(req.params.id) });
-  const bParsed = MarkEnRouteBody.safeParse(req.body);
-  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
+router.post("/requests/:id/en-route", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });
+
+  // Verify caller is the assigned helper before updating
+  const [current] = await db.select({ helper_id: requestsTable.helper_id })
+    .from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
+  if (!current) return res.status(404).json({ error: "Request not found" });
+  if (current.helper_id !== callerId) return res.status(403).json({ error: "You are not the assigned helper for this request" });
+
   const [request] = await db.update(requestsTable)
     .set({ status: "en_route", en_route_at: new Date() })
-    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, bParsed.data.helper_id)))
+    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, callerId)))
     .returning();
   if (!request) return res.status(404).json({ error: "Not found" });
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
@@ -321,13 +331,20 @@ router.post("/requests/:id/en-route", async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/arrived", async (req, res) => {
-  const pParsed = MarkArrivedParams.safeParse({ id: parseInt(req.params.id) });
-  const bParsed = MarkArrivedBody.safeParse(req.body);
-  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
+router.post("/requests/:id/arrived", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const pParsed = MarkArrivedParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });
+
+  // Verify caller is the assigned helper before updating
+  const [current] = await db.select({ helper_id: requestsTable.helper_id })
+    .from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
+  if (!current) return res.status(404).json({ error: "Request not found" });
+  if (current.helper_id !== callerId) return res.status(403).json({ error: "You are not the assigned helper for this request" });
+
   const [request] = await db.update(requestsTable)
     .set({ status: "arrived", arrived_at: new Date() })
-    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, bParsed.data.helper_id)))
+    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, callerId)))
     .returning();
   if (!request) return res.status(404).json({ error: "Not found" });
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
@@ -335,14 +352,21 @@ router.post("/requests/:id/arrived", async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/complete", async (req, res) => {
-  const pParsed = CompleteRequestParams.safeParse({ id: parseInt(req.params.id) });
-  const bParsed = CompleteRequestBody.safeParse(req.body);
-  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
+router.post("/requests/:id/complete", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const pParsed = CompleteRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });
+
+  // Verify caller is the assigned helper BEFORE making any mutations
+  const [current] = await db.select({ helper_id: requestsTable.helper_id, status: requestsTable.status })
+    .from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
+  if (!current) return res.status(404).json({ error: "Request not found" });
+  if (current.helper_id !== callerId) return res.status(403).json({ error: "You are not the assigned helper for this request" });
+  if (current.status === "completed") return res.status(409).json({ error: "Request already completed" });
 
   const [request] = await db.update(requestsTable)
     .set({ status: "completed", completed_at: new Date() })
-    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, bParsed.data.helper_id)))
+    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, callerId)))
     .returning();
   if (!request) return res.status(404).json({ error: "Not found" });
 
@@ -350,20 +374,20 @@ router.post("/requests/:id/complete", async (req, res) => {
   const [helperBefore] = await db
     .select({ help_count: usersTable.help_count, trust_score: usersTable.trust_score, name: usersTable.name })
     .from(usersTable)
-    .where(eq(usersTable.id, bParsed.data.helper_id))
+    .where(eq(usersTable.id, callerId))
     .limit(1);
 
   // Increment help_count
   await db.update(usersTable)
     .set({ help_count: sql`${usersTable.help_count} + 1` })
-    .where(eq(usersTable.id, bParsed.data.helper_id));
+    .where(eq(usersTable.id, callerId));
 
   // Immediate-pay jobs: record in earnings history ONLY — do NOT credit benevolence_wallet.
   // benevolence_wallet is the goodwill/donation pot (pledges, sponsorships, tips).
   // The real money for immediate jobs arrives via the Stripe Connect transfer below.
   if (request.payment_type === "immediate" && request.pay_it_forward_amount && request.pay_it_forward_amount > 0) {
     await db.insert(transactionsTable).values({
-      user_id: bParsed.data.helper_id,
+      user_id: callerId,
       request_id: request.id,
       type: "earned",
       amount: request.pay_it_forward_amount,
@@ -375,9 +399,9 @@ router.post("/requests/:id/complete", async (req, res) => {
   if (request.payment_type === "goodwill") {
     await db.update(usersTable)
       .set({ goodwill_score: sql`${usersTable.goodwill_score} + 1` })
-      .where(eq(usersTable.id, bParsed.data.helper_id));
+      .where(eq(usersTable.id, callerId));
     await db.insert(transactionsTable).values({
-      user_id: bParsed.data.helper_id,
+      user_id: callerId,
       request_id: request.id,
       type: "goodwill",
       amount: 0,
@@ -399,7 +423,7 @@ router.post("/requests/:id/complete", async (req, res) => {
       [stripeAcct] = await db
         .select()
         .from(stripeAccountsTable)
-        .where(eq(stripeAccountsTable.user_id, bParsed.data.helper_id))
+        .where(eq(stripeAccountsTable.user_id, callerId))
         .limit(1);
 
       if (stripeAcct?.payouts_enabled && stripeAcct.stripe_account_id) {
@@ -413,7 +437,7 @@ router.post("/requests/:id/complete", async (req, res) => {
           destination: stripeAcct.stripe_account_id,
           metadata: {
             request_id: String(request.id),
-            helper_id: String(bParsed.data.helper_id),
+            helper_id: String(callerId),
             platform_fee_cents: String(platformFeeCents),
           },
         });
@@ -421,7 +445,7 @@ router.post("/requests/:id/complete", async (req, res) => {
         // Record the completed payout
         await db.insert(paymentTransactionsTable).values({
           request_id: request.id,
-          helper_id: bParsed.data.helper_id,
+          helper_id: callerId,
           requester_id: request.requester_id,
           amount: request.pay_it_forward_amount,
           state: "completed",
@@ -433,7 +457,7 @@ router.post("/requests/:id/complete", async (req, res) => {
         broadcast({
           type: "payout_sent",
           payload: {
-            helper_id: bParsed.data.helper_id,
+            helper_id: callerId,
             amount: payoutCents / 100,
             transfer_id: transfer.id,
           },
@@ -448,7 +472,7 @@ router.post("/requests/:id/complete", async (req, res) => {
         const platformFeeCents = Math.round(amountCents * 0.05);
         enqueuePayoutRetry({
           request_id:         request.id,
-          helper_id:          bParsed.data.helper_id,
+          helper_id:          callerId,
           requester_id:       request.requester_id,
           amount_cents:       amountCents,
           platform_fee_cents: platformFeeCents,
@@ -464,11 +488,10 @@ router.post("/requests/:id/complete", async (req, res) => {
 
   // Fire-and-forget leaderboard broadcast (doesn't block response)
   broadcastLeaderboardUpdate(
-    bParsed.data.helper_id,
+    callerId,
     helperBefore?.help_count ?? 0,
     helperBefore?.trust_score ?? 0
   ).catch(() => {});
-
 
   // Fire receipt email async (non-blocking)
   const [requester] = await db.select({ email: usersTable.email, name: usersTable.name })
@@ -493,7 +516,7 @@ router.post("/requests/:id/complete", async (req, res) => {
       requester_id: request.requester_id,
       request_title: request.title,
       helper_name: helperBefore?.name ?? null,
-      helper_id: bParsed.data.helper_id,
+      helper_id: callerId,
     },
   });
 
@@ -501,19 +524,22 @@ router.post("/requests/:id/complete", async (req, res) => {
 });
 
 
-router.post("/requests/:id/tip", async (req, res) => {
-  const requestId = parseInt(req.params.id as string);
+router.post("/requests/:id/tip", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id));
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 
-  const { requester_id, tip_amount } = req.body as { requester_id: number; tip_amount: number };
-  if (!requester_id || !tip_amount || tip_amount <= 0) {
-    return res.status(400).json({ error: "requester_id and tip_amount > 0 required" });
+  const { tip_amount } = req.body as { tip_amount: number };
+  if (!tip_amount || tip_amount <= 0) {
+    return res.status(400).json({ error: "tip_amount > 0 required" });
   }
 
   const [request] = await db.select().from(requestsTable)
-    .where(and(eq(requestsTable.id, requestId), eq(requestsTable.requester_id, requester_id)))
+    .where(eq(requestsTable.id, requestId))
     .limit(1);
   if (!request) return res.status(404).json({ error: "Request not found" });
+  // Only the actual requester (verified via auth token) can tip
+  if (request.requester_id !== callerId) return res.status(403).json({ error: "Only the requester can tip on this request" });
   if (request.status !== "completed") return res.status(409).json({ error: "Can only tip completed requests" });
   if (!request.helper_id) return res.status(400).json({ error: "No helper to tip" });
 

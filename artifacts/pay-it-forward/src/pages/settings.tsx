@@ -10,12 +10,14 @@ import {
   Trash2,
   CheckCircle2,
   AlertCircle,
+  Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { toast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
+import i18n from "../i18n";
 
 // ── API helpers (kept in sync with profile.tsx) ───────────────────────────────
 
@@ -134,6 +136,47 @@ function NotificationPreferences({ userId }: { userId: number }) {
 }
 
 // ── Account Privacy ───────────────────────────────────────────────────────────
+
+function LanguageSwitcher(_: { userId: number }) {
+  const [lang, setLang] = useState(i18n.language ?? "en");
+
+  const languages = [
+    { code: "en", label: "English", flag: "🇺🇸" },
+    { code: "es", label: "Español", flag: "🇲🇽" },
+  ];
+
+  const handleChange = (code: string) => {
+    i18n.changeLanguage(code);
+    localStorage.setItem("niakofa_lang", code);
+    setLang(code);
+    toast({ title: code === "es" ? "Idioma cambiado a Español" : "Language changed to English" });
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        Choose your preferred language for the Niakofa app.
+      </p>
+      {languages.map(l => (
+        <button
+          key={l.code}
+          onClick={() => handleChange(l.code)}
+          className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-colors text-left ${
+            lang === l.code
+              ? "border-primary bg-primary/10 text-primary"
+              : "border-border bg-card text-foreground hover:border-primary/40"
+          }`}
+        >
+          <span className="text-2xl">{l.flag}</span>
+          <div className="flex-1">
+            <div className="font-semibold text-sm">{l.label}</div>
+          </div>
+          {lang === l.code && <CheckCircle2 className="w-4 h-4 text-primary" />}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function AccountPrivacy({ userId }: { userId: number }) {
   const [prefs, setPrefs] = useState({
@@ -484,6 +527,12 @@ export default function SettingsPage() {
       title: "Account Privacy",
       icon: Lock,
       component: AccountPrivacy,
+    },
+    {
+      id: "language",
+      title: "Language / Idioma",
+      icon: Globe,
+      component: LanguageSwitcher,
     },
     {
       id: "delete-account",

@@ -9,3 +9,6 @@
 - [Niakofa AppContext HMR](niakofa-appctext-hmr.md) — AppContext exports both component+hook so Vite can't fast-refresh it (expected warning); new hooks must always be added LAST to preserve hook order across HMR cycles.
 - [Niakofa RBAC](niakofa-rbac.md) — is_admin boolean column on usersTable replaces hardcoded ID-1 check; requireAdmin() is now async and queries DB; set is_admin=true on any user row to grant access.
 - [Niakofa notification bell](niakofa-notif-bell.md) — BottomNav.tsx owns all WS listener + state logic; NotificationsDrawer.tsx is the pure display layer; nearby/new_request notifications use cyan (text-primary), not yellow.
+- [Niakofa lifecycle auth](niakofa-lifecycle-auth.md) — /claim, /en-route, /arrived, /complete, /tip all require requireAuth; helper_id derived from token, DB pre-fetch verifies ownership before any mutation.
+- [Niakofa openapi codegen](niakofa-openapi-codegen.md) — orval runs via root node_modules; duplicate YAML keys and null-valued properties silently break codegen with cryptic errors.
+- [Niakofa test setup](niakofa-test-setup.md) — Jest+Supertest in ESM mode (ts-jest esm preset); __tests__ excluded from main tsconfig to avoid type conflicts with jest globals.

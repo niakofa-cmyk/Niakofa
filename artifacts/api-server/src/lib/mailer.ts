@@ -78,6 +78,55 @@ export async function sendReceipt(data: ReceiptData): Promise<void> {
   }
 }
 
+export interface AlertEmailData {
+  to: string;
+  subject: string;
+  title: string;
+  body: string;
+  ctaText?: string;
+  ctaUrl?: string;
+}
+
+export async function sendAlertEmail(data: AlertEmailData): Promise<void> {
+  const smtpUser = process.env["SMTP_USER"];
+  if (!smtpUser) return;
+
+  const ctaBlock = data.ctaText && data.ctaUrl
+    ? `<div style="text-align:center;margin-top:24px"><a href="${data.ctaUrl}" style="display:inline-block;background:#00d4ff;color:#0a0f1e;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;text-decoration:none">${data.ctaText}</a></div>`
+    : "";
+
+  const html = `<!DOCTYPE html>
+<html>
+<body style="background:#0a0f1e;color:#e2e8f0;font-family:system-ui,sans-serif;margin:0;padding:32px 24px">
+  <div style="max-width:480px;margin:0 auto">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:28px;font-weight:900;color:#00d4ff">Niakofa</div>
+    </div>
+    <div style="background:#111827;border:1px solid #1e3a5f;border-radius:16px;padding:24px">
+      <div style="font-size:18px;font-weight:700;margin-bottom:12px">${data.title}</div>
+      <div style="color:#94a3b8;line-height:1.6">${data.body}</div>
+      ${ctaBlock}
+    </div>
+    <p style="text-align:center;font-size:12px;color:#475569;margin-top:16px">
+      Niakofa — Help Today · Pay It Forward Tomorrow
+    </p>
+  </div>
+</body>
+</html>`;
+
+  try {
+    await transporter.sendMail({
+      from: `"Niakofa" <${smtpUser}>`,
+      to: data.to,
+      subject: data.subject,
+      html,
+    });
+    logger.info({ to: data.to, subject: data.subject }, "alert email sent");
+  } catch (err) {
+    logger.error({ err, to: data.to }, "alert email failed");
+  }
+}
+
 export interface TipData {
   to: string;
   helperName: string;

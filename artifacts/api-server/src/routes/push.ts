@@ -2,6 +2,8 @@ import { Router } from "express";
 import webpush from "web-push";
 import { db, pushSubscriptionsTable, usersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
+import { sendAlertEmail } from "../lib/mailer";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -60,7 +62,7 @@ router.post("/push/unsubscribe", async (req, res) => {
   return res.json({ ok: true });
 });
 
-type PushPayload = {
+export type PushPayload = {
   title: string;
   body: string;
   urgency?: string;
@@ -93,20 +95,83 @@ async function getSubsForUser(userId: number): Promise<webpush.PushSubscription[
   return rows.map(r => r.subscription as unknown as webpush.PushSubscription);
 }
 
-async function deliverToSubs(subs: webpush.PushSubscription[], payload: PushPayload): Promise<void> {
-  if (!VAPID_PUBLIC || !VAPID_PRIVATE || subs.length === 0) return;
+/**
+ * Deliver to a set of push subscriptions.
+ * Returns the count of successful deliveries.
+ */
+async function deliverToSubs(subs: webpush.PushSubscription[], payload: PushPayload): Promise<number> {
+  if (!VAPID_PUBLIC || !VAPID_PRIVATE || subs.length === 0) return 0;
   const data = JSON.stringify(payload);
   const opts = pushOptions(payload.urgency);
+  let delivered = 0;
   await Promise.allSettled(
     subs.map(sub =>
-      webpush.sendNotification(sub, data, opts).catch(err => {
-        // 410 Gone = subscription expired — remove from DB
-        if ((err as { statusCode?: number }).statusCode === 410) {
-          db.delete(pushSubscriptionsTable)
-            .where(eq(pushSubscriptionsTable.endpoint, sub.endpoint))
-            .catch(() => {});
-        }
-      })
+      webpush.sendNotification(sub, data, opts)
+        .then(() => { delivered++; })
+        .catch(err => {
+          // 410 Gone = subscription expired — remove from DB
+          if ((err as { statusCode?: number }).statusCode === 410) {
+            db.delete(pushSubscriptionsTable)
+              .where(eq(pushSubscriptionsTable.endpoint, sub.endpoint))
+              .catch(() => {});
+          }
+        })
+    )
+  );
+  return delivered;
+}
+
+/**
+ * Send push to a specific user, falling back to email if:
+ *   • VAPID keys are not configured, OR
+ *   • the user has no active push subscriptions
+ * The email fallback requires `fallbackEmail` and `fallbackEmailSubject` to be provided.
+ */
+export async function sendPushToUser(
+  userId: number,
+  payload: PushPayload,
+  options?: { fallbackEmail?: string; fallbackEmailSubject?: string }
+): Promise<void> {
+  const subs = await getSubsForUser(userId);
+  const delivered = await deliverToSubs(subs, payload);
+
+  if (delivered === 0 && options?.fallbackEmail) {
+    logger.info({ userId }, "push: no delivery — falling back to email");
+    await sendAlertEmail({
+      to: options.fallbackEmail,
+      subject: options.fallbackEmailSubject ?? payload.title,
+      title: payload.title,
+      body: payload.body,
+    }).catch(() => {});
+  }
+}
+
+/**
+ * Send push to multiple users, with optional per-user email fallback.
+ * Fetches each user's email from DB automatically when `emailFallback: true`.
+ */
+export async function sendPushToUsers(
+  userIds: number[],
+  payload: PushPayload,
+  options?: { emailFallback?: boolean }
+): Promise<void> {
+  if (userIds.length === 0) return;
+
+  // Fetch emails upfront if fallback is requested
+  let emailMap: Map<number, string> = new Map();
+  if (options?.emailFallback) {
+    const users = await db
+      .select({ id: usersTable.id, email: usersTable.email })
+      .from(usersTable);
+    emailMap = new Map(users.map(u => [u.id, u.email]));
+  }
+
+  await Promise.allSettled(
+    userIds.map(id =>
+      sendPushToUser(id, payload, options?.emailFallback ? {
+        fallbackEmail: emailMap.get(id),
+        fallbackEmailSubject: payload.title,
+      } : undefined)
     )
   );
 }
@@ -114,6 +179,7 @@ async function deliverToSubs(subs: webpush.PushSubscription[], payload: PushPayl
 /**
  * Send a push notification to helpers within `radiusMiles` of (lat, lng).
  * Only helpers with helper_mode_active = true and a stored location are considered.
+ * For emergency urgency, falls back to email if push is unavailable.
  */
 export async function sendPushToNearbyHelpers(
   lat: number,
@@ -121,26 +187,57 @@ export async function sendPushToNearbyHelpers(
   radiusMiles: number,
   payload: PushPayload
 ): Promise<void> {
-  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
+  if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
+    // No VAPID keys — email all active helpers as fallback for emergency
+    if (payload.urgency === "emergency") {
+      const helpers = await db
+        .select({ id: usersTable.id, email: usersTable.email })
+        .from(usersTable)
+        .where(eq(usersTable.helper_mode_active, true));
+      await Promise.allSettled(
+        helpers.map(h =>
+          sendAlertEmail({
+            to: h.email,
+            subject: `🚨 Emergency request near you: ${payload.title}`,
+            title: payload.title,
+            body: payload.body,
+          })
+        )
+      );
+    }
+    return;
+  }
 
   // Fetch all active helpers that have a stored lat/lng
   const helpers = await db
-    .select({ id: usersTable.id, lat: usersTable.lat, lng: usersTable.lng })
+    .select({ id: usersTable.id, lat: usersTable.lat, lng: usersTable.lng, email: usersTable.email })
     .from(usersTable)
     .where(eq(usersTable.helper_mode_active, true));
 
   // Filter to those within radius
-  const nearbyIds = helpers
+  const nearbyHelpers = helpers
     .filter(h => h.lat != null && h.lng != null)
-    .filter(h => haversineMiles(lat, lng, h.lat!, h.lng!) <= radiusMiles)
-    .map(h => h.id);
+    .filter(h => haversineMiles(lat, lng, h.lat!, h.lng!) <= radiusMiles);
 
-  if (nearbyIds.length === 0) return;
+  if (nearbyHelpers.length === 0) return;
 
-  // Fetch their subscriptions in parallel, then deliver
-  const subArrays = await Promise.all(nearbyIds.map(id => getSubsForUser(id)));
-  const allSubs = subArrays.flat();
-  await deliverToSubs(allSubs, payload);
+  const isEmergency = payload.urgency === "emergency";
+
+  // Deliver push + email fallback for each nearby helper in parallel
+  await Promise.allSettled(
+    nearbyHelpers.map(async h => {
+      const subs = await getSubsForUser(h.id);
+      const delivered = await deliverToSubs(subs, payload);
+      if (delivered === 0 && isEmergency && h.email) {
+        await sendAlertEmail({
+          to: h.email,
+          subject: `🚨 Emergency request near you: ${payload.title}`,
+          title: payload.title,
+          body: `${payload.body}\n\nOpen the Niakofa app to respond.`,
+        }).catch(() => {});
+      }
+    })
+  );
 }
 
 /** Send a push notification to all registered subscribers (broadcast fallback) */
@@ -152,18 +249,6 @@ export async function sendPushToAllHelpers(payload: PushPayload): Promise<void> 
     .from(pushSubscriptionsTable);
   const subs = rows.map(r => r.subscription as unknown as webpush.PushSubscription);
   await deliverToSubs(subs, payload);
-}
-
-/** Send a push notification to a specific user by userId */
-export async function sendPushToUser(userId: number, payload: PushPayload): Promise<void> {
-  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
-  const subs = await getSubsForUser(userId);
-  await deliverToSubs(subs, payload);
-}
-
-/** Send a push notification to multiple users */
-export async function sendPushToUsers(userIds: number[], payload: PushPayload): Promise<void> {
-  await Promise.allSettled(userIds.map(id => sendPushToUser(id, payload)));
 }
 
 export default router;

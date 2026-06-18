@@ -45,16 +45,19 @@ router.post("/users/login", authLimiter, async (req, res) => {
   if (!user) return res.status(401).json({ error: "No account found with that email" });
 
   // If user has a password hash, verify it; otherwise it's a legacy account
+  let password_reset_required = false;
   if (user.password_hash) {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: "Incorrect password" });
   } else {
     // Legacy account (registered before passwords were required) — allow with warning
+    // Flag the client so it can prompt the user to set a password
     logger.warn({ user_id: user.id }, "login: user has no password_hash — legacy account access");
+    password_reset_required = true;
   }
 
   const token = signTokenById(user.id);
-  return res.json({ user, token });
+  return res.json({ user, token, password_reset_required });
 });
 
 router.post("/users/register", authLimiter, async (req, res) => {
@@ -67,8 +70,8 @@ router.post("/users/register", authLimiter, async (req, res) => {
     ? await bcrypt.hash(rawPassword, BCRYPT_ROUNDS)
     : null;
 
-  const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
-  if (existing.length > 0) return res.json(existing[0]);
+  const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
+  if (existing.length > 0) return res.status(409).json({ error: "Email already registered" });
 
   const [user] = await db.insert(usersTable).values({
     name, email,

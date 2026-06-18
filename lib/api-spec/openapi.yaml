@@ -865,8 +865,11 @@ components:
       properties:
         title:
           type: string
+          minLength: 3
+          maxLength: 200
         description:
           type: string
+          maxLength: 2000
         category:
           type: string
           enum: [groceries, transportation, errands, home_repair, medical, emergency, other]
@@ -884,6 +887,7 @@ components:
           type: number
         neighborhood:
           type: string
+          maxLength: 100
         pay_it_forward_amount:
           type: number
         pledge_amount:
@@ -1035,6 +1039,7 @@ components:
         eta_text:
           type: string
         distance_text:
+          type: string
         initial_bearing:
           type: number
           description: Compass bearing (0-359) from start toward first waypoint
@@ -1042,7 +1047,6 @@ components:
           type: number
         waypoints:
           type: integer
-          type: string
 
     Transaction:
       type: object
