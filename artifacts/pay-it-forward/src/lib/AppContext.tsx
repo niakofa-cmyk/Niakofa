@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import type { User } from "@workspace/api-client-react";
 import { useUpdateUserLocation, useUpdateHelperMode } from "@workspace/api-client-react";
 import { useWebSocket } from "./useWebSocket";
+import { wsStart, wsRegister, wsUnregister } from "./wsClient";
 import { GratitudeModal } from "../components/GratitudeModal";
 
 interface Location {
@@ -53,6 +54,7 @@ function emaSmooth(prev: number, next: number, alpha = 0.3): number {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  // ── All useState calls first ─────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
       const stored = localStorage.getItem("niakofa_user");
@@ -62,13 +64,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
 
   const [location, setLocation] = useLocation();
-
-  // Redirect to login if no user — except already on /login
-  useEffect(() => {
-    if (!currentUser && location !== "/login") {
-      setLocation("/login");
-    }
-  }, [currentUser, location, setLocation]);
 
   const [helperModeActive, setHelperModeActiveState] = useState(false);
   const [myLocation, setMyLocation] = useState<Location | null>({ lat: 32.75, lng: -97.33 });
@@ -83,15 +78,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   const [activeRequestId, setActiveRequestId] = useState<number | null>(null);
 
-  // Refs for GPS broadcasting (avoids stale closures)
+  // ── All useRef calls ─────────────────────────────────────────────────────
   const locationRef = useRef<Location | null>({ lat: 32.75, lng: -97.33 });
   const prevBroadcastRef = useRef<Location | null>(null);
   const prevLocationRef = useRef<Location | null>(null);
   const smoothedRef = useRef<{ lat: number; lng: number } | null>(null);
 
+  // ── Custom hooks ─────────────────────────────────────────────────────────
   const updateLocation = useUpdateUserLocation();
   const updateHelperMode = useUpdateHelperMode();
 
+  // ── Non-hook helper ──────────────────────────────────────────────────────
   const setHelperModeActive = (active: boolean) => {
     setHelperModeActiveState(active);
     setCurrentUser(u => u ? { ...u, helper_mode_active: active } : u);
@@ -103,8 +100,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // ── useWebSocket subscriptions ────────────────────────────────────────────
   // Show gratitude prompt when the current user's request is completed
-  // Fixed: useWebSocket now supports (eventType, handler) overload
   useWebSocket("new_gratitude_prompt", (event) => {
     const p = event.payload as {
       request_id: number;
@@ -125,6 +122,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
     }
   });
+
+  // ── All useEffect calls last ──────────────────────────────────────────────
+
+  // Redirect to login if no user — except already on /login
+  useEffect(() => {
+    if (!currentUser && location !== "/login") {
+      setLocation("/login");
+    }
+  }, [currentUser, location, setLocation]);
 
   // GPS watchPosition — high-accuracy continuous stream
   useEffect(() => {
@@ -152,7 +158,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         // Smooth lat/lng with EMA to reduce GPS jitter
-        // alpha = 0.4: responsive but smooth (lower = smoother, higher = more responsive)
         const alpha = 0.4;
         const smoothed = smoothedRef.current
           ? {
@@ -170,7 +175,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           accuracy: raw.accuracy,
         };
 
-        prevLocationRef.current = raw; // raw for heading calc
+        prevLocationRef.current = raw;
         locationRef.current = newLoc;
         setMyLocation(newLoc);
       },
@@ -178,18 +183,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       {
         enableHighAccuracy: true,
         timeout: 8000,
-        maximumAge: 1000, // accept positions up to 1s old
+        maximumAge: 1000,
       }
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
-  // Smart GPS broadcast loop:
-  // - 2s when actively navigating (activeRequestId set)
-  // - 15s when helper mode on (per spec requirement for live map dots)
-  // - 30s otherwise (battery conservation)
-  // - Skip broadcast if position hasn't moved enough (threshold-gated)
+  // Smart GPS broadcast loop
   useEffect(() => {
     if (!currentUser) return;
 
@@ -219,6 +220,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id, helperModeActive, activeRequestId]);
+
+  // Start the shared WS singleton and register/unregister as the user changes.
+  // This effect is LAST so it never disturbs the hook order above.
+  useEffect(() => {
+    wsStart();
+    if (currentUser) {
+      wsRegister(currentUser.id);
+    } else {
+      wsUnregister();
+    }
+  }, [currentUser?.id]);
 
   return (
     <AppContext.Provider value={{

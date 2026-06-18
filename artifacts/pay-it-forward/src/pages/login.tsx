@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Heart, Mail, User, Lock, Eye, EyeOff, Loader2, MapPin, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
+import { setToken } from "@/lib/auth";
 import { toast } from "@/hooks/use-toast";
 
 type Mode = "login" | "register";
@@ -34,6 +35,7 @@ export default function LoginScreen() {
         const data = await res.json().catch(() => ({})) as any;
         if (!res.ok) throw new Error(data.error ?? "Registration failed");
         const user = data.user ?? data;
+        if (data.token) setToken(data.token);
         setCurrentUser(user);
         localStorage.setItem("niakofa_user", JSON.stringify(user));
         toast({ title: `Welcome to Niakofa, ${user.name}! 💙` });
@@ -48,6 +50,7 @@ export default function LoginScreen() {
         const data = await res.json().catch(() => ({})) as any;
         if (!res.ok) throw new Error(data.error ?? "Login failed");
         const user = data.user ?? data;
+        if (data.token) setToken(data.token);
         setCurrentUser(user);
         localStorage.setItem("niakofa_user", JSON.stringify(user));
         toast({ title: `Welcome back, ${user.name}!` });

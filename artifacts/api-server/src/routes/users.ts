@@ -47,7 +47,8 @@ router.post("/users/register", authLimiter, async (req, res) => {
     is_helper: is_helper ?? false,
     neighborhood: neighborhood ?? null,
   }).returning();
-  return res.status(201).json(user);
+  const token = signTokenById(user.id);
+  return res.status(201).json({ user, token });
 });
 
 router.get("/users/:id", async (req, res) => {
