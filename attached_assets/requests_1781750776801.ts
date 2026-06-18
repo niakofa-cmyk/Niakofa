@@ -255,26 +255,26 @@ router.get("/requests/:id", requireAuth, async (req, res) => {
 router.patch("/requests/:id", requireAuth, async (req, res) => {
   const authenticatedUserId = (req as any).authenticatedUserId;
   const requestId = parseInt(req.params.id);
-  const [existing] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
-  if (!existing) return res.status(404).json({ error: "Request not found" });
-  if (existing.requester_id !== authenticatedUserId) {
+  const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.requester_id !== authenticatedUserId) {
     return res.status(403).json({ error: "Forbidden: You can only update your own requests" });
   }
-  const pParsed = UpdateRequestParams.safeParse({ id: requestId });
+  const pParsed = UpdateRequestParams.safeParse({ id: parseInt(req.params.id) });
   const bParsed = UpdateRequestBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
   const updates: Record<string, unknown> = {};
   if (bParsed.data.status !== undefined) updates.status = bParsed.data.status;
   if (bParsed.data.description !== undefined) updates.description = bParsed.data.description;
   if (bParsed.data.urgency !== undefined) updates.urgency = bParsed.data.urgency;
-  const [updated] = await db.update(requestsTable).set(updates).where(eq(requestsTable.id, pParsed.data.id)).returning();
-  if (!updated) return res.status(404).json({ error: "Not found" });
-  const enriched = { ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
+  const [request] = await db.update(requestsTable).set(updates).where(eq(requestsTable.id, pParsed.data.id)).returning();
+  if (!request) return res.status(404).json({ error: "Not found" });
+  const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
   broadcast({ type: "request_updated", payload: enriched });
   return res.json(enriched);
 });
 
-router.post("/requests/:id/claim", async (req, res) => {
+router.post("/requests/:id/claim", requireAuth, requireOwnership("helper_id"), async (req, res) => {
   const pParsed = ClaimRequestParams.safeParse({ id: parseInt(req.params.id) });
   const bParsed = ClaimRequestBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -289,7 +289,7 @@ router.post("/requests/:id/claim", async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/en-route", async (req, res) => {
+router.post("/requests/:id/en-route", requireAuth, requireOwnership("helper_id"), async (req, res) => {
   const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(req.params.id) });
   const bParsed = MarkEnRouteBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -303,7 +303,7 @@ router.post("/requests/:id/en-route", async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/arrived", async (req, res) => {
+router.post("/requests/:id/arrived", requireAuth, requireOwnership("helper_id"), async (req, res) => {
   const pParsed = MarkArrivedParams.safeParse({ id: parseInt(req.params.id) });
   const bParsed = MarkArrivedBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -317,7 +317,7 @@ router.post("/requests/:id/arrived", async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/complete", async (req, res) => {
+router.post("/requests/:id/complete", requireAuth, requireOwnership("helper_id"), async (req, res) => {
   const pParsed = CompleteRequestParams.safeParse({ id: parseInt(req.params.id) });
   const bParsed = CompleteRequestBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -483,7 +483,7 @@ router.post("/requests/:id/complete", async (req, res) => {
 });
 
 
-router.post("/requests/:id/tip", async (req, res) => {
+router.post("/requests/:id/tip", requireAuth, requireOwnership("requester_id"), async (req, res) => {
   const requestId = parseInt(req.params.id);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 

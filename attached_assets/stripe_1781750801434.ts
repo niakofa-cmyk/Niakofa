@@ -224,6 +224,7 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
     requestId: number;
     amount: number;
     helperId?: number;
+    
     paymentType?: "immediate" | "pay_it_forward";
   };
 
@@ -413,7 +414,7 @@ router.get("/stripe/payment-transactions/:userId", async (req, res) => {
 });
 
 // ── PAYOUT TO HELPER (called after request completion) ─────────────────────
-router.post("/stripe/payout", paymentLimiter, async (req, res) => {
+router.post("/stripe/payout", requireAuth, requireOwnership("helperId"), paymentLimiter, async (req, res) => {
   if (!stripeRequired(res)) return;
 
   const { helperId, amount, description, requestId } = req.body as {
