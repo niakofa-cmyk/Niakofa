@@ -155,3 +155,20 @@ export function wsSubscribe(handler: Handler): () => void {
 export function wsIsConnected(): boolean {
   return socket?.readyState === WebSocket.OPEN;
 }
+
+// ── Page-visibility reconnect — resume immediately when tab regains focus ──────
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && started) {
+      const state = socket?.readyState;
+      if (state === WebSocket.CLOSED || state === WebSocket.CLOSING) {
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        attempt = 0;
+        connect();
+      }
+    }
+  });
+}

@@ -78,11 +78,22 @@ app.use("/api", router);
 if (process.env.NODE_ENV === "production" && process.env.SERVE_FRONTEND === "true") {
   const frontendDist = path.join(import.meta.dirname, "..", "..", "pay-it-forward", "dist", "public");
 
-  app.use(express.static(frontendDist));
+  app.use(express.static(frontendDist, {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith("index.html")) {
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      }
+    },
+  }));
   logger.info({ frontendDist }, "serving frontend static files");
 
   app.get("*path", (req, res) => {
     if (!req.path.startsWith("/api") && !req.path.startsWith("/ws")) {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(path.join(frontendDist, "index.html"));
     }
   });

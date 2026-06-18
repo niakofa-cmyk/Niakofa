@@ -174,6 +174,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!navigator.geolocation) return;
 
+    const gpsOpts: PositionOptions = {
+      enableHighAccuracy: true,
+      timeout: activeRequestId ? 7000 : 10000,
+      maximumAge: activeRequestId ? 1000 : 5000,
+    };
+
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const raw: Location = {
@@ -222,16 +228,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
           localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify({ lat: smoothed.lat, lng: smoothed.lng }));
         } catch {}
       },
-      () => {},
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 5000,
-      }
+      (err) => {
+        const msgs: Record<number, string> = {
+          1: "Location access denied. Enable it in your browser settings to use navigation.",
+          2: "Location unavailable. Move to an open area or check your device settings.",
+          3: "Location request timed out. Check your GPS signal.",
+        };
+        const msg = msgs[err.code] ?? "Unable to determine your location.";
+        import("sonner").then(({ toast: sonnerToast }) => {
+          sonnerToast.warning("GPS issue", { description: msg, id: "gps-error", duration: 8000 });
+        });
+      },
+      gpsOpts
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, []);
+  // Re-run when activeRequestId changes so GPS opts tighten/loosen accordingly
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRequestId]);
 
   // Smart GPS broadcast loop — adaptive intervals based on activity state
   useEffect(() => {

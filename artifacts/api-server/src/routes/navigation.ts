@@ -29,7 +29,8 @@ router.get("/navigation/route", async (req, res) => {
   if (!token) return res.status(500).json({ error: "Mapbox token not configured" });
 
   try {
-    const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${start_lng},${start_lat};${end_lng},${end_lat}?steps=true&geometries=geojson&overview=full&access_token=${token}`;
+    const departAt = profile === "driving" ? `&depart_at=${new Date().toISOString()}&annotations=congestion` : "";
+    const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${start_lng},${start_lat};${end_lng},${end_lat}?steps=true&geometries=geojson&overview=full${departAt}&access_token=${token}`;
     const response = await fetch(url);
     const data = await response.json() as {
       routes?: Array<{

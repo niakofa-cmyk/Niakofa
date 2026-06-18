@@ -114,6 +114,7 @@ export default function ActiveRequestScreen() {
   const enRouteRef = useRef(false);
   const offRouteCooldownRef = useRef(false);
   const startTimeRef = useRef<number>(Date.now());
+  const lastSpokenStepRef = useRef<number>(-1);
 
   // ── Directional map UX ─────────────────────────────────────────────────
   // rawMapRef holds the mapboxgl.Map instance, resolved only after mount
@@ -153,7 +154,7 @@ export default function ActiveRequestScreen() {
   const { data: routeData } = useGetRoute(routeParams, {
     query: {
       enabled: !!myLocation && !!request,
-      refetchInterval: isOffRoute ? 5000 : 15000,
+      refetchInterval: isOffRoute ? 2000 : 15000,
       queryKey: getGetRouteQueryKey(routeParams),
     }
   });
@@ -255,6 +256,36 @@ export default function ActiveRequestScreen() {
     );
     setCurrentStepIndex(newStep);
   }, [myLocation, routeData, request]);
+
+  // Turn-by-turn voice guidance via Web Speech API
+  const speakInstruction = useCallback((text: string) => {
+    if (!("speechSynthesis" in window) || !text) return;
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.rate = 1.0;
+    utt.pitch = 1.0;
+    utt.volume = 1.0;
+    window.speechSynthesis.speak(utt);
+  }, []);
+
+  useEffect(() => {
+    if (isArrived || !routeData?.steps) return;
+    const step = routeData.steps[currentStepIndex];
+    if (!step?.instruction) return;
+    if (lastSpokenStepRef.current === currentStepIndex) return;
+    lastSpokenStepRef.current = currentStepIndex;
+    speakInstruction(step.instruction);
+  }, [currentStepIndex, routeData?.steps, isArrived, speakInstruction]);
+
+  // Announce arrival
+  useEffect(() => {
+    if (isArrived) speakInstruction("You have arrived at your destination.");
+  }, [isArrived, speakInstruction]);
+
+  // Announce off-route
+  useEffect(() => {
+    if (isOffRoute) speakInstruction("Off route. Recalculating.");
+  }, [isOffRoute, speakInstruction]);
 
   // Auto-zoom to route
   useEffect(() => {
@@ -509,6 +540,29 @@ export default function ActiveRequestScreen() {
             )}
           </div>
         </Marker>
+
+        {/* Real-time traffic layer from Mapbox */}
+        <Source id="mapbox-traffic" type="vector" url="mapbox://mapbox.mapbox-traffic-v1">
+          <Layer
+            id="traffic-flow"
+            type="line"
+            source-layer="traffic"
+            paint={{
+              "line-color": [
+                "match",
+                ["get", "congestion"],
+                "low",    "#4ade80",
+                "moderate", "#facc15",
+                "heavy",  "#f97316",
+                "severe", "#ef4444",
+                "#94a3b8",
+              ],
+              "line-width": 3,
+              "line-opacity": 0.65,
+            }}
+            layout={{ "line-cap": "round", "line-join": "round" }}
+          />
+        </Source>
 
         {routeData?.geometry && (
           <Source id="route" type="geojson" data={routeData.geometry as unknown as GeoJSON.FeatureCollection}>
