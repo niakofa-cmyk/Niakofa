@@ -126,6 +126,21 @@ function bearerToken(userId: number): string {
   return `Bearer ${signTokenById(userId)}`;
 }
 
+// ── Reset mocks between tests to avoid state bleed ───────────────────────────
+beforeEach(async () => {
+  const { db } = await import("@workspace/db");
+  (db.select as jest.Mock).mockClear().mockReturnThis();
+  (db.update as jest.Mock).mockClear().mockReturnThis();
+  (db.insert as jest.Mock).mockClear().mockReturnThis();
+  (db.delete as jest.Mock).mockClear().mockReturnThis();
+  (db.from as jest.Mock).mockClear().mockReturnThis();
+  (db.where as jest.Mock).mockClear().mockReturnThis();
+  (db.set as jest.Mock).mockClear().mockReturnThis();
+  (db.values as jest.Mock).mockClear().mockReturnThis();
+  (db.limit as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
+  (db.returning as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
+});
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("POST /api/requests/:id/claim", () => {
@@ -143,6 +158,22 @@ describe("POST /api/requests/:id/claim", () => {
       .send({});
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/own request/i);
+  });
+
+  it("returns 200 when a different user claims an open request", async () => {
+    const { db } = await import("@workspace/db");
+    const openReq = { id: 1, status: "open", requester_id: 10, helper_id: null };
+    const claimedReq = { ...openReq, status: "claimed", helper_id: 20 };
+    (db.limit as jest.Mock).mockResolvedValueOnce([openReq]);
+    (db.returning as jest.Mock).mockResolvedValueOnce([claimedReq]);
+    (db.limit as jest.Mock).mockResolvedValueOnce([{ id: 20, name: "Helper", lat: null, lng: null }]);
+    const res = await request(app)
+      .post("/api/requests/1/claim")
+      .set("Authorization", bearerToken(20))
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("claimed");
+    expect(res.body.helper_id).toBe(20);
   });
 });
 
@@ -162,6 +193,19 @@ describe("POST /api/requests/:id/en-route", () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/not the assigned helper/i);
   });
+
+  it("returns 200 when the assigned helper marks en-route", async () => {
+    const { db } = await import("@workspace/db");
+    const updatedReq = { id: 2, status: "en_route", helper_id: 20, requester_id: 10 };
+    (db.limit as jest.Mock).mockResolvedValueOnce([{ helper_id: 20 }]);
+    (db.returning as jest.Mock).mockResolvedValueOnce([updatedReq]);
+    const res = await request(app)
+      .post("/api/requests/2/en-route")
+      .set("Authorization", bearerToken(20))
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("en_route");
+  });
 });
 
 describe("POST /api/requests/:id/arrived", () => {
@@ -179,6 +223,19 @@ describe("POST /api/requests/:id/arrived", () => {
       .send({});
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/not the assigned helper/i);
+  });
+
+  it("returns 200 when the assigned helper marks arrived", async () => {
+    const { db } = await import("@workspace/db");
+    const updatedReq = { id: 2, status: "arrived", helper_id: 20, requester_id: 10 };
+    (db.limit as jest.Mock).mockResolvedValueOnce([{ helper_id: 20 }]);
+    (db.returning as jest.Mock).mockResolvedValueOnce([updatedReq]);
+    const res = await request(app)
+      .post("/api/requests/2/arrived")
+      .set("Authorization", bearerToken(20))
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("arrived");
   });
 });
 
@@ -209,6 +266,21 @@ describe("POST /api/requests/:id/complete", () => {
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/already completed/i);
   });
+
+  it("returns 200 when the assigned helper completes an active request", async () => {
+    const { db } = await import("@workspace/db");
+    const activeReq = { id: 2, status: "arrived", helper_id: 20, requester_id: 10, payment_type: "goodwill" };
+    const completedReq = { ...activeReq, status: "completed" };
+    (db.limit as jest.Mock).mockResolvedValueOnce([activeReq]);
+    (db.returning as jest.Mock).mockResolvedValueOnce([completedReq]);
+    (db.returning as jest.Mock).mockResolvedValueOnce([{ id: 20, help_count: 1, goodwill_score: 10 }]);
+    const res = await request(app)
+      .post("/api/requests/2/complete")
+      .set("Authorization", bearerToken(20))
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("completed");
+  });
 });
 
 describe("POST /api/requests/:id/tip", () => {
@@ -235,8 +307,20 @@ describe("POST /api/requests/:id/tip", () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/only the requester/i);
   });
-});
 
-describe("POST /api/users/register — duplicate email", () => {
-  it("is tested via the users router (see users.test.ts)");
+  it("returns 200 when the requester tips the helper", async () => {
+    const { db } = await import("@workspace/db");
+    const completedReq = {
+      id: 3, status: "completed", helper_id: 20, requester_id: 10,
+      payment_type: "goodwill", title: "Grocery run",
+    };
+    (db.limit as jest.Mock).mockResolvedValueOnce([completedReq]);
+    (db.returning as jest.Mock).mockResolvedValueOnce([{ ...completedReq }]);
+    (db.returning as jest.Mock).mockResolvedValueOnce([{ id: 20, benevolence_wallet: 5 }]);
+    const res = await request(app)
+      .post("/api/requests/3/tip")
+      .set("Authorization", bearerToken(10))
+      .send({ tip_amount: 5 });
+    expect(res.status).toBe(200);
+  });
 });

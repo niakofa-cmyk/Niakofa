@@ -1,1 +1,151 @@
-# cache bust Wed Jun 17 14:38:44 CDT 2026
+# Niakofa — Community Help Platform
+
+A map-first, pay-it-forward community mutual aid platform for Tarrant County, TX. Residents can request help with groceries, rides, errands, and more; neighbors volunteer as helpers and earn goodwill — all on a live Mapbox map.
+
+> **Mission:** Help Today. Pay It Forward Tomorrow. Building community one act of kindness at a time in Fort Worth, TX.
+
+---
+
+## Quick Start
+
+```bash
+# Install dependencies
+pnpm install
+
+# Run the API server (port 8080)
+pnpm --filter @workspace/api-server run dev
+
+# Run the frontend (port 18848 in Replit, 3000 locally)
+pnpm --filter @workspace/pay-it-forward run dev
+```
+
+### Required Environment Variables
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `SESSION_SECRET` | 64-char hex string for HMAC token signing |
+| `ADMIN_SECRET` | Password protecting the `/admin` route |
+| `VITE_MAPBOX_TOKEN` | Mapbox public token (baked into frontend build) |
+| `MAPBOX_TOKEN` | Mapbox token for server-side geocoding |
+| `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (`pk_live_` / `pk_test_`) |
+| `STRIPE_SECRET_KEY` | Stripe secret key |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
+| `VAPID_PUBLIC_KEY` | Web Push VAPID public key |
+| `VAPID_PRIVATE_KEY` | Web Push VAPID private key |
+| `REDIS_URL` | *(Optional)* Redis for BullMQ background workers |
+
+See `.env.railway.example` for the full reference.
+
+---
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Runtime | Node.js 22+, TypeScript 5.9 |
+| Frontend | React 19, Vite, Tailwind CSS 4, Framer Motion |
+| Routing | Wouter |
+| Data Fetching | TanStack Query (React Query) |
+| Maps | Mapbox GL / react-map-gl |
+| API | Express 5 |
+| Database | PostgreSQL + Drizzle ORM |
+| Validation | Zod, drizzle-zod |
+| API Codegen | Orval (OpenAPI → React Query hooks + Zod) |
+| Background Jobs | BullMQ (Redis) with setInterval fallback |
+| Payments | Stripe |
+| Push Notifications | Web Push API (VAPID) |
+| i18n | i18next (English + Spanish) |
+| Monorepo | pnpm workspaces |
+
+---
+
+## Where Things Live
+
+```
+lib/
+  api-spec/openapi.yaml              ← single source of truth for API contracts
+  db/src/schema/                     ← Drizzle ORM schema files
+  api-client-react/src/generated/   ← generated React Query hooks (do not hand-edit)
+  api-zod/src/generated/            ← generated Zod validation schemas (do not hand-edit)
+
+artifacts/
+  api-server/src/routes/            ← Express route handlers
+  api-server/src/middlewares/       ← Auth, authz, rate limiting
+  api-server/src/workers/           ← BullMQ background workers
+  api-server/src/__tests__/         ← Supertest unit + integration tests
+  pay-it-forward/src/pages/         ← React page components
+  pay-it-forward/src/components/    ← Shared UI components
+  pay-it-forward/src/lib/           ← Auth helpers, hooks, context
+```
+
+---
+
+## Key Commands
+
+```bash
+# Full typecheck across all packages
+pnpm run typecheck
+
+# Build everything (typecheck + compile)
+pnpm run build
+
+# Regenerate API hooks and Zod schemas from OpenAPI spec
+# Run this after ANY change to lib/api-spec/openapi.yaml
+pnpm --filter @workspace/api-spec run codegen
+
+# Push DB schema changes to development database
+pnpm --filter @workspace/db run push
+
+# Run backend tests
+pnpm --filter @workspace/api-server run test
+```
+
+---
+
+## Product Screens
+
+| Route | Description |
+|---|---|
+| `/` | Live Mapbox map — open requests + online helpers in real time |
+| `/request/new` | Create a help request (category, urgency, payment type) |
+| `/request/:id` | Track a live request — claim → en-route → arrived → complete |
+| `/community` | Leaderboard, stats, civic resources for Tarrant County |
+| `/wallet` | Benevolence wallet, scheduled payments, pay-it-forward pledges |
+| `/profile` | User profile, helper mode toggle, trust score |
+| `/admin` | Token-gated trust & safety report review queue |
+
+---
+
+## Architecture Decisions
+
+- **Contract-first OpenAPI:** The spec in `lib/api-spec/openapi.yaml` is the single source of truth. Orval generates both server Zod schemas and client React Query hooks. Never hand-write types that codegen produces.
+- **Stateless auth:** HMAC-SHA256 tokens signed with `SESSION_SECRET`. No database sessions.
+- **Admin auth:** `X-Admin-Token` header checked against `ADMIN_SECRET`. Frontend stores token in sessionStorage.
+- **Civic resources:** Seeded in the DB — 19 Tarrant County organizations across 8 categories.
+- **WebSocket hub** (`/ws`): Broadcasts live events — new requests, helper location updates, new reports, report reviews.
+- **BullMQ workers:** Handle payouts, pledges, and notification delivery when `REDIS_URL` is set; falls back to setInterval-based scheduler otherwise.
+- **Legacy account passwords:** Users with `password_hash = null` get `password_reset_required: true` on login. The frontend shows an inline "Set Password" prompt that calls `PATCH /api/users/:id` with `new_password`.
+
+---
+
+## Testing
+
+```bash
+pnpm --filter @workspace/api-server run test
+```
+
+Tests live in `artifacts/api-server/src/__tests__/`. The DB is mocked — no real Postgres connection needed.
+
+- `lifecycle.test.ts` — request lifecycle authorization (claim, en-route, arrived, complete, tip) + happy-path flows
+- `users.test.ts` — user registration, login, and duplicate-email rejection
+
+---
+
+## Gotchas
+
+- After any OpenAPI spec change, always run `pnpm --filter @workspace/api-spec run codegen` before restarting the server.
+- The Vite dev server has `fs.allow` set to the workspace root (`../..`) so it can serve `lib/api-client-react` source files.
+- `ADMIN_SECRET` must be set via environment secrets — never hardcode it.
+- Mapbox and Stripe keys are split: `VITE_*` prefix bakes them into the frontend bundle at build time; unprefixed versions are for server-side use only.
+- Mobile: the map view uses `100dvh` and `pb-safe` padding for iOS notch/home-bar compatibility.

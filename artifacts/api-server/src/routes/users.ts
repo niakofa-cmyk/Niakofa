@@ -106,9 +106,24 @@ router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => 
   if (specialties !== undefined) (updates as any).specialties = specialties;
   if (phone_masked !== undefined) (updates as any).phone_masked = phone_masked;
   if (quick_replies !== undefined) (updates as any).quick_replies = quick_replies;
+
+  // ── Set-password flow for legacy accounts ─────────────────────────────────
+  // The client sends `new_password` (plaintext) when a legacy user creates a
+  // password for the first time. We hash it here — the plaintext never persists.
+  const rawNewPassword = (req.body as Record<string, unknown>).new_password;
+  if (rawNewPassword !== undefined) {
+    if (typeof rawNewPassword !== "string" || rawNewPassword.length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters" });
+    }
+    (updates as any).password_hash = await bcrypt.hash(rawNewPassword, BCRYPT_ROUNDS);
+    logger.info({ user_id: pParsed.data.id }, "users: legacy account password set");
+  }
+
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  return res.json(user);
+  // Never return the password hash to the client
+  const { password_hash: _ph, ...safeUser } = user as any;
+  return res.json(safeUser);
 });
 
 router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter, async (req, res) => {

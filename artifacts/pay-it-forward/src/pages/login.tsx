@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { Heart, Mail, User, Lock, Eye, EyeOff, Loader2, MapPin, Shield } from "lucide-react";
+import { Heart, Mail, User, Lock, Eye, EyeOff, Loader2, MapPin, Shield, KeyRound, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { setToken } from "@/lib/auth";
 import { toast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 
 type Mode = "login" | "register";
 
 export default function LoginScreen() {
+  const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { setCurrentUser } = useAppContext();
   const [mode, setMode] = useState<Mode>("login");
@@ -19,6 +21,14 @@ export default function LoginScreen() {
   const [showPass, setShowPass] = useState(false);
   const [isHelper, setIsHelper] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // ── Set-Password flow for legacy accounts ────────────────────────────────────
+  const [pendingLegacyUser, setPendingLegacyUser] = useState<{ id: number; token: string; name: string } | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [passwordSaved, setPasswordSaved] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
 
   const handleSubmit = async () => {
     if (!email.trim()) return;
@@ -33,7 +43,10 @@ export default function LoginScreen() {
           body: JSON.stringify({ name: name.trim(), email: email.trim(), password, is_helper: isHelper }),
         });
         const data = await res.json().catch(() => ({})) as any;
-        if (!res.ok) throw new Error(data.error ?? "Registration failed");
+        if (!res.ok) {
+          const msgKey = data.error === "Email already registered" ? "auth.email_taken" : null;
+          throw new Error(msgKey ? t(msgKey) : (data.error ?? "Registration failed"));
+        }
         const user = data.user ?? data;
         if (data.token) setToken(data.token);
         setCurrentUser(user);
@@ -48,20 +61,190 @@ export default function LoginScreen() {
           body: JSON.stringify({ email: email.trim(), password }),
         });
         const data = await res.json().catch(() => ({})) as any;
-        if (!res.ok) throw new Error(data.error ?? "Login failed");
+        if (!res.ok) {
+          const msgKey =
+            data.error === "Incorrect password" ? "auth.wrong_password" :
+            data.error === "No account found with that email" ? "auth.no_account" : null;
+          throw new Error(msgKey ? t(msgKey) : (data.error ?? t("common.error")));
+        }
         const user = data.user ?? data;
         if (data.token) setToken(data.token);
+
+        // Legacy account — prompt to set a password before entering the app
+        if (data.password_reset_required === true) {
+          setCurrentUser(user);
+          localStorage.setItem("niakofa_user", JSON.stringify(user));
+          setPendingLegacyUser({ id: user.id, token: data.token, name: user.name });
+          return;
+        }
+
         setCurrentUser(user);
         localStorage.setItem("niakofa_user", JSON.stringify(user));
         toast({ title: `Welcome back, ${user.name}!` });
         setLocation("/");
       }
     } catch (err) {
-      toast({ title: err instanceof Error ? err.message : "Something went wrong", variant: "destructive" });
+      toast({ title: err instanceof Error ? err.message : t("common.error"), variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
+
+  const handleSetPassword = async () => {
+    if (!pendingLegacyUser) return;
+    if (newPassword.length < 8) {
+      toast({ title: "Password must be at least 8 characters", variant: "destructive" });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast({ title: "Passwords do not match", variant: "destructive" });
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const res = await fetch(`/api/users/${pendingLegacyUser.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${pendingLegacyUser.token}`,
+        },
+        body: JSON.stringify({ new_password: newPassword }),
+      });
+      const data = await res.json().catch(() => ({})) as any;
+      if (!res.ok) throw new Error(data.error ?? "Failed to save password");
+      setPasswordSaved(true);
+      setTimeout(() => {
+        toast({ title: "Password set — welcome, " + pendingLegacyUser.name + "!" });
+        setLocation("/");
+      }, 1400);
+    } catch (err) {
+      toast({ title: err instanceof Error ? err.message : t("common.error"), variant: "destructive" });
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  // ── Legacy account "Set Password" screen ─────────────────────────────────────
+  if (pendingLegacyUser) {
+    return (
+      <div className="min-h-[100dvh] bg-background flex flex-col">
+        <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
+          <motion.div
+            initial={{ scale: 0.85, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 200, damping: 20 }}
+            className="w-full max-w-sm"
+          >
+            <div className="flex flex-col items-center mb-8">
+              <div className="w-16 h-16 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center mb-4 shadow-[0_0_40px_rgba(0,212,255,0.15)]">
+                <KeyRound className="w-8 h-8 text-primary" />
+              </div>
+              <h2 className="text-2xl font-black tracking-tight text-foreground">
+                {t("auth.set_password")}
+              </h2>
+              <p className="text-sm text-muted-foreground mt-2 text-center leading-relaxed">
+                {t("auth.password_setup_prompt")}
+              </p>
+            </div>
+
+            <AnimatePresence mode="wait">
+              {passwordSaved ? (
+                <motion.div
+                  key="saved"
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="flex flex-col items-center gap-3 py-8 text-center"
+                >
+                  <CheckCircle2 className="w-14 h-14 text-green-400" />
+                  <div className="font-black text-lg text-foreground">Password saved!</div>
+                  <div className="text-sm text-muted-foreground">Taking you to the app…</div>
+                </motion.div>
+              ) : (
+                <motion.div key="form" className="space-y-3">
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type={showNewPass ? "text" : "password"}
+                      placeholder="New password (min 8 characters)"
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                      className="w-full bg-card border border-border rounded-2xl pl-11 pr-12 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      autoComplete="new-password"
+                    />
+                    <button
+                      onClick={() => setShowNewPass(p => !p)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground active:text-foreground transition-colors"
+                    >
+                      {showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type="password"
+                      placeholder="Confirm password"
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleSetPassword()}
+                      className="w-full bg-card border border-border rounded-2xl pl-11 pr-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      autoComplete="new-password"
+                    />
+                  </div>
+
+                  {newPassword.length > 0 && confirmPassword.length > 0 && newPassword !== confirmPassword && (
+                    <motion.p
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="text-xs text-destructive px-1"
+                    >
+                      Passwords do not match
+                    </motion.p>
+                  )}
+
+                  <Button
+                    className="w-full h-13 font-black text-base mt-2"
+                    onClick={handleSetPassword}
+                    disabled={
+                      savingPassword ||
+                      newPassword.length < 8 ||
+                      newPassword !== confirmPassword
+                    }
+                  >
+                    {savingPassword ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Saving…
+                      </span>
+                    ) : (
+                      t("auth.set_password")
+                    )}
+                  </Button>
+
+                  <button
+                    onClick={() => {
+                      toast({ title: `Welcome back, ${pendingLegacyUser.name}!` });
+                      setLocation("/");
+                    }}
+                    className="w-full text-sm text-muted-foreground py-2 hover:text-foreground transition-colors"
+                  >
+                    Skip for now
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        </div>
+
+        <div className="px-6 pb-safe pb-6 text-center">
+          <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+            <Shield className="w-3 h-3" />
+            No tracking, no ads, community-owned
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col">

@@ -18,6 +18,7 @@ const en = {
     confirm: "Confirm",
     back: "Back",
     retry: "Retry",
+    alerts: "Alerts",
   },
   status: {
     open: "Open",
@@ -123,6 +124,7 @@ const es: typeof en = {
     confirm: "Confirmar",
     back: "Atrás",
     retry: "Reintentar",
+    alerts: "Alertas",
   },
   status: {
     open: "Abierto",

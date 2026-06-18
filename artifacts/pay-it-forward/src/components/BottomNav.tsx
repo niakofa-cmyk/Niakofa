@@ -5,13 +5,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import { NotificationsDrawer, type LiveNotification } from "./NotificationsDrawer";
 import { useWebSocket } from "@/lib/useWebSocket";
 import type { HelpRequest } from "@workspace/api-client-react";
+import { useTranslation } from "react-i18next";
 
-const tabs = [
-  { path: "/",          icon: Map,    label: "Map"      },
-  { path: "/community", icon: Users,  label: "Community"},
-  { path: "/request/new", icon: Plus, label: "Request", center: true },
-  { path: "/wallet",    icon: Wallet, label: "Wallet"   },
-  { path: "/profile",   icon: User,   label: "Profile"  },
+type Tab = { path: string; icon: React.ElementType; labelKey: string; center?: boolean };
+
+const tabs: Tab[] = [
+  { path: "/",            icon: Map,    labelKey: "nav.map"       },
+  { path: "/community",   icon: Users,  labelKey: "nav.community" },
+  { path: "/request/new", icon: Plus,   labelKey: "request.new",  center: true },
+  { path: "/wallet",      icon: Wallet, labelKey: "nav.wallet"    },
+  { path: "/profile",     icon: User,   labelKey: "nav.profile"   },
 ];
 
 const SEED_NOTIFICATIONS: LiveNotification[] = [
@@ -46,6 +49,7 @@ const SEED_NOTIFICATIONS: LiveNotification[] = [
 ];
 
 export function BottomNav() {
+  const { t } = useTranslation();
   const [location] = useLocation();
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<LiveNotification[]>(SEED_NOTIFICATIONS);
@@ -146,7 +150,7 @@ export function BottomNav() {
                     }`}>
                       <tab.icon className="w-7 h-7 text-primary-foreground" />
                     </div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-muted-foreground">{tab.label}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-muted-foreground">{t(tab.labelKey)}</span>
                   </div>
                 </Link>
               );
@@ -157,7 +161,7 @@ export function BottomNav() {
                 <div className="flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all min-w-[52px]">
                   <tab.icon className={`w-5 h-5 transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`} />
                   <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`}>
-                    {tab.label}
+                    {t(tab.labelKey)}
                   </span>
                   {isActive && <div className="w-1 h-1 rounded-full bg-primary" />}
                 </div>
@@ -190,7 +194,7 @@ export function BottomNav() {
               </AnimatePresence>
             </div>
             <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${unreadCount > 0 ? "text-primary" : "text-muted-foreground"}`}>
-              Alerts
+              {t("common.alerts", "Alerts")}
             </span>
           </button>
 
