@@ -1,15 +1,10 @@
 import { useLocation, Link } from "wouter";
 import { Map, Users, Plus, Wallet, User, Bell } from "lucide-react";
-<<<<<<< HEAD
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NotificationsDrawer, type LiveNotification } from "./NotificationsDrawer";
 import { useWebSocket } from "@/lib/useWebSocket";
 import type { HelpRequest } from "@workspace/api-client-react";
-=======
-import { useState, useCallback } from "react";
-import { NotificationsDrawer } from "./NotificationsDrawer";
->>>>>>> 5387f3ff (fix: red dot unread count, singleton WebSocket, BASE_URL fixes, SOS href)
 
 const tabs = [
   { path: "/",          icon: Map,    label: "Map"      },
@@ -52,7 +47,6 @@ const SEED_NOTIFICATIONS: LiveNotification[] = [
 
 export function BottomNav() {
   const [location] = useLocation();
-<<<<<<< HEAD
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<LiveNotification[]>(SEED_NOTIFICATIONS);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -133,19 +127,6 @@ export function BottomNav() {
     setNotifOpen(true);
     setUnreadCount(0);
   };
-=======
-  const [notifOpen, setNotifOpen]   = useState(false);
-  const [unreadCount, setUnreadCount] = useState(4); // 4 seed notifications start unread
-
-  const handleOpen = () => {
-    setNotifOpen(true);
-    setUnreadCount(0); // clear dot the moment drawer opens
-  };
-
-  const handleNewNotif = useCallback(() => {
-    setUnreadCount(n => n + 1);
-  }, []);
->>>>>>> 5387f3ff (fix: red dot unread count, singleton WebSocket, BASE_URL fixes, SOS href)
 
   return (
     <>
@@ -168,13 +149,7 @@ export function BottomNav() {
                     }`}>
                       <tab.icon className="w-7 h-7 text-primary-foreground" />
                     </div>
-<<<<<<< HEAD
                     <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-muted-foreground">{tab.label}</span>
-=======
-                    <span className="text-[9px] font-bold uppercase tracking-wider mt-1 text-muted-foreground">
-                      {tab.label}
-                    </span>
->>>>>>> 5387f3ff (fix: red dot unread count, singleton WebSocket, BASE_URL fixes, SOS href)
                   </div>
                 </Link>
               );
@@ -184,13 +159,7 @@ export function BottomNav() {
               <Link key={tab.path} href={tab.path}>
                 <div className="flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all min-w-[52px]">
                   <tab.icon className={`w-5 h-5 transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`} />
-<<<<<<< HEAD
                   <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`}>
-=======
-                  <span className={`text-[9px] font-bold uppercase tracking-wider transition-colors ${
-                    isActive ? "text-primary" : "text-muted-foreground"
-                  }`}>
->>>>>>> 5387f3ff (fix: red dot unread count, singleton WebSocket, BASE_URL fixes, SOS href)
                     {tab.label}
                   </span>
                   {isActive && <div className="w-1 h-1 rounded-full bg-primary" />}
@@ -201,7 +170,6 @@ export function BottomNav() {
 
           {/* Alerts bell — unread count badge, clears on open */}
           <button
-<<<<<<< HEAD
             onClick={openNotifications}
             className="flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all min-w-[52px] relative active:scale-95"
           >
@@ -227,39 +195,12 @@ export function BottomNav() {
             <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${unreadCount > 0 ? "text-primary" : "text-muted-foreground"}`}>
               Alerts
             </span>
-=======
-            onClick={handleOpen}
-            className="flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all min-w-[52px] relative"
-          >
-            <Bell className={`w-5 h-5 transition-colors ${notifOpen ? "text-primary" : "text-muted-foreground"}`} />
-            <span className={`text-[9px] font-bold uppercase tracking-wider transition-colors ${
-              notifOpen ? "text-primary" : "text-muted-foreground"
-            }`}>
-              Alerts
-            </span>
-            {/* Only render when there are unread notifications */}
-            {unreadCount > 0 && (
-              <span className="absolute top-0 right-1 min-w-[16px] h-4 bg-destructive rounded-full flex items-center justify-center px-1">
-                <span className="text-[9px] font-black text-white leading-none">
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </span>
-              </span>
-            )}
->>>>>>> 5387f3ff (fix: red dot unread count, singleton WebSocket, BASE_URL fixes, SOS href)
           </button>
 
         </div>
       </nav>
 
-<<<<<<< HEAD
       <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} notifications={notifications} />
-=======
-      <NotificationsDrawer
-        open={notifOpen}
-        onClose={() => setNotifOpen(false)}
-        onNewNotification={handleNewNotif}
-      />
->>>>>>> 5387f3ff (fix: red dot unread count, singleton WebSocket, BASE_URL fixes, SOS href)
     </>
   );
 }
