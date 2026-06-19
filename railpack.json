@@ -1,10 +1,7 @@
 {
   "$schema": "https://schema.railpack.com",
   "cache": [
-    { "id": "pnpm-store", "paths": ["/root/.local/share/pnpm/store"] },
-    { "id": "api-dist",   "paths": ["artifacts/api-server/dist"] },
-    { "id": "fe-dist",    "paths": ["artifacts/pay-it-forward/dist"] },
-    { "id": "tsbuild",    "paths": ["artifacts/pay-it-forward/.tsbuildinfo", "lib/api-client-react/dist"] }
+    { "id": "pnpm-store", "paths": ["/root/.local/share/pnpm/store"] }
   ],
   "steps": {
     "build": {
