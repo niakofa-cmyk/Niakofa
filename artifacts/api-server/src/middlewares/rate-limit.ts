@@ -7,8 +7,26 @@
  *
  * Trust model (future): high-trust/verified users get higher limits.
  * Today: IP-based and userId-based limits that are generous but enforceable.
+ *
+ * STORE: backed by Redis when configured (via the shared connection in
+ * lib/queue.ts) so limits are enforced consistently across restarts and
+ * multiple instances. Falls back to express-rate-limit's default in-memory
+ * store when Redis isn't configured — same graceful-degradation pattern
+ * used everywhere else in this codebase (queues, cache).
  */
-import { rateLimit } from "express-rate-limit";
+import { rateLimit, type Store } from "express-rate-limit";
+import { RedisStore } from "rate-limit-redis";
+import { getRedisConnection } from "../lib/queue";
+
+function createStore(prefix: string): Store | undefined {
+  const redis = getRedisConnection();
+  if (!redis) return undefined; // falls back to default in-memory store
+  return new RedisStore({
+    sendCommand: (command: string, ...rest: string[]) =>
+      redis.call(command, ...rest) as ReturnType<RedisStore["sendCommand"]>,
+    prefix: `rl:${prefix}:`,
+  });
+}
 
 // ── 1. Auth Routes (10 / 15 min) ─────────────────────────────────────────────
 // Protects: login, signup, password reset against brute-force / credential stuffing.
@@ -17,6 +35,7 @@ export const authLimiter = rateLimit({
   limit: 10,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  store: createStore("auth"),
   message: {
     error:
       "Too many sign-in attempts from this device. Please wait 15 minutes and try again. " +
@@ -33,6 +52,7 @@ export const requestCreationLimiter = rateLimit({
   limit: 10,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  store: createStore("req-create"),
   keyGenerator: (req) => {
     // Key on the authenticated userId set by parseAuth (runs before all routes).
     // Never key on req.body.requester_id — unauthenticated body data can be spoofed
@@ -55,6 +75,7 @@ export const gpsLimiter = rateLimit({
   limit: 1,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  store: createStore("gps"),
   keyGenerator: (req) =>
     `gps-${req.params?.["id"] ?? "unknown"}-${req.ip ?? ""}`,
   message: {
@@ -72,6 +93,7 @@ export const paymentLimiter = rateLimit({
   limit: 20,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  store: createStore("payment"),
   message: {
     error:
       "Too many payment requests in a short period. " +
@@ -87,6 +109,7 @@ export const generalApiLimiter = rateLimit({
   limit: 200,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  store: createStore("general"),
   message: {
     error:
       "Too many requests from this address. " +
@@ -103,6 +126,7 @@ export const chatLimiter = rateLimit({
   limit: 30,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  store: createStore("chat"),
   keyGenerator: (req) => {
     const r = req as typeof req & { authenticatedUserId?: number };
     return `chat-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;

@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import Stripe from "stripe";
 import { logger } from "../lib/logger";
 import { sendSms } from "../lib/sms";
-import { broadcast } from "../lib/ws-hub";
+import { broadcast, broadcastToAdmins } from "../lib/ws-hub";
 
 const router = Router();
 
@@ -129,9 +129,10 @@ router.post("/verification/sos", requireAuth, requireOwnership("user_id"), async
     status: "pending",
   }).returning();
 
-  // Broadcast to all moderators via WebSocket — best-effort, real-time nudge
-  // on top of the persisted record above, not a substitute for it.
-  broadcast({
+  // Notify admins only — best-effort, real-time nudge on top of the
+  // persisted record above, not a substitute for it. This is NOT a public
+  // broadcast; an SOS event is sensitive and should only reach moderators.
+  broadcastToAdmins({
     type: "new_report",
     payload: {
       report_id: savedReport?.id,
@@ -163,7 +164,7 @@ router.patch("/verification/panic-contacts/:userId", requireAuth, requireOwnersh
   if (!Array.isArray(contacts)) return res.status(400).json({ error: "contacts array required" });
 
   await db.update(usersTable)
-    .set({ panic_contacts: contacts.slice(0, 3) } as any)
+    .set({ panic_contacts: contacts.slice(0, 5) } as any) // matches the 5-contact limit enforced in users.ts
     .where(eq(usersTable.id, userId));
 
   return res.json({ ok: true, contacts });

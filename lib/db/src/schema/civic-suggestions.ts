@@ -10,7 +10,7 @@ export const civicSuggestionsTable = pgTable("civic_suggestions", {
   website: text("website"),
   status: text("status").notNull().default("pending"),
   admin_notes: text("admin_notes"),
-  reviewed_by: integer("reviewed_by").references(() => usersTable.id),
+  reviewed_by: integer("reviewed_by").references(() => usersTable.id, { onDelete: "set null" }),
   reviewed_at: timestamp("reviewed_at"),
   created_at: timestamp("created_at").notNull().defaultNow(),
 });

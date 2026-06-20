@@ -58,7 +58,10 @@ export function computeNextFireAt(
     if (recurrence === "daily") {
       next.setDate(next.getDate() + 1);
     } else if (recurrence === "weekly") {
-      next.setDate(next.getDate() + 1);
+      // Advance a full week, not 1 day — without this, a weekly recurrence
+      // with no day_of_week set would effectively fire daily, since the
+      // day-of-week correction loop below only runs when dayOfWeek is set.
+      next.setDate(next.getDate() + 7);
     } else if (recurrence === "monthly") {
       next.setMonth(next.getMonth() + 1);
     }

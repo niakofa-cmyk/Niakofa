@@ -13,6 +13,8 @@ import { WebSocketServer, WebSocket } from "ws";
 import { IncomingMessage } from "http";
 import { logger } from "./logger";
 import { verifyToken } from "../middlewares/auth";
+import { db, usersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 // ── Standardized Niakofa Event Types ─────────────────────────────────────────
 export type WsEventType =
@@ -73,6 +75,24 @@ export function getPresence(userId: number): PresenceStatus {
 // ── Per-user socket registry ──────────────────────────────────────────────────
 const userSockets = new Map<number, Set<WebSocket>>();
 
+// ── Admin socket registry — populated at register time below ─────────────────
+// Used so admin-only events (e.g. SOS, report reviews) aren't broadcast to
+// every connected client by default; visibility no longer relies solely on
+// the frontend choosing not to render them.
+const adminSockets = new Set<WebSocket>();
+
+export function broadcastToAdmins(event: WsEvent): void {
+  const msg = JSON.stringify(event);
+  let sent = 0;
+  adminSockets.forEach((sock) => {
+    if (sock.readyState === WebSocket.OPEN) {
+      sock.send(msg);
+      sent++;
+    }
+  });
+  if (sent > 0) logger.info({ type: event.type, clients: sent }, "WS broadcast (admins only)");
+}
+
 export function sendToUser(userId: number, event: WsEvent): void {
   const sockets = userSockets.get(userId);
   if (!sockets) return;
@@ -94,7 +114,15 @@ const socketAlive       = new WeakMap<WebSocket, boolean>();
 
 function getClientIp(req: IncomingMessage): string {
   const fwd = req.headers["x-forwarded-for"];
-  if (fwd) return (Array.isArray(fwd) ? fwd[0] : fwd).split(",")[0]!.trim();
+  if (fwd) {
+    // Trust the LAST entry, not the first — with exactly one trusted proxy
+    // in front (Railway, matching app.ts's `trust proxy = 1`), that proxy
+    // appends the real client IP as the final hop. The FIRST entry is
+    // entirely client-supplied and trivially spoofable by sending a fake
+    // x-forwarded-for header directly.
+    const parts = (Array.isArray(fwd) ? fwd[0] : fwd).split(",");
+    return parts[parts.length - 1]!.trim();
+  }
   return req.socket.remoteAddress ?? "unknown";
 }
 
@@ -150,7 +178,7 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
     socket.on("pong", () => socketAlive.set(socket, true));
 
     // ── Message handler ───────────────────────────────────────────────────────
-    socket.on("message", (raw) => {
+    socket.on("message", async (raw) => {
       try {
         const msg = JSON.parse(raw.toString()) as WsEvent;
 
@@ -172,6 +200,15 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
             return;
           }
           registeredUserId = userId;
+          // Check admin status once at register time and track the socket
+          // for admin-only broadcasts.
+          try {
+            const [u] = await db.select({ is_admin: usersTable.is_admin })
+              .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+            if (u?.is_admin) adminSockets.add(socket);
+          } catch (err) {
+            logger.warn({ err, userId }, "WS: failed to check admin status at register");
+          }
           if (!userSockets.has(userId)) userSockets.set(userId, new Set());
           userSockets.get(userId)!.add(socket);
           return;
@@ -196,6 +233,7 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
       const remaining = Math.max(0, (ipConnectionCount.get(ip) ?? 1) - 1);
       ipConnectionCount.set(ip, remaining);
       socketAlive.delete(socket);
+      adminSockets.delete(socket);
 
       if (registeredUserId !== null) {
         const sockets = userSockets.get(registeredUserId);

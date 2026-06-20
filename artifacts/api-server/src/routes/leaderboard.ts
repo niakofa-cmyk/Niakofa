@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { getTierName } from "../lib/trust-tiers";
 import { db, usersTable, requestsTable } from "@workspace/db";
 import { eq, sql, and, gte } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
@@ -10,13 +11,7 @@ const LEADERBOARD_TTL = 60; // 60 seconds
 const router = Router();
 
 // ── Tier helper (mirrors TrustTierBadge.tsx logic) ────────────────────────────
-export function getTierName(trustScore: number, helpCount: number): string {
-  if (helpCount >= 50 && trustScore >= 97) return "anchor";
-  if (helpCount >= 30 && trustScore >= 95) return "elite";
-  if (helpCount >= 15 && trustScore >= 90) return "trusted";
-  if (helpCount >= 5 || trustScore >= 85) return "verified";
-  return "member";
-}
+
 
 // ── Monthly contributions per helper ─────────────────────────────────────────
 async function fetchMonthlyContributions(): Promise<Map<number, number>> {
@@ -55,7 +50,7 @@ async function fetchLeaderboard(city?: string) {
     db
       .select()
       .from(usersTable)
-      .where(eq(usersTable.is_helper, true))
+      .where(and(eq(usersTable.is_helper, true), sql`COALESCE(${usersTable.trust_score}, 0) >= 0`))
       .orderBy(sql`${usersTable.help_count} * 10 + COALESCE(${usersTable.trust_score}, 0) DESC`)
       .limit(50),
     fetchMonthlyContributions(),
@@ -157,7 +152,7 @@ router.get("/leaderboard/cities", async (_req, res) => {
   const helpers = await db
     .select({ neighborhood: usersTable.neighborhood, city: usersTable.city })
     .from(usersTable)
-    .where(eq(usersTable.is_helper, true));
+    .where(and(eq(usersTable.is_helper, true), sql`COALESCE(${usersTable.trust_score}, 0) >= 0`));
 
   const cities = new Set<string>();
   for (const h of helpers) {

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, reportsTable, usersTable } from "@workspace/db";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
-import { broadcast } from "../lib/ws-hub";
+import { broadcast, broadcastToAdmins } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
@@ -91,8 +91,9 @@ router.post("/reports", requireAuth, async (req, res) => {
     "trust-safety: new report filed"
   );
 
-  // Broadcast to admin clients so the queue updates in real-time
-  broadcast({
+  // Broadcast to admin clients only — reports contain sensitive details
+  // about other users and should never reach a regular connected client.
+  broadcastToAdmins({
     type: "new_report",
     payload: { id: report.id, type, status: "pending", created_at: report.created_at },
   });
@@ -182,12 +183,25 @@ router.patch("/reports/:id/review", requireAuth, requireAdmin(), async (req, res
 
   if (!updated) return res.status(404).json({ error: "Report not found" });
 
+  // resolved_banned must actually ban the reported user, not just label the
+  // report — previously this only updated report metadata, leaving the
+  // user fully active despite the report reading "banned".
+  if (status === "resolved_banned" && updated.reported_user_id) {
+    await db.update(usersTable)
+      .set({ trust_score: -1, helper_mode_active: false })
+      .where(eq(usersTable.id, updated.reported_user_id));
+    logger.warn(
+      { report_id: id, banned_user_id: updated.reported_user_id },
+      "trust-safety: user banned via report resolution"
+    );
+  }
+
   logger.info(
     { report_id: id, status, reviewed_by },
     "trust-safety: report reviewed"
   );
 
-  broadcast({
+  broadcastToAdmins({
     type: "report_reviewed",
     payload: { id, status, reviewed_by },
   });

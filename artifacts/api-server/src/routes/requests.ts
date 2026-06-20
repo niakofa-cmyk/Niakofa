@@ -107,7 +107,18 @@ router.get("/requests/nearby", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "lat and lng are required" });
   const { lat, lng, radius_miles } = parsed.data;
   const radius = radius_miles ?? 5;
-  const requests = await db.select().from(requestsTable).where(eq(requestsTable.status, "open"));
+  // SQL bounding-box pre-filter — avoids loading every open request
+  // platform-wide on every call. The precise haversine distance is still
+  // computed in JS afterward, just on a much smaller candidate set.
+  const latDelta = radius / 69;
+  const lngDelta = radius / (69 * Math.cos(lat * Math.PI / 180));
+  const requests = await db.select().from(requestsTable).where(
+    and(
+      eq(requestsTable.status, "open"),
+      sql`${requestsTable.lat} BETWEEN ${lat - latDelta} AND ${lat + latDelta}`,
+      sql`${requestsTable.lng} BETWEEN ${lng - lngDelta} AND ${lng + lngDelta}`,
+    )
+  );
   const nearby = requests
     .map(r => ({ ...r, distance_miles: distanceMiles(lat, lng, r.lat, r.lng) }))
     .filter(r => r.distance_miles <= radius)

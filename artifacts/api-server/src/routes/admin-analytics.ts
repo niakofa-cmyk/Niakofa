@@ -110,10 +110,10 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), async (_req, res) =>
       .select({
         bucket: sql<string>`CASE
           WHEN ${usersTable.trust_score} IS NULL THEN 'Unknown'
-          WHEN ${usersTable.trust_score} < 2 THEN '0-2'
-          WHEN ${usersTable.trust_score} < 4 THEN '2-4'
-          WHEN ${usersTable.trust_score} < 6 THEN '4-6'
-          WHEN ${usersTable.trust_score} < 8 THEN '6-8'
+          WHEN ${usersTable.trust_score} < 20 THEN '0-20'
+          WHEN ${usersTable.trust_score} < 40 THEN '20-40'
+          WHEN ${usersTable.trust_score} < 60 THEN '40-60'
+          WHEN ${usersTable.trust_score} < 80 THEN '60-80'
           ELSE '8-10'
         END`,
         count: sql<number>`COUNT(*)::int`,
@@ -122,10 +122,10 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), async (_req, res) =>
       .groupBy(
         sql`CASE
           WHEN ${usersTable.trust_score} IS NULL THEN 'Unknown'
-          WHEN ${usersTable.trust_score} < 2 THEN '0-2'
-          WHEN ${usersTable.trust_score} < 4 THEN '2-4'
-          WHEN ${usersTable.trust_score} < 6 THEN '4-6'
-          WHEN ${usersTable.trust_score} < 8 THEN '6-8'
+          WHEN ${usersTable.trust_score} < 20 THEN '0-20'
+          WHEN ${usersTable.trust_score} < 40 THEN '20-40'
+          WHEN ${usersTable.trust_score} < 60 THEN '40-60'
+          WHEN ${usersTable.trust_score} < 80 THEN '60-80'
           ELSE '8-10'
         END`
       ),

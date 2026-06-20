@@ -4,7 +4,7 @@ import { eq, and, or, isNull, desc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
-import { cacheGet, cacheSet } from "../lib/cache";
+import { cacheGet, cacheSet, cacheDel } from "../lib/cache";
 
 const CIVIC_TTL = 3600; // 1 hour — civic resources change rarely
 
@@ -34,7 +34,10 @@ interface ResolvedPlace {
 async function reverseGeocode(lat: number, lng: number): Promise<ResolvedPlace | null> {
   const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?types=place,district,region&access_token=${MAPBOX_TOKEN}`;
   try {
-    const res = await fetch(url);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout — don't hang the request handler on a slow upstream
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
     if (!res.ok) {
       logger.warn({ status: res.status }, "Mapbox geocoding non-200");
       return null;
@@ -240,6 +243,11 @@ router.patch("/civic/suggestions/:id/review", requireAuth, requireAdmin(), async
 
   if (!updated) return res.status(404).json({ error: "Suggestion not found" });
   logger.info({ id, status, reviewed_by: req.authenticatedUserId }, "civic suggestion reviewed");
+  if (status === "approved") {
+    // Invalidate the cache immediately instead of waiting up to an hour
+    // for the TTL to expire — newly approved content should appear right away.
+    await cacheDel("civic:all");
+  }
   return res.json(updated);
 });
 

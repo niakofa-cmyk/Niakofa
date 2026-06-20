@@ -512,7 +512,7 @@ router.delete("/users/:id", requireAuth, requireOwnership(), async (req, res) =>
 
     return res.json({ ok: true, message: "Account deleted successfully" });
   } catch (error) {
-    console.error("Error deleting user account:", error);
+    logger.error({ err: error, user_id: userId }, "users: failed to delete account");
     return res.status(500).json({ error: "Failed to delete account" });
   }
 });
