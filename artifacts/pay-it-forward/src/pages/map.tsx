@@ -282,7 +282,25 @@ export default function MapScreen() {
   useTerrain(mapRef);
   const deviceHeading = useDeviceHeading();
   const { mode: orientMode, setMode: setOrientMode, applyHeading } = useMapOrientation(mapRef);
-  useEffect(() => { if (deviceHeading !== null) applyHeading(deviceHeading); }, [deviceHeading, applyHeading]);
+
+  // Prefer GPS course-over-ground when actively moving — it's derived from
+  // real movement vector and is far steadier than the magnetometer. Only
+  // fall back to the device compass when stationary or GPS heading is
+  // unavailable (GPS heading is meaningless below walking speed).
+  const MOVING_SPEED_THRESHOLD_MPS = 0.5;
+  const gpsHeading =
+    myLocation?.speed != null &&
+    myLocation.speed > MOVING_SPEED_THRESHOLD_MPS &&
+    myLocation?.heading != null &&
+    !isNaN(myLocation.heading)
+      ? myLocation.heading
+      : null;
+
+  const effectiveHeading = gpsHeading ?? deviceHeading;
+
+  useEffect(() => {
+    if (effectiveHeading !== null) applyHeading(effectiveHeading);
+  }, [effectiveHeading, applyHeading]);
   const handleClaim = useCallback((request: HelpRequest) => {
     if (!currentUser) return;
     claimMutation.mutate(

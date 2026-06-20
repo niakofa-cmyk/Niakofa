@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 /**
  * useDeviceHeading
@@ -6,21 +6,34 @@ import { useState, useEffect } from "react";
  * Returns the device's compass heading in degrees (0–360, true north = 0),
  * or null if the device doesn't support orientation events.
  *
- * On iOS 13+ we must request permission before reading DeviceOrientationEvent.
- * We do this lazily on the first user gesture that calls requestPermission().
+ * Raw magnetometer data is noisy (several degrees of jitter even when
+ * stationary), so we apply circular exponential smoothing and throttle
+ * emitted updates to ~8/sec — plenty for visual map rotation, and far less
+ * likely to fight with the map's own animation loop.
  */
 
 declare global {
   interface DeviceOrientationEvent {
     webkitCompassHeading?: number;
   }
-  interface DeviceOrientationEventConstructor {
-    requestPermission?: () => Promise<"granted" | "denied" | "default">;
-  }
+}
+interface DeviceOrientationEventConstructor {
+  requestPermission?: () => Promise<"granted" | "denied" | "default">;
+}
+
+const SMOOTHING = 0.15;
+const UPDATE_INTERVAL_MS = 120;
+
+function circularSmooth(prev: number | null, next: number, alpha: number): number {
+  if (prev == null) return next;
+  const diff = ((next - prev + 540) % 360) - 180;
+  return (prev + diff * alpha + 360) % 360;
 }
 
 export function useDeviceHeading(): number | null {
   const [heading, setHeading] = useState<number | null>(null);
+  const smoothedRef = useRef<number | null>(null);
+  const lastEmitRef = useRef<number>(0);
 
   useEffect(() => {
     let active = true;
@@ -28,25 +41,25 @@ export function useDeviceHeading(): number | null {
     function handleOrientation(e: DeviceOrientationEvent) {
       if (!active) return;
 
-      // iOS: webkitCompassHeading is already absolute clockwise from north
+      let raw: number | null = null;
       if (typeof e.webkitCompassHeading === "number") {
-        setHeading(e.webkitCompassHeading);
-        return;
+        raw = e.webkitCompassHeading;
+      } else if (e.alpha != null) {
+        raw = (360 - e.alpha) % 360;
       }
+      if (raw == null) return;
 
-      // Android/Chrome: alpha is counter-clockwise from north
-      if (e.absolute && e.alpha != null) {
-        setHeading((360 - e.alpha) % 360);
-        return;
-      }
+      smoothedRef.current = circularSmooth(smoothedRef.current, raw, SMOOTHING);
 
-      if (e.alpha != null) {
-        setHeading((360 - e.alpha) % 360);
+      const now = performance.now();
+      if (now - lastEmitRef.current >= UPDATE_INTERVAL_MS) {
+        lastEmitRef.current = now;
+        setHeading(smoothedRef.current);
       }
     }
 
     async function start() {
-      const DC = DeviceOrientationEvent as DeviceOrientationEventConstructor;
+      const DC = DeviceOrientationEvent as unknown as DeviceOrientationEventConstructor;
       if (typeof DC.requestPermission === "function") {
         try {
           const perm = await DC.requestPermission();
@@ -55,7 +68,6 @@ export function useDeviceHeading(): number | null {
           return;
         }
       }
-
       window.addEventListener("deviceorientationabsolute", handleOrientation as EventListener, true);
       window.addEventListener("deviceorientation", handleOrientation as EventListener, true);
     }
