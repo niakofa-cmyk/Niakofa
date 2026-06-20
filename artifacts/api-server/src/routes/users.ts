@@ -200,21 +200,42 @@ router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => 
   if (phone_masked !== undefined) (updates as any).phone_masked = phone_masked;
   if (quick_replies !== undefined) (updates as any).quick_replies = quick_replies;
 
-  // ── Set-password flow for legacy accounts ─────────────────────────────────
-  // The client sends `new_password` (plaintext) when a legacy user creates a
-  // password for the first time. We hash it here — the plaintext never persists.
+  // ── Password change/set flow ──────────────────────────────────────────────
+  // The client sends `new_password` (plaintext) either to create a password
+  // for the first time (legacy account, password_hash currently null) or to
+  // change an existing one. We hash it here — the plaintext never persists.
   const rawNewPassword = (req.body as Record<string, unknown>).new_password;
   if (rawNewPassword !== undefined) {
     if (typeof rawNewPassword !== "string" || rawNewPassword.length < 8) {
       return res.status(400).json({ error: "Password must be at least 8 characters" });
     }
+
+    const [existing] = await db.select({ password_hash: usersTable.password_hash })
+      .from(usersTable).where(eq(usersTable.id, pParsed.data.id)).limit(1);
+    if (!existing) return res.status(404).json({ error: "User not found" });
+
+    // If a password already exists, this is a CHANGE, not a first-time set —
+    // require proof of the current password before allowing it. Without
+    // this, anyone holding a valid (e.g. stolen) bearer token could
+    // permanently lock the legitimate owner out of their own account.
+    if (existing.password_hash) {
+      const rawCurrentPassword = (req.body as Record<string, unknown>).current_password;
+      if (typeof rawCurrentPassword !== "string" || !rawCurrentPassword) {
+        return res.status(400).json({ error: "current_password is required to change your password" });
+      }
+      const currentValid = await bcrypt.compare(rawCurrentPassword, existing.password_hash);
+      if (!currentValid) {
+        return res.status(403).json({ error: "Current password is incorrect" });
+      }
+    }
+
     (updates as any).password_hash = await bcrypt.hash(rawNewPassword, BCRYPT_ROUNDS);
     // Changing the password invalidates every previously issued token for
     // this account, including ones an attacker may have stolen — bump the
     // version, then issue this request's own caller a fresh token below so
     // their current session keeps working.
     (updates as any).token_version = sql`${usersTable.token_version} + 1`;
-    logger.info({ user_id: pParsed.data.id }, "users: legacy account password set");
+    logger.info({ user_id: pParsed.data.id }, "users: password changed/set");
   }
 
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
