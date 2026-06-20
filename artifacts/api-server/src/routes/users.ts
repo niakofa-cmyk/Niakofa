@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import {
   GetUserParams,
   UpdateUserParams,
@@ -229,11 +229,51 @@ router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter,
     .where(eq(usersTable.id, pParsed.data.id))
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  if (user.helper_mode_active) {
+
+  // Respect the user's own privacy_live_location preference before sharing
+  // their position with anyone. Defaults to false (off) at the DB level,
+  // matching the settings schema default — a person must explicitly opt in
+  // via Settings to share live location, whether as a helper or requester.
+  const [locSettings] = await db
+    .select({ privacy_live_location: userSettingsTable.privacy_live_location })
+    .from(userSettingsTable)
+    .where(eq(userSettingsTable.user_id, user.id))
+    .limit(1);
+  const shareLiveLocation = locSettings?.privacy_live_location === true;
+
+  if (shareLiveLocation && user.helper_mode_active) {
     broadcast({
       type: "helper_location",
       payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng, heading: user.heading },
     });
+  } else if (shareLiveLocation) {
+    // Requester live-location sharing — note the requester may not be at
+    // the help location itself (e.g. requesting help for a relative's
+    // apartment), so this is purely "where the requester currently is",
+    // separate from the fixed request.lat/lng the helper navigates to.
+    // Targeted only to the assigned helper on an active request — never a
+    // public broadcast, since this is more sensitive than helper visibility.
+    const [activeReq] = await db
+      .select({ id: requestsTable.id, helper_id: requestsTable.helper_id })
+      .from(requestsTable)
+      .where(and(
+        eq(requestsTable.requester_id, user.id),
+        inArray(requestsTable.status, ["claimed", "en_route", "arrived"]),
+      ))
+      .limit(1);
+
+    if (activeReq?.helper_id) {
+      sendToUser(activeReq.helper_id, {
+        type: "requester_location",
+        payload: {
+          request_id: activeReq.id,
+          requester_id: user.id,
+          lat: user.lat,
+          lng: user.lng,
+          heading: user.heading,
+        },
+      });
+    }
   }
   return res.json(user);
 });

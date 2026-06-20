@@ -48,7 +48,8 @@ export type WsEventType =
   | "helper_application_approved"
   | "helper_application_denied"
   | "account_approved"
-  | "account_denied";
+  | "account_denied"
+  | "requester_location";
 
 export interface WsEvent {
   type: WsEventType;
