@@ -17,7 +17,7 @@ import { useUpdateUserLocation, useUpdateHelperMode } from "@workspace/api-clien
 import { useWebSocket } from "./useWebSocket";
 import { wsStart, wsRegister, wsUnregister } from "./wsClient";
 import { GratitudeModal } from "../components/GratitudeModal";
-import { clearToken } from "./auth";
+import { clearToken, authHeaders } from "./auth";
 
 interface Location {
   lat: number;
@@ -126,6 +126,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Centralized logout — clears all auth state ───────────────────────────
   const logout = () => {
+    // Revoke server-side tokens (logout-everywhere) on a best-effort basis —
+    // local logout proceeds regardless of whether this network call
+    // succeeds, since the person wants to log out either way.
+    if (currentUser) {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      fetch(`${base}/api/users/${currentUser.id}/logout`, {
+        method: "POST",
+        headers: authHeaders(),
+      }).catch(() => {});
+    }
     clearToken();
     localStorage.removeItem("niakofa_user");
     setCurrentUserState(null);

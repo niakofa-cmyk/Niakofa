@@ -3,7 +3,7 @@ import { requireAuth } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import Stripe from "stripe";
 import { db, stripeAccountsTable, paymentTransactionsTable, usersTable, requestsTable, transactionsTable } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { sendPushToUser } from "./push";
 import { logger } from "../lib/logger";
@@ -460,9 +460,38 @@ router.post("/stripe/payout", requireAuth, requireAdmin(), paymentLimiter, async
   };
 
   if (!helperId || !amount) return res.status(400).json({ error: "helperId and amount required" });
-  const MAX_PAYOUT_AMOUNT = 25000; // sanity cap — recompute-from-source-of-truth is a larger follow-up fix
-  if (amount <= 0 || amount > MAX_PAYOUT_AMOUNT) {
+  const MAX_PAYOUT_AMOUNT = 25000; // sanity cap for manual, requestId-less payouts
+
+  // If a requestId is given, the payment_transactions row for that request
+  // is the authoritative source of truth for what's actually owed — the
+  // client/admin-supplied amount is validated against it (and overridden if
+  // it disagrees) rather than trusted outright. A free-form payout with no
+  // requestId (e.g. a manual goodwill correction) has no source-of-truth row
+  // to recompute against, so it falls back to the sanity-capped admin amount.
+  let payoutAmount = amount;
+  let paymentTransaction: typeof paymentTransactionsTable.$inferSelect | undefined;
+
+  if (requestId) {
+    const [pt] = await db.select().from(paymentTransactionsTable)
+      .where(eq(paymentTransactionsTable.request_id, requestId)).limit(1);
+    if (!pt) return res.status(404).json({ error: "No payment transaction found for this request" });
+    if (pt.state === "completed") {
+      return res.status(409).json({ error: "This request has already been paid out" });
+    }
+    paymentTransaction = pt;
+    payoutAmount = pt.amount;
+    if (Math.abs(amount - pt.amount) > 0.01) {
+      logger.warn(
+        { requestId, clientAmount: amount, authoritativeAmount: pt.amount },
+        "stripe/payout: client-supplied amount did not match source of truth — using authoritative amount"
+      );
+    }
+  } else if (payoutAmount <= 0 || payoutAmount > MAX_PAYOUT_AMOUNT) {
     return res.status(400).json({ error: `amount must be greater than 0 and no more than $${MAX_PAYOUT_AMOUNT}` });
+  }
+
+  if (payoutAmount <= 0) {
+    return res.status(400).json({ error: "Computed payout amount must be greater than 0" });
   }
 
   const [acct] = await db
@@ -480,19 +509,24 @@ router.post("/stripe/payout", requireAuth, requireAdmin(), paymentLimiter, async
 
   // Create a transfer to the helper's connected account
   const transfer = await stripe!.transfers.create({
-    amount: Math.round(amount * 100),
+    amount: Math.round(payoutAmount * 100),
     currency: "usd",
     destination: acct.stripe_account_id,
     description: description ?? `Niakofa — Request #${requestId}`,
     metadata: { helperId: helperId.toString(), requestId: requestId?.toString() ?? "" },
   });
 
-  // Update payment transaction state
-  if (requestId) {
+  // Update payment transaction state — guarded by state != 'completed' in
+  // the WHERE clause itself (not just the earlier read-check) to close the
+  // same TOCTOU race already fixed for request completion in §3.1.
+  if (requestId && paymentTransaction) {
     await db
       .update(paymentTransactionsTable)
       .set({ stripe_transfer_id: transfer.id, state: "completed", updated_at: new Date() })
-      .where(eq(paymentTransactionsTable.request_id, requestId));
+      .where(and(
+        eq(paymentTransactionsTable.request_id, requestId),
+        sql`${paymentTransactionsTable.state} != 'completed'`,
+      ));
   }
 
   return res.json({

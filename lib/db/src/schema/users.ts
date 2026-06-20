@@ -46,6 +46,11 @@ export const usersTable = pgTable("users", {
   // businesses, sponsors). Default at the DB level is "approved" so existing
   // rows are grandfathered in when this column is added; new registrations
   // explicitly set "pending" in the register endpoint, overriding this default.
+  // Bumping this immediately invalidates every previously issued token for
+  // this user, regardless of its expiry — used for logout-everywhere and
+  // forced re-auth on password change. Stateless tokens otherwise have no
+  // server-side revocation mechanism.
+  token_version: integer("token_version").notNull().default(0),
   approval_status: text("approval_status").notNull().default("approved"), // pending | approved | denied
   // What kind of account this is. Individuals request/offer help directly.
   // Businesses/sponsors fund the pledge pool, offer helper perks, and sponsor

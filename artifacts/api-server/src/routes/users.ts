@@ -69,7 +69,7 @@ router.post("/users/login", authLimiter, async (req, res) => {
     });
   }
 
-  const token = signTokenById(user.id);
+  const token = signTokenById(user.id, user.token_version);
   const { password_hash: _ph, ...safeUser } = user as any;
   return res.json({ user: safeUser, token });
 });
@@ -118,14 +118,14 @@ router.post("/users/set-initial-password", authLimiter, async (req, res) => {
   const password_hash = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
   const [updated] = await db
     .update(usersTable)
-    .set({ password_hash, updated_at: new Date() })
+    .set({ password_hash, updated_at: new Date(), token_version: sql`${usersTable.token_version} + 1` })
     .where(eq(usersTable.id, user.id))
     .returning();
 
   if (!updated) return res.status(500).json({ error: "Failed to update password" });
 
   logger.info({ user_id: user.id }, "users: legacy account initial password set");
-  const token = signTokenById(updated.id);
+  const token = signTokenById(updated.id, updated.token_version);
   const { password_hash: _ph, ...safeUser } = updated as any;
   return res.json({ user: safeUser, token });
 });
@@ -166,7 +166,7 @@ router.post("/users/register", authLimiter, async (req, res) => {
       organization_description,
       approval_status: "pending",
     }).returning();
-    const token = signTokenById(user.id);
+    const token = signTokenById(user.id, user.token_version);
     const { password_hash: _ph, ...safeUser } = user as Record<string, unknown>;
     logger.info({ user_id: user.id, account_type }, "register: new account pending approval");
     return res.status(201).json({ user: safeUser, token });
@@ -209,6 +209,11 @@ router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => 
       return res.status(400).json({ error: "Password must be at least 8 characters" });
     }
     (updates as any).password_hash = await bcrypt.hash(rawNewPassword, BCRYPT_ROUNDS);
+    // Changing the password invalidates every previously issued token for
+    // this account, including ones an attacker may have stolen — bump the
+    // version, then issue this request's own caller a fresh token below so
+    // their current session keeps working.
+    (updates as any).token_version = sql`${usersTable.token_version} + 1`;
     logger.info({ user_id: pParsed.data.id }, "users: legacy account password set");
   }
 
@@ -216,7 +221,25 @@ router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => 
   if (!user) return res.status(404).json({ error: "User not found" });
   // Never return the password hash to the client
   const { password_hash: _ph, ...safeUser } = user as any;
+  if (rawNewPassword !== undefined) {
+    const token = signTokenById(user.id, user.token_version);
+    return res.json({ ...safeUser, token });
+  }
   return res.json(safeUser);
+});
+
+// POST /users/:id/logout — invalidate every previously issued token for
+// this account (logout-everywhere). Coarse-grained by design: this token
+// scheme has no per-device/session tracking, so there is no narrower unit
+// of revocation available.
+router.post("/users/:id/logout", requireAuth, requireOwnership(), async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  await db.update(usersTable)
+    .set({ token_version: sql`${usersTable.token_version} + 1` })
+    .where(eq(usersTable.id, id));
+  logger.info({ user_id: id }, "users: logged out — all tokens revoked");
+  return res.json({ ok: true });
 });
 
 router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter, async (req, res) => {
