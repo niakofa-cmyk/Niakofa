@@ -41,12 +41,27 @@ export const usersTable = pgTable("users", {
   passive_check_interval_min: integer("passive_check_interval_min").default(30),
   is_admin: boolean("is_admin").notNull().default(false),
   password_hash: text("password_hash"),
+
+  // Account-level approval gate — applies to ALL account types (individuals,
+  // businesses, sponsors). Default at the DB level is "approved" so existing
+  // rows are grandfathered in when this column is added; new registrations
+  // explicitly set "pending" in the register endpoint, overriding this default.
+  approval_status: text("approval_status").notNull().default("approved"), // pending | approved | denied
+  // What kind of account this is. Individuals request/offer help directly.
+  // Businesses/sponsors fund the pledge pool, offer helper perks, and sponsor
+  // community resources/events.
+  account_type: text("account_type").notNull().default("individual"), // individual | business | sponsor
+  organization_name: text("organization_name"),
+  organization_description: text("organization_description"),
+
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   index("users_is_helper_idx").on(t.is_helper),
   index("users_helper_mode_active_idx").on(t.helper_mode_active),
   index("users_helper_status_idx").on(t.helper_status),
+  index("users_approval_status_idx").on(t.approval_status),
+  index("users_account_type_idx").on(t.account_type),
 ]);
 
 export const insertUserSchema = createInsertSchema(usersTable).omit({ id: true, created_at: true, updated_at: true });

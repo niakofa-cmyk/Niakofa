@@ -134,25 +134,41 @@ router.post("/users/register", authLimiter, async (req, res) => {
   const parsed = RegisterUserBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
   const { name, email, avatar_url, is_helper, neighborhood } = parsed.data;
-  // Accept optional password from body (not part of OpenAPI spec to avoid codegen churn)
-  const rawPassword = (req.body as Record<string, unknown>).password;
+  // Accept optional fields from body (not part of OpenAPI spec to avoid codegen churn)
+  const rawBody = req.body as Record<string, unknown>;
+  const rawPassword = rawBody.password;
   const password_hash = rawPassword && typeof rawPassword === "string" && rawPassword.length >= 6
     ? await bcrypt.hash(rawPassword, BCRYPT_ROUNDS)
     : null;
+
+  const VALID_ACCOUNT_TYPES = ["individual", "business", "sponsor"];
+  const rawAccountType = rawBody.account_type;
+  const account_type = typeof rawAccountType === "string" && VALID_ACCOUNT_TYPES.includes(rawAccountType)
+    ? rawAccountType
+    : "individual";
+  const organization_name = typeof rawBody.organization_name === "string" ? rawBody.organization_name.trim() || null : null;
+  const organization_description = typeof rawBody.organization_description === "string" ? rawBody.organization_description.trim() || null : null;
 
   try {
     const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
     if (existing.length > 0) return res.status(409).json({ error: "Email already registered" });
 
+    // Every new account — individual, business, or sponsor — starts pending
+    // admin approval and is fully locked out of the API until reviewed.
     const [user] = await db.insert(usersTable).values({
       name, email: email.trim().toLowerCase(),
       avatar_url: avatar_url ?? null,
       is_helper: is_helper ?? false,
       neighborhood: neighborhood ?? null,
       password_hash,
+      account_type,
+      organization_name,
+      organization_description,
+      approval_status: "pending",
     }).returning();
     const token = signTokenById(user.id);
     const { password_hash: _ph, ...safeUser } = user as Record<string, unknown>;
+    logger.info({ user_id: user.id, account_type }, "register: new account pending approval");
     return res.status(201).json({ user: safeUser, token });
   } catch (err) {
     logger.error({ err }, "register: database error");
@@ -578,6 +594,74 @@ router.patch("/admin/helper-applications/:id/review", requireAuth, requireAdmin(
     decision: decision as "approved" | "denied",
     appUrl: process.env["APP_URL"] ?? "https://niakofa.community",
   }).catch(() => {}); // already logs internally
+
+  return res.json(safeUser);
+});
+
+// GET /admin/account-applications — list accounts by approval status (admin only)
+router.get("/admin/account-applications", requireAuth, requireAdmin(), async (req, res) => {
+  const { status, account_type } = req.query as { status?: string; account_type?: string };
+  const validStatuses = ["pending", "approved", "denied"];
+  const validAccountTypes = ["individual", "business", "sponsor"];
+  const filterStatus = status && validStatuses.includes(status) ? status : null;
+  const filterAccountType = account_type && validAccountTypes.includes(account_type) ? account_type : null;
+
+  const query = db.select({
+    id: usersTable.id,
+    name: usersTable.name,
+    email: usersTable.email,
+    avatar_url: usersTable.avatar_url,
+    account_type: usersTable.account_type,
+    approval_status: usersTable.approval_status,
+    organization_name: usersTable.organization_name,
+    organization_description: usersTable.organization_description,
+    neighborhood: usersTable.neighborhood,
+    is_helper: usersTable.is_helper,
+    identity_verified: usersTable.identity_verified,
+    created_at: usersTable.created_at,
+    updated_at: usersTable.updated_at,
+  }).from(usersTable);
+
+  const conditions = [];
+  if (filterStatus) conditions.push(eq(usersTable.approval_status, filterStatus));
+  if (filterAccountType) conditions.push(eq(usersTable.account_type, filterAccountType));
+
+  const rows = conditions.length > 0
+    ? await (query as any).where(and(...conditions)).orderBy(sql`${usersTable.created_at} DESC`).limit(200)
+    : await (query as any).orderBy(sql`${usersTable.created_at} DESC`).limit(200);
+
+  return res.json(rows);
+});
+
+// PATCH /admin/account-applications/:id/review — approve or deny an account (individual/business/sponsor)
+router.patch("/admin/account-applications/:id/review", requireAuth, requireAdmin(), async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const { decision } = req.body as { decision?: string };
+  if (!decision || !["approved", "denied"].includes(decision)) {
+    return res.status(400).json({ error: "decision must be 'approved' or 'denied'" });
+  }
+
+  const [user] = await db.update(usersTable)
+    .set({ approval_status: decision as "approved" | "denied", updated_at: new Date() })
+    .where(eq(usersTable.id, id))
+    .returning();
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  const { password_hash: _ph, ...safeUser } = user as any;
+  logger.info({ user_id: id, decision, account_type: user.account_type }, "admin: account application reviewed");
+
+  const wsEventType = decision === "approved" ? "account_approved" : "account_denied";
+
+  sendToUser(id, {
+    type: wsEventType,
+    payload: { user_id: id, decision, approval_status: decision },
+  });
+
+  broadcast({
+    type: wsEventType,
+    payload: { user_id: id, decision },
+  });
 
   return res.json(safeUser);
 });

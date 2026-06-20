@@ -6,6 +6,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { generalApiLimiter } from "./middlewares/rate-limit";
 import { parseAuth } from "./middlewares/auth";
+import { requireApproved } from "./middlewares/authz";
 
 const app: Express = express();
 
@@ -71,6 +72,30 @@ app.use(express.urlencoded({ extended: true }));
 
 // Attach authenticated userId to every request (non-blocking — routes decide if auth is required)
 app.use(parseAuth);
+
+// ── Account approval gate ───────────────────────────────────────────────────
+// Locks out any individual/business/sponsor account that hasn't been admin-
+// approved yet, across the ENTIRE API surface, except for a short exemption
+// list needed to log in, register, check service health, and receive Stripe
+// webhooks. Admins always bypass this (see requireApproved).
+const APPROVAL_EXEMPT_PATHS = new Set([
+  "/users/login",
+  "/users/register",
+  "/healthz",
+  "/version",
+  "/stripe/webhook",
+  "/verification/identity/webhook",
+]);
+
+app.use("/api", (req, res, next) => {
+  if (APPROVAL_EXEMPT_PATHS.has(req.path)) return next();
+  // Allow a user to fetch their own profile (already owner-locked by
+  // requireOwnership downstream) so the frontend can display pending/denied
+  // status without this gate creating a chicken-and-egg problem.
+  if (req.method === "GET" && /^\/users\/\d+$/.test(req.path)) return next();
+  if (!req.authenticatedUserId) return next(); // let each route's own requireAuth handle this
+  return requireApproved(req, res, next);
+});
 
 app.use("/api", router);
 

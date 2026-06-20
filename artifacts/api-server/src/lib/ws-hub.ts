@@ -46,7 +46,9 @@ export type WsEventType =
   | "report_reviewed"
   | "chat_message"
   | "helper_application_approved"
-  | "helper_application_denied";
+  | "helper_application_denied"
+  | "account_approved"
+  | "account_denied";
 
 export interface WsEvent {
   type: WsEventType;
