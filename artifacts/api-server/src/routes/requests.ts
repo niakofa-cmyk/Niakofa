@@ -671,6 +671,14 @@ router.post("/requests/:id/cancel", requireAuth, async (req, res) => {
     }).catch(err => logger.warn({ err }, "cancel: sendPushToUser to requester failed"));
   }
 
+  // Trust score penalty for helpers who cancel a claim — discourages repeated cancellations
+  if (!isRequester && callerId) {
+    await db.update(usersTable)
+      .set({ trust_score: sql`GREATEST(0, ${usersTable.trust_score} - 5)` })
+      .where(eq(usersTable.id, callerId));
+    logger.info({ helper_id: callerId, request_id: requestId }, "cancel: helper trust_score -5 for claim cancellation");
+  }
+
   // Email the other party
   const notifyId = isRequester ? (request.helper_id ?? null) : request.requester_id;
   if (notifyId) {

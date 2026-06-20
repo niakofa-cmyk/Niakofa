@@ -80,7 +80,7 @@ export default function RequestDetailScreen() {
     <div className="min-h-[100dvh] bg-background">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-md border-b border-border px-4 py-3 flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full shrink-0">
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full shrink-0" aria-label="Back to map">
           <ChevronLeft className="w-5 h-5" />
         </Button>
         <span className="font-black text-base truncate flex-1">Request Detail</span>

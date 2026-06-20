@@ -258,7 +258,7 @@ export default function NewRequestScreen() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <div className="sticky top-0 z-10 bg-card border-b border-border p-4 pt-safe flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full">
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full" aria-label="Back to map">
           <ChevronLeft className="w-6 h-6" />
         </Button>
         <div>

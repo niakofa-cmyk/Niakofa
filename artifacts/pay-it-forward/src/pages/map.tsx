@@ -122,6 +122,7 @@ export default function MapScreen() {
   const [statsVisible, setStatsVisible] = useState(true);
   const [bestMatchDismissed, setBestMatchDismissed] = useState<number | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [neighborhoodFilter, setNeighborhoodFilter] = useState<string | null>(null);
   const prevHelperMode = useRef(false);
   const [crisis, setCrisis] = useState<CrisisState | null>(null);
   const [crisisDismissed, setCrisisDismissed] = useState(false);
@@ -277,7 +278,17 @@ export default function MapScreen() {
 
   const safeRequests = Array.isArray(liveRequests) ? liveRequests : [];
   const safeHelpers = Array.isArray(liveHelpers) ? liveHelpers : [];
-  const openRequests = safeRequests.filter(r => r.status === "open");
+  const allOpenRequests = safeRequests.filter(r => r.status === "open");
+
+  // Derive unique neighborhoods from visible open requests for the filter
+  const availableNeighborhoods = Array.from(
+    new Set(allOpenRequests.map(r => (r as { neighborhood?: string | null }).neighborhood).filter((n): n is string => !!n))
+  ).sort();
+
+  const openRequests = neighborhoodFilter
+    ? allOpenRequests.filter(r => (r as { neighborhood?: string | null }).neighborhood === neighborhoodFilter)
+    : allOpenRequests;
+
   const emergencyRequests = openRequests.filter(r => r.urgency === "emergency");
   const displayHelpers = safeHelpers.filter(h => h.id !== currentUser?.id);
 
@@ -518,11 +529,46 @@ export default function MapScreen() {
       </Map>
       )}
 
+      {/* Neighborhood filter chips — appear when requests have neighborhood data */}
+      {availableNeighborhoods.length > 0 && helperModeActive && (
+        <div className="absolute bottom-[14.5rem] left-0 right-0 z-10 flex gap-2 px-4 overflow-x-auto scrollbar-none pb-1">
+          <button
+            onClick={() => setNeighborhoodFilter(null)}
+            className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all shadow-sm ${
+              neighborhoodFilter === null
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-card/90 backdrop-blur-sm border-border text-muted-foreground hover:border-primary/50"
+            }`}
+            aria-label="Show all neighborhoods"
+            aria-pressed={neighborhoodFilter === null}
+          >
+            All
+          </button>
+          {availableNeighborhoods.map(hood => (
+            <button
+              key={hood}
+              onClick={() => setNeighborhoodFilter(neighborhoodFilter === hood ? null : hood)}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all shadow-sm whitespace-nowrap ${
+                neighborhoodFilter === hood
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-card/90 backdrop-blur-sm border-border text-muted-foreground hover:border-primary/50"
+              }`}
+              aria-label={`Filter by ${hood}`}
+              aria-pressed={neighborhoodFilter === hood}
+            >
+              {hood}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Heatmap toggle button */}
       {webGLSupported && !mapError && (
         <button
           onClick={() => setShowHeatmap(v => !v)}
           title={showHeatmap ? "Hide helper heatmap" : "Show helper availability heatmap"}
+          aria-label={showHeatmap ? "Hide helper heatmap" : "Show helper availability heatmap"}
+          aria-pressed={showHeatmap}
           className={`absolute bottom-28 right-4 z-10 w-10 h-10 rounded-xl border flex items-center justify-center shadow-lg transition-all ${
             showHeatmap
               ? "bg-primary text-primary-foreground border-primary"

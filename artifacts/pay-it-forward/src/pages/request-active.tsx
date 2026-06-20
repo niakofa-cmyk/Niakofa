@@ -7,7 +7,7 @@ import type mapboxgl from "mapbox-gl";
 import { useAppContext } from "@/lib/AppContext";
 import { useGetRequest, useGetRoute, useCompleteRequest, useMarkEnRoute, useMarkArrived, getGetRequestQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share2, CheckCircle2, Car, PersonStanding, Bike } from "lucide-react";
+import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share2, CheckCircle2, Car, PersonStanding, Bike, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { NavigationOverlay } from "@/components/NavigationOverlay";
@@ -114,6 +114,7 @@ export default function ActiveRequestScreen() {
   const [tipShown, setTipShown] = useState(false);
   const [showRating, setShowRating] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
 
   const enRouteRef = useRef(false);
   const offRouteCooldownRef = useRef(false);
@@ -261,16 +262,16 @@ export default function ActiveRequestScreen() {
     setCurrentStepIndex(newStep);
   }, [myLocation, routeData, request]);
 
-  // Turn-by-turn voice guidance via Web Speech API
+  // Turn-by-turn voice guidance via Web Speech API — respects voiceEnabled toggle
   const speakInstruction = useCallback((text: string) => {
-    if (!("speechSynthesis" in window) || !text) return;
+    if (!voiceEnabled || !("speechSynthesis" in window) || !text) return;
     window.speechSynthesis.cancel();
     const utt = new SpeechSynthesisUtterance(text);
     utt.rate = 1.0;
     utt.pitch = 1.0;
     utt.volume = 1.0;
     window.speechSynthesis.speak(utt);
-  }, []);
+  }, [voiceEnabled]);
 
   useEffect(() => {
     if (isArrived || !routeData?.steps) return;
@@ -450,7 +451,7 @@ export default function ActiveRequestScreen() {
     <div className="relative w-full h-[100dvh] overflow-hidden bg-background">
       {/* Back button */}
       <div className="absolute top-4 left-4 z-30">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full bg-card/80 backdrop-blur-sm border border-border">
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full bg-card/80 backdrop-blur-sm border border-border" aria-label="Back to map">
           <ChevronLeft className="w-6 h-6" />
         </Button>
       </div>
@@ -504,9 +505,36 @@ export default function ActiveRequestScreen() {
           onClick={handleShare}
           className="flex items-center gap-1.5 bg-card/90 backdrop-blur-md border border-border px-3 py-1.5 rounded-full shadow-lg hover:border-primary/50 transition-colors"
           title="Share trip"
+          aria-label="Share trip link"
         >
           <Share2 className="w-3 h-3 text-muted-foreground" />
           <span className="text-[10px] font-black text-muted-foreground">Share</span>
+        </button>
+
+        {/* Voice guidance mute/unmute toggle */}
+        <button
+          onClick={() => {
+            const next = !voiceEnabled;
+            setVoiceEnabled(next);
+            if (!next && "speechSynthesis" in window) window.speechSynthesis.cancel();
+            toast({ title: next ? "🔊 Voice guidance on" : "🔇 Voice guidance off" });
+          }}
+          className={`flex items-center gap-1.5 backdrop-blur-md border px-3 py-1.5 rounded-full shadow-lg transition-colors ${
+            voiceEnabled
+              ? "bg-primary/20 border-primary/40 hover:border-primary"
+              : "bg-card/90 border-border hover:border-primary/40"
+          }`}
+          title={voiceEnabled ? "Mute voice guidance" : "Enable voice guidance"}
+          aria-label={voiceEnabled ? "Mute voice guidance" : "Enable voice guidance"}
+          aria-pressed={voiceEnabled}
+        >
+          {voiceEnabled
+            ? <Volume2 className="w-3 h-3 text-primary" />
+            : <VolumeX className="w-3 h-3 text-muted-foreground" />
+          }
+          <span className={`text-[10px] font-black ${voiceEnabled ? "text-primary" : "text-muted-foreground"}`}>
+            {voiceEnabled ? "Voice" : "Muted"}
+          </span>
         </button>
       </motion.div>
 

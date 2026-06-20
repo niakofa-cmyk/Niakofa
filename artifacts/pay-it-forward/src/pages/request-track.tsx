@@ -161,6 +161,7 @@ export default function RequesterTrackingScreen() {
           variant="ghost" size="icon"
           onClick={() => setLocation("/")}
           className="rounded-full bg-card/80 backdrop-blur-sm border border-border"
+          aria-label="Back to map"
         >
           <ChevronLeft className="w-6 h-6" />
         </Button>
