@@ -1,7 +1,9 @@
 import { Router } from "express";
-import { db, civicResourcesTable } from "@workspace/db";
-import { eq, and, or, isNull } from "drizzle-orm";
+import { db, civicResourcesTable, civicSuggestionsTable } from "@workspace/db";
+import { eq, and, or, isNull, desc } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { requireAuth } from "../middlewares/auth";
+import { requireAdmin } from "../middlewares/authz";
 import { cacheGet, cacheSet } from "../lib/cache";
 
 const CIVIC_TTL = 3600; // 1 hour — civic resources change rarely
@@ -185,16 +187,60 @@ router.get("/civic/resources", async (req, res) => {
 });
 
 // POST /civic/suggestions — community-submitted resource suggestions (§3.3.2)
+// Persists to DB so admins can review and approve them.
 router.post("/civic/suggestions", async (req, res) => {
   const { name, category, description, phone, website } = req.body as {
     name?: string; category?: string; description?: string; phone?: string; website?: string;
   };
   if (!name?.trim()) return res.status(400).json({ error: "name is required" });
-  logger.info(
-    { name, category, description, phone, website },
-    "civic resource suggestion received"
-  );
+
+  const [suggestion] = await db.insert(civicSuggestionsTable)
+    .values({
+      name: name.trim(),
+      category: category?.trim() ?? null,
+      description: description?.trim() ?? null,
+      phone: phone?.trim() ?? null,
+      website: website?.trim() ?? null,
+      status: "pending",
+    })
+    .returning();
+
+  logger.info({ id: suggestion?.id, name }, "civic resource suggestion stored");
   return res.json({ ok: true, message: "Thank you — your suggestion will be reviewed by the Niakofa team." });
+});
+
+// GET /civic/suggestions — admin: list all community-submitted suggestions
+router.get("/civic/suggestions", requireAuth, requireAdmin(), async (_req, res) => {
+  const suggestions = await db.select()
+    .from(civicSuggestionsTable)
+    .orderBy(desc(civicSuggestionsTable.created_at));
+  return res.json(suggestions);
+});
+
+// PATCH /civic/suggestions/:id/review — admin: approve, dismiss, or note a suggestion
+router.patch("/civic/suggestions/:id/review", requireAuth, requireAdmin(), async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid suggestion id" });
+
+  const { status, admin_notes } = req.body as { status?: string; admin_notes?: string };
+  const validStatuses = ["pending", "approved", "dismissed"];
+  if (status && !validStatuses.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${validStatuses.join(", ")}` });
+  }
+
+  const [updated] = await db.update(civicSuggestionsTable)
+    .set({
+      ...(status ? { status } : {}),
+      ...(admin_notes !== undefined ? { admin_notes } : {}),
+      reviewed_by: req.authenticatedUserId!,
+      reviewed_at: new Date(),
+    })
+    .where(eq(civicSuggestionsTable.id, id))
+    .returning();
+
+  if (!updated) return res.status(404).json({ error: "Suggestion not found" });
+  logger.info({ id, status, reviewed_by: req.authenticatedUserId }, "civic suggestion reviewed");
+  return res.json(updated);
 });
 
 export default router;

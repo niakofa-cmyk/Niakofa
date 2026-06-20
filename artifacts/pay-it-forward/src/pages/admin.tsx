@@ -4,7 +4,7 @@ import {
   Shield, AlertCircle, CheckCircle2, Clock, X, ChevronLeft,
   Eye, Flag, User as UserIcon, RefreshCw, Filter,
   Users, Search, Ban, AlertTriangle, Star, BarChart3,
-  TrendingUp, Heart, Activity
+  TrendingUp, Heart, Activity, Inbox, CheckCheck, ThumbsDown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -872,14 +872,220 @@ function AnalyticsTab() {
   );
 }
 
+// ── Civic Suggestions Tab ─────────────────────────────────────────────────────
+
+interface CivicSuggestion {
+  id: number;
+  name: string;
+  category: string | null;
+  description: string | null;
+  phone: string | null;
+  website: string | null;
+  status: string;
+  admin_notes: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+const SUGGESTION_STATUS: Record<string, { label: string; color: string }> = {
+  pending:   { label: "Pending",   color: "bg-yellow-500/15 text-yellow-500 border-yellow-500/30" },
+  approved:  { label: "Approved",  color: "bg-green-500/15 text-green-400 border-green-500/30" },
+  dismissed: { label: "Dismissed", color: "bg-muted text-muted-foreground border-border" },
+};
+
+function CivicTab() {
+  const [suggestions, setSuggestions] = useState<CivicSuggestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<CivicSuggestion | null>(null);
+  const [notes, setNotes] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
+  const fetchSuggestions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${base}/api/civic/suggestions`, { headers: authHeaders() });
+      const data = await res.json() as CivicSuggestion[];
+      if (Array.isArray(data)) setSuggestions(data);
+    } catch {
+      toast({ title: "Failed to load suggestions", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [base]);
+
+  useEffect(() => { fetchSuggestions(); }, [fetchSuggestions]);
+
+  const handleReview = async (id: number, status: "approved" | "dismissed") => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(`${base}/api/civic/suggestions/${id}/review`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ status, admin_notes: notes.trim() || undefined }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: status === "approved" ? "✅ Suggestion approved" : "Suggestion dismissed" });
+      setSelected(null);
+      setNotes("");
+      await fetchSuggestions();
+    } catch {
+      toast({ title: "Action failed", variant: "destructive" });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const pending = suggestions.filter(s => s.status === "pending");
+  const reviewed = suggestions.filter(s => s.status !== "pending");
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20 gap-2 text-muted-foreground">
+      <RefreshCw className="w-5 h-5 animate-spin" />
+      <span className="text-sm">Loading suggestions…</span>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">
+          Community Suggestions · {pending.length} pending
+        </div>
+        <button onClick={fetchSuggestions} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+          <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+        </button>
+      </div>
+
+      {suggestions.length === 0 && (
+        <div className="text-center py-16 px-4">
+          <Inbox className="w-10 h-10 text-primary/30 mx-auto mb-3" />
+          <div className="font-bold text-sm text-muted-foreground">No suggestions yet</div>
+          <div className="text-xs text-muted-foreground/60 mt-1">Community-submitted civic resource suggestions will appear here</div>
+        </div>
+      )}
+
+      {pending.length > 0 && (
+        <div className="space-y-3">
+          <div className="text-[10px] font-black uppercase tracking-wider text-yellow-500">Awaiting Review</div>
+          {pending.map(s => (
+            <motion.div
+              key={s.id}
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              className="bg-card border border-yellow-500/20 rounded-2xl p-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-black text-sm">{s.name}</div>
+                  {s.category && <div className="text-[10px] text-primary font-bold uppercase tracking-wider mt-0.5">{s.category}</div>}
+                  {s.description && <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{s.description}</p>}
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-2">
+                    {s.phone && <span className="text-[10px] text-muted-foreground">📞 {s.phone}</span>}
+                    {s.website && <span className="text-[10px] text-muted-foreground">🌐 {s.website}</span>}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground/60 mt-1">{fmtDate(s.created_at)}</div>
+                </div>
+                <button
+                  onClick={() => { setSelected(s); setNotes(""); }}
+                  className="shrink-0 p-2 rounded-xl border border-border hover:border-primary/40 transition-colors"
+                  aria-label="Review this suggestion"
+                >
+                  <Eye className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
+
+      {reviewed.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Reviewed</div>
+          {reviewed.map(s => {
+            const sc = SUGGESTION_STATUS[s.status] ?? SUGGESTION_STATUS["dismissed"];
+            return (
+              <div key={s.id} className="bg-card/60 border border-border rounded-xl p-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold truncate">{s.name}</div>
+                  {s.admin_notes && <div className="text-[10px] text-muted-foreground truncate">{s.admin_notes}</div>}
+                </div>
+                <span className={`shrink-0 text-[10px] font-black px-2 py-0.5 rounded-full border ${sc.color}`}>
+                  {sc.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Review bottom sheet */}
+      <AnimatePresence>
+        {selected && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 z-50 backdrop-blur-sm"
+              onClick={() => setSelected(null)}
+            />
+            <motion.div
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 26, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl p-5 space-y-4"
+              style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="w-10 h-1 bg-muted rounded-full mx-auto" />
+              <div>
+                <div className="font-black text-base">{selected.name}</div>
+                {selected.category && <div className="text-xs text-primary font-bold uppercase tracking-wider">{selected.category}</div>}
+                {selected.description && <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{selected.description}</p>}
+              </div>
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1.5">Admin Notes (optional)</div>
+                <textarea
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  placeholder="Internal note about this suggestion…"
+                  rows={2}
+                  className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => handleReview(selected.id, "approved")}
+                  disabled={actionLoading}
+                  className="flex items-center justify-center gap-2 p-3 bg-green-500/15 border border-green-500/30 rounded-2xl text-green-400 font-black text-sm active:scale-[0.98] transition-all disabled:opacity-50"
+                >
+                  <CheckCheck className="w-4 h-4" /> Approve
+                </button>
+                <button
+                  onClick={() => handleReview(selected.id, "dismissed")}
+                  disabled={actionLoading}
+                  className="flex items-center justify-center gap-2 p-3 bg-muted border border-border rounded-2xl text-muted-foreground font-black text-sm active:scale-[0.98] transition-all disabled:opacity-50"
+                >
+                  <ThumbsDown className="w-4 h-4" /> Dismiss
+                </button>
+              </div>
+              <button onClick={() => setSelected(null)} className="w-full text-xs text-muted-foreground py-2">
+                Cancel
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // ── Main Admin Screen ─────────────────────────────────────────────────────────
 
-type TabId = "reports" | "users" | "analytics";
+type TabId = "reports" | "users" | "analytics" | "civic";
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
-  { id: "reports", label: "Reports", icon: Flag },
-  { id: "users",   label: "Users",   icon: Users },
+  { id: "reports",   label: "Reports",   icon: Flag },
+  { id: "users",     label: "Users",     icon: Users },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
+  { id: "civic",     label: "Civic",     icon: Inbox },
 ];
 
 export default function AdminScreen() {
@@ -949,6 +1155,7 @@ export default function AdminScreen() {
             {activeTab === "reports"   && <ReportsTab />}
             {activeTab === "users"     && <UsersTab />}
             {activeTab === "analytics" && <AnalyticsTab />}
+            {activeTab === "civic"     && <CivicTab />}
           </motion.div>
         </AnimatePresence>
       </div>

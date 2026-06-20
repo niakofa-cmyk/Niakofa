@@ -84,7 +84,7 @@ export default function RequestDetailScreen() {
           <ChevronLeft className="w-5 h-5" />
         </Button>
         <span className="font-black text-base truncate flex-1">Request Detail</span>
-        <button onClick={handleShare} className="p-2 rounded-full active:bg-muted transition-colors">
+        <button onClick={handleShare} className="p-2 rounded-full active:bg-muted transition-colors" aria-label="Share request">
           <Share2 className="w-4 h-4 text-muted-foreground" />
         </button>
       </div>

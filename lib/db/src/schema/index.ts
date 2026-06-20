@@ -11,3 +11,4 @@ export * from "./civic-resources";
 export * from "./chat-messages";
 export * from "./push-subscriptions";
 export * from "./ratings";
+export * from "./civic-suggestions";
