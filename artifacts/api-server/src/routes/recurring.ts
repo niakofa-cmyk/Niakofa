@@ -243,10 +243,10 @@ export async function processRecurringRequests(): Promise<void> {
       const [newReq] = await db.insert(requestsTable).values({
         title: sub.title,
         description: sub.description ?? undefined,
-        category: sub.category,
+        category: sub.category as "groceries" | "transportation" | "errands" | "home_repair" | "medical" | "emergency" | "other" | "stock_shelves" | "event_setup" | "delivery_run" | "tech_support",
         urgency: "medium",
         status: "open",
-        payment_type: sub.payment_type,
+        payment_type: sub.payment_type as "immediate" | "pay_it_forward" | "goodwill",
         requester_id: sub.user_id,
         lat: sub.lat,
         lng: sub.lng,

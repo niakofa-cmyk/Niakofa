@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, real, boolean, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, real, numeric, boolean, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -9,7 +9,7 @@ export const recurringRequestsTable = pgTable("recurring_requests", {
   description: text("description"),
   category: text("category").notNull().default("other"),
   payment_type: text("payment_type").notNull().default("goodwill"),
-  pay_it_forward_amount: real("pay_it_forward_amount"),
+  pay_it_forward_amount: numeric("pay_it_forward_amount", { precision: 10, scale: 2, mode: "number" }),
   lat: real("lat").notNull(),
   lng: real("lng").notNull(),
   neighborhood: text("neighborhood"),

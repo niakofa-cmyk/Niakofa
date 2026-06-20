@@ -24,13 +24,16 @@ import { logger } from "../lib/logger";
 const CLEANUP_JOB_NAME = "daily-request-cleanup";
 const CLEANUP_REPEAT   = { pattern: "0 3 * * *" }; // 3 AM daily (low traffic)
 
-// Expiry thresholds by urgency (in milliseconds)
-const EXPIRY_MS: Record<string, number> = {
-  emergency: 2  * 60 * 60 * 1000,
-  high:      6  * 60 * 60 * 1000,
-  medium:    24 * 60 * 60 * 1000,
-  low:       72 * 60 * 60 * 1000,
-};
+// Expiry thresholds by urgency (in milliseconds). Kept as a typed array
+// rather than Object.entries(Record<string, number>) — Object.entries always
+// widens keys back to plain `string`, which no longer satisfies the strict
+// urgency enum type after the help_request_urgency migration.
+const EXPIRY_THRESHOLDS: Array<{ urgency: "emergency" | "high" | "medium" | "low"; ms: number }> = [
+  { urgency: "emergency", ms: 2  * 60 * 60 * 1000 },
+  { urgency: "high",      ms: 6  * 60 * 60 * 1000 },
+  { urgency: "medium",    ms: 24 * 60 * 60 * 1000 },
+  { urgency: "low",       ms: 72 * 60 * 60 * 1000 },
+];
 
 const ORPHAN_CLAIMED_MS = 4 * 60 * 60 * 1000; // 4 hours stuck in "claimed"
 
@@ -41,7 +44,7 @@ async function runCleanup(_job: Job): Promise<void> {
   let totalExpired = 0;
 
   // 1. Expire stale open requests per urgency threshold
-  for (const [urgency, expiryMs] of Object.entries(EXPIRY_MS)) {
+  for (const { urgency, ms: expiryMs } of EXPIRY_THRESHOLDS) {
     const cutoff = new Date(now.getTime() - expiryMs);
     const expired = await db
       .update(requestsTable)

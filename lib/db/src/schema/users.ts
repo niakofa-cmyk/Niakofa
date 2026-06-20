@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, real, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, real, numeric, integer, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -27,7 +27,7 @@ export const usersTable = pgTable("users", {
   help_count: integer("help_count").notNull().default(0),
   neighborhood: text("neighborhood"),
   city: text("city"),
-  benevolence_wallet: real("benevolence_wallet").notNull().default(0),
+  benevolence_wallet: numeric("benevolence_wallet", { precision: 10, scale: 2, mode: "number" }).notNull().default(0),
   goodwill_score: integer("goodwill_score").notNull().default(0),
   specialties: text("specialties").array(),
   phone_masked: text("phone_masked"),

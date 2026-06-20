@@ -1,10 +1,10 @@
-import { pgTable, serial, integer, real, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, numeric, text, timestamp } from "drizzle-orm/pg-core";
 
 export const scheduledPaymentsTable = pgTable("scheduled_payments", {
   id: serial("id").primaryKey(),
   user_id: integer("user_id").notNull(),
   request_id: integer("request_id").notNull(),
-  amount: real("amount").notNull(),
+  amount: numeric("amount", { precision: 10, scale: 2, mode: "number" }).notNull(),
   scheduled_date: timestamp("scheduled_date").notNull(),
   status: text("status").notNull().default("pending"),
   note: text("note"),
