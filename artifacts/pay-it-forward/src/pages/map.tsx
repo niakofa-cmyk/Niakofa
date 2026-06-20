@@ -17,14 +17,12 @@ import { BottomSheet } from "@/components/BottomSheet";
 import { RequestMarker } from "@/components/RequestMarker";
 import { HelperMarker } from "@/components/HelperMarker";
 import { DispatchIntelligenceCard } from "@/components/DispatchIntelligenceCard";
-import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2, Layers, X, Siren, Zap } from "lucide-react";
+import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2, Layers, X, Siren, Zap, Locate } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { wsIsConnected } from "@/lib/wsClient";
 import { useTerrain } from "@/hooks/useTerrain";
-import { useDeviceHeading } from "@/hooks/useDeviceHeading";
-import { useMapOrientation } from "@/hooks/useMapOrientation";
-import { OrientationToggle } from "@/components/OrientationToggle";
+
 
 function checkWebGL(): boolean {
   try {
@@ -280,27 +278,15 @@ export default function MapScreen() {
   const claimMutation = useClaimRequest();
   const mapRef = useRef<mapboxgl.Map | null>(null);
   useTerrain(mapRef);
-  const deviceHeading = useDeviceHeading();
-  const { mode: orientMode, setMode: setOrientMode, applyHeading } = useMapOrientation(mapRef);
-
-  // Prefer GPS course-over-ground when actively moving — it's derived from
-  // real movement vector and is far steadier than the magnetometer. Only
-  // fall back to the device compass when stationary or GPS heading is
-  // unavailable (GPS heading is meaningless below walking speed).
-  const MOVING_SPEED_THRESHOLD_MPS = 0.5;
-  const gpsHeading =
-    myLocation?.speed != null &&
-    myLocation.speed > MOVING_SPEED_THRESHOLD_MPS &&
-    myLocation?.heading != null &&
-    !isNaN(myLocation.heading)
-      ? myLocation.heading
-      : null;
-
-  const effectiveHeading = gpsHeading ?? deviceHeading;
-
-  useEffect(() => {
-    if (effectiveHeading !== null) applyHeading(effectiveHeading);
-  }, [effectiveHeading, applyHeading]);
+  // Main map screen stays locked to north-up always — heading-up rotation
+  // and auto-follow are reserved for the active-navigation screen, matching
+  // how Uber/DoorDash only auto-rotate/follow during a live trip, not while
+  // idly browsing the map.
+  const handleRecenter = useCallback(() => {
+    if (myLocation && mapRef.current) {
+      mapRef.current.flyTo({ center: [myLocation.lng, myLocation.lat], zoom: 14, duration: 800 });
+    }
+  }, [myLocation]);
   const handleClaim = useCallback((request: HelpRequest) => {
     if (!currentUser) return;
     claimMutation.mutate(
@@ -592,8 +578,19 @@ export default function MapScreen() {
           </div>
         )}
 
-        <OrientationToggle mode={orientMode} onToggle={() => setOrientMode(orientMode === "heading-up" ? "north-up" : "heading-up")} />
       </Map>
+      )}
+
+      {/* Re-center button — manual recenter only; main map stays north-up
+          and user-controlled, unlike the active-navigation screen. */}
+      {myLocation && !mapError && (
+        <button
+          onClick={handleRecenter}
+          className="absolute bottom-24 right-4 z-30 w-10 h-10 bg-card/90 backdrop-blur-md border border-border rounded-full shadow-lg flex items-center justify-center hover:bg-card transition-colors"
+          aria-label="Re-center map on my location"
+        >
+          <Locate className="w-4 h-4 text-primary" />
+        </button>
       )}
 
       {/* Neighborhood filter chips — appear when requests have neighborhood data */}

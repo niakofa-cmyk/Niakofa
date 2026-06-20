@@ -133,9 +133,21 @@ export default function ActiveRequestScreen() {
   const { mode, setMode, applyHeading } = useMapOrientation(rawMapRef);
   useTerrain(rawMapRef);
 
+  // Prefer GPS course-over-ground while actively moving — far steadier
+  // than the magnetometer. Falls back to device compass when stationary.
+  const MOVING_SPEED_THRESHOLD_MPS = 0.5;
+  const gpsHeading =
+    myLocation?.speed != null &&
+    myLocation.speed > MOVING_SPEED_THRESHOLD_MPS &&
+    myLocation?.heading != null &&
+    !isNaN(myLocation.heading)
+      ? myLocation.heading
+      : null;
+  const effectiveHeading = gpsHeading ?? deviceHeading;
+
   useEffect(() => {
-    if (deviceHeading != null) applyHeading(deviceHeading);
-  }, [deviceHeading, applyHeading]);
+    if (effectiveHeading != null) applyHeading(effectiveHeading);
+  }, [effectiveHeading, applyHeading]);
 
   // ── Data ───────────────────────────────────────────────────────────────
 
@@ -292,11 +304,15 @@ export default function ActiveRequestScreen() {
     if (isOffRoute) speakInstruction("Off route. Recalculating.");
   }, [isOffRoute, speakInstruction]);
 
-  // Auto-zoom to route
+  // Auto-zoom to route — fires ONCE on initial route load to preview the
+  // full trip, then hands off entirely to follow-mode above. Re-fitting on
+  // every refetch fought with continuous user-following, causing jumps.
+  const hasFitInitialRouteRef = useRef(false);
   useEffect(() => {
-    if (!routeData?.geometry || !mapRef.current) return;
+    if (!routeData?.geometry || !mapRef.current || hasFitInitialRouteRef.current) return;
     const coords = (routeData.geometry as { coordinates: number[][] }).coordinates;
     if (coords.length < 2) return;
+    hasFitInitialRouteRef.current = true;
     const lngs = coords.map(c => c[0]);
     const lats = coords.map(c => c[1]);
     const bounds: [[number, number], [number, number]] = [
@@ -306,27 +322,19 @@ export default function ActiveRequestScreen() {
     mapRef.current.fitBounds(bounds, { padding: 80, duration: 1200, pitch: 55, maxZoom: 17 });
   }, [routeData?.geometry]);
 
-  // GPS heading fallback (only fires when device compass is unavailable)
-  useEffect(() => {
-    if (deviceHeading != null) return;
-    if (!myLocation?.heading || !mapRef.current || isArrived) return;
-    if (mode !== "heading-up") return;
-    mapRef.current.easeTo({
-      bearing: myLocation.heading,
-      duration: 800,
-      easing: (t: number) => t,
-    });
-  }, [myLocation?.heading, isArrived, deviceHeading, mode]);
-
-  // Re-center on user
+  // Follow user — instant setCenter (no animation queue) since GPS
+  // lat/lng is already EMA-smoothed upstream in AppContext. Zoom is only
+  // set once on entry, not re-applied every tick, so it doesn't fight the
+  // route-preview fitBounds below.
+  const hasSetInitialZoomRef = useRef(false);
   useEffect(() => {
     if (!myLocation || !mapRef.current || isArrived || autoArrived) return;
-    mapRef.current.easeTo({
-      center: [myLocation.lng, myLocation.lat],
-      duration: 600,
-      zoom: 16,
-    });
-  }, [myLocation?.lat, myLocation?.lng]);
+    mapRef.current.setCenter([myLocation.lng, myLocation.lat]);
+    if (!hasSetInitialZoomRef.current) {
+      hasSetInitialZoomRef.current = true;
+      mapRef.current.setZoom(16);
+    }
+  }, [myLocation?.lat, myLocation?.lng, isArrived, autoArrived]);
 
   // Passive safety check-in
   useEffect(() => {
