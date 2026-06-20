@@ -785,7 +785,14 @@ router.patch("/users/:id/moderation", requireAuth, requireAdmin(), async (req, r
 
   if (action === "ban") {
     await db.update(usersTable)
-      .set({ trust_score: -1, helper_mode_active: false })
+      .set({
+        trust_score: -1,
+        helper_mode_active: false,
+        // Revoke every previously issued token immediately, not just future
+        // logins — without this, a banned user's existing session(s) stay
+        // valid until natural 30-day token expiry.
+        token_version: sql`${usersTable.token_version} + 1`,
+      })
       .where(eq(usersTable.id, userId));
   } else {
     await db.update(usersTable)

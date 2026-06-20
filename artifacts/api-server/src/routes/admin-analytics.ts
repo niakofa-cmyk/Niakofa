@@ -114,7 +114,7 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), async (_req, res) =>
           WHEN ${usersTable.trust_score} < 40 THEN '20-40'
           WHEN ${usersTable.trust_score} < 60 THEN '40-60'
           WHEN ${usersTable.trust_score} < 80 THEN '60-80'
-          ELSE '8-10'
+          ELSE '80-100'
         END`,
         count: sql<number>`COUNT(*)::int`,
       })
@@ -126,7 +126,7 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), async (_req, res) =>
           WHEN ${usersTable.trust_score} < 40 THEN '20-40'
           WHEN ${usersTable.trust_score} < 60 THEN '40-60'
           WHEN ${usersTable.trust_score} < 80 THEN '60-80'
-          ELSE '8-10'
+          ELSE '80-100'
         END`
       ),
 

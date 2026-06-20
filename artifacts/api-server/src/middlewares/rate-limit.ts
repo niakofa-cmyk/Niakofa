@@ -121,6 +121,22 @@ export const generalApiLimiter = rateLimit({
 // Key on the authenticated userId (set by parseAuth before this runs).
 // Falls back to IP only when there is no verified token (should not happen
 // on POST chat since requireAuth runs first, but defensive).
+// ── 7. Navigation/Directions (60 / 15 min per user) ──────────────────────────
+// Protects against unmetered cost-amplification against the paid Mapbox
+// Directions API — this route proxies directly to a billed third-party API.
+export const navigationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  store: createStore("navigation"),
+  keyGenerator: (req) => {
+    const r = req as typeof req & { authenticatedUserId?: number };
+    return `nav-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
+  },
+  message: { error: "Too many route requests in a short period. Please wait a few minutes." },
+});
+
 export const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 30,

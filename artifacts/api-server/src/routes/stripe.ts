@@ -267,9 +267,17 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
     return res.status(400).json({ error: `amount exceeds maximum allowed ($${MAX_PAYMENT_AMOUNT})` });
   }
 
-  // Check if helper has a Connect account for direct transfer
+  // Check if helper has a Connect account for direct transfer — but first
+  // verify the client-supplied helperId actually matches this request's
+  // real assigned helper, server-side. Without this, a requester could
+  // redirect the transfer's destination to an arbitrary connected account.
   let transferData: { destination: string } | undefined;
   if (helperId) {
+    const [req_] = await db.select({ helper_id: requestsTable.helper_id })
+      .from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+    if (!req_ || req_.helper_id !== helperId) {
+      return res.status(400).json({ error: "helperId does not match this request's assigned helper" });
+    }
     const [acct] = await db
       .select()
       .from(stripeAccountsTable)

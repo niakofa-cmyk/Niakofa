@@ -188,7 +188,11 @@ router.patch("/reports/:id/review", requireAuth, requireAdmin(), async (req, res
   // user fully active despite the report reading "banned".
   if (status === "resolved_banned" && updated.reported_user_id) {
     await db.update(usersTable)
-      .set({ trust_score: -1, helper_mode_active: false })
+      .set({
+        trust_score: -1,
+        helper_mode_active: false,
+        token_version: sql`${usersTable.token_version} + 1`,
+      })
       .where(eq(usersTable.id, updated.reported_user_id));
     logger.warn(
       { report_id: id, banned_user_id: updated.reported_user_id },
