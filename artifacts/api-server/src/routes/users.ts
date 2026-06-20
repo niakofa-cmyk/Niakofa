@@ -299,6 +299,10 @@ router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, re
   const bParsed = MakePledgePaymentBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { request_id, amount } = bParsed.data;
+  const MAX_PLEDGE_AMOUNT = 10000; // $10,000 sanity cap
+  if (amount <= 0 || amount > MAX_PLEDGE_AMOUNT) {
+    return res.status(400).json({ error: `amount must be greater than 0 and no more than $${MAX_PLEDGE_AMOUNT}` });
+  }
   const [request] = await db.select().from(requestsTable)
     .where(and(eq(requestsTable.id, request_id), eq(requestsTable.requester_id, pParsed.data.id)))
     .limit(1);

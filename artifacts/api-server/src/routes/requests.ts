@@ -403,7 +403,11 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
 
   const [request] = await db.update(requestsTable)
     .set({ status: "completed", completed_at: new Date() })
-    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, callerId)))
+    .where(and(
+      eq(requestsTable.id, pParsed.data.id),
+      eq(requestsTable.helper_id, callerId),
+      sql`${requestsTable.status} != 'completed'`,
+    ))
     .returning();
   if (!request) return res.status(404).json({ error: "Not found" });
 
@@ -567,8 +571,9 @@ router.post("/requests/:id/tip", requireAuth, async (req, res) => {
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 
   const { tip_amount } = req.body as { tip_amount: number };
-  if (!tip_amount || tip_amount <= 0) {
-    return res.status(400).json({ error: "tip_amount > 0 required" });
+  const MAX_TIP_AMOUNT = 500; // sanity cap — tips are smaller-scale than pledges/payments
+  if (!tip_amount || tip_amount <= 0 || tip_amount > MAX_TIP_AMOUNT) {
+    return res.status(400).json({ error: `tip_amount must be greater than 0 and no more than $${MAX_TIP_AMOUNT}` });
   }
 
   const [request] = await db.select().from(requestsTable)

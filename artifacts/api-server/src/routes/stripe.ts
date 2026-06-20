@@ -262,6 +262,10 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
   if (!requestId || !amount || amount <= 0) {
     return res.status(400).json({ error: "requestId and amount (> 0) required" });
   }
+  const MAX_PAYMENT_AMOUNT = 10000; // $10,000 sanity cap
+  if (amount > MAX_PAYMENT_AMOUNT) {
+    return res.status(400).json({ error: `amount exceeds maximum allowed ($${MAX_PAYMENT_AMOUNT})` });
+  }
 
   // Check if helper has a Connect account for direct transfer
   let transferData: { destination: string } | undefined;
@@ -456,6 +460,10 @@ router.post("/stripe/payout", requireAuth, requireAdmin(), paymentLimiter, async
   };
 
   if (!helperId || !amount) return res.status(400).json({ error: "helperId and amount required" });
+  const MAX_PAYOUT_AMOUNT = 25000; // sanity cap — recompute-from-source-of-truth is a larger follow-up fix
+  if (amount <= 0 || amount > MAX_PAYOUT_AMOUNT) {
+    return res.status(400).json({ error: `amount must be greater than 0 and no more than $${MAX_PAYOUT_AMOUNT}` });
+  }
 
   const [acct] = await db
     .select()

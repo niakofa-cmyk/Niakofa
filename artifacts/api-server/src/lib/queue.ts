@@ -101,7 +101,7 @@ export async function enqueuePayoutRetry(data: PayoutJobData): Promise<boolean> 
     return false;
   }
   await payoutQueue.add("retry-payout", data, {
-    jobId: `payout-${data.request_id}-${Date.now()}`,
+    jobId: `payout-${data.request_id}`, // deterministic — enables real BullMQ deduplication
   });
   logger.info({ request_id: data.request_id }, "payout retry enqueued");
   return true;
