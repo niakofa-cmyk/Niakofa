@@ -152,7 +152,8 @@ router.post("/users/register", authLimiter, async (req, res) => {
       password_hash,
     }).returning();
     const token = signTokenById(user.id);
-    return res.status(201).json({ user, token });
+    const { password_hash: _ph, ...safeUser } = user as Record<string, unknown>;
+    return res.status(201).json({ user: safeUser, token });
   } catch (err) {
     logger.error({ err }, "register: database error");
     return res.status(500).json({ error: "Registration failed — please try again" });
@@ -164,7 +165,8 @@ router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, parsed.data.id)).limit(1);
   if (!user) return res.status(404).json({ error: "User not found" });
-  return res.json(user);
+  const { password_hash: _ph, ...safeUser } = user as Record<string, unknown>;
+  return res.json(safeUser);
 });
 
 router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => {

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type mapboxgl from "mapbox-gl";
 import { useLocation } from "wouter";
 import Map, { Marker, Source, Layer } from "react-map-gl/mapbox";
@@ -17,7 +17,7 @@ import { BottomSheet } from "@/components/BottomSheet";
 import { RequestMarker } from "@/components/RequestMarker";
 import { HelperMarker } from "@/components/HelperMarker";
 import { DispatchIntelligenceCard } from "@/components/DispatchIntelligenceCard";
-import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2, Layers, X, Siren } from "lucide-react";
+import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2, Layers, X, Siren, Zap } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { wsIsConnected } from "@/lib/wsClient";
@@ -44,6 +44,7 @@ function checkWebGL(): boolean {
  * Skill match awards a +20 bonus when the helper has a specialty that maps to the request category.
  */
 const SKILL_CATEGORY_MAP: Record<string, string[]> = {
+  // Legacy specialties
   truck_owner:          ["transportation", "delivery_run", "stock_shelves", "errands"],
   medical_background:   ["medical", "emergency"],
   bilingual:            ["groceries", "errands", "medical", "other"],
@@ -51,6 +52,26 @@ const SKILL_CATEGORY_MAP: Record<string, string[]> = {
   licensed_plumber:     ["home_repair"],
   carpenter:            ["home_repair", "event_setup"],
   tech_support:         ["tech_support"],
+  // New helper application skills
+  plumbing:             ["home_repair"],
+  electrical:           ["home_repair"],
+  carpentry:            ["home_repair", "event_setup"],
+  painting:             ["home_repair"],
+  yard_work:            ["home_repair", "other"],
+  heavy_lifting:        ["home_repair", "delivery_run", "event_setup"],
+  drives_truck:         ["transportation", "delivery_run", "stock_shelves", "errands"],
+  cdl_driver:           ["transportation", "delivery_run"],
+  grocery_shopping:     ["groceries"],
+  cooking:              ["other"],
+  childcare:            ["other"],
+  elder_care:           ["medical", "other"],
+  medical_support:      ["medical", "emergency"],
+  tutoring:             ["other"],
+  translation:          ["other", "medical", "errands"],
+  pet_care:             ["other"],
+  food_delivery:        ["delivery_run", "groceries"],
+  event_setup:          ["event_setup"],
+  emergency_first_aid:  ["emergency", "medical"],
 };
 
 const CATEGORY_WEIGHT: Record<string, number> = {
@@ -304,8 +325,30 @@ export default function MapScreen() {
       })),
   };
 
+  // Compute which categories the current helper's skills cover
+  const helperSkillCategories = useMemo(() => {
+    const u = currentUser as unknown as { helper_skills?: string[] | null; specialties?: string[] | null };
+    const skills = (u?.helper_skills ?? u?.specialties ?? []).map(s => s.toLowerCase().replace(/\s+/g, "_"));
+    const matchedCategories = new Set<string>();
+    for (const [skill, cats] of Object.entries(SKILL_CATEGORY_MAP)) {
+      if (skills.includes(skill)) cats.forEach(c => matchedCategories.add(c));
+    }
+    return matchedCategories;
+  }, [currentUser]);
+
+  // Returns true when a request's category matches at least one of this helper's skills
+  const isSkillMatch = useCallback((request: HelpRequest) => {
+    if (!helperModeActive) return false;
+    if (helperSkillCategories.size === 0) return false;
+    return helperSkillCategories.has(request.category ?? "other");
+  }, [helperModeActive, helperSkillCategories]);
+
+  const skillMatchCount = useMemo(() => openRequests.filter(isSkillMatch).length, [openRequests, isSkillMatch]);
+
   // Dispatch Intelligence — Best Match card
-  const bestMatch = helperModeActive ? pickBestMatch(openRequests, (currentUser as unknown as { specialties?: string[] })?.specialties) : null;
+  const helperSkills = (currentUser as unknown as { helper_skills?: string[] | null; specialties?: string[] | null })?.helper_skills
+    ?? (currentUser as unknown as { specialties?: string[] | null })?.specialties;
+  const bestMatch = helperModeActive ? pickBestMatch(openRequests, helperSkills) : null;
   const showBestMatch = bestMatch && bestMatch.id !== bestMatchDismissed;
 
   const showCrisisBanner = crisis?.active && !crisisDismissed;
@@ -385,6 +428,12 @@ export default function MapScreen() {
               <span className="text-[10px] font-bold text-destructive">{emergencyRequests.length} 🚨</span>
             </div>
           )}
+          {helperModeActive && skillMatchCount > 0 && (
+            <div className="flex items-center gap-1.5 bg-emerald-500/20 backdrop-blur-md border border-emerald-500/50 px-2.5 py-1.5 rounded-full shadow-lg">
+              <Zap className="w-3 h-3 text-emerald-400" />
+              <span className="text-[10px] font-bold text-emerald-400">{skillMatchCount} skill match{skillMatchCount !== 1 ? "es" : ""}</span>
+            </div>
+          )}
           {activeHelperRoute && (
             <div className="flex items-center gap-1.5 bg-primary/10 backdrop-blur-md border border-primary/30 px-2.5 py-1.5 rounded-full shadow-lg">
               <Navigation2 className="w-3 h-3 text-primary" />
@@ -459,12 +508,12 @@ export default function MapScreen() {
             </Marker>
           ))}
 
-        {/* Open request markers with emergency pulse rings */}
+        {/* Open request markers — skill-matched ones render in emerald with a ⚡ badge */}
         {openRequests
           .filter(r => typeof r.lat === "number" && typeof r.lng === "number" && isFinite(r.lat) && isFinite(r.lng))
           .map(r => (
             <Marker key={r.id} longitude={r.lng} latitude={r.lat} anchor="bottom">
-              <RequestMarker request={r} />
+              <RequestMarker request={r} skillMatch={isSkillMatch(r)} />
             </Marker>
           ))}
 
