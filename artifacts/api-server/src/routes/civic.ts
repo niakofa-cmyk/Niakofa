@@ -4,7 +4,7 @@ import { eq, and, or, isNull, desc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
-import { cacheGet, cacheSet, cacheDel } from "../lib/cache";
+import { cacheGet, cacheSet, cacheDel, cacheDelPrefix } from "../lib/cache";
 
 const CIVIC_TTL = 3600; // 1 hour — civic resources change rarely
 
@@ -244,9 +244,12 @@ router.patch("/civic/suggestions/:id/review", requireAuth, requireAdmin(), async
   if (!updated) return res.status(404).json({ error: "Suggestion not found" });
   logger.info({ id, status, reviewed_by: req.authenticatedUserId }, "civic suggestion reviewed");
   if (status === "approved") {
-    // Invalidate the cache immediately instead of waiting up to an hour
-    // for the TTL to expire — newly approved content should appear right away.
+    // Invalidate both the unscoped cache AND every location-specific cache
+    // entry — previously only "civic:all" was cleared, so a newly approved
+    // resource could stay invisible in location-scoped results for up to
+    // an hour.
     await cacheDel("civic:all");
+    await cacheDelPrefix("civic:loc:");
   }
   return res.json(updated);
 });
