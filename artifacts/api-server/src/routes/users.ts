@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable } from "@workspace/db";
+import bcrypt from "bcryptjs";
+import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import {
   GetUserParams,
@@ -16,8 +17,14 @@ import {
   CreateScheduledPaymentBody,
   GetScheduledPaymentsParams,
 } from "@workspace/api-zod";
-import { broadcast } from "../lib/ws-hub";
+import { broadcast, sendToUser } from "../lib/ws-hub";
 import { authLimiter, gpsLimiter } from "../middlewares/rate-limit";
+import { requireAuth, signTokenById } from "../middlewares/auth";
+import { requireOwnership, requireAdmin } from "../middlewares/authz";
+import { logger } from "../lib/logger";
+import { sendHelperApplicationDecision } from "../lib/mailer";
+
+const BCRYPT_ROUNDS = 12;
 
 const router = Router();
 
@@ -26,39 +33,144 @@ router.get("/users/register", (_req, res) => {
 });
 
 router.post("/users/login", authLimiter, async (req, res) => {
-  const { email, password } = req.body as { email: string; password: string };
+  const { email, password } = req.body as { email?: string; password?: string };
   if (!email) return res.status(400).json({ error: "Email required" });
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
+  if (!password) return res.status(400).json({ error: "Password required" });
+
+  let user: typeof usersTable.$inferSelect | undefined;
+  try {
+    const rows = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.email, email.trim().toLowerCase()))
+      .limit(1);
+    user = rows[0];
+  } catch (err) {
+    logger.error({ err }, "login: database error");
+    return res.status(500).json({ error: "Database error — please try again" });
+  }
+
   if (!user) return res.status(401).json({ error: "No account found with that email" });
-  const token = `${user.id}.${Buffer.from(user.email).toString("base64url")}`;
-  return res.json({ user, token });
+
+  if (user.password_hash) {
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: "Incorrect password" });
+  } else {
+    // Legacy account (no password set) — do NOT issue a token.
+    // The client must call POST /users/set-initial-password to create a
+    // password before gaining access. There is no "skip" path.
+    logger.warn({ user_id: user.id }, "login: legacy account must set password");
+    return res.status(403).json({
+      error_code: "LEGACY_PASSWORD_REQUIRED",
+      error: "Please create a password to continue. Your account was created before passwords were required.",
+      user_id: user.id,
+      user_name: user.name,
+      user_email: user.email,
+    });
+  }
+
+  const token = signTokenById(user.id);
+  const { password_hash: _ph, ...safeUser } = user as any;
+  return res.json({ user: safeUser, token });
+});
+
+// POST /users/set-initial-password — unauthenticated, rate-limited one-time password setup.
+// ONLY works for legacy accounts where password_hash is NULL (pre-password-era accounts).
+// Verifies user_id + email match before allowing the change — proves account ownership.
+// On success, returns a full auth token so the user lands directly in the app.
+router.post("/users/set-initial-password", authLimiter, async (req, res) => {
+  const { user_id, email, new_password } = req.body as {
+    user_id?: number;
+    email?: string;
+    new_password?: string;
+  };
+
+  if (!user_id || !email || !new_password) {
+    return res.status(400).json({ error: "user_id, email, and new_password are required" });
+  }
+  if (typeof new_password !== "string" || new_password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+
+  let user: typeof usersTable.$inferSelect | undefined;
+  try {
+    const rows = await db.select().from(usersTable).where(eq(usersTable.id, Number(user_id))).limit(1);
+    user = rows[0];
+  } catch (err) {
+    logger.error({ err }, "set-initial-password: database error");
+    return res.status(500).json({ error: "Database error — please try again" });
+  }
+
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  // Email must match to prove account ownership — no additional token needed
+  if (user.email.toLowerCase() !== String(email).trim().toLowerCase()) {
+    return res.status(403).json({ error: "Email does not match account" });
+  }
+
+  // This endpoint is only for legacy (no-password) accounts
+  if (user.password_hash) {
+    return res.status(409).json({
+      error: "This account already has a password. Use the normal sign-in form.",
+    });
+  }
+
+  const password_hash = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
+  const [updated] = await db
+    .update(usersTable)
+    .set({ password_hash, updated_at: new Date() })
+    .where(eq(usersTable.id, user.id))
+    .returning();
+
+  if (!updated) return res.status(500).json({ error: "Failed to update password" });
+
+  logger.info({ user_id: user.id }, "users: legacy account initial password set");
+  const token = signTokenById(updated.id);
+  const { password_hash: _ph, ...safeUser } = updated as any;
+  return res.json({ user: safeUser, token });
 });
 
 router.post("/users/register", authLimiter, async (req, res) => {
   const parsed = RegisterUserBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
   const { name, email, avatar_url, is_helper, neighborhood } = parsed.data;
-  const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
-  if (existing.length > 0) return res.json(existing[0]);
-  const [user] = await db.insert(usersTable).values({
-    name, email,
-    avatar_url: avatar_url ?? null,
-    is_helper: is_helper ?? false,
-    neighborhood: neighborhood ?? null,
-  }).returning();
-  return res.status(201).json(user);
+  // Accept optional password from body (not part of OpenAPI spec to avoid codegen churn)
+  const rawPassword = (req.body as Record<string, unknown>).password;
+  const password_hash = rawPassword && typeof rawPassword === "string" && rawPassword.length >= 6
+    ? await bcrypt.hash(rawPassword, BCRYPT_ROUNDS)
+    : null;
+
+  try {
+    const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
+    if (existing.length > 0) return res.status(409).json({ error: "Email already registered" });
+
+    const [user] = await db.insert(usersTable).values({
+      name, email: email.trim().toLowerCase(),
+      avatar_url: avatar_url ?? null,
+      is_helper: is_helper ?? false,
+      neighborhood: neighborhood ?? null,
+      password_hash,
+    }).returning();
+    const token = signTokenById(user.id);
+    const { password_hash: _ph, ...safeUser } = user as Record<string, unknown>;
+    return res.status(201).json({ user: safeUser, token });
+  } catch (err) {
+    logger.error({ err }, "register: database error");
+    return res.status(500).json({ error: "Registration failed — please try again" });
+  }
 });
 
-router.get("/users/:id", async (req, res) => {
-  const parsed = GetUserParams.safeParse({ id: parseInt(req.params.id) });
+router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
+  const parsed = GetUserParams.safeParse({ id: parseInt(req.params.id as string) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, parsed.data.id)).limit(1);
   if (!user) return res.status(404).json({ error: "User not found" });
-  return res.json(user);
+  const { password_hash: _ph, ...safeUser } = user as Record<string, unknown>;
+  return res.json(safeUser);
 });
 
-router.patch("/users/:id", async (req, res) => {
-  const pParsed = UpdateUserParams.safeParse({ id: parseInt(req.params.id) });
+router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
+  const pParsed = UpdateUserParams.safeParse({ id: parseInt(req.params.id as string) });
   const bParsed = UpdateUserBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { name, avatar_url, neighborhood, is_helper } = bParsed.data;
@@ -71,12 +183,27 @@ router.patch("/users/:id", async (req, res) => {
   if (specialties !== undefined) (updates as any).specialties = specialties;
   if (phone_masked !== undefined) (updates as any).phone_masked = phone_masked;
   if (quick_replies !== undefined) (updates as any).quick_replies = quick_replies;
+
+  // ── Set-password flow for legacy accounts ─────────────────────────────────
+  // The client sends `new_password` (plaintext) when a legacy user creates a
+  // password for the first time. We hash it here — the plaintext never persists.
+  const rawNewPassword = (req.body as Record<string, unknown>).new_password;
+  if (rawNewPassword !== undefined) {
+    if (typeof rawNewPassword !== "string" || rawNewPassword.length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters" });
+    }
+    (updates as any).password_hash = await bcrypt.hash(rawNewPassword, BCRYPT_ROUNDS);
+    logger.info({ user_id: pParsed.data.id }, "users: legacy account password set");
+  }
+
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  return res.json(user);
+  // Never return the password hash to the client
+  const { password_hash: _ph, ...safeUser } = user as any;
+  return res.json(safeUser);
 });
 
-router.patch("/users/:id/location", gpsLimiter, async (req, res) => {
+router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter, async (req, res) => {
   const pParsed = UpdateUserLocationParams.safeParse({ id: parseInt(req.params.id as string) });
   const bParsed = UpdateUserLocationBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
@@ -95,8 +222,8 @@ router.patch("/users/:id/location", gpsLimiter, async (req, res) => {
   return res.json(user);
 });
 
-router.patch("/users/:id/helper-mode", async (req, res) => {
-  const pParsed = UpdateHelperModeParams.safeParse({ id: parseInt(req.params.id) });
+router.patch("/users/:id/helper-mode", requireAuth, requireOwnership(), async (req, res) => {
+  const pParsed = UpdateHelperModeParams.safeParse({ id: parseInt(req.params.id as string) });
   const bParsed = UpdateHelperModeBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const [user] = await db.update(usersTable)
@@ -111,8 +238,8 @@ router.patch("/users/:id/helper-mode", async (req, res) => {
   return res.json(user);
 });
 
-router.post("/users/:id/pledge", async (req, res) => {
-  const pParsed = MakePledgePaymentParams.safeParse({ id: parseInt(req.params.id) });
+router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, res) => {
+  const pParsed = MakePledgePaymentParams.safeParse({ id: parseInt(req.params.id as string) });
   const bParsed = MakePledgePaymentBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { request_id, amount } = bParsed.data;
@@ -146,9 +273,6 @@ router.post("/users/:id/pledge", async (req, res) => {
     description: request.title,
   });
 
-  // Record payment_transactions row so this pledge appears in the financial ledger.
-  // state = "pending_contribution" — a real Stripe charge may have already been confirmed
-  // by the frontend (PaymentIntent flow) or will be fulfilled on the honor system.
   await db.insert(paymentTransactionsTable).values({
     request_id: request_id,
     helper_id: request.helper_id ?? null,
@@ -165,8 +289,8 @@ router.post("/users/:id/pledge", async (req, res) => {
 });
 
 // GET /users/:id/transactions — real activity history
-router.get("/users/:id/transactions", async (req, res) => {
-  const id = parseInt(req.params.id);
+router.get("/users/:id/transactions", requireAuth, requireOwnership(), async (req, res) => {
+  const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const txns = await db.select().from(transactionsTable)
     .where(eq(transactionsTable.user_id, id))
@@ -176,8 +300,8 @@ router.get("/users/:id/transactions", async (req, res) => {
 });
 
 // POST /users/:id/scheduled-payment — save a future repayment intent
-router.post("/users/:id/scheduled-payment", async (req, res) => {
-  const pParsed = CreateScheduledPaymentParams.safeParse({ id: parseInt(req.params.id) });
+router.post("/users/:id/scheduled-payment", requireAuth, requireOwnership(), async (req, res) => {
+  const pParsed = CreateScheduledPaymentParams.safeParse({ id: parseInt(req.params.id as string) });
   const bParsed = CreateScheduledPaymentBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { request_id, amount, scheduled_date, note } = bParsed.data;
@@ -200,8 +324,8 @@ router.post("/users/:id/scheduled-payment", async (req, res) => {
 });
 
 // GET /users/:id/scheduled-payment — list future payment intents
-router.get("/users/:id/scheduled-payment", async (req, res) => {
-  const parsed = GetScheduledPaymentsParams.safeParse({ id: parseInt(req.params.id) });
+router.get("/users/:id/scheduled-payment", requireAuth, requireOwnership(), async (req, res) => {
+  const parsed = GetScheduledPaymentsParams.safeParse({ id: parseInt(req.params.id as string) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const rows = await db.select().from(scheduledPaymentsTable)
     .where(eq(scheduledPaymentsTable.user_id, parsed.data.id))
@@ -210,9 +334,9 @@ router.get("/users/:id/scheduled-payment", async (req, res) => {
 });
 
 // DELETE /users/:id/scheduled-payment/:paymentId — cancel a scheduled payment
-router.delete("/users/:id/scheduled-payment/:paymentId", async (req, res) => {
-  const userId = parseInt(req.params.id);
-  const paymentId = parseInt(req.params.paymentId);
+router.delete("/users/:id/scheduled-payment/:paymentId", requireAuth, requireOwnership(), async (req, res) => {
+  const userId = parseInt(req.params.id as string);
+  const paymentId = parseInt(req.params.paymentId as string);
   if (isNaN(userId) || isNaN(paymentId)) return res.status(400).json({ error: "Invalid id" });
   const [deleted] = await db.delete(scheduledPaymentsTable)
     .where(and(
@@ -225,8 +349,8 @@ router.delete("/users/:id/scheduled-payment/:paymentId", async (req, res) => {
 });
 
 // GET /users/:id/outstanding-pledges — requests with unpaid pledge balance
-router.get("/users/:id/outstanding-pledges", async (req, res) => {
-  const id = parseInt(req.params.id);
+router.get("/users/:id/outstanding-pledges", requireAuth, requireOwnership(), async (req, res) => {
+  const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const requests = await db.select().from(requestsTable)
     .where(
@@ -248,14 +372,13 @@ router.get("/users/:id/outstanding-pledges", async (req, res) => {
 });
 
 // POST /users/:id/avatar — update profile photo (base64 data URL)
-router.post("/users/:id/avatar", async (req, res) => {
-  const id = parseInt(req.params.id);
+router.post("/users/:id/avatar", requireAuth, requireOwnership(), async (req, res) => {
+  const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const { dataUrl } = req.body as { dataUrl?: string };
   if (!dataUrl || !dataUrl.startsWith("data:image/")) {
     return res.status(400).json({ error: "Invalid image data — must be a base64 data URL starting with data:image/" });
   }
-  // Enforce reasonable size limit (~5 MB base64)
   if (dataUrl.length > 7 * 1024 * 1024) {
     return res.status(413).json({ error: "Image too large — max 5 MB" });
   }
@@ -269,19 +392,18 @@ router.post("/users/:id/avatar", async (req, res) => {
 });
 
 // GET /users/:id/settings — fetch user notification + privacy prefs (upserts defaults if first visit)
-router.get("/users/:id/settings", async (req, res) => {
-  const id = parseInt(req.params.id);
+router.get("/users/:id/settings", requireAuth, requireOwnership(), async (req, res) => {
+  const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const [existing] = await db.select().from(userSettingsTable).where(eq(userSettingsTable.user_id, id)).limit(1);
   if (existing) return res.json(existing);
-  // First visit — create defaults
   const [created] = await db.insert(userSettingsTable).values({ user_id: id }).returning();
   return res.status(201).json(created);
 });
 
 // PUT /users/:id/settings — persist notification + privacy prefs
-router.put("/users/:id/settings", async (req, res) => {
-  const id = parseInt(req.params.id);
+router.put("/users/:id/settings", requireAuth, requireOwnership(), async (req, res) => {
+  const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const allowed = [
     "notif_nearby_requests", "notif_emergency", "notif_task_accepted",
@@ -293,7 +415,6 @@ router.put("/users/:id/settings", async (req, res) => {
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
   }
-  // Upsert
   const [existing] = await db.select().from(userSettingsTable).where(eq(userSettingsTable.user_id, id)).limit(1);
   if (existing) {
     const [updated] = await db.update(userSettingsTable).set(updates).where(eq(userSettingsTable.user_id, id)).returning();
@@ -304,36 +425,175 @@ router.put("/users/:id/settings", async (req, res) => {
   }
 });
 
-
 // PATCH /users/:id/panic-contacts — update emergency contacts
-router.patch("/users/:id/panic-contacts", async (req, res) => {
+router.patch("/users/:id/panic-contacts", requireAuth, requireOwnership(), async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const { contacts } = req.body as { contacts?: string[] };
   if (!Array.isArray(contacts)) return res.status(400).json({ error: "contacts must be an array" });
-  const safeContacts: string[] = contacts;
-  if (safeContacts.length > 5) return res.status(400).json({ error: "Max 5 panic contacts" });
+  if (contacts.length > 5) return res.status(400).json({ error: "Max 5 panic contacts" });
   const [user] = await db.update(usersTable)
-    .set({ panic_contacts: safeContacts })
+    .set({ panic_contacts: contacts })
     .where(eq(usersTable.id, id))
     .returning();
   return res.json(user);
 });
 
-// Admin moderation actions
-router.patch("/users/:id/moderation", async (req, res) => {
-  const userId = parseInt(req.params.id);
+// DELETE /users/:id — permanently delete a user and all their data
+router.delete("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
+  const userId = parseInt(req.params.id as string);
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+
+  try {
+    await db.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
+    await db.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
+    await db.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
+    await db.delete(usersTable).where(eq(usersTable.id, userId));
+
+    return res.json({ ok: true, message: "Account deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting user account:", error);
+    return res.status(500).json({ error: "Failed to delete account" });
+  }
+});
+
+// PATCH /users/:id/helper-application — submit helper profile, sets status to pending
+router.patch("/users/:id/helper-application", requireAuth, requireOwnership(), async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const {
+    helper_skills, helper_languages, helper_qualifications,
+    helper_bio, helper_vehicle, helper_social_links,
+  } = req.body as {
+    helper_skills?: string[];
+    helper_languages?: string[];
+    helper_qualifications?: string[];
+    helper_bio?: string;
+    helper_vehicle?: string;
+    helper_social_links?: string;
+  };
+  if (!helper_skills || !Array.isArray(helper_skills) || helper_skills.length === 0) {
+    return res.status(400).json({ error: "At least one skill is required" });
+  }
+  const updates: Partial<typeof usersTable.$inferInsert> = {
+    is_helper: true,
+    helper_status: "pending",
+    helper_skills: helper_skills ?? [],
+    helper_languages: helper_languages ?? [],
+    helper_qualifications: helper_qualifications ?? [],
+    helper_bio: helper_bio ?? null,
+    helper_vehicle: helper_vehicle ?? null,
+    helper_social_links: helper_social_links ?? null,
+    updated_at: new Date(),
+  };
+  const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, id)).returning();
+  if (!user) return res.status(404).json({ error: "User not found" });
+  const { password_hash: _ph, ...safeUser } = user as any;
+  logger.info({ user_id: id }, "users: helper application submitted");
+  return res.json(safeUser);
+});
+
+// GET /admin/helper-applications — list helper applicants (admin only)
+router.get("/admin/helper-applications", requireAuth, requireAdmin(), async (req, res) => {
+  const { status } = req.query as { status?: string };
+  const validStatuses = ["pending", "approved", "denied"];
+  const filterStatus = status && validStatuses.includes(status) ? status : null;
+
+  let query = db.select({
+    id: usersTable.id,
+    name: usersTable.name,
+    email: usersTable.email,
+    avatar_url: usersTable.avatar_url,
+    is_helper: usersTable.is_helper,
+    helper_mode_active: usersTable.helper_mode_active,
+    helper_status: usersTable.helper_status,
+    helper_skills: usersTable.helper_skills,
+    helper_languages: usersTable.helper_languages,
+    helper_qualifications: usersTable.helper_qualifications,
+    helper_bio: usersTable.helper_bio,
+    helper_vehicle: usersTable.helper_vehicle,
+    helper_social_links: usersTable.helper_social_links,
+    trust_score: usersTable.trust_score,
+    help_count: usersTable.help_count,
+    neighborhood: usersTable.neighborhood,
+    benevolence_wallet: usersTable.benevolence_wallet,
+    goodwill_score: usersTable.goodwill_score,
+    identity_verified: usersTable.identity_verified,
+    created_at: usersTable.created_at,
+    updated_at: usersTable.updated_at,
+  }).from(usersTable);
+
+  const rows = filterStatus
+    ? await (query as any).where(eq(usersTable.helper_status, filterStatus)).limit(200)
+    : await (query as any).where(sql`${usersTable.helper_status} IS NOT NULL`).limit(200);
+
+  return res.json(rows);
+});
+
+// PATCH /admin/helper-applications/:id/review — approve or deny a helper application
+router.patch("/admin/helper-applications/:id/review", requireAuth, requireAdmin(), async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const { decision } = req.body as { decision?: string; admin_notes?: string };
+  if (!decision || !["approved", "denied"].includes(decision)) {
+    return res.status(400).json({ error: "decision must be 'approved' or 'denied'" });
+  }
+
+  const updates: Partial<typeof usersTable.$inferInsert> = {
+    helper_status: decision as "approved" | "denied",
+    updated_at: new Date(),
+  };
+
+  if (decision === "approved") {
+    updates.is_helper = true;
+  } else {
+    updates.is_helper = false;
+    updates.helper_mode_active = false;
+  }
+
+  const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, id)).returning();
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  const { password_hash: _ph, ...safeUser } = user as any;
+  logger.info({ user_id: id, decision }, "admin: helper application reviewed");
+
+  const wsEventType = decision === "approved" ? "helper_application_approved" : "helper_application_denied";
+
+  // Targeted WS event to the specific user (real-time in-app update)
+  sendToUser(id, {
+    type: wsEventType,
+    payload: { user_id: id, decision, helper_status: decision },
+  });
+
+  // Also broadcast so any admin views can update
+  broadcast({
+    type: wsEventType,
+    payload: { user_id: id, decision },
+  });
+
+  // Email notification — fire-and-forget, non-blocking
+  sendHelperApplicationDecision({
+    to: user.email,
+    applicantName: user.name,
+    decision: decision as "approved" | "denied",
+    appUrl: process.env["APP_URL"] ?? "https://niakofa.community",
+  }).catch(() => {}); // already logs internally
+
+  return res.json(safeUser);
+});
+
+// PATCH /users/:id/moderation — admin moderation actions
+router.patch("/users/:id/moderation", requireAuth, requireAdmin(), async (req, res) => {
+  const userId = parseInt(req.params.id as string);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
   const { action } = req.body as { action: "warn" | "ban" };
   if (!["warn", "ban"].includes(action)) return res.status(400).json({ error: "Invalid action" });
 
   if (action === "ban") {
-    // Set trust_score to -1 as banned flag
     await db.update(usersTable)
       .set({ trust_score: -1, helper_mode_active: false })
       .where(eq(usersTable.id, userId));
   } else {
-    // Reduce trust score by 10 for a warning
     await db.update(usersTable)
       .set({ trust_score: sql`GREATEST(0, ${usersTable.trust_score} - 10)` })
       .where(eq(usersTable.id, userId));
@@ -342,7 +602,7 @@ router.patch("/users/:id/moderation", async (req, res) => {
 });
 
 // GET all users (admin)
-router.get("/users", async (_req, res) => {
+router.get("/users", requireAuth, requireAdmin(), async (_req, res) => {
   const users = await db.select({
     id: usersTable.id,
     name: usersTable.name,

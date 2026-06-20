@@ -7,19 +7,21 @@ import type mapboxgl from "mapbox-gl";
 import { useAppContext } from "@/lib/AppContext";
 import { useGetRequest, useGetRoute, useCompleteRequest, useMarkEnRoute, useMarkArrived, getGetRequestQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share2, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share2, CheckCircle2, Car, PersonStanding, Bike, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { NavigationOverlay } from "@/components/NavigationOverlay";
 import { InAppChat } from "@/components/InAppChat";
 import { TipModal } from "@/components/TipModal";
+import { RatingModal } from "@/components/RatingModal";
+import { getToken } from "@/lib/auth";
 import { TurnArrowHUD } from "@/components/TurnArrowHUD";
 import { OrientationToggle } from "@/components/OrientationToggle";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { useDeviceHeading } from "@/hooks/useDeviceHeading";
 import { useMapOrientation } from "@/hooks/useMapOrientation";
 import { useTerrain } from "@/hooks/useTerrain";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 const ARRIVAL_THRESHOLD_METERS = 80;
 const OFF_ROUTE_THRESHOLD_METERS = 150;
@@ -106,13 +108,18 @@ export default function ActiveRequestScreen() {
   const [isOffRoute, setIsOffRoute] = useState(false);
   const [safetyAlertShown, setSafetyAlertShown] = useState(false);
   const [shareVisible, setShareVisible] = useState(false);
+  const [routingProfile, setRoutingProfile] = useState<"driving" | "walking" | "cycling">("driving");
   const mapRef = useRef<MapRef>(null);
   const [showTip, setShowTip] = useState(false);
   const [tipShown, setTipShown] = useState(false);
+  const [showRating, setShowRating] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
 
   const enRouteRef = useRef(false);
   const offRouteCooldownRef = useRef(false);
   const startTimeRef = useRef<number>(Date.now());
+  const lastSpokenStepRef = useRef<number>(-1);
 
   // ── Directional map UX ─────────────────────────────────────────────────
   // rawMapRef holds the mapboxgl.Map instance, resolved only after mount
@@ -147,11 +154,12 @@ export default function ActiveRequestScreen() {
     start_lng: myLocation?.lng || 0,
     end_lat: request?.lat || 0,
     end_lng: request?.lng || 0,
+    profile: routingProfile,
   };
   const { data: routeData } = useGetRoute(routeParams, {
     query: {
       enabled: !!myLocation && !!request,
-      refetchInterval: isOffRoute ? 5000 : 15000,
+      refetchInterval: isOffRoute ? 2000 : 15000,
       queryKey: getGetRouteQueryKey(routeParams),
     }
   });
@@ -254,6 +262,36 @@ export default function ActiveRequestScreen() {
     setCurrentStepIndex(newStep);
   }, [myLocation, routeData, request]);
 
+  // Turn-by-turn voice guidance via Web Speech API — respects voiceEnabled toggle
+  const speakInstruction = useCallback((text: string) => {
+    if (!voiceEnabled || !("speechSynthesis" in window) || !text) return;
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.rate = 1.0;
+    utt.pitch = 1.0;
+    utt.volume = 1.0;
+    window.speechSynthesis.speak(utt);
+  }, [voiceEnabled]);
+
+  useEffect(() => {
+    if (isArrived || !routeData?.steps) return;
+    const step = routeData.steps[currentStepIndex];
+    if (!step?.instruction) return;
+    if (lastSpokenStepRef.current === currentStepIndex) return;
+    lastSpokenStepRef.current = currentStepIndex;
+    speakInstruction(step.instruction);
+  }, [currentStepIndex, routeData?.steps, isArrived, speakInstruction]);
+
+  // Announce arrival
+  useEffect(() => {
+    if (isArrived) speakInstruction("You have arrived at your destination.");
+  }, [isArrived, speakInstruction]);
+
+  // Announce off-route
+  useEffect(() => {
+    if (isOffRoute) speakInstruction("Off route. Recalculating.");
+  }, [isOffRoute, speakInstruction]);
+
   // Auto-zoom to route
   useEffect(() => {
     if (!routeData?.geometry || !mapRef.current) return;
@@ -321,14 +359,48 @@ export default function ActiveRequestScreen() {
             ? `+$${request.pay_it_forward_amount.toFixed(2)} added to your wallet`
             : request.payment_type === "goodwill" ? "+1 goodwill point earned" : "Thank you for helping!";
           toast({ title: "🎉 Request Completed!", description: earned });
-          if (!tipShown) { setTipShown(true); setTimeout(() => setShowTip(true), 1500); }
           queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
           queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
-          setLocation("/");
+          // Show rating modal before navigating away
+          setTimeout(() => setShowRating(true), 900);
         },
         onError: () => toast({ title: "Failed to complete", variant: "destructive" })
       }
     );
+  };
+
+  const handleCancel = async () => {
+    if (!currentUser || !request) return;
+    const isHelper = request.helper_id === currentUser.id;
+    const msg = isHelper
+      ? "Cancel your claim? The request will re-open for another helper."
+      : "Withdraw your request? This cannot be undone.";
+    if (!window.confirm(msg)) return;
+    setCancelLoading(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/requests/${requestId}/cancel`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? "Failed to cancel");
+      }
+      queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
+      queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
+      toast({
+        title: isHelper ? "Claim cancelled — request is back in the pool" : "Request withdrawn",
+      });
+      setLocation("/");
+    } catch (err) {
+      toast({ title: err instanceof Error ? err.message : "Failed to cancel", variant: "destructive" });
+    } finally {
+      setCancelLoading(false);
+    }
   };
 
   const handleShare = async () => {
@@ -379,7 +451,7 @@ export default function ActiveRequestScreen() {
     <div className="relative w-full h-[100dvh] overflow-hidden bg-background">
       {/* Back button */}
       <div className="absolute top-4 left-4 z-30">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full bg-card/80 backdrop-blur-sm border border-border">
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full bg-card/80 backdrop-blur-sm border border-border" aria-label="Back to map">
           <ChevronLeft className="w-6 h-6" />
         </Button>
       </div>
@@ -433,9 +505,36 @@ export default function ActiveRequestScreen() {
           onClick={handleShare}
           className="flex items-center gap-1.5 bg-card/90 backdrop-blur-md border border-border px-3 py-1.5 rounded-full shadow-lg hover:border-primary/50 transition-colors"
           title="Share trip"
+          aria-label="Share trip link"
         >
           <Share2 className="w-3 h-3 text-muted-foreground" />
           <span className="text-[10px] font-black text-muted-foreground">Share</span>
+        </button>
+
+        {/* Voice guidance mute/unmute toggle */}
+        <button
+          onClick={() => {
+            const next = !voiceEnabled;
+            setVoiceEnabled(next);
+            if (!next && "speechSynthesis" in window) window.speechSynthesis.cancel();
+            toast({ title: next ? "🔊 Voice guidance on" : "🔇 Voice guidance off" });
+          }}
+          className={`flex items-center gap-1.5 backdrop-blur-md border px-3 py-1.5 rounded-full shadow-lg transition-colors ${
+            voiceEnabled
+              ? "bg-primary/20 border-primary/40 hover:border-primary"
+              : "bg-card/90 border-border hover:border-primary/40"
+          }`}
+          title={voiceEnabled ? "Mute voice guidance" : "Enable voice guidance"}
+          aria-label={voiceEnabled ? "Mute voice guidance" : "Enable voice guidance"}
+          aria-pressed={voiceEnabled}
+        >
+          {voiceEnabled
+            ? <Volume2 className="w-3 h-3 text-primary" />
+            : <VolumeX className="w-3 h-3 text-muted-foreground" />
+          }
+          <span className={`text-[10px] font-black ${voiceEnabled ? "text-primary" : "text-muted-foreground"}`}>
+            {voiceEnabled ? "Voice" : "Muted"}
+          </span>
         </button>
       </motion.div>
 
@@ -508,6 +607,29 @@ export default function ActiveRequestScreen() {
           </div>
         </Marker>
 
+        {/* Real-time traffic layer from Mapbox */}
+        <Source id="mapbox-traffic" type="vector" url="mapbox://mapbox.mapbox-traffic-v1">
+          <Layer
+            id="traffic-flow"
+            type="line"
+            source-layer="traffic"
+            paint={{
+              "line-color": [
+                "match",
+                ["get", "congestion"],
+                "low",    "#4ade80",
+                "moderate", "#facc15",
+                "heavy",  "#f97316",
+                "severe", "#ef4444",
+                "#94a3b8",
+              ],
+              "line-width": 3,
+              "line-opacity": 0.65,
+            }}
+            layout={{ "line-cap": "round", "line-join": "round" }}
+          />
+        </Source>
+
         {routeData?.geometry && (
           <Source id="route" type="geojson" data={routeData.geometry as unknown as GeoJSON.FeatureCollection}>
             <Layer
@@ -571,6 +693,36 @@ export default function ActiveRequestScreen() {
           </div>
         )}
 
+        {/* Routing profile selector — driving / walking / cycling */}
+        {!isArrived && !isCompleted && (
+          <div className="flex gap-2 mb-3">
+            {(["driving", "walking", "cycling"] as const).map((p) => {
+              const Icon = p === "driving" ? Car : p === "walking" ? PersonStanding : Bike;
+              const label = p === "driving" ? "Drive" : p === "walking" ? "Walk" : "Bike";
+              const active = routingProfile === p;
+              return (
+                <button
+                  key={p}
+                  onClick={() => {
+                    if (routingProfile !== p) {
+                      setRoutingProfile(p);
+                      queryClient.invalidateQueries({ queryKey: getGetRouteQueryKey(routeParams) });
+                    }
+                  }}
+                  className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-xl border transition-all text-xs font-black ${
+                    active
+                      ? "bg-primary/15 border-primary text-primary"
+                      : "bg-muted/50 border-border text-muted-foreground hover:border-primary/40"
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <Button
           className={`w-full h-12 text-base font-black uppercase tracking-widest gap-2 ${
             isCompleted ? "bg-muted text-muted-foreground" : isArrived ? "bg-green-500 hover:bg-green-600 text-white" : ""
@@ -597,6 +749,29 @@ export default function ActiveRequestScreen() {
           </p>
         )}
 
+        {/* Cancel / Withdraw button — only visible when request is not terminal */}
+        {!isCompleted && !["cancelled"].includes(request.status) && currentUser && (
+          <button
+            onClick={handleCancel}
+            disabled={cancelLoading}
+            className="w-full mt-2 text-sm text-muted-foreground hover:text-destructive transition-colors py-2 flex items-center justify-center gap-1"
+            aria-label={request.helper_id === currentUser.id ? "Cancel claim" : "Withdraw request"}
+          >
+            {cancelLoading ? (
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Cancelling…
+              </span>
+            ) : (
+              request.helper_id === currentUser.id
+                ? "Cancel Claim"
+                : request.requester_id === currentUser.id
+                ? "Withdraw Request"
+                : null
+            )}
+          </button>
+        )}
+
         <div className="mt-4">
           <InAppChat
             requestId={requestId}
@@ -613,6 +788,21 @@ export default function ActiveRequestScreen() {
           onClose={() => setShowTip(false)}
         />
       )}
+
+      <AnimatePresence>
+        {showRating && currentUser && (
+          <RatingModal
+            requestId={requestId}
+            role={request.helper_id === currentUser.id ? "helper" : "requester"}
+            helperName={request.helper_name}
+            requesterName={request.requester_name}
+            onClose={() => {
+              setShowRating(false);
+              setLocation("/");
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

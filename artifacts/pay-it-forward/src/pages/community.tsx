@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
+import { useAppContext } from "@/lib/AppContext";
 import LiveLeaderboard from "@/components/LiveLeaderboard";
-import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield } from "lucide-react";
+import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, MapPin, Award, Wrench, Globe } from "lucide-react";
 import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
@@ -32,7 +33,7 @@ const FUND_POOLS = [
   { label: "General Pool", description: "Everyday help — groceries, errands, transport", pct: 17, color: "bg-green-500" },
 ];
 
-type Tab = "feed" | "heroes" | "pool" | "impact" | "resources";
+type Tab = "feed" | "heroes" | "pool" | "impact" | "resources" | "circles" | "skills";
 
 
 interface CivicResource {
@@ -52,10 +53,37 @@ const CIVIC_ICONS: Record<string, string> = {
   childcare: "👶", education: "📚", other: "💙",
 };
 
+interface SuggestionForm {
+  name: string;
+  category: string;
+  description: string;
+  phone: string;
+  website: string;
+}
+
 function CivicResourcesTab() {
   const [resources, setResources] = useState<CivicResource[]>([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("all");
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [suggestionSent, setSuggestionSent] = useState(false);
+  const [suggestion, setSuggestion] = useState<SuggestionForm>({
+    name: "", category: "other", description: "", phone: "", website: "",
+  });
+
+  const submitSuggestion = async () => {
+    if (!suggestion.name.trim()) return;
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      await fetch(`${base}/api/civic/suggestions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(suggestion),
+      });
+    } catch {}
+    setSuggestionSent(true);
+    setTimeout(() => { setShowSuggest(false); setSuggestionSent(false); setSuggestion({ name: "", category: "other", description: "", phone: "", website: "" }); }, 2000);
+  };
 
   useEffect(() => {
     fetch("/api/civic/resources")
@@ -129,6 +157,279 @@ function CivicResourcesTab() {
           </div>
         </div>
       ))}
+
+      {/* Suggest a resource — §3.3.2 */}
+      <button
+        onClick={() => setShowSuggest(true)}
+        className="w-full flex items-center justify-center gap-2 p-3 border border-dashed border-primary/30 rounded-2xl text-sm text-primary/70 hover:text-primary hover:border-primary/60 transition-all"
+      >
+        <PlusCircle className="w-4 h-4" />
+        Know a resource we're missing? Suggest it
+      </button>
+
+      {/* Suggestion modal */}
+      <AnimatePresence>
+        {showSuggest && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 z-50 backdrop-blur-sm"
+              onClick={() => setShowSuggest(false)}
+            />
+            <motion.div
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 26, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl max-h-[80dvh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-5 pb-3 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <PlusCircle className="w-5 h-5 text-primary" />
+                  <h3 className="font-black text-lg">Suggest a Resource</h3>
+                </div>
+                <button onClick={() => setShowSuggest(false)} className="p-2 rounded-full hover:bg-muted transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                {suggestionSent ? (
+                  <div className="text-center py-8">
+                    <div className="text-4xl mb-3">🙏</div>
+                    <div className="font-black text-lg">Thank you!</div>
+                    <p className="text-sm text-muted-foreground mt-1">Your suggestion will be reviewed by the Niakofa team.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Organization Name *</label>
+                      <input
+                        className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                        placeholder="e.g. Tarrant County Food Bank"
+                        value={suggestion.name}
+                        onChange={e => setSuggestion(s => ({ ...s, name: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Category</label>
+                      <select
+                        className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                        value={suggestion.category}
+                        onChange={e => setSuggestion(s => ({ ...s, category: e.target.value }))}
+                      >
+                        {Object.entries(CIVIC_ICONS).map(([k, icon]) => (
+                          <option key={k} value={k}>{icon} {k.replace(/_/g, " ")}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Description</label>
+                      <textarea
+                        className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors min-h-[80px] resize-none"
+                        placeholder="What services do they provide?"
+                        value={suggestion.description}
+                        onChange={e => setSuggestion(s => ({ ...s, description: e.target.value }))}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Phone</label>
+                        <input
+                          className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                          placeholder="(817) 555-0000"
+                          value={suggestion.phone}
+                          onChange={e => setSuggestion(s => ({ ...s, phone: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Website</label>
+                        <input
+                          className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                          placeholder="https://..."
+                          value={suggestion.website}
+                          onChange={e => setSuggestion(s => ({ ...s, website: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={submitSuggestion}
+                      disabled={!suggestion.name.trim()}
+                      className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground font-bold py-3.5 rounded-xl disabled:opacity-40 transition-all active:scale-[0.98]"
+                    >
+                      <Send className="w-4 h-4" />
+                      Submit Suggestion
+                    </button>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+const FORT_WORTH_NEIGHBORHOODS = [
+  { id: "southside",       name: "Southside",         emoji: "🏘️", description: "Historic community south of downtown" },
+  { id: "near_southside",  name: "Near Southside",    emoji: "🌳", description: "Creative district near Magnolia Ave" },
+  { id: "polytechnic",     name: "Polytechnic",       emoji: "🎓", description: "Home of Texas Wesleyan University" },
+  { id: "riverside",       name: "Riverside",         emoji: "🌊", description: "Diverse neighborhood along the Trinity River" },
+  { id: "downtown",        name: "Downtown",          emoji: "🏙️", description: "Urban core of Fort Worth" },
+  { id: "east_fort_worth", name: "East Fort Worth",   emoji: "🌅", description: "Working-class roots and tight-knit community" },
+  { id: "north_fort_worth",name: "North Fort Worth",  emoji: "🤠", description: "Stockyards district and growing suburbs" },
+  { id: "stop_six",        name: "Stop Six",          emoji: "✊", description: "Resilient community with deep history" },
+  { id: "wedgwood",        name: "Wedgwood",          emoji: "🏡", description: "Family-friendly neighborhood in southwest FW" },
+];
+
+function NeighborhoodCirclesTab() {
+  const [selected, setSelected] = useState<string | null>(null);
+  const { currentUser } = useAppContext();
+  const userHood = currentUser?.neighborhood?.toLowerCase().replace(/\s+/g, "_");
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
+        <h3 className="font-black text-sm flex items-center gap-2 mb-1">
+          <MapPin className="w-4 h-4 text-primary" /> Neighborhood Circles
+        </h3>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Your circle connects you with neighbors. Requests from your circle appear first on the map. "My neighbors helped me" — that's the power of local belonging.
+        </p>
+      </div>
+
+      {FORT_WORTH_NEIGHBORHOODS.map(hood => {
+        const isYours = userHood === hood.id || currentUser?.neighborhood?.toLowerCase() === hood.name.toLowerCase();
+        const isOpen = selected === hood.id;
+        return (
+          <motion.div
+            key={hood.id}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`bg-card border rounded-2xl p-4 cursor-pointer transition-all ${
+              isYours ? "border-primary/60 bg-primary/5" : "border-border hover:border-primary/30"
+            }`}
+            onClick={() => setSelected(isOpen ? null : hood.id)}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl shrink-0">
+                {hood.emoji}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="font-black text-sm">{hood.name}</div>
+                  {isYours && (
+                    <span className="text-[10px] font-black text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
+                      Your Circle
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">{hood.description}</div>
+              </div>
+              <Users className="w-4 h-4 text-muted-foreground shrink-0" />
+            </div>
+          </motion.div>
+        );
+      })}
+
+      <div className="bg-card/50 border border-dashed border-border rounded-2xl p-4 text-center">
+        <Globe className="w-6 h-6 text-primary/40 mx-auto mb-2" />
+        <div className="text-sm font-bold text-muted-foreground">Circle chat &amp; leaderboards coming soon</div>
+        <div className="text-xs text-muted-foreground/60 mt-1">Your neighborhood, your impact, your leaderboard</div>
+      </div>
+    </div>
+  );
+}
+
+const SKILLS_DIRECTORY = [
+  { id: "bilingual",            label: "Bilingual",    emoji: "🌐", desc: "Spanish, Vietnamese, or other language support", cats: ["groceries","errands","medical"] },
+  { id: "truck_owner",          label: "Truck Owner",  emoji: "🚛", desc: "Move furniture, haul supplies, or transport large items", cats: ["transportation","errands","stock_shelves"] },
+  { id: "medical_background",   label: "Medical",      emoji: "🏥", desc: "Healthcare worker, EMT, nurse, or caregiver experience", cats: ["medical","emergency"] },
+  { id: "licensed_electrician", label: "Electrician",  emoji: "⚡", desc: "Safe assistance with electrical needs and home repairs", cats: ["home_repair"] },
+  { id: "licensed_plumber",     label: "Plumber",      emoji: "🔧", desc: "Pipe repairs, leak fixes, and plumbing emergencies", cats: ["home_repair"] },
+  { id: "carpenter",            label: "Carpenter",    emoji: "🪚", desc: "Woodworking, furniture assembly, and construction", cats: ["home_repair","event_setup"] },
+  { id: "tech_support",         label: "Tech Support", emoji: "💻", desc: "Computer setup, smartphone help, device troubleshooting", cats: ["tech_support"] },
+  { id: "cdl_driver",           label: "CDL Driver",   emoji: "🚚", desc: "Commercial driver's license — large vehicle expertise", cats: ["transportation","delivery_run"] },
+  { id: "food_handler",         label: "Food Handler", emoji: "🍽️", desc: "Safe food preparation and handling certified", cats: ["errands","event_setup"] },
+  { id: "childcare",            label: "Childcare",    emoji: "👶", desc: "Experienced in caring for children", cats: ["other"] },
+];
+
+const CAT_LABELS: Record<string, string> = {
+  groceries: "Groceries", transportation: "Transport", errands: "Errands",
+  home_repair: "Home Repair", medical: "Medical", emergency: "Emergency",
+  stock_shelves: "Stocking", event_setup: "Events", delivery_run: "Delivery",
+  tech_support: "Tech", other: "General",
+};
+
+function SkillsMarketplaceTab() {
+  const [active, setActive] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
+        <h3 className="font-black text-sm flex items-center gap-2 mb-1">
+          <Wrench className="w-4 h-4 text-primary" /> Skills Directory
+        </h3>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Helpers tag their specialties so requesters find the right person. Skill-matched requests get dispatch priority.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        {SKILLS_DIRECTORY.map(skill => (
+          <motion.button
+            key={skill.id}
+            onClick={() => setActive(active === skill.id ? null : skill.id)}
+            whileTap={{ scale: 0.97 }}
+            className={`text-left rounded-2xl border p-3 transition-all ${
+              active === skill.id ? "border-primary/60 bg-primary/10" : "border-border bg-card hover:border-primary/30"
+            }`}
+          >
+            <div className="text-2xl mb-1.5">{skill.emoji}</div>
+            <div className="font-black text-xs">{skill.label}</div>
+            <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{skill.desc}</div>
+          </motion.button>
+        ))}
+      </div>
+
+      <AnimatePresence>
+        {active && SKILLS_DIRECTORY.find(s => s.id === active) && (() => {
+          const skill = SKILLS_DIRECTORY.find(s => s.id === active)!;
+          return (
+            <motion.div
+              key={skill.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="bg-card border border-primary/30 rounded-2xl p-4"
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-2xl">{skill.emoji}</span>
+                <div>
+                  <div className="font-black text-sm">{skill.label}</div>
+                  <div className="text-xs text-muted-foreground">{skill.desc}</div>
+                </div>
+              </div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Helps With</div>
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {skill.cats.map(cat => (
+                  <span key={cat} className="text-[10px] font-bold bg-muted border border-border px-2 py-1 rounded-full">
+                    {CAT_LABELS[cat] ?? cat}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                Add this skill in Profile → Settings to get matched with relevant requests automatically.
+              </p>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+
+      <div className="bg-card/50 border border-dashed border-border rounded-2xl p-4 text-center">
+        <Award className="w-5 h-5 text-primary/40 mx-auto mb-2" />
+        <div className="text-sm font-bold text-muted-foreground">Add skills in Profile Settings</div>
+        <div className="text-xs text-muted-foreground/60 mt-1">Skill-matched helpers get priority in dispatch</div>
+      </div>
     </div>
   );
 }
@@ -139,9 +440,10 @@ export default function CommunityScreen() {
   const [posts, setPosts] = useState<GratitudePost[]>([]);
   const [postsLoading, setPostsLoading] = useState(true);
 
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
   // Load initial gratitude posts from API
   useEffect(() => {
-    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
     fetch(`${base}/api/gratitude`)
       .then(r => r.json())
       .then((data: GratitudePost[]) => {
@@ -191,11 +493,13 @@ export default function CommunityScreen() {
   };
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: "resources", label: "Resources" },
-    { key: "feed", label: "💙 Feed" },
-    { key: "heroes", label: "⭐ Heroes" },
-    { key: "pool", label: "🏦 Pool" },
-    { key: "impact", label: "📊 Impact" },
+    { key: "feed",      label: "💙 Feed" },
+    { key: "circles",   label: "🏘️ Circles" },
+    { key: "skills",    label: "🔧 Skills" },
+    { key: "heroes",    label: "⭐ Heroes" },
+    { key: "pool",      label: "🏦 Pool" },
+    { key: "impact",    label: "📊 Impact" },
+    { key: "resources", label: "🏛️ Resources" },
   ];
 
   return (
@@ -204,12 +508,12 @@ export default function CommunityScreen() {
         <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2">
           <Users className="w-5 h-5 text-primary" /> Community
         </h1>
-        <div className="flex gap-1 mt-3">
+        <div className="flex gap-1 mt-3 overflow-x-auto pb-1 scrollbar-none">
           {tabs.map(t => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+              className={`shrink-0 py-2 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
                 tab === t.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -514,6 +818,9 @@ export default function CommunityScreen() {
             </div>
           </div>
         )}
+
+        {tab === "circles" && <NeighborhoodCirclesTab />}
+        {tab === "skills" && <SkillsMarketplaceTab />}
       </div>
     </div>
   );

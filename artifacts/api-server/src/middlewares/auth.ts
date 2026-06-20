@@ -68,7 +68,7 @@ export function parseAuth(req: Request, _res: Response, next: NextFunction): voi
     const token = authHeader.slice(7).trim();
     const { userId, valid } = verifyToken(token);
     if (valid) {
-      (req as Request & { authenticatedUserId?: number }).authenticatedUserId = userId;
+      req.authenticatedUserId = userId;
     }
   }
   next();
@@ -76,8 +76,7 @@ export function parseAuth(req: Request, _res: Response, next: NextFunction): voi
 
 /** Express middleware — rejects with 401 if no valid Bearer token. */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const r = req as Request & { authenticatedUserId?: number };
-  if (!r.authenticatedUserId) {
+  if (!req.authenticatedUserId) {
     res.status(401).json({ error: "Unauthorized — valid Bearer token required" });
     return;
   }
@@ -86,6 +85,5 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 
 /** Returns true only when the authenticated user IS the target user. */
 export function isSelf(req: Request, targetUserId: number): boolean {
-  const r = req as Request & { authenticatedUserId?: number };
-  return r.authenticatedUserId === targetUserId;
+  return req.authenticatedUserId === targetUserId;
 }

@@ -1,17 +1,31 @@
 import { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { ChevronLeft, Star, Heart, MapPin, Shield, CheckCircle2, Clock, Gift, MessageCircle } from "lucide-react";
+import {
+  ChevronLeft, Star, Heart, MapPin, Shield, CheckCircle2, Clock,
+  Gift, MessageCircle, Globe, Car, Wrench, FileText, ExternalLink,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TrustTierBadge } from "@/components/TrustTierBadge";
 import { useAppContext } from "@/lib/AppContext";
 import { toast } from "@/hooks/use-toast";
 import type { User } from "@workspace/api-client-react";
 
-const SPECIALTY_ICONS: Record<string, string> = {
+const SKILL_ICONS: Record<string, string> = {
+  plumbing: "🔧", electrical: "⚡", carpentry: "🪚", painting: "🖌️",
+  yard_work: "🌿", heavy_lifting: "💪", drives_truck: "🚛", cdl_driver: "🚚",
+  grocery_shopping: "🛒", cooking: "🍳", childcare: "👶", elder_care: "🧓",
+  medical_support: "💊", tech_support: "💻", tutoring: "📚", translation: "🌍",
+  pet_care: "🐾", food_delivery: "🍔", event_setup: "🎪", emergency_first_aid: "🚑",
+  // legacy specialties
   Groceries: "🛒", Transportation: "🚗", "Tech Help": "💻",
   "Home Repair": "🔧", Medical: "💊", Errands: "📦",
   Emergency: "🚨", Childcare: "👶",
+};
+
+const VEHICLE_LABELS: Record<string, string> = {
+  car: "🚗 Has a car", truck: "🛻 Drives a truck", van: "🚐 Has a van/SUV",
+  motorcycle: "🏍️ Motorcycle", bicycle: "🚲 Bicycle/E-bike", none: "🚶 No vehicle",
 };
 
 export default function HelperProfileScreen() {
@@ -35,12 +49,9 @@ export default function HelperProfileScreen() {
       })
       .catch(() => setLoading(false));
 
-    // Load recent completed requests by this helper
     fetch(`/api/requests?helper_id=${helperId}&status=completed&limit=5`)
       .then(r => r.json())
-      .then((data) => {
-        if (Array.isArray(data)) setRecentHelps(data.slice(0, 5));
-      })
+      .then((data) => { if (Array.isArray(data)) setRecentHelps(data.slice(0, 5)); })
       .catch(() => {});
   }, [helperId]);
 
@@ -65,7 +76,14 @@ export default function HelperProfileScreen() {
     );
   }
 
-  const specialties: string[] = (helper as any).specialties ?? [];
+  const h = helper as any;
+  const skills: string[] = h.helper_skills ?? h.specialties ?? [];
+  const languages: string[] = h.helper_languages ?? [];
+  const qualifications: string[] = h.helper_qualifications ?? [];
+  const bio: string | null = h.helper_bio ?? null;
+  const vehicle: string | null = h.helper_vehicle ?? null;
+  const socialLinks: string | null = h.helper_social_links ?? null;
+
   const tier = helper.trust_score != null && helper.help_count != null
     ? { trust: helper.trust_score, helps: helper.help_count }
     : null;
@@ -73,8 +91,8 @@ export default function HelperProfileScreen() {
   return (
     <div className="min-h-[100dvh] bg-background">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-md border-b border-border px-4 py-3 flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setLocation(-1 as any)} className="rounded-full shrink-0">
+      <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-md border-b border-border px-4 py-3 flex items-center gap-3 pt-safe">
+        <Button variant="ghost" size="icon" onClick={() => setLocation(-1 as any)} className="rounded-full shrink-0" aria-label="Go back">
           <ChevronLeft className="w-5 h-5" />
         </Button>
         <span className="font-black text-base truncate">{helper.name}</span>
@@ -101,16 +119,21 @@ export default function HelperProfileScreen() {
           </div>
           <div>
             <h1 className="text-2xl font-black">{helper.name}</h1>
-            {(helper.neighborhood) && (
+            {helper.neighborhood && (
               <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground mt-1">
                 <MapPin className="w-3.5 h-3.5" />
-                {[helper.neighborhood].filter(Boolean).join(", ")}
+                {helper.neighborhood}
+              </div>
+            )}
+            {/* Approved helper badge */}
+            {h.helper_status === "approved" && (
+              <div className="inline-flex items-center gap-1.5 mt-2 bg-primary/10 border border-primary/30 rounded-full px-3 py-1">
+                <CheckCircle2 className="w-3 h-3 text-primary" />
+                <span className="text-[11px] font-black text-primary uppercase tracking-wider">Verified Helper</span>
               </div>
             )}
           </div>
-          {tier && (
-            <TrustTierBadge trustScore={tier.trust} helpCount={tier.helps} size="md" />
-          )}
+          {tier && <TrustTierBadge trustScore={tier.trust} helpCount={tier.helps} size="md" />}
         </motion.div>
 
         {/* Stats row */}
@@ -128,14 +151,89 @@ export default function HelperProfileScreen() {
           ))}
         </div>
 
+        {/* Bio */}
+        {bio && (
+          <div className="bg-card border border-border rounded-2xl p-4">
+            <div className="flex items-center gap-1.5 mb-2">
+              <FileText className="w-3.5 h-3.5 text-primary" />
+              <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">About</span>
+            </div>
+            <p className="text-sm text-muted-foreground leading-relaxed">{bio}</p>
+          </div>
+        )}
+
+        {/* Skills */}
+        {skills.length > 0 && (
+          <div className="bg-card border border-border rounded-2xl p-4">
+            <div className="flex items-center gap-1.5 mb-3">
+              <Wrench className="w-3.5 h-3.5 text-primary" />
+              <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Skills & Specialties</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {skills.map(s => (
+                <span key={s} className="flex items-center gap-1.5 text-xs bg-primary/10 border border-primary/30 text-primary px-3 py-1.5 rounded-full font-bold">
+                  {SKILL_ICONS[s] ?? "✦"} {s.replace(/_/g, " ")}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Languages */}
+        {languages.length > 0 && (
+          <div className="bg-card border border-border rounded-2xl p-4">
+            <div className="flex items-center gap-1.5 mb-3">
+              <Globe className="w-3.5 h-3.5 text-primary" />
+              <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Languages</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {languages.map(l => (
+                <span key={l} className="text-xs bg-muted border border-border text-foreground px-3 py-1.5 rounded-full font-bold">
+                  🌐 {l}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Vehicle */}
+        {vehicle && VEHICLE_LABELS[vehicle] && (
+          <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
+            <Car className="w-4 h-4 text-primary shrink-0" />
+            <div>
+              <div className="text-xs font-black uppercase tracking-wider text-muted-foreground mb-0.5">Transportation</div>
+              <div className="text-sm font-bold">{VEHICLE_LABELS[vehicle]}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Qualifications */}
+        {qualifications.length > 0 && (
+          <div className="bg-card border border-border rounded-2xl p-4">
+            <div className="flex items-center gap-1.5 mb-3">
+              <Shield className="w-3.5 h-3.5 text-primary" />
+              <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Certifications</span>
+            </div>
+            <div className="space-y-1.5">
+              {qualifications.map(q => (
+                <div key={q} className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-green-400 shrink-0" />
+                  {q}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Verified badges */}
         <div className="bg-card border border-border rounded-2xl p-4">
           <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">Verification</div>
           <div className="flex flex-wrap gap-2">
             {[
               { label: "Email verified", done: true },
-              { label: "Phone verified", done: !!(helper as any).phone_masked },
+              { label: "Phone verified", done: !!h.phone_masked },
               { label: "Background check", done: (helper.help_count ?? 0) >= 15 },
+              { label: "Admin approved", done: h.helper_status === "approved" },
               { label: "Community member", done: true },
             ].map(({ label, done }) => (
               <div key={label} className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${
@@ -148,16 +246,13 @@ export default function HelperProfileScreen() {
           </div>
         </div>
 
-        {/* Specialties */}
-        {specialties.length > 0 && (
-          <div className="bg-card border border-border rounded-2xl p-4">
-            <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">Specialties</div>
-            <div className="flex flex-wrap gap-2">
-              {specialties.map(s => (
-                <span key={s} className="flex items-center gap-1.5 text-xs bg-primary/10 border border-primary/30 text-primary px-3 py-1.5 rounded-full font-bold">
-                  {SPECIALTY_ICONS[s] ?? "✦"} {s}
-                </span>
-              ))}
+        {/* Social links */}
+        {socialLinks && (
+          <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
+            <ExternalLink className="w-4 h-4 text-primary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-black uppercase tracking-wider text-muted-foreground mb-0.5">Social</div>
+              <p className="text-sm text-muted-foreground truncate">{socialLinks}</p>
             </div>
           </div>
         )}
@@ -187,12 +282,12 @@ export default function HelperProfileScreen() {
           <div className="flex items-start gap-3">
             <Shield className="w-4 h-4 text-primary mt-0.5 shrink-0" />
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Trust scores are calculated from community ratings, completion rate, and response time. Scores above 90% qualify for emergency requests.
+              Trust scores are calculated from community ratings, completion rate, and response time. Scores above 90% qualify for emergency requests. All helpers are admin-verified before they can accept requests.
             </p>
           </div>
         </div>
 
-        {/* CTA — only show if viewing another user's profile */}
+        {/* CTA */}
         {currentUser && currentUser.id !== helperId && (
           <Button className="w-full h-12 font-black gap-2" onClick={() => setLocation("/request/new")}>
             <MessageCircle className="w-4 h-4" />

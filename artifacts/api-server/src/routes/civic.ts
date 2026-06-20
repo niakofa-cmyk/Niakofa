@@ -1,11 +1,16 @@
 import { Router } from "express";
-import { db, civicResourcesTable } from "@workspace/db";
-import { eq, and, or, isNull } from "drizzle-orm";
+import { db, civicResourcesTable, civicSuggestionsTable } from "@workspace/db";
+import { eq, and, or, isNull, desc } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { requireAuth } from "../middlewares/auth";
+import { requireAdmin } from "../middlewares/authz";
+import { cacheGet, cacheSet } from "../lib/cache";
+
+const CIVIC_TTL = 3600; // 1 hour — civic resources change rarely
 
 const router = Router();
 
-const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN ?? "pk.eyJ1IjoiaGYxMDEiLCJhIjoiY2tjYzVqNmFhMDFmMTJwcWUza2pmZzVtMSJ9.THxYY3Ic2MFylIONeZI_Xw";
+const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN ?? process.env.VITE_MAPBOX_TOKEN ?? "";
 
 interface MapboxFeature {
   place_type: string[];
@@ -88,14 +93,25 @@ async function reverseGeocode(lat: number, lng: number): Promise<ResolvedPlace |
   }
 }
 
-// GET /civic/resources?lat=X&lng=Y
+// GET /civic/resources?lat=X&lng=Y  (lat/lng are optional — falls back to full list)
 router.get("/civic/resources", async (req, res) => {
   const lat = parseFloat(req.query.lat as string);
   const lng = parseFloat(req.query.lng as string);
 
   if (isNaN(lat) || isNaN(lng)) {
-    return res.status(400).json({ error: "lat and lng query params required" });
+    const cacheKey = "civic:all";
+    const cached = await cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+    const all = await db.select().from(civicResourcesTable).limit(50);
+    await cacheSet(cacheKey, all, CIVIC_TTL);
+    return res.json(all);
   }
+
+  const latRounded = Math.round(lat * 10) / 10;
+  const lngRounded = Math.round(lng * 10) / 10;
+  const locationCacheKey = `civic:loc:${latRounded}:${lngRounded}`;
+  const locationCached = await cacheGet(locationCacheKey);
+  if (locationCached) return res.json(locationCached);
 
   const place = await reverseGeocode(lat, lng);
 
@@ -104,7 +120,9 @@ router.get("/civic/resources", async (req, res) => {
       .select()
       .from(civicResourcesTable)
       .limit(6);
-    return res.json({ resources: statewide, place_name: "your area", match_level: "fallback" });
+    const result = { resources: statewide, place_name: "your area", match_level: "fallback" };
+    await cacheSet(locationCacheKey, result, CIVIC_TTL);
+    return res.json(result);
   }
 
   const state = place.state_short.toUpperCase();
@@ -156,14 +174,73 @@ router.get("/civic/resources", async (req, res) => {
 
   logger.info({ lat, lng, state, county, city, matchLevel, count: resources.length }, "civic resources resolved");
 
-  return res.json({
+  const payload = {
     resources,
     place_name: place.place_name,
     city: place.city,
     county: place.county ? `${place.county} County` : null,
     state: place.state_short,
     match_level: matchLevel,
-  });
+  };
+  await cacheSet(locationCacheKey, payload, CIVIC_TTL);
+  return res.json(payload);
+});
+
+// POST /civic/suggestions — community-submitted resource suggestions (§3.3.2)
+// Persists to DB so admins can review and approve them.
+router.post("/civic/suggestions", async (req, res) => {
+  const { name, category, description, phone, website } = req.body as {
+    name?: string; category?: string; description?: string; phone?: string; website?: string;
+  };
+  if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+
+  const [suggestion] = await db.insert(civicSuggestionsTable)
+    .values({
+      name: name.trim(),
+      category: category?.trim() ?? null,
+      description: description?.trim() ?? null,
+      phone: phone?.trim() ?? null,
+      website: website?.trim() ?? null,
+      status: "pending",
+    })
+    .returning();
+
+  logger.info({ id: suggestion?.id, name }, "civic resource suggestion stored");
+  return res.json({ ok: true, message: "Thank you — your suggestion will be reviewed by the Niakofa team." });
+});
+
+// GET /civic/suggestions — admin: list all community-submitted suggestions
+router.get("/civic/suggestions", requireAuth, requireAdmin(), async (_req, res) => {
+  const suggestions = await db.select()
+    .from(civicSuggestionsTable)
+    .orderBy(desc(civicSuggestionsTable.created_at));
+  return res.json(suggestions);
+});
+
+// PATCH /civic/suggestions/:id/review — admin: approve, dismiss, or note a suggestion
+router.patch("/civic/suggestions/:id/review", requireAuth, requireAdmin(), async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid suggestion id" });
+
+  const { status, admin_notes } = req.body as { status?: string; admin_notes?: string };
+  const validStatuses = ["pending", "approved", "dismissed"];
+  if (status && !validStatuses.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${validStatuses.join(", ")}` });
+  }
+
+  const [updated] = await db.update(civicSuggestionsTable)
+    .set({
+      ...(status ? { status } : {}),
+      ...(admin_notes !== undefined ? { admin_notes } : {}),
+      reviewed_by: req.authenticatedUserId!,
+      reviewed_at: new Date(),
+    })
+    .where(eq(civicSuggestionsTable.id, id))
+    .returning();
+
+  if (!updated) return res.status(404).json({ error: "Suggestion not found" });
+  logger.info({ id, status, reviewed_by: req.authenticatedUserId }, "civic suggestion reviewed");
+  return res.json(updated);
 });
 
 export default router;

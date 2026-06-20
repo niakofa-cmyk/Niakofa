@@ -57,9 +57,23 @@ export default defineConfig({
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
+    hmr: process.env.REPL_ID
+      ? { protocol: "wss", host: process.env.REPLIT_DEV_DOMAIN, clientPort: 443 }
+      : true,
     fs: {
       strict: true,
       allow: [path.resolve(import.meta.dirname, "..", "..")],
+    },
+    proxy: {
+      "/api": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+      },
+      "/ws": {
+        target: "ws://localhost:8080",
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
   preview: {

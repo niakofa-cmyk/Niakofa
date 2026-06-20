@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, boolean, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, boolean, timestamp, pgEnum, index } from "drizzle-orm/pg-core";
 
 export const reportTypeEnum = pgEnum("report_type", [
   "suspicious_request",
@@ -32,7 +32,13 @@ export const reportsTable = pgTable("reports", {
   reviewed_at: timestamp("reviewed_at"),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  index("reports_reporter_id_idx").on(t.reporter_id),
+  index("reports_reported_user_id_idx").on(t.reported_user_id),
+  index("reports_reported_request_id_idx").on(t.reported_request_id),
+  index("reports_status_idx").on(t.status),
+  index("reports_created_at_idx").on(t.created_at),
+]);
 
 export type Report = typeof reportsTable.$inferSelect;
 export type InsertReport = typeof reportsTable.$inferInsert;

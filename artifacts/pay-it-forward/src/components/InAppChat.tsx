@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useWebSocket } from "@/lib/useWebSocket";
+import { authHeaders } from "@/lib/auth";
 import { Send, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
@@ -25,27 +26,53 @@ export function InAppChat({ requestId, helperName, requesterName }: InAppChatPro
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const markedReadRef = useRef(false);
 
-  // Load history
+  // Load history — includes auth header so the backend can verify the caller
   useEffect(() => {
-    fetch(`/api/requests/${requestId}/chat`)
-      .then(r => r.json())
+    fetch(`/api/requests/${requestId}/chat`, {
+      headers: authHeaders(),
+    })
+      .then((r) => (r.ok ? r.json() : []))
       .then((msgs: ChatMessage[]) => setMessages(msgs))
       .catch(() => {});
   }, [requestId]);
 
-  // Real-time incoming messages
-  useWebSocket("chat_message" as any, (event) => {
-    const msg = event.payload as ChatMessage;
-    if (msg.request_id === requestId) {
-      setMessages(prev => {
-        if (prev.find(m => m.id === msg.id)) return prev;
-        return [...prev, msg];
-      });
-    }
-  });
+  // Mark other party's messages as read once, when the chat mounts
+  useEffect(() => {
+    if (markedReadRef.current) return;
+    markedReadRef.current = true;
+    fetch(`/api/requests/${requestId}/chat/read`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+    }).catch(() => {});
+  }, [requestId]);
 
-  // Auto-scroll
+  // Real-time incoming messages — typed correctly, no cast needed
+  useWebSocket(
+    "chat_message",
+    useCallback(
+      (event) => {
+        const msg = event.payload as ChatMessage;
+        if (msg.request_id === requestId) {
+          setMessages((prev) => {
+            if (prev.find((m) => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+          // Mark newly arrived messages from the other party as read immediately
+          if (msg.sender_id !== currentUser?.id) {
+            fetch(`/api/requests/${requestId}/chat/read`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json", ...authHeaders() },
+            }).catch(() => {});
+          }
+        }
+      },
+      [requestId, currentUser?.id],
+    ),
+  );
+
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -53,13 +80,22 @@ export function InAppChat({ requestId, helperName, requesterName }: InAppChatPro
   const send = async () => {
     if (!input.trim() || !currentUser || sending) return;
     setSending(true);
+    const optimisticContent = input.trim();
+    setInput("");
     try {
       const res = await fetch(`/api/requests/${requestId}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sender_id: currentUser.id, content: input.trim() }),
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        // sender_id is read from the verified Bearer token on the backend —
+        // we do NOT send it in the body to prevent spoofing.
+        body: JSON.stringify({ content: optimisticContent }),
       });
-      if (res.ok) setInput("");
+      if (!res.ok) {
+        // Restore input on failure
+        setInput(optimisticContent);
+      }
+    } catch {
+      setInput(optimisticContent);
     } finally {
       setSending(false);
     }
@@ -67,25 +103,33 @@ export function InAppChat({ requestId, helperName, requesterName }: InAppChatPro
 
   return (
     <div className="flex flex-col bg-card border border-border rounded-2xl overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-card/80">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-card/80 shrink-0">
         <MessageCircle className="w-4 h-4 text-primary" />
         <span className="text-sm font-bold">Chat</span>
-        <span className="text-xs text-muted-foreground ml-auto">{helperName} · {requesterName}</span>
+        <span className="text-xs text-muted-foreground ml-auto">
+          {helperName} · {requesterName}
+        </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      {/* Message list — capped height so it doesn't push other content off screen */}
+      <div className="overflow-y-auto p-3 space-y-2" style={{ maxHeight: "220px", minHeight: "80px" }}>
         {messages.length === 0 && (
-          <div className="text-center text-xs text-muted-foreground py-4">No messages yet. Say hi!</div>
+          <div className="text-center text-xs text-muted-foreground py-4">
+            No messages yet. Say hi!
+          </div>
         )}
-        {messages.map(msg => {
+        {messages.map((msg) => {
           const isMine = msg.sender_id === currentUser?.id;
           return (
             <div key={msg.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-snug ${
-                isMine
-                  ? "bg-primary text-primary-foreground rounded-br-sm"
-                  : "bg-muted text-foreground rounded-bl-sm"
-              }`}>
+              <div
+                className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-snug ${
+                  isMine
+                    ? "bg-primary text-primary-foreground rounded-br-sm"
+                    : "bg-muted text-foreground rounded-bl-sm"
+                }`}
+              >
                 {msg.content}
               </div>
             </div>
@@ -94,26 +138,34 @@ export function InAppChat({ requestId, helperName, requesterName }: InAppChatPro
         <div ref={bottomRef} />
       </div>
 
-
       {/* Quick reply chips */}
-      <div className="flex gap-2 px-3 pt-2 overflow-x-auto pb-1 scrollbar-none">
-        {["I'm on my way!", "Be there in 5 min", "Running a bit late", "Arrived!", "Can you clarify?"].map(reply => (
-          <button
-            key={reply}
-            onClick={() => setInput(reply)}
-            className="shrink-0 text-xs bg-muted active:bg-primary/20 border border-border active:border-primary/50 rounded-full px-3 py-1.5 transition-all text-muted-foreground active:text-primary font-medium select-none"
-          >
-            {reply}
-          </button>
-        ))}
+      <div className="flex gap-2 px-3 pt-2 overflow-x-auto pb-1 scrollbar-none shrink-0">
+        {["I'm on my way!", "Be there in 5 min", "Running a bit late", "Arrived!", "Can you clarify?"].map(
+          (reply) => (
+            <button
+              key={reply}
+              onClick={() => setInput(reply)}
+              className="shrink-0 text-xs bg-muted active:bg-primary/20 border border-border active:border-primary/50 rounded-full px-3 py-1.5 transition-all text-muted-foreground active:text-primary font-medium select-none"
+            >
+              {reply}
+            </button>
+          ),
+        )}
       </div>
-      <div className="flex items-center gap-2 p-3 border-t border-border">
+
+      {/* Input row */}
+      <div className="flex items-center gap-2 p-3 border-t border-border shrink-0">
         <input
           className="flex-1 bg-muted rounded-full px-4 py-2 text-sm outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground transition-all"
           placeholder="Type a message..."
           value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }}}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
           maxLength={1000}
         />
         <Button

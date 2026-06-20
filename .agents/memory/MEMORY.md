@@ -1,0 +1,19 @@
+- [Niakofa shared-lib builds](niakofa-lib-builds.md) — tsc --build fixes TS6305 errors; lib packages have no "build" script, use tsc directly.
+- [Niakofa code-review fixes](niakofa-code-review.md) — bugs fixed across admin.tsx, users.ts, leaderboard.ts, profile.tsx during full line-by-line review.
+- [Niakofa Vite proxy](niakofa-vite-proxy.md) — vite.config.ts had no /api or /ws proxy; all fetch("/api/…") calls hit Vite and returned HTML → JSON parse crash.
+- [Niakofa env var override](niakofa-env-override.md) — [userenv.shared] placeholder vars override real Replit secrets; delete placeholders so secrets take effect.
+- [Niakofa login token](niakofa-login-token.md) — login route was issuing email-based tokens incompatible with HMAC verifier; fixed to use signTokenById.
+- [Niakofa push notifications](niakofa-push-notifications.md) — push subscriptions were in-memory; switched to DB (pushSubscriptionsTable); added geolocation-targeted sendPushToNearbyHelpers.
+- [Niakofa DB schema exports](niakofa-db-schema-exports.md) — lib/db/src/schema/index.ts must explicitly export every schema file; push-subscriptions.ts was missing, causing build failure.
+- [Niakofa Railway deploy](niakofa-railway-deploy.md) — railpack.json drives build; SERVE_FRONTEND=true makes Express serve the SPA; ALLOWED_ORIGIN is comma-separated for multi-domain CORS.
+- [Niakofa AppContext HMR](niakofa-appctext-hmr.md) — AppContext exports both component+hook so Vite can't fast-refresh it (expected warning); new hooks must always be added LAST to preserve hook order across HMR cycles.
+- [Niakofa RBAC](niakofa-rbac.md) — is_admin boolean column on usersTable replaces hardcoded ID-1 check; requireAdmin() is now async and queries DB; set is_admin=true on any user row to grant access.
+- [Niakofa notification bell](niakofa-notif-bell.md) — BottomNav.tsx owns all WS listener + state logic; NotificationsDrawer.tsx is the pure display layer; nearby/new_request notifications use cyan (text-primary), not yellow.
+- [Niakofa lifecycle auth](niakofa-lifecycle-auth.md) — /claim, /en-route, /arrived, /complete, /tip all require requireAuth; helper_id derived from token, DB pre-fetch verifies ownership before any mutation.
+- [Niakofa openapi codegen](niakofa-openapi-codegen.md) — orval runs via root node_modules; duplicate YAML keys and null-valued properties silently break codegen with cryptic errors.
+- [Niakofa test setup](niakofa-test-setup.md) — Jest+Supertest in ESM mode (ts-jest esm preset); __tests__ excluded from main tsconfig to avoid type conflicts with jest globals.
+- [Niakofa auth flow](niakofa-auth-flow.md) — DB tables caused all 500s; logout used wrong localStorage keys; AppContext must own centralized logout(); last-known location persisted to localStorage as niakofa_last_location.
+- [Niakofa rate limiter](niakofa-rate-limit.md) — authLimiter is 10 req/15 min; rapid test loops hit 429; this is expected security behavior, not a bug.
+- [Niakofa recurring requests](niakofa-recurring.md) — recurring_requests table + /api/recurring routes + hourly scheduler worker; wallet.tsx entry point at /recurring; requireAdmin() must be called as a factory function (requireAdmin()), not used directly.
+- [Niakofa middleware paths](niakofa-middleware-paths.md) — auth middleware is at middlewares/ (plural); requireAdmin is in middlewares/authz.ts (not middleware/requireAdmin); always call requireAdmin() not requireAdmin.
+- [Niakofa helper application system](niakofa-helper-application.md) — full helper signup/approval flow, TopBar gating by helper_status, new helper-profile fields, admin review queue; useCallback token bug fix pattern.

@@ -33,6 +33,7 @@ export type WsEventType =
   | "new_gratitude"
   | "new_gratitude_prompt"
   | "gratitude_liked"
+  | "crisis_update"
   | "payment_completed"
   | "payouts_enabled"
   | "payout_sent"
@@ -42,7 +43,9 @@ export type WsEventType =
   | "ping"
   | "new_report"
   | "report_reviewed"
-  | "chat_message";
+  | "chat_message"
+  | "helper_application_approved"
+  | "helper_application_denied";
 
 export interface WsEvent {
   type: WsEventType;

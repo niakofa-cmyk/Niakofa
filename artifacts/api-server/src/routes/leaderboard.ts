@@ -2,15 +2,19 @@ import { Router } from "express";
 import { db, usersTable, requestsTable } from "@workspace/db";
 import { eq, sql, and, gte } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
+import { cacheGet, cacheSet, cacheDel } from "../lib/cache";
+
+const LEADERBOARD_CACHE_KEY = "leaderboard:all";
+const LEADERBOARD_TTL = 60; // 60 seconds
 
 const router = Router();
 
 // ── Tier helper (mirrors TrustTierBadge.tsx logic) ────────────────────────────
 export function getTierName(trustScore: number, helpCount: number): string {
-  if (helpCount >= 50 && trustScore >= 98) return "anchor";
+  if (helpCount >= 50 && trustScore >= 97) return "anchor";
   if (helpCount >= 30 && trustScore >= 95) return "elite";
   if (helpCount >= 15 && trustScore >= 90) return "trusted";
-  if (helpCount >= 5 && trustScore >= 80) return "verified";
+  if (helpCount >= 5 || trustScore >= 85) return "verified";
   return "member";
 }
 
@@ -101,6 +105,11 @@ async function fetchLeaderboard(city?: string) {
   });
 }
 
+// ── Invalidate cache whenever the leaderboard changes ─────────────────────────
+export async function invalidateLeaderboardCache(): Promise<void> {
+  await cacheDel(LEADERBOARD_CACHE_KEY);
+}
+
 // ── Broadcast helper (called by requests.ts after completion) ─────────────────
 export async function broadcastLeaderboardUpdate(
   changedUserId: number,
@@ -130,10 +139,16 @@ export async function broadcastLeaderboardUpdate(
   });
 }
 
-// ── GET /leaderboard — initial HTTP fetch (with optional city filter) ──────────
+// ── GET /leaderboard — initial HTTP fetch (cached 60s) ────────────────────────
 router.get("/leaderboard", async (req, res) => {
   const city = req.query.city as string | undefined;
+  const cacheKey = city ? `leaderboard:city:${city.toLowerCase()}` : LEADERBOARD_CACHE_KEY;
+
+  const cached = await cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+
   const entries = await fetchLeaderboard(city);
+  await cacheSet(cacheKey, entries, LEADERBOARD_TTL);
   return res.json(entries);
 });
 

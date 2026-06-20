@@ -250,7 +250,8 @@ export default function LiveLeaderboard() {
                 layout
                 layoutId={`lb-${entry.id}`}
                 transition={{ type: "spring", damping: 30, stiffness: 300 }}
-                className={`relative flex flex-col items-center p-3 rounded-2xl border transition-colors ${
+                onClick={() => setLocation(`/helper/${entry.id}`)}
+                className={`relative flex flex-col items-center p-3 rounded-2xl border transition-colors cursor-pointer active:scale-95 ${
                   isChanged
                     ? "bg-primary/15 border-primary/60 shadow-[0_0_20px_rgba(0,212,255,0.18)]"
                     : i === 0
@@ -333,10 +334,11 @@ export default function LiveLeaderboard() {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: 20 }}
                   transition={{ type: "spring", damping: 28, stiffness: 260 }}
-                  className={`flex items-center gap-3 p-3 rounded-2xl border transition-colors ${
+                  onClick={() => setLocation(`/helper/${entry.id}`)}
+                  className={`flex items-center gap-3 p-3 rounded-2xl border transition-colors cursor-pointer active:scale-95 ${
                     isChanged
                       ? "bg-primary/12 border-primary/50"
-                      : "bg-card border-border"
+                      : "bg-card border-border hover:border-primary/30"
                   }`}
                 >
                   {/* Rank number */}

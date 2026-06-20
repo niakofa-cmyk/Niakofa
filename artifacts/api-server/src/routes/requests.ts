@@ -1,5 +1,7 @@
 import { Router } from "express";
-import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable } from "@workspace/db";
+import { requireAuth } from "../middlewares/auth";
+import { requireOwnership } from "../middlewares/authz";
+import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, ratingsTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -8,22 +10,18 @@ import {
   UpdateRequestParams,
   UpdateRequestBody,
   ClaimRequestParams,
-  ClaimRequestBody,
   CompleteRequestParams,
-  CompleteRequestBody,
   GetNearbyRequestsQueryParams,
   MarkEnRouteParams,
-  MarkEnRouteBody,
   MarkArrivedParams,
-  MarkArrivedBody,
 } from "@workspace/api-zod";
 import { broadcast, broadcastRequestEvent } from "../lib/ws-hub";
 import { requestCreationLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
-import { sendPushToAllHelpers } from "./push";
+import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser } from "./push";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { logger } from "../lib/logger";
-import { sendReceipt } from "../lib/mailer";
+import { sendReceipt, sendAlertEmail } from "../lib/mailer";
 import Stripe from "stripe";
 
 // Lazy Stripe client — null when STRIPE_SECRET_KEY is not configured
@@ -57,28 +55,46 @@ function enrichRequest(r: typeof requestsTable.$inferSelect, userMap: Record<num
 }
 
 router.get("/requests/stats", async (_req, res) => {
-  const allRequests = await db.select().from(requestsTable);
-  const open = allRequests.filter(r => r.status === "open").length;
-  const completed = allRequests.filter(r => r.status === "completed").length;
-  const recentCompletions = allRequests.filter(r => {
-    if (!r.completed_at) return false;
-    return Date.now() - new Date(r.completed_at).getTime() < 86400000;
-  }).length;
-  const onlineHelpers = await db.select().from(usersTable).where(eq(usersTable.helper_mode_active, true));
-  const catMap: Record<string, number> = {};
-  for (const r of allRequests) catMap[r.category] = (catMap[r.category] ?? 0) + 1;
-  const requests_by_category = Object.entries(catMap).map(([category, count]) => ({ category, count }));
+  // All aggregations done at the DB level — no full table scan into memory
+  const [statusCounts, categoryCounts, recentCompletions, pledgeVolume, onlineHelpers] =
+    await Promise.all([
+      db
+        .select({ status: requestsTable.status, count: sql<number>`COUNT(*)::int` })
+        .from(requestsTable)
+        .groupBy(requestsTable.status),
 
-  // Total pay-it-forward pledge volume
-  const pledgeVolume = allRequests.reduce((s, r) => s + (r.pledge_paid || 0), 0);
+      db
+        .select({ category: requestsTable.category, count: sql<number>`COUNT(*)::int` })
+        .from(requestsTable)
+        .groupBy(requestsTable.category),
+
+      db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(requestsTable)
+        .where(
+          and(
+            eq(requestsTable.status, "completed"),
+            sql`${requestsTable.completed_at} > NOW() - INTERVAL '24 hours'`
+          )
+        ),
+
+      db
+        .select({ total: sql<number>`COALESCE(SUM(${requestsTable.pledge_paid}), 0)::float` })
+        .from(requestsTable),
+
+      db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(usersTable)
+        .where(eq(usersTable.helper_mode_active, true)),
+    ]);
 
   return res.json({
-    total_open: open,
-    total_completed: completed,
-    total_helpers_online: onlineHelpers.length,
-    requests_by_category,
-    recent_completions: recentCompletions,
-    total_pledge_volume: pledgeVolume,
+    total_open:             statusCounts.find(s => s.status === "open")?.count ?? 0,
+    total_completed:        statusCounts.find(s => s.status === "completed")?.count ?? 0,
+    total_helpers_online:   onlineHelpers[0]?.count ?? 0,
+    requests_by_category:   categoryCounts,
+    recent_completions:     recentCompletions[0]?.count ?? 0,
+    total_pledge_volume:    pledgeVolume[0]?.total ?? 0,
   });
 });
 
@@ -127,18 +143,34 @@ router.get("/requests", async (req, res) => {
     radius_miles: req.query.radius_miles ? parseFloat(req.query.radius_miles as string) : undefined,
   });
 
+  // Optional helper_id filter — used by helper profile page
+  const helperId = req.query.helper_id ? parseInt(req.query.helper_id as string) : null;
+  // Optional requester_id filter — used by profile page to fetch user's own requests
+  const requesterId = req.query.requester_id ? parseInt(req.query.requester_id as string) : null;
+  // Optional limit
+  const limitParam = req.query.limit ? parseInt(req.query.limit as string) : null;
+
   let rows = await db.select().from(requestsTable);
+  if (helperId) rows = rows.filter(r => r.helper_id === helperId);
+  if (requesterId) rows = rows.filter(r => r.requester_id === requesterId);
   if (params.success && params.data.status) rows = rows.filter(r => r.status === params.data.status);
   if (params.success && params.data.lat && params.data.lng) {
     const radius = params.data.radius_miles ?? 10;
     rows = rows.filter(r => distanceMiles(params.data.lat!, params.data.lng!, r.lat, r.lng) <= radius);
   }
+  // Sort newest first, then apply limit
+  rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  if (limitParam && limitParam > 0) rows = rows.slice(0, limitParam);
 
-  const userIds = [...new Set(rows.map(r => r.requester_id))];
-  const users = userIds.length > 0
+  // Collect all relevant user IDs (requesters + helpers) for a single batch fetch
+  const allUserIds = [...new Set([
+    ...rows.map(r => r.requester_id),
+    ...rows.map(r => r.helper_id).filter((id): id is number => id != null),
+  ])];
+  const users = allUserIds.length > 0
     ? await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url })
         .from(usersTable)
-        .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(userIds.map(id => sql`${id}`), sql`, `)}]::int[])`)
+        .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(allUserIds.map(id => sql`${id}`), sql`, `)}]::int[])`)
     : [];
   const userMap = Object.fromEntries(users.map(u => [u.id, u]));
 
@@ -146,13 +178,14 @@ router.get("/requests", async (req, res) => {
     ...r,
     requester_name: userMap[r.requester_id]?.name ?? null,
     requester_avatar: userMap[r.requester_id]?.avatar_url ?? null,
-    helper_name: null,
+    helper_name: r.helper_id ? (userMap[r.helper_id]?.name ?? null) : null,
+    helper_avatar: r.helper_id ? (userMap[r.helper_id]?.avatar_url ?? null) : null,
     distance_miles: null,
     estimated_duration_min: null,
   })));
 });
 
-router.post("/requests", requestCreationLimiter, async (req, res) => {
+router.post("/requests", requireAuth, requireOwnership("requester_id"), requestCreationLimiter, async (req, res) => {
   const parsed = CreateRequestBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
 
@@ -192,10 +225,23 @@ router.post("/requests", requestCreationLimiter, async (req, res) => {
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
   broadcastRequestEvent("REQUEST_CREATED", "new_request", enriched);
 
+  // Push notifications — geolocation-targeted when request has coordinates
   if (request.urgency === "emergency" || request.urgency === "high") {
     const isEmergency = request.urgency === "emergency";
-    sendPushToAllHelpers({
+    const payload = {
       title: isEmergency ? "🚨 EMERGENCY — Help Needed Now!" : "🔴 Urgent Request Nearby",
+      body: request.title,
+      urgency: request.urgency,
+      requestId: request.id,
+    };
+    // Notify helpers within 15 miles of the request; fall back to all helpers if no nearby ones found
+    sendPushToNearbyHelpers(request.lat, request.lng, 15, payload).catch(() => {
+      sendPushToAllHelpers(payload).catch(() => {});
+    });
+  } else {
+    // For medium/low urgency, notify helpers within 5 miles
+    sendPushToNearbyHelpers(request.lat, request.lng, 5, {
+      title: "💙 Help Request Near You",
       body: request.title,
       urgency: request.urgency,
       requestId: request.id,
@@ -205,8 +251,8 @@ router.post("/requests", requestCreationLimiter, async (req, res) => {
   return res.status(201).json(enriched);
 });
 
-router.get("/requests/:id", async (req, res) => {
-  const parsed = GetRequestParams.safeParse({ id: parseInt(req.params.id) });
+router.get("/requests/:id", requireAuth, async (req, res) => {
+  const parsed = GetRequestParams.safeParse({ id: parseInt(req.params.id as string) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, parsed.data.id)).limit(1);
   if (!request) return res.status(404).json({ error: "Not found" });
@@ -220,57 +266,113 @@ router.get("/requests/:id", async (req, res) => {
   return res.json({ ...request, requester_name: requester?.name ?? null, requester_avatar: requester?.avatar_url ?? null, helper_name: helperName, distance_miles: null, estimated_duration_min: null });
 });
 
-router.patch("/requests/:id", async (req, res) => {
-  const pParsed = UpdateRequestParams.safeParse({ id: parseInt(req.params.id) });
+router.patch("/requests/:id", requireAuth, async (req, res) => {
+  const authenticatedUserId = (req as any).authenticatedUserId;
+  const requestId = parseInt(req.params.id as string);
+  const [existing] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+  if (!existing) return res.status(404).json({ error: "Request not found" });
+  if (existing.requester_id !== authenticatedUserId) {
+    return res.status(403).json({ error: "Forbidden: You can only update your own requests" });
+  }
+  const pParsed = UpdateRequestParams.safeParse({ id: requestId });
   const bParsed = UpdateRequestBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
   const updates: Record<string, unknown> = {};
   if (bParsed.data.status !== undefined) updates.status = bParsed.data.status;
   if (bParsed.data.description !== undefined) updates.description = bParsed.data.description;
   if (bParsed.data.urgency !== undefined) updates.urgency = bParsed.data.urgency;
-  const [request] = await db.update(requestsTable).set(updates).where(eq(requestsTable.id, pParsed.data.id)).returning();
-  if (!request) return res.status(404).json({ error: "Not found" });
-  const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
+  const [updated] = await db.update(requestsTable).set(updates).where(eq(requestsTable.id, pParsed.data.id)).returning();
+  if (!updated) return res.status(404).json({ error: "Not found" });
+  const enriched = { ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
   broadcast({ type: "request_updated", payload: enriched });
   return res.json(enriched);
 });
 
-router.post("/requests/:id/claim", async (req, res) => {
-  const pParsed = ClaimRequestParams.safeParse({ id: parseInt(req.params.id) });
-  const bParsed = ClaimRequestBody.safeParse(req.body);
-  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
+router.post("/requests/:id/claim", requireAuth, async (req, res) => {
+  const helperId = req.authenticatedUserId!;
+  const pParsed = ClaimRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });
+
+  // Prevent requester from claiming their own request
+  const [existing] = await db.select({ requester_id: requestsTable.requester_id })
+    .from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
+  if (!existing) return res.status(404).json({ error: "Request not found" });
+  if (existing.requester_id === helperId) return res.status(403).json({ error: "Cannot claim your own request" });
+
   const [request] = await db.update(requestsTable)
-    .set({ status: "claimed", helper_id: bParsed.data.helper_id, claimed_at: new Date() })
+    .set({ status: "claimed", helper_id: helperId, claimed_at: new Date() })
     .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.status, "open")))
     .returning();
   if (!request) return res.status(409).json({ error: "Request already claimed or not found" });
-  const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, bParsed.data.helper_id)).limit(1);
+  const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, helperId)).limit(1);
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: helper?.name ?? null, distance_miles: null, estimated_duration_min: null };
   broadcastRequestEvent("REQUEST_ACCEPTED", "request_updated", enriched);
+
+  // Notify requester that their request has been claimed
+  const [requesterRow] = await db.select({ email: usersTable.email, name: usersTable.name })
+    .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1);
+  if (requesterRow?.email) {
+    sendAlertEmail({
+      to: requesterRow.email,
+      subject: "Your request was claimed!",
+      title: "A helper is coming 💙",
+      body: `Great news, ${requesterRow.name}! ${helper?.name ?? "A helper"} just claimed your request: "${request.title}". They should be on their way shortly.`,
+    }).catch(err => logger.warn({ err }, "claim: sendAlertEmail failed"));
+  }
+
   return res.json(enriched);
 });
 
-router.post("/requests/:id/en-route", async (req, res) => {
-  const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(req.params.id) });
-  const bParsed = MarkEnRouteBody.safeParse(req.body);
-  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
+router.post("/requests/:id/en-route", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });
+
+  // Verify caller is the assigned helper before updating
+  const [current] = await db.select({ helper_id: requestsTable.helper_id })
+    .from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
+  if (!current) return res.status(404).json({ error: "Request not found" });
+  if (current.helper_id !== callerId) return res.status(403).json({ error: "You are not the assigned helper for this request" });
+
   const [request] = await db.update(requestsTable)
     .set({ status: "en_route", en_route_at: new Date() })
-    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, bParsed.data.helper_id)))
+    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, callerId)))
     .returning();
   if (!request) return res.status(404).json({ error: "Not found" });
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
   broadcastRequestEvent("HELPER_MOVING", "request_updated", enriched);
+
+  // Notify requester that their helper is en route
+  const [reqRow] = await db.select({ email: usersTable.email, name: usersTable.name })
+    .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1);
+  const [helperRow] = await db.select({ name: usersTable.name })
+    .from(usersTable).where(eq(usersTable.id, callerId)).limit(1);
+  if (reqRow?.email) {
+    sendAlertEmail({
+      to: reqRow.email,
+      subject: "Your helper is on the way!",
+      title: "En route! 🚗",
+      body: `${helperRow?.name ?? "Your helper"} is now on the way to help with "${request.title}". They should arrive soon — keep an eye out!`,
+    }).catch(err => logger.warn({ err }, "en-route: sendAlertEmail failed"));
+  }
+
   return res.json(enriched);
 });
 
-router.post("/requests/:id/arrived", async (req, res) => {
-  const pParsed = MarkArrivedParams.safeParse({ id: parseInt(req.params.id) });
-  const bParsed = MarkArrivedBody.safeParse(req.body);
-  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
+router.post("/requests/:id/arrived", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const pParsed = MarkArrivedParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });
+
+  // Verify caller is the assigned helper before updating
+  const [current] = await db.select({ helper_id: requestsTable.helper_id })
+    .from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
+  if (!current) return res.status(404).json({ error: "Request not found" });
+  if (current.helper_id !== callerId) return res.status(403).json({ error: "You are not the assigned helper for this request" });
+
   const [request] = await db.update(requestsTable)
     .set({ status: "arrived", arrived_at: new Date() })
-    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, bParsed.data.helper_id)))
+    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, callerId)))
     .returning();
   if (!request) return res.status(404).json({ error: "Not found" });
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
@@ -278,14 +380,21 @@ router.post("/requests/:id/arrived", async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/complete", async (req, res) => {
-  const pParsed = CompleteRequestParams.safeParse({ id: parseInt(req.params.id) });
-  const bParsed = CompleteRequestBody.safeParse(req.body);
-  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
+router.post("/requests/:id/complete", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const pParsed = CompleteRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });
+
+  // Verify caller is the assigned helper BEFORE making any mutations
+  const [current] = await db.select({ helper_id: requestsTable.helper_id, status: requestsTable.status })
+    .from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
+  if (!current) return res.status(404).json({ error: "Request not found" });
+  if (current.helper_id !== callerId) return res.status(403).json({ error: "You are not the assigned helper for this request" });
+  if (current.status === "completed") return res.status(409).json({ error: "Request already completed" });
 
   const [request] = await db.update(requestsTable)
     .set({ status: "completed", completed_at: new Date() })
-    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, bParsed.data.helper_id)))
+    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, callerId)))
     .returning();
   if (!request) return res.status(404).json({ error: "Not found" });
 
@@ -293,20 +402,20 @@ router.post("/requests/:id/complete", async (req, res) => {
   const [helperBefore] = await db
     .select({ help_count: usersTable.help_count, trust_score: usersTable.trust_score, name: usersTable.name })
     .from(usersTable)
-    .where(eq(usersTable.id, bParsed.data.helper_id))
+    .where(eq(usersTable.id, callerId))
     .limit(1);
 
   // Increment help_count
   await db.update(usersTable)
     .set({ help_count: sql`${usersTable.help_count} + 1` })
-    .where(eq(usersTable.id, bParsed.data.helper_id));
+    .where(eq(usersTable.id, callerId));
 
   // Immediate-pay jobs: record in earnings history ONLY — do NOT credit benevolence_wallet.
   // benevolence_wallet is the goodwill/donation pot (pledges, sponsorships, tips).
   // The real money for immediate jobs arrives via the Stripe Connect transfer below.
   if (request.payment_type === "immediate" && request.pay_it_forward_amount && request.pay_it_forward_amount > 0) {
     await db.insert(transactionsTable).values({
-      user_id: bParsed.data.helper_id,
+      user_id: callerId,
       request_id: request.id,
       type: "earned",
       amount: request.pay_it_forward_amount,
@@ -318,9 +427,9 @@ router.post("/requests/:id/complete", async (req, res) => {
   if (request.payment_type === "goodwill") {
     await db.update(usersTable)
       .set({ goodwill_score: sql`${usersTable.goodwill_score} + 1` })
-      .where(eq(usersTable.id, bParsed.data.helper_id));
+      .where(eq(usersTable.id, callerId));
     await db.insert(transactionsTable).values({
-      user_id: bParsed.data.helper_id,
+      user_id: callerId,
       request_id: request.id,
       type: "goodwill",
       amount: 0,
@@ -342,7 +451,7 @@ router.post("/requests/:id/complete", async (req, res) => {
       [stripeAcct] = await db
         .select()
         .from(stripeAccountsTable)
-        .where(eq(stripeAccountsTable.user_id, bParsed.data.helper_id))
+        .where(eq(stripeAccountsTable.user_id, callerId))
         .limit(1);
 
       if (stripeAcct?.payouts_enabled && stripeAcct.stripe_account_id) {
@@ -356,7 +465,7 @@ router.post("/requests/:id/complete", async (req, res) => {
           destination: stripeAcct.stripe_account_id,
           metadata: {
             request_id: String(request.id),
-            helper_id: String(bParsed.data.helper_id),
+            helper_id: String(callerId),
             platform_fee_cents: String(platformFeeCents),
           },
         });
@@ -364,7 +473,7 @@ router.post("/requests/:id/complete", async (req, res) => {
         // Record the completed payout
         await db.insert(paymentTransactionsTable).values({
           request_id: request.id,
-          helper_id: bParsed.data.helper_id,
+          helper_id: callerId,
           requester_id: request.requester_id,
           amount: request.pay_it_forward_amount,
           state: "completed",
@@ -376,7 +485,7 @@ router.post("/requests/:id/complete", async (req, res) => {
         broadcast({
           type: "payout_sent",
           payload: {
-            helper_id: bParsed.data.helper_id,
+            helper_id: callerId,
             amount: payoutCents / 100,
             transfer_id: transfer.id,
           },
@@ -391,7 +500,7 @@ router.post("/requests/:id/complete", async (req, res) => {
         const platformFeeCents = Math.round(amountCents * 0.05);
         enqueuePayoutRetry({
           request_id:         request.id,
-          helper_id:          bParsed.data.helper_id,
+          helper_id:          callerId,
           requester_id:       request.requester_id,
           amount_cents:       amountCents,
           platform_fee_cents: platformFeeCents,
@@ -407,11 +516,10 @@ router.post("/requests/:id/complete", async (req, res) => {
 
   // Fire-and-forget leaderboard broadcast (doesn't block response)
   broadcastLeaderboardUpdate(
-    bParsed.data.helper_id,
+    callerId,
     helperBefore?.help_count ?? 0,
     helperBefore?.trust_score ?? 0
   ).catch(() => {});
-
 
   // Fire receipt email async (non-blocking)
   const [requester] = await db.select({ email: usersTable.email, name: usersTable.name })
@@ -436,7 +544,7 @@ router.post("/requests/:id/complete", async (req, res) => {
       requester_id: request.requester_id,
       request_title: request.title,
       helper_name: helperBefore?.name ?? null,
-      helper_id: bParsed.data.helper_id,
+      helper_id: callerId,
     },
   });
 
@@ -444,19 +552,22 @@ router.post("/requests/:id/complete", async (req, res) => {
 });
 
 
-router.post("/requests/:id/tip", async (req, res) => {
-  const requestId = parseInt(req.params.id);
+router.post("/requests/:id/tip", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id));
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 
-  const { requester_id, tip_amount } = req.body as { requester_id: number; tip_amount: number };
-  if (!requester_id || !tip_amount || tip_amount <= 0) {
-    return res.status(400).json({ error: "requester_id and tip_amount > 0 required" });
+  const { tip_amount } = req.body as { tip_amount: number };
+  if (!tip_amount || tip_amount <= 0) {
+    return res.status(400).json({ error: "tip_amount > 0 required" });
   }
 
   const [request] = await db.select().from(requestsTable)
-    .where(and(eq(requestsTable.id, requestId), eq(requestsTable.requester_id, requester_id)))
+    .where(eq(requestsTable.id, requestId))
     .limit(1);
   if (!request) return res.status(404).json({ error: "Request not found" });
+  // Only the actual requester (verified via auth token) can tip
+  if (request.requester_id !== callerId) return res.status(403).json({ error: "Only the requester can tip on this request" });
   if (request.status !== "completed") return res.status(409).json({ error: "Can only tip completed requests" });
   if (!request.helper_id) return res.status(400).json({ error: "No helper to tip" });
 
@@ -474,11 +585,192 @@ router.post("/requests/:id/tip", async (req, res) => {
   });
 
   broadcast({
-    type: "payout_sent" as any,
+    type: "payout_sent",
     payload: { helper_id: request.helper_id, amount: tip_amount, type: "tip" },
   });
 
   return res.status(201).json({ ok: true, tip_amount, helper_id: request.helper_id });
+});
+
+// POST /requests/:id/cancel
+// Helper cancels → request re-opens to the pool (another helper can pick it up).
+// Requester withdraws → request marked "cancelled" permanently.
+router.post("/requests/:id/cancel", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id));
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  const [request] = await db.select()
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+
+  if (!request) return res.status(404).json({ error: "Request not found" });
+
+  if (["completed", "cancelled"].includes(request.status)) {
+    return res.status(409).json({ error: `Request is already ${request.status}` });
+  }
+
+  const isRequester = request.requester_id === callerId;
+  const isHelper = request.helper_id === callerId;
+
+  if (!isRequester && !isHelper) {
+    return res.status(403).json({ error: "Not authorized to cancel this request" });
+  }
+
+  let updated: typeof requestsTable.$inferSelect | undefined;
+
+  if (isRequester) {
+    // Requester permanently withdraws their request
+    const [row] = await db.update(requestsTable)
+      .set({ status: "cancelled", cancelled_at: new Date() })
+      .where(eq(requestsTable.id, requestId))
+      .returning();
+    updated = row;
+  } else {
+    // Helper unclaims — re-opens to the pool so another helper can take it
+    if (!["claimed", "en_route", "arrived"].includes(request.status)) {
+      return res.status(409).json({ error: "Can only cancel an active claim" });
+    }
+    const [row] = await db.update(requestsTable)
+      .set({
+        status: "open",
+        helper_id: null,
+        claimed_at: null,
+        en_route_at: null,
+        arrived_at: null,
+      })
+      .where(eq(requestsTable.id, requestId))
+      .returning();
+    updated = row;
+  }
+
+  if (!updated) return res.status(500).json({ error: "Failed to cancel request" });
+
+  const enriched = {
+    ...updated,
+    requester_name: null, requester_avatar: null, helper_name: null,
+    distance_miles: null, estimated_duration_min: null,
+  };
+  broadcast({ type: "request_updated", payload: enriched });
+
+  // Push notification: when a helper cancels, immediately alert the requester so they know to look for a new helper
+  if (!isRequester) {
+    const [helperUser] = await db.select({ name: usersTable.name })
+      .from(usersTable).where(eq(usersTable.id, callerId)).limit(1);
+    const [requesterUser] = await db.select({ email: usersTable.email })
+      .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1);
+    sendPushToUser(request.requester_id, {
+      title: "Your helper cancelled",
+      body: `${helperUser?.name ?? "Your helper"} can no longer help with "${request.title}". Your request is back in the pool — a new helper will be notified.`,
+      urgency: request.urgency === "emergency" ? "high" : "normal",
+      requestId: requestId,
+    }, {
+      fallbackEmail: requesterUser?.email,
+      fallbackEmailSubject: "Your helper cancelled — look for a new helper",
+    }).catch(err => logger.warn({ err }, "cancel: sendPushToUser to requester failed"));
+  }
+
+  // Trust score penalty for helpers who cancel a claim — discourages repeated cancellations
+  if (!isRequester && callerId) {
+    await db.update(usersTable)
+      .set({ trust_score: sql`GREATEST(0, ${usersTable.trust_score} - 5)` })
+      .where(eq(usersTable.id, callerId));
+    logger.info({ helper_id: callerId, request_id: requestId }, "cancel: helper trust_score -5 for claim cancellation");
+  }
+
+  // Email the other party
+  const notifyId = isRequester ? (request.helper_id ?? null) : request.requester_id;
+  if (notifyId) {
+    const [notifyUser] = await db.select({ email: usersTable.email, name: usersTable.name })
+      .from(usersTable).where(eq(usersTable.id, notifyId)).limit(1);
+    const [actor] = await db.select({ name: usersTable.name })
+      .from(usersTable).where(eq(usersTable.id, callerId)).limit(1);
+    if (notifyUser?.email) {
+      sendAlertEmail({
+        to: notifyUser.email,
+        subject: isRequester
+          ? "A request you were helping has been withdrawn"
+          : "A request is back in the pool",
+        title: isRequester ? "Request withdrawn" : "Back to open 💙",
+        body: isRequester
+          ? `${actor?.name ?? "The requester"} has withdrawn their request "${request.title}". No further action is needed from you.`
+          : `${actor?.name ?? "The helper"} is no longer available for "${request.title}". The request is now open for another helper to claim.`,
+      }).catch(err => logger.warn({ err }, "cancel: sendAlertEmail failed"));
+    }
+  }
+
+  return res.json(enriched);
+});
+
+// POST /requests/:id/rate
+// Either participant (requester or helper) can rate the other after completion.
+// Stars 1–5 are required; a short review text is optional.
+// Recomputes the ratee's trust_score as a scaled average across all received ratings.
+router.post("/requests/:id/rate", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id));
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  const { stars, review } = req.body as { stars?: number; review?: string };
+  const starsNum = Number(stars);
+  if (!starsNum || starsNum < 1 || starsNum > 5 || !Number.isInteger(starsNum)) {
+    return res.status(400).json({ error: "stars must be an integer from 1 to 5" });
+  }
+
+  const [request] = await db.select()
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.status !== "completed") {
+    return res.status(409).json({ error: "Can only rate completed requests" });
+  }
+
+  const isRequester = request.requester_id === callerId;
+  const isHelper = request.helper_id === callerId;
+
+  if (!isRequester && !isHelper) {
+    return res.status(403).json({ error: "Only participants can rate this request" });
+  }
+  if (!request.helper_id) {
+    return res.status(400).json({ error: "No helper to rate" });
+  }
+
+  const role = isRequester ? "requester" : "helper";
+  const rateeId = isRequester ? request.helper_id : request.requester_id;
+
+  // One rating per person per request
+  const [existing] = await db.select({ id: ratingsTable.id })
+    .from(ratingsTable)
+    .where(and(eq(ratingsTable.request_id, requestId), eq(ratingsTable.rater_id, callerId)))
+    .limit(1);
+  if (existing) return res.status(409).json({ error: "You have already rated this request" });
+
+  const [rating] = await db.insert(ratingsTable).values({
+    request_id: requestId,
+    rater_id: callerId,
+    ratee_id: rateeId,
+    stars: starsNum,
+    review: typeof review === "string" && review.trim() ? review.trim() : null,
+    role,
+  }).returning();
+
+  // Recompute trust_score for ratee: average-stars × 20 (1 star = 20, 5 stars = 100)
+  const allRatings = await db.select({ stars: ratingsTable.stars })
+    .from(ratingsTable)
+    .where(eq(ratingsTable.ratee_id, rateeId));
+  const avgStars = allRatings.reduce((s, r) => s + r.stars, 0) / allRatings.length;
+  const newTrustScore = Math.round(avgStars * 20);
+
+  await db.update(usersTable)
+    .set({ trust_score: newTrustScore })
+    .where(eq(usersTable.id, rateeId));
+
+  logger.info({ request_id: requestId, rater_id: callerId, ratee_id: rateeId, stars: starsNum }, "rate: submitted");
+
+  return res.status(201).json(rating);
 });
 
 export default router;

@@ -25,9 +25,9 @@ export const TIER_CONFIG: Record<TrustTier, TierConfig> = {
   verified: {
     label: "Verified Helper",
     icon: "✓",
-    color: "text-blue-400",
-    bg: "bg-blue-500/10",
-    border: "border-blue-500/30",
+    color: "text-cyan-400",
+    bg: "bg-cyan-500/10",
+    border: "border-cyan-500/30",
     description: "Phone + email verified, active helper",
     minHelps: 5,
     minTrust: 85,

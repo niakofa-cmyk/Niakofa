@@ -4,6 +4,8 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
+import { requireAuth } from "../middlewares/auth";
+import { requireAdmin } from "../middlewares/authz";
 
 const router = Router();
 
@@ -33,18 +35,23 @@ const AdminReviewBody = z.object({
     "resolved_warned",
     "resolved_banned",
   ]),
+  // reviewed_by is derived from the authenticated user token — not client-supplied
   admin_notes: z.string().max(2000).optional(),
-  reviewed_by: z.number().int().positive(),
 });
 
 // ── POST /reports — file a new report ─────────────────────────────────────
-router.post("/reports", async (req, res) => {
+router.post("/reports", requireAuth, async (req, res) => {
   const parsed = CreateReportBody.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid body", details: parsed.error.issues });
   }
 
   const { reporter_id, reported_user_id, reported_request_id, type, description } = parsed.data;
+
+  // Ensure reporter_id matches authenticated user (prevent filing as someone else)
+  if (req.authenticatedUserId !== reporter_id) {
+    return res.status(403).json({ error: "reporter_id must match your authenticated user" });
+  }
 
   // Prevent self-report
   if (reported_user_id && reported_user_id === reporter_id) {
@@ -94,26 +101,24 @@ router.post("/reports", async (req, res) => {
 });
 
 // ── GET /reports — admin: list all reports with optional status filter ─────
-router.get("/reports", async (req, res) => {
+router.get("/reports", requireAuth, requireAdmin(), async (req, res) => {
   const status = req.query.status as string | undefined;
   const validStatuses = ["pending", "under_review", "resolved_dismissed", "resolved_warned", "resolved_banned"];
+  const validStatus = status && validStatuses.includes(status) ? status : undefined;
 
-  let rows = await db
+  const rows = await db
     .select()
     .from(reportsTable)
+    .where(validStatus ? eq(reportsTable.status, validStatus as "pending" | "under_review" | "resolved_dismissed" | "resolved_warned" | "resolved_banned") : undefined)
     .orderBy(desc(reportsTable.created_at))
     .limit(200);
-
-  if (status && validStatuses.includes(status)) {
-    rows = rows.filter(r => r.status === status);
-  }
 
   return res.json(rows);
 });
 
 // ── GET /reports/:id — admin: get a single report ─────────────────────────
-router.get("/reports/:id", async (req, res) => {
-  const id = parseInt(req.params.id);
+router.get("/reports/:id", requireAuth, requireAdmin(), async (req, res) => {
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
   const [report] = await db
@@ -150,8 +155,8 @@ router.get("/reports/:id", async (req, res) => {
 });
 
 // ── PATCH /reports/:id/review — admin: update report status + notes ───────
-router.patch("/reports/:id/review", async (req, res) => {
-  const id = parseInt(req.params.id);
+router.patch("/reports/:id/review", requireAuth, requireAdmin(), async (req, res) => {
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
   const parsed = AdminReviewBody.safeParse(req.body);
@@ -159,7 +164,9 @@ router.patch("/reports/:id/review", async (req, res) => {
     return res.status(400).json({ error: "Invalid body", details: parsed.error.issues });
   }
 
-  const { status, admin_notes, reviewed_by } = parsed.data;
+  const { status, admin_notes } = parsed.data;
+  // reviewed_by comes from the verified auth token — never from the client body
+  const reviewed_by = req.authenticatedUserId!;
 
   const [updated] = await db
     .update(reportsTable)
@@ -188,9 +195,9 @@ router.patch("/reports/:id/review", async (req, res) => {
   return res.json(updated);
 });
 
-// ── GET /users/:id/reports — get all reports filed by or against a user ───
-router.get("/users/:id/reports", async (req, res) => {
-  const userId = parseInt(req.params.id);
+// ── GET /users/:id/reports — admin: get all reports filed by or against a user
+router.get("/users/:id/reports", requireAuth, requireAdmin(), async (req, res) => {
+  const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
 
   const filed = await db

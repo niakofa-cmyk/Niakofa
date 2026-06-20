@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { requireAuth } from "../middlewares/auth";
+import { requireOwnership } from "../middlewares/authz";
 import Stripe from "stripe";
 import { db, stripeAccountsTable, paymentTransactionsTable, usersTable, requestsTable, transactionsTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
@@ -51,13 +53,16 @@ router.post("/stripe/webhook", async (req, res) => {
     return res.status(400).send(`Webhook Error: ${err instanceof Error ? err.message : "Unknown"}`);
   }
 
-  logger.info({ type: event.type }, "Stripe webhook event received");
+  logger.info({ eventId: event.id, type: event.type }, "Stripe webhook event received");
 
-  try {
-    switch (event.type) {
-      case "payment_intent.succeeded": {
-        const pi = event.data.object as Stripe.PaymentIntent;
+  // Each case is wrapped independently so one handler failure never silences others.
+  // We ALWAYS return 200 — Stripe retries on non-2xx and we log failures for investigation.
+  const processingErrors: { case: string; message: string }[] = [];
 
+  switch (event.type) {
+    case "payment_intent.succeeded": {
+      const pi = event.data.object as Stripe.PaymentIntent;
+      try {
         // 1. Flip the payment_transactions row to completed
         await db
           .update(paymentTransactionsTable)
@@ -65,7 +70,6 @@ router.post("/stripe/webhook", async (req, res) => {
           .where(eq(paymentTransactionsTable.stripe_payment_intent_id, pi.id));
 
         // 2. Full ledger sync for Pay It Forward pledges
-        // Look up the transaction to check type and get request/helper ids
         const [txRow] = await db
           .select()
           .from(paymentTransactionsTable)
@@ -80,20 +84,17 @@ router.post("/stripe/webhook", async (req, res) => {
         ) {
           const amount = txRow.amount;
 
-          // Update request.pledge_paid
           await db
             .update(requestsTable)
             .set({ pledge_paid: sql`COALESCE(${requestsTable.pledge_paid}, 0) + ${amount}` })
             .where(eq(requestsTable.id, txRow.request_id));
 
-          // Credit benevolence_wallet for the helper
-          // (benevolence_wallet = goodwill pot: pledges, sponsorships, tips — NOT job earnings)
+          // benevolence_wallet = goodwill pot (pledges, sponsorships, tips — NOT job earnings)
           await db
             .update(usersTable)
             .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${amount}` })
             .where(eq(usersTable.id, txRow.helper_id));
 
-          // Ledger: helper received a pledge
           await db.insert(transactionsTable).values({
             user_id: txRow.helper_id,
             request_id: txRow.request_id,
@@ -102,7 +103,6 @@ router.post("/stripe/webhook", async (req, res) => {
             description: "Niakofa contribution (Stripe)",
           });
 
-          // Ledger: requester sent a pledge
           if (txRow.requester_id) {
             await db.insert(transactionsTable).values({
               user_id: txRow.requester_id,
@@ -113,7 +113,6 @@ router.post("/stripe/webhook", async (req, res) => {
             });
           }
 
-          // Fetch the request title so the NotificationsDrawer can render it
           let requestTitle = "a community request";
           try {
             const [reqRow] = await db
@@ -122,7 +121,7 @@ router.post("/stripe/webhook", async (req, res) => {
               .where(eq(requestsTable.id, txRow.request_id))
               .limit(1);
             if (reqRow?.title) requestTitle = reqRow.title;
-          } catch { /* non-fatal */ }
+          } catch { /* non-fatal — title is cosmetic */ }
 
           broadcast({
             type: "pledge_paid",
@@ -136,7 +135,6 @@ router.post("/stripe/webhook", async (req, res) => {
             },
           });
 
-          // Push notification to the helper so they know money arrived
           sendPushToUser(txRow.helper_id, {
             title: "💙 Niakofa Received",
             body: `$${amount.toFixed(2)} was paid forward for: "${requestTitle}". Check your Goodwill Fund.`,
@@ -148,20 +146,36 @@ router.post("/stripe/webhook", async (req, res) => {
             payload: { paymentIntentId: pi.id, amount: pi.amount / 100 },
           });
         }
-        break;
+      } catch (err) {
+        logger.error(
+          { err, eventId: event.id, paymentIntentId: pi.id, amountCents: pi.amount },
+          "Stripe webhook: payment_intent.succeeded handler failed",
+        );
+        processingErrors.push({ case: event.type, message: err instanceof Error ? err.message : String(err) });
       }
+      break;
+    }
 
-      case "payment_intent.payment_failed": {
-        const pi = event.data.object as Stripe.PaymentIntent;
+    case "payment_intent.payment_failed": {
+      const pi = event.data.object as Stripe.PaymentIntent;
+      try {
         await db
           .update(paymentTransactionsTable)
           .set({ state: "failed", updated_at: new Date() })
           .where(eq(paymentTransactionsTable.stripe_payment_intent_id, pi.id));
-        break;
+      } catch (err) {
+        logger.error(
+          { err, eventId: event.id, paymentIntentId: pi.id },
+          "Stripe webhook: payment_intent.payment_failed handler failed",
+        );
+        processingErrors.push({ case: event.type, message: err instanceof Error ? err.message : String(err) });
       }
+      break;
+    }
 
-      case "transfer.created": {
-        const transfer = event.data.object as Stripe.Transfer;
+    case "transfer.created": {
+      const transfer = event.data.object as Stripe.Transfer;
+      try {
         if (transfer.destination) {
           await db
             .update(paymentTransactionsTable)
@@ -172,11 +186,19 @@ router.post("/stripe/webhook", async (req, res) => {
             })
             .where(eq(paymentTransactionsTable.stripe_transfer_id, transfer.id));
         }
-        break;
+      } catch (err) {
+        logger.error(
+          { err, eventId: event.id, transferId: transfer.id },
+          "Stripe webhook: transfer.created handler failed",
+        );
+        processingErrors.push({ case: event.type, message: err instanceof Error ? err.message : String(err) });
       }
+      break;
+    }
 
-      case "account.updated": {
-        const account = event.data.object as Stripe.Account;
+    case "account.updated": {
+      const account = event.data.object as Stripe.Account;
+      try {
         const [existing] = await db
           .select()
           .from(stripeAccountsTable)
@@ -201,28 +223,39 @@ router.post("/stripe/webhook", async (req, res) => {
             });
           }
         }
-        break;
+      } catch (err) {
+        logger.error(
+          { err, eventId: event.id, stripeAccountId: account.id },
+          "Stripe webhook: account.updated handler failed",
+        );
+        processingErrors.push({ case: event.type, message: err instanceof Error ? err.message : String(err) });
       }
-
-      default:
-        break;
+      break;
     }
-  } catch (err) {
-    logger.error({ err, eventType: event.type }, "Error processing Stripe webhook event");
+
+    default:
+      logger.debug({ eventId: event.id, type: event.type }, "Stripe webhook: unhandled event type (ignored)");
+      break;
+  }
+
+  // Always return 200 — Stripe considers non-2xx a delivery failure and will retry.
+  // Include processing errors in the response body for observability without causing retries.
+  if (processingErrors.length > 0) {
+    logger.warn({ processingErrors, eventId: event.id }, "Stripe webhook processed with errors");
+    return res.json({ received: true, warnings: processingErrors });
   }
 
   return res.json({ received: true });
 });
 
 // ── PAYMENT INTENT (Phase 1 — immediate pay) ────────────────────────────────
-router.post("/stripe/payment-intent", paymentLimiter, async (req, res) => {
+router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId"), paymentLimiter, async (req, res) => {
   if (!stripeRequired(res)) return;
 
-  const { requestId, amount, helperId, requesterId, paymentType } = req.body as {
+  const { requestId, amount, helperId, paymentType } = req.body as {
     requestId: number;
     amount: number;
     helperId?: number;
-    requesterId?: number;
     paymentType?: "immediate" | "pay_it_forward";
   };
 
@@ -249,7 +282,7 @@ router.post("/stripe/payment-intent", paymentLimiter, async (req, res) => {
     metadata: {
       requestId: requestId.toString(),
       helperId: helperId?.toString() ?? "",
-      requesterId: requesterId?.toString() ?? "",
+      requesterId: (req as any).authenticatedUserId.toString(),
       paymentType: paymentType ?? "immediate",
     },
     automatic_payment_methods: { enabled: true },
@@ -262,7 +295,7 @@ router.post("/stripe/payment-intent", paymentLimiter, async (req, res) => {
     .values({
       request_id: requestId,
       helper_id: helperId ?? null,
-      requester_id: requesterId ?? 0,
+      requester_id: (req as any).authenticatedUserId,
       amount,
       state: "authorized",
       payment_type: paymentType ?? "immediate",
@@ -278,7 +311,7 @@ router.post("/stripe/payment-intent", paymentLimiter, async (req, res) => {
 });
 
 // ── STRIPE CONNECT ONBOARDING ───────────────────────────────────────────────
-router.post("/stripe/connect/onboard", paymentLimiter, async (req, res) => {
+router.post("/stripe/connect/onboard", requireAuth, requireOwnership("userId"), paymentLimiter, async (req, res) => {
   if (!stripeRequired(res)) return;
 
   const { userId } = req.body as { userId: number };

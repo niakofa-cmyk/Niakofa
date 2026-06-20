@@ -3,7 +3,9 @@ import { useLocation } from "wouter";
 import type { User } from "@workspace/api-client-react";
 import { useUpdateUserLocation, useUpdateHelperMode } from "@workspace/api-client-react";
 import { useWebSocket } from "./useWebSocket";
+import { wsStart, wsRegister, wsUnregister } from "./wsClient";
 import { GratitudeModal } from "../components/GratitudeModal";
+import { clearToken } from "./auth";
 
 interface Location {
   lat: number;
@@ -13,9 +15,12 @@ interface Location {
   accuracy?: number | null;
 }
 
+const LAST_LOCATION_KEY = "niakofa_last_location";
+
 interface AppContextType {
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
+  logout: () => void;
   helperModeActive: boolean;
   setHelperModeActive: (active: boolean) => void;
   myLocation: Location | null;
@@ -52,8 +57,18 @@ function emaSmooth(prev: number, next: number, alpha = 0.3): number {
   return alpha * next + (1 - alpha) * prev;
 }
 
+// Load last-known location from localStorage (avoids hardcoded default)
+function loadLastLocation(): Location | null {
+  try {
+    const stored = localStorage.getItem(LAST_LOCATION_KEY);
+    if (stored) return JSON.parse(stored) as Location;
+  } catch {}
+  return null;
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+  // ── All useState calls first ─────────────────────────────────────────────
+  const [currentUser, setCurrentUserState] = useState<User | null>(() => {
     try {
       const stored = localStorage.getItem("niakofa_user");
       if (stored) return JSON.parse(stored) as User;
@@ -63,15 +78,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [location, setLocation] = useLocation();
 
-  // Redirect to login if no user — except already on /login
-  useEffect(() => {
-    if (!currentUser && location !== "/login") {
-      setLocation("/login");
-    }
-  }, [currentUser, location, setLocation]);
-
   const [helperModeActive, setHelperModeActiveState] = useState(false);
-  const [myLocation, setMyLocation] = useState<Location | null>({ lat: 32.75, lng: -97.33 });
+  // Use last-known location from localStorage; fall back to null (not a hardcoded city)
+  const [myLocation, setMyLocation] = useState<Location | null>(loadLastLocation);
   const [gratitudePrompt, setGratitudePrompt] = useState<{
     requestId: number;
     requestTitle: string;
@@ -83,18 +92,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   const [activeRequestId, setActiveRequestId] = useState<number | null>(null);
 
-  // Refs for GPS broadcasting (avoids stale closures)
-  const locationRef = useRef<Location | null>({ lat: 32.75, lng: -97.33 });
+  // ── All useRef calls ─────────────────────────────────────────────────────
+  const locationRef = useRef<Location | null>(loadLastLocation());
   const prevBroadcastRef = useRef<Location | null>(null);
   const prevLocationRef = useRef<Location | null>(null);
   const smoothedRef = useRef<{ lat: number; lng: number } | null>(null);
 
+  // ── Custom hooks ─────────────────────────────────────────────────────────
   const updateLocation = useUpdateUserLocation();
   const updateHelperMode = useUpdateHelperMode();
 
+  // ── Centralized setCurrentUser — persists to localStorage ────────────────
+  const setCurrentUser = (user: User | null) => {
+    setCurrentUserState(user);
+    if (user) {
+      localStorage.setItem("niakofa_user", JSON.stringify(user));
+    } else {
+      localStorage.removeItem("niakofa_user");
+    }
+  };
+
+  // ── Centralized logout — clears all auth state ───────────────────────────
+  const logout = () => {
+    clearToken();
+    localStorage.removeItem("niakofa_user");
+    setCurrentUserState(null);
+    wsUnregister();
+    setLocation("/login");
+  };
+
+  // ── Non-hook helper ──────────────────────────────────────────────────────
   const setHelperModeActive = (active: boolean) => {
     setHelperModeActiveState(active);
-    setCurrentUser(u => u ? { ...u, helper_mode_active: active } : u);
+    setCurrentUserState(u => {
+      if (!u) return u;
+      const updated = { ...u, helper_mode_active: active };
+      localStorage.setItem("niakofa_user", JSON.stringify(updated));
+      return updated;
+    });
     if (currentUser) {
       updateHelperMode.mutate(
         { id: currentUser.id, data: { active } },
@@ -103,8 +138,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // ── useWebSocket subscriptions ────────────────────────────────────────────
+
+  // Listen for helper application approval/denial — update the current user in real-time
+  useWebSocket("helper_application_approved", (event) => {
+    const p = event.payload as { user_id: number; decision: string };
+    if (currentUser && currentUser.id === p.user_id) {
+      const updated = { ...currentUser, helper_status: "approved" as const, is_helper: true };
+      setCurrentUser(updated);
+      import("sonner").then(({ toast }) => {
+        toast.success("🎉 You're approved as a helper!", {
+          description: "Enable Helper Mode in your profile to start accepting requests.",
+          duration: 8000,
+        });
+      }).catch(() => {});
+    }
+  });
+
+  useWebSocket("helper_application_denied", (event) => {
+    const p = event.payload as { user_id: number; decision: string };
+    if (currentUser && currentUser.id === p.user_id) {
+      const updated = { ...currentUser, helper_status: "denied" as const, is_helper: false };
+      setCurrentUser(updated);
+      import("sonner").then(({ toast }) => {
+        toast.error("Helper application update", {
+          description: "Your application was not approved. Check your email for details.",
+          duration: 8000,
+        });
+      }).catch(() => {});
+    }
+  });
+
   // Show gratitude prompt when the current user's request is completed
-  // Fixed: useWebSocket now supports (eventType, handler) overload
   useWebSocket("new_gratitude_prompt", (event) => {
     const p = event.payload as {
       request_id: number;
@@ -126,9 +191,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   });
 
+  // ── All useEffect calls last ──────────────────────────────────────────────
+
+  // Redirect to login if no user — except already on /login
+  useEffect(() => {
+    if (!currentUser && location !== "/login") {
+      setLocation("/login");
+    }
+  }, [currentUser, location, setLocation]);
+
   // GPS watchPosition — high-accuracy continuous stream
   useEffect(() => {
     if (!navigator.geolocation) return;
+
+    const gpsOpts: PositionOptions = {
+      enableHighAccuracy: true,
+      timeout: activeRequestId ? 7000 : 10000,
+      maximumAge: activeRequestId ? 1000 : 5000,
+    };
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
@@ -152,7 +232,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         // Smooth lat/lng with EMA to reduce GPS jitter
-        // alpha = 0.4: responsive but smooth (lower = smoother, higher = more responsive)
         const alpha = 0.4;
         const smoothed = smoothedRef.current
           ? {
@@ -170,29 +249,58 @@ export function AppProvider({ children }: { children: ReactNode }) {
           accuracy: raw.accuracy,
         };
 
-        prevLocationRef.current = raw; // raw for heading calc
+        prevLocationRef.current = raw;
         locationRef.current = newLoc;
         setMyLocation(newLoc);
+
+        // Persist last-known location so next session starts near here
+        try {
+          localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify({ lat: smoothed.lat, lng: smoothed.lng }));
+        } catch {}
       },
-      () => {},
-      {
-        enableHighAccuracy: true,
-        timeout: 8000,
-        maximumAge: 1000, // accept positions up to 1s old
-      }
+      async (err) => {
+        const msgs: Record<number, string> = {
+          1: "Location access denied. Enable it in your browser settings to use navigation.",
+          2: "Location unavailable. Move to an open area or check your device settings.",
+          3: "Location request timed out. Check your GPS signal.",
+        };
+        const msg = msgs[err.code] ?? "Unable to determine your location.";
+        const { toast: sonnerToast } = await import("sonner");
+        sonnerToast.warning("GPS issue", { description: msg, id: "gps-error", duration: 8000 });
+
+        // IP-based geolocation fallback (very coarse, ~city-level)
+        if (err.code !== 1 && !locationRef.current) {
+          try {
+            const ipRes = await fetch("https://ipapi.co/json/");
+            if (ipRes.ok) {
+              const ipData = await ipRes.json() as { latitude?: number; longitude?: number };
+              if (ipData.latitude && ipData.longitude) {
+                const fallbackLoc: Location = { lat: ipData.latitude, lng: ipData.longitude };
+                locationRef.current = fallbackLoc;
+                setMyLocation(fallbackLoc);
+                sonnerToast.info("Using approximate location", {
+                  description: "GPS unavailable — using IP-based location. Accuracy is limited.",
+                  id: "ip-fallback",
+                  duration: 6000,
+                });
+              }
+            }
+          } catch {}
+        }
+      },
+      gpsOpts
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, []);
+  // Re-run when activeRequestId changes so GPS opts tighten/loosen accordingly
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRequestId]);
 
-  // Smart GPS broadcast loop:
-  // - 2s when actively navigating (activeRequestId set)
-  // - 15s when helper mode on (per spec requirement for live map dots)
-  // - 30s otherwise (battery conservation)
-  // - Skip broadcast if position hasn't moved enough (threshold-gated)
+  // Smart GPS broadcast loop — adaptive intervals based on activity state
   useEffect(() => {
     if (!currentUser) return;
 
+    // Adaptive polling: most aggressive during active request, light otherwise
     const interval = activeRequestId ? 2000 : helperModeActive ? 15000 : 30000;
     const MOVEMENT_THRESHOLD_M = activeRequestId ? 2 : helperModeActive ? 3 : 10;
 
@@ -204,26 +312,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const movedEnough = !prev || distanceMeters(prev, loc) >= MOVEMENT_THRESHOLD_M;
       if (!movedEnough) return;
 
+      // Speed-based stationary suppression: skip broadcast when helper is
+      // stationary (speed < 0.5 m/s ≈ 1mph) and NOT in an active request.
+      // This reduces battery drain during idle waits.
+      if (!activeRequestId && loc.speed != null && loc.speed < 0.5) return;
+
       prevBroadcastRef.current = loc;
-      updateLocation.mutate({
-        id: currentUser.id,
-        data: {
-          lat: loc.lat,
-          lng: loc.lng,
-          heading: loc.heading ?? null,
-          speed: loc.speed ?? null,
+      updateLocation.mutate(
+        {
+          id: currentUser.id,
+          data: {
+            lat: loc.lat,
+            lng: loc.lng,
+            heading: loc.heading ?? null,
+            speed: loc.speed ?? null,
+          },
         },
-      });
+        { onError: () => {} }
+      );
     }, interval);
 
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id, helperModeActive, activeRequestId]);
 
+  // Start the shared WS singleton and register/unregister as the user changes.
+  // This effect is LAST so it never disturbs the hook order above.
+  useEffect(() => {
+    wsStart();
+    if (currentUser) {
+      wsRegister(currentUser.id);
+    } else {
+      wsUnregister();
+    }
+  }, [currentUser?.id]);
+
   return (
     <AppContext.Provider value={{
       currentUser,
       setCurrentUser,
+      logout,
       helperModeActive,
       setHelperModeActive,
       myLocation,

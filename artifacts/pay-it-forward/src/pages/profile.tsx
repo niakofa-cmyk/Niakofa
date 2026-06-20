@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { usePushNotifications } from "@/lib/usePushNotifications";
 import {
@@ -6,7 +6,7 @@ import {
   DollarSign, Gift, Clock, ChevronRight, AlertCircle, CheckCircle2,
   ExternalLink, BookOpen, Bell, Lock, Trash2, X, Phone, FileText,
   Eye, Users, Info, ChevronLeft, Flag,
-  Camera, Sliders, CreditCard, Activity, Loader2, Building2
+  Camera, Sliders, CreditCard, Activity, Loader2, Building2, Award, Wrench
 } from "lucide-react";
 import { ReportModal } from "@/components/ReportModal";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import type { Transaction } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TrustTierBadge, getTrustTier } from "@/components/TrustTierBadge";
 import { IdentityVerificationCard } from "@/components/IdentityVerificationCard";
+import { useQueryClient } from "@tanstack/react-query";
 
 type ProfileTab = "overview" | "history" | "settings";
 
@@ -84,7 +85,7 @@ function ModalShell({ title, icon: Icon, onClose, children }: {
   );
 }
 
-function DeleteAccountDialog({ onClose }: { onClose: () => void }) {
+function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId: number }) {
   const [confirmed, setConfirmed] = useState(false);
   return (
     <ModalShell title="Delete Account" icon={Trash2} onClose={onClose}>
@@ -124,8 +125,27 @@ function DeleteAccountDialog({ onClose }: { onClose: () => void }) {
           <Button
             variant="destructive"
             disabled={!confirmed}
-            onClick={() => {
-              toast({ title: "Deletion request submitted", description: "You will receive a confirmation email within 24 hours." });
+            onClick={async () => {
+              if (!userId) return;
+              try {
+                const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+                const res = await fetch(`${base}/api/users/${userId}`, {
+                  method: "DELETE",
+                  headers: { "Content-Type": "application/json" },
+                });
+                if (!res.ok) {
+                  const err = await res.json() as { error?: string };
+                  toast({ title: err.error ?? "Failed to delete account", variant: "destructive" });
+                  return;
+                }
+                toast({ title: "Account deleted successfully", description: "You will be logged out." });
+                localStorage.removeItem("niakofa_token");
+                localStorage.removeItem("niakofa_user");
+                localStorage.removeItem("niakofa_last_location");
+                window.location.href = "/";
+              } catch {
+                toast({ title: "Could not delete account — please try again", variant: "destructive" });
+              }
               onClose();
             }}
           >
@@ -716,20 +736,157 @@ const CATEGORY_LABELS: Record<string, string> = {
   housing: "Housing",
 };
 
+// ── Recent Helpers Section ─────────────────────────────────────────────────
+
+interface CompletedRequest {
+  id: number;
+  title: string;
+  helper_id: number | null;
+  helper_name: string | null;
+  helper_avatar?: string | null;
+  completed_at: string | null;
+  category: string;
+}
+
+function RecentHelpersSection({
+  transactions,
+  onNavigate,
+}: {
+  transactions: Transaction[];
+  onNavigate: (path: string) => void;
+}) {
+  const [helpers, setHelpers] = useState<CompletedRequest[]>([]);
+  const [loading, setLoading] = useState(false);
+  const { currentUser } = useAppContext();
+  const userId = currentUser?.id;
+
+  useEffect(() => {
+    if (!userId) return;
+    setLoading(true);
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/requests?requester_id=${userId}&status=completed&limit=6`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((rows: CompletedRequest[]) => {
+        // Deduplicate by helper_id, only include rows where a helper completed the job
+        const seen = new Set<number>();
+        const unique: CompletedRequest[] = [];
+        for (const r of rows) {
+          if (r.helper_id && !seen.has(r.helper_id)) {
+            seen.add(r.helper_id);
+            unique.push(r);
+          }
+        }
+        setHelpers(unique.slice(0, 5));
+      })
+      .catch(() => setHelpers([]))
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  // Count of "helped me" transactions (pledge_received = pay-it-forward chain coming back)
+  const helpReceived = transactions.filter(t => t.type === "pledge_received").length;
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-4">
+      <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
+        <Users className="w-3.5 h-3.5" /> Helpers Who've Helped You
+      </h3>
+
+      {loading && (
+        <div className="flex items-center justify-center py-4 gap-2 text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-xs">Loading…</span>
+        </div>
+      )}
+
+      {!loading && helpers.length === 0 && (
+        <div className="bg-muted/40 border border-border/60 rounded-xl p-4 text-center">
+          <div className="text-2xl mb-2">💙</div>
+          <div className="font-bold text-sm">No completed requests yet</div>
+          <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
+            Helpers who complete your requests will appear here.
+          </div>
+        </div>
+      )}
+
+      {!loading && helpers.length > 0 && (
+        <div className="space-y-2">
+          {helpers.map(r => (
+            <button
+              key={r.id}
+              onClick={() => r.helper_id && onNavigate(`/helper/${r.helper_id}`)}
+              className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-muted/30 hover:bg-muted/60 border border-border/50 hover:border-primary/30 transition-all text-left group"
+            >
+              <div className="w-9 h-9 rounded-full bg-muted border border-border flex items-center justify-center shrink-0 overflow-hidden">
+                {r.helper_avatar ? (
+                  <img src={r.helper_avatar} alt={r.helper_name ?? "Helper"} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-xs font-black text-muted-foreground">
+                    {r.helper_name?.[0] ?? "?"}
+                  </span>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm truncate group-hover:text-primary transition-colors">
+                  {r.helper_name ?? "Anonymous Helper"}
+                </div>
+                <div className="text-[10px] text-muted-foreground truncate capitalize">
+                  {r.category.replace(/_/g, " ")} · {r.completed_at ? fmtDate(r.completed_at) : "Completed"}
+                </div>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+            </button>
+          ))}
+          {helpReceived > 0 && (
+            <div className="text-[10px] text-muted-foreground text-center pt-1">
+              You've received help {helpReceived} time{helpReceived !== 1 ? "s" : ""} through Niakofa
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
   const [, setLocation] = useLocation();
-  const { currentUser, helperModeActive, setHelperModeActive, myLocation } = useAppContext();
+  const { currentUser, helperModeActive, setHelperModeActive, myLocation, logout } = useAppContext();
   const [tab, setTab] = useState<ProfileTab>("overview");
 
   // Settings dialog state
   const [openDialog, setOpenDialog] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [isVerifyingIdentity, setIsVerifyingIdentity] = useState(false);
+  const queryClient = useQueryClient();
 
-  const userId = currentUser?.id ?? 0;
-  const { data: transactions = [], isLoading: txLoading } = useGetUserTransactions(userId, {
-    query: { enabled: !!userId, queryKey: getGetUserTransactionsQueryKey(userId), staleTime: 30000 }
+  const userId = currentUser?.id;
+
+  const startIdentityVerification = useCallback(async () => {
+    if (!userId) return;
+    setIsVerifyingIdentity(true);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const res = await fetch(`${base}/api/verification/identity/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        toast({ title: data.error ?? "Verification unavailable", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Verification failed — please try again", variant: "destructive" });
+    } finally {
+      setIsVerifyingIdentity(false);
+    }
+  }, [userId]);
+
+  const { data: transactions = [], isLoading: txLoading } = useGetUserTransactions(userId ?? 0, {
+    query: { enabled: !!userId, queryKey: getGetUserTransactionsQueryKey(userId ?? 0), staleTime: 30000 }
   });
 
   const { data: civicData, loading: civicLoading } = useCivicResources(myLocation?.lat, myLocation?.lng);
@@ -869,6 +1026,46 @@ export default function ProfileScreen() {
               </div>
             </div>
 
+            {/* Achievement Badges — §3.3.1 Gamification */}
+            {(() => {
+              const hc = currentUser.help_count ?? 0;
+              const ts = currentUser.trust_score ?? 0;
+              const gs = currentUser.goodwill_score ?? 0;
+              const earned = [
+                hc >= 1   && { id: "first",    icon: "🌱", label: "First Help",       desc: "Completed your first request" },
+                hc >= 5   && { id: "five",     icon: "💙", label: "5 Helped",         desc: "Helped 5 neighbors" },
+                hc >= 25  && { id: "pillar",   icon: "🏛️", label: "Community Pillar", desc: "25 completed requests" },
+                hc >= 100 && { id: "legend",   icon: "🌟", label: "Legend",           desc: "100 requests fulfilled" },
+                ts >= 80  && { id: "trusted",  icon: "🛡️", label: "Trusted",          desc: "Trust score above 80%" },
+                ts >= 95  && { id: "guardian", icon: "⭐", label: "Guardian",         desc: "Trust score above 95%" },
+                gs >= 10  && { id: "goodwill", icon: "🙏", label: "Goodwill Hero",    desc: "10+ goodwill points earned" },
+                currentUser.is_helper && { id: "helper", icon: "🤝", label: "Helper",  desc: "Registered community helper" },
+              ].filter(Boolean) as { id: string; icon: string; label: string; desc: string }[];
+              if (earned.length === 0) return null;
+              return (
+                <div className="bg-card border border-border rounded-2xl p-4">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
+                    <Star className="w-3.5 h-3.5 text-yellow-400" /> Achievements
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {earned.map(b => (
+                      <div
+                        key={b.id}
+                        title={b.desc}
+                        className="flex items-center gap-1.5 bg-primary/10 border border-primary/20 rounded-full px-3 py-1.5 cursor-default"
+                      >
+                        <span className="text-sm">{b.icon}</span>
+                        <span className="text-xs font-bold">{b.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {earned.length < 4 && (
+                    <p className="text-[10px] text-muted-foreground mt-3">Keep helping to unlock more achievements</p>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Wallet Summary */}
             <button
               onClick={() => setLocation("/wallet")}
@@ -887,35 +1084,113 @@ export default function ProfileScreen() {
               </div>
             </button>
 
-            {/* Helper Mode */}
-            <div className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between">
-              <div>
-                <div className="font-bold flex items-center gap-2">
-                  Helper Mode
-                  {helperModeActive && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
-                </div>
-                <p className="text-sm text-muted-foreground">Receive nearby help requests</p>
-              </div>
-              <Switch
-                checked={helperModeActive}
-                onCheckedChange={setHelperModeActive}
-                className="data-[state=checked]:bg-green-500 scale-125"
-              />
-            </div>
+            {/* Helper Performance Dashboard — §3.1.3, §4.7 */}
+            {currentUser.is_helper && (
+              <div className="bg-card border border-border rounded-2xl p-4">
+                <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-primary" /> Helper Performance
+                </h3>
 
-            {/* Community Connections — honest placeholder */}
-            <div className="bg-card border border-border rounded-2xl p-4">
-              <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5" /> Saved Helpers
-              </h3>
-              <div className="bg-muted/40 border border-border/60 rounded-xl p-4 text-center">
-                <div className="text-2xl mb-2">💙</div>
-                <div className="font-bold text-sm">Coming Soon</div>
-                <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                  Save trusted helpers from your past help exchanges. Feature launching soon.
+                {/* Anchor Helper badge — 50+ helps, 97%+ trust score */}
+                {(currentUser.help_count ?? 0) >= 50 && (currentUser.trust_score ?? 0) >= 97 && (
+                  <div className="mb-3 flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
+                    <span className="text-lg">⚓</span>
+                    <div className="flex-1">
+                      <div className="text-xs font-black text-amber-400">Anchor Helper</div>
+                      <div className="text-[10px] text-muted-foreground">Elite community pillar · Mentor status</div>
+                    </div>
+                    <Award className="w-3.5 h-3.5 text-amber-400" />
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="bg-muted/40 rounded-xl p-3 text-center">
+                    <div className="text-xl font-black">{currentUser.help_count ?? 0}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Completed</div>
+                  </div>
+                  <div className="bg-muted/40 rounded-xl p-3 text-center">
+                    <div className="text-xl font-black text-primary">{(currentUser.trust_score ?? 0).toFixed(0)}%</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Trust Score</div>
+                  </div>
+                  <div className="bg-muted/40 rounded-xl p-3 text-center">
+                    <div className="text-xl font-black text-yellow-400">{currentUser.goodwill_score ?? 0}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Goodwill Pts</div>
+                  </div>
+                  <div className="bg-muted/40 rounded-xl p-3 text-center">
+                    <div className="text-xl font-black text-green-400">${(currentUser.benevolence_wallet ?? 0).toFixed(0)}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Earned</div>
+                  </div>
                 </div>
+                {/* Trust tier progress */}
+                {(() => {
+                  const hc = currentUser.help_count ?? 0;
+                  const milestones = [5, 25, 100, 250];
+                  const next = milestones.find(m => m > hc);
+                  const prev = milestones.filter(m => m <= hc).at(-1) ?? 0;
+                  if (!next) return <p className="text-[10px] text-primary font-bold mt-3 text-center">🌟 Max tier achieved!</p>;
+                  const pct = Math.round(((hc - prev) / (next - prev)) * 100);
+                  return (
+                    <div className="mt-3">
+                      <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+                        <span>{hc} helps completed</span>
+                        <span>{next - hc} more to next milestone</span>
+                      </div>
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
-            </div>
+            )}
+
+            {/* Helper Mode — only available to approved helpers */}
+            {(() => {
+              const helperStatus = (currentUser as any).helper_status as string | null | undefined;
+              if (helperStatus === "approved") {
+                return (
+                  <div className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between">
+                    <div>
+                      <div className="font-bold flex items-center gap-2">
+                        Helper Mode
+                        {helperModeActive && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
+                      </div>
+                      <p className="text-sm text-muted-foreground">Receive nearby help requests</p>
+                    </div>
+                    <Switch
+                      checked={helperModeActive}
+                      onCheckedChange={setHelperModeActive}
+                      className="data-[state=checked]:bg-green-500 scale-125"
+                    />
+                  </div>
+                );
+              }
+              if (helperStatus === "pending") {
+                return (
+                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 flex items-start gap-3">
+                    <Clock className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold text-yellow-300 text-sm">Helper Application Pending</div>
+                      <p className="text-xs text-muted-foreground mt-0.5">Your application is under admin review. You'll be notified once approved.</p>
+                    </div>
+                  </div>
+                );
+              }
+              if (helperStatus === "denied") {
+                return (
+                  <div className="bg-destructive/10 border border-destructive/30 rounded-2xl p-4 flex items-start gap-3">
+                    <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold text-destructive text-sm">Helper Application Not Approved</div>
+                      <p className="text-xs text-muted-foreground mt-0.5">Contact help@niakofa.community if you have questions about your application.</p>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
+            {/* Recent Helpers — derived from transaction history */}
+            <RecentHelpersSection transactions={transactions} onNavigate={setLocation} />
 
             <div className="bg-card/50 border border-border/50 rounded-2xl p-4">
               <p className="text-xs text-muted-foreground leading-relaxed text-center">
@@ -1001,8 +1276,8 @@ export default function ProfileScreen() {
                 {[
                   { label: "Phone number", done: true, desc: "Verified" },
                   { label: "Email address", done: true, desc: "Verified" },
-                  { label: "Government ID", done: currentUser.identity_verified, desc: currentUser.identity_verified ? "Verified" : "Required for emergency helper status" },
-                  { label: "Background check", done: currentUser.background_check_status === "completed", desc: currentUser.background_check_status === "completed" ? "Completed" : "Required for Trusted Helper badge" },
+                  { label: "Government ID", done: (currentUser as any).identity_verified, desc: (currentUser as any).identity_verified ? "Verified" : "Required for emergency helper status" },
+                  { label: "Background check", done: (currentUser as any).background_check_status === "completed", desc: (currentUser as any).background_check_status === "completed" ? "Completed" : "Required for Trusted Helper badge" },
                 ].map(item => (
                   <div key={item.label} className="flex items-center justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -1016,12 +1291,10 @@ export default function ProfileScreen() {
                           variant="outline"
                           size="sm"
                           className="text-xs h-7 shrink-0"
-                          onClick={() => toast({
-                            title: `${item.label} Verification`,
-                            description: "Identity verification will be available in the next update. Email verify@niakofa.community to be notified.",
-                          })}
+                          onClick={startIdentityVerification}
+                          disabled={isVerifyingIdentity}
                         >
-                          Verify
+                          {isVerifyingIdentity ? "Starting…" : "Verify"}
                         </Button>
                       )
                     }
@@ -1153,7 +1426,7 @@ export default function ProfileScreen() {
               </div>
               <div className="divide-y divide-border">
                 <button
-                  onClick={() => setOpenDialog("notification_prefs")}
+                  onClick={() => setLocation("/settings?section=notifications")}
                   className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-2">
@@ -1163,7 +1436,7 @@ export default function ProfileScreen() {
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
                 <button
-                  onClick={() => setOpenDialog("account_privacy")}
+                  onClick={() => setLocation("/settings?section=privacy")}
                   className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-2">
@@ -1173,7 +1446,7 @@ export default function ProfileScreen() {
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
                 <button
-                  onClick={() => setOpenDialog("delete_account")}
+                  onClick={() => setLocation("/settings?section=delete-account")}
                   className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors text-destructive"
                 >
                   <div className="flex items-center gap-2">
@@ -1207,6 +1480,20 @@ export default function ProfileScreen() {
               </div>
             </div>
 
+            {/* Sign Out */}
+            <div className="bg-card border border-border rounded-2xl overflow-hidden">
+              <button
+                onClick={() => {
+                  toast({ title: "Signed out" });
+                  logout();
+                }}
+                className="w-full flex items-center gap-3 p-4 text-sm text-destructive hover:bg-destructive/5 transition-colors"
+              >
+                <Lock className="w-4 h-4" />
+                <span className="font-semibold">Sign Out</span>
+              </button>
+            </div>
+
             {/* Helper Profile — service radius, specialties, payout setup */}
             {currentUser.is_helper && (
               <div className="bg-card border border-border rounded-2xl overflow-hidden">
@@ -1218,7 +1505,7 @@ export default function ProfileScreen() {
                 </div>
                 <div className="divide-y divide-border">
                   <button
-                    onClick={() => setOpenDialog("helper_settings")}
+                    onClick={() => setLocation("/settings?section=helper-settings")}
                     className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-center gap-2">
@@ -1228,7 +1515,7 @@ export default function ProfileScreen() {
                     <ChevronRight className="w-4 h-4 text-muted-foreground" />
                   </button>
                   <button
-                    onClick={() => setOpenDialog("payout_setup")}
+                    onClick={() => setLocation("/settings?section=payout-setup")}
                     className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-center gap-2">
@@ -1245,7 +1532,7 @@ export default function ProfileScreen() {
       </div>
 
       {/* ── Dialogs ── */}
-      {openDialog === "delete_account" && <DeleteAccountDialog onClose={closeDialog} />}
+      {openDialog === "delete_account" && <DeleteAccountDialog onClose={closeDialog} userId={userId ?? 0} />}
       {openDialog === "notification_prefs" && <NotificationPrefsDialog onClose={closeDialog} userId={currentUser.id} />}
       {openDialog === "account_privacy" && <AccountPrivacyDialog onClose={closeDialog} userId={currentUser.id} />}
       {openDialog === "helper_settings" && currentUser.is_helper && (

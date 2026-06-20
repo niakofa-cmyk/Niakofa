@@ -1,9 +1,9 @@
-import { useState, type ReactElement } from "react";
+import { useState, useEffect, type ReactElement } from "react";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle } from "lucide-react";
+import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,8 @@ import { useCreateRequest, getGetRequestsQueryKey, getGetNearbyRequestsQueryKey 
 import { useAppContext } from "@/lib/AppContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
+import "mapbox-gl/dist/mapbox-gl.css";
+import MapboxMap, { Marker } from "react-map-gl/mapbox";
 
 type PaymentType = "immediate" | "pay_it_forward" | "goodwill";
 
@@ -75,10 +77,24 @@ const PAYMENT_OPTIONS: { type: PaymentType; label: string; desc: string; color: 
 const COMMUNITY_CATS = CATEGORIES.filter(c => c.group === "Community");
 const BUSINESS_CATS = CATEGORIES.filter(c => c.group === "Business");
 
+const DRAFT_KEY = "niakofa_request_draft";
+
 interface PendingPayment {
   clientSecret: string;
   amount: number;
   requestTitle: string;
+}
+
+function checkWebGL(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    return !!(
+      window.WebGLRenderingContext &&
+      (canvas.getContext("webgl") || canvas.getContext("experimental-webgl"))
+    );
+  } catch {
+    return false;
+  }
 }
 
 export default function NewRequestScreen() {
@@ -89,6 +105,12 @@ export default function NewRequestScreen() {
   const [paymentType, setPaymentType] = useState<PaymentType>("pay_it_forward");
   const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
   const [creatingPaymentIntent, setCreatingPaymentIntent] = useState(false);
+  const [webGLSupported] = useState(checkWebGL);
+  const [checklistItems, setChecklistItems] = useState<string[]>([]);
+  const [accessibilityNeeds, setAccessibilityNeeds] = useState<string[]>([]);
+  const [pinLocation, setPinLocation] = useState<{ lat: number; lng: number } | null>(
+    myLocation ? { lat: myLocation.lat, lng: myLocation.lng } : null
+  );
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -102,35 +124,89 @@ export default function NewRequestScreen() {
 
   const urgency = form.watch("urgency");
 
+  // Offline draft: restore on mount, auto-save on every change, clear on successful submit
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const vals = JSON.parse(saved) as Record<string, unknown>;
+        form.reset({
+          title:       String(vals.title ?? ""),
+          description: String(vals.description ?? ""),
+          category:    String(vals.category ?? "other"),
+          urgency:     (vals.urgency as "low" | "medium" | "high" | "emergency") ?? "medium",
+        });
+        toast({ title: "✏️ Draft restored", description: "Your previous unfinished request has been loaded." });
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const sub = form.watch(vals => {
+      if (vals.title) {
+        try { localStorage.setItem(DRAFT_KEY, JSON.stringify(vals)); } catch {}
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [form]);
+
+  // Sync pinLocation from GPS when it first becomes available
+  useEffect(() => {
+    if (myLocation && !pinLocation) {
+      setPinLocation({ lat: myLocation.lat, lng: myLocation.lng });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myLocation]);
+
   const finishAndNavigate = () => {
-    if (!myLocation) { setLocation("/"); return; }
     queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
-    queryClient.invalidateQueries({ queryKey: getGetNearbyRequestsQueryKey({ lat: myLocation.lat, lng: myLocation.lng }) });
+    if (myLocation) {
+      queryClient.invalidateQueries({ queryKey: getGetNearbyRequestsQueryKey({ lat: myLocation.lat, lng: myLocation.lng }) });
+    }
     setLocation("/");
   };
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    if (!currentUser || !myLocation) {
-      toast({ title: "Error", description: "Missing user or location data", variant: "destructive" });
+    if (!currentUser || !pinLocation) {
+      toast({ title: "Error", description: "Please confirm your pickup location on the map", variant: "destructive" });
       return;
     }
+
+    // Append checklist and accessibility needs to description
+    const extras: string[] = [];
+    const filledItems = checklistItems.filter(i => i.trim());
+    if (filledItems.length > 0) {
+      extras.push("Items needed:\n" + filledItems.map(i => `• ${i}`).join("\n"));
+    }
+    if (accessibilityNeeds.length > 0) {
+      const labels: Record<string, string> = {
+        wheelchair: "Wheelchair accessible location",
+        female_helper: "Prefer female helper",
+        pet_friendly: "Pet-friendly",
+        non_smoking: "Non-smoking",
+      };
+      extras.push("Needs: " + accessibilityNeeds.map(n => labels[n] ?? n).join(", "));
+    }
+    const fullDescription = [values.description, ...extras].filter(Boolean).join("\n\n");
 
     createMutation.mutate({
       data: {
         title: values.title,
-        description: values.description,
+        description: fullDescription || undefined,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         category: values.category as any,
         urgency: values.urgency as any,
         payment_type: paymentType,
         requester_id: currentUser.id,
-        lat: myLocation.lat,
-        lng: myLocation.lng,
+        lat: pinLocation.lat,
+        lng: pinLocation.lng,
         pay_it_forward_amount: values.pay_it_forward_amount,
         pledge_amount: values.pledge_amount,
       }
     }, {
       onSuccess: async (request) => {
+        localStorage.removeItem(DRAFT_KEY);
         toast({ title: "📍 Request posted!", description: "Nearby helpers have been notified in real time." });
 
         // ── Pay Now: create PaymentIntent and show Stripe checkout ──────────
@@ -182,7 +258,7 @@ export default function NewRequestScreen() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <div className="sticky top-0 z-10 bg-card border-b border-border p-4 pt-safe flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full">
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full" aria-label="Back to map">
           <ChevronLeft className="w-6 h-6" />
         </Button>
         <div>
@@ -281,7 +357,7 @@ export default function NewRequestScreen() {
                     <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Details (optional)</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Specific instructions, building code, accessibility needs..."
+                        placeholder="Specific instructions, building code, special considerations..."
                         className="bg-card border-border min-h-[90px] resize-none"
                         {...field}
                       />
@@ -290,6 +366,129 @@ export default function NewRequestScreen() {
                   </FormItem>
                 )}
               />
+
+              {/* Item Checklist — §3.1.4 Request specificity */}
+              {checklistItems.length > 0 || true ? (
+                <div>
+                  <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">Item Checklist (optional)</div>
+                  <div className="space-y-2">
+                    {checklistItems.map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={item}
+                          onChange={e => setChecklistItems(prev => prev.map((v, j) => j === i ? e.target.value : v))}
+                          placeholder={`Item ${i + 1}`}
+                          className="flex-1 bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-primary transition-colors"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setChecklistItems(prev => prev.filter((_, j) => j !== i))}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-muted hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-all"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {checklistItems.length < 8 && (
+                      <button
+                        type="button"
+                        onClick={() => setChecklistItems(prev => [...prev, ""])}
+                        className="flex items-center gap-1.5 text-xs text-primary/70 hover:text-primary transition-colors py-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Add item
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Accessibility Needs — §4.5 */}
+              <div>
+                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">Accessibility Needs</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: "wheelchair", label: "♿ Wheelchair access" },
+                    { id: "female_helper", label: "👩 Prefer female helper" },
+                    { id: "pet_friendly", label: "🐾 Pet-friendly" },
+                    { id: "non_smoking", label: "🚭 Non-smoking" },
+                  ].map(opt => (
+                    <label
+                      key={opt.id}
+                      className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all text-xs font-medium ${
+                        accessibilityNeeds.includes(opt.id)
+                          ? "border-primary/60 bg-primary/10 text-primary"
+                          : "border-border bg-card text-muted-foreground"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={accessibilityNeeds.includes(opt.id)}
+                        onChange={e => setAccessibilityNeeds(prev =>
+                          e.target.checked ? [...prev, opt.id] : prev.filter(v => v !== opt.id)
+                        )}
+                      />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── Location Picker ─────────────────────────────────────── */}
+              <div>
+                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5" />
+                  Pickup Location
+                  <span className="ml-1 text-[10px] text-muted-foreground/60 normal-case font-normal tracking-normal">Tap or drag pin to adjust</span>
+                </div>
+                <div className="relative rounded-xl overflow-hidden border border-border bg-card" style={{ height: 180 }}>
+                  {webGLSupported && pinLocation ? (
+                    <MapboxMap
+                      mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
+                      initialViewState={{ longitude: pinLocation.lng, latitude: pinLocation.lat, zoom: 14 }}
+                      style={{ width: "100%", height: "100%" }}
+                      mapStyle="mapbox://styles/mapbox/dark-v11"
+                      attributionControl={false}
+                      onClick={(e) => setPinLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng })}
+                    >
+                      <Marker
+                        longitude={pinLocation.lng}
+                        latitude={pinLocation.lat}
+                        anchor="bottom"
+                        draggable
+                        onDragEnd={(e) => setPinLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng })}
+                      >
+                        <div className="text-2xl drop-shadow-lg select-none">📍</div>
+                      </Marker>
+                    </MapboxMap>
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                      <MapPin className="w-8 h-8 text-primary" />
+                      <span className="text-xs">
+                        {pinLocation
+                          ? `${pinLocation.lat.toFixed(5)}, ${pinLocation.lng.toFixed(5)}`
+                          : "Waiting for GPS…"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center justify-between mt-1.5 min-h-[16px]">
+                  <span className="text-[10px] text-muted-foreground">
+                    {pinLocation ? `📍 ${pinLocation.lat.toFixed(5)}, ${pinLocation.lng.toFixed(5)}` : ""}
+                  </span>
+                  {myLocation && pinLocation &&
+                    (Math.abs(pinLocation.lat - myLocation.lat) > 0.00001 || Math.abs(pinLocation.lng - myLocation.lng) > 0.00001) && (
+                    <button
+                      type="button"
+                      onClick={() => setPinLocation({ lat: myLocation.lat, lng: myLocation.lng })}
+                      className="text-[10px] text-primary underline"
+                    >
+                      Reset to my GPS
+                    </button>
+                  )}
+                </div>
+              </div>
 
               {/* Three-Tier Payment Selector */}
               <div>
@@ -370,12 +569,12 @@ export default function NewRequestScreen() {
               <Button
                 type="submit"
                 className="w-full h-13 text-base font-black tracking-widest uppercase"
-                disabled={!myLocation || createMutation.isPending || creatingPaymentIntent}
+                disabled={!pinLocation || createMutation.isPending || creatingPaymentIntent}
               >
                 {createMutation.isPending || creatingPaymentIntent ? "Posting..." : "📍 Post Request"}
               </Button>
 
-              {!myLocation && (
+              {!pinLocation && (
                 <p className="text-xs text-yellow-500 text-center">Waiting for GPS to set your location...</p>
               )}
             </form>

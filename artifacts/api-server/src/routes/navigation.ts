@@ -4,6 +4,9 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
+const ALLOWED_PROFILES = ["driving", "walking", "cycling"] as const;
+type RoutingProfile = (typeof ALLOWED_PROFILES)[number];
+
 router.get("/navigation/route", async (req, res) => {
   const parsed = GetRouteQueryParams.safeParse({
     start_lat: parseFloat(req.query.start_lat as string),
@@ -14,11 +17,20 @@ router.get("/navigation/route", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "start_lat, start_lng, end_lat, end_lng required" });
 
   const { start_lat, start_lng, end_lat, end_lng } = parsed.data;
+
+  // Validate and sanitize routing profile — allowlist only, never interpolate user input directly
+  const rawProfile = req.query.profile as string | undefined;
+  const profile: RoutingProfile =
+    rawProfile && (ALLOWED_PROFILES as readonly string[]).includes(rawProfile)
+      ? (rawProfile as RoutingProfile)
+      : "driving";
+
   const token = process.env.VITE_MAPBOX_TOKEN;
   if (!token) return res.status(500).json({ error: "Mapbox token not configured" });
 
   try {
-    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${start_lng},${start_lat};${end_lng},${end_lat}?steps=true&geometries=geojson&access_token=${token}`;
+    const departAt = profile === "driving" ? `&depart_at=${new Date().toISOString()}&annotations=congestion` : "";
+    const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${start_lng},${start_lat};${end_lng},${end_lat}?steps=true&geometries=geojson&overview=full${departAt}&access_token=${token}`;
     const response = await fetch(url);
     const data = await response.json() as {
       routes?: Array<{
@@ -78,6 +90,7 @@ router.get("/navigation/route", async (req, res) => {
       initial_bearing: Math.round(initialBearing),
       speed_mph: Math.round(speedMph),
       waypoints: coords.length,
+      profile,
     });
   } catch (err) {
     logger.error({ err }, "Mapbox directions API error");

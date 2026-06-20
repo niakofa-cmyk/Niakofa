@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { requireAuth } from "../middlewares/auth";
+import { requireOwnership } from "../middlewares/authz";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import Stripe from "stripe";
@@ -13,7 +15,7 @@ const stripe = STRIPE_SK ? new Stripe(STRIPE_SK, { apiVersion: "2024-06-20" as S
 const APP_URL = process.env["APP_URL"] ?? "https://niakofa.com";
 
 // ── Stripe Identity verification session ─────────────────────────────────────
-router.post("/verification/identity/start", async (req, res) => {
+router.post("/verification/identity/start", requireAuth, async (req, res) => {
   const { user_id } = req.body as { user_id: number };
   if (!user_id) return res.status(400).json({ error: "user_id required" });
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
@@ -67,7 +69,7 @@ router.post("/verification/identity/webhook", async (req, res) => {
         })
         .where(eq(usersTable.id, userId));
 
-      broadcast({ type: "presence_update" as any, payload: { user_id: userId, identity_verified: true } });
+      broadcast({ type: "presence_update", payload: { user_id: userId, identity_verified: true } });
       logger.info({ user_id: userId }, "identity verified");
     }
   } else if (event.type === "identity.verification_session.requires_input") {
@@ -86,7 +88,7 @@ router.post("/verification/identity/webhook", async (req, res) => {
 // ── Passive safety check-in ───────────────────────────────────────────────────
 // Called periodically during active requests to confirm helper is safe
 router.post("/verification/safety-checkin/:userId", async (req, res) => {
-  const userId = parseInt(req.params.userId);
+  const userId = parseInt(req.params.userId as string);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
   // Update last_seen (use updated_at as proxy)
@@ -98,7 +100,7 @@ router.post("/verification/safety-checkin/:userId", async (req, res) => {
 });
 
 // ── SOS panic alert ───────────────────────────────────────────────────────────
-router.post("/verification/sos", async (req, res) => {
+router.post("/verification/sos", requireAuth, requireOwnership("user_id"), async (req, res) => {
   const { user_id, lat, lng, message } = req.body as {
     user_id: number;
     lat?: number;
@@ -118,7 +120,7 @@ router.post("/verification/sos", async (req, res) => {
 
   // Broadcast to all moderators via WebSocket
   broadcast({
-    type: "new_report" as any,
+    type: "new_report",
     payload: {
       type: "sos",
       user_id,
@@ -140,8 +142,8 @@ router.post("/verification/sos", async (req, res) => {
 });
 
 // ── Update panic contacts ─────────────────────────────────────────────────────
-router.patch("/verification/panic-contacts/:userId", async (req, res) => {
-  const userId = parseInt(req.params.userId);
+router.patch("/verification/panic-contacts/:userId", requireAuth, requireOwnership("userId"), async (req, res) => {
+  const userId = parseInt(req.params.userId as string);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
   const { contacts } = req.body as { contacts: string[] };

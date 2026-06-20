@@ -34,9 +34,11 @@ export const requestCreationLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req) => {
-    const body = req.body as Record<string, unknown>;
-    const userId = body?.requester_id;
-    return userId ? `req-create-${String(userId)}` : `req-create-ip-${req.ip ?? "unknown"}`;
+    // Key on the authenticated userId set by parseAuth (runs before all routes).
+    // Never key on req.body.requester_id — unauthenticated body data can be spoofed
+    // to rotate around the limit.
+    const userId = req.authenticatedUserId;
+    return userId ? `req-create-${userId}` : `req-create-ip-${req.ip ?? "unknown"}`;
   },
   message: {
     error:
@@ -93,14 +95,17 @@ export const generalApiLimiter = rateLimit({
 });
 
 // ── 6. Chat Messages (30 / min per user) ─────────────────────────────────────
+// Key on the authenticated userId (set by parseAuth before this runs).
+// Falls back to IP only when there is no verified token (should not happen
+// on POST chat since requireAuth runs first, but defensive).
 export const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 30,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req) => {
-    const body = req.body as Record<string, unknown>;
-    return `chat-${String(body?.sender_id ?? req.ip)}`;
+    const r = req as typeof req & { authenticatedUserId?: number };
+    return `chat-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
   },
   message: { error: "You're sending messages too fast. Slow down a little." },
 });

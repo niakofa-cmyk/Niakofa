@@ -529,7 +529,7 @@ paths:
     get:
       operationId: getRoute
       tags: [navigation]
-      summary: Get driving route between two coordinates
+      summary: Get route between two coordinates
       parameters:
         - name: start_lat
           in: query
@@ -551,6 +551,13 @@ paths:
           required: true
           schema:
             type: number
+        - name: profile
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [driving, walking, cycling]
+            default: driving
       responses:
         "200":
           description: Route data with turn-by-turn steps
@@ -675,6 +682,85 @@ paths:
         "404":
           description: Not found
 
+  /users/{id}/helper-application:
+    patch:
+      operationId: submitHelperApplication
+      tags: [users]
+      summary: Submit or update helper profile details (sets status to pending)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelperApplicationInput"
+      responses:
+        "200":
+          description: Updated user with pending helper status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /admin/helper-applications:
+    get:
+      operationId: getHelperApplications
+      tags: [users]
+      summary: Admin — list helper applications by status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, denied]
+      responses:
+        "200":
+          description: List of helper applicants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+
+  /admin/helper-applications/{id}/review:
+    patch:
+      operationId: reviewHelperApplication
+      tags: [users]
+      summary: Admin — approve or deny a helper application
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelperApplicationReview"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+
   /users/{id}/reports:
     get:
       operationId: getUserReports
@@ -695,6 +781,93 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Report"
+
+  /requests/{id}/cancel:
+    post:
+      operationId: cancelRequest
+      tags: [requests]
+      summary: Cancel a request — helper unclaims (re-opens to pool) or requester withdraws (marks cancelled)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HelpRequest"
+        "403":
+          description: Not authorized to cancel this request
+        "404":
+          description: Request not found
+        "409":
+          description: Request is already completed or cancelled
+
+  /requests/{id}/rate:
+    post:
+      operationId: rateRequest
+      tags: [requests]
+      summary: Rate the other participant after a completed request (1–5 stars + optional review)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RateInput"
+      responses:
+        "201":
+          description: Rating created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rating"
+        "403":
+          description: Only participants can rate
+        "404":
+          description: Request not found
+        "409":
+          description: Already rated or request not completed
+
+  /users/set-initial-password:
+    post:
+      operationId: setInitialPassword
+      tags: [users]
+      summary: One-time password setup for legacy accounts that pre-date passwords (unauthenticated, rate-limited)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetInitialPasswordInput"
+      responses:
+        "200":
+          description: Password set — returns full auth token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Missing fields or password too short
+        "403":
+          description: Email does not match account
+        "404":
+          description: User not found
+        "409":
+          description: Account already has a password — use normal login
 
 components:
   schemas:
@@ -722,6 +895,30 @@ components:
           type: boolean
         helper_mode_active:
           type: boolean
+        helper_status:
+          type: ["string", "null"]
+          enum: ["pending", "approved", "denied", null]
+          description: "null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected"
+        helper_skills:
+          type: ["array", "null"]
+          items:
+            type: string
+          description: Specific helper skills like plumbing, Spanish speaker, drives truck
+        helper_languages:
+          type: ["array", "null"]
+          items:
+            type: string
+        helper_qualifications:
+          type: ["array", "null"]
+          items:
+            type: string
+        helper_bio:
+          type: ["string", "null"]
+        helper_vehicle:
+          type: ["string", "null"]
+        helper_social_links:
+          type: ["string", "null"]
+          description: JSON-encoded social media links
         lat:
           type: ["number", "null"]
         lng:
@@ -753,6 +950,41 @@ components:
         is_helper:
           type: boolean
 
+    HelperApplicationInput:
+      type: object
+      required: [helper_skills]
+      properties:
+        helper_skills:
+          type: array
+          items:
+            type: string
+        helper_languages:
+          type: array
+          items:
+            type: string
+        helper_qualifications:
+          type: array
+          items:
+            type: string
+        helper_bio:
+          type: string
+          maxLength: 500
+        helper_vehicle:
+          type: string
+        helper_social_links:
+          type: string
+          description: JSON-encoded social media links
+
+    HelperApplicationReview:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approved, denied]
+        admin_notes:
+          type: string
+
     UserRegistration:
       type: object
       required: [name, email]
@@ -766,6 +998,24 @@ components:
         is_helper:
           type: boolean
         neighborhood:
+          type: string
+        helper_skills:
+          type: array
+          items:
+            type: string
+        helper_languages:
+          type: array
+          items:
+            type: string
+        helper_qualifications:
+          type: array
+          items:
+            type: string
+        helper_bio:
+          type: string
+        helper_vehicle:
+          type: string
+        helper_social_links:
           type: string
 
     LocationUpdate:
@@ -810,7 +1060,7 @@ components:
           type: ["string", "null"]
         category:
           type: string
-          enum: [groceries, transportation, errands, home_repair, medical, emergency, other]
+          enum: [groceries, transportation, errands, home_repair, medical, emergency, other, stock_shelves, event_setup, delivery_run, tech_support]
         urgency:
           type: string
           enum: [low, medium, high, emergency]
@@ -858,6 +1108,8 @@ components:
           type: ["string", "null"]
         completed_at:
           type: ["string", "null"]
+        cancelled_at:
+          type: ["string", "null"]
 
     HelpRequestInput:
       type: object
@@ -865,11 +1117,14 @@ components:
       properties:
         title:
           type: string
+          minLength: 3
+          maxLength: 200
         description:
           type: string
+          maxLength: 2000
         category:
           type: string
-          enum: [groceries, transportation, errands, home_repair, medical, emergency, other]
+          enum: [groceries, transportation, errands, home_repair, medical, emergency, other, stock_shelves, event_setup, delivery_run, tech_support]
         urgency:
           type: string
           enum: [low, medium, high, emergency]
@@ -884,6 +1139,7 @@ components:
           type: number
         neighborhood:
           type: string
+          maxLength: 100
         pay_it_forward_amount:
           type: number
         pledge_amount:
@@ -1035,6 +1291,7 @@ components:
         eta_text:
           type: string
         distance_text:
+          type: string
         initial_bearing:
           type: number
           description: Compass bearing (0-359) from start toward first waypoint
@@ -1042,7 +1299,6 @@ components:
           type: number
         waypoints:
           type: integer
-          type: string
 
     Transaction:
       type: object
@@ -1056,8 +1312,8 @@ components:
           type: ["integer", "null"]
         type:
           type: string
-          enum: [earned, pledge_received, pledge_sent, goodwill]
-          description: earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act
+          enum: [earned, pledge_received, pledge_sent, goodwill, tip_received]
+          description: earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester
         amount:
           type: number
         description:
@@ -1180,6 +1436,63 @@ components:
         category:
           type: ["string", "null"]
           description: "social_services | shelter | food | medical | housing"
+
+    Rating:
+      type: object
+      required: [id, request_id, rater_id, ratee_id, stars, role, created_at]
+      properties:
+        id:
+          type: integer
+        request_id:
+          type: integer
+        rater_id:
+          type: integer
+        ratee_id:
+          type: integer
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
+        review:
+          type: ["string", "null"]
+        role:
+          type: string
+          enum: [requester, helper]
+        created_at:
+          type: string
+
+    RateInput:
+      type: object
+      required: [stars]
+      properties:
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
+        review:
+          type: string
+          maxLength: 500
+
+    SetInitialPasswordInput:
+      type: object
+      required: [user_id, email, new_password]
+      properties:
+        user_id:
+          type: integer
+        email:
+          type: string
+        new_password:
+          type: string
+          minLength: 8
+
+    AuthResponse:
+      type: object
+      required: [user, token]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        token:
+          type: string
 
     CivicResourcesResponse:
       type: object

@@ -2,12 +2,13 @@ import http from "http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
-import { startScheduledPaymentReminder } from "./lib/scheduler";
+import { startScheduledPaymentReminder, startRecurringRequestWorker } from "./lib/scheduler";
 import { isRedisConfigured, closeRedis } from "./lib/queue";
 import { startPayoutWorker } from "./workers/payout-worker";
 import { startPledgeWorker } from "./workers/pledge-worker";
 import { startCleanupWorker } from "./workers/cleanup-worker";
 import { startNotificationWorker } from "./workers/notification-worker";
+import { startAnomalyDetectionWorker } from "./workers/anomaly-worker";
 
 const rawPort = process.env["PORT"];
 if (!rawPort) throw new Error("PORT environment variable is required but was not provided.");
@@ -19,6 +20,19 @@ initWebSocketServer(server);
 
 server.listen(port, async () => {
   logger.info({ port }, "Server listening (HTTP + WebSocket)");
+
+  // ── Redis production guard ─────────────────────────────────────────────────
+  // Redis is required in production for reliable push notifications, payout
+  // retries, and pledge reconciliation. The setInterval fallback is only
+  // permitted in development so local dev stays frictionless.
+  if (process.env["NODE_ENV"] === "production" && !isRedisConfigured()) {
+    logger.error(
+      "FATAL: REDIS_URL is required in production. " +
+      "BullMQ workers handle push notifications, payout retries, and pledge reconciliation. " +
+      "Set REDIS_URL in your environment variables. " +
+      "The server will continue but background jobs will NOT run — this is unsafe for production."
+    );
+  }
 
   // ── Background workers ────────────────────────────────────────────────────
   if (isRedisConfigured()) {
@@ -43,6 +57,12 @@ server.listen(port, async () => {
     );
     startScheduledPaymentReminder();
   }
+
+  // Recurring requests worker — fires subscriptions that are due; runs every hour regardless of Redis
+  startRecurringRequestWorker();
+
+  // Anomaly detection — runs regardless of Redis; lightweight DB polling
+  startAnomalyDetectionWorker();
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
