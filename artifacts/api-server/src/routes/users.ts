@@ -17,11 +17,12 @@ import {
   CreateScheduledPaymentBody,
   GetScheduledPaymentsParams,
 } from "@workspace/api-zod";
-import { broadcast } from "../lib/ws-hub";
+import { broadcast, sendToUser } from "../lib/ws-hub";
 import { authLimiter, gpsLimiter } from "../middlewares/rate-limit";
 import { requireAuth, signTokenById } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import { logger } from "../lib/logger";
+import { sendHelperApplicationDecision } from "../lib/mailer";
 
 const BCRYPT_ROUNDS = 12;
 
@@ -554,10 +555,27 @@ router.patch("/admin/helper-applications/:id/review", requireAuth, requireAdmin(
   const { password_hash: _ph, ...safeUser } = user as any;
   logger.info({ user_id: id, decision }, "admin: helper application reviewed");
 
+  const wsEventType = decision === "approved" ? "helper_application_approved" : "helper_application_denied";
+
+  // Targeted WS event to the specific user (real-time in-app update)
+  sendToUser(id, {
+    type: wsEventType,
+    payload: { user_id: id, decision, helper_status: decision },
+  });
+
+  // Also broadcast so any admin views can update
   broadcast({
-    type: decision === "approved" ? "helper_application_approved" : "helper_application_denied",
+    type: wsEventType,
     payload: { user_id: id, decision },
   });
+
+  // Email notification — fire-and-forget, non-blocking
+  sendHelperApplicationDecision({
+    to: user.email,
+    applicantName: user.name,
+    decision: decision as "approved" | "denied",
+    appUrl: process.env["APP_URL"] ?? "https://niakofa.community",
+  }).catch(() => {}); // already logs internally
 
   return res.json(safeUser);
 });

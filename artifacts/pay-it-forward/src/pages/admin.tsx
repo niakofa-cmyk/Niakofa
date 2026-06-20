@@ -1123,7 +1123,7 @@ function HelpersTab() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, []);
 
   useEffect(() => { load(filter); }, [filter, load]);
 

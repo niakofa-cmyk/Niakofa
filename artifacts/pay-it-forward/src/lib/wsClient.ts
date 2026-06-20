@@ -34,7 +34,10 @@ export type WsEventType =
   | "presence_update"
   | "connected"
   | "pong"
-  | "ping";
+  | "ping"
+  | "helper_application_approved"
+  | "helper_application_denied"
+  | "crisis_update";
 
 export interface WsEvent {
   type: WsEventType;

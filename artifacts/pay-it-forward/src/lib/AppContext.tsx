@@ -139,6 +139,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // ── useWebSocket subscriptions ────────────────────────────────────────────
+
+  // Listen for helper application approval/denial — update the current user in real-time
+  useWebSocket("helper_application_approved", (event) => {
+    const p = event.payload as { user_id: number; decision: string };
+    if (currentUser && currentUser.id === p.user_id) {
+      const updated = { ...currentUser, helper_status: "approved" as const, is_helper: true };
+      setCurrentUser(updated);
+      import("sonner").then(({ toast }) => {
+        toast.success("🎉 You're approved as a helper!", {
+          description: "Enable Helper Mode in your profile to start accepting requests.",
+          duration: 8000,
+        });
+      }).catch(() => {});
+    }
+  });
+
+  useWebSocket("helper_application_denied", (event) => {
+    const p = event.payload as { user_id: number; decision: string };
+    if (currentUser && currentUser.id === p.user_id) {
+      const updated = { ...currentUser, helper_status: "denied" as const, is_helper: false };
+      setCurrentUser(updated);
+      import("sonner").then(({ toast }) => {
+        toast.error("Helper application update", {
+          description: "Your application was not approved. Check your email for details.",
+          duration: 8000,
+        });
+      }).catch(() => {});
+    }
+  });
+
   // Show gratitude prompt when the current user's request is completed
   useWebSocket("new_gratitude_prompt", (event) => {
     const p = event.payload as {

@@ -214,28 +214,44 @@ export function TopBar() {
             <span className="text-[10px] font-black uppercase tracking-wider">SOS</span>
           </button>
 
-          <div className={`flex items-center gap-3 px-5 py-2.5 rounded-full backdrop-blur-md border shadow-lg transition-all ${
-            helperModeActive
-              ? "bg-green-500/20 border-green-500/50 shadow-[0_0_20px_rgba(34,197,94,0.2)]"
-              : "bg-card/90 border-border"
-          }`}>
-            <Label htmlFor="helper-mode" className="text-sm font-black tracking-widest uppercase cursor-pointer select-none">
-              {helperModeActive ? (
-                <span className="text-green-400 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                  Helper Online
-                </span>
-              ) : (
-                <span className="text-muted-foreground">Go Online</span>
-              )}
-            </Label>
-            <Switch
-              id="helper-mode"
-              checked={helperModeActive}
-              onCheckedChange={setHelperModeActive}
-              className="data-[state=checked]:bg-green-500"
-            />
-          </div>
+          {(() => {
+            const helperStatus = (currentUser as any)?.helper_status as string | null | undefined;
+            const isApproved = helperStatus === "approved";
+            const isPending = helperStatus === "pending";
+            if (isPending) {
+              return (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-500/10 border border-yellow-500/30 shadow-lg">
+                  <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+                  <span className="text-[10px] font-black uppercase tracking-wider text-yellow-400">Under Review</span>
+                </div>
+              );
+            }
+            if (!isApproved) return null;
+            return (
+              <div className={`flex items-center gap-3 px-5 py-2.5 rounded-full backdrop-blur-md border shadow-lg transition-all ${
+                helperModeActive
+                  ? "bg-green-500/20 border-green-500/50 shadow-[0_0_20px_rgba(34,197,94,0.2)]"
+                  : "bg-card/90 border-border"
+              }`}>
+                <Label htmlFor="helper-mode" className="text-sm font-black tracking-widest uppercase cursor-pointer select-none">
+                  {helperModeActive ? (
+                    <span className="text-green-400 flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                      Helper Online
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">Go Online</span>
+                  )}
+                </Label>
+                <Switch
+                  id="helper-mode"
+                  checked={helperModeActive}
+                  onCheckedChange={setHelperModeActive}
+                  className="data-[state=checked]:bg-green-500"
+                />
+              </div>
+            );
+          })()}
 
           {/* Profile avatar */}
           <button

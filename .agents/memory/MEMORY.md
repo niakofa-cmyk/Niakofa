@@ -16,3 +16,4 @@
 - [Niakofa rate limiter](niakofa-rate-limit.md) — authLimiter is 10 req/15 min; rapid test loops hit 429; this is expected security behavior, not a bug.
 - [Niakofa recurring requests](niakofa-recurring.md) — recurring_requests table + /api/recurring routes + hourly scheduler worker; wallet.tsx entry point at /recurring; requireAdmin() must be called as a factory function (requireAdmin()), not used directly.
 - [Niakofa middleware paths](niakofa-middleware-paths.md) — auth middleware is at middlewares/ (plural); requireAdmin is in middlewares/authz.ts (not middleware/requireAdmin); always call requireAdmin() not requireAdmin.
+- [Niakofa helper application system](niakofa-helper-application.md) — full helper signup/approval flow, TopBar gating by helper_status, new helper-profile fields, admin review queue; useCallback token bug fix pattern.
