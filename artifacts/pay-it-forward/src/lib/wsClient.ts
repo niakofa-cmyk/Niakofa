@@ -17,6 +17,7 @@ export type WsEventType =
   | "new_request"
   | "request_updated"
   | "helper_location"
+  | "requester_location"
   | "helper_online"
   | "helper_offline"
   | "pledge_paid"

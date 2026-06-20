@@ -115,6 +115,7 @@ export default function ActiveRequestScreen() {
   const [showRating, setShowRating] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [requesterLiveLocation, setRequesterLiveLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   const enRouteRef = useRef(false);
   const offRouteCooldownRef = useRef(false);
@@ -353,6 +354,15 @@ export default function ActiveRequestScreen() {
       const req = event.payload as { id: number };
       if (req.id === requestId) {
         queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
+      }
+    }
+    // Requester's live position — opt-in, relayed only to the assigned
+    // helper by the backend. Separate from request.lat/lng, since the
+    // requester may not be at the help location itself.
+    if (event.type === "requester_location") {
+      const payload = event.payload as { request_id: number; lat: number; lng: number };
+      if (payload.request_id === requestId) {
+        setRequesterLiveLocation({ lat: payload.lat, lng: payload.lng });
       }
     }
   }, [requestId, queryClient]));
@@ -658,6 +668,18 @@ export default function ActiveRequestScreen() {
             />
           </Source>
         )}
+      {/* Requester's live position — only present if they opted in via
+          Settings; distinct styling from the helper's own "myLocation"
+          marker and from the fixed help-location pin. */}
+      {requesterLiveLocation && (
+        <Marker longitude={requesterLiveLocation.lng} latitude={requesterLiveLocation.lat} anchor="center">
+          <div className="relative flex items-center justify-center w-8 h-8">
+            <div className="absolute w-8 h-8 bg-amber-400 rounded-full opacity-25 animate-ping" style={{ animationDuration: "2.5s" }} />
+            <div className="w-3.5 h-3.5 bg-amber-400 rounded-full shadow-[0_0_10px_rgba(251,191,36,0.9)] border-2 border-background" />
+          </div>
+        </Marker>
+      )}
+
       </Map>
 
       {/* Bottom action card */}
