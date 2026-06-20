@@ -1,3 +1,4 @@
+import { authHeaders } from "./auth";
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY;
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -56,7 +57,7 @@ async function sendSubscriptionToServer(userId: number, sub: PushSubscription): 
   const base = import.meta.env.BASE_URL.replace(/\/$/, "");
   await fetch(`${base}/api/push/subscribe`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ userId, subscription: sub.toJSON() }),
   });
 }

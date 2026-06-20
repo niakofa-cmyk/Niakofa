@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useState } from "react";
+import { authHeaders } from "@/lib/auth";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -73,7 +74,7 @@ export function usePushNotifications(userId: number | null) {
       // Send subscription to server
       const res = await fetch(`${BASE}/api/push/subscribe`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ userId, subscription }),
       });
 
@@ -96,7 +97,7 @@ export function usePushNotifications(userId: number | null) {
         await sub.unsubscribe();
         await fetch(`${BASE}/api/push/unsubscribe`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify({ userId, endpoint: sub.endpoint }),
         });
       }

@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { subscribeToPush } from "@/lib/push";
 import { ShieldAlert, X, Phone, AlertTriangle, Heart, MapPin, MessageSquare } from "lucide-react";
+import { authHeaders } from "@/lib/auth";
 
 const EMERGENCY_RESOURCES = [
   {
@@ -72,7 +73,7 @@ function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
     try {
       await fetch("/api/verification/sos", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           user_id: currentUser?.id,
           lat: myLocation?.lat,

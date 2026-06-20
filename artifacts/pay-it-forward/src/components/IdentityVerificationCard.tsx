@@ -4,6 +4,7 @@ import { Shield, CheckCircle2, Clock, X, ChevronRight, Camera, FileText, Loader2
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { toast } from "@/hooks/use-toast";
+import { authHeaders } from "@/lib/auth";
 
 interface VerificationStatus {
   identity_verified: boolean;
@@ -20,7 +21,7 @@ export function IdentityVerificationCard() {
 
   useEffect(() => {
     if (!currentUser?.id) return;
-    fetch(`/api/users/${currentUser.id}`)
+    fetch(`/api/users/${currentUser.id}`, { headers: authHeaders() })
       .then(r => r.json())
       .then(u => setStatus({
         identity_verified: u.identity_verified ?? false,
@@ -36,7 +37,7 @@ export function IdentityVerificationCard() {
     try {
       const res = await fetch("/api/verification/identity/start", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ user_id: currentUser.id }),
       });
       const data = await res.json();
@@ -55,7 +56,7 @@ export function IdentityVerificationCard() {
     const filled = contacts.filter(c => c.trim());
     await fetch(`/api/verification/panic-contacts/${currentUser.id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ contacts: filled }),
     });
     toast({ title: `${filled.length} emergency contact${filled.length !== 1 ? "s" : ""} saved` });

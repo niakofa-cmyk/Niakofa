@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import { motion } from "framer-motion";
+import { authHeaders } from "@/lib/auth";
 import {
   ChevronLeft, Star, Heart, MapPin, Shield, CheckCircle2, Clock,
   Gift, MessageCircle, Globe, Car, Wrench, FileText, ExternalLink,
@@ -41,7 +42,7 @@ export default function HelperProfileScreen() {
   useEffect(() => {
     if (!helperId) return;
     setLoading(true);
-    fetch(`/api/users/${helperId}`)
+    fetch(`/api/users/${helperId}`, { headers: authHeaders() })
       .then(r => r.json())
       .then((u: User) => {
         setHelper(u);
@@ -49,7 +50,7 @@ export default function HelperProfileScreen() {
       })
       .catch(() => setLoading(false));
 
-    fetch(`/api/requests?helper_id=${helperId}&status=completed&limit=5`)
+    fetch(`/api/requests?helper_id=${helperId}&status=completed&limit=5`, { headers: authHeaders() })
       .then(r => r.json())
       .then((data) => { if (Array.isArray(data)) setRecentHelps(data.slice(0, 5)); })
       .catch(() => {});

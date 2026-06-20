@@ -176,13 +176,35 @@ router.post("/users/register", authLimiter, async (req, res) => {
   }
 });
 
-router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
+// Any authenticated user can view a profile (needed for public helper
+// profiles, leaderboard, etc.) — but only the profile's OWNER sees private
+// fields (email, phone, panic contacts, Stripe identity session). Other
+// viewers get a public-safe subset only.
+router.get("/users/:id", requireAuth, async (req, res) => {
   const parsed = GetUserParams.safeParse({ id: parseInt(req.params.id as string) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, parsed.data.id)).limit(1);
   if (!user) return res.status(404).json({ error: "User not found" });
-  const { password_hash: _ph, ...safeUser } = user as Record<string, unknown>;
-  return res.json(safeUser);
+
+  const isSelf = req.authenticatedUserId === user.id;
+  const {
+    password_hash: _ph,
+    email: _email,
+    phone_masked: _pm,
+    panic_contacts: _pc,
+    stripe_identity_session_id: _sid,
+    ...publicUser
+  } = user as Record<string, unknown>;
+
+  if (isSelf) {
+    return res.json({
+      ...publicUser,
+      email: user.email,
+      phone_masked: user.phone_masked,
+      panic_contacts: user.panic_contacts,
+    });
+  }
+  return res.json(publicUser);
 });
 
 router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
