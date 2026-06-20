@@ -31,23 +31,27 @@ const SECRET: string = SESSION_SECRET;
  * signed a different payload than verifyToken expected has been removed —
  * it was dead code that would have silently produced unverifiable tokens.
  */
+const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
 export function signTokenById(userId: number): string {
-  const sig = createHmac("sha256", SECRET).update(String(userId)).digest("base64url");
-  return `${userId}.${sig}`;
+  const expiresAt = Date.now() + TOKEN_TTL_MS;
+  const sig = createHmac("sha256", SECRET).update(`${userId}.${expiresAt}`).digest("base64url");
+  return `${userId}.${expiresAt}.${sig}`;
 }
 
-/** Verify a token produced by signTokenById. */
+/** Verify a token produced by signTokenById. Rejects expired or malformed tokens. */
 export function verifyToken(token: string): { userId: number; valid: boolean } {
-  const dotIdx = token.indexOf(".");
-  if (dotIdx === -1) return { userId: 0, valid: false };
+  const parts = token.split(".");
+  if (parts.length !== 3) return { userId: 0, valid: false };
 
-  const userId = parseInt(token.slice(0, dotIdx), 10);
-  if (isNaN(userId) || userId <= 0) return { userId: 0, valid: false };
+  const [userIdRaw, expiresAtRaw, sig] = parts;
+  const userId = parseInt(userIdRaw, 10);
+  const expiresAt = parseInt(expiresAtRaw, 10);
+  if (isNaN(userId) || userId <= 0 || isNaN(expiresAt) || !sig) return { userId: 0, valid: false };
 
-  const sig = token.slice(dotIdx + 1);
-  if (!sig) return { userId: 0, valid: false };
+  if (Date.now() > expiresAt) return { userId, valid: false }; // expired
 
-  const expected = createHmac("sha256", SECRET).update(String(userId)).digest("base64url");
+  const expected = createHmac("sha256", SECRET).update(`${userId}.${expiresAt}`).digest("base64url");
 
   try {
     const sigBuf = Buffer.from(sig, "base64url");

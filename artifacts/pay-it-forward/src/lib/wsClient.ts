@@ -1,3 +1,4 @@
+import { getToken } from "@/lib/auth";
 /**
  * Niakofa WebSocket Client — shared singleton
  *
@@ -88,7 +89,7 @@ function connect(): void {
 
     // Re-register the user after reconnect
     if (registeredUserId !== null) {
-      send({ type: "register", payload: { userId: registeredUserId } });
+      send({ type: "register", payload: { userId: registeredUserId, authToken: getToken() ?? undefined } });
     }
 
     // Keepalive ping every 25s
@@ -134,7 +135,7 @@ export function wsStart(): void {
  */
 export function wsRegister(userId: number): void {
   registeredUserId = userId;
-  send({ type: "register", payload: { userId } });
+  send({ type: "register", payload: { userId, authToken: getToken() ?? undefined } });
 }
 
 /** Clear registration (e.g. on logout). */

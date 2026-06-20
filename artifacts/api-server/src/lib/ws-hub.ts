@@ -12,6 +12,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { IncomingMessage } from "http";
 import { logger } from "./logger";
+import { verifyToken } from "../middlewares/auth";
 
 // ── Standardized Niakofa Event Types ─────────────────────────────────────────
 export type WsEventType =
@@ -157,18 +158,29 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
         }
 
         if ((msg as { type: string }).type === "register") {
-          const { userId } = msg.payload as { userId: number };
-          if (userId) {
-            registeredUserId = userId;
-            if (!userSockets.has(userId)) userSockets.set(userId, new Set());
-            userSockets.get(userId)!.add(socket);
+          const { userId, authToken } = msg.payload as { userId: number; authToken?: string };
+          if (!userId || !authToken) {
+            logger.warn({ ip }, "WS: register attempted without authToken — rejecting");
+            return;
           }
+          const { userId: verifiedUserId, valid } = verifyToken(authToken);
+          if (!valid || verifiedUserId !== userId) {
+            logger.warn({ ip, userId }, "WS: register failed token verification — rejecting");
+            return;
+          }
+          registeredUserId = userId;
+          if (!userSockets.has(userId)) userSockets.set(userId, new Set());
+          userSockets.get(userId)!.add(socket);
           return;
         }
 
         if ((msg as { type: string }).type === "presence") {
           const { userId, status } = msg.payload as { userId: number; status: PresenceStatus };
-          if (userId && status) setPresence(userId, status);
+          // Only allow a socket to set presence for the user it already
+          // authenticated as via "register" — prevents presence spoofing.
+          if (userId && status && registeredUserId === userId) {
+            setPresence(userId, status);
+          }
           return;
         }
       } catch {

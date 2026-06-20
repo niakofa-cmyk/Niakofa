@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
-import { requireOwnership } from "../middlewares/authz";
+import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import Stripe from "stripe";
 import { db, stripeAccountsTable, paymentTransactionsTable, usersTable, requestsTable, transactionsTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
@@ -431,8 +431,8 @@ router.get("/stripe/connect/refresh", (_req, res) => {
 });
 
 // ── PAYMENT TRANSACTIONS (for wallet display) ───────────────────────────────
-router.get("/stripe/payment-transactions/:userId", async (req, res) => {
-  const userId = parseInt(req.params.userId);
+router.get("/stripe/payment-transactions/:userId", requireAuth, requireOwnership("userId"), async (req, res) => {
+  const userId = parseInt(req.params.userId as string);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
   const txs = await db
@@ -445,7 +445,7 @@ router.get("/stripe/payment-transactions/:userId", async (req, res) => {
 });
 
 // ── PAYOUT TO HELPER (called after request completion) ─────────────────────
-router.post("/stripe/payout", paymentLimiter, async (req, res) => {
+router.post("/stripe/payout", requireAuth, requireAdmin(), paymentLimiter, async (req, res) => {
   if (!stripeRequired(res)) return;
 
   const { helperId, amount, description, requestId } = req.body as {

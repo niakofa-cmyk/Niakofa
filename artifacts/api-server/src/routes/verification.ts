@@ -87,7 +87,7 @@ router.post("/verification/identity/webhook", async (req, res) => {
 
 // ── Passive safety check-in ───────────────────────────────────────────────────
 // Called periodically during active requests to confirm helper is safe
-router.post("/verification/safety-checkin/:userId", async (req, res) => {
+router.post("/verification/safety-checkin/:userId", requireAuth, requireOwnership("userId"), async (req, res) => {
   const userId = parseInt(req.params.userId as string);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
