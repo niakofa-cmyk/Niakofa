@@ -372,8 +372,8 @@ router.post("/stripe/connect/onboard", requireAuth, requireOwnership("userId"), 
 });
 
 // ── CONNECT ACCOUNT STATUS ──────────────────────────────────────────────────
-router.get("/stripe/connect/status/:userId", async (req, res) => {
-  const userId = parseInt(req.params.userId);
+router.get("/stripe/connect/status/:userId", requireAuth, requireOwnership("userId"), async (req, res) => {
+  const userId = parseInt(req.params.userId as string);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
   const [acct] = await db

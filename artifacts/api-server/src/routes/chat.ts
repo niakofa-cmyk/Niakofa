@@ -14,6 +14,14 @@ router.get("/requests/:id/chat", requireAuth, async (req, res) => {
   const requestId = parseInt(req.params.id as string);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 
+  const r = req as typeof req & { authenticatedUserId: number };
+  const [request] = await db.select({ requester_id: requestsTable.requester_id, helper_id: requestsTable.helper_id })
+    .from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.requester_id !== r.authenticatedUserId && request.helper_id !== r.authenticatedUserId) {
+    return res.status(403).json({ error: "Forbidden: you are not a participant in this conversation" });
+  }
+
   const limit = Math.min(parseInt((req.query.limit as string) || "50"), 100);
   const before = req.query.before ? new Date(req.query.before as string) : null;
 
@@ -97,6 +105,13 @@ router.patch("/requests/:id/chat/read", requireAuth, async (req, res) => {
 
   const r = req as typeof req & { authenticatedUserId: number };
   const readerId = r.authenticatedUserId;
+
+  const [request] = await db.select({ requester_id: requestsTable.requester_id, helper_id: requestsTable.helper_id })
+    .from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.requester_id !== readerId && request.helper_id !== readerId) {
+    return res.status(403).json({ error: "Forbidden: you are not a participant in this conversation" });
+  }
 
   await db
     .update(chatMessagesTable)

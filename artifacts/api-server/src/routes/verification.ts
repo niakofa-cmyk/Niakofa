@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
-import { db, usersTable } from "@workspace/db";
+import { db, usersTable, reportsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import Stripe from "stripe";
 import { logger } from "../lib/logger";
@@ -118,10 +118,23 @@ router.post("/verification/sos", requireAuth, requireOwnership("user_id"), async
 
   const sosMessage = `🚨 SOS from ${user.name} on Niakofa. ${message ?? "Emergency assistance needed."} Location: ${locationStr}`;
 
-  // Broadcast to all moderators via WebSocket
+  // Persist to the database FIRST — this is a life-safety event and must
+  // survive even if no admin happens to be connected via WebSocket at this
+  // exact moment. It also surfaces in the existing /reports admin review
+  // flow automatically, giving it a durable audit trail.
+  const [savedReport] = await db.insert(reportsTable).values({
+    reporter_id: user_id,
+    type: "sos",
+    description: message ?? "SOS activated",
+    status: "pending",
+  }).returning();
+
+  // Broadcast to all moderators via WebSocket — best-effort, real-time nudge
+  // on top of the persisted record above, not a substitute for it.
   broadcast({
     type: "new_report",
     payload: {
+      report_id: savedReport?.id,
       type: "sos",
       user_id,
       user_name: user.name,

@@ -135,7 +135,7 @@ router.get("/requests/nearby", async (req, res) => {
   })));
 });
 
-router.get("/requests", async (req, res) => {
+router.get("/requests", requireAuth, async (req, res) => {
   const params = GetRequestsQueryParams.safeParse({
     status: req.query.status,
     lat: req.query.lat ? parseFloat(req.query.lat as string) : undefined,
@@ -255,6 +255,15 @@ router.get("/requests/:id", requireAuth, async (req, res) => {
   const parsed = GetRequestParams.safeParse({ id: parseInt(req.params.id as string) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, parsed.data.id)).limit(1);
+  // Open requests stay visible to any logged-in user (helpers need to see
+  // them before claiming). Once claimed/in-progress/completed, only the
+  // requester and assigned helper can view the details.
+  if (request && request.status !== "open") {
+    const r = req as typeof req & { authenticatedUserId: number };
+    if (request.requester_id !== r.authenticatedUserId && request.helper_id !== r.authenticatedUserId) {
+      return res.status(403).json({ error: "Forbidden: you don't have access to this request" });
+    }
+  }
   if (!request) return res.status(404).json({ error: "Not found" });
   const [requester] = await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url })
     .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1);

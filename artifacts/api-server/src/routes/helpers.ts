@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { db, usersTable, requestsTable } from "@workspace/db";
+import { db, usersTable, requestsTable, userSettingsTable } from "@workspace/db";
+import { requireAuth } from "../middlewares/auth";
 import { eq, and, sql } from "drizzle-orm";
 import { GetOnlineHelpersQueryParams } from "@workspace/api-zod";
 
@@ -15,7 +16,7 @@ function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-router.get("/helpers/online", async (req, res) => {
+router.get("/helpers/online", requireAuth, async (req, res) => {
   const params = GetOnlineHelpersQueryParams.safeParse({
     lat: req.query.lat ? parseFloat(req.query.lat as string) : undefined,
     lng: req.query.lng ? parseFloat(req.query.lng as string) : undefined,
@@ -26,9 +27,18 @@ router.get("/helpers/online", async (req, res) => {
   const lat = params.success ? params.data.lat : undefined;
   const lng = params.success ? params.data.lng : undefined;
 
+  // Only include helpers who've opted in via Settings — same
+  // privacy_live_location preference enforced on the location-update route.
+  const optedInUserIds = await db
+    .select({ user_id: userSettingsTable.user_id })
+    .from(userSettingsTable)
+    .where(eq(userSettingsTable.privacy_live_location, true));
+  const optedInIdSet = optedInUserIds.map(r => r.user_id);
+  if (optedInIdSet.length === 0) return res.json([]);
+
   // SQL bounding-box pre-filter — avoids full table scan
   let query = db.select().from(usersTable).$dynamic();
-  const conditions = [eq(usersTable.helper_mode_active, true)];
+  const conditions = [eq(usersTable.helper_mode_active, true), sql`${usersTable.id} IN ${optedInIdSet}`];
   if (lat && lng) {
     const latDelta = radius / 69;
     const lngDelta = radius / (69 * Math.cos(lat * Math.PI / 180));
@@ -72,8 +82,12 @@ router.get("/helpers/online", async (req, res) => {
 });
 
 // Auto-assign nearest available helper to a request
-router.post("/helpers/auto-assign/:requestId", async (req, res) => {
-  const requestId = parseInt(req.params.requestId);
+// NOTE: despite the name, this endpoint only SUGGESTS the nearest helper —
+// it never writes to the database. There is no actual auto-assignment
+// happening here. If real auto-assignment is needed later, this is where
+// a requestsTable.update(...) call would need to be added.
+router.post("/helpers/auto-assign/:requestId", requireAuth, async (req, res) => {
+  const requestId = parseInt(req.params.requestId as string);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid requestId" });
 
   const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
