@@ -5,6 +5,7 @@ import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle,
 import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
+import { authHeaders } from "@/lib/auth";
 
 interface GratitudePost {
   id: number;
@@ -486,7 +487,7 @@ export default function CommunityScreen() {
       } else {
         next.add(id);
         // Fire-and-forget — WS event will broadcast the updated count
-        fetch(`${base}/api/gratitude/${id}/like`, { method: "POST" }).catch(() => {});
+        fetch(`${base}/api/gratitude/${id}/like`, { method: "POST", headers: authHeaders() }).catch(() => {});
       }
       return next;
     });

@@ -6,6 +6,7 @@ export * from "./user-settings";
 export * from "./payment-states";
 export * from "./stripe-accounts";
 export * from "./gratitude";
+export * from "./gratitude-likes";
 export * from "./reports";
 export * from "./civic-resources";
 export * from "./chat-messages";
