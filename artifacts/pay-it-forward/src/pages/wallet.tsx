@@ -500,7 +500,7 @@ export default function WalletScreen() {
                     <button
                       onClick={() => cancelMutation.mutate({ paymentId: sp.id })}
                       disabled={cancelMutation.isPending}
-                      className="w-7 h-7 rounded-full bg-muted hover:bg-destructive/10 hover:text-destructive border border-border flex items-center justify-center transition-colors shrink-0"
+                      className="w-11 h-11 rounded-full bg-muted hover:bg-destructive/10 hover:text-destructive border border-border flex items-center justify-center transition-colors shrink-0"
                       title="Cancel scheduled payment"
                     >
                       {cancelMutation.isPending ? (

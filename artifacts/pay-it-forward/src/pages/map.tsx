@@ -586,7 +586,7 @@ export default function MapScreen() {
       {myLocation && !mapError && (
         <button
           onClick={handleRecenter}
-          className="absolute bottom-44 right-4 z-30 w-10 h-10 bg-card/90 backdrop-blur-md border border-border rounded-full shadow-lg flex items-center justify-center hover:bg-card transition-colors"
+          className="absolute bottom-44 right-4 z-30 w-11 h-11 bg-card/90 backdrop-blur-md border border-border rounded-full shadow-lg flex items-center justify-center hover:bg-card transition-colors"
           aria-label="Re-center map on my location"
         >
           <Locate className="w-4 h-4 text-primary" />
@@ -633,7 +633,7 @@ export default function MapScreen() {
           title={showHeatmap ? "Hide helper heatmap" : "Show helper availability heatmap"}
           aria-label={showHeatmap ? "Hide helper heatmap" : "Show helper availability heatmap"}
           aria-pressed={showHeatmap}
-          className={`absolute bottom-28 right-4 z-10 w-10 h-10 rounded-xl border flex items-center justify-center shadow-lg transition-all ${
+          className={`absolute bottom-28 right-4 z-10 w-11 h-11 rounded-xl border flex items-center justify-center shadow-lg transition-all ${
             showHeatmap
               ? "bg-primary text-primary-foreground border-primary"
               : "bg-card/90 backdrop-blur-sm border-border text-muted-foreground hover:border-primary/50"
