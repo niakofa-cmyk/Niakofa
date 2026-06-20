@@ -75,11 +75,14 @@ async function runCleanup(_job: Job): Promise<void> {
     }
   }
 
-  // 2. Expire orphaned "claimed" requests (stuck > 4 hours with no progress)
+  // 2. Release orphaned "claimed" requests back to the open pool (stuck
+  // > 4 hours with no progress) — the helper presumably went unresponsive
+  // or abandoned it. Reset to "open" with no helper_id so it can actually
+  // be re-claimed by someone else, rather than terminating it outright.
   const orphanCutoff = new Date(now.getTime() - ORPHAN_CLAIMED_MS);
   const orphaned = await db
     .update(requestsTable)
-    .set({ status: "expired", helper_id: null })
+    .set({ status: "open", helper_id: null, claimed_at: null })
     .where(
       and(
         eq(requestsTable.status, "claimed"),
@@ -92,14 +95,12 @@ async function runCleanup(_job: Job): Promise<void> {
     totalExpired += orphaned.length;
     logger.warn(
       { count: orphaned.length },
-      "cleanup-worker: expired orphaned claimed requests"
+      "cleanup-worker: released orphaned claimed requests back to open"
     );
     for (const req of orphaned) {
-      // Re-broadcast as "open" so another helper can pick it up
-      // (in a real system, we'd reset to open and re-notify)
       broadcast({
         type: "request_updated",
-        payload: { id: req.id, status: "expired" },
+        payload: { id: req.id, status: "open" },
       });
     }
   }

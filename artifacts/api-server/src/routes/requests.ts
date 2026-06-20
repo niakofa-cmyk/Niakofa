@@ -516,7 +516,9 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
         });
       }
     } catch (err: unknown) {
-      // Non-fatal — wallet was already credited, but payout must be retried
+      // Non-fatal — the Stripe transfer itself failed; no wallet has been
+      // credited at this point under the current logic, but the payout must
+      // still be retried so the helper actually gets paid.
       logger.error({ err, request_id: request.id }, "Stripe payout failed — enqueuing retry");
       // Enqueue for exponential-backoff retry via BullMQ (up to 5 attempts)
       if (stripeAcct?.stripe_account_id) {
@@ -782,16 +784,28 @@ router.post("/requests/:id/rate", requireAuth, async (req, res) => {
     role,
   }).returning();
 
-  // Recompute trust_score for ratee: average-stars × 20 (1 star = 20, 5 stars = 100)
-  const allRatings = await db.select({ stars: ratingsTable.stars })
-    .from(ratingsTable)
-    .where(eq(ratingsTable.ratee_id, rateeId));
-  const avgStars = allRatings.reduce((s, r) => s + r.stars, 0) / allRatings.length;
-  const newTrustScore = Math.round(avgStars * 20);
+  // Recompute trust_score for ratee: average-stars × 20 (1 star = 20, 5 stars = 100).
+  // A banned user (trust_score = -1, a moderation sentinel value, not a
+  // rating-derived one) must stay banned — a new rating can never silently
+  // restore them above the ban threshold and reverse a moderation action
+  // with no admin involvement.
+  const [currentRatee] = await db.select({ trust_score: usersTable.trust_score })
+    .from(usersTable).where(eq(usersTable.id, rateeId)).limit(1);
+  const isBanned = currentRatee?.trust_score === -1;
 
-  await db.update(usersTable)
-    .set({ trust_score: newTrustScore })
-    .where(eq(usersTable.id, rateeId));
+  if (!isBanned) {
+    const allRatings = await db.select({ stars: ratingsTable.stars })
+      .from(ratingsTable)
+      .where(eq(ratingsTable.ratee_id, rateeId));
+    const avgStars = allRatings.reduce((s, r) => s + r.stars, 0) / allRatings.length;
+    const newTrustScore = Math.round(avgStars * 20);
+
+    await db.update(usersTable)
+      .set({ trust_score: newTrustScore })
+      .where(eq(usersTable.id, rateeId));
+  } else {
+    logger.warn({ rateeId, requestId }, "rate: skipped trust_score recompute — user is banned");
+  }
 
   logger.info({ request_id: requestId, rater_id: callerId, ratee_id: rateeId, stars: starsNum }, "rate: submitted");
 

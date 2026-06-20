@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable } from "@workspace/db";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, pushSubscriptionsTable, recurringRequestsTable, ratingsTable, gratitudeLikesTable, gratitudePostsTable, chatMessagesTable, reportsTable } from "@workspace/db";
+import { eq, and, sql, inArray, or } from "drizzle-orm";
 import {
   GetUserParams,
   UpdateUserParams,
@@ -571,9 +571,27 @@ router.delete("/users/:id", requireAuth, requireOwnership(), async (req, res) =>
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
 
   try {
+    // Clean up every dependent table, not just 4 of ~13 — previously
+    // requests, transactions, payment_transactions, reports,
+    // recurring_requests, push_subscriptions, chat_messages, ratings, and
+    // gratitude_posts were all left orphaned after account deletion.
     await db.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
     await db.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
     await db.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
+    await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
+    await db.delete(recurringRequestsTable).where(eq(recurringRequestsTable.user_id, userId));
+    await db.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
+    await db.delete(ratingsTable).where(or(eq(ratingsTable.rater_id, userId), eq(ratingsTable.ratee_id, userId)));
+    await db.delete(gratitudeLikesTable).where(eq(gratitudeLikesTable.user_id, userId));
+    await db.delete(gratitudePostsTable).where(or(eq(gratitudePostsTable.author_id, userId), eq(gratitudePostsTable.helper_id, userId)));
+    await db.delete(chatMessagesTable).where(eq(chatMessagesTable.sender_id, userId));
+    await db.delete(reportsTable).where(or(eq(reportsTable.reporter_id, userId), eq(reportsTable.reported_user_id, userId)));
+    await db.delete(paymentTransactionsTable).where(or(eq(paymentTransactionsTable.requester_id, userId), eq(paymentTransactionsTable.helper_id, userId)));
+    // Requests reference this user as requester or helper — null out the
+    // helper_id reference (request stays, just unclaimed) but delete
+    // requests this user actually created themselves.
+    await db.update(requestsTable).set({ helper_id: null }).where(eq(requestsTable.helper_id, userId));
+    await db.delete(requestsTable).where(eq(requestsTable.requester_id, userId));
     await db.delete(usersTable).where(eq(usersTable.id, userId));
 
     return res.json({ ok: true, message: "Account deleted successfully" });
