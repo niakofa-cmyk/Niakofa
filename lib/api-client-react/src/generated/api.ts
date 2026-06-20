@@ -27,6 +27,7 @@ import type {
   CompleteInput,
   CreateReportInput,
   GetCivicResourcesParams,
+  GetHelperApplicationsParams,
   GetNearbyRequestsParams,
   GetOnlineHelpersParams,
   GetReportsParams,
@@ -36,6 +37,8 @@ import type {
   HelpRequest,
   HelpRequestInput,
   HelpRequestUpdate,
+  HelperApplicationInput,
+  HelperApplicationReview,
   HelperIdInput,
   HelperLocation,
   HelperModeUpdate,
@@ -2177,6 +2180,232 @@ export const useReviewReport = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getReviewReportMutationOptions(options));
+    }
+
+export const getSubmitHelperApplicationUrl = (id: number,) => {
+
+
+
+
+  return `/api/users/${id}/helper-application`
+}
+
+/**
+ * @summary Submit or update helper profile details (sets status to pending)
+ */
+export const submitHelperApplication = async (id: number,
+    helperApplicationInput: HelperApplicationInput, options?: RequestInit): Promise<User> => {
+
+  return customFetch<User>(getSubmitHelperApplicationUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(helperApplicationInput)
+  }
+);}
+
+
+
+
+export const getSubmitHelperApplicationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitHelperApplication>>, TError,{id: number;data: BodyType<HelperApplicationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitHelperApplication>>, TError,{id: number;data: BodyType<HelperApplicationInput>}, TContext> => {
+
+const mutationKey = ['submitHelperApplication'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitHelperApplication>>, {id: number;data: BodyType<HelperApplicationInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  submitHelperApplication(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitHelperApplicationMutationResult = NonNullable<Awaited<ReturnType<typeof submitHelperApplication>>>
+    export type SubmitHelperApplicationMutationBody = BodyType<HelperApplicationInput>
+    export type SubmitHelperApplicationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Submit or update helper profile details (sets status to pending)
+ */
+export const useSubmitHelperApplication = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitHelperApplication>>, TError,{id: number;data: BodyType<HelperApplicationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitHelperApplication>>,
+        TError,
+        {id: number;data: BodyType<HelperApplicationInput>},
+        TContext
+      > => {
+      return useMutation(getSubmitHelperApplicationMutationOptions(options));
+    }
+
+export const getGetHelperApplicationsUrl = (params?: GetHelperApplicationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/helper-applications?${stringifiedParams}` : `/api/admin/helper-applications`
+}
+
+/**
+ * @summary Admin — list helper applications by status
+ */
+export const getHelperApplications = async (params?: GetHelperApplicationsParams, options?: RequestInit): Promise<User[]> => {
+
+  return customFetch<User[]>(getGetHelperApplicationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetHelperApplicationsQueryKey = (params?: GetHelperApplicationsParams,) => {
+    return [
+    `/api/admin/helper-applications`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetHelperApplicationsQueryOptions = <TData = Awaited<ReturnType<typeof getHelperApplications>>, TError = ErrorType<unknown>>(params?: GetHelperApplicationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getHelperApplications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetHelperApplicationsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getHelperApplications>>> = ({ signal }) => getHelperApplications(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getHelperApplications>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetHelperApplicationsQueryResult = NonNullable<Awaited<ReturnType<typeof getHelperApplications>>>
+export type GetHelperApplicationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Admin — list helper applications by status
+ */
+
+export function useGetHelperApplications<TData = Awaited<ReturnType<typeof getHelperApplications>>, TError = ErrorType<unknown>>(
+ params?: GetHelperApplicationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getHelperApplications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetHelperApplicationsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getReviewHelperApplicationUrl = (id: number,) => {
+
+
+
+
+  return `/api/admin/helper-applications/${id}/review`
+}
+
+/**
+ * @summary Admin — approve or deny a helper application
+ */
+export const reviewHelperApplication = async (id: number,
+    helperApplicationReview: HelperApplicationReview, options?: RequestInit): Promise<User> => {
+
+  return customFetch<User>(getReviewHelperApplicationUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(helperApplicationReview)
+  }
+);}
+
+
+
+
+export const getReviewHelperApplicationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewHelperApplication>>, TError,{id: number;data: BodyType<HelperApplicationReview>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reviewHelperApplication>>, TError,{id: number;data: BodyType<HelperApplicationReview>}, TContext> => {
+
+const mutationKey = ['reviewHelperApplication'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reviewHelperApplication>>, {id: number;data: BodyType<HelperApplicationReview>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  reviewHelperApplication(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReviewHelperApplicationMutationResult = NonNullable<Awaited<ReturnType<typeof reviewHelperApplication>>>
+    export type ReviewHelperApplicationMutationBody = BodyType<HelperApplicationReview>
+    export type ReviewHelperApplicationMutationError = ErrorType<void>
+
+    /**
+ * @summary Admin — approve or deny a helper application
+ */
+export const useReviewHelperApplication = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewHelperApplication>>, TError,{id: number;data: BodyType<HelperApplicationReview>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reviewHelperApplication>>,
+        TError,
+        {id: number;data: BodyType<HelperApplicationReview>},
+        TContext
+      > => {
+      return useMutation(getReviewHelperApplicationMutationOptions(options));
     }
 
 export const getGetUserReportsUrl = (id: number,) => {

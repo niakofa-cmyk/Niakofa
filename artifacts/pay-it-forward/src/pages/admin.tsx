@@ -1077,13 +1077,280 @@ function CivicTab() {
   );
 }
 
+// ── Helpers Tab ───────────────────────────────────────────────────────────────
+
+interface HelperApplicant {
+  id: number;
+  name: string;
+  email: string;
+  avatar_url?: string | null;
+  is_helper: boolean;
+  helper_status: "pending" | "approved" | "denied" | null;
+  helper_skills?: string[] | null;
+  helper_languages?: string[] | null;
+  helper_qualifications?: string[] | null;
+  helper_bio?: string | null;
+  helper_vehicle?: string | null;
+  helper_social_links?: string | null;
+  trust_score?: number | null;
+  help_count?: number | null;
+  neighborhood?: string | null;
+  created_at?: string | null;
+}
+
+type HelperFilter = "pending" | "approved" | "denied";
+
+function HelpersTab() {
+  const [filter, setFilter] = useState<HelperFilter>("pending");
+  const [applicants, setApplicants] = useState<HelperApplicant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<number | null>(null);
+
+  const load = useCallback(async (status: HelperFilter) => {
+    setLoading(true);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const adminToken = getAdminToken();
+      const res = await fetch(`${base}/api/admin/helper-applications?status=${status}`, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      if (!res.ok) throw new Error("Failed to load");
+      const data = await res.json() as HelperApplicant[];
+      setApplicants(data);
+    } catch {
+      toast({ title: "Failed to load helper applications", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => { load(filter); }, [filter, load]);
+
+  const handleReview = async (id: number, decision: "approved" | "denied") => {
+    setActionLoading(id);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const adminToken = getAdminToken();
+      const res = await fetch(`${base}/api/admin/helper-applications/${id}/review`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({ decision }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: decision === "approved" ? "✅ Helper approved!" : "❌ Application denied" });
+      setApplicants(prev => prev.filter(a => a.id !== id));
+      setExpanded(null);
+    } catch {
+      toast({ title: "Action failed — try again", variant: "destructive" });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const filterColors: Record<HelperFilter, string> = {
+    pending:  "bg-yellow-500/20 border-yellow-500/40 text-yellow-300",
+    approved: "bg-green-500/20 border-green-500/40 text-green-300",
+    denied:   "bg-destructive/20 border-destructive/40 text-destructive",
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Filter tabs */}
+      <div className="flex gap-2">
+        {(["pending", "approved", "denied"] as HelperFilter[]).map(f => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`flex-1 py-2 text-xs font-black rounded-xl border capitalize transition-all ${
+              filter === f ? filterColors[f] : "bg-muted border-border text-muted-foreground"
+            }`}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <div className="w-7 h-7 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : applicants.length === 0 ? (
+        <div className="text-center py-12">
+          <div className="text-4xl mb-3">✅</div>
+          <p className="text-muted-foreground text-sm font-bold">No {filter} applications</p>
+          <p className="text-xs text-muted-foreground mt-1">All caught up!</p>
+        </div>
+      ) : (
+        <AnimatePresence initial={false}>
+          {applicants.map(a => (
+            <motion.div
+              key={a.id}
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, height: 0, overflow: "hidden" }}
+              transition={{ duration: 0.2 }}
+              className="bg-card border border-border rounded-2xl overflow-hidden"
+            >
+              {/* Card header */}
+              <button
+                onClick={() => setExpanded(expanded === a.id ? null : a.id)}
+                className="w-full flex items-center gap-3 p-4 text-left"
+              >
+                <div className="w-10 h-10 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0 font-black text-primary text-sm">
+                  {a.name?.[0]?.toUpperCase() ?? "?"}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-black text-sm truncate">{a.name}</div>
+                  <div className="text-[11px] text-muted-foreground truncate">{a.email}</div>
+                  {a.neighborhood && (
+                    <div className="text-[10px] text-muted-foreground">📍 {a.neighborhood}</div>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border capitalize ${filterColors[a.helper_status ?? "pending" as HelperFilter]}`}>
+                    {a.helper_status}
+                  </span>
+                  {expanded === a.id ? <ChevronLeft className="w-3.5 h-3.5 text-muted-foreground rotate-90" /> : <ChevronLeft className="w-3.5 h-3.5 text-muted-foreground -rotate-90" />}
+                </div>
+              </button>
+
+              {/* Expanded details */}
+              {expanded === a.id && (
+                <div className="px-4 pb-4 space-y-3 border-t border-border/50 pt-3">
+                  {/* Skills */}
+                  {(a.helper_skills?.length ?? 0) > 0 && (
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1.5">Skills</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(a.helper_skills ?? []).map(s => (
+                          <span key={s} className="text-[11px] bg-primary/10 border border-primary/20 text-primary px-2 py-0.5 rounded-full font-bold">
+                            {s.replace(/_/g, " ")}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Languages */}
+                  {(a.helper_languages?.length ?? 0) > 0 && (
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1.5">Languages</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(a.helper_languages ?? []).map(l => (
+                          <span key={l} className="text-[11px] bg-muted border border-border text-foreground px-2 py-0.5 rounded-full font-bold">
+                            🌐 {l}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Qualifications */}
+                  {(a.helper_qualifications?.length ?? 0) > 0 && (
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1.5">Qualifications</div>
+                      <div className="space-y-1">
+                        {(a.helper_qualifications ?? []).map(q => (
+                          <div key={q} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                            <CheckCircle2 className="w-3 h-3 text-green-400 shrink-0" />
+                            {q}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Vehicle */}
+                  {a.helper_vehicle && (
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Transportation</div>
+                      <span className="text-xs text-foreground capitalize">{a.helper_vehicle.replace(/_/g, " ")}</span>
+                    </div>
+                  )}
+
+                  {/* Bio */}
+                  {a.helper_bio && (
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Bio</div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">{a.helper_bio}</p>
+                    </div>
+                  )}
+
+                  {/* Social */}
+                  {a.helper_social_links && (
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Social</div>
+                      <p className="text-xs text-muted-foreground">{a.helper_social_links}</p>
+                    </div>
+                  )}
+
+                  {/* Approve / Deny buttons */}
+                  {filter === "pending" && (
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-destructive/40 text-destructive hover:bg-destructive/10 font-black text-xs"
+                        disabled={actionLoading === a.id}
+                        onClick={() => handleReview(a.id, "denied")}
+                      >
+                        {actionLoading === a.id ? <span className="flex items-center gap-1"><span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />…</span> : <><ThumbsDown className="w-3 h-3 mr-1" />Deny</>}
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="font-black text-xs"
+                        disabled={actionLoading === a.id}
+                        onClick={() => handleReview(a.id, "approved")}
+                      >
+                        {actionLoading === a.id ? <span className="flex items-center gap-1"><span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />…</span> : <><CheckCheck className="w-3 h-3 mr-1" />Approve</>}
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Re-evaluate options for already-decided */}
+                  {filter !== "pending" && (
+                    <div className="pt-1">
+                      {filter === "approved" ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full border-destructive/40 text-destructive hover:bg-destructive/10 font-black text-xs"
+                          disabled={actionLoading === a.id}
+                          onClick={() => handleReview(a.id, "denied")}
+                        >
+                          <ThumbsDown className="w-3 h-3 mr-1" />Revoke Approval
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          className="w-full font-black text-xs"
+                          disabled={actionLoading === a.id}
+                          onClick={() => handleReview(a.id, "approved")}
+                        >
+                          <CheckCheck className="w-3 h-3 mr-1" />Approve Now
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      )}
+    </div>
+  );
+}
+
 // ── Main Admin Screen ─────────────────────────────────────────────────────────
 
-type TabId = "reports" | "users" | "analytics" | "civic";
+type TabId = "reports" | "users" | "analytics" | "civic" | "helpers";
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "reports",   label: "Reports",   icon: Flag },
   { id: "users",     label: "Users",     icon: Users },
+  { id: "helpers",   label: "Helpers",   icon: CheckCheck },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "civic",     label: "Civic",     icon: Inbox },
 ];
@@ -1154,6 +1421,7 @@ export default function AdminScreen() {
           >
             {activeTab === "reports"   && <ReportsTab />}
             {activeTab === "users"     && <UsersTab />}
+            {activeTab === "helpers"   && <HelpersTab />}
             {activeTab === "analytics" && <AnalyticsTab />}
             {activeTab === "civic"     && <CivicTab />}
           </motion.div>

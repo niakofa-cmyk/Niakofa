@@ -30,6 +30,13 @@ export const GetUserResponse = zod.object({
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
   "helper_mode_active": zod.boolean(),
+  "helper_status": zod.union([zod.literal('pending'),zod.literal('approved'),zod.literal('denied'),zod.literal(null)]).nullish().describe('null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected'),
+  "helper_skills": zod.array(zod.string()).nullish().describe('Specific helper skills like plumbing, Spanish speaker, drives truck'),
+  "helper_languages": zod.array(zod.string()).nullish(),
+  "helper_qualifications": zod.array(zod.string()).nullish(),
+  "helper_bio": zod.string().nullish(),
+  "helper_vehicle": zod.string().nullish(),
+  "helper_social_links": zod.string().nullish().describe('JSON-encoded social media links'),
   "lat": zod.number().nullish(),
   "lng": zod.number().nullish(),
   "trust_score": zod.number().nullish(),
@@ -62,6 +69,13 @@ export const UpdateUserResponse = zod.object({
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
   "helper_mode_active": zod.boolean(),
+  "helper_status": zod.union([zod.literal('pending'),zod.literal('approved'),zod.literal('denied'),zod.literal(null)]).nullish().describe('null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected'),
+  "helper_skills": zod.array(zod.string()).nullish().describe('Specific helper skills like plumbing, Spanish speaker, drives truck'),
+  "helper_languages": zod.array(zod.string()).nullish(),
+  "helper_qualifications": zod.array(zod.string()).nullish(),
+  "helper_bio": zod.string().nullish(),
+  "helper_vehicle": zod.string().nullish(),
+  "helper_social_links": zod.string().nullish().describe('JSON-encoded social media links'),
   "lat": zod.number().nullish(),
   "lng": zod.number().nullish(),
   "trust_score": zod.number().nullish(),
@@ -94,6 +108,13 @@ export const UpdateUserLocationResponse = zod.object({
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
   "helper_mode_active": zod.boolean(),
+  "helper_status": zod.union([zod.literal('pending'),zod.literal('approved'),zod.literal('denied'),zod.literal(null)]).nullish().describe('null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected'),
+  "helper_skills": zod.array(zod.string()).nullish().describe('Specific helper skills like plumbing, Spanish speaker, drives truck'),
+  "helper_languages": zod.array(zod.string()).nullish(),
+  "helper_qualifications": zod.array(zod.string()).nullish(),
+  "helper_bio": zod.string().nullish(),
+  "helper_vehicle": zod.string().nullish(),
+  "helper_social_links": zod.string().nullish().describe('JSON-encoded social media links'),
   "lat": zod.number().nullish(),
   "lng": zod.number().nullish(),
   "trust_score": zod.number().nullish(),
@@ -123,6 +144,13 @@ export const UpdateHelperModeResponse = zod.object({
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
   "helper_mode_active": zod.boolean(),
+  "helper_status": zod.union([zod.literal('pending'),zod.literal('approved'),zod.literal('denied'),zod.literal(null)]).nullish().describe('null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected'),
+  "helper_skills": zod.array(zod.string()).nullish().describe('Specific helper skills like plumbing, Spanish speaker, drives truck'),
+  "helper_languages": zod.array(zod.string()).nullish(),
+  "helper_qualifications": zod.array(zod.string()).nullish(),
+  "helper_bio": zod.string().nullish(),
+  "helper_vehicle": zod.string().nullish(),
+  "helper_social_links": zod.string().nullish().describe('JSON-encoded social media links'),
   "lat": zod.number().nullish(),
   "lng": zod.number().nullish(),
   "trust_score": zod.number().nullish(),
@@ -152,7 +180,7 @@ export const MakePledgePaymentResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
@@ -186,7 +214,13 @@ export const RegisterUserBody = zod.object({
   "email": zod.string(),
   "avatar_url": zod.string().optional(),
   "is_helper": zod.boolean().optional(),
-  "neighborhood": zod.string().optional()
+  "neighborhood": zod.string().optional(),
+  "helper_skills": zod.array(zod.string()).optional(),
+  "helper_languages": zod.array(zod.string()).optional(),
+  "helper_qualifications": zod.array(zod.string()).optional(),
+  "helper_bio": zod.string().optional(),
+  "helper_vehicle": zod.string().optional(),
+  "helper_social_links": zod.string().optional()
 })
 
 export const RegisterUserResponse = zod.object({
@@ -196,6 +230,13 @@ export const RegisterUserResponse = zod.object({
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
   "helper_mode_active": zod.boolean(),
+  "helper_status": zod.union([zod.literal('pending'),zod.literal('approved'),zod.literal('denied'),zod.literal(null)]).nullish().describe('null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected'),
+  "helper_skills": zod.array(zod.string()).nullish().describe('Specific helper skills like plumbing, Spanish speaker, drives truck'),
+  "helper_languages": zod.array(zod.string()).nullish(),
+  "helper_qualifications": zod.array(zod.string()).nullish(),
+  "helper_bio": zod.string().nullish(),
+  "helper_vehicle": zod.string().nullish(),
+  "helper_social_links": zod.string().nullish().describe('JSON-encoded social media links'),
   "lat": zod.number().nullish(),
   "lng": zod.number().nullish(),
   "trust_score": zod.number().nullish(),
@@ -223,7 +264,7 @@ export const GetRequestsResponseItem = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
@@ -265,7 +306,7 @@ export const createRequestBodyNeighborhoodMax = 100;
 export const CreateRequestBody = zod.object({
   "title": zod.string().min(createRequestBodyTitleMin).max(createRequestBodyTitleMax),
   "description": zod.string().max(createRequestBodyDescriptionMax).optional(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).optional(),
   "requester_id": zod.number(),
@@ -282,7 +323,7 @@ export const CreateRequestResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
@@ -325,7 +366,7 @@ export const GetNearbyRequestsResponseItem = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
@@ -381,7 +422,7 @@ export const GetRequestResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
@@ -426,7 +467,7 @@ export const UpdateRequestResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
@@ -469,7 +510,7 @@ export const ClaimRequestResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
@@ -512,7 +553,7 @@ export const MarkEnRouteResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
@@ -555,7 +596,7 @@ export const MarkArrivedResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
@@ -599,7 +640,7 @@ export const CompleteRequestResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
@@ -703,7 +744,7 @@ export const GetUserOutstandingPledgesResponseItem = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
@@ -932,6 +973,121 @@ export const ReviewReportResponse = zod.object({
 
 
 /**
+ * @summary Submit or update helper profile details (sets status to pending)
+ */
+export const SubmitHelperApplicationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const submitHelperApplicationBodyHelperBioMax = 500;
+
+
+
+export const SubmitHelperApplicationBody = zod.object({
+  "helper_skills": zod.array(zod.string()),
+  "helper_languages": zod.array(zod.string()).optional(),
+  "helper_qualifications": zod.array(zod.string()).optional(),
+  "helper_bio": zod.string().max(submitHelperApplicationBodyHelperBioMax).optional(),
+  "helper_vehicle": zod.string().optional(),
+  "helper_social_links": zod.string().optional().describe('JSON-encoded social media links')
+})
+
+export const SubmitHelperApplicationResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "avatar_url": zod.string().nullish(),
+  "is_helper": zod.boolean(),
+  "helper_mode_active": zod.boolean(),
+  "helper_status": zod.union([zod.literal('pending'),zod.literal('approved'),zod.literal('denied'),zod.literal(null)]).nullish().describe('null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected'),
+  "helper_skills": zod.array(zod.string()).nullish().describe('Specific helper skills like plumbing, Spanish speaker, drives truck'),
+  "helper_languages": zod.array(zod.string()).nullish(),
+  "helper_qualifications": zod.array(zod.string()).nullish(),
+  "helper_bio": zod.string().nullish(),
+  "helper_vehicle": zod.string().nullish(),
+  "helper_social_links": zod.string().nullish().describe('JSON-encoded social media links'),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "trust_score": zod.number().nullish(),
+  "help_count": zod.number(),
+  "neighborhood": zod.string().nullish(),
+  "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
+  "goodwill_score": zod.number().describe('Community reputation score'),
+  "created_at": zod.string().optional()
+})
+
+
+/**
+ * @summary Admin — list helper applications by status
+ */
+export const GetHelperApplicationsQueryParams = zod.object({
+  "status": zod.enum(['pending', 'approved', 'denied']).optional()
+})
+
+export const GetHelperApplicationsResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "avatar_url": zod.string().nullish(),
+  "is_helper": zod.boolean(),
+  "helper_mode_active": zod.boolean(),
+  "helper_status": zod.union([zod.literal('pending'),zod.literal('approved'),zod.literal('denied'),zod.literal(null)]).nullish().describe('null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected'),
+  "helper_skills": zod.array(zod.string()).nullish().describe('Specific helper skills like plumbing, Spanish speaker, drives truck'),
+  "helper_languages": zod.array(zod.string()).nullish(),
+  "helper_qualifications": zod.array(zod.string()).nullish(),
+  "helper_bio": zod.string().nullish(),
+  "helper_vehicle": zod.string().nullish(),
+  "helper_social_links": zod.string().nullish().describe('JSON-encoded social media links'),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "trust_score": zod.number().nullish(),
+  "help_count": zod.number(),
+  "neighborhood": zod.string().nullish(),
+  "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
+  "goodwill_score": zod.number().describe('Community reputation score'),
+  "created_at": zod.string().optional()
+})
+export const GetHelperApplicationsResponse = zod.array(GetHelperApplicationsResponseItem)
+
+
+/**
+ * @summary Admin — approve or deny a helper application
+ */
+export const ReviewHelperApplicationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ReviewHelperApplicationBody = zod.object({
+  "decision": zod.enum(['approved', 'denied']),
+  "admin_notes": zod.string().optional()
+})
+
+export const ReviewHelperApplicationResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "avatar_url": zod.string().nullish(),
+  "is_helper": zod.boolean(),
+  "helper_mode_active": zod.boolean(),
+  "helper_status": zod.union([zod.literal('pending'),zod.literal('approved'),zod.literal('denied'),zod.literal(null)]).nullish().describe('null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected'),
+  "helper_skills": zod.array(zod.string()).nullish().describe('Specific helper skills like plumbing, Spanish speaker, drives truck'),
+  "helper_languages": zod.array(zod.string()).nullish(),
+  "helper_qualifications": zod.array(zod.string()).nullish(),
+  "helper_bio": zod.string().nullish(),
+  "helper_vehicle": zod.string().nullish(),
+  "helper_social_links": zod.string().nullish().describe('JSON-encoded social media links'),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "trust_score": zod.number().nullish(),
+  "help_count": zod.number(),
+  "neighborhood": zod.string().nullish(),
+  "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
+  "goodwill_score": zod.number().describe('Community reputation score'),
+  "created_at": zod.string().optional()
+})
+
+
+/**
  * @summary Get reports filed by a user
  */
 export const GetUserReportsParams = zod.object({
@@ -968,7 +1124,7 @@ export const CancelRequestResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
@@ -1049,6 +1205,13 @@ export const SetInitialPasswordResponse = zod.object({
   "avatar_url": zod.string().nullish(),
   "is_helper": zod.boolean(),
   "helper_mode_active": zod.boolean(),
+  "helper_status": zod.union([zod.literal('pending'),zod.literal('approved'),zod.literal('denied'),zod.literal(null)]).nullish().describe('null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected'),
+  "helper_skills": zod.array(zod.string()).nullish().describe('Specific helper skills like plumbing, Spanish speaker, drives truck'),
+  "helper_languages": zod.array(zod.string()).nullish(),
+  "helper_qualifications": zod.array(zod.string()).nullish(),
+  "helper_bio": zod.string().nullish(),
+  "helper_vehicle": zod.string().nullish(),
+  "helper_social_links": zod.string().nullish().describe('JSON-encoded social media links'),
   "lat": zod.number().nullish(),
   "lng": zod.number().nullish(),
   "trust_score": zod.number().nullish(),

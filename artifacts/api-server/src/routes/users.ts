@@ -454,6 +454,114 @@ router.delete("/users/:id", requireAuth, requireOwnership(), async (req, res) =>
   }
 });
 
+// PATCH /users/:id/helper-application — submit helper profile, sets status to pending
+router.patch("/users/:id/helper-application", requireAuth, requireOwnership(), async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const {
+    helper_skills, helper_languages, helper_qualifications,
+    helper_bio, helper_vehicle, helper_social_links,
+  } = req.body as {
+    helper_skills?: string[];
+    helper_languages?: string[];
+    helper_qualifications?: string[];
+    helper_bio?: string;
+    helper_vehicle?: string;
+    helper_social_links?: string;
+  };
+  if (!helper_skills || !Array.isArray(helper_skills) || helper_skills.length === 0) {
+    return res.status(400).json({ error: "At least one skill is required" });
+  }
+  const updates: Partial<typeof usersTable.$inferInsert> = {
+    is_helper: true,
+    helper_status: "pending",
+    helper_skills: helper_skills ?? [],
+    helper_languages: helper_languages ?? [],
+    helper_qualifications: helper_qualifications ?? [],
+    helper_bio: helper_bio ?? null,
+    helper_vehicle: helper_vehicle ?? null,
+    helper_social_links: helper_social_links ?? null,
+    updated_at: new Date(),
+  };
+  const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, id)).returning();
+  if (!user) return res.status(404).json({ error: "User not found" });
+  const { password_hash: _ph, ...safeUser } = user as any;
+  logger.info({ user_id: id }, "users: helper application submitted");
+  return res.json(safeUser);
+});
+
+// GET /admin/helper-applications — list helper applicants (admin only)
+router.get("/admin/helper-applications", requireAuth, requireAdmin(), async (req, res) => {
+  const { status } = req.query as { status?: string };
+  const validStatuses = ["pending", "approved", "denied"];
+  const filterStatus = status && validStatuses.includes(status) ? status : null;
+
+  let query = db.select({
+    id: usersTable.id,
+    name: usersTable.name,
+    email: usersTable.email,
+    avatar_url: usersTable.avatar_url,
+    is_helper: usersTable.is_helper,
+    helper_mode_active: usersTable.helper_mode_active,
+    helper_status: usersTable.helper_status,
+    helper_skills: usersTable.helper_skills,
+    helper_languages: usersTable.helper_languages,
+    helper_qualifications: usersTable.helper_qualifications,
+    helper_bio: usersTable.helper_bio,
+    helper_vehicle: usersTable.helper_vehicle,
+    helper_social_links: usersTable.helper_social_links,
+    trust_score: usersTable.trust_score,
+    help_count: usersTable.help_count,
+    neighborhood: usersTable.neighborhood,
+    benevolence_wallet: usersTable.benevolence_wallet,
+    goodwill_score: usersTable.goodwill_score,
+    identity_verified: usersTable.identity_verified,
+    created_at: usersTable.created_at,
+    updated_at: usersTable.updated_at,
+  }).from(usersTable);
+
+  const rows = filterStatus
+    ? await (query as any).where(eq(usersTable.helper_status, filterStatus)).limit(200)
+    : await (query as any).where(sql`${usersTable.helper_status} IS NOT NULL`).limit(200);
+
+  return res.json(rows);
+});
+
+// PATCH /admin/helper-applications/:id/review — approve or deny a helper application
+router.patch("/admin/helper-applications/:id/review", requireAuth, requireAdmin(), async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const { decision } = req.body as { decision?: string; admin_notes?: string };
+  if (!decision || !["approved", "denied"].includes(decision)) {
+    return res.status(400).json({ error: "decision must be 'approved' or 'denied'" });
+  }
+
+  const updates: Partial<typeof usersTable.$inferInsert> = {
+    helper_status: decision as "approved" | "denied",
+    updated_at: new Date(),
+  };
+
+  if (decision === "approved") {
+    updates.is_helper = true;
+  } else {
+    updates.is_helper = false;
+    updates.helper_mode_active = false;
+  }
+
+  const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, id)).returning();
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  const { password_hash: _ph, ...safeUser } = user as any;
+  logger.info({ user_id: id, decision }, "admin: helper application reviewed");
+
+  broadcast({
+    type: decision === "approved" ? "helper_application_approved" : "helper_application_denied",
+    payload: { user_id: id, decision },
+  });
+
+  return res.json(safeUser);
+});
+
 // PATCH /users/:id/moderation — admin moderation actions
 router.patch("/users/:id/moderation", requireAuth, requireAdmin(), async (req, res) => {
   const userId = parseInt(req.params.id as string);

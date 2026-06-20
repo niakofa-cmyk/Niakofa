@@ -1143,21 +1143,51 @@ export default function ProfileScreen() {
               </div>
             )}
 
-            {/* Helper Mode */}
-            <div className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between">
-              <div>
-                <div className="font-bold flex items-center gap-2">
-                  Helper Mode
-                  {helperModeActive && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
-                </div>
-                <p className="text-sm text-muted-foreground">Receive nearby help requests</p>
-              </div>
-              <Switch
-                checked={helperModeActive}
-                onCheckedChange={setHelperModeActive}
-                className="data-[state=checked]:bg-green-500 scale-125"
-              />
-            </div>
+            {/* Helper Mode — only available to approved helpers */}
+            {(() => {
+              const helperStatus = (currentUser as any).helper_status as string | null | undefined;
+              if (helperStatus === "approved") {
+                return (
+                  <div className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between">
+                    <div>
+                      <div className="font-bold flex items-center gap-2">
+                        Helper Mode
+                        {helperModeActive && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
+                      </div>
+                      <p className="text-sm text-muted-foreground">Receive nearby help requests</p>
+                    </div>
+                    <Switch
+                      checked={helperModeActive}
+                      onCheckedChange={setHelperModeActive}
+                      className="data-[state=checked]:bg-green-500 scale-125"
+                    />
+                  </div>
+                );
+              }
+              if (helperStatus === "pending") {
+                return (
+                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 flex items-start gap-3">
+                    <Clock className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold text-yellow-300 text-sm">Helper Application Pending</div>
+                      <p className="text-xs text-muted-foreground mt-0.5">Your application is under admin review. You'll be notified once approved.</p>
+                    </div>
+                  </div>
+                );
+              }
+              if (helperStatus === "denied") {
+                return (
+                  <div className="bg-destructive/10 border border-destructive/30 rounded-2xl p-4 flex items-start gap-3">
+                    <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold text-destructive text-sm">Helper Application Not Approved</div>
+                      <p className="text-xs text-muted-foreground mt-0.5">Contact help@niakofa.community if you have questions about your application.</p>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
 
             {/* Recent Helpers — derived from transaction history */}
             <RecentHelpersSection transactions={transactions} onNavigate={setLocation} />

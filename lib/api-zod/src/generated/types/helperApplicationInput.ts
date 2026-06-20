@@ -6,16 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface UserRegistration {
-  name: string;
-  email: string;
-  avatar_url?: string;
-  is_helper?: boolean;
-  neighborhood?: string;
-  helper_skills?: string[];
+export interface HelperApplicationInput {
+  helper_skills: string[];
   helper_languages?: string[];
   helper_qualifications?: string[];
+  /** @maxLength 500 */
   helper_bio?: string;
   helper_vehicle?: string;
+  /** JSON-encoded social media links */
   helper_social_links?: string;
 }

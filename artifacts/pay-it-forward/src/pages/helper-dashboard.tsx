@@ -60,6 +60,73 @@ export default function HelperDashboardScreen() {
 
   if (!currentUser) return null;
 
+  // Gate: only approved helpers can access the dashboard
+  const helperStatus = (currentUser as any).helper_status as string | null | undefined;
+  if (helperStatus !== "approved") {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex flex-col">
+        <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-xl border-b border-border p-4 pt-safe">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setLocation("/")} className="p-2 rounded-xl hover:bg-muted transition-colors">
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <h1 className="text-lg font-black">Helper Dashboard</h1>
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center p-8 gap-5 text-center max-w-sm mx-auto">
+          {helperStatus === "pending" ? (
+            <>
+              <div className="w-20 h-20 rounded-full bg-yellow-500/10 border-2 border-yellow-500/30 flex items-center justify-center">
+                <Clock className="w-10 h-10 text-yellow-400" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black mb-2">Application Under Review</h2>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Your helper application is pending admin review. You'll be notified once it's approved. Thank you for your patience!
+                </p>
+              </div>
+              <div className="w-full bg-card border border-yellow-500/20 rounded-2xl p-4 text-left">
+                <div className="text-[10px] font-black uppercase tracking-wider text-yellow-400 mb-1">Status</div>
+                <div className="text-sm font-bold text-yellow-300">Pending Admin Review</div>
+                <div className="text-xs text-muted-foreground mt-1">Applications are typically reviewed within 1–2 business days.</div>
+              </div>
+            </>
+          ) : helperStatus === "denied" ? (
+            <>
+              <div className="w-20 h-20 rounded-full bg-destructive/10 border-2 border-destructive/30 flex items-center justify-center">
+                <Award className="w-10 h-10 text-destructive" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black mb-2">Application Not Approved</h2>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Your helper application was not approved at this time. Contact us at help@niakofa.community if you have questions.
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
+                <Heart className="w-10 h-10 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black mb-2">Become a Helper</h2>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Apply to become a verified Niakofa helper. You'll be able to accept requests and earn goodwill from your community.
+                </p>
+              </div>
+              <button
+                onClick={() => setLocation("/login")}
+                className="w-full bg-primary text-primary-foreground font-black py-3 rounded-2xl transition-all active:scale-[0.98]"
+              >
+                Apply as Helper
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   const nearbyRequests = nearbyRaw as HelpRequest[];
   const myActiveRequests = (myActiveRaw as HelpRequest[]).filter(r => r.helper_id === currentUser.id);
   const openNearby = nearbyRequests.filter(r => r.status === "open");

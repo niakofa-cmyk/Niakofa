@@ -9,6 +9,19 @@ export interface HealthStatus {
   status: string;
 }
 
+/**
+ * null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected
+ * @nullable
+ */
+export type UserHelperStatus = typeof UserHelperStatus[keyof typeof UserHelperStatus] | null;
+
+
+export const UserHelperStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  denied: 'denied',
+} as const;
+
 export interface User {
   id: number;
   name: string;
@@ -17,6 +30,29 @@ export interface User {
   avatar_url?: string | null;
   is_helper: boolean;
   helper_mode_active: boolean;
+  /**
+     * null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected
+     * @nullable
+     */
+  helper_status?: UserHelperStatus;
+  /**
+     * Specific helper skills like plumbing, Spanish speaker, drives truck
+     * @nullable
+     */
+  helper_skills?: string[] | null;
+  /** @nullable */
+  helper_languages?: string[] | null;
+  /** @nullable */
+  helper_qualifications?: string[] | null;
+  /** @nullable */
+  helper_bio?: string | null;
+  /** @nullable */
+  helper_vehicle?: string | null;
+  /**
+     * JSON-encoded social media links
+     * @nullable
+     */
+  helper_social_links?: string | null;
   /** @nullable */
   lat?: number | null;
   /** @nullable */
@@ -40,12 +76,42 @@ export interface UserUpdate {
   is_helper?: boolean;
 }
 
+export interface HelperApplicationInput {
+  helper_skills: string[];
+  helper_languages?: string[];
+  helper_qualifications?: string[];
+  /** @maxLength 500 */
+  helper_bio?: string;
+  helper_vehicle?: string;
+  /** JSON-encoded social media links */
+  helper_social_links?: string;
+}
+
+export type HelperApplicationReviewDecision = typeof HelperApplicationReviewDecision[keyof typeof HelperApplicationReviewDecision];
+
+
+export const HelperApplicationReviewDecision = {
+  approved: 'approved',
+  denied: 'denied',
+} as const;
+
+export interface HelperApplicationReview {
+  decision: HelperApplicationReviewDecision;
+  admin_notes?: string;
+}
+
 export interface UserRegistration {
   name: string;
   email: string;
   avatar_url?: string;
   is_helper?: boolean;
   neighborhood?: string;
+  helper_skills?: string[];
+  helper_languages?: string[];
+  helper_qualifications?: string[];
+  helper_bio?: string;
+  helper_vehicle?: string;
+  helper_social_links?: string;
 }
 
 export interface LocationUpdate {
@@ -78,6 +144,10 @@ export const HelpRequestCategory = {
   medical: 'medical',
   emergency: 'emergency',
   other: 'other',
+  stock_shelves: 'stock_shelves',
+  event_setup: 'event_setup',
+  delivery_run: 'delivery_run',
+  tech_support: 'tech_support',
 } as const;
 
 export type HelpRequestUrgency = typeof HelpRequestUrgency[keyof typeof HelpRequestUrgency];
@@ -171,6 +241,10 @@ export const HelpRequestInputCategory = {
   medical: 'medical',
   emergency: 'emergency',
   other: 'other',
+  stock_shelves: 'stock_shelves',
+  event_setup: 'event_setup',
+  delivery_run: 'delivery_run',
+  tech_support: 'tech_support',
 } as const;
 
 export type HelpRequestInputUrgency = typeof HelpRequestInputUrgency[keyof typeof HelpRequestInputUrgency];
@@ -637,5 +711,18 @@ export const GetReportsStatus = {
   resolved_dismissed: 'resolved_dismissed',
   resolved_warned: 'resolved_warned',
   resolved_banned: 'resolved_banned',
+} as const;
+
+export type GetHelperApplicationsParams = {
+status?: GetHelperApplicationsStatus;
+};
+
+export type GetHelperApplicationsStatus = typeof GetHelperApplicationsStatus[keyof typeof GetHelperApplicationsStatus];
+
+
+export const GetHelperApplicationsStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  denied: 'denied',
 } as const;
 

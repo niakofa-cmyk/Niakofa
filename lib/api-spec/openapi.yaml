@@ -682,6 +682,85 @@ paths:
         "404":
           description: Not found
 
+  /users/{id}/helper-application:
+    patch:
+      operationId: submitHelperApplication
+      tags: [users]
+      summary: Submit or update helper profile details (sets status to pending)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelperApplicationInput"
+      responses:
+        "200":
+          description: Updated user with pending helper status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /admin/helper-applications:
+    get:
+      operationId: getHelperApplications
+      tags: [users]
+      summary: Admin — list helper applications by status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, denied]
+      responses:
+        "200":
+          description: List of helper applicants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+
+  /admin/helper-applications/{id}/review:
+    patch:
+      operationId: reviewHelperApplication
+      tags: [users]
+      summary: Admin — approve or deny a helper application
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelperApplicationReview"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+
   /users/{id}/reports:
     get:
       operationId: getUserReports
@@ -816,6 +895,30 @@ components:
           type: boolean
         helper_mode_active:
           type: boolean
+        helper_status:
+          type: ["string", "null"]
+          enum: ["pending", "approved", "denied", null]
+          description: "null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected"
+        helper_skills:
+          type: ["array", "null"]
+          items:
+            type: string
+          description: Specific helper skills like plumbing, Spanish speaker, drives truck
+        helper_languages:
+          type: ["array", "null"]
+          items:
+            type: string
+        helper_qualifications:
+          type: ["array", "null"]
+          items:
+            type: string
+        helper_bio:
+          type: ["string", "null"]
+        helper_vehicle:
+          type: ["string", "null"]
+        helper_social_links:
+          type: ["string", "null"]
+          description: JSON-encoded social media links
         lat:
           type: ["number", "null"]
         lng:
@@ -847,6 +950,41 @@ components:
         is_helper:
           type: boolean
 
+    HelperApplicationInput:
+      type: object
+      required: [helper_skills]
+      properties:
+        helper_skills:
+          type: array
+          items:
+            type: string
+        helper_languages:
+          type: array
+          items:
+            type: string
+        helper_qualifications:
+          type: array
+          items:
+            type: string
+        helper_bio:
+          type: string
+          maxLength: 500
+        helper_vehicle:
+          type: string
+        helper_social_links:
+          type: string
+          description: JSON-encoded social media links
+
+    HelperApplicationReview:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approved, denied]
+        admin_notes:
+          type: string
+
     UserRegistration:
       type: object
       required: [name, email]
@@ -860,6 +998,24 @@ components:
         is_helper:
           type: boolean
         neighborhood:
+          type: string
+        helper_skills:
+          type: array
+          items:
+            type: string
+        helper_languages:
+          type: array
+          items:
+            type: string
+        helper_qualifications:
+          type: array
+          items:
+            type: string
+        helper_bio:
+          type: string
+        helper_vehicle:
+          type: string
+        helper_social_links:
           type: string
 
     LocationUpdate:

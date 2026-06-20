@@ -9,6 +9,16 @@ export const usersTable = pgTable("users", {
   avatar_url: text("avatar_url"),
   is_helper: boolean("is_helper").notNull().default(false),
   helper_mode_active: boolean("helper_mode_active").notNull().default(false),
+  // Helper approval lifecycle: null = not a helper applicant, pending = awaiting admin review,
+  // approved = accepted helper, denied = rejected
+  helper_status: text("helper_status"),
+  // Rich helper profile fields
+  helper_skills: text("helper_skills").array(),
+  helper_languages: text("helper_languages").array(),
+  helper_qualifications: text("helper_qualifications").array(),
+  helper_bio: text("helper_bio"),
+  helper_vehicle: text("helper_vehicle"),
+  helper_social_links: text("helper_social_links"),
   lat: real("lat"),
   lng: real("lng"),
   heading: real("heading"),
@@ -36,6 +46,7 @@ export const usersTable = pgTable("users", {
 }, (t) => [
   index("users_is_helper_idx").on(t.is_helper),
   index("users_helper_mode_active_idx").on(t.helper_mode_active),
+  index("users_helper_status_idx").on(t.helper_status),
 ]);
 
 export const insertUserSchema = createInsertSchema(usersTable).omit({ id: true, created_at: true, updated_at: true });
