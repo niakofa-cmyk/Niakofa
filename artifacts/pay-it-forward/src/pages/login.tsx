@@ -299,6 +299,9 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [isHelper, setIsHelper] = useState(false);
+  const [accountType, setAccountType] = useState<"individual" | "business" | "sponsor">("individual");
+  const [organizationName, setOrganizationName] = useState("");
+  const [organizationDescription, setOrganizationDescription] = useState("");
   const [loading, setLoading] = useState(false);
 
   // Helper profile state
@@ -324,6 +327,10 @@ export default function LoginScreen() {
       toast({ title: "Please select at least one skill", variant: "destructive" });
       return;
     }
+    if (mode === "register" && (accountType === "business" || accountType === "sponsor") && !organizationName.trim()) {
+      toast({ title: `Please enter your ${accountType} name`, variant: "destructive" });
+      return;
+    }
     setLoading(true);
 
     try {
@@ -331,7 +338,15 @@ export default function LoginScreen() {
         const res = await fetch("/api/users/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: name.trim(), email: email.trim(), password, is_helper: false }),
+          body: JSON.stringify({
+            name: name.trim(),
+            email: email.trim(),
+            password,
+            is_helper: false,
+            account_type: accountType,
+            organization_name: organizationName.trim() || undefined,
+            organization_description: organizationDescription.trim() || undefined,
+          }),
         });
         const data = await res.json().catch(() => ({})) as any;
         if (!res.ok) {
@@ -578,6 +593,48 @@ export default function LoginScreen() {
                     className="w-full bg-card border border-border rounded-2xl pl-11 pr-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
                     autoComplete="name"
                   />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence mode="wait">
+            {mode === "register" && (
+              <motion.div key="account-type" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["individual", "business", "sponsor"] as const).map(t => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setAccountType(t)}
+                        className={`py-2.5 rounded-xl border-2 text-xs font-black capitalize transition-all ${
+                          accountType === t ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground"
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+
+                  {(accountType === "business" || accountType === "sponsor") && (
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        placeholder={accountType === "business" ? "Business name" : "Organization name"}
+                        value={organizationName}
+                        onChange={e => setOrganizationName(e.target.value)}
+                        className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      />
+                      <textarea
+                        placeholder={`Tell us about your ${accountType} and how you'd like to support Niakofa`}
+                        value={organizationDescription}
+                        onChange={e => setOrganizationDescription(e.target.value)}
+                        rows={3}
+                        className="w-full bg-card border border-border rounded-2xl px-4 py-3 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground resize-none"
+                      />
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}

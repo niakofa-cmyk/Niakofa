@@ -1,6 +1,18 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import { useLocation } from "wouter";
-import type { User } from "@workspace/api-client-react";
+import type { User as GeneratedUser } from "@workspace/api-client-react";
+
+/**
+ * Extends the generated User type with fields that exist in the database
+ * and API responses but aren't part of the OpenAPI spec yet (same pattern
+ * as how `password` is handled — kept out of codegen to avoid spec churn).
+ */
+export type User = GeneratedUser & {
+  approval_status?: "pending" | "approved" | "denied";
+  account_type?: "individual" | "business" | "sponsor";
+  organization_name?: string | null;
+  organization_description?: string | null;
+};
 import { useUpdateUserLocation, useUpdateHelperMode } from "@workspace/api-client-react";
 import { useWebSocket } from "./useWebSocket";
 import { wsStart, wsRegister, wsUnregister } from "./wsClient";

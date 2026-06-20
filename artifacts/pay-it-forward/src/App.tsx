@@ -20,6 +20,7 @@ const AdminScreen = lazy(() => import("@/pages/admin"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 const RequesterTrackingScreen = lazy(() => import("@/pages/request-track"));
 const LoginScreen = lazy(() => import("@/pages/login"));
+const PendingApprovalScreen = lazy(() => import("@/pages/pending-approval"));
 const HelperProfileScreen = lazy(() => import("@/pages/helper-profile"));
 const RequestDetailScreen = lazy(() => import("@/pages/request-detail"));
 const OnboardingScreen = lazy(() => import("@/pages/onboarding"));
@@ -54,6 +55,18 @@ function AppShell() {
   // Show login/register screen if no authenticated user is stored
   if (!currentUser) {
     return <LoginScreen />;
+  }
+
+  // Lock out anyone whose account hasn't been admin-approved yet — applies
+  // to every account type (individual, business, sponsor). The API enforces
+  // this server-side regardless; this just gives them a clear explanation
+  // instead of a wall of broken-looking 403s.
+  if (currentUser.approval_status === "pending" || currentUser.approval_status === "denied") {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <PendingApprovalScreen />
+      </Suspense>
+    );
   }
 
   return (
