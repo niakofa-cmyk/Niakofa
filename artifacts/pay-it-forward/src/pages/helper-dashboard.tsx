@@ -132,13 +132,13 @@ export default function HelperDashboardScreen() {
         </div>
 
         {/* Skills */}
-        {(currentUser.specialties?.length ?? 0) > 0 && (
+        {(((currentUser as unknown as { specialties?: string[] }).specialties)?.length ?? 0) > 0 && (
           <div className="bg-card border border-border rounded-2xl p-4">
             <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
               <Wrench className="w-3.5 h-3.5 text-primary" /> Your Skills
             </h3>
             <div className="flex flex-wrap gap-2">
-              {currentUser.specialties!.map(skill => {
+              {((currentUser as unknown as { specialties?: string[] }).specialties ?? []).map(skill => {
                 const match = ALL_SKILLS.find(s => s.id === skill.toLowerCase().replace(/\s+/g, "_"));
                 return (
                   <span key={skill} className="flex items-center gap-1 text-xs font-bold bg-primary/10 text-primary border border-primary/20 px-3 py-1.5 rounded-full">

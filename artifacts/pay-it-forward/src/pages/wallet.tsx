@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Wallet, TrendingUp, Heart, DollarSign, Gift, Clock, X, ArrowUpRight, ArrowDownLeft, Loader2, Calendar, CheckCircle, CreditCard, ExternalLink, Play } from "lucide-react";
+import { useLocation } from "wouter";
+import { Wallet, TrendingUp, Heart, DollarSign, Gift, Clock, X, ArrowUpRight, ArrowDownLeft, Loader2, Calendar, CheckCircle, CreditCard, ExternalLink, Play, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAppContext } from "@/lib/AppContext";
@@ -61,6 +62,7 @@ async function cancelScheduledPaymentFetch(userId: number, paymentId: number): P
 
 export default function WalletScreen() {
   const { currentUser } = useAppContext();
+  const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [walletTab, setWalletTab] = useState<"activity" | "earnings">("activity");
   const [pledgeOpen, setPledgeOpen] = useState(false);
@@ -418,7 +420,7 @@ export default function WalletScreen() {
         )}
 
         {/* Action Buttons */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <button
             onClick={() => setPledgeOpen(true)}
             className="bg-primary/10 border-2 border-primary/40 hover:border-primary/70 rounded-2xl p-4 flex flex-col items-center gap-2 transition-all group"
@@ -427,7 +429,7 @@ export default function WalletScreen() {
               <Heart className="w-5 h-5 text-primary" />
             </div>
             <div className="text-sm font-black">Pay Forward</div>
-            <div className="text-[10px] text-muted-foreground text-center">Contribute any amount</div>
+            <div className="text-[10px] text-muted-foreground text-center">Contribute</div>
           </button>
           <button
             onClick={() => {
@@ -442,6 +444,17 @@ export default function WalletScreen() {
             </div>
             <div className="text-sm font-black text-purple-400">Schedule</div>
             <div className="text-[10px] text-muted-foreground text-center">Plan repayment</div>
+          </button>
+          <button
+            onClick={() => setLocation("/recurring")}
+            className="bg-cyan-500/10 border-2 border-cyan-500/30 hover:border-cyan-500/60 rounded-2xl p-4 flex flex-col items-center gap-2 transition-all group"
+            aria-label="Manage recurring help requests"
+          >
+            <div className="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center">
+              <RotateCcw className="w-5 h-5 text-cyan-400" />
+            </div>
+            <div className="text-sm font-black text-cyan-400">Recurring</div>
+            <div className="text-[10px] text-muted-foreground text-center">Auto-schedule</div>
           </button>
         </div>
 

@@ -217,7 +217,7 @@ export default function MapScreen() {
         if (!exists) return prev;
         return prev.map(h => h.id === loc.id ? { ...h, lat: loc.lat, lng: loc.lng, heading: loc.heading ?? h.heading } : h);
       });
-    } else if (event.type === "crisis_update") {
+    } else if ((event as { type: string }).type === "crisis_update") {
       const state = event.payload as CrisisState;
       if (state.active) {
         setCrisis(state);
@@ -305,7 +305,7 @@ export default function MapScreen() {
   };
 
   // Dispatch Intelligence — Best Match card
-  const bestMatch = helperModeActive ? pickBestMatch(openRequests, currentUser?.specialties) : null;
+  const bestMatch = helperModeActive ? pickBestMatch(openRequests, (currentUser as unknown as { specialties?: string[] })?.specialties) : null;
   const showBestMatch = bestMatch && bestMatch.id !== bestMatchDismissed;
 
   const showCrisisBanner = crisis?.active && !crisisDismissed;

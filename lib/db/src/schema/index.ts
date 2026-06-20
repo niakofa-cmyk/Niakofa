@@ -12,3 +12,4 @@ export * from "./chat-messages";
 export * from "./push-subscriptions";
 export * from "./ratings";
 export * from "./civic-suggestions";
+export * from "./recurring-requests";

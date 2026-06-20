@@ -14,3 +14,5 @@
 - [Niakofa test setup](niakofa-test-setup.md) — Jest+Supertest in ESM mode (ts-jest esm preset); __tests__ excluded from main tsconfig to avoid type conflicts with jest globals.
 - [Niakofa auth flow](niakofa-auth-flow.md) — DB tables caused all 500s; logout used wrong localStorage keys; AppContext must own centralized logout(); last-known location persisted to localStorage as niakofa_last_location.
 - [Niakofa rate limiter](niakofa-rate-limit.md) — authLimiter is 10 req/15 min; rapid test loops hit 429; this is expected security behavior, not a bug.
+- [Niakofa recurring requests](niakofa-recurring.md) — recurring_requests table + /api/recurring routes + hourly scheduler worker; wallet.tsx entry point at /recurring; requireAdmin() must be called as a factory function (requireAdmin()), not used directly.
+- [Niakofa middleware paths](niakofa-middleware-paths.md) — auth middleware is at middlewares/ (plural); requireAdmin is in middlewares/authz.ts (not middleware/requireAdmin); always call requireAdmin() not requireAdmin.

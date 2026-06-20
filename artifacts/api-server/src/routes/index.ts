@@ -14,6 +14,7 @@ import reportsRouter from "./reports";
 import civicRouter from "./civic";
 import adminAnalyticsRouter from "./admin-analytics";
 import crisisRouter from "./crisis";
+import recurringRouter from "./recurring";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(reportsRouter);
 router.use(civicRouter);
 router.use(adminAnalyticsRouter);
 router.use(crisisRouter);
+router.use(recurringRouter);
 
 export default router;

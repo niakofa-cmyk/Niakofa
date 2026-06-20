@@ -21,12 +21,19 @@ export interface ReceiptData {
   completedAt: Date;
 }
 
-export async function sendReceipt(data: ReceiptData): Promise<void> {
-  const smtpUser = process.env["SMTP_USER"];
-  if (!smtpUser) {
-    logger.warn("SMTP not configured — skipping receipt email");
-    return;
+function isSmtpConfigured(): boolean {
+  const user = process.env["SMTP_USER"];
+  const pass = process.env["SMTP_PASS"];
+  if (!user || !pass) {
+    logger.warn({ hasUser: !!user, hasPass: !!pass }, "SMTP not fully configured — email disabled");
+    return false;
   }
+  return true;
+}
+
+export async function sendReceipt(data: ReceiptData): Promise<void> {
+  if (!isSmtpConfigured()) return;
+  const smtpUser = process.env["SMTP_USER"]!;
 
   const amountLine = data.amount
     ? `<p style="font-size:28px;font-weight:900;color:#00d4ff;margin:0">$${data.amount.toFixed(2)}</p>`
@@ -88,8 +95,8 @@ export interface AlertEmailData {
 }
 
 export async function sendAlertEmail(data: AlertEmailData): Promise<void> {
-  const smtpUser = process.env["SMTP_USER"];
-  if (!smtpUser) return;
+  if (!isSmtpConfigured()) return;
+  const smtpUser = process.env["SMTP_USER"]!;
 
   const ctaBlock = data.ctaText && data.ctaUrl
     ? `<div style="text-align:center;margin-top:24px"><a href="${data.ctaUrl}" style="display:inline-block;background:#00d4ff;color:#0a0f1e;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;text-decoration:none">${data.ctaText}</a></div>`
@@ -135,8 +142,8 @@ export interface TipData {
 }
 
 export async function sendTipNotification(data: TipData): Promise<void> {
-  const smtpUser = process.env["SMTP_USER"];
-  if (!smtpUser) return;
+  if (!isSmtpConfigured()) return;
+  const smtpUser = process.env["SMTP_USER"]!;
 
   const html = `
 <!DOCTYPE html>

@@ -1,16 +1,18 @@
 /**
- * Scheduled Payment Reminder Worker
+ * Scheduled Workers
  *
- * Runs every 6 hours. Finds pending scheduled_payments whose scheduled_date
- * has passed and sends a push notification reminder to the requester.
+ * 1. Scheduled Payment Reminder — runs every 6 hours. Finds pending
+ *    scheduled_payments whose scheduled_date has passed and sends a push
+ *    notification reminder to the requester.
  *
- * This fulfils the promise made in wallet.tsx: "we'll remind you".
- * Users still control fulfillment via the "Pay Now" button, but they get
- * a nudge when their target date arrives.
+ * 2. Recurring Request Worker — runs every hour. Fires recurring help
+ *    requests whose next_fire_at is in the past, posts them to the open pool,
+ *    and notifies nearby helpers.
  */
 import { db, scheduledPaymentsTable } from "@workspace/db";
 import { eq, and, lte } from "drizzle-orm";
 import { sendPushToUser } from "../routes/push";
+import { processRecurringRequests } from "../routes/recurring";
 import { logger } from "./logger";
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
@@ -66,5 +68,23 @@ export function startScheduledPaymentReminder(): () => void {
   return () => {
     clearInterval(interval);
     logger.info("scheduler: scheduled payment reminder worker stopped");
+  };
+}
+
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
+/** Start the recurring request worker. Fires every hour. Returns a cleanup function. */
+export function startRecurringRequestWorker(): () => void {
+  // Run once immediately on server start, then every hour
+  processRecurringRequests().catch(() => {});
+  const interval = setInterval(() => {
+    processRecurringRequests().catch(() => {});
+  }, ONE_HOUR_MS);
+
+  logger.info({ intervalMs: ONE_HOUR_MS }, "recurring-worker: started");
+
+  return () => {
+    clearInterval(interval);
+    logger.info("recurring-worker: stopped");
   };
 }

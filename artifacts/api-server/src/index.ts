@@ -2,7 +2,7 @@ import http from "http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
-import { startScheduledPaymentReminder } from "./lib/scheduler";
+import { startScheduledPaymentReminder, startRecurringRequestWorker } from "./lib/scheduler";
 import { isRedisConfigured, closeRedis } from "./lib/queue";
 import { startPayoutWorker } from "./workers/payout-worker";
 import { startPledgeWorker } from "./workers/pledge-worker";
@@ -57,6 +57,9 @@ server.listen(port, async () => {
     );
     startScheduledPaymentReminder();
   }
+
+  // Recurring requests worker — fires subscriptions that are due; runs every hour regardless of Redis
+  startRecurringRequestWorker();
 
   // Anomaly detection — runs regardless of Redis; lightweight DB polling
   startAnomalyDetectionWorker();

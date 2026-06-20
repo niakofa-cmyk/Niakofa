@@ -25,6 +25,7 @@ const RequestDetailScreen = lazy(() => import("@/pages/request-detail"));
 const OnboardingScreen = lazy(() => import("@/pages/onboarding"));
 const StripeConnectedScreen = lazy(() => import("@/pages/stripe-connected"));
 const HelperDashboardScreen = lazy(() => import("@/pages/helper-dashboard"));
+const RecurringScreen = lazy(() => import("@/pages/recurring"));
 
 function PageLoader() {
   return (
@@ -72,6 +73,7 @@ function AppShell() {
           <Route path="/request/:id" component={ActiveRequestScreen} />
           <Route path="/wallet" component={WalletScreen} />
           <Route path="/profile" component={ProfileScreen} />
+          <Route path="/recurring" component={RecurringScreen} />
           <Route path="/settings" component={SettingsPage} />
           <Route path="/admin" component={AdminScreen} />
           <Route component={NotFound} />
