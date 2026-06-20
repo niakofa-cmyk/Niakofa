@@ -586,7 +586,7 @@ export default function MapScreen() {
       {myLocation && !mapError && (
         <button
           onClick={handleRecenter}
-          className="absolute bottom-24 right-4 z-30 w-10 h-10 bg-card/90 backdrop-blur-md border border-border rounded-full shadow-lg flex items-center justify-center hover:bg-card transition-colors"
+          className="absolute bottom-44 right-4 z-30 w-10 h-10 bg-card/90 backdrop-blur-md border border-border rounded-full shadow-lg flex items-center justify-center hover:bg-card transition-colors"
           aria-label="Re-center map on my location"
         >
           <Locate className="w-4 h-4 text-primary" />
