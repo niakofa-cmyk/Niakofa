@@ -5,6 +5,7 @@ import { Heart, MapPin, Bell, Shield, ChevronRight, Check, Loader2 } from "lucid
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { subscribeToPush } from "@/lib/push";
+import { useTranslation } from "react-i18next";
 
 interface Step {
   id: string;
@@ -51,6 +52,7 @@ const STEPS: Step[] = [
 ];
 
 export default function OnboardingScreen() {
+  const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { currentUser } = useAppContext();
   const [step, setStep] = useState(0);
@@ -114,7 +116,7 @@ export default function OnboardingScreen() {
       {/* Skip */}
       <div className="flex justify-end px-4">
         <button onClick={skip} className="text-xs text-muted-foreground px-3 py-2 active:text-foreground transition-colors">
-          Skip
+          {t("onboarding.skip")}
         </button>
       </div>
 
@@ -143,7 +145,7 @@ export default function OnboardingScreen() {
                 animate={{ scale: 1 }}
                 className="flex items-center gap-2 mt-4 text-green-400 text-sm font-bold"
               >
-                <Check className="w-4 h-4" /> Location enabled
+                <Check className="w-4 h-4" /> {t("onboarding.location_enabled")}
               </motion.div>
             )}
             {current.id === "notifications" && notifGranted && (
@@ -152,7 +154,7 @@ export default function OnboardingScreen() {
                 animate={{ scale: 1 }}
                 className="flex items-center gap-2 mt-4 text-green-400 text-sm font-bold"
               >
-                <Check className="w-4 h-4" /> Notifications enabled
+                <Check className="w-4 h-4" /> {t("onboarding.notifications_enabled")}
               </motion.div>
             )}
           </motion.div>
@@ -180,7 +182,7 @@ export default function OnboardingScreen() {
             onClick={() => setStep(s => s + 1)}
             className="w-full text-sm text-muted-foreground py-2 active:text-foreground transition-colors"
           >
-            Not now
+            {t("onboarding.not_now")}
           </button>
         )}
       </div>
