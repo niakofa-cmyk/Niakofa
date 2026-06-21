@@ -47,11 +47,16 @@ export async function closeRedis(): Promise<void> {
 }
 
 // ── Queue names ───────────────────────────────────────────────────────────────
+// BullMQ rejects ":" in queue names outright — use "-" as the namespace
+// separator instead. (This bug was silent the entire time Redis wasn't
+// configured, since createQueue() short-circuits before constructing a
+// real Queue when no connection exists — it only surfaced once Redis was
+// actually connected.)
 export const QUEUE = {
-  PAYOUTS:               "niakofa:payouts",
-  PLEDGE_RECONCILIATION: "niakofa:pledge-reconciliation",
-  REQUEST_CLEANUP:       "niakofa:request-cleanup",
-  NOTIFICATIONS:         "niakofa:notifications",
+  PAYOUTS:               "niakofa-payouts",
+  PLEDGE_RECONCILIATION: "niakofa-pledge-reconciliation",
+  REQUEST_CLEANUP:       "niakofa-request-cleanup",
+  NOTIFICATIONS:         "niakofa-notifications",
 } as const;
 
 // ── Default job options ───────────────────────────────────────────────────────
