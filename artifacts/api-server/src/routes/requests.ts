@@ -16,7 +16,7 @@ import {
   MarkArrivedParams,
 } from "@workspace/api-zod";
 import { broadcast, broadcastRequestEvent } from "../lib/ws-hub";
-import { requestCreationLimiter } from "../middlewares/rate-limit";
+import { requestCreationLimiter, requestActionLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser } from "./push";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
@@ -308,7 +308,7 @@ router.patch("/requests/:id", requireAuth, async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/claim", requireAuth, async (req, res) => {
+router.post("/requests/:id/claim", requireAuth, requestActionLimiter, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = ClaimRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });
@@ -343,7 +343,7 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/en-route", requireAuth, async (req, res) => {
+router.post("/requests/:id/en-route", requireAuth, requestActionLimiter, async (req, res) => {
   const callerId = req.authenticatedUserId!;
   const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });

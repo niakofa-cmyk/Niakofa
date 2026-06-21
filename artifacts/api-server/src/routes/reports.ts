@@ -130,12 +130,12 @@ router.get("/reports/:id", requireAuth, requireAdmin(), async (req, res) => {
 
   if (!report) return res.status(404).json({ error: "Report not found" });
 
-  // Enrich with reporter name for admin UI
-  const [reporter] = await db
-    .select({ name: usersTable.name, email: usersTable.email })
-    .from(usersTable)
-    .where(eq(usersTable.id, report.reporter_id))
-    .limit(1);
+  // Enrich with reporter name for admin UI — reporter_id can be null if
+  // that account was since deleted (FK onDelete: "set null").
+  const reporter = report.reporter_id
+    ? (await db.select({ name: usersTable.name, email: usersTable.email })
+        .from(usersTable).where(eq(usersTable.id, report.reporter_id)).limit(1))[0]
+    : undefined;
 
   let reportedUserName: string | null = null;
   if (report.reported_user_id) {

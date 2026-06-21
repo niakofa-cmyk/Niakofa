@@ -155,24 +155,36 @@ router.post("/users/set-initial-password", authLimiter, async (req, res) => {
     });
   }
 
-  // Verify the emailed one-time code — the actual proof of account
-  // ownership now, not just knowing the (non-secret, guessable) user_id+email.
-  const codeHash = createHash("sha256").update(String(code).trim()).digest("hex");
-  const [resetCode] = await db.select().from(passwordResetCodesTable)
-    .where(and(
-      eq(passwordResetCodesTable.user_id, user.id),
-      eq(passwordResetCodesTable.code_hash, codeHash),
-    ))
+  // Per-code attempt lockout — closes the distributed-brute-force gap a
+  // purely per-IP rate limit leaves open against a 6-digit (1M-combo) code.
+  // Look up the most recent outstanding (unused, unexpired) code for this
+  // user FIRST, regardless of whether the submitted code matches it — that
+  // way failed attempts get tracked even when the code itself is wrong.
+  const MAX_CODE_ATTEMPTS = 5;
+  const [latestCode] = await db.select().from(passwordResetCodesTable)
+    .where(eq(passwordResetCodesTable.user_id, user.id))
     .orderBy(sql`${passwordResetCodesTable.created_at} DESC`)
     .limit(1);
 
-  if (!resetCode || resetCode.used_at || resetCode.expires_at < new Date()) {
+  if (!latestCode || latestCode.used_at || latestCode.expires_at < new Date()) {
+    return res.status(403).json({ error: "Invalid or expired code. Please request a new one." });
+  }
+
+  if (latestCode.failed_attempts >= MAX_CODE_ATTEMPTS) {
+    return res.status(429).json({ error: "Too many incorrect attempts. Please request a new code." });
+  }
+
+  const codeHash = createHash("sha256").update(String(code).trim()).digest("hex");
+  if (latestCode.code_hash !== codeHash) {
+    await db.update(passwordResetCodesTable)
+      .set({ failed_attempts: sql`${passwordResetCodesTable.failed_attempts} + 1` })
+      .where(eq(passwordResetCodesTable.id, latestCode.id));
     return res.status(403).json({ error: "Invalid or expired code. Please request a new one." });
   }
 
   await db.update(passwordResetCodesTable)
     .set({ used_at: new Date() })
-    .where(eq(passwordResetCodesTable.id, resetCode.id));
+    .where(eq(passwordResetCodesTable.id, latestCode.id));
 
   const password_hash = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
   const [updated] = await db

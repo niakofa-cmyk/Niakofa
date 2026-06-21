@@ -1,4 +1,5 @@
 import { pgTable, serial, integer, text, boolean, timestamp, pgEnum, index } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
 
 export const reportTypeEnum = pgEnum("report_type", [
   "suspicious_request",
@@ -22,8 +23,8 @@ export const reportStatusEnum = pgEnum("report_status", [
 
 export const reportsTable = pgTable("reports", {
   id: serial("id").primaryKey(),
-  reporter_id: integer("reporter_id").notNull(),
-  reported_user_id: integer("reported_user_id"),
+  reporter_id: integer("reporter_id").references(() => usersTable.id, { onDelete: "set null" }), // nullable so the report survives if the reporter's account is later deleted
+  reported_user_id: integer("reported_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   reported_request_id: integer("reported_request_id"),
   type: reportTypeEnum("type").notNull(),
   description: text("description").notNull(),

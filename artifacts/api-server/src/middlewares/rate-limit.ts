@@ -121,6 +121,19 @@ export const generalApiLimiter = rateLimit({
 // Key on the authenticated userId (set by parseAuth before this runs).
 // Falls back to IP only when there is no verified token (should not happen
 // on POST chat since requireAuth runs first, but defensive).
+export const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  store: createStore("chat"),
+  keyGenerator: (req) => {
+    const r = req as typeof req & { authenticatedUserId?: number };
+    return `chat-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
+  },
+  message: { error: "You're sending messages too fast. Slow down a little." },
+});
+
 // ── 7. Navigation/Directions (60 / 15 min per user) ──────────────────────────
 // Protects against unmetered cost-amplification against the paid Mapbox
 // Directions API — this route proxies directly to a billed third-party API.
@@ -137,15 +150,19 @@ export const navigationLimiter = rateLimit({
   message: { error: "Too many route requests in a short period. Please wait a few minutes." },
 });
 
-export const chatLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: 30,
+// ── 8. Request State Transitions (claim/en-route — 20 / 15 min per user) ────
+// Previously only covered by the broad 200/15min global limiter — this adds
+// a tighter, dedicated limit specifically on claim/en-route to prevent
+// abuse/spam of request state transitions by an authenticated user.
+export const requestActionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  store: createStore("chat"),
+  store: createStore("request-action"),
   keyGenerator: (req) => {
     const r = req as typeof req & { authenticatedUserId?: number };
-    return `chat-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
+    return `req-action-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
   },
-  message: { error: "You're sending messages too fast. Slow down a little." },
+  message: { error: "Too many request actions in a short period. Please wait a few minutes." },
 });
