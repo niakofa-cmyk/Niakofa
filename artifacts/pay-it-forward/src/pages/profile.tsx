@@ -720,16 +720,27 @@ function useCivicResources(lat: number | null | undefined, lng: number | null | 
   const [data, setData] = useState<CivicResourcesResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const rLat = lat != null ? Math.round(lat * 1000) / 1000 : lat;
+  const rLng = lng != null ? Math.round(lng * 1000) / 1000 : lng;
+
   useEffect(() => {
-    if (lat == null || lng == null) return;
+    if (rLat == null || rLng == null) return;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    let current = true;
     setLoading(true);
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-    fetch(`${base}/api/civic/resources?lat=${lat}&lng=${lng}`)
+    fetch(`${base}/api/civic/resources?lat=${rLat}&lng=${rLng}`, { signal: controller.signal })
       .then(r => r.ok ? r.json() as Promise<CivicResourcesResponse> : Promise.reject())
-      .then(setData)
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
-  }, [lat, lng]);
+      .then(json => { if (current) setData(json); })
+      .catch(() => { if (current) setData(null); })
+      .finally(() => { if (current) setLoading(false); });
+    return () => {
+      current = false;
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [rLat, rLng]);
 
   return { data, loading };
 }
