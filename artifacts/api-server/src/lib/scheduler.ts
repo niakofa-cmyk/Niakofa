@@ -108,7 +108,7 @@ async function processWeeklyTrustDecay(): Promise<void> {
   logger.info("trust-decay: starting weekly trust score recomputation");
 
   // Get all users who have ever been rated
-  let ratees: { id: number; trust_score: number }[] = [];
+  let ratees: { id: number; trust_score: number | null }[] = [];
   try {
     ratees = await db
       .selectDistinct({ id: usersTable.id, trust_score: usersTable.trust_score })

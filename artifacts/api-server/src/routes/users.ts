@@ -18,7 +18,7 @@ import {
   CreateScheduledPaymentBody,
   GetScheduledPaymentsParams,
 } from "@workspace/api-zod";
-import { broadcast, sendToUser } from "../lib/ws-hub";
+import { broadcast, broadcastToAdmins, sendToUser } from "../lib/ws-hub";
 import { authLimiter, gpsLimiter } from "../middlewares/rate-limit";
 import { requireAuth, signTokenById } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
@@ -1018,7 +1018,7 @@ router.patch("/admin/account-applications/:id/review", requireAuth, requireAdmin
     updated_at: new Date(),
   };
   if (decision === "denied") {
-    updateSet.token_version = sql`${usersTable.token_version} + 1`;
+    (updateSet as Record<string, unknown>).token_version = sql`${usersTable.token_version} + 1`;
   }
 
   const [user] = await db.update(usersTable)
