@@ -2,7 +2,7 @@ import http from "http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
-import { startScheduledPaymentReminder, startRecurringRequestWorker } from "./lib/scheduler";
+import { startScheduledPaymentReminder, startRecurringRequestWorker, startTrustScoreDecayWorker } from "./lib/scheduler";
 import { isRedisConfigured, closeRedis } from "./lib/queue";
 import { startPayoutWorker } from "./workers/payout-worker";
 import { startPledgeWorker } from "./workers/pledge-worker";
@@ -63,6 +63,10 @@ server.listen(port, async () => {
 
   // Anomaly detection — runs regardless of Redis; lightweight DB polling
   startAnomalyDetectionWorker();
+
+  // BUG-018: Weekly trust score recency decay — recomputes trust_score for all
+  // rated users so old ratings naturally decay even without a new rating event.
+  startTrustScoreDecayWorker();
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────

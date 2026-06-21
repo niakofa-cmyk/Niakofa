@@ -12,9 +12,21 @@ async function detectAnomalies() {
   try {
     const since = new Date(Date.now() - WINDOW_HOURS * 60 * 60 * 1000);
 
-    const frequentCancellations = await db
+    // BUG-013: The previous query looked for status='cancelled' AND helper_id IS NOT NULL,
+    // then labeled those as "helper cancellations." This was wrong: status='cancelled' is
+    // set ONLY when the REQUESTER cancels — not the helper. Helper release sets status
+    // back to 'open'. The old query was flagging helpers for something the requester did.
+    //
+    // Correct approach: detect requesters who repeatedly cancel AFTER a helper was
+    // assigned (cancelled_at IS NOT NULL with the helper_id column still populated at
+    // cancel time). This is a legitimate signal — a requester doing this repeatedly may
+    // be gaming the system. The alert label now correctly identifies the requester.
+    //
+    // True helper abandonment detection requires a dedicated schema column (cancelled_by
+    // or a request_events log). That is tracked as a future schema migration.
+    const frequentRequesterCancels = await db
       .select({
-        helper_id: requestsTable.helper_id,
+        requester_id: requestsTable.requester_id,
         cancel_count: sql<number>`cast(count(*) as int)`,
       })
       .from(requestsTable)
@@ -25,27 +37,24 @@ async function detectAnomalies() {
           sql`${requestsTable.helper_id} IS NOT NULL`
         )
       )
-      .groupBy(requestsTable.helper_id)
+      .groupBy(requestsTable.requester_id)
       .having(sql`count(*) >= ${CANCEL_THRESHOLD}`);
 
-    for (const row of frequentCancellations) {
-      if (row.helper_id) {
-        logger.warn(
-          { helper_id: row.helper_id, cancel_count: row.cancel_count, window_hours: WINDOW_HOURS },
-          "anomaly: helper has frequent cancellations — flagged for admin review"
-        );
-        // Previously logged only — admins had no way to see this short of
-        // reading raw logs. Now surfaces live in the admin dashboard.
-        broadcastToAdmins({
-          type: "anomaly_detected",
-          payload: {
-            kind: "frequent_cancellations",
-            helper_id: row.helper_id,
-            cancel_count: row.cancel_count,
-            window_hours: WINDOW_HOURS,
-          },
-        });
-      }
+    for (const row of frequentRequesterCancels) {
+      logger.warn(
+        { requester_id: row.requester_id, cancel_count: row.cancel_count, window_hours: WINDOW_HOURS },
+        "anomaly: requester repeatedly cancelled claimed requests — flagged for admin review"
+      );
+      broadcastToAdmins({
+        type: "anomaly_detected",
+        payload: {
+          kind: "frequent_requester_cancels",
+          requester_id: row.requester_id,
+          cancel_count: row.cancel_count,
+          window_hours: WINDOW_HOURS,
+          note: "Requester cancelled after helper was assigned — possible bad-faith behavior",
+        },
+      });
     }
 
     const lowTrustActiveHelpers = await db
@@ -81,10 +90,10 @@ async function detectAnomalies() {
       });
     }
 
-    const totalFlagged = frequentCancellations.length + lowTrustActiveHelpers.length;
+    const totalFlagged = frequentRequesterCancels.length + lowTrustActiveHelpers.length;
     if (totalFlagged > 0) {
       logger.info(
-        { frequent_cancellers: frequentCancellations.length, low_trust: lowTrustActiveHelpers.length },
+        { frequent_requester_cancellers: frequentRequesterCancels.length, low_trust: lowTrustActiveHelpers.length },
         "anomaly: scan complete — flagged users detected"
       );
     }

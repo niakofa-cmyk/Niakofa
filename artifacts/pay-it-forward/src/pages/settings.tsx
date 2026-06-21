@@ -18,12 +18,18 @@ import { toast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import i18n from "../i18n";
+import { authHeaders } from "@/lib/auth";
 
 // ── API helpers (kept in sync with profile.tsx) ───────────────────────────────
+// BUG-006: Both fetch and save must include the Authorization header.
+// GET /users/:id/settings and PUT /users/:id/settings both require
+// requireAuth + requireOwnership — calls without the header return 401.
 
 async function fetchSettings(userId: number) {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-  const res = await fetch(`${base}/api/users/${userId}/settings`);
+  const res = await fetch(`${base}/api/users/${userId}/settings`, {
+    headers: { ...authHeaders() },
+  });
   if (!res.ok) return null;
   return res.json();
 }
@@ -35,7 +41,7 @@ async function saveSettings(
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   const res = await fetch(`${base}/api/users/${userId}/settings`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(updates),
   });
   if (!res.ok) throw new Error("Failed to save settings");

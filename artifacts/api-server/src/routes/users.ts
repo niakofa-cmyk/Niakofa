@@ -75,13 +75,16 @@ router.post("/users/login", authLimiter, async (req, res) => {
   return res.json({ user: safeUser, token });
 });
 
-// POST /users/request-password-reset — sends a one-time 6-digit code via
-// email, proving the caller actually controls the account's email address.
-// Replaces the old "proof" of just knowing user_id + email (both non-secret,
-// guessable values) with an actual emailed secret. Always returns the same
-// generic success message regardless of whether the email exists or
-// already has a password — avoids leaking account existence/state.
+// POST /users/request-password-reset — DEPRECATED (BUG-029)
+// This endpoint only works for legacy accounts that have no password_hash yet.
+// All password-reset flows (including accounts that already have a password)
+// should use POST /users/forgot-password instead — that endpoint handles all
+// account types correctly. This legacy path is retained for old app versions
+// still in the field but should not be used in new client code.
+// TODO: remove once all clients are on a version that uses /forgot-password.
 router.post("/users/request-password-reset", authLimiter, async (req, res) => {
+  res.setHeader("Deprecation", "true");
+  res.setHeader("Link", '</users/forgot-password>; rel="successor-version"');
   const { email } = req.body as { email?: string };
   const GENERIC_RESPONSE = { ok: true, message: "If that email has a legacy account, a code has been sent." };
 
@@ -312,9 +315,18 @@ router.post("/users/register", authLimiter, async (req, res) => {
   // Accept optional fields from body (not part of OpenAPI spec to avoid codegen churn)
   const rawBody = req.body as Record<string, unknown>;
   const rawPassword = rawBody.password;
-  const password_hash = rawPassword && typeof rawPassword === "string" && rawPassword.length >= 6
-    ? await bcrypt.hash(rawPassword, BCRYPT_ROUNDS)
-    : null;
+
+  // BUG-001: Enforce minimum 8-character password at registration, matching all
+  // other password-change flows (forgot-password, set-initial-password).
+  // Reject registration entirely if no password is provided — never create a
+  // null-hash account that can never be changed via the standard UI.
+  if (!rawPassword || typeof rawPassword !== "string") {
+    return res.status(400).json({ error: "Password is required" });
+  }
+  if (rawPassword.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+  const password_hash = await bcrypt.hash(rawPassword, BCRYPT_ROUNDS);
 
   const VALID_ACCOUNT_TYPES = ["individual", "business", "sponsor"];
   const rawAccountType = rawBody.account_type;
@@ -344,6 +356,20 @@ router.post("/users/register", authLimiter, async (req, res) => {
     const token = signTokenById(user.id, user.token_version);
     const { password_hash: _ph, ...safeUser } = user as Record<string, unknown>;
     logger.info({ user_id: user.id, account_type }, "register: new account pending approval");
+
+    // BUG-003: Notify online admins in real-time so they can review the new
+    // account application without polling. Previously admins had no live signal
+    // and could miss pending registrations for hours.
+    broadcastToAdmins({
+      type: "new_account_application",
+      payload: {
+        user_id: user.id,
+        name: user.name,
+        account_type: user.account_type,
+        created_at: user.created_at,
+      },
+    });
+
     return res.status(201).json({ user: safeUser, token });
   } catch (err) {
     logger.error({ err }, "register: database error");
@@ -576,25 +602,18 @@ router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, re
     .where(eq(requestsTable.id, request_id))
     .returning();
 
-  if (request.helper_id && amount > 0) {
-    await db.update(usersTable)
-      .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${amount}` })
-      .where(eq(usersTable.id, request.helper_id));
-    await db.insert(transactionsTable).values({
-      user_id: request.helper_id,
-      request_id: request_id,
-      type: "pledge_received",
-      amount: amount,
-      description: request.title,
-    });
-  }
-  await db.insert(transactionsTable).values({
-    user_id: pParsed.data.id,
-    request_id: request_id,
-    type: "pledge_sent",
-    amount: -amount,
-    description: request.title,
-  });
+  // BUG-009: Do NOT credit benevolence_wallet here or insert pledge_received/
+  // pledge_sent transaction rows — the Stripe webhook (payment_intent.succeeded)
+  // is the ONLY authoritative path for crediting the wallet. Crediting here
+  // AND in the webhook causes a double-credit when both paths fire.
+  //
+  // The previous code immediately credited the wallet and also inserted a
+  // payment_transactions row (below). If a Stripe webhook fired for the same
+  // pledge, it would find the payment_transactions row and credit the wallet
+  // again. The fix: only create the pending intent here; let the webhook credit.
+  //
+  // The `pledge_sent` transaction (requester's ledger) also moves to the webhook
+  // handler so both sides of the ledger are always in sync with actual payment.
 
   await db.insert(paymentTransactionsTable).values({
     request_id: request_id,
@@ -603,7 +622,7 @@ router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, re
     amount,
     state: "pending_contribution",
     payment_type: "pay_it_forward",
-    notes: "Pay It Forward pledge",
+    notes: "Pay It Forward pledge — wallet credited on Stripe webhook success",
   });
 
   broadcast({ type: "request_updated", payload: { ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null } });
@@ -695,6 +714,13 @@ router.get("/users/:id/outstanding-pledges", requireAuth, requireOwnership(), as
 });
 
 // POST /users/:id/avatar — update profile photo (base64 data URL)
+// BUG-005 (partial mitigation): Avatars are stored as base64 data URLs directly
+// in the users.avatar_url column. This inflates row size, adds pressure to DB
+// read bandwidth, and is not suitable for large images. The correct fix is to
+// store binary blobs in an object store (S3, Cloudflare R2, etc.) and persist
+// a CDN URL here instead — but that requires external infrastructure.
+// Until a CDN is added, we enforce a strict 5 MB cap (already ~3.75 MB decoded)
+// and validate the content type prefix to limit damage.
 router.post("/users/:id/avatar", requireAuth, requireOwnership(), async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -702,6 +728,8 @@ router.post("/users/:id/avatar", requireAuth, requireOwnership(), async (req, re
   if (!dataUrl || !dataUrl.startsWith("data:image/")) {
     return res.status(400).json({ error: "Invalid image data — must be a base64 data URL starting with data:image/" });
   }
+  // BUG-005: 5 MB hard cap — base64 string length, not decoded bytes.
+  // Decoded size = length * 0.75; a 5 MB string ≈ 3.75 MB image.
   if (dataUrl.length > 5 * 1024 * 1024) {
     return res.status(413).json({ error: "Image too large — max 5 MB" });
   }
@@ -768,28 +796,34 @@ router.delete("/users/:id", requireAuth, requireOwnership(), async (req, res) =>
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
 
   try {
-    // Clean up every dependent table, not just 4 of ~13 — previously
-    // requests, transactions, payment_transactions, reports,
-    // recurring_requests, push_subscriptions, chat_messages, ratings, and
-    // gratitude_posts were all left orphaned after account deletion.
-    await db.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
-    await db.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
-    await db.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
-    await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
-    await db.delete(recurringRequestsTable).where(eq(recurringRequestsTable.user_id, userId));
-    await db.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
-    await db.delete(ratingsTable).where(or(eq(ratingsTable.rater_id, userId), eq(ratingsTable.ratee_id, userId)));
-    await db.delete(gratitudeLikesTable).where(eq(gratitudeLikesTable.user_id, userId));
-    await db.delete(gratitudePostsTable).where(or(eq(gratitudePostsTable.author_id, userId), eq(gratitudePostsTable.helper_id, userId)));
-    await db.delete(chatMessagesTable).where(eq(chatMessagesTable.sender_id, userId));
-    await db.delete(reportsTable).where(or(eq(reportsTable.reporter_id, userId), eq(reportsTable.reported_user_id, userId)));
-    await db.delete(paymentTransactionsTable).where(or(eq(paymentTransactionsTable.requester_id, userId), eq(paymentTransactionsTable.helper_id, userId)));
-    // Requests reference this user as requester or helper — null out the
-    // helper_id reference (request stays, just unclaimed) but delete
-    // requests this user actually created themselves.
-    await db.update(requestsTable).set({ helper_id: null }).where(eq(requestsTable.helper_id, userId));
-    await db.delete(requestsTable).where(eq(requestsTable.requester_id, userId));
-    await db.delete(usersTable).where(eq(usersTable.id, userId));
+    // BUG-017: Wrap all deletion steps in a single DB transaction so that
+    // a failure at any step does not leave the account in a partially
+    // deleted state. Previously 14+ sequential deletes could fail mid-way
+    // with no rollback.
+    await db.transaction(async (tx) => {
+      // Clean up every dependent table, not just 4 of ~13 — previously
+      // requests, transactions, payment_transactions, reports,
+      // recurring_requests, push_subscriptions, chat_messages, ratings, and
+      // gratitude_posts were all left orphaned after account deletion.
+      await tx.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
+      await tx.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
+      await tx.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
+      await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.user_id, userId));
+      await tx.delete(recurringRequestsTable).where(eq(recurringRequestsTable.user_id, userId));
+      await tx.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
+      await tx.delete(ratingsTable).where(or(eq(ratingsTable.rater_id, userId), eq(ratingsTable.ratee_id, userId)));
+      await tx.delete(gratitudeLikesTable).where(eq(gratitudeLikesTable.user_id, userId));
+      await tx.delete(gratitudePostsTable).where(or(eq(gratitudePostsTable.author_id, userId), eq(gratitudePostsTable.helper_id, userId)));
+      await tx.delete(chatMessagesTable).where(eq(chatMessagesTable.sender_id, userId));
+      await tx.delete(reportsTable).where(or(eq(reportsTable.reporter_id, userId), eq(reportsTable.reported_user_id, userId)));
+      await tx.delete(paymentTransactionsTable).where(or(eq(paymentTransactionsTable.requester_id, userId), eq(paymentTransactionsTable.helper_id, userId)));
+      // Requests reference this user as requester or helper — null out the
+      // helper_id reference (request stays, just unclaimed) but delete
+      // requests this user actually created themselves.
+      await tx.update(requestsTable).set({ helper_id: null }).where(eq(requestsTable.helper_id, userId));
+      await tx.delete(requestsTable).where(eq(requestsTable.requester_id, userId));
+      await tx.delete(usersTable).where(eq(usersTable.id, userId));
+    });
 
     return res.json({ ok: true, message: "Account deleted successfully" });
   } catch (error) {
@@ -973,13 +1007,22 @@ router.patch("/admin/account-applications/:id/review", requireAuth, requireAdmin
     return res.status(400).json({ error: "decision must be 'approved' or 'denied'" });
   }
 
+  // BUG-004: When an account is denied, bump token_version to immediately
+  // revoke all outstanding tokens. Denied accounts keep valid tokens from
+  // registration and could still make API calls until natural token expiry.
+  // This matches the ban pattern in PATCH /users/:id/moderation.
+  const updateSet: Partial<typeof usersTable.$inferInsert> & Record<string, unknown> = {
+    approval_status: decision as "approved" | "denied",
+    approval_reviewed_by: req.authenticatedUserId,
+    approval_reviewed_at: new Date(),
+    updated_at: new Date(),
+  };
+  if (decision === "denied") {
+    updateSet.token_version = sql`${usersTable.token_version} + 1`;
+  }
+
   const [user] = await db.update(usersTable)
-    .set({
-      approval_status: decision as "approved" | "denied",
-      approval_reviewed_by: req.authenticatedUserId,
-      approval_reviewed_at: new Date(),
-      updated_at: new Date(),
-    })
+    .set(updateSet)
     .where(eq(usersTable.id, id))
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });

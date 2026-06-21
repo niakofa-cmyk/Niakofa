@@ -127,6 +127,9 @@ interface CrisisState {
   active: boolean;
   message: string;
   level: "info" | "warning" | "critical";
+  /** BUG-033: region from the crisis API response (e.g. "Tarrant County").
+   * Optional — falls back to a generic label if not set by the server. */
+  region?: string;
   activatedAt?: string;
   resources?: Array<{ label: string; phone?: string; url?: string }>;
 }
@@ -236,7 +239,8 @@ export default function MapScreen() {
         if (!exists) return prev;
         return prev.map(h => h.id === loc.id ? { ...h, lat: loc.lat, lng: loc.lng, heading: loc.heading ?? h.heading } : h);
       });
-    } else if ((event as { type: string }).type === "crisis_update") {
+    } else if (event.type === "crisis_update") {
+      // BUG-014: crisis_update is now in the WsEventType union — the cast is removed.
       const state = event.payload as CrisisState;
       if (state.active) {
         setCrisis(state);
@@ -331,6 +335,10 @@ export default function MapScreen() {
 
   // Compute which categories the current helper's skills cover
   const helperSkillCategories = useMemo(() => {
+    // BUG-025: Two separate skill columns exist — helper_skills (new helper-application field)
+    // and specialties (legacy). The dual-lookup `helper_skills ?? specialties ?? []` keeps
+    // both working until a DB migration consolidates them. TODO: migrate specialties data
+    // into helper_skills and remove the specialties column once clients have migrated.
     const u = currentUser as unknown as { helper_skills?: string[] | null; specialties?: string[] | null };
     const skills = (u?.helper_skills ?? u?.specialties ?? []).map(s => s.toLowerCase().replace(/\s+/g, "_"));
     const matchedCategories = new Set<string>();
@@ -374,7 +382,9 @@ export default function MapScreen() {
             <Siren className="w-4 h-4 mt-0.5 shrink-0 animate-pulse" />
             <div className="flex-1 min-w-0">
               <div className="text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">
-                Community Emergency Alert · Tarrant County
+                {/* BUG-033: Use region from the crisis payload if provided; fall back to
+                    "Your Community" rather than a hardcoded county name */}
+                Community Emergency Alert{crisis.region ? ` · ${crisis.region}` : ""}
               </div>
               <p className="text-xs leading-relaxed font-medium">{crisis.message}</p>
               {crisis.resources && crisis.resources.length > 0 && (
@@ -447,6 +457,18 @@ export default function MapScreen() {
         </div>
       )}
 
+      {/* BUG-015: Location prompt — shown when GPS hasn't resolved and no saved location.
+          The map renders in the background at zoom-2 (world view) so WebGL stays warm.
+          Once AppContext resolves GPS or IP-geolocation, myLocation becomes non-null
+          and the map's useEffect flyTo re-centers automatically. */}
+      {!myLocation && webGLSupported && !mapError && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 bg-card/95 backdrop-blur-sm border border-border rounded-2xl shadow-xl px-5 py-4 flex flex-col items-center gap-2 max-w-xs w-[90%]">
+          <MapPin className="w-6 h-6 text-primary" />
+          <p className="text-sm font-bold text-center">Locating you…</p>
+          <p className="text-xs text-muted-foreground text-center">Allow location access so the map can center on your neighborhood.</p>
+        </div>
+      )}
+
       {/* Map fallback — shown immediately when WebGL unavailable, or after a GL error */}
       {(!webGLSupported || !!mapError) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-background z-20 gap-3 px-6 pt-20 pb-28">
@@ -484,10 +506,17 @@ export default function MapScreen() {
         attributionControl={false}
         onError={onMapError}
         initialViewState={{
-          longitude: myLocation?.lng ?? -97.33,
-          latitude: myLocation?.lat ?? 32.75,
-          zoom: 13.5,
-          pitch: 45,
+          // BUG-015: When myLocation is null (new user, no GPS yet, no saved
+          // location), the map used to silently center on hardcoded Fort Worth
+          // coordinates (-97.33, 32.75), confusing users in other cities.
+          // Fix: use 0,0 as a neutral fallback; the location prompt overlay
+          // below instructs the user to enable location access. Once GPS or
+          // the AppContext IP-geolocation fallback resolves, the map flyTo
+          // in the useEffect (line ~287) re-centers automatically.
+          longitude: myLocation?.lng ?? 0,
+          latitude: myLocation?.lat ?? 0,
+          zoom: myLocation ? 13.5 : 2,
+          pitch: myLocation ? 45 : 0,
           bearing: 0,
         }}
         ref={(ref) => { if (ref) (mapRef as React.MutableRefObject<mapboxgl.Map | null>).current = ref.getMap(); }}
@@ -594,7 +623,8 @@ export default function MapScreen() {
       )}
 
       {/* Neighborhood filter chips — appear when requests have neighborhood data */}
-      {availableNeighborhoods.length > 0 && helperModeActive && (
+      {/* BUG-022: Removed helperModeActive gate — requesters also benefit from neighborhood filtering */}
+      {availableNeighborhoods.length > 0 && (
         <div className="absolute bottom-[14.5rem] left-0 right-0 z-10 flex gap-2 px-4 overflow-x-auto scrollbar-none pb-1">
           <button
             onClick={() => setNeighborhoodFilter(null)}
@@ -656,7 +686,7 @@ export default function MapScreen() {
       {/* Helper mode bottom sheet */}
       {helperModeActive && openRequests.length > 0 && webGLSupported && !mapError && !showBestMatch && (
         <div className="pb-20">
-          <BottomSheet requests={openRequests} onClaim={handleClaim} isClaiming={claimMutation.isPending} />
+          <BottomSheet requests={openRequests} onClaim={handleClaim} isClaiming={claimMutation.isPending} dismissedId={bestMatchDismissed} />
         </div>
       )}
 

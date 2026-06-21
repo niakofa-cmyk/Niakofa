@@ -57,7 +57,12 @@ export const usersTable = pgTable("users", {
   // forced re-auth on password change. Stateless tokens otherwise have no
   // server-side revocation mechanism.
   token_version: integer("token_version").notNull().default(0),
-  approval_status: text("approval_status").notNull().default("approved"), // pending | approved | denied
+  // BUG-032: Default changed from "approved" to "pending" — any direct INSERT
+  // that omits approval_status (e.g. a future migration script) now correctly
+  // creates a pending-review account instead of silently bypassing admin approval.
+  // The registration route explicitly sets "pending"; the only way to get "approved"
+  // is through the admin review endpoint.
+  approval_status: text("approval_status").notNull().default("pending"), // pending | approved | denied
   // Audit trail for account-application reviews — previously unrecorded,
   // unlike the helper-application review flow which already logs this.
   approval_reviewed_by: integer("approval_reviewed_by"),
