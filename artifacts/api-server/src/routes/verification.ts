@@ -177,7 +177,7 @@ router.patch("/verification/panic-contacts/:userId", requireAuth, requireOwnersh
   if (!Array.isArray(contacts)) return res.status(400).json({ error: "contacts array required" });
 
   await db.update(usersTable)
-    .set({ panic_contacts: contacts.slice(0, 5) } as any) // matches the 5-contact limit enforced in users.ts
+    .set({ panic_contacts: contacts.slice(0, 5) }) // matches the 5-contact limit enforced in users.ts
     .where(eq(usersTable.id, userId));
 
   return res.json({ ok: true, contacts });
