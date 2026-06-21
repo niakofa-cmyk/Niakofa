@@ -11,6 +11,28 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// No HTML-escaping utility existed anywhere in this codebase (the "esc("
+// hits found earlier were false positives — substring matches on
+// drizzle-orm's `desc(...)`). User-supplied strings (names, request titles,
+// alert bodies) were being interpolated directly into HTML emails sent from
+// the Niakofa address — an HTML/phishing-link injection risk. This escapes
+// the characters that matter for both HTML text content and double-quoted
+// attribute contexts (e.g. href="...").
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Email subjects become SMTP headers — strip CR/LF so user content can't
+// inject extra headers into the message.
+function sanitizeHeaderValue(input: string): string {
+  return input.replace(/[\r\n]+/g, " ").trim();
+}
+
 export interface ReceiptData {
   to: string;
   helperName: string;
@@ -51,12 +73,12 @@ export async function sendReceipt(data: ReceiptData): Promise<void> {
     </div>
     <div style="background:#111827;border:1px solid #1e3a5f;border-radius:16px;padding:24px;margin-bottom:24px">
       <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Request Completed</div>
-      <div style="font-size:18px;font-weight:700;margin-bottom:16px">${data.requestTitle}</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:16px">${escapeHtml(data.requestTitle)}</div>
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-        <span style="color:#64748b">Helper</span><span style="font-weight:600">${data.helperName}</span>
+        <span style="color:#64748b">Helper</span><span style="font-weight:600">${escapeHtml(data.helperName)}</span>
       </div>
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-        <span style="color:#64748b">Requester</span><span style="font-weight:600">${data.requesterName}</span>
+        <span style="color:#64748b">Requester</span><span style="font-weight:600">${escapeHtml(data.requesterName)}</span>
       </div>
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
         <span style="color:#64748b">Completed</span><span>${data.completedAt.toLocaleString()}</span>
@@ -76,7 +98,7 @@ export async function sendReceipt(data: ReceiptData): Promise<void> {
     await transporter.sendMail({
       from: `"Niakofa" <${smtpUser}>`,
       to: data.to,
-      subject: `✅ Help completed: ${data.requestTitle}`,
+      subject: `✅ Help completed: ${sanitizeHeaderValue(data.requestTitle)}`,
       html,
     });
     logger.info({ to: data.to }, "receipt: email sent");
@@ -99,7 +121,7 @@ export async function sendAlertEmail(data: AlertEmailData): Promise<void> {
   const smtpUser = process.env["SMTP_USER"]!;
 
   const ctaBlock = data.ctaText && data.ctaUrl
-    ? `<div style="text-align:center;margin-top:24px"><a href="${data.ctaUrl}" style="display:inline-block;background:#00d4ff;color:#0a0f1e;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;text-decoration:none">${data.ctaText}</a></div>`
+    ? `<div style="text-align:center;margin-top:24px"><a href="${escapeHtml(data.ctaUrl)}" style="display:inline-block;background:#00d4ff;color:#0a0f1e;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;text-decoration:none">${escapeHtml(data.ctaText)}</a></div>`
     : "";
 
   const html = `<!DOCTYPE html>
@@ -110,8 +132,8 @@ export async function sendAlertEmail(data: AlertEmailData): Promise<void> {
       <div style="font-size:28px;font-weight:900;color:#00d4ff">Niakofa</div>
     </div>
     <div style="background:#111827;border:1px solid #1e3a5f;border-radius:16px;padding:24px">
-      <div style="font-size:18px;font-weight:700;margin-bottom:12px">${data.title}</div>
-      <div style="color:#94a3b8;line-height:1.6">${data.body}</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:12px">${escapeHtml(data.title)}</div>
+      <div style="color:#94a3b8;line-height:1.6">${escapeHtml(data.body)}</div>
       ${ctaBlock}
     </div>
     <p style="text-align:center;font-size:12px;color:#475569;margin-top:16px">
@@ -125,7 +147,7 @@ export async function sendAlertEmail(data: AlertEmailData): Promise<void> {
     await transporter.sendMail({
       from: `"Niakofa" <${smtpUser}>`,
       to: data.to,
-      subject: data.subject,
+      subject: sanitizeHeaderValue(data.subject),
       html,
     });
     logger.info({ to: data.to, subject: data.subject }, "alert email sent");
@@ -144,9 +166,10 @@ export interface HelperDecisionData {
 export async function sendHelperApplicationDecision(data: HelperDecisionData): Promise<void> {
   if (!isSmtpConfigured()) return;
   const smtpUser = process.env["SMTP_USER"]!;
-  const appUrl = data.appUrl ?? "https://niakofa.community";
+  const appUrl = escapeHtml(data.appUrl ?? "https://niakofa.community");
 
   const isApproved = data.decision === "approved";
+  const safeApplicantName = escapeHtml(data.applicantName);
 
   const html = `<!DOCTYPE html>
 <html>
@@ -164,7 +187,7 @@ export async function sendHelperApplicationDecision(data: HelperDecisionData): P
         ${isApproved ? "You're Approved as a Helper!" : "Application Not Approved"}
       </h1>
       <p style="color:#94a3b8;line-height:1.6;margin:0 0 24px">
-        Hi ${data.applicantName},<br><br>
+        Hi ${safeApplicantName},<br><br>
         ${isApproved
           ? "Your Niakofa helper application has been <strong style='color:#22c55e'>approved</strong>. You can now activate Helper Mode and start accepting requests from neighbors who need your support."
           : "Thank you for applying to be a Niakofa community helper. After review, we're unable to approve your application at this time. You may re-apply in 30 days. If you have questions, contact us at <a href='mailto:help@niakofa.community' style='color:#00d4ff'>help@niakofa.community</a>."}
@@ -227,8 +250,8 @@ export async function sendTipNotification(data: TipData): Promise<void> {
   <div style="text-align:center;padding:32px;background:#111827;border:1px solid #16a34a33;border-radius:16px">
     <div style="font-size:48px;margin-bottom:16px">💚</div>
     <div style="font-size:28px;font-weight:900;color:#22c55e">+$${data.tipAmount.toFixed(2)}</div>
-    <div style="font-size:14px;color:#64748b;margin-top:8px">Tip received for: <strong style="color:#e2e8f0">${data.requestTitle}</strong></div>
-    <div style="font-size:12px;color:#64748b;margin-top:16px">Hi ${data.helperName}, someone appreciated your help so much they left a tip. It's been added to your wallet.</div>
+    <div style="font-size:14px;color:#64748b;margin-top:8px">Tip received for: <strong style="color:#e2e8f0">${escapeHtml(data.requestTitle)}</strong></div>
+    <div style="font-size:12px;color:#64748b;margin-top:16px">Hi ${escapeHtml(data.helperName)}, someone appreciated your help so much they left a tip. It's been added to your wallet.</div>
   </div>
 </body>
 </html>`;
@@ -237,7 +260,7 @@ export async function sendTipNotification(data: TipData): Promise<void> {
     await transporter.sendMail({
       from: `"Niakofa" <${smtpUser}>`,
       to: data.to,
-      subject: `💚 You received a tip for: ${data.requestTitle}`,
+      subject: sanitizeHeaderValue(`💚 You received a tip for: ${data.requestTitle}`),
       html,
     });
   } catch (err) {
