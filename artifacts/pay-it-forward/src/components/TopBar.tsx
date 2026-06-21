@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { subscribeToPush } from "@/lib/push";
 import { ShieldAlert, X, Phone, AlertTriangle, Heart, MapPin, MessageSquare } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
+import { toast } from "@/hooks/use-toast";
 
 const EMERGENCY_RESOURCES = [
   {
@@ -70,8 +71,9 @@ function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
     setPressed(true);
 
     // Fire real SOS API
+    let sosSent = false;
     try {
-      await fetch("/api/verification/sos", {
+      const sosRes = await fetch("/api/verification/sos", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
@@ -81,7 +83,17 @@ function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
           message: "SOS activated from Niakofa app",
         }),
       });
-    } catch {}
+      sosSent = sosRes.ok;
+    } catch {
+      sosSent = false;
+    }
+    if (!sosSent) {
+      toast({
+        title: "SOS alert failed to send",
+        description: "Check your connection and call 911 directly if you're in danger.",
+        variant: "destructive",
+      });
+    }
 
     setTimeout(() => {
       setPressed(false);

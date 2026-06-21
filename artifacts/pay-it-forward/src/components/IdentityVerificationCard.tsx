@@ -54,13 +54,18 @@ export function IdentityVerificationCard() {
   const savePanicContacts = async () => {
     if (!currentUser?.id) return;
     const filled = contacts.filter(c => c.trim());
-    await fetch(`/api/verification/panic-contacts/${currentUser.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ contacts: filled }),
-    });
-    toast({ title: `${filled.length} emergency contact${filled.length !== 1 ? "s" : ""} saved` });
-    setShowPanicContacts(false);
+    try {
+      const res = await fetch(`/api/verification/panic-contacts/${currentUser.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ contacts: filled }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      toast({ title: `${filled.length} emergency contact${filled.length !== 1 ? "s" : ""} saved` });
+      setShowPanicContacts(false);
+    } catch {
+      toast({ title: "Failed to save emergency contacts", description: "Please try again.", variant: "destructive" });
+    }
   };
 
   const isVerified = status?.identity_verified;
