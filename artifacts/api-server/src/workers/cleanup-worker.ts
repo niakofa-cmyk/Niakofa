@@ -79,13 +79,38 @@ async function runCleanup(_job: Job): Promise<void> {
   // > 4 hours with no progress) — the helper presumably went unresponsive
   // or abandoned it. Reset to "open" with no helper_id so it can actually
   // be re-claimed by someone else, rather than terminating it outright.
+  //
+  // BUG-012: claimed_at is nullable. A NULL claimed_at compared with lt()
+  // evaluates to NULL (false) in PostgreSQL, silently skipping orphaned rows
+  // that have no timestamp. We guard with IS NOT NULL explicitly.
+  // Rows with status='claimed' AND claimed_at IS NULL are a data integrity
+  // issue and are logged separately below for admin visibility.
   const orphanCutoff = new Date(now.getTime() - ORPHAN_CLAIMED_MS);
+
+  // Log any claimed requests missing a timestamp — data integrity alert
+  const missingTimestamp = await db
+    .select({ id: requestsTable.id })
+    .from(requestsTable)
+    .where(
+      and(
+        eq(requestsTable.status, "claimed"),
+        sql`${requestsTable.claimed_at} IS NULL`
+      )
+    );
+  if (missingTimestamp.length > 0) {
+    logger.error(
+      { count: missingTimestamp.length, ids: missingTimestamp.map(r => r.id) },
+      "cleanup-worker: data integrity — claimed requests with NULL claimed_at"
+    );
+  }
+
   const orphaned = await db
     .update(requestsTable)
     .set({ status: "open", helper_id: null, claimed_at: null, en_route_at: null, arrived_at: null })
     .where(
       and(
         eq(requestsTable.status, "claimed"),
+        sql`${requestsTable.claimed_at} IS NOT NULL`,
         lt(requestsTable.claimed_at, orphanCutoff)
       )
     )

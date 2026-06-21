@@ -709,7 +709,15 @@ function AnalyticsTab() {
     }
   }, [base]);
 
-  useEffect(() => { fetchAnalytics(); }, [fetchAnalytics]);
+  // BUG-031: Analytics were fetched once on mount and never again unless the
+  // admin manually hit the refresh button. Add a polling interval so the
+  // dashboard stays current without user action. Uses the same stale-cache
+  // guard inside fetchAnalytics, so network calls only happen when needed.
+  useEffect(() => {
+    fetchAnalytics();
+    const interval = setInterval(() => fetchAnalytics(), 60_000);
+    return () => clearInterval(interval);
+  }, [fetchAnalytics]);
 
   if (loading) {
     return (

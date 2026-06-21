@@ -2,7 +2,7 @@
  * Niakofa Service Worker
  *
  * Responsibilities:
- *  1. Web Push notifications for Fort Worth neighbors.
+ *  1. Web Push notifications for community members.
  *  2. Offline fallback — shows /offline.html instead of a blank screen
  *     when the user navigates with no network connection.
  *

@@ -55,9 +55,13 @@ export const requestCreationLimiter = rateLimit({
   store: createStore("req-create"),
   keyGenerator: (req) => {
     // This route always runs requireAuth + requireOwnership("requester_id")
-    // before this limiter, so authenticatedUserId is guaranteed present —
-    // the IP fallback that used to live here was dead code that implied
-    // (incorrectly) that unauthenticated abuse of this route was covered.
+    // before this limiter, so authenticatedUserId is guaranteed present.
+    // BUG-016: Guard against undefined — if middleware order is ever changed
+    // and authenticatedUserId is missing, block the request with a fixed key
+    // rather than allowing unlimited requests under the undefined key.
+    if (!req.authenticatedUserId) {
+      return "req-create-unauthenticated-blocked";
+    }
     return `req-create-${req.authenticatedUserId}`;
   },
   message: {

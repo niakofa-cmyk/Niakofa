@@ -1,3 +1,16 @@
+// BUG-034: HTML-escape helper — user-controlled strings (names, request titles,
+// email bodies) must be escaped before interpolation into HTML email templates.
+// Without this, a name like `<script>...</script>` would execute in some email
+// clients and could exfiltrate data or redirect links.
+function esc(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
+}
+
 import nodemailer from "nodemailer";
 import { logger } from "./logger";
 
@@ -51,12 +64,12 @@ export async function sendReceipt(data: ReceiptData): Promise<void> {
     </div>
     <div style="background:#111827;border:1px solid #1e3a5f;border-radius:16px;padding:24px;margin-bottom:24px">
       <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Request Completed</div>
-      <div style="font-size:18px;font-weight:700;margin-bottom:16px">${data.requestTitle}</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:16px">${esc(data.requestTitle)}</div>
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-        <span style="color:#64748b">Helper</span><span style="font-weight:600">${data.helperName}</span>
+        <span style="color:#64748b">Helper</span><span style="font-weight:600">${esc(data.helperName)}</span>
       </div>
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-        <span style="color:#64748b">Requester</span><span style="font-weight:600">${data.requesterName}</span>
+        <span style="color:#64748b">Requester</span><span style="font-weight:600">${esc(data.requesterName)}</span>
       </div>
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
         <span style="color:#64748b">Completed</span><span>${data.completedAt.toLocaleString()}</span>
@@ -110,8 +123,8 @@ export async function sendAlertEmail(data: AlertEmailData): Promise<void> {
       <div style="font-size:28px;font-weight:900;color:#00d4ff">Niakofa</div>
     </div>
     <div style="background:#111827;border:1px solid #1e3a5f;border-radius:16px;padding:24px">
-      <div style="font-size:18px;font-weight:700;margin-bottom:12px">${data.title}</div>
-      <div style="color:#94a3b8;line-height:1.6">${data.body}</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:12px">${esc(data.title)}</div>
+      <div style="color:#94a3b8;line-height:1.6">${esc(data.body)}</div>
       ${ctaBlock}
     </div>
     <p style="text-align:center;font-size:12px;color:#475569;margin-top:16px">
@@ -164,7 +177,7 @@ export async function sendHelperApplicationDecision(data: HelperDecisionData): P
         ${isApproved ? "You're Approved as a Helper!" : "Application Not Approved"}
       </h1>
       <p style="color:#94a3b8;line-height:1.6;margin:0 0 24px">
-        Hi ${data.applicantName},<br><br>
+        Hi ${esc(data.applicantName)},<br><br>
         ${isApproved
           ? "Your Niakofa helper application has been <strong style='color:#22c55e'>approved</strong>. You can now activate Helper Mode and start accepting requests from neighbors who need your support."
           : "Thank you for applying to be a Niakofa community helper. After review, we're unable to approve your application at this time. You may re-apply in 30 days. If you have questions, contact us at <a href='mailto:help@niakofa.community' style='color:#00d4ff'>help@niakofa.community</a>."}

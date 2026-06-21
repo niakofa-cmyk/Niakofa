@@ -644,10 +644,14 @@ export default function LoginScreen() {
                   <Button className="w-full h-13 font-black text-base mt-2" onClick={handleResetPassword} disabled={forgotSaving || forgotCode.length !== 6 || forgotNewPassword.length < 8 || forgotNewPassword !== forgotConfirmPassword}>
                     {forgotSaving ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Saving…</span> : "Reset Password"}
                   </Button>
+                  {/* BUG-020: "Resend code" must actually call the forgot-password API —
+                      previously it only reset UI state without sending a new code.
+                      Now it re-runs handleRequestForgotCode which POSTs to the endpoint
+                      (which also deletes any prior unused code) and moves back to code step. */}
                   <button
-                    onClick={() => { setForgotStep("email"); setForgotCode(""); }}
-                    disabled={forgotSaving}
-                    className="w-full text-center text-xs text-primary active:text-primary/70 transition-colors py-1"
+                    onClick={handleRequestForgotCode}
+                    disabled={forgotSaving || !forgotEmail.trim()}
+                    className="w-full text-center text-xs text-primary active:text-primary/70 transition-colors py-1 disabled:opacity-50"
                   >
                     Resend code
                   </button>

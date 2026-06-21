@@ -12,6 +12,10 @@ export interface CrisisState {
   active: boolean;
   message: string;
   level: "info" | "warning" | "critical";
+  /** BUG-033: region is the configurable deployment area name (e.g. "Tarrant County").
+   * Set via CRISIS_DEFAULT_REGION env var so the banner subtitle is not hardcoded
+   * in frontend JSX. Falls back to undefined — the frontend renders a generic label. */
+  region?: string;
   activatedAt?: string;
   resources?: Array<{ label: string; phone?: string; url?: string }>;
 }
@@ -25,6 +29,10 @@ async function getCurrentCrisisState(): Promise<CrisisState> {
     active: row.active,
     message: row.message,
     level: row.level as CrisisState["level"],
+    // BUG-033: Include region in the API response so the frontend can render
+    // a configurable banner subtitle. CRISIS_DEFAULT_REGION defaults to
+    // "Tarrant County" to match the app's primary deployment area.
+    region: process.env["CRISIS_DEFAULT_REGION"] ?? "Tarrant County",
     activatedAt: row.created_at.toISOString(),
     resources: row.resources ? JSON.parse(row.resources) : [],
   };

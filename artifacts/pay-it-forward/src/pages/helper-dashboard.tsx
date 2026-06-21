@@ -193,8 +193,11 @@ export default function HelperDashboardScreen() {
           </div>
           <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
             <Activity className="w-4 h-4 text-green-400 mb-1" />
+            {/* BUG-024: benevolence_wallet is the goodwill/donation pot — NOT real withdrawable earnings.
+                Real earnings from Stripe transfers are tracked separately in transactions (type: "earned").
+                Labeling this as "Earned" is misleading — renamed to "Goodwill Fund". */}
             <div className="text-2xl font-black text-green-400">${(currentUser.benevolence_wallet ?? 0).toFixed(0)}</div>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Earned</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Goodwill Fund</div>
           </div>
         </div>
 

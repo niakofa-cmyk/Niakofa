@@ -2,6 +2,8 @@ import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
 import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, ratingsTable } from "@workspace/db";
+// BUG-030: distanceMiles moved to shared lib/geo.ts — single server-side source of truth
+import { distanceMiles } from "../lib/geo";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -31,16 +33,6 @@ const _stripe = _STRIPE_SK
   : null;
 
 const router = Router();
-
-function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 3958.8;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
 
 function enrichRequest(r: typeof requestsTable.$inferSelect, userMap: Record<number, { name: string; avatar_url: string | null }>, helperName?: string | null, extraFields?: Record<string, unknown>) {
   return {
@@ -281,16 +273,24 @@ router.get("/requests/:id", requireAuth, async (req, res) => {
   const parsed = GetRequestParams.safeParse({ id: parseInt(req.params.id as string) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, parsed.data.id)).limit(1);
+
+  // BUG-010: 404 check MUST come before 403 check. If request is null and we
+  // reached the 403 block first, accessing request.requester_id would throw.
+  // The old code used `if (request && ...)` short-circuit which was safe, but
+  // moving 404 first is the correct defensive order.
+  if (!request) return res.status(404).json({ error: "Not found" });
+
   // Open requests stay visible to any logged-in user (helpers need to see
   // them before claiming). Once claimed/in-progress/completed, only the
   // requester and assigned helper can view the details.
-  if (request && request.status !== "open") {
-    const r = req as typeof req & { authenticatedUserId: number };
-    if (request.requester_id !== r.authenticatedUserId && request.helper_id !== r.authenticatedUserId) {
+  // BUG-010: Guard helper_id null — null !== userId is true, so a non-requester
+  // correctly gets 403 when no helper is assigned yet. This is intentional.
+  if (request.status !== "open") {
+    const authenticatedUserId = req.authenticatedUserId!;
+    if (request.requester_id !== authenticatedUserId && request.helper_id !== authenticatedUserId) {
       return res.status(403).json({ error: "Forbidden: you don't have access to this request" });
     }
   }
-  if (!request) return res.status(404).json({ error: "Not found" });
   const [requester] = await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url })
     .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1);
   let helperName = null;
@@ -462,18 +462,12 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
     .set({ help_count: sql`${usersTable.help_count} + 1` })
     .where(eq(usersTable.id, callerId));
 
-  // Immediate-pay jobs: record in earnings history ONLY — do NOT credit benevolence_wallet.
-  // benevolence_wallet is the goodwill/donation pot (pledges, sponsorships, tips).
-  // The real money for immediate jobs arrives via the Stripe Connect transfer below.
-  if (request.payment_type === "immediate" && request.pay_it_forward_amount && request.pay_it_forward_amount > 0) {
-    await db.insert(transactionsTable).values({
-      user_id: callerId,
-      request_id: request.id,
-      type: "earned",
-      amount: request.pay_it_forward_amount,
-      description: request.title,
-    });
-  }
+  // BUG-007: Do NOT insert the `earned` transaction row here — it must only be
+  // recorded AFTER the Stripe transfer succeeds. If the transfer fails (even
+  // after all BullMQ retries exhaust), inserting the row here would mean the
+  // helper sees "earnings" in their history that were never actually paid out.
+  // The insert is now deferred to the Stripe success block below (or payout-worker
+  // on retry success). This block intentionally left empty as documentation.
 
   // Award goodwill point for volunteer missions
   if (request.payment_type === "goodwill") {
@@ -532,6 +526,16 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
           payment_type: "immediate",
           stripe_transfer_id: transfer.id,
           notes: `Auto-payout on completion. Platform fee: $${(platformFeeCents / 100).toFixed(2)}`,
+        });
+
+        // BUG-007: Insert the `earned` transaction row here — AFTER the Stripe
+        // transfer succeeds — so earnings history only reflects actual payouts.
+        await db.insert(transactionsTable).values({
+          user_id: callerId,
+          request_id: request.id,
+          type: "earned",
+          amount: request.pay_it_forward_amount,
+          description: request.title,
         });
 
         broadcast({
@@ -626,7 +630,20 @@ router.post("/requests/:id/tip", requireAuth, paymentLimiter, async (req, res) =
   if (request.status !== "completed") return res.status(409).json({ error: "Can only tip completed requests" });
   if (!request.helper_id) return res.status(400).json({ error: "No helper to tip" });
 
-  // Credit tip to helper benevolence_wallet
+  // BUG-008: Tips are real money paid by the requester, but the current
+  // implementation only increments benevolence_wallet (a goodwill ledger column)
+  // without processing a real Stripe payment or transfer. This means helpers
+  // receive a number in a wallet column but NO actual funds are moved.
+  //
+  // A proper fix requires: (1) a Stripe PaymentIntent for tip_amount charged to
+  // the requester's saved payment method, (2) a Stripe Connect transfer to the
+  // helper's account on payment_intent.succeeded webhook. Until that is
+  // implemented, we log a warning and credit benevolence_wallet as before — but
+  // tips should NOT be presented as "real earnings" in the UI.
+  logger.warn(
+    { request_id: requestId, helper_id: request.helper_id, tip_amount },
+    "tip: credited benevolence_wallet without Stripe transfer — no real funds moved (BUG-008)"
+  );
   await db.update(usersTable)
     .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${tip_amount}` })
     .where(eq(usersTable.id, request.helper_id));

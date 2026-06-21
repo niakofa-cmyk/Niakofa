@@ -39,6 +39,8 @@ export type WsEventType =
   | "ping"
   | "helper_application_approved"
   | "helper_application_denied"
+  | "account_approved"
+  | "account_denied"
   | "crisis_update";
 
 export interface WsEvent {

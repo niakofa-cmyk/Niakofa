@@ -15,6 +15,13 @@ import { getRedisConnection, QUEUE, type PayoutJobData } from "../lib/queue";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 
+// BUG-019: Instantiate the Stripe client once at module load time (singleton).
+// Previously `new Stripe(stripeKey)` was called on every job execution —
+// with concurrency: 2 this creates multiple clients per cycle and has no
+// connection pooling. The Stripe Node library recommends a single instance.
+const _stripeKey = process.env["STRIPE_SECRET_KEY"];
+const stripe: Stripe | null = _stripeKey ? new Stripe(_stripeKey) : null;
+
 async function processPayout(job: Job<PayoutJobData>): Promise<void> {
   const {
     request_id, helper_id, requester_id,
@@ -22,10 +29,7 @@ async function processPayout(job: Job<PayoutJobData>): Promise<void> {
     request_title,
   } = job.data;
 
-  const stripeKey = process.env["STRIPE_SECRET_KEY"];
-  if (!stripeKey) throw new Error("STRIPE_SECRET_KEY not configured");
-
-  const stripe = new Stripe(stripeKey);
+  if (!stripe) throw new Error("STRIPE_SECRET_KEY not configured");
   const payoutCents = amount_cents - platform_fee_cents;
 
   logger.info(

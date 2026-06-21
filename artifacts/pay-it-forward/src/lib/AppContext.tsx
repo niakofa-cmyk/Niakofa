@@ -192,6 +192,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   });
 
+  // BUG-002: Handle account-level approval/denial events (distinct from helper application events).
+  // Server emits these when an admin reviews an account's approval_status.
+  useWebSocket("account_approved", (event) => {
+    const p = event.payload as { user_id: number };
+    if (currentUser && currentUser.id === p.user_id) {
+      const updated = { ...currentUser, approval_status: "approved" as const };
+      setCurrentUser(updated);
+      import("sonner").then(({ toast }) => {
+        toast.success("Account approved!", {
+          description: "Your account has been approved. Welcome to Niakofa!",
+          duration: 8000,
+        });
+      }).catch(() => {});
+    }
+  });
+
+  useWebSocket("account_denied", (event) => {
+    const p = event.payload as { user_id: number };
+    if (currentUser && currentUser.id === p.user_id) {
+      const updated = { ...currentUser, approval_status: "denied" as const };
+      setCurrentUser(updated);
+      import("sonner").then(({ toast }) => {
+        toast.error("Account not approved", {
+          description: "Your account was not approved. Check your email for details or contact support.",
+          duration: 10000,
+        });
+      }).catch(() => {});
+    }
+  });
+
   // Show gratitude prompt when the current user's request is completed
   useWebSocket("new_gratitude_prompt", (event) => {
     const p = event.payload as {
