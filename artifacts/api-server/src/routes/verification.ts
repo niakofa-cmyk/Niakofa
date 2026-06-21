@@ -159,7 +159,7 @@ router.post("/verification/sos", requireAuth, requireOwnership("user_id"), async
   });
 
   // SMS panic contacts if configured
-  const contacts: string[] = (user as any).panic_contacts ?? [];
+  const contacts: string[] = user.panic_contacts ?? [];
   await Promise.allSettled(
     contacts.map(phone => sendSms(phone, sosMessage))
   );

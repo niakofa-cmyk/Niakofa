@@ -71,7 +71,7 @@ router.post("/users/login", authLimiter, async (req, res) => {
   }
 
   const token = signTokenById(user.id, user.token_version);
-  const { password_hash: _ph, ...safeUser } = user as any;
+  const { password_hash: _ph, ...safeUser } = user;
   return res.json({ user: safeUser, token });
 });
 
@@ -216,7 +216,7 @@ router.post("/users/reset-password", authLimiter, async (req, res) => {
 
   logger.info({ user_id: user.id }, "users: password reset via forgot-password flow");
   const token = signTokenById(updated.id, updated.token_version);
-  const { password_hash: _ph, ...safeUser } = updated as any;
+  const { password_hash: _ph, ...safeUser } = updated;
   return res.json({ user: safeUser, token });
 });
 
@@ -304,7 +304,7 @@ router.post("/users/set-initial-password", authLimiter, async (req, res) => {
 
   logger.info({ user_id: user.id }, "users: legacy account initial password set");
   const token = signTokenById(updated.id, updated.token_version);
-  const { password_hash: _ph, ...safeUser } = updated as any;
+  const { password_hash: _ph, ...safeUser } = updated;
   return res.json({ user: safeUser, token });
 });
 
@@ -418,10 +418,10 @@ router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => 
   if (avatar_url !== undefined) updates.avatar_url = avatar_url;
   if (neighborhood !== undefined) updates.neighborhood = neighborhood;
   if (is_helper !== undefined) updates.is_helper = is_helper;
-  const { specialties, phone_masked, quick_replies } = bParsed.data as any;
-  if (specialties !== undefined) (updates as any).specialties = specialties;
-  if (phone_masked !== undefined) (updates as any).phone_masked = phone_masked;
-  if (quick_replies !== undefined) (updates as any).quick_replies = quick_replies;
+  const { specialties, phone_masked, quick_replies } = bParsed.data;
+  if (specialties !== undefined) updates.specialties = specialties;
+  if (phone_masked !== undefined) updates.phone_masked = phone_masked;
+  if (quick_replies !== undefined) updates.quick_replies = quick_replies;
 
   // ── Password change/set flow ──────────────────────────────────────────────
   // The client sends `new_password` (plaintext) either to create a password
@@ -452,19 +452,19 @@ router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => 
       }
     }
 
-    (updates as any).password_hash = await bcrypt.hash(rawNewPassword, BCRYPT_ROUNDS);
+    updates.password_hash = await bcrypt.hash(rawNewPassword, BCRYPT_ROUNDS);
     // Changing the password invalidates every previously issued token for
     // this account, including ones an attacker may have stolen — bump the
     // version, then issue this request's own caller a fresh token below so
     // their current session keeps working.
-    (updates as any).token_version = sql`${usersTable.token_version} + 1`;
+    (updates as Record<string, unknown>).token_version = sql`${usersTable.token_version} + 1`;
     logger.info({ user_id: pParsed.data.id }, "users: password changed/set");
   }
 
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });
   // Never return the password hash to the client
-  const { password_hash: _ph, ...safeUser } = user as any;
+  const { password_hash: _ph, ...safeUser } = user;
   if (rawNewPassword !== undefined) {
     const token = signTokenById(user.id, user.token_version);
     return res.json({ ...safeUser, token });
@@ -863,7 +863,7 @@ router.patch("/users/:id/helper-application", requireAuth, requireOwnership(), a
   };
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  const { password_hash: _ph, ...safeUser } = user as any;
+  const { password_hash: _ph, ...safeUser } = user;
   logger.info({ user_id: id }, "users: helper application submitted");
   return res.json(safeUser);
 });
@@ -932,7 +932,7 @@ router.patch("/admin/helper-applications/:id/review", requireAuth, requireAdmin(
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  const { password_hash: _ph, ...safeUser } = user as any;
+  const { password_hash: _ph, ...safeUser } = user;
   logger.info({ user_id: id, decision }, "admin: helper application reviewed");
 
   const wsEventType = decision === "approved" ? "helper_application_approved" : "helper_application_denied";
@@ -1027,7 +1027,7 @@ router.patch("/admin/account-applications/:id/review", requireAuth, requireAdmin
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  const { password_hash: _ph, ...safeUser } = user as any;
+  const { password_hash: _ph, ...safeUser } = user;
   logger.info({ user_id: id, decision, account_type: user.account_type, reviewed_by: req.authenticatedUserId }, "admin: account application reviewed");
 
   const wsEventType = decision === "approved" ? "account_approved" : "account_denied";

@@ -74,6 +74,9 @@ export interface UserUpdate {
   avatar_url?: string;
   neighborhood?: string;
   is_helper?: boolean;
+  specialties?: string[];
+  phone_masked?: string;
+  quick_replies?: string[];
 }
 
 export interface HelperApplicationInput {

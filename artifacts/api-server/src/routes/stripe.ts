@@ -292,14 +292,15 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
   // (e.g. mobile connection drop during checkout) resending this exact
   // request returns the SAME PaymentIntent instead of creating a second
   // one for the same transaction.
-  const idempotencyKey = `pi-${requestId}-${(req as any).authenticatedUserId}-${paymentType ?? "immediate"}`;
+  const authenticatedUserId = req.authenticatedUserId!;
+  const idempotencyKey = `pi-${requestId}-${authenticatedUserId}-${paymentType ?? "immediate"}`;
   const pi = await stripe!.paymentIntents.create({
     amount: Math.round(amount * 100), // convert to cents
     currency: "usd",
     metadata: {
       requestId: requestId.toString(),
       helperId: helperId?.toString() ?? "",
-      requesterId: (req as any).authenticatedUserId.toString(),
+      requesterId: authenticatedUserId.toString(),
       paymentType: paymentType ?? "immediate",
     },
     automatic_payment_methods: { enabled: true },
@@ -312,7 +313,7 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
     .values({
       request_id: requestId,
       helper_id: helperId ?? null,
-      requester_id: (req as any).authenticatedUserId,
+      requester_id: authenticatedUserId,
       amount,
       state: "authorized",
       payment_type: paymentType ?? "immediate",

@@ -949,6 +949,16 @@ components:
           type: string
         is_helper:
           type: boolean
+        specialties:
+          type: array
+          items:
+            type: string
+        phone_masked:
+          type: string
+        quick_replies:
+          type: array
+          items:
+            type: string
 
     HelperApplicationInput:
       type: object

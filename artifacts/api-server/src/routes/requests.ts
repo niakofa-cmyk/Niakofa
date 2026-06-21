@@ -302,7 +302,7 @@ router.get("/requests/:id", requireAuth, async (req, res) => {
 });
 
 router.patch("/requests/:id", requireAuth, async (req, res) => {
-  const authenticatedUserId = (req as any).authenticatedUserId;
+  const authenticatedUserId = req.authenticatedUserId;
   const requestId = parseInt(req.params.id as string);
   const [existing] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
   if (!existing) return res.status(404).json({ error: "Request not found" });
