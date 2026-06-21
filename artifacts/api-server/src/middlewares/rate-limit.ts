@@ -108,6 +108,20 @@ export const paymentLimiter = rateLimit({
 // ── 5. General API (200 / 15 min) ────────────────────────────────────────────
 // Broad protection on all /api routes. High enough that normal users never hit it.
 // Blocks only clearly automated abuse (scrapers, bots, DoS).
+// ── Civic Suggestions (5 / hour per IP) ──────────────────────────────────────
+// Public, unauthenticated write endpoint — caps spam/abuse submissions
+// without requiring sign-in for a low-stakes "suggest a resource" form.
+export const civicSuggestionLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  store: createStore("civic-suggestion"),
+  message: {
+    error: "Too many suggestions submitted. Please try again in an hour.",
+  },
+});
+
 export const generalApiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 200,

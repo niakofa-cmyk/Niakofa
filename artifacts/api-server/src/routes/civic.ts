@@ -5,6 +5,7 @@ import { logger } from "../lib/logger";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { cacheGet, cacheSet, cacheDel, cacheDelPrefix } from "../lib/cache";
+import { civicSuggestionLimiter } from "../middlewares/rate-limit";
 
 const CIVIC_TTL = 3600; // 1 hour — civic resources change rarely
 
@@ -191,7 +192,7 @@ router.get("/civic/resources", async (req, res) => {
 
 // POST /civic/suggestions — community-submitted resource suggestions (§3.3.2)
 // Persists to DB so admins can review and approve them.
-router.post("/civic/suggestions", async (req, res) => {
+router.post("/civic/suggestions", civicSuggestionLimiter, async (req, res) => {
   const { name, category, description, phone, website } = req.body as {
     name?: string; category?: string; description?: string; phone?: string; website?: string;
   };
