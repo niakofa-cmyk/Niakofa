@@ -26,6 +26,7 @@ import type { Transaction, HelpRequest, ScheduledPayment } from "@workspace/api-
 type ScheduledPaymentEx = ScheduledPayment & { request_id?: number };
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 
 function txIcon(type: Transaction["type"]) {
   if (type === "earned") return { Icon: ArrowDownLeft, color: "text-green-400" };
@@ -63,6 +64,7 @@ async function cancelScheduledPaymentFetch(userId: number, paymentId: number): P
 }
 
 export default function WalletScreen() {
+  const { t } = useTranslation();
   const { currentUser } = useAppContext();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -323,7 +325,7 @@ export default function WalletScreen() {
     <div className="min-h-screen bg-background text-foreground flex flex-col pb-24">
       <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-xl border-b border-border p-4 pt-safe">
         <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2">
-          <Wallet className="w-5 h-5 text-primary" /> Wallet
+          <Wallet className="w-5 h-5 text-primary" /> {t("wallet.wallet")}
         </h1>
       </div>
 
@@ -338,22 +340,22 @@ export default function WalletScreen() {
             size={160}
           />
           <div className="text-center">
-            <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">Goodwill Fund</div>
+            <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">{t("wallet.goodwill_fund")}</div>
             <div className="text-4xl font-black text-primary">${wallet.toFixed(2)}</div>
-            <div className="text-xs text-muted-foreground mt-0.5">Donations, goodwill &amp; community support</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{t("wallet.donations_goodwill_amp_community_support")}</div>
           </div>
           <div className="grid grid-cols-3 gap-3 w-full">
             <div className="bg-background/40 rounded-xl p-3 text-center">
               <div className="text-xl font-black text-green-400">${totalEarned.toFixed(0)}</div>
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Earned</div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{t("wallet.earned")}</div>
             </div>
             <div className="bg-background/40 rounded-xl p-3 text-center">
               <div className="text-xl font-black text-primary">${totalReceived.toFixed(0)}</div>
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Received</div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{t("wallet.received")}</div>
             </div>
             <div className="bg-background/40 rounded-xl p-3 text-center">
               <div className="text-xl font-black text-purple-400">{goodwill}</div>
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Goodwill</div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{t("wallet.goodwill_label")}</div>
             </div>
           </div>
         </div>
@@ -369,8 +371,8 @@ export default function WalletScreen() {
                 <CheckCircle className="w-4 h-4 text-green-400" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-black text-sm text-green-400">Payouts Active</div>
-                <div className="text-[10px] text-muted-foreground">Earnings transfer to your bank via Stripe Connect</div>
+                <div className="font-black text-sm text-green-400">{t("wallet.payouts_active")}</div>
+                <div className="text-[10px] text-muted-foreground">{t("wallet.earnings_transfer_to_your_bank_via")}</div>
               </div>
             </div>
           ) : (
@@ -380,12 +382,12 @@ export default function WalletScreen() {
                   <CreditCard className="w-4 h-4 text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-black text-sm">Enable Real Payouts</div>
-                  <div className="text-[10px] text-muted-foreground">Connect your bank account via Stripe</div>
+                  <div className="font-black text-sm">{t("wallet.enable_real_payouts")}</div>
+                  <div className="text-[10px] text-muted-foreground">{t("wallet.connect_your_bank_account_via_stripe")}</div>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Set up Stripe Connect to receive immediate-pay job earnings directly to your bank. Takes ~5 minutes.
+                {t("wallet.set_up_stripe_connect_to_receive")}
               </p>
               <Button
                 className="w-full h-10 font-black text-sm"
@@ -393,9 +395,9 @@ export default function WalletScreen() {
                 disabled={stripeOnboarding}
               >
                 {stripeOnboarding ? (
-                  <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Opening Stripe…</span>
+                  <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{t("wallet.opening_stripe")}</span>
                 ) : (
-                  <span className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />Set Up Payouts via Stripe</span>
+                  <span className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />{t("wallet.set_up_payouts_via_stripe")}</span>
                 )}
               </Button>
             </div>
@@ -430,8 +432,8 @@ export default function WalletScreen() {
             <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
               <Heart className="w-5 h-5 text-primary" />
             </div>
-            <div className="text-sm font-black">Pay Forward</div>
-            <div className="text-[10px] text-muted-foreground text-center">Contribute</div>
+            <div className="text-sm font-black">{t("wallet.pay_forward")}</div>
+            <div className="text-[10px] text-muted-foreground text-center">{t("wallet.contribute")}</div>
           </button>
           <button
             onClick={() => {
@@ -444,19 +446,19 @@ export default function WalletScreen() {
             <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center">
               <Calendar className="w-5 h-5 text-purple-400" />
             </div>
-            <div className="text-sm font-black text-purple-400">Schedule</div>
-            <div className="text-[10px] text-muted-foreground text-center">Plan repayment</div>
+            <div className="text-sm font-black text-purple-400">{t("wallet.schedule")}</div>
+            <div className="text-[10px] text-muted-foreground text-center">{t("wallet.plan_repayment")}</div>
           </button>
           <button
             onClick={() => setLocation("/recurring")}
             className="bg-cyan-500/10 border-2 border-cyan-500/30 hover:border-cyan-500/60 rounded-2xl p-4 flex flex-col items-center gap-2 transition-all group"
-            aria-label="Manage recurring help requests"
+            aria-label={t("wallet.manage_recurring_help_requests")}
           >
             <div className="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center">
               <RotateCcw className="w-5 h-5 text-cyan-400" />
             </div>
-            <div className="text-sm font-black text-cyan-400">Recurring</div>
-            <div className="text-[10px] text-muted-foreground text-center">Auto-schedule</div>
+            <div className="text-sm font-black text-cyan-400">{t("wallet.recurring")}</div>
+            <div className="text-[10px] text-muted-foreground text-center">{t("wallet.autoschedule")}</div>
           </button>
         </div>
 
@@ -464,7 +466,7 @@ export default function WalletScreen() {
         {pendingScheduled.length > 0 && (
           <div>
             <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-purple-400" /> Upcoming Payments
+              <Calendar className="w-4 h-4 text-purple-400" /> {t("wallet.upcoming_payments")}
             </h2>
             <div className="space-y-2">
               {pendingScheduled.map(sp => {
@@ -477,10 +479,10 @@ export default function WalletScreen() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-sm text-purple-300">
-                        ${sp.amount.toFixed(2)} scheduled
+                        ${sp.amount.toFixed(2)} {t("wallet.scheduled_label")}
                       </div>
                       <div className="text-xs text-muted-foreground mt-0.5">
-                        Due {fmtScheduledDate(sp.scheduled_date)}
+                        {t("wallet.due")} {fmtScheduledDate(sp.scheduled_date)}
                         {sp.note && <> · <span className="italic">{sp.note}</span></>}
                       </div>
                     </div>
@@ -489,21 +491,21 @@ export default function WalletScreen() {
                       onClick={() => handlePayNowScheduled(spEx)}
                       disabled={isPayingThis && (creatingPayNowIntent || pledgeMutation.isPending)}
                       className="flex items-center gap-1 text-[10px] font-black text-primary bg-primary/10 border border-primary/30 hover:border-primary/60 px-2.5 py-1.5 rounded-lg transition-all shrink-0"
-                      title="Pay this now"
+                      title={t("wallet.pay_this_now")}
                     >
                       {isPayingThis && (creatingPayNowIntent || pledgeMutation.isPending) ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
                       ) : (
                         <Play className="w-3 h-3" />
                       )}
-                      Pay Now
+                      {t("wallet.pay_now")}
                     </button>
                     {/* Cancel */}
                     <button
                       onClick={() => cancelMutation.mutate({ paymentId: sp.id })}
                       disabled={cancelMutation.isPending}
                       className="w-11 h-11 rounded-full bg-muted hover:bg-destructive/10 hover:text-destructive border border-border flex items-center justify-center transition-colors shrink-0"
-                      title="Cancel scheduled payment"
+                      title={t("wallet.cancel_scheduled_payment")}
                     >
                       {cancelMutation.isPending ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
@@ -522,7 +524,7 @@ export default function WalletScreen() {
         {outstandingPledges.length > 0 && (
           <div>
             <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
-              <Clock className="w-4 h-4" /> Outstanding Pledges
+              <Clock className="w-4 h-4" /> {t("wallet.outstanding_pledges")}
             </h2>
             <div className="space-y-2">
               {outstandingPledges.map(r => {
@@ -532,14 +534,14 @@ export default function WalletScreen() {
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-sm truncate">{r.title}</div>
                       <div className="text-xs text-muted-foreground mt-0.5">
-                        Outstanding: <span className="text-yellow-400 font-bold">${outstanding.toFixed(2)}</span>
+                        {t("wallet.outstanding")} <span className="text-yellow-400 font-bold">${outstanding.toFixed(2)}</span>
                       </div>
                     </div>
                     <button
                       onClick={() => { setSchedulerRequest(r); setSchedulerOpen(true); }}
                       className="text-[10px] font-black text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2.5 py-1.5 rounded-lg hover:border-purple-500/60 transition-all flex items-center gap-1 shrink-0"
                     >
-                      <Calendar className="w-3 h-3" /> Schedule
+                      <Calendar className="w-3 h-3" /> {t("wallet.schedule_2")}
                     </button>
                   </div>
                 );
@@ -553,20 +555,20 @@ export default function WalletScreen() {
           <div className="bg-card border border-border rounded-2xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <TrendingUp className="w-4 h-4 text-green-400" />
-              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Paid Jobs</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t("wallet.paid_jobs")}</span>
             </div>
             <div className="text-2xl font-black text-green-400">${totalEarned.toFixed(0)}</div>
             <div className="text-xs text-muted-foreground">
-              from {transactions.filter(t => t.type === "earned").length} immediate-pay jobs
+              {t("wallet.from")} {transactions.filter(t => t.type === "earned").length} {t("wallet.immediatepay_jobs")}
             </div>
           </div>
           <div className="bg-card border border-border rounded-2xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <Gift className="w-4 h-4 text-purple-400" />
-              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Goodwill Acts</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{t("wallet.goodwill_acts")}</span>
             </div>
             <div className="text-2xl font-black text-purple-400">{goodwill}</div>
-            <div className="text-xs text-muted-foreground">volunteer missions</div>
+            <div className="text-xs text-muted-foreground">{t("wallet.volunteer_missions")}</div>
           </div>
         </div>
 
@@ -574,17 +576,17 @@ export default function WalletScreen() {
         {(!currentUser?.is_helper || walletTab === "activity") && (
           <div>
             <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
-              <Clock className="w-4 h-4" /> Activity History
+              <Clock className="w-4 h-4" /> {t("wallet.activity_history")}
             </h2>
             {txLoading && (
               <div className="flex items-center justify-center py-8 text-muted-foreground gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span className="text-sm">Loading history...</span>
+                <span className="text-sm">{t("wallet.loading_history")}</span>
               </div>
             )}
             {!txLoading && transactions.length === 0 && (
               <div className="text-center py-8 text-muted-foreground text-sm">
-                No transactions yet. Complete a job to see earnings here.
+                {t("wallet.no_transactions_yet_complete_a_job")}
               </div>
             )}
             <div className="space-y-2">
@@ -600,7 +602,7 @@ export default function WalletScreen() {
                       <div className="text-[10px] text-muted-foreground">{fmtDate(tx.created_at)}</div>
                     </div>
                     {tx.type === "goodwill" ? (
-                      <div className="text-[10px] text-purple-400 font-bold shrink-0">GOODWILL</div>
+                      <div className="text-[10px] text-purple-400 font-bold shrink-0">{t("wallet.goodwill_2")}</div>
                     ) : (
                       <div className={`font-black text-sm shrink-0 ${tx.amount > 0 ? "text-green-400" : "text-muted-foreground"}`}>
                         {tx.amount > 0 ? "+" : ""}${Math.abs(tx.amount).toFixed(2)}
@@ -620,15 +622,15 @@ export default function WalletScreen() {
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-4 text-center">
                 <div className="text-2xl font-black text-green-400">${totalEarned.toFixed(2)}</div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Paid Jobs</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">{t("wallet.paid_jobs_2")}</div>
               </div>
               <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 text-center">
                 <div className="text-2xl font-black text-yellow-400">${totalTips.toFixed(2)}</div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Tips Received</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">{t("wallet.tips_received")}</div>
               </div>
             </div>
             <div className="bg-primary/10 border border-primary/30 rounded-2xl p-4 text-center">
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Total Lifetime Earnings</div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{t("wallet.total_lifetime_earnings")}</div>
               <div className="text-3xl font-black text-primary">${(totalEarned + totalTips).toFixed(2)}</div>
             </div>
 
@@ -637,19 +639,19 @@ export default function WalletScreen() {
               stripeStatus.payoutsEnabled ? (
                 <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3.5 flex items-center gap-3">
                   <CheckCircle className="w-4 h-4 text-green-400 shrink-0" />
-                  <div className="text-sm font-bold text-green-400">Bank payouts active via Stripe Connect</div>
+                  <div className="text-sm font-bold text-green-400">{t("wallet.bank_payouts_active_via_stripe_connect")}</div>
                 </div>
               ) : (
                 <div className="bg-card border border-primary/30 rounded-xl p-3.5 space-y-2">
-                  <div className="text-sm font-bold">Connect your bank to receive payouts</div>
+                  <div className="text-sm font-bold">{t("wallet.connect_your_bank_to_receive_payouts")}</div>
                   <p className="text-xs text-muted-foreground">
-                    Immediate-pay earnings stay in your goodwill balance until you connect a bank account via Stripe.
+                    {t("wallet.immediatepay_earnings_stay_in_your_goodwill")}
                   </p>
                   <Button className="w-full h-10 font-black text-sm" onClick={handleStripeOnboard} disabled={stripeOnboarding}>
                     {stripeOnboarding ? (
-                      <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Opening…</span>
+                      <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{t("wallet.opening")}</span>
                     ) : (
-                      <span className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />Set Up Payouts</span>
+                      <span className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />{t("wallet.set_up_payouts")}</span>
                     )}
                   </Button>
                 </div>
@@ -659,17 +661,17 @@ export default function WalletScreen() {
             {/* Earnings transaction list */}
             <div>
               <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-green-400" /> Earnings History
+                <TrendingUp className="w-4 h-4 text-green-400" /> {t("wallet.earnings_history")}
               </h2>
               {txLoading && (
                 <div className="flex items-center justify-center py-8 text-muted-foreground gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm">Loading…</span>
+                  <span className="text-sm">{t("wallet.loading")}</span>
                 </div>
               )}
               {!txLoading && earningsTransactions.length === 0 && (
                 <div className="text-center py-8 text-muted-foreground text-sm">
-                  No earnings yet. Complete a paid job to see them here.
+                  {t("wallet.no_earnings_yet_complete_a_paid")}
                 </div>
               )}
               <div className="space-y-2">
@@ -700,9 +702,9 @@ export default function WalletScreen() {
           <div className="flex items-start gap-3">
             <DollarSign className="w-4 h-4 text-primary mt-0.5 shrink-0" />
             <div>
-              <div className="font-bold text-sm mb-1">Pay What You Can, When You Can</div>
+              <div className="font-bold text-sm mb-1">{t("wallet.pay_what_you_can_when_you")}</div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                No deadlines. No pressure. When you're in a better position, help someone else or contribute back. That's how this community grows.
+                {t("wallet.no_deadlines_no_pressure_when_youre")}
               </p>
             </div>
           </div>
@@ -726,19 +728,19 @@ export default function WalletScreen() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Heart className="w-5 h-5 text-primary" />
-                  <h3 className="font-black text-lg">Niakofa</h3>
+                  <h3 className="font-black text-lg">{t("wallet.niakofa")}</h3>
                 </div>
                 <Button variant="ghost" size="icon" onClick={() => { setPledgeOpen(false); setSelectedRequest(null); setPledgeAmount(""); }} className="rounded-full">
                   <X className="w-5 h-5" />
                 </Button>
               </div>
               <p className="text-sm text-muted-foreground">
-                Every contribution pays your helper directly and sustains the community. Any amount helps.
+                {t("wallet.every_contribution_pays_your_helper_directly")}
               </p>
 
               {outstandingPledges.length > 0 ? (
                 <div>
-                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Your Requests With Outstanding Balance</div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">{t("wallet.your_requests_with_outstanding_balance")}</div>
                   <div className="space-y-2">
                     {outstandingPledges.map(r => {
                       const outstanding = (r.pledge_amount ?? 0) - (r.pledge_paid ?? 0);
@@ -755,7 +757,7 @@ export default function WalletScreen() {
                         >
                           <div className="font-semibold text-sm truncate">{r.title}</div>
                           <div className="text-xs text-muted-foreground mt-0.5">
-                            Outstanding: <span className="text-yellow-400 font-bold">${outstanding.toFixed(2)}</span>
+                            {t("wallet.outstanding_2")} <span className="text-yellow-400 font-bold">${outstanding.toFixed(2)}</span>
                           </div>
                         </button>
                       );
@@ -764,13 +766,13 @@ export default function WalletScreen() {
                 </div>
               ) : (
                 <div className="bg-muted/50 rounded-xl p-4 text-center text-sm text-muted-foreground">
-                  No outstanding pledges right now.
+                  {t("wallet.no_outstanding_pledges_right_now")}
                 </div>
               )}
 
               <Input
                 type="number"
-                placeholder="Amount ($) — any amount"
+                placeholder={t("wallet.amount_any_amount")}
                 value={pledgeAmount}
                 onChange={e => setPledgeAmount(e.target.value)}
                 className="bg-background border-border"
@@ -778,7 +780,7 @@ export default function WalletScreen() {
               />
               {selectedRequest && (
                 <p className="text-xs text-muted-foreground -mt-2">
-                  Contributing to: <span className="text-primary font-semibold">{selectedRequest.title}</span>
+                  {t("wallet.contributing_to")} <span className="text-primary font-semibold">{selectedRequest.title}</span>
                 </p>
               )}
               <Button
@@ -787,7 +789,7 @@ export default function WalletScreen() {
                 disabled={pledgeMutation.isPending || creatingPaymentIntent || !selectedRequest || !pledgeAmount}
               >
                 {creatingPaymentIntent ? (
-                  <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Setting up payment…</span>
+                  <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{t("wallet.setting_up_payment")}</span>
                 ) : pledgeMutation.isPending ? (
                   "Sending..."
                 ) : (
