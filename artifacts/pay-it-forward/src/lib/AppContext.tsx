@@ -109,6 +109,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const prevBroadcastRef = useRef<Location | null>(null);
   const prevLocationRef = useRef<Location | null>(null);
   const smoothedRef = useRef<{ lat: number; lng: number } | null>(null);
+  const smoothedSpeedRef = useRef<number | null>(null);
 
   // ── Custom hooks ─────────────────────────────────────────────────────────
   const updateLocation = useUpdateUserLocation();
@@ -263,11 +264,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
           : { lat: raw.lat, lng: raw.lng };
         smoothedRef.current = smoothed;
 
+        // Speed is notoriously noisy on raw GPS readings — a genuinely
+        // stationary device can report brief spikes well above the 0.5 m/s
+        // stationary threshold used below. Smooth it with the same EMA
+        // approach as lat/lng so the threshold check reflects sustained
+        // movement, not single-sample jitter.
+        const smoothedSpeed = raw.speed != null
+          ? (smoothedSpeedRef.current != null ? emaSmooth(smoothedSpeedRef.current, raw.speed, alpha) : raw.speed)
+          : null;
+        smoothedSpeedRef.current = smoothedSpeed;
+
         const newLoc: Location = {
           lat: smoothed.lat,
           lng: smoothed.lng,
           heading,
-          speed: raw.speed,
+          speed: smoothedSpeed,
           accuracy: raw.accuracy,
         };
 

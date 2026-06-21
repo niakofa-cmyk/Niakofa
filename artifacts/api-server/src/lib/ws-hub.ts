@@ -17,7 +17,15 @@ import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 // ── Standardized Niakofa Event Types ─────────────────────────────────────────
+// Admin-only event types — these carry sensitive data (report contents,
+// reporter/reported user identities) and must NEVER go out via broadcast(),
+// only broadcastToAdmins() or sendToUser(). Splitting the type means a
+// future broadcast({ type: "new_report", ... }) call is a compile error,
+// not just a code-review hope.
+export type AdminOnlyEventType = "new_report" | "report_reviewed";
+
 export type WsEventType =
+  | AdminOnlyEventType
   | "REQUEST_CREATED"
   | "REQUEST_ACCEPTED"
   | "HELPER_MOVING"
@@ -55,6 +63,13 @@ export type WsEventType =
 
 export interface WsEvent {
   type: WsEventType;
+  payload: unknown;
+}
+
+// broadcast() is public-only by construction — admin-only event types are
+// excluded from the type it accepts, so passing one is a compile error.
+export interface PublicWsEvent {
+  type: Exclude<WsEventType, AdminOnlyEventType>;
   payload: unknown;
 }
 
@@ -194,21 +209,31 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
             logger.warn({ ip }, "WS: register attempted without authToken — rejecting");
             return;
           }
-          const { userId: verifiedUserId, valid } = verifyToken(authToken);
+          const { userId: verifiedUserId, tokenVersion, valid } = verifyToken(authToken);
           if (!valid || verifiedUserId !== userId) {
             logger.warn({ ip, userId }, "WS: register failed token verification — rejecting");
             return;
           }
-          registeredUserId = userId;
-          // Check admin status once at register time and track the socket
-          // for admin-only broadcasts.
+          // Check token_version against the DB too — verifyToken only
+          // checks signature/expiry. Without this, a revoked token (logged
+          // out, password changed, or banned user) could still register a
+          // live WebSocket connection and keep receiving real-time events,
+          // even though the equivalent HTTP request would 401.
+          let isAdmin = false;
           try {
-            const [u] = await db.select({ is_admin: usersTable.is_admin })
+            const [u] = await db.select({ is_admin: usersTable.is_admin, token_version: usersTable.token_version })
               .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-            if (u?.is_admin) adminSockets.add(socket);
+            if (!u || u.token_version !== tokenVersion) {
+              logger.warn({ ip, userId }, "WS: register token_version mismatch (revoked) — rejecting");
+              return;
+            }
+            isAdmin = u.is_admin;
           } catch (err) {
-            logger.warn({ err, userId }, "WS: failed to check admin status at register");
+            logger.warn({ err, userId }, "WS: failed to verify token_version at register — rejecting");
+            return;
           }
+          registeredUserId = userId;
+          if (isAdmin) adminSockets.add(socket);
           if (!userSockets.has(userId)) userSockets.set(userId, new Set());
           userSockets.get(userId)!.add(socket);
           return;
@@ -272,7 +297,7 @@ export function stopHeartbeat(): void {
   }
 }
 
-export function broadcast(event: WsEvent): void {
+export function broadcast(event: PublicWsEvent): void {
   if (!wss) return;
   const msg = JSON.stringify(event);
   let sent = 0;
@@ -286,8 +311,8 @@ export function broadcast(event: WsEvent): void {
 }
 
 export function broadcastRequestEvent(
-  standardType: WsEventType,
-  legacyType: WsEventType,
+  standardType: PublicWsEvent["type"],
+  legacyType: PublicWsEvent["type"],
   payload: unknown
 ): void {
   broadcast({ type: standardType, payload });

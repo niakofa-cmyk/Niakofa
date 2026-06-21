@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
 import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, ratingsTable } from "@workspace/db";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
   GetRequestParams,
@@ -16,7 +16,7 @@ import {
   MarkArrivedParams,
 } from "@workspace/api-zod";
 import { broadcast, broadcastRequestEvent } from "../lib/ws-hub";
-import { requestCreationLimiter, requestActionLimiter } from "../middlewares/rate-limit";
+import { requestCreationLimiter, requestActionLimiter, paymentLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser } from "./push";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
@@ -54,7 +54,7 @@ function enrichRequest(r: typeof requestsTable.$inferSelect, userMap: Record<num
   };
 }
 
-router.get("/requests/stats", async (_req, res) => {
+router.get("/requests/stats", requireAuth, async (_req, res) => {
   // All aggregations done at the DB level — no full table scan into memory
   const [statusCounts, categoryCounts, recentCompletions, pledgeVolume, onlineHelpers] =
     await Promise.all([
@@ -98,7 +98,7 @@ router.get("/requests/stats", async (_req, res) => {
   });
 });
 
-router.get("/requests/nearby", async (req, res) => {
+router.get("/requests/nearby", requireAuth, async (req, res) => {
   const parsed = GetNearbyRequestsQueryParams.safeParse({
     lat: parseFloat(req.query.lat as string),
     lng: parseFloat(req.query.lng as string),
@@ -161,16 +161,22 @@ router.get("/requests", requireAuth, async (req, res) => {
   // Optional limit
   const limitParam = req.query.limit ? parseInt(req.query.limit as string) : null;
 
-  let rows = await db.select().from(requestsTable);
-  if (helperId) rows = rows.filter(r => r.helper_id === helperId);
-  if (requesterId) rows = rows.filter(r => r.requester_id === requesterId);
-  if (params.success && params.data.status) rows = rows.filter(r => r.status === params.data.status);
+  // Push every filter we can into SQL instead of loading the entire table —
+  // only the haversine radius filter (no PostGIS available) stays in JS,
+  // and even that runs against an already-narrowed result set.
+  const conditions = [];
+  if (helperId) conditions.push(eq(requestsTable.helper_id, helperId));
+  if (requesterId) conditions.push(eq(requestsTable.requester_id, requesterId));
+  if (params.success && params.data.status) conditions.push(eq(requestsTable.status, params.data.status));
+
+  let rows = conditions.length > 0
+    ? await db.select().from(requestsTable).where(and(...conditions)).orderBy(desc(requestsTable.created_at))
+    : await db.select().from(requestsTable).orderBy(desc(requestsTable.created_at));
+
   if (params.success && params.data.lat && params.data.lng) {
     const radius = params.data.radius_miles ?? 10;
     rows = rows.filter(r => distanceMiles(params.data.lat!, params.data.lng!, r.lat, r.lng) <= radius);
   }
-  // Sort newest first, then apply limit
-  rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   if (limitParam && limitParam > 0) rows = rows.slice(0, limitParam);
 
   // Collect all relevant user IDs (requesters + helpers) for a single batch fetch
@@ -578,7 +584,7 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
 });
 
 
-router.post("/requests/:id/tip", requireAuth, async (req, res) => {
+router.post("/requests/:id/tip", requireAuth, paymentLimiter, async (req, res) => {
   const callerId = req.authenticatedUserId!;
   const requestId = parseInt(String(req.params.id));
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });

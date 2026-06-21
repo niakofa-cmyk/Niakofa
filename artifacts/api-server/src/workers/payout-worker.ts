@@ -59,14 +59,14 @@ async function processPayout(job: Job<PayoutJobData>): Promise<void> {
     notes: `Retry payout (attempt ${job.attemptsMade + 1}). Platform fee: $${(platform_fee_cents / 100).toFixed(2)}`,
   });
 
-  // Record in helper's earnings history
-  await db.insert(transactionsTable).values({
-    user_id: helper_id,
-    request_id,
-    type: "payout_sent",
-    amount: payoutCents / 100,
-    description: `[Retry] ${request_title}`,
-  });
+  // NOTE: deliberately NOT inserting another transactionsTable row here —
+  // the original completion handler in requests.ts already recorded an
+  // "earned" row for this request_id/user_id at completion time, regardless
+  // of whether the Stripe transfer succeeded immediately or needed this
+  // retry. Inserting a second row here (previously type: "payout_sent")
+  // double-counted the same job in the helper's displayed earnings history.
+  // The paymentTransactionsTable insert above is the correct, single
+  // source of truth for the actual payment/transfer state.
 
   broadcast({
     type: "payout_sent",

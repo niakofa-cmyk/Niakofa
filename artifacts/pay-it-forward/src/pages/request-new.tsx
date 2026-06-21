@@ -30,7 +30,7 @@ const CATEGORIES = [
   // Business
   { value: "stock_shelves",  label: "📦 Stock Shelves",    group: "Business" },
   { value: "event_setup",    label: "🎪 Event Setup",      group: "Business" },
-  { value: "delivery",       label: "🚚 Delivery Run",     group: "Business" },
+  { value: "delivery_run",   label: "🚚 Delivery Run",     group: "Business" },
   { value: "tech_support",   label: "💻 Tech Support",     group: "Business" },
   // Catch-all
   { value: "other",          label: "📋 Other",            group: "Community" },
@@ -43,7 +43,7 @@ const formSchema = z.object({
   description: z.string().optional(),
   category: z.enum([
     "groceries", "transportation", "errands", "home_repair", "medical", "emergency",
-    "stock_shelves", "event_setup", "delivery", "tech_support", "other",
+    "stock_shelves", "event_setup", "delivery_run", "tech_support", "other",
   ] as [string, ...string[]]),
   urgency: z.enum(["low", "medium", "high", "emergency"]),
   pay_it_forward_amount: z.number().optional(),

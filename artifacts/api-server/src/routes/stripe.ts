@@ -288,6 +288,11 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
     }
   }
 
+  // Idempotency key derived from requestId + caller — a network retry
+  // (e.g. mobile connection drop during checkout) resending this exact
+  // request returns the SAME PaymentIntent instead of creating a second
+  // one for the same transaction.
+  const idempotencyKey = `pi-${requestId}-${(req as any).authenticatedUserId}-${paymentType ?? "immediate"}`;
   const pi = await stripe!.paymentIntents.create({
     amount: Math.round(amount * 100), // convert to cents
     currency: "usd",
@@ -299,7 +304,7 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
     },
     automatic_payment_methods: { enabled: true },
     ...(transferData ? { transfer_data: transferData } : {}),
-  });
+  }, { idempotencyKey });
 
   // Record in payment_transactions — starts as "authorized"
   const [tx] = await db

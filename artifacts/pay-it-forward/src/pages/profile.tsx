@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { usePushNotifications } from "@/lib/usePushNotifications";
-import { authHeaders } from "@/lib/auth";
+import { authHeaders, clearToken } from "@/lib/auth";
 import {
   User as UserIcon, Shield, MapPin, Settings, Wallet, Heart, Star,
   DollarSign, Gift, Clock, ChevronRight, AlertCircle, CheckCircle2,
@@ -140,7 +140,7 @@ function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId:
                   return;
                 }
                 toast({ title: "Account deleted successfully", description: "You will be logged out." });
-                localStorage.removeItem("niakofa_token");
+                clearToken(); // shared helper, not a hardcoded string literal
                 localStorage.removeItem("niakofa_user");
                 localStorage.removeItem("niakofa_last_location");
                 window.location.href = "/";

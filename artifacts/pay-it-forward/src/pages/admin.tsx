@@ -676,17 +676,32 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   );
 };
 
+// Module-level (not component-level) cache — survives AnalyticsTab
+// unmounting/remounting on tab switches, which a useRef would not.
+let analyticsCacheRef: { current: { data: AnalyticsData; fetchedAt: number } | null } = { current: null };
+
 function AnalyticsTab() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
-  const fetchAnalytics = useCallback(async () => {
+  // Cache analytics briefly — without this, every tab switch to Analytics
+  // remounts this component and refires all 11 parallel server-side
+  // queries, even if the person just looked at this tab seconds ago.
+  const ANALYTICS_STALE_MS = 30_000;
+  const fetchAnalytics = useCallback(async (force = false) => {
+    const cached = analyticsCacheRef.current;
+    if (!force && cached && Date.now() - cached.fetchedAt < ANALYTICS_STALE_MS) {
+      setData(cached.data);
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(`${base}/api/admin/analytics`, { headers: authHeaders() });
       if (!res.ok) throw new Error("Failed to load analytics");
-      setData(await res.json() as AnalyticsData);
+      const json = await res.json() as AnalyticsData;
+      analyticsCacheRef.current = { data: json, fetchedAt: Date.now() };
+      setData(json);
     } catch {
       toast({ title: "Could not load analytics", variant: "destructive" });
     } finally {
@@ -730,7 +745,7 @@ function AnalyticsTab() {
       {/* Refresh */}
       <div className="flex items-center justify-between">
         <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Platform Health</div>
-        <button onClick={fetchAnalytics} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+        <button onClick={() => fetchAnalytics(true)} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
           <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
         </button>
       </div>

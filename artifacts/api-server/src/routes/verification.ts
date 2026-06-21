@@ -48,7 +48,16 @@ router.post("/verification/identity/webhook", async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
 
   const sig = req.headers["stripe-signature"] as string;
-  const webhookSecret = process.env["STRIPE_IDENTITY_WEBHOOK_SECRET"] ?? "";
+  const webhookSecret = process.env["STRIPE_IDENTITY_WEBHOOK_SECRET"];
+
+  // Explicit guard rather than relying on constructEvent's signature
+  // mismatch to incidentally reject an empty secret — fails with a clear
+  // error instead of a generic "Webhook error" message, and makes the
+  // missing-config state impossible to miss in logs.
+  if (!webhookSecret) {
+    logger.error("verification/identity/webhook: STRIPE_IDENTITY_WEBHOOK_SECRET not configured — rejecting");
+    return res.status(503).json({ error: "Webhook not configured" });
+  }
 
   let event: Stripe.Event;
   try {

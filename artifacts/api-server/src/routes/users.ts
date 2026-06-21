@@ -444,6 +444,26 @@ router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, re
     .where(and(eq(requestsTable.id, request_id), eq(requestsTable.requester_id, pParsed.data.id)))
     .limit(1);
   if (!request) return res.status(404).json({ error: "Request not found or unauthorized" });
+
+  // Dedup guard — a double-tap or client retry with the exact same
+  // request_id + amount within a short window is almost certainly a
+  // duplicate submission, not a genuinely new pledge. Without this, each
+  // retry would separately increment pledge_paid and credit the helper's
+  // wallet again for the same intended payment.
+  const DEDUP_WINDOW_MS = 10_000;
+  const [recentDuplicate] = await db.select({ id: transactionsTable.id })
+    .from(transactionsTable)
+    .where(and(
+      eq(transactionsTable.request_id, request_id),
+      eq(transactionsTable.type, "pledge_sent"),
+      eq(transactionsTable.amount, -amount),
+      sql`${transactionsTable.created_at} > NOW() - INTERVAL '10 seconds'`,
+    ))
+    .limit(1);
+  if (recentDuplicate) {
+    return res.status(409).json({ error: "Duplicate pledge — please wait a moment before retrying" });
+  }
+
   const newPledgePaid = (request.pledge_paid || 0) + amount;
   const [updated] = await db.update(requestsTable)
     .set({ pledge_paid: newPledgePaid })
@@ -576,7 +596,7 @@ router.post("/users/:id/avatar", requireAuth, requireOwnership(), async (req, re
   if (!dataUrl || !dataUrl.startsWith("data:image/")) {
     return res.status(400).json({ error: "Invalid image data — must be a base64 data URL starting with data:image/" });
   }
-  if (dataUrl.length > 7 * 1024 * 1024) {
+  if (dataUrl.length > 5 * 1024 * 1024) {
     return res.status(413).json({ error: "Image too large — max 5 MB" });
   }
   const [user] = await db
@@ -842,13 +862,18 @@ router.patch("/admin/account-applications/:id/review", requireAuth, requireAdmin
   }
 
   const [user] = await db.update(usersTable)
-    .set({ approval_status: decision as "approved" | "denied", updated_at: new Date() })
+    .set({
+      approval_status: decision as "approved" | "denied",
+      approval_reviewed_by: req.authenticatedUserId,
+      approval_reviewed_at: new Date(),
+      updated_at: new Date(),
+    })
     .where(eq(usersTable.id, id))
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
 
   const { password_hash: _ph, ...safeUser } = user as any;
-  logger.info({ user_id: id, decision, account_type: user.account_type }, "admin: account application reviewed");
+  logger.info({ user_id: id, decision, account_type: user.account_type, reviewed_by: req.authenticatedUserId }, "admin: account application reviewed");
 
   const wsEventType = decision === "approved" ? "account_approved" : "account_denied";
 

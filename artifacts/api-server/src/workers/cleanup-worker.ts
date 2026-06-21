@@ -82,7 +82,7 @@ async function runCleanup(_job: Job): Promise<void> {
   const orphanCutoff = new Date(now.getTime() - ORPHAN_CLAIMED_MS);
   const orphaned = await db
     .update(requestsTable)
-    .set({ status: "open", helper_id: null, claimed_at: null })
+    .set({ status: "open", helper_id: null, claimed_at: null, en_route_at: null, arrived_at: null })
     .where(
       and(
         eq(requestsTable.status, "claimed"),

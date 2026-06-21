@@ -23,7 +23,7 @@ export const usersTable = pgTable("users", {
   lng: real("lng"),
   heading: real("heading"),
   speed: real("speed"),
-  trust_score: real("trust_score").default(5.0),
+  trust_score: real("trust_score").default(50), // neutral midpoint on the real 0-100 scale — was 5.0, making every new helper appear near-banned before their first rating
   help_count: integer("help_count").notNull().default(0),
   neighborhood: text("neighborhood"),
   city: text("city"),
@@ -52,6 +52,10 @@ export const usersTable = pgTable("users", {
   // server-side revocation mechanism.
   token_version: integer("token_version").notNull().default(0),
   approval_status: text("approval_status").notNull().default("approved"), // pending | approved | denied
+  // Audit trail for account-application reviews — previously unrecorded,
+  // unlike the helper-application review flow which already logs this.
+  approval_reviewed_by: integer("approval_reviewed_by"),
+  approval_reviewed_at: timestamp("approval_reviewed_at"),
   // What kind of account this is. Individuals request/offer help directly.
   // Businesses/sponsors fund the pledge pool, offer helper perks, and sponsor
   // community resources/events.
