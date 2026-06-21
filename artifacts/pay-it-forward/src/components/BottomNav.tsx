@@ -172,6 +172,7 @@ export function BottomNav() {
           {/* Alerts bell — unread count badge, clears on open */}
           <button
             onClick={openNotifications}
+            aria-label="Notifications"
             className="flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all min-w-[52px] relative active:scale-95"
           >
             <div className="relative">

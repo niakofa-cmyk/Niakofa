@@ -61,7 +61,7 @@ export function TipModal({ requestId, helperName, onClose }: TipModalProps) {
               <Heart className="w-5 h-5 text-green-400" />
               <h3 className="font-black text-lg">Leave a Tip</h3>
             </div>
-            <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full">
+            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close" className="rounded-full">
               <X className="w-5 h-5" />
             </Button>
           </div>

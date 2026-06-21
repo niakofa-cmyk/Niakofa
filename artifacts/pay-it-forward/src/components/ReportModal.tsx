@@ -120,7 +120,7 @@ export function ReportModal({ reportedUserId, reportedRequestId, reportedName, o
               <Flag className="w-4 h-4 text-orange-400" />
               {step === "done" ? "Report Submitted" : "Report a Concern"}
             </div>
-            <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground transition-colors">
               <X className="w-5 h-5" />
             </button>
           </div>

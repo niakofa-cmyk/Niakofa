@@ -191,6 +191,7 @@ export function InAppChat({ requestId, helperName, requesterName }: InAppChatPro
         />
         <Button
           size="icon"
+          aria-label="Send message"
           className="rounded-full w-9 h-9 shrink-0"
           onClick={send}
           disabled={!input.trim() || sending}

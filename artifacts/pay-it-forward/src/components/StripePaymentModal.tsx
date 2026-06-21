@@ -168,6 +168,7 @@ export function StripePaymentModal({
               variant="ghost"
               size="icon"
               onClick={onClose}
+              aria-label="Close"
               className="rounded-full"
             >
               <X className="w-5 h-5" />
