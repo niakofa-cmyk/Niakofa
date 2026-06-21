@@ -16,6 +16,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
 import "mapbox-gl/dist/mapbox-gl.css";
 import MapboxMap, { Marker } from "react-map-gl/mapbox";
+import { useTranslation } from "react-i18next";
 
 type PaymentType = "immediate" | "pay_it_forward" | "goodwill";
 
@@ -98,6 +99,7 @@ function checkWebGL(): boolean {
 }
 
 export default function NewRequestScreen() {
+  const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { currentUser, myLocation } = useAppContext();
   const queryClient = useQueryClient();
@@ -136,7 +138,7 @@ export default function NewRequestScreen() {
           category:    (vals.category as typeof formSchema.shape.category._def.values[number]) ?? "other",
           urgency:     (vals.urgency as "low" | "medium" | "high" | "emergency") ?? "medium",
         });
-        toast({ title: "✏️ Draft restored", description: "Your previous unfinished request has been loaded." });
+        toast({ title: t("request_new.draft_restored"), description: t("request_new.your_previous_unfinished_request_has_been") });
       }
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -169,7 +171,7 @@ export default function NewRequestScreen() {
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     if (!currentUser || !pinLocation) {
-      toast({ title: "Error", description: "Please confirm your pickup location on the map", variant: "destructive" });
+      toast({ title: t("request_new.error"), description: t("request_new.please_confirm_your_pickup_location_on"), variant: "destructive" });
       return;
     }
 
@@ -206,7 +208,7 @@ export default function NewRequestScreen() {
     }, {
       onSuccess: async (request) => {
         localStorage.removeItem(DRAFT_KEY);
-        toast({ title: "📍 Request posted!", description: "Nearby helpers have been notified in real time." });
+        toast({ title: t("request_new.request_posted"), description: t("request_new.nearby_helpers_have_been_notified_in") });
 
         // ── Pay Now: create PaymentIntent and show Stripe checkout ──────────
         const amount = values.pay_it_forward_amount;
@@ -232,15 +234,15 @@ export default function NewRequestScreen() {
               const err = await res.json() as { error?: string; setup?: string };
               if (res.status === 503) {
                 toast({
-                  title: "Stripe not configured",
+                  title: t("request_new.stripe_not_configured"),
                   description: err.setup ?? "Ask the admin to add the Stripe API key to enable real payments.",
                 });
               } else {
-                toast({ title: "Could not create payment", description: err.error ?? "Please try again.", variant: "destructive" });
+                toast({ title: t("request_new.could_not_create_payment"), description: err.error ?? "Please try again.", variant: "destructive" });
               }
             }
           } catch {
-            toast({ title: "Network error — payment skipped", variant: "destructive" });
+            toast({ title: t("request_new.network_error_payment_skipped"), variant: "destructive" });
           } finally {
             setCreatingPaymentIntent(false);
           }
@@ -249,7 +251,7 @@ export default function NewRequestScreen() {
         finishAndNavigate();
       },
       onError: (err) => {
-        toast({ title: "Failed to post request", description: String(err), variant: "destructive" });
+        toast({ title: t("request_new.failed_to_post_request"), description: String(err), variant: "destructive" });
       }
     });
   };
@@ -257,12 +259,12 @@ export default function NewRequestScreen() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <div className="sticky top-0 z-10 bg-card border-b border-border p-4 pt-safe flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full" aria-label="Back to map">
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full" aria-label={t("request_new.back_to_map")}>
           <ChevronLeft className="w-6 h-6" />
         </Button>
         <div>
-          <h1 className="text-xl font-bold uppercase tracking-widest">New Request</h1>
-          <p className="text-xs text-muted-foreground">Helpers are notified in real time</p>
+          <h1 className="text-xl font-bold uppercase tracking-widest">{t("request_new.new_request")}</h1>
+          <p className="text-xs text-muted-foreground">{t("request_new.helpers_are_notified_in_real_time")}</p>
         </div>
       </div>
 
@@ -272,8 +274,8 @@ export default function NewRequestScreen() {
             <div className="bg-destructive/10 border border-destructive/40 rounded-xl p-3 flex items-center gap-3 text-destructive">
               <AlertTriangle className="w-5 h-5 shrink-0 animate-pulse" />
               <div>
-                <div className="font-bold text-sm">Emergency Request</div>
-                <div className="text-xs opacity-80">This will be dispatched to helpers with highest priority</div>
+                <div className="font-bold text-sm">{t("request_new.emergency_request")}</div>
+                <div className="text-xs opacity-80">{t("request_new.this_will_be_dispatched_to_helpers")}</div>
               </div>
             </div>
           )}
@@ -285,9 +287,9 @@ export default function NewRequestScreen() {
                 name="title"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">What do you need?</FormLabel>
+                    <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">{t("request_new.what_do_you_need")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. Ride to pharmacy, grocery pickup..." className="bg-card border-border text-base py-5" {...field} />
+                      <Input placeholder={t("request_new.eg_ride_to_pharmacy_grocery_pickup")} className="bg-card border-border text-base py-5" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -300,19 +302,19 @@ export default function NewRequestScreen() {
                   name="category"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Category</FormLabel>
+                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">{t("request_new.category")}</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                           <SelectTrigger className="bg-card border-border h-11">
-                            <SelectValue placeholder="Select..." />
+                            <SelectValue placeholder={t("request_new.select")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-muted-foreground">Community</div>
+                          <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-muted-foreground">{t("request_new.community")}</div>
                           {COMMUNITY_CATS.map(c => (
                             <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                           ))}
-                          <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-muted-foreground border-t border-border mt-1 pt-2">Business</div>
+                          <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-muted-foreground border-t border-border mt-1 pt-2">{t("request_new.business")}</div>
                           {BUSINESS_CATS.map(c => (
                             <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                           ))}
@@ -328,18 +330,18 @@ export default function NewRequestScreen() {
                   name="urgency"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Urgency</FormLabel>
+                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">{t("request_new.urgency")}</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                           <SelectTrigger className={`bg-card border-border h-11 ${field.value === 'emergency' ? 'text-destructive font-bold' : ''}`}>
-                            <SelectValue placeholder="Select..." />
+                            <SelectValue placeholder={t("request_new.select_2")} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="low">Low</SelectItem>
-                          <SelectItem value="medium">Medium</SelectItem>
-                          <SelectItem value="high" className="text-orange-500">High</SelectItem>
-                          <SelectItem value="emergency" className="text-destructive font-bold">🚨 Emergency</SelectItem>
+                          <SelectItem value="low">{t("request_new.low")}</SelectItem>
+                          <SelectItem value="medium">{t("request_new.medium")}</SelectItem>
+                          <SelectItem value="high" className="text-orange-500">{t("request_new.high")}</SelectItem>
+                          <SelectItem value="emergency" className="text-destructive font-bold">{t("request_new.emergency")}</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -353,10 +355,10 @@ export default function NewRequestScreen() {
                 name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Details (optional)</FormLabel>
+                    <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">{t("request_new.details_optional")}</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Specific instructions, building code, special considerations..."
+                        placeholder={t("request_new.specific_instructions_building_code_special_considerations")}
                         className="bg-card border-border min-h-[90px] resize-none"
                         {...field}
                       />
@@ -369,7 +371,7 @@ export default function NewRequestScreen() {
               {/* Item Checklist — §3.1.4 Request specificity */}
               {checklistItems.length > 0 || true ? (
                 <div>
-                  <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">Item Checklist (optional)</div>
+                  <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">{t("request_new.item_checklist_optional")}</div>
                   <div className="space-y-2">
                     {checklistItems.map((item, i) => (
                       <div key={i} className="flex items-center gap-2">
@@ -395,7 +397,7 @@ export default function NewRequestScreen() {
                         onClick={() => setChecklistItems(prev => [...prev, ""])}
                         className="flex items-center gap-1.5 text-xs text-primary/70 hover:text-primary transition-colors py-1"
                       >
-                        <Plus className="w-3.5 h-3.5" /> Add item
+                        <Plus className="w-3.5 h-3.5" /> {t("request_new.add_item")}
                       </button>
                     )}
                   </div>
@@ -404,7 +406,7 @@ export default function NewRequestScreen() {
 
               {/* Accessibility Needs — §4.5 */}
               <div>
-                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">Accessibility Needs</div>
+                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">{t("request_new.accessibility_needs")}</div>
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { id: "wheelchair", label: "♿ Wheelchair access" },
@@ -438,8 +440,8 @@ export default function NewRequestScreen() {
               <div>
                 <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5" />
-                  Pickup Location
-                  <span className="ml-1 text-[10px] text-muted-foreground/60 normal-case font-normal tracking-normal">Tap or drag pin to adjust</span>
+                  {t("request_new.pickup_location")}
+                  <span className="ml-1 text-[10px] text-muted-foreground/60 normal-case font-normal tracking-normal">{t("request_new.tap_or_drag_pin_to_adjust")}</span>
                 </div>
                 <div className="relative rounded-xl overflow-hidden border border-border bg-card" style={{ height: 180 }}>
                   {webGLSupported && pinLocation ? (
@@ -483,7 +485,7 @@ export default function NewRequestScreen() {
                       onClick={() => setPinLocation({ lat: myLocation.lat, lng: myLocation.lng })}
                       className="text-[10px] text-primary underline"
                     >
-                      Reset to my GPS
+                      {t("request_new.reset_to_my_gps")}
                     </button>
                   )}
                 </div>
@@ -491,7 +493,7 @@ export default function NewRequestScreen() {
 
               {/* Three-Tier Payment Selector */}
               <div>
-                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-3 font-medium">Assistance Type</div>
+                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-3 font-medium">{t("request_new.assistance_type")}</div>
                 <div className="grid grid-cols-3 gap-2">
                   {PAYMENT_OPTIONS.map(opt => (
                     <button
@@ -521,20 +523,20 @@ export default function NewRequestScreen() {
                   name="pay_it_forward_amount"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Amount to Pay ($)</FormLabel>
+                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">{t("request_new.amount_to_pay")}</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
-                          placeholder="e.g. 15.00"
+                          placeholder={t("request_new.eg_1500")}
                           className="bg-card border-border"
                           {...field}
                           onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
                         />
                       </FormControl>
                       {isStripeConfigured() ? (
-                        <p className="text-xs text-green-400 mt-1">You'll confirm payment via Stripe after posting.</p>
+                        <p className="text-xs text-green-400 mt-1">{t("request_new.youll_confirm_payment_via_stripe_after")}</p>
                       ) : (
-                        <p className="text-xs text-muted-foreground mt-1">Stripe must be configured to enable real card payments.</p>
+                        <p className="text-xs text-muted-foreground mt-1">{t("request_new.stripe_must_be_configured_to_enable")}</p>
                       )}
                       <FormMessage />
                     </FormItem>
@@ -548,17 +550,17 @@ export default function NewRequestScreen() {
                   name="pledge_amount"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Pledge Amount (optional)</FormLabel>
+                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">{t("request_new.pledge_amount_optional")}</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
-                          placeholder="Any amount, when you're able"
+                          placeholder={t("request_new.any_amount_when_youre_able")}
                           className="bg-card border-border"
                           {...field}
                           onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
                         />
                       </FormControl>
-                      <p className="text-xs text-muted-foreground mt-1">No pressure — any contribution helps sustain the community</p>
+                      <p className="text-xs text-muted-foreground mt-1">{t("request_new.no_pressure_any_contribution_helps_sustain")}</p>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -574,7 +576,7 @@ export default function NewRequestScreen() {
               </Button>
 
               {!pinLocation && (
-                <p className="text-xs text-yellow-500 text-center">Waiting for GPS to set your location...</p>
+                <p className="text-xs text-yellow-500 text-center">{t("request_new.waiting_for_gps_to_set_your")}</p>
               )}
             </form>
           </Form>
@@ -589,12 +591,12 @@ export default function NewRequestScreen() {
           description={`Pay your helper for: "${pendingPayment.requestTitle}". Your helper receives the funds when the request is completed.`}
           onSuccess={() => {
             setPendingPayment(null);
-            toast({ title: "Payment confirmed!", description: "Your helper will be paid automatically upon completion." });
+            toast({ title: t("request_new.payment_confirmed"), description: t("request_new.your_helper_will_be_paid_automatically") });
             finishAndNavigate();
           }}
           onSkip={() => {
             setPendingPayment(null);
-            toast({ title: "Payment skipped", description: "You can pay from your wallet later." });
+            toast({ title: t("request_new.payment_skipped"), description: t("request_new.you_can_pay_from_your_wallet") });
             finishAndNavigate();
           }}
           onClose={() => {

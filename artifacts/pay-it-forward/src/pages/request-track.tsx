@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { toast } from "@/hooks/use-toast";
 import { InAppChat } from "@/components/InAppChat";
+import { useTranslation } from "react-i18next";
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -41,6 +42,7 @@ const STATUS_STEPS = [
 const STATUS_ORDER = ["open", "claimed", "en_route", "arrived", "completed"];
 
 export default function RequesterTrackingScreen() {
+  const { t } = useTranslation();
   const [, params] = useRoute("/request/:id/track");
   const [, setLocation] = useLocation();
   const { currentUser } = useAppContext();
@@ -119,7 +121,7 @@ export default function RequesterTrackingScreen() {
       await navigator.share({ title: "Track my helper", url }).catch(() => {});
     } else {
       await navigator.clipboard.writeText(url).catch(() => {});
-      toast({ title: "Link copied!" });
+      toast({ title: t("request_track.link_copied") });
     }
   };
 
@@ -137,8 +139,8 @@ export default function RequesterTrackingScreen() {
         <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-2">
           <MapPin className="w-8 h-8 text-muted-foreground" />
         </div>
-        <p className="font-bold text-lg">Request not found</p>
-        <Button variant="outline" onClick={() => setLocation("/")}>Back to map</Button>
+        <p className="font-bold text-lg">{t("request_track.request_not_found")}</p>
+        <Button variant="outline" onClick={() => setLocation("/")}>{t("request_track.back_to_map")}</Button>
       </div>
     );
   }
@@ -161,7 +163,7 @@ export default function RequesterTrackingScreen() {
           variant="ghost" size="icon"
           onClick={() => setLocation("/")}
           className="rounded-full bg-card/80 backdrop-blur-sm border border-border"
-          aria-label="Back to map"
+          aria-label={t("request_track.back_to_map_2")}
         >
           <ChevronLeft className="w-6 h-6" />
         </Button>
@@ -175,7 +177,7 @@ export default function RequesterTrackingScreen() {
               className="flex items-center gap-1.5 bg-primary/20 backdrop-blur-md border border-primary/40 px-3 py-1.5 rounded-full shadow-lg"
             >
               <Navigation2 className="w-3 h-3 text-primary" />
-              <span className="text-xs font-black text-primary">{etaMin} min away</span>
+              <span className="text-xs font-black text-primary">{etaMin} {t("request_track.min_away")}</span>
             </motion.div>
           )}
 
@@ -187,7 +189,7 @@ export default function RequesterTrackingScreen() {
               className="flex items-center gap-1.5 bg-green-500/20 backdrop-blur-md border border-green-500/40 px-3 py-1.5 rounded-full shadow-lg"
             >
               <CheckCircle2 className="w-3 h-3 text-green-400" />
-              <span className="text-xs font-black text-green-400">Helper arrived!</span>
+              <span className="text-xs font-black text-green-400">{t("request_track.helper_arrived")}</span>
             </motion.div>
           )}
 
@@ -222,7 +224,7 @@ export default function RequesterTrackingScreen() {
               <div className="absolute w-10 h-10 bg-primary rounded-full opacity-15 animate-ping" style={{ animationDuration: "2.5s" }} />
               <div className="w-4 h-4 bg-primary rounded-full shadow-[0_0_12px_rgba(0,212,255,0.9)] border-2 border-background" />
               <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                <span className="text-[10px] font-bold text-primary bg-card/90 px-1.5 py-0.5 rounded-full border border-primary/30">You</span>
+                <span className="text-[10px] font-bold text-primary bg-card/90 px-1.5 py-0.5 rounded-full border border-primary/30">{t("request_track.you")}</span>
               </div>
             </div>
           </Marker>
@@ -278,8 +280,8 @@ export default function RequesterTrackingScreen() {
         <div className="absolute inset-0 bg-background flex items-center justify-center">
           <div className="text-center px-6">
             <MapPin className="w-12 h-12 text-primary mx-auto mb-3" />
-            <p className="font-bold">Map needs WebGL</p>
-            <p className="text-sm text-muted-foreground mt-1">Open in Chrome or Firefox for live tracking</p>
+            <p className="font-bold">{t("request_track.map_needs_webgl")}</p>
+            <p className="text-sm text-muted-foreground mt-1">{t("request_track.open_in_chrome_or_firefox_for")}</p>
           </div>
         </div>
       )}
@@ -289,8 +291,8 @@ export default function RequesterTrackingScreen() {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none">
           <div className="bg-card/90 backdrop-blur-md border border-border rounded-2xl px-6 py-4 text-center shadow-2xl">
             <div className="w-2 h-2 rounded-full bg-primary animate-pulse mx-auto mb-2" />
-            <p className="font-bold text-sm">Finding a helper nearby…</p>
-            <p className="text-xs text-muted-foreground mt-1">You'll be notified when someone accepts</p>
+            <p className="font-bold text-sm">{t("request_track.finding_a_helper_nearby")}</p>
+            <p className="text-xs text-muted-foreground mt-1">{t("request_track.youll_be_notified_when_someone_accepts")}</p>
           </div>
         </div>
       )}
@@ -348,8 +350,8 @@ export default function RequesterTrackingScreen() {
               </div>
               {distToHelper && !isArrived && (
                 <div className="text-right shrink-0">
-                  <div className="text-xs font-black text-primary">{distToHelper} mi</div>
-                  <div className="text-[10px] text-muted-foreground">away</div>
+                  <div className="text-xs font-black text-primary">{distToHelper} {t("request_track.mi")}</div>
+                  <div className="text-[10px] text-muted-foreground">{t("request_track.away")}</div>
                 </div>
               )}
             </div>
@@ -357,7 +359,7 @@ export default function RequesterTrackingScreen() {
 
           {/* Request title */}
           <div className="bg-muted/50 rounded-xl px-3 py-2.5">
-            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Your Request</div>
+            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">{t("request_track.your_request")}</div>
             <div className="font-bold text-sm truncate">{request.title}</div>
           </div>
 
@@ -370,7 +372,7 @@ export default function RequesterTrackingScreen() {
                 onClick={() => setShowChat(p => !p)}
               >
                 <MessageCircle className="w-4 h-4" />
-                Chat
+                {t("request_track.chat")}
               </Button>
             )}
             {isCompleted && (
@@ -378,7 +380,7 @@ export default function RequesterTrackingScreen() {
                 className="flex-1 h-11 font-black"
                 onClick={() => setLocation("/wallet")}
               >
-                💙 Pay It Forward
+                {t("request_track.pay_it_forward")}
               </Button>
             )}
             {!hasHelper && (
@@ -387,7 +389,7 @@ export default function RequesterTrackingScreen() {
                 className="flex-1 h-11 text-sm"
                 onClick={() => setLocation("/")}
               >
-                Back to Map
+                {t("request_track.back_to_map_3")}
               </Button>
             )}
           </div>
