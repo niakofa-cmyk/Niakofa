@@ -102,6 +102,26 @@ function visit(node) {
       const key = registerKey(text);
       addEdit(node.expression.getStart(), node.expression.getEnd(), `t("${namespace}.${key}")`);
     }
+  } else if (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === "toast" &&
+    node.arguments.length > 0 &&
+    ts.isObjectLiteralExpression(node.arguments[0])
+  ) {
+    for (const prop of node.arguments[0].properties) {
+      if (
+        ts.isPropertyAssignment(prop) &&
+        (prop.name.getText() === "title" || prop.name.getText() === "description") &&
+        ts.isStringLiteral(prop.initializer)
+      ) {
+        const text = prop.initializer.text;
+        if (isTranslatable(text)) {
+          const key = registerKey(text);
+          addEdit(prop.initializer.getStart(), prop.initializer.getEnd(), `t("${namespace}.${key}")`);
+        }
+      }
+    }
   }
   ts.forEachChild(node, visit);
 }

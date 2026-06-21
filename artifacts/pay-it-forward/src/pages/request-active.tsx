@@ -22,6 +22,7 @@ import { useDeviceHeading } from "@/hooks/useDeviceHeading";
 import { useMapOrientation } from "@/hooks/useMapOrientation";
 import { useTerrain } from "@/hooks/useTerrain";
 import { motion, AnimatePresence } from "framer-motion";
+import { useTranslation } from "react-i18next";
 
 const ARRIVAL_THRESHOLD_METERS = 80;
 const OFF_ROUTE_THRESHOLD_METERS = 150;
@@ -95,6 +96,7 @@ function computeCurrentStep(
 }
 
 export default function ActiveRequestScreen() {
+  const { t } = useTranslation();
   const [, params] = useRoute("/request/:id");
   const [, setLocation] = useLocation();
   const { currentUser, myLocation } = useAppContext();
@@ -195,8 +197,8 @@ export default function ActiveRequestScreen() {
     if (elapsedSeconds >= SAFETY_TIMER_SECONDS) {
       setSafetyAlertShown(true);
       toast({
-        title: "⏱️ Still on your way?",
-        description: "You've been en route for 20 minutes. Everything okay? Complete the request or use SOS if needed.",
+        title: t("request_active.still_on_your_way"),
+        description: t("request_active.youve_been_en_route_for_20"),
       });
     }
   }, [elapsedSeconds, autoArrived, safetyAlertShown]);
@@ -230,7 +232,7 @@ export default function ActiveRequestScreen() {
         { id: requestId, data: { helper_id: currentUser.id } },
         {
           onSuccess: () => {
-            toast({ title: "📍 You've arrived!", description: "Complete the request when you're done helping." });
+            toast({ title: t("request_active.youve_arrived"), description: t("request_active.complete_the_request_when_youre_done") });
             queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
           }
         }
@@ -250,8 +252,8 @@ export default function ActiveRequestScreen() {
       setIsOffRoute(true);
       offRouteCooldownRef.current = true;
       toast({
-        title: "🔄 Off route — recalculating…",
-        description: "You've deviated from the route. Fetching updated directions.",
+        title: t("request_active.off_route_recalculating"),
+        description: t("request_active.youve_deviated_from_the_route_fetching"),
         variant: "destructive",
       });
       queryClient.invalidateQueries({ queryKey: getGetRouteQueryKey(routeParams) });
@@ -376,13 +378,13 @@ export default function ActiveRequestScreen() {
           const earned = request.payment_type === "immediate" && request.pay_it_forward_amount
             ? `+$${request.pay_it_forward_amount.toFixed(2)} added to your wallet`
             : request.payment_type === "goodwill" ? "+1 goodwill point earned" : "Thank you for helping!";
-          toast({ title: "🎉 Request Completed!", description: earned });
+          toast({ title: t("request_active.request_completed"), description: earned });
           queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
           queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
           // Show rating modal before navigating away
           setTimeout(() => setShowRating(true), 900);
         },
-        onError: () => toast({ title: "Failed to complete", variant: "destructive" })
+        onError: () => toast({ title: t("request_active.failed_to_complete"), variant: "destructive" })
       }
     );
   };
@@ -431,7 +433,7 @@ export default function ActiveRequestScreen() {
       }).catch(() => {});
     } else {
       await navigator.clipboard.writeText(shareUrl).catch(() => {});
-      toast({ title: "Trip link copied!", description: "Share this link so others can track your progress." });
+      toast({ title: t("request_active.trip_link_copied"), description: t("request_active.share_this_link_so_others_can") });
     }
     setShareVisible(false);
   };
@@ -446,14 +448,14 @@ export default function ActiveRequestScreen() {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center text-primary">
         <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
-        <p>Loading route...</p>
+        <p>{t("request_active.loading_route")}</p>
       </div>
     );
   }
 
   if (!request) return (
     <div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">
-      Request not found
+      {t("request_active.request_not_found")}
     </div>
   );
 
@@ -469,7 +471,7 @@ export default function ActiveRequestScreen() {
     <div className="relative w-full h-[100dvh] overflow-hidden bg-background">
       {/* Back button */}
       <div className="absolute top-4 left-4 z-30">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full bg-card/80 backdrop-blur-sm border border-border" aria-label="Back to map">
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full bg-card/80 backdrop-blur-sm border border-border" aria-label={t("request_active.back_to_map")}>
           <ChevronLeft className="w-6 h-6" />
         </Button>
       </div>
@@ -502,7 +504,7 @@ export default function ActiveRequestScreen() {
         {isOffRoute && (
           <div className="flex items-center gap-1.5 bg-orange-500/20 backdrop-blur-md border border-orange-500/40 px-3 py-1.5 rounded-full shadow-lg animate-pulse">
             <AlertTriangle className="w-3 h-3 text-orange-400" />
-            <span className="text-[10px] font-black text-orange-400">Rerouting</span>
+            <span className="text-[10px] font-black text-orange-400">{t("request_active.rerouting")}</span>
           </div>
         )}
 
@@ -515,18 +517,18 @@ export default function ActiveRequestScreen() {
         {request.payment_type === "goodwill" && (
           <div className="flex items-center gap-1.5 bg-purple-500/20 backdrop-blur-md border border-purple-500/40 px-3 py-1.5 rounded-full shadow-lg">
             <Star className="w-3 h-3 text-purple-400" />
-            <span className="text-xs font-black text-purple-400">Goodwill</span>
+            <span className="text-xs font-black text-purple-400">{t("request_active.goodwill")}</span>
           </div>
         )}
 
         <button
           onClick={handleShare}
           className="flex items-center gap-1.5 bg-card/90 backdrop-blur-md border border-border px-3 py-1.5 rounded-full shadow-lg hover:border-primary/50 transition-colors"
-          title="Share trip"
-          aria-label="Share trip link"
+          title={t("request_active.share_trip")}
+          aria-label={t("request_active.share_trip_link")}
         >
           <Share2 className="w-3 h-3 text-muted-foreground" />
-          <span className="text-[10px] font-black text-muted-foreground">Share</span>
+          <span className="text-[10px] font-black text-muted-foreground">{t("request_active.share")}</span>
         </button>
 
         {/* Voice guidance mute/unmute toggle */}
@@ -687,7 +689,7 @@ export default function ActiveRequestScreen() {
         <div className="flex items-center gap-4 mb-4">
           <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 border-border shrink-0">
             {request.requester_avatar ? (
-              <img src={request.requester_avatar} alt="Requester" className="w-full h-full object-cover" />
+              <img src={request.requester_avatar} alt={t("request_active.requester")} className="w-full h-full object-cover" />
             ) : (
               <span className="text-lg font-bold">{request.requester_name?.[0] || "U"}</span>
             )}
@@ -697,7 +699,7 @@ export default function ActiveRequestScreen() {
             <p className="text-muted-foreground text-sm">{request.requester_name}</p>
           </div>
           <div className="text-right shrink-0">
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-0.5">Status</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-0.5">{t("request_active.status")}</div>
             <div className={`text-xs font-black uppercase ${isArrived ? "text-green-500" : isOffRoute ? "text-orange-400" : "text-primary"}`}>
               {isArrived ? "Arrived" : isOffRoute ? "Rerouting" : request.status.replace("_", " ")}
             </div>
@@ -717,7 +719,7 @@ export default function ActiveRequestScreen() {
               ))}
             </div>
             <div className="text-[10px] text-muted-foreground mt-1 flex justify-between">
-              <span>Step {currentStepIndex + 1} of {routeData.steps.length}</span>
+              <span>{t("request_active.step")} {currentStepIndex + 1} {t("request_active.of")} {routeData.steps.length}</span>
               <span>{routeData.distance_text}</span>
             </div>
           </div>
@@ -765,17 +767,17 @@ export default function ActiveRequestScreen() {
 
         {request.payment_type === "immediate" && earnAmount && (
           <p className="text-center text-xs text-green-400 font-bold mt-2">
-            💰 +${earnAmount.toFixed(2)} will be added to your wallet on completion
+            💰 +${earnAmount.toFixed(2)} {t("request_active.will_be_added_to_your_wallet")}
           </p>
         )}
         {request.payment_type === "pay_it_forward" && (
           <p className="text-center text-xs text-muted-foreground mt-2">
-            💙 Pay It Forward — your help sustains the community
+            {t("request_active.pay_it_forward_your_help_sustains")}
           </p>
         )}
         {request.payment_type === "goodwill" && (
           <p className="text-center text-xs text-purple-400 mt-2">
-            ✨ Goodwill mission — +1 community goodwill point
+            {t("request_active.goodwill_mission_1_community_goodwill_point")}
           </p>
         )}
 
@@ -790,7 +792,7 @@ export default function ActiveRequestScreen() {
             {cancelLoading ? (
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                Cancelling…
+                {t("request_active.cancelling")}
               </span>
             ) : (
               request.helper_id === currentUser.id
