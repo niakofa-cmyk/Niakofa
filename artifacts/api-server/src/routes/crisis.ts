@@ -45,7 +45,19 @@ router.post("/crisis/activate", requireAuth, requireAdmin(), async (req, res) =>
     level?: string;
     resources?: CrisisState["resources"];
   };
-  const finalResources = resources ?? [
+  // Default resources are configurable via CRISIS_DEFAULT_RESOURCES (JSON
+  // array) so a deployment outside Tarrant County/Fort Worth isn't
+  // permanently hardcoded to the wrong emergency contacts. Falls back to
+  // the original Fort Worth defaults if unset or malformed.
+  const envDefaults = (() => {
+    try {
+      const raw = process.env["CRISIS_DEFAULT_RESOURCES"];
+      return raw ? JSON.parse(raw) as CrisisState["resources"] : null;
+    } catch {
+      return null;
+    }
+  })();
+  const finalResources = resources ?? envDefaults ?? [
     { label: "Fort Worth Emergency Mgmt", phone: "817-392-6100" },
     { label: "Tarrant County 211", phone: "211" },
     { label: "Red Cross North TX", url: "https://www.redcross.org" },

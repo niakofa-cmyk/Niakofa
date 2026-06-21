@@ -54,11 +54,11 @@ export const requestCreationLimiter = rateLimit({
   legacyHeaders: false,
   store: createStore("req-create"),
   keyGenerator: (req) => {
-    // Key on the authenticated userId set by parseAuth (runs before all routes).
-    // Never key on req.body.requester_id — unauthenticated body data can be spoofed
-    // to rotate around the limit.
-    const userId = req.authenticatedUserId;
-    return userId ? `req-create-${userId}` : `req-create-ip-${req.ip ?? "unknown"}`;
+    // This route always runs requireAuth + requireOwnership("requester_id")
+    // before this limiter, so authenticatedUserId is guaranteed present —
+    // the IP fallback that used to live here was dead code that implied
+    // (incorrectly) that unauthenticated abuse of this route was covered.
+    return `req-create-${req.authenticatedUserId}`;
   },
   message: {
     error:

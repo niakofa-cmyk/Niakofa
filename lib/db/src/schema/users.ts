@@ -27,6 +27,12 @@ export const usersTable = pgTable("users", {
   help_count: integer("help_count").notNull().default(0),
   neighborhood: text("neighborhood"),
   city: text("city"),
+  // IMPORTANT — this is the GOODWILL/DONATION pot only (pledges, tips,
+  // sponsorships) — it is NOT total earnings. Immediate-pay job earnings
+  // bypass this field entirely; they're paid via direct Stripe Connect
+  // transfer and only ever appear in `transactions` (type: "earned"),
+  // never credited here. Any UI/logic treating this as "total earnings"
+  // is wrong — see transactions table for that.
   benevolence_wallet: numeric("benevolence_wallet", { precision: 10, scale: 2, mode: "number" }).notNull().default(0),
   goodwill_score: integer("goodwill_score").notNull().default(0),
   specialties: text("specialties").array(),

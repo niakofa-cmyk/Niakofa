@@ -22,7 +22,7 @@ import { eq } from "drizzle-orm";
 // only broadcastToAdmins() or sendToUser(). Splitting the type means a
 // future broadcast({ type: "new_report", ... }) call is a compile error,
 // not just a code-review hope.
-export type AdminOnlyEventType = "new_report" | "report_reviewed";
+export type AdminOnlyEventType = "new_report" | "report_reviewed" | "anomaly_detected";
 
 export type WsEventType =
   | AdminOnlyEventType

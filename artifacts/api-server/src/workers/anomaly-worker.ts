@@ -1,6 +1,7 @@
 import { db, usersTable, requestsTable } from "@workspace/db";
 import { sql, and, gte, eq } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { broadcastToAdmins } from "../lib/ws-hub";
 
 const INTERVAL_MS = 10 * 60 * 1000;
 const CANCEL_THRESHOLD = 3;
@@ -33,6 +34,17 @@ async function detectAnomalies() {
           { helper_id: row.helper_id, cancel_count: row.cancel_count, window_hours: WINDOW_HOURS },
           "anomaly: helper has frequent cancellations — flagged for admin review"
         );
+        // Previously logged only — admins had no way to see this short of
+        // reading raw logs. Now surfaces live in the admin dashboard.
+        broadcastToAdmins({
+          type: "anomaly_detected",
+          payload: {
+            kind: "frequent_cancellations",
+            helper_id: row.helper_id,
+            cancel_count: row.cancel_count,
+            window_hours: WINDOW_HOURS,
+          },
+        });
       }
     }
 
@@ -57,6 +69,16 @@ async function detectAnomalies() {
         { user_id: user.id, trust_score: user.trust_score, help_count: user.help_count },
         "anomaly: active helper with critically low trust score"
       );
+      broadcastToAdmins({
+        type: "anomaly_detected",
+        payload: {
+          kind: "low_trust_active_helper",
+          user_id: user.id,
+          name: user.name,
+          trust_score: user.trust_score,
+          help_count: user.help_count,
+        },
+      });
     }
 
     const totalFlagged = frequentCancellations.length + lowTrustActiveHelpers.length;

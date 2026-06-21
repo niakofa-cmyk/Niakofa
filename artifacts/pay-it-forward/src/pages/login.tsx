@@ -316,6 +316,14 @@ export default function LoginScreen() {
   const [pendingLegacyUser, setPendingLegacyUser] = useState<{ id: number; email: string; name: string } | null>(null);
   const [resetCode, setResetCode] = useState("");
   const [codeSentMessage, setCodeSentMessage] = useState("");
+  const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
+  const [forgotStep, setForgotStep] = useState<"email" | "code">("email");
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotCode, setForgotCode] = useState("");
+  const [forgotNewPassword, setForgotNewPassword] = useState("");
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
+  const [forgotSaving, setForgotSaving] = useState(false);
+  const [forgotPasswordSaved, setForgotPasswordSaved] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNewPass, setShowNewPass] = useState(false);
@@ -483,6 +491,158 @@ export default function LoginScreen() {
       setSavingPassword(false);
     }
   };
+
+  const handleRequestForgotCode = async () => {
+    if (!forgotEmail.trim()) return;
+    setForgotSaving(true);
+    try {
+      await fetch("/api/users/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail.trim() }),
+      });
+      setForgotStep("code");
+      toast({ title: "If that email has an account, a code has been sent." });
+    } catch {
+      toast({ title: t("common.error"), variant: "destructive" });
+    } finally {
+      setForgotSaving(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (forgotCode.trim().length !== 6) {
+      toast({ title: "Enter the 6-digit code sent to your email", variant: "destructive" });
+      return;
+    }
+    if (forgotNewPassword.length < 8) {
+      toast({ title: "Password must be at least 8 characters", variant: "destructive" });
+      return;
+    }
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      toast({ title: "Passwords do not match", variant: "destructive" });
+      return;
+    }
+    setForgotSaving(true);
+    try {
+      const res = await fetch("/api/users/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: forgotEmail.trim(),
+          code: forgotCode.trim(),
+          new_password: forgotNewPassword,
+        }),
+      });
+      const data = await res.json().catch(() => ({})) as any;
+      if (!res.ok) throw new Error(data.error ?? "Failed to reset password");
+      if (data.token) setToken(data.token);
+      setCurrentUser(data.user);
+      localStorage.setItem("niakofa_user", JSON.stringify(data.user));
+      setForgotPasswordSaved(true);
+      setTimeout(() => {
+        toast({ title: `Welcome back, ${data.user.name}!` });
+        setLocation("/");
+      }, 1400);
+    } catch (err) {
+      toast({ title: err instanceof Error ? err.message : t("common.error"), variant: "destructive" });
+    } finally {
+      setForgotSaving(false);
+    }
+  };
+
+  // ── Forgot Password screen ───────────────────────────────────────────────────
+  if (forgotPasswordMode) {
+    return (
+      <div className="min-h-[100dvh] bg-background flex flex-col">
+        <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
+          <motion.div
+            initial={{ scale: 0.85, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 200, damping: 20 }}
+            className="w-full max-w-sm"
+          >
+            <div className="flex flex-col items-center mb-8">
+              <div className="w-16 h-16 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center mb-4 shadow-[0_0_40px_rgba(0,212,255,0.15)]">
+                <KeyRound className="w-8 h-8 text-primary" />
+              </div>
+              <h2 className="text-2xl font-black tracking-tight text-foreground">Reset Password</h2>
+              <p className="text-sm text-muted-foreground mt-2 text-center leading-relaxed">
+                {forgotStep === "email"
+                  ? "Enter your email and we'll send you a code."
+                  : `Enter the code sent to ${forgotEmail}`}
+              </p>
+            </div>
+            <AnimatePresence mode="wait">
+              {forgotPasswordSaved ? (
+                <motion.div key="saved" initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex flex-col items-center gap-3 py-8 text-center">
+                  <CheckCircle2 className="w-14 h-14 text-green-400" />
+                  <div className="font-black text-lg text-foreground">Password reset!</div>
+                  <div className="text-sm text-muted-foreground">Taking you to the app…</div>
+                </motion.div>
+              ) : forgotStep === "email" ? (
+                <motion.div key="email-step" className="space-y-3">
+                  <div className="relative">
+                    <input
+                      type="email"
+                      placeholder="Email address"
+                      value={forgotEmail}
+                      onChange={e => setForgotEmail(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleRequestForgotCode()}
+                      className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      autoComplete="email"
+                    />
+                  </div>
+                  <Button className="w-full h-13 font-black text-base mt-2" onClick={handleRequestForgotCode} disabled={forgotSaving || !forgotEmail.trim()}>
+                    {forgotSaving ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Sending…</span> : "Send Code"}
+                  </Button>
+                  <button onClick={() => setForgotPasswordMode(false)} className="w-full text-center text-xs text-muted-foreground active:text-foreground transition-colors py-2">
+                    Back to sign in
+                  </button>
+                </motion.div>
+              ) : (
+                <motion.div key="code-step" className="space-y-3">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="6-digit code"
+                    value={forgotCode}
+                    onChange={e => setForgotCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground tracking-widest"
+                    autoComplete="one-time-code"
+                  />
+                  <input
+                    type="password"
+                    placeholder="New password (min 8 characters)"
+                    value={forgotNewPassword}
+                    onChange={e => setForgotNewPassword(e.target.value)}
+                    className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                    autoComplete="new-password"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Confirm password"
+                    value={forgotConfirmPassword}
+                    onChange={e => setForgotConfirmPassword(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleResetPassword()}
+                    className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                    autoComplete="new-password"
+                  />
+                  <Button className="w-full h-13 font-black text-base mt-2" onClick={handleResetPassword} disabled={forgotSaving || forgotCode.length !== 6 || forgotNewPassword.length < 8 || forgotNewPassword !== forgotConfirmPassword}>
+                    {forgotSaving ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Saving…</span> : "Reset Password"}
+                  </Button>
+                  <button onClick={() => setForgotPasswordMode(false)} className="w-full text-center text-xs text-muted-foreground active:text-foreground transition-colors py-2">
+                    Back to sign in
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
 
   // ── Legacy account "Set Password" screen ────────────────────────────────────
   if (pendingLegacyUser) {
@@ -697,6 +857,16 @@ export default function LoginScreen() {
               {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+
+          {mode === "login" && (
+            <button
+              type="button"
+              onClick={() => setForgotPasswordMode(true)}
+              className="text-xs text-muted-foreground active:text-foreground transition-colors text-right w-full px-1"
+            >
+              Forgot password?
+            </button>
+          )}
 
           {/* Helper toggle + expanded form */}
           <AnimatePresence mode="wait">

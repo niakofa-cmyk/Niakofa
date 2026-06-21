@@ -113,6 +113,100 @@ router.post("/users/request-password-reset", authLimiter, async (req, res) => {
   return res.json(GENERIC_RESPONSE);
 });
 
+// POST /users/forgot-password — works for ANY account (with or without an
+// existing password), unlike request-password-reset above which is
+// legacy-only. Sends the same kind of one-time emailed code. Always
+// returns the same generic message regardless of whether the email exists.
+router.post("/users/forgot-password", authLimiter, async (req, res) => {
+  const { email } = req.body as { email?: string };
+  const GENERIC_RESPONSE = { ok: true, message: "If that email has an account, a code has been sent." };
+
+  if (!email || typeof email !== "string") return res.json(GENERIC_RESPONSE);
+
+  const [user] = await db.select().from(usersTable)
+    .where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
+
+  if (!user) return res.json(GENERIC_RESPONSE);
+
+  const code = randomInt(100000, 999999).toString();
+  const codeHash = createHash("sha256").update(code).digest("hex");
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+  await db.insert(passwordResetCodesTable).values({
+    user_id: user.id,
+    code_hash: codeHash,
+    expires_at: expiresAt,
+  });
+
+  sendAlertEmail({
+    to: user.email,
+    subject: "Your Niakofa password reset code",
+    title: "Reset your password",
+    body: `Your one-time code is <strong style="color:#00d4ff;font-size:24px;letter-spacing:4px">${code}</strong>. It expires in 15 minutes. If you didn't request this, you can safely ignore this email — your password has not been changed.`,
+  }).catch(() => {});
+
+  logger.info({ user_id: user.id }, "users: forgot-password code sent");
+  return res.json(GENERIC_RESPONSE);
+});
+
+// POST /users/reset-password — completes a forgot-password flow for ANY
+// account (with or without an existing password). Requires a valid code
+// from forgot-password above. Same per-code attempt lockout as
+// set-initial-password.
+router.post("/users/reset-password", authLimiter, async (req, res) => {
+  const { email, code, new_password } = req.body as {
+    email?: string; code?: string; new_password?: string;
+  };
+
+  if (!email || !code || !new_password) {
+    return res.status(400).json({ error: "email, code, and new_password are required" });
+  }
+  if (typeof new_password !== "string" || new_password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+
+  const [user] = await db.select().from(usersTable)
+    .where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
+  if (!user) return res.status(404).json({ error: "Invalid or expired code. Please request a new one." });
+
+  const MAX_CODE_ATTEMPTS = 5;
+  const [latestCode] = await db.select().from(passwordResetCodesTable)
+    .where(eq(passwordResetCodesTable.user_id, user.id))
+    .orderBy(sql`${passwordResetCodesTable.created_at} DESC`)
+    .limit(1);
+
+  if (!latestCode || latestCode.used_at || latestCode.expires_at < new Date()) {
+    return res.status(403).json({ error: "Invalid or expired code. Please request a new one." });
+  }
+  if (latestCode.failed_attempts >= MAX_CODE_ATTEMPTS) {
+    return res.status(429).json({ error: "Too many incorrect attempts. Please request a new code." });
+  }
+
+  const codeHash = createHash("sha256").update(String(code).trim()).digest("hex");
+  if (latestCode.code_hash !== codeHash) {
+    await db.update(passwordResetCodesTable)
+      .set({ failed_attempts: sql`${passwordResetCodesTable.failed_attempts} + 1` })
+      .where(eq(passwordResetCodesTable.id, latestCode.id));
+    return res.status(403).json({ error: "Invalid or expired code. Please request a new one." });
+  }
+
+  await db.update(passwordResetCodesTable)
+    .set({ used_at: new Date() })
+    .where(eq(passwordResetCodesTable.id, latestCode.id));
+
+  const password_hash = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
+  const [updated] = await db.update(usersTable)
+    .set({ password_hash, token_version: sql`${usersTable.token_version} + 1`, updated_at: new Date() })
+    .where(eq(usersTable.id, user.id))
+    .returning();
+  if (!updated) return res.status(500).json({ error: "Failed to reset password" });
+
+  logger.info({ user_id: user.id }, "users: password reset via forgot-password flow");
+  const token = signTokenById(updated.id, updated.token_version);
+  const { password_hash: _ph, ...safeUser } = updated as any;
+  return res.json({ user: safeUser, token });
+});
+
 // POST /users/set-initial-password — unauthenticated, rate-limited one-time password setup.
 // ONLY works for legacy accounts where password_hash is NULL (pre-password-era accounts).
 // Requires a valid, unexpired, unused code from request-password-reset above —
@@ -758,9 +852,12 @@ router.get("/admin/helper-applications", requireAuth, requireAdmin(), async (req
     updated_at: usersTable.updated_at,
   }).from(usersTable);
 
+  const limit = Math.min(parseInt(req.query.limit as string) || 200, 200);
+  const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
   const rows = filterStatus
-    ? await (query as any).where(eq(usersTable.helper_status, filterStatus)).limit(200)
-    : await (query as any).where(sql`${usersTable.helper_status} IS NOT NULL`).limit(200);
+    ? await (query as any).where(eq(usersTable.helper_status, filterStatus)).limit(limit).offset(offset)
+    : await (query as any).where(sql`${usersTable.helper_status} IS NOT NULL`).limit(limit).offset(offset);
 
   return res.json(rows);
 });
@@ -845,9 +942,12 @@ router.get("/admin/account-applications", requireAuth, requireAdmin(), async (re
   if (filterStatus) conditions.push(eq(usersTable.approval_status, filterStatus));
   if (filterAccountType) conditions.push(eq(usersTable.account_type, filterAccountType));
 
+  const limit = Math.min(parseInt(req.query.limit as string) || 200, 200);
+  const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
   const rows = conditions.length > 0
-    ? await (query as any).where(and(...conditions)).orderBy(sql`${usersTable.created_at} DESC`).limit(200)
-    : await (query as any).orderBy(sql`${usersTable.created_at} DESC`).limit(200);
+    ? await (query as any).where(and(...conditions)).orderBy(sql`${usersTable.created_at} DESC`).limit(limit).offset(offset)
+    : await (query as any).orderBy(sql`${usersTable.created_at} DESC`).limit(limit).offset(offset);
 
   return res.json(rows);
 });
@@ -917,7 +1017,11 @@ router.patch("/users/:id/moderation", requireAuth, requireAdmin(), async (req, r
 });
 
 // GET all users (admin)
-router.get("/users", requireAuth, requireAdmin(), async (_req, res) => {
+router.get("/users", requireAuth, requireAdmin(), async (req, res) => {
+  // Previously hard-capped at 200 with no way to see anything beyond that
+  // as the user base grows. Optional ?limit=&offset= now supports paging.
+  const limit = Math.min(parseInt(req.query.limit as string) || 200, 200);
+  const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
   const users = await db.select({
     id: usersTable.id,
     name: usersTable.name,
@@ -926,7 +1030,7 @@ router.get("/users", requireAuth, requireAdmin(), async (_req, res) => {
     trust_score: usersTable.trust_score,
     help_count: usersTable.help_count,
     created_at: usersTable.created_at,
-  }).from(usersTable).limit(200);
+  }).from(usersTable).orderBy(sql`${usersTable.created_at} DESC`).limit(limit).offset(offset);
   return res.json(users);
 });
 
