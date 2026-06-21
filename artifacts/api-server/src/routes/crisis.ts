@@ -49,10 +49,23 @@ router.post("/crisis/activate", requireAuth, requireAdmin(), async (req, res) =>
   // array) so a deployment outside Tarrant County/Fort Worth isn't
   // permanently hardcoded to the wrong emergency contacts. Falls back to
   // the original Fort Worth defaults if unset or malformed.
+  // Validate that a parsed value is an array of { label, phone?, url? } objects —
+  // the TypeScript cast alone does not check the runtime shape.
+  function isValidResources(val: unknown): val is CrisisState["resources"] {
+    return Array.isArray(val) && val.every(
+      (r) => r !== null && typeof r === "object" && typeof (r as Record<string, unknown>).label === "string",
+    );
+  }
   const envDefaults = (() => {
     try {
       const raw = process.env["CRISIS_DEFAULT_RESOURCES"];
-      return raw ? JSON.parse(raw) as CrisisState["resources"] : null;
+      if (!raw) return null;
+      const parsed: unknown = JSON.parse(raw);
+      if (!isValidResources(parsed)) {
+        logger.warn("crisis: CRISIS_DEFAULT_RESOURCES is not a valid resource array — ignoring");
+        return null;
+      }
+      return parsed;
     } catch {
       return null;
     }
@@ -62,7 +75,9 @@ router.post("/crisis/activate", requireAuth, requireAdmin(), async (req, res) =>
     { label: "Tarrant County 211", phone: "211" },
     { label: "Red Cross North TX", url: "https://www.redcross.org" },
   ];
-  const finalMessage = message ?? "⚠️ Emergency situation active in Tarrant County. Check nearby requests and stay safe.";
+  // Allow deployments outside Tarrant County / Fort Worth to set a custom
+  // default message via CRISIS_DEFAULT_MESSAGE env var.
+  const finalMessage = message ?? process.env["CRISIS_DEFAULT_MESSAGE"] ?? "⚠️ Emergency situation active in Tarrant County. Check nearby requests and stay safe.";
   const finalLevel = (level as CrisisState["level"]) ?? "warning";
 
   const [row] = await db.insert(crisisStateTable).values({

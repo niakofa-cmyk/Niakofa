@@ -71,11 +71,6 @@ catalog:
 autoInstallPeers: false
 
 dangerouslyAllowAllBuilds: true
-onlyBuiltDependencies:
-  - '@swc/core'
-  - esbuild
-  - msw
-  - unrs-resolver
 
 overrides:
   # pin ioredis to a single version to avoid BullMQ type conflicts
@@ -164,6 +159,3 @@ overrides:
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
 
-allowBuilds:
-  esbuild: true
-  msgpackr-extract: true

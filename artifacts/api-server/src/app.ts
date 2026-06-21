@@ -81,6 +81,10 @@ app.use(parseAuth);
 const APPROVAL_EXEMPT_PATHS = new Set([
   "/users/login",
   "/users/register",
+  "/users/forgot-password",
+  "/users/reset-password",
+  "/users/request-password-reset",
+  "/users/set-initial-password",
   "/healthz",
   "/version",
   "/stripe/webhook",

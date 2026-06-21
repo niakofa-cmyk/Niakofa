@@ -128,6 +128,14 @@ router.post("/users/forgot-password", authLimiter, async (req, res) => {
 
   if (!user) return res.json(GENERIC_RESPONSE);
 
+  // Invalidate any prior outstanding (unused) codes so old codes can't be used
+  // after a new one is requested. Orphaned codes also stop accumulating.
+  await db.delete(passwordResetCodesTable)
+    .where(and(
+      eq(passwordResetCodesTable.user_id, user.id),
+      sql`${passwordResetCodesTable.used_at} IS NULL`,
+    ));
+
   const code = randomInt(100000, 999999).toString();
   const codeHash = createHash("sha256").update(code).digest("hex");
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
@@ -167,7 +175,9 @@ router.post("/users/reset-password", authLimiter, async (req, res) => {
 
   const [user] = await db.select().from(usersTable)
     .where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
-  if (!user) return res.status(404).json({ error: "Invalid or expired code. Please request a new one." });
+  // Return 403 (not 404) regardless of whether the email exists — 404 leaks
+  // account existence by differing from the "code wrong/expired" 403 response.
+  if (!user) return res.status(403).json({ error: "Invalid or expired code. Please request a new one." });
 
   const MAX_CODE_ATTEMPTS = 5;
   const [latestCode] = await db.select().from(passwordResetCodesTable)
@@ -539,15 +549,15 @@ router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, re
     .limit(1);
   if (!request) return res.status(404).json({ error: "Request not found or unauthorized" });
 
-  // Dedup guard — a double-tap or client retry with the exact same
-  // request_id + amount within a short window is almost certainly a
-  // duplicate submission, not a genuinely new pledge. Without this, each
-  // retry would separately increment pledge_paid and credit the helper's
-  // wallet again for the same intended payment.
-  const DEDUP_WINDOW_MS = 10_000;
+  // Dedup guard — a double-tap or client retry from the SAME USER with the
+  // exact same request_id + amount within a short window is almost certainly
+  // a duplicate submission. user_id is required so two different users
+  // pledging the same amount on the same request within 10 seconds don't
+  // block each other (a real, legitimate scenario on active requests).
   const [recentDuplicate] = await db.select({ id: transactionsTable.id })
     .from(transactionsTable)
     .where(and(
+      eq(transactionsTable.user_id, pParsed.data.id),
       eq(transactionsTable.request_id, request_id),
       eq(transactionsTable.type, "pledge_sent"),
       eq(transactionsTable.amount, -amount),
@@ -558,9 +568,11 @@ router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, re
     return res.status(409).json({ error: "Duplicate pledge — please wait a moment before retrying" });
   }
 
-  const newPledgePaid = (request.pledge_paid || 0) + amount;
+  // Atomic increment — avoids TOCTOU race where two concurrent pledges both
+  // read the same pledge_paid value, add their amounts, and the second write
+  // silently overwrites the first. DB-level arithmetic is always consistent.
   const [updated] = await db.update(requestsTable)
-    .set({ pledge_paid: newPledgePaid })
+    .set({ pledge_paid: sql`${requestsTable.pledge_paid} + ${amount}` })
     .where(eq(requestsTable.id, request_id))
     .returning();
 

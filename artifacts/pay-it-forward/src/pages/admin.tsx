@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import {
   Shield, AlertCircle, CheckCircle2, Clock, X, ChevronLeft,
@@ -676,14 +676,14 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   );
 };
 
-// Module-level (not component-level) cache — survives AnalyticsTab
-// unmounting/remounting on tab switches, which a useRef would not.
-let analyticsCacheRef: { current: { data: AnalyticsData; fetchedAt: number } | null } = { current: null };
-
 function AnalyticsTab() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  // useRef so the cache is per-component-instance and resets on logout/remount.
+  // A module-level variable would survive logout and serve stale admin data
+  // to the next session without a full page reload.
+  const analyticsCacheRef = useRef<{ data: AnalyticsData; fetchedAt: number } | null>(null);
 
   // Cache analytics briefly — without this, every tab switch to Analytics
   // remounts this component and refires all 11 parallel server-side
@@ -709,7 +709,7 @@ function AnalyticsTab() {
     }
   }, [base]);
 
-  useEffect(() => { fetchAnalytics(); }, []);
+  useEffect(() => { fetchAnalytics(); }, [fetchAnalytics]);
 
   if (loading) {
     return (

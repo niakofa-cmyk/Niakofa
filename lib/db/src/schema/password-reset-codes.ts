@@ -16,6 +16,7 @@ export const passwordResetCodesTable = pgTable("password_reset_codes", {
   created_at: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   index("password_reset_codes_user_id_idx").on(t.user_id),
+  index("password_reset_codes_expires_at_idx").on(t.expires_at),
 ]);
 
 export type PasswordResetCode = typeof passwordResetCodesTable.$inferSelect;

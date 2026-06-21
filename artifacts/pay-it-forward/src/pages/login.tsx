@@ -324,6 +324,8 @@ export default function LoginScreen() {
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
   const [forgotSaving, setForgotSaving] = useState(false);
   const [forgotPasswordSaved, setForgotPasswordSaved] = useState(false);
+  const [showForgotNewPass, setShowForgotNewPass] = useState(false);
+  const [showForgotConfirmPass, setShowForgotConfirmPass] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNewPass, setShowNewPass] = useState(false);
@@ -612,26 +614,43 @@ export default function LoginScreen() {
                     className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground tracking-widest"
                     autoComplete="one-time-code"
                   />
-                  <input
-                    type="password"
-                    placeholder="New password (min 8 characters)"
-                    value={forgotNewPassword}
-                    onChange={e => setForgotNewPassword(e.target.value)}
-                    className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
-                    autoComplete="new-password"
-                  />
-                  <input
-                    type="password"
-                    placeholder="Confirm password"
-                    value={forgotConfirmPassword}
-                    onChange={e => setForgotConfirmPassword(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && handleResetPassword()}
-                    className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
-                    autoComplete="new-password"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showForgotNewPass ? "text" : "password"}
+                      placeholder="New password (min 8 characters)"
+                      value={forgotNewPassword}
+                      onChange={e => setForgotNewPassword(e.target.value)}
+                      className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 pr-11 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      autoComplete="new-password"
+                    />
+                    <button type="button" onClick={() => setShowForgotNewPass(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors" tabIndex={-1}>
+                      {showForgotNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showForgotConfirmPass ? "text" : "password"}
+                      placeholder="Confirm password"
+                      value={forgotConfirmPassword}
+                      onChange={e => setForgotConfirmPassword(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleResetPassword()}
+                      className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 pr-11 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      autoComplete="new-password"
+                    />
+                    <button type="button" onClick={() => setShowForgotConfirmPass(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors" tabIndex={-1}>
+                      {showForgotConfirmPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                   <Button className="w-full h-13 font-black text-base mt-2" onClick={handleResetPassword} disabled={forgotSaving || forgotCode.length !== 6 || forgotNewPassword.length < 8 || forgotNewPassword !== forgotConfirmPassword}>
                     {forgotSaving ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Saving…</span> : "Reset Password"}
                   </Button>
+                  <button
+                    onClick={() => { setForgotStep("email"); setForgotCode(""); }}
+                    disabled={forgotSaving}
+                    className="w-full text-center text-xs text-primary active:text-primary/70 transition-colors py-1"
+                  >
+                    Resend code
+                  </button>
                   <button onClick={() => setForgotPasswordMode(false)} className="w-full text-center text-xs text-muted-foreground active:text-foreground transition-colors py-2">
                     Back to sign in
                   </button>

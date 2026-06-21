@@ -155,29 +155,38 @@ router.get("/requests", requireAuth, async (req, res) => {
   });
 
   // Optional helper_id filter — used by helper profile page
-  const helperId = req.query.helper_id ? parseInt(req.query.helper_id as string) : null;
+  const rawHelperId = req.query.helper_id ? parseInt(req.query.helper_id as string) : null;
+  const helperId = rawHelperId !== null && !isNaN(rawHelperId) ? rawHelperId : null;
+  if (req.query.helper_id && helperId === null) {
+    return res.status(400).json({ error: "helper_id must be a valid integer" });
+  }
   // Optional requester_id filter — used by profile page to fetch user's own requests
-  const requesterId = req.query.requester_id ? parseInt(req.query.requester_id as string) : null;
-  // Optional limit
-  const limitParam = req.query.limit ? parseInt(req.query.limit as string) : null;
+  const rawRequesterId = req.query.requester_id ? parseInt(req.query.requester_id as string) : null;
+  const requesterId = rawRequesterId !== null && !isNaN(rawRequesterId) ? rawRequesterId : null;
+  if (req.query.requester_id && requesterId === null) {
+    return res.status(400).json({ error: "requester_id must be a valid integer" });
+  }
+  // Optional limit — capped at 500; default 200 to prevent full-table scans
+  const rawLimit = req.query.limit ? parseInt(req.query.limit as string) : null;
+  const limitParam = rawLimit !== null && !isNaN(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 500) : 200;
 
   // Push every filter we can into SQL instead of loading the entire table —
   // only the haversine radius filter (no PostGIS available) stays in JS,
   // and even that runs against an already-narrowed result set.
   const conditions = [];
-  if (helperId) conditions.push(eq(requestsTable.helper_id, helperId));
-  if (requesterId) conditions.push(eq(requestsTable.requester_id, requesterId));
+  if (helperId !== null) conditions.push(eq(requestsTable.helper_id, helperId));
+  if (requesterId !== null) conditions.push(eq(requestsTable.requester_id, requesterId));
   if (params.success && params.data.status) conditions.push(eq(requestsTable.status, params.data.status));
 
+  // Always push LIMIT into SQL — never load more than limitParam rows into memory
   let rows = conditions.length > 0
-    ? await db.select().from(requestsTable).where(and(...conditions)).orderBy(desc(requestsTable.created_at))
-    : await db.select().from(requestsTable).orderBy(desc(requestsTable.created_at));
+    ? await db.select().from(requestsTable).where(and(...conditions)).orderBy(desc(requestsTable.created_at)).limit(limitParam)
+    : await db.select().from(requestsTable).orderBy(desc(requestsTable.created_at)).limit(limitParam);
 
   if (params.success && params.data.lat && params.data.lng) {
     const radius = params.data.radius_miles ?? 10;
     rows = rows.filter(r => distanceMiles(params.data.lat!, params.data.lng!, r.lat, r.lng) <= radius);
   }
-  if (limitParam && limitParam > 0) rows = rows.slice(0, limitParam);
 
   // Collect all relevant user IDs (requesters + helpers) for a single batch fetch
   const allUserIds = [...new Set([
@@ -354,17 +363,24 @@ router.post("/requests/:id/en-route", requireAuth, requestActionLimiter, async (
   const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });
 
-  // Verify caller is the assigned helper before updating
-  const [current] = await db.select({ helper_id: requestsTable.helper_id })
+  // Verify caller is the assigned helper before updating (gives clean 404/403)
+  const [current] = await db.select({ helper_id: requestsTable.helper_id, status: requestsTable.status })
     .from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
   if (!current) return res.status(404).json({ error: "Request not found" });
   if (current.helper_id !== callerId) return res.status(403).json({ error: "You are not the assigned helper for this request" });
 
+  // Include AND status = 'claimed' in the UPDATE WHERE so a concurrent
+  // cancellation or reassignment between the SELECT and UPDATE is detected —
+  // the UPDATE returns null instead of silently stomping the new state.
   const [request] = await db.update(requestsTable)
     .set({ status: "en_route", en_route_at: new Date() })
-    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, callerId)))
+    .where(and(
+      eq(requestsTable.id, pParsed.data.id),
+      eq(requestsTable.helper_id, callerId),
+      eq(requestsTable.status, "claimed"),
+    ))
     .returning();
-  if (!request) return res.status(404).json({ error: "Not found" });
+  if (!request) return res.status(409).json({ error: "Request is no longer in the claimed state — it may have been cancelled or reassigned" });
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
   broadcastRequestEvent("HELPER_MOVING", "request_updated", enriched);
 
@@ -390,17 +406,23 @@ router.post("/requests/:id/arrived", requireAuth, async (req, res) => {
   const pParsed = MarkArrivedParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });
 
-  // Verify caller is the assigned helper before updating
-  const [current] = await db.select({ helper_id: requestsTable.helper_id })
+  // Verify caller is the assigned helper before updating (gives clean 404/403)
+  const [current] = await db.select({ helper_id: requestsTable.helper_id, status: requestsTable.status })
     .from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
   if (!current) return res.status(404).json({ error: "Request not found" });
   if (current.helper_id !== callerId) return res.status(403).json({ error: "You are not the assigned helper for this request" });
 
+  // Include AND status = 'en_route' in the UPDATE WHERE — catches a concurrent
+  // cancellation or state change between the SELECT and UPDATE.
   const [request] = await db.update(requestsTable)
     .set({ status: "arrived", arrived_at: new Date() })
-    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, callerId)))
+    .where(and(
+      eq(requestsTable.id, pParsed.data.id),
+      eq(requestsTable.helper_id, callerId),
+      eq(requestsTable.status, "en_route"),
+    ))
     .returning();
-  if (!request) return res.status(404).json({ error: "Not found" });
+  if (!request) return res.status(409).json({ error: "Request is no longer en-route — it may have been cancelled or its state changed" });
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
   broadcastRequestEvent("HELPER_ARRIVED", "request_updated", enriched);
   return res.json(enriched);
