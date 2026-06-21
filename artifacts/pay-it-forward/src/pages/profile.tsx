@@ -23,6 +23,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { TrustTierBadge, getTrustTier } from "@/components/TrustTierBadge";
 import { IdentityVerificationCard } from "@/components/IdentityVerificationCard";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 
 type ProfileTab = "overview" | "history" | "settings";
 
@@ -87,27 +88,25 @@ function ModalShell({ title, icon: Icon, onClose, children }: {
 }
 
 function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId: number }) {
+  const { t } = useTranslation();
   const [confirmed, setConfirmed] = useState(false);
   return (
-    <ModalShell title="Delete Account" icon={Trash2} onClose={onClose}>
+    <ModalShell title={t("profile.delete_account")} icon={Trash2} onClose={onClose}>
       <div className="space-y-4">
         <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4">
-          <p className="text-sm text-destructive font-bold mb-1">This cannot be undone.</p>
+          <p className="text-sm text-destructive font-bold mb-1">{t("profile.this_cannot_be_undone")}</p>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Deleting your account will permanently remove your profile, transaction history, goodwill score,
-            and benevolence wallet balance. Scheduled payments will be cancelled. This action is irreversible
-            and cannot be recovered.
+            {t("profile.deleting_your_account_will_permanently_remove")}
           </p>
         </div>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          Under GDPR/CCPA regulations, you have the right to request deletion of your personal data.
-          Your data will be removed within 30 days of confirmation. To request deletion, contact:
+          {t("profile.under_gdprccpa_regulations_you_have_the")}
         </p>
         <a
           href="mailto:privacy@niakofa.community?subject=Account%20Deletion%20Request"
           className="block bg-card border border-border rounded-xl p-3 text-sm text-primary hover:border-primary/50 transition-colors"
         >
-          privacy@niakofa.community
+          {t("profile.privacyniakofacommunity")}
         </a>
         <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-xl">
           <input
@@ -118,11 +117,11 @@ function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId:
             className="accent-destructive w-4 h-4"
           />
           <label htmlFor="confirm-delete" className="text-xs text-muted-foreground">
-            I understand this action is permanent and cannot be undone
+            {t("profile.i_understand_this_action_is_permanent")}
           </label>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>{t("profile.cancel")}</Button>
           <Button
             variant="destructive"
             disabled={!confirmed}
@@ -150,7 +149,7 @@ function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId:
               onClose();
             }}
           >
-            Request Deletion
+            {t("profile.request_deletion")}
           </Button>
         </div>
       </div>
@@ -177,6 +176,7 @@ async function saveSettings(userId: number, updates: Record<string, boolean | nu
 }
 
 function PushEnableButton({ userId }: { userId: number }) {
+  const { t } = useTranslation();
   const { permission, isSubscribed, isLoading, requestPermissionAndSubscribe, unsubscribe } =
     usePushNotifications(userId);
 
@@ -187,13 +187,13 @@ function PushEnableButton({ userId }: { userId: number }) {
       <div className="flex items-center justify-between p-3 bg-green-500/10 rounded-xl border border-green-500/30">
         <div className="flex items-center gap-2">
           <Bell className="w-4 h-4 text-green-400" />
-          <span className="text-sm font-semibold text-green-400">Push Notifications Active</span>
+          <span className="text-sm font-semibold text-green-400">{t("profile.push_notifications_active")}</span>
         </div>
         <button
           onClick={unsubscribe}
           className="text-xs text-muted-foreground hover:text-destructive transition-colors"
         >
-          Disable
+          {t("profile.disable")}
         </button>
       </div>
     );
@@ -219,9 +219,9 @@ function PushEnableButton({ userId }: { userId: number }) {
         )}
       </div>
       <div>
-        <div className="text-sm font-bold">Enable Push Notifications</div>
+        <div className="text-sm font-bold">{t("profile.enable_push_notifications")}</div>
         <div className="text-[10px] text-muted-foreground">
-          Get alerted for nearby requests, pledges &amp; arrivals
+          {t("profile.get_alerted_for_nearby_requests_pledges")}
         </div>
       </div>
     </button>
@@ -229,6 +229,7 @@ function PushEnableButton({ userId }: { userId: number }) {
 }
 
 function NotificationPrefsDialog({ onClose, userId }: { onClose: () => void; userId: number }) {
+  const { t } = useTranslation();
   const [prefs, setPrefs] = useState({
     notif_nearby_requests: true,
     notif_emergency: true,
@@ -278,7 +279,7 @@ function NotificationPrefsDialog({ onClose, userId }: { onClose: () => void; use
   };
 
   return (
-    <ModalShell title="Notification Preferences" icon={Bell} onClose={onClose}>
+    <ModalShell title={t("profile.notification_preferences")} icon={Bell} onClose={onClose}>
       {loading ? (
         <div className="flex items-center justify-center py-8">
           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -288,7 +289,7 @@ function NotificationPrefsDialog({ onClose, userId }: { onClose: () => void; use
           {/* Push notification enable — must grant permission for any toggles below to reach the device */}
           <PushEnableButton userId={userId} />
           <div className="pt-1 border-t border-border/60">
-            <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wider font-bold">In-App Notification Types</p>
+            <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wider font-bold">{t("profile.inapp_notification_types")}</p>
             {(Object.keys(prefs) as (keyof typeof prefs)[]).map(key => (
               <div key={key} className="flex items-center justify-between p-3 bg-background rounded-xl border border-border mb-2">
                 <span className="text-sm">{labels[key]}</span>
@@ -306,6 +307,7 @@ function NotificationPrefsDialog({ onClose, userId }: { onClose: () => void; use
 }
 
 function AccountPrivacyDialog({ onClose, userId }: { onClose: () => void; userId: number }) {
+  const { t } = useTranslation();
   const [prefs, setPrefs] = useState({
     privacy_profile_visible: true,
     privacy_live_location: false,
@@ -349,7 +351,7 @@ function AccountPrivacyDialog({ onClose, userId }: { onClose: () => void; userId
   };
 
   return (
-    <ModalShell title="Account Privacy" icon={Lock} onClose={onClose}>
+    <ModalShell title={t("profile.account_privacy")} icon={Lock} onClose={onClose}>
       {loading ? (
         <div className="flex items-center justify-center py-8">
           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -375,22 +377,23 @@ function AccountPrivacyDialog({ onClose, userId }: { onClose: () => void; userId
 }
 
 function SafetyDialog({ item, onClose, setShowReportModal }: { item: string; onClose: () => void; setShowReportModal: (v: boolean) => void }) {
+  const { t } = useTranslation();
   const content: Record<string, { icon: React.ComponentType<{className?: string}>; body: React.ReactNode }> = {
     "Report unsafe behavior": {
       icon: AlertCircle,
       body: (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground leading-relaxed">
-            If you felt unsafe during a help exchange, we take that seriously. Our safety team reviews every report within 24 hours.
+            {t("profile.if_you_felt_unsafe_during_a")}
           </p>
           <button
             onClick={() => { onClose(); setTimeout(() => setShowReportModal(true), 150); }}
             className="w-full flex items-center justify-center gap-2 bg-destructive/10 border border-destructive/30 hover:border-destructive/60 text-destructive font-bold text-sm text-center py-3 rounded-xl transition-colors"
           >
             <Flag className="w-4 h-4" />
-            File a Report
+            {t("profile.file_a_report")}
           </button>
-          <p className="text-[11px] text-muted-foreground text-center">Or use the SOS button on the map screen for immediate assistance</p>
+          <p className="text-[11px] text-muted-foreground text-center">{t("profile.or_use_the_sos_button_on")}</p>
         </div>
       ),
     },
@@ -399,12 +402,12 @@ function SafetyDialog({ item, onClose, setShowReportModal }: { item: string; onC
       body: (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground leading-relaxed">
-            Emergency contacts are trusted people who can be notified if you activate an SOS alert. This feature is being built — available soon.
+            {t("profile.emergency_contacts_are_trusted_people_who")}
           </p>
           <div className="bg-muted/50 border border-border rounded-xl p-4 text-center">
             <div className="text-2xl mb-2">🔒</div>
-            <div className="font-bold text-sm">Coming Soon</div>
-            <div className="text-xs text-muted-foreground mt-1">Emergency contact management will be available in the next update</div>
+            <div className="font-bold text-sm">{t("profile.coming_soon")}</div>
+            <div className="text-xs text-muted-foreground mt-1">{t("profile.emergency_contact_management_will_be_available")}</div>
           </div>
         </div>
       ),
@@ -435,7 +438,7 @@ function SafetyDialog({ item, onClose, setShowReportModal }: { item: string; onC
       icon: Eye,
       body: (
         <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
-          <p>Niakofa collects only what's necessary to connect neighbors safely.</p>
+          <p>{t("profile.niakofa_collects_only_whats_necessary_to")}</p>
           <div className="space-y-2">
             {[
               ["Location data", "Used only when helper mode is active or a request is open. Never sold."],
@@ -453,7 +456,7 @@ function SafetyDialog({ item, onClose, setShowReportModal }: { item: string; onC
             href="mailto:privacy@niakofa.community"
             className="block text-primary text-xs text-center hover:underline"
           >
-            privacy@niakofa.community
+            {t("profile.privacyniakofacommunity_2")}
           </a>
         </div>
       ),
@@ -505,6 +508,7 @@ const SPECIALTY_OPTIONS = [
 ];
 
 function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId: number }) {
+  const { t } = useTranslation();
   const [radius, setRadius] = useState(5);
   const [specialties, setSpecialties] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -534,7 +538,7 @@ function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId
   };
 
   return (
-    <ModalShell title="Helper Settings" icon={Sliders} onClose={onClose}>
+    <ModalShell title={t("profile.helper_settings")} icon={Sliders} onClose={onClose}>
       {loading ? (
         <div className="flex justify-center py-8">
           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -543,8 +547,8 @@ function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId
         <div className="space-y-5">
           <div>
             <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-bold">Service Radius</span>
-              <span className="text-primary font-black text-sm">{radius} mile{radius !== 1 ? "s" : ""}</span>
+              <span className="text-sm font-bold">{t("profile.service_radius")}</span>
+              <span className="text-primary font-black text-sm">{radius} {t("profile.mile")}{radius !== 1 ? "s" : ""}</span>
             </div>
             <input
               type="range" min={1} max={25} step={1} value={radius}
@@ -552,14 +556,14 @@ function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId
               className="w-full accent-primary h-2"
             />
             <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-              <span>1 mile</span><span>25 miles</span>
+              <span>{t("profile.1_mile")}</span><span>{t("profile.25_miles")}</span>
             </div>
             <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
-              You'll receive requests from within this radius of your current location.
+              {t("profile.youll_receive_requests_from_within_this")}
             </p>
           </div>
           <div>
-            <div className="text-sm font-bold mb-2">Specialties</div>
+            <div className="text-sm font-bold mb-2">{t("profile.specialties")}</div>
             <div className="flex flex-wrap gap-2">
               {SPECIALTY_OPTIONS.map(opt => (
                 <button
@@ -574,7 +578,7 @@ function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId
               ))}
             </div>
             <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
-              Requesters can filter helpers by specialty. Select all that apply.
+              {t("profile.requesters_can_filter_helpers_by_specialty")}
             </p>
           </div>
           <Button className="w-full" onClick={handleSave} disabled={saving}>
@@ -587,6 +591,7 @@ function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId
 }
 
 function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void; userId: number; isHelper: boolean }) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<{
     connected: boolean; chargesEnabled?: boolean; payoutsEnabled?: boolean; detailsSubmitted?: boolean;
   } | null>(null);
@@ -620,7 +625,7 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
   };
 
   return (
-    <ModalShell title="Payout Setup" icon={CreditCard} onClose={onClose}>
+    <ModalShell title={t("profile.payout_setup")} icon={CreditCard} onClose={onClose}>
       {loading ? (
         <div className="flex justify-center py-8">
           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -628,22 +633,22 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
       ) : !isHelper ? (
         <div className="bg-muted/50 border border-border rounded-xl p-4 text-center">
           <div className="text-2xl mb-2">💡</div>
-          <div className="font-bold text-sm">Enable Helper Mode First</div>
-          <div className="text-xs text-muted-foreground mt-1">Toggle Helper Mode on to start receiving jobs and set up payouts.</div>
+          <div className="font-bold text-sm">{t("profile.enable_helper_mode_first")}</div>
+          <div className="text-xs text-muted-foreground mt-1">{t("profile.toggle_helper_mode_on_to_start")}</div>
         </div>
       ) : status?.payoutsEnabled ? (
         <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 flex items-center gap-3">
           <span className="text-2xl">✅</span>
           <div>
-            <div className="font-black text-green-400">Payouts Active</div>
-            <div className="text-xs text-muted-foreground mt-0.5">Earnings transfer directly to your bank account via Stripe.</div>
+            <div className="font-black text-green-400">{t("profile.payouts_active")}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{t("profile.earnings_transfer_directly_to_your_bank")}</div>
           </div>
         </div>
       ) : status?.connected ? (
         <div className="space-y-3">
           <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
-            <div className="font-black text-yellow-400 mb-1">Almost there</div>
-            <div className="text-xs text-muted-foreground mb-2">Your Stripe account needs more information before payouts can be enabled.</div>
+            <div className="font-black text-yellow-400 mb-1">{t("profile.almost_there")}</div>
+            <div className="text-xs text-muted-foreground mb-2">{t("profile.your_stripe_account_needs_more_information")}</div>
             {[
               { label: "Account connected", done: true },
               { label: "Details submitted", done: status.detailsSubmitted },
@@ -662,9 +667,9 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
       ) : (
         <div className="space-y-4">
           <div className="bg-primary/10 border border-primary/30 rounded-xl p-4">
-            <div className="font-black text-primary mb-1">Set Up Real Payments</div>
+            <div className="font-black text-primary mb-1">{t("profile.set_up_real_payments")}</div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Connect your bank account via Stripe to receive real payments from immediate-pay jobs and Niakofa contributions.
+              {t("profile.connect_your_bank_account_via_stripe")}
             </p>
           </div>
           <div className="space-y-2">
@@ -677,11 +682,11 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
           </div>
           <Button className="w-full h-12 font-black" onClick={handleSetupPayouts} disabled={onboarding}>
             {onboarding
-              ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Opening Stripe…</span>
+              ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{t("profile.opening_stripe")}</span>
               : "Set Up Payouts via Stripe"
             }
           </Button>
-          <p className="text-[10px] text-muted-foreground text-center">Requires STRIPE_SECRET_KEY to be configured by the app administrator.</p>
+          <p className="text-[10px] text-muted-foreground text-center">{t("profile.requires_stripesecretkey_to_be_configured_by")}</p>
         </div>
       )}
     </ModalShell>
@@ -756,6 +761,7 @@ function RecentHelpersSection({
   transactions: Transaction[];
   onNavigate: (path: string) => void;
 }) {
+  const { t } = useTranslation();
   const [helpers, setHelpers] = useState<CompletedRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const { currentUser } = useAppContext();
@@ -789,22 +795,22 @@ function RecentHelpersSection({
   return (
     <div className="bg-card border border-border rounded-2xl p-4">
       <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
-        <Users className="w-3.5 h-3.5" /> Helpers Who've Helped You
+        <Users className="w-3.5 h-3.5" /> {t("profile.helpers_whove_helped_you")}
       </h3>
 
       {loading && (
         <div className="flex items-center justify-center py-4 gap-2 text-muted-foreground">
           <Loader2 className="w-4 h-4 animate-spin" />
-          <span className="text-xs">Loading…</span>
+          <span className="text-xs">{t("profile.loading")}</span>
         </div>
       )}
 
       {!loading && helpers.length === 0 && (
         <div className="bg-muted/40 border border-border/60 rounded-xl p-4 text-center">
           <div className="text-2xl mb-2">💙</div>
-          <div className="font-bold text-sm">No completed requests yet</div>
+          <div className="font-bold text-sm">{t("profile.no_completed_requests_yet")}</div>
           <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
-            Helpers who complete your requests will appear here.
+            {t("profile.helpers_who_complete_your_requests_will")}
           </div>
         </div>
       )}
@@ -839,7 +845,7 @@ function RecentHelpersSection({
           ))}
           {helpReceived > 0 && (
             <div className="text-[10px] text-muted-foreground text-center pt-1">
-              You've received help {helpReceived} time{helpReceived !== 1 ? "s" : ""} through Niakofa
+              {t("profile.youve_received_help")} {helpReceived} {t("profile.time")}{helpReceived !== 1 ? "s" : ""} {t("profile.through_niakofa")}
             </div>
           )}
         </div>
@@ -851,6 +857,7 @@ function RecentHelpersSection({
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
+  const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { currentUser, helperModeActive, setHelperModeActive, myLocation, logout } = useAppContext();
   const [tab, setTab] = useState<ProfileTab>("overview");
@@ -942,7 +949,7 @@ export default function ProfileScreen() {
       {/* Header */}
       <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-xl border-b border-border p-4 pt-safe">
         <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2">
-          <UserIcon className="w-5 h-5 text-primary" /> Profile
+          <UserIcon className="w-5 h-5 text-primary" /> {t("profile.profile")}
         </h1>
         <div className="flex gap-1 mt-3">
           {(["overview", "history", "settings"] as ProfileTab[]).map(t => (
@@ -966,7 +973,7 @@ export default function ProfileScreen() {
           <>
             <div className="flex items-center gap-4 pt-2">
               <div className="relative">
-                <button onClick={handleAvatarClick} className="relative group" title="Change profile photo">
+                <button onClick={handleAvatarClick} className="relative group" title={t("profile.change_profile_photo")}>
                   <div className="w-20 h-20 rounded-full border-4 border-card bg-muted flex items-center justify-center shadow-xl overflow-hidden">
                     {avatarPreview || currentUser.avatar_url
                       ? <img src={avatarPreview ?? currentUser.avatar_url!} alt={currentUser.name} className="w-full h-full object-cover" />
@@ -1013,17 +1020,17 @@ export default function ProfileScreen() {
               <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
                 <Shield className="w-4 h-4 text-blue-400 mb-1.5" />
                 <div className="text-xl font-black">{currentUser.trust_score?.toFixed(0) ?? 0}%</div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Trust</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{t("profile.trust")}</div>
               </div>
               <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
                 <Heart className="w-4 h-4 text-primary mb-1.5" />
                 <div className="text-xl font-black">{currentUser.help_count ?? 0}</div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Helped</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{t("profile.helped")}</div>
               </div>
               <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
                 <Star className="w-4 h-4 text-yellow-400 mb-1.5" />
                 <div className="text-xl font-black">{goodwill}</div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Goodwill</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{t("profile.goodwill")}</div>
               </div>
             </div>
 
@@ -1046,7 +1053,7 @@ export default function ProfileScreen() {
               return (
                 <div className="bg-card border border-border rounded-2xl p-4">
                   <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
-                    <Star className="w-3.5 h-3.5 text-yellow-400" /> Achievements
+                    <Star className="w-3.5 h-3.5 text-yellow-400" /> {t("profile.achievements")}
                   </h3>
                   <div className="flex flex-wrap gap-2">
                     {earned.map(b => (
@@ -1061,7 +1068,7 @@ export default function ProfileScreen() {
                     ))}
                   </div>
                   {earned.length < 4 && (
-                    <p className="text-[10px] text-muted-foreground mt-3">Keep helping to unlock more achievements</p>
+                    <p className="text-[10px] text-muted-foreground mt-3">{t("profile.keep_helping_to_unlock_more_achievements")}</p>
                   )}
                 </div>
               );
@@ -1075,12 +1082,12 @@ export default function ProfileScreen() {
               <div className="flex items-center gap-3">
                 <Wallet className="w-5 h-5 text-primary" />
                 <div className="text-left">
-                  <div className="font-black">Benevolence Wallet</div>
+                  <div className="font-black">{t("profile.benevolence_wallet")}</div>
                   <div className="text-2xl font-black text-primary">${wallet.toFixed(2)}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2 text-muted-foreground">
-                <span className="text-sm">View</span>
+                <span className="text-sm">{t("profile.view")}</span>
                 <ChevronRight className="w-4 h-4" />
               </div>
             </button>
@@ -1089,7 +1096,7 @@ export default function ProfileScreen() {
             {currentUser.is_helper && (
               <div className="bg-card border border-border rounded-2xl p-4">
                 <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
-                  <Activity className="w-3.5 h-3.5 text-primary" /> Helper Performance
+                  <Activity className="w-3.5 h-3.5 text-primary" /> {t("profile.helper_performance")}
                 </h3>
 
                 {/* Anchor Helper badge — 50+ helps, 97%+ trust score */}
@@ -1097,8 +1104,8 @@ export default function ProfileScreen() {
                   <div className="mb-3 flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
                     <span className="text-lg">⚓</span>
                     <div className="flex-1">
-                      <div className="text-xs font-black text-amber-400">Anchor Helper</div>
-                      <div className="text-[10px] text-muted-foreground">Elite community pillar · Mentor status</div>
+                      <div className="text-xs font-black text-amber-400">{t("profile.anchor_helper")}</div>
+                      <div className="text-[10px] text-muted-foreground">{t("profile.elite_community_pillar_mentor_status")}</div>
                     </div>
                     <Award className="w-3.5 h-3.5 text-amber-400" />
                   </div>
@@ -1106,19 +1113,19 @@ export default function ProfileScreen() {
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="bg-muted/40 rounded-xl p-3 text-center">
                     <div className="text-xl font-black">{currentUser.help_count ?? 0}</div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Completed</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{t("profile.completed")}</div>
                   </div>
                   <div className="bg-muted/40 rounded-xl p-3 text-center">
                     <div className="text-xl font-black text-primary">{(currentUser.trust_score ?? 0).toFixed(0)}%</div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Trust Score</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{t("profile.trust_score")}</div>
                   </div>
                   <div className="bg-muted/40 rounded-xl p-3 text-center">
                     <div className="text-xl font-black text-yellow-400">{currentUser.goodwill_score ?? 0}</div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Goodwill Pts</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{t("profile.goodwill_pts")}</div>
                   </div>
                   <div className="bg-muted/40 rounded-xl p-3 text-center">
                     <div className="text-xl font-black text-green-400">${(currentUser.benevolence_wallet ?? 0).toFixed(0)}</div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Earned</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{t("profile.earned")}</div>
                   </div>
                 </div>
                 {/* Trust tier progress */}
@@ -1127,13 +1134,13 @@ export default function ProfileScreen() {
                   const milestones = [5, 25, 100, 250];
                   const next = milestones.find(m => m > hc);
                   const prev = milestones.filter(m => m <= hc).at(-1) ?? 0;
-                  if (!next) return <p className="text-[10px] text-primary font-bold mt-3 text-center">🌟 Max tier achieved!</p>;
+                  if (!next) return <p className="text-[10px] text-primary font-bold mt-3 text-center">{t("profile.max_tier_achieved")}</p>;
                   const pct = Math.round(((hc - prev) / (next - prev)) * 100);
                   return (
                     <div className="mt-3">
                       <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
-                        <span>{hc} helps completed</span>
-                        <span>{next - hc} more to next milestone</span>
+                        <span>{hc} {t("profile.helps_completed")}</span>
+                        <span>{next - hc} {t("profile.more_to_next_milestone")}</span>
                       </div>
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                         <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
@@ -1152,10 +1159,10 @@ export default function ProfileScreen() {
                   <div className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between">
                     <div>
                       <div className="font-bold flex items-center gap-2">
-                        Helper Mode
+                        {t("profile.helper_mode")}
                         {helperModeActive && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
                       </div>
-                      <p className="text-sm text-muted-foreground">Receive nearby help requests</p>
+                      <p className="text-sm text-muted-foreground">{t("profile.receive_nearby_help_requests")}</p>
                     </div>
                     <Switch
                       checked={helperModeActive}
@@ -1170,8 +1177,8 @@ export default function ProfileScreen() {
                   <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 flex items-start gap-3">
                     <Clock className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
                     <div>
-                      <div className="font-bold text-yellow-300 text-sm">Helper Application Pending</div>
-                      <p className="text-xs text-muted-foreground mt-0.5">Your application is under admin review. You'll be notified once approved.</p>
+                      <div className="font-bold text-yellow-300 text-sm">{t("profile.helper_application_pending")}</div>
+                      <p className="text-xs text-muted-foreground mt-0.5">{t("profile.your_application_is_under_admin_review")}</p>
                     </div>
                   </div>
                 );
@@ -1181,8 +1188,8 @@ export default function ProfileScreen() {
                   <div className="bg-destructive/10 border border-destructive/30 rounded-2xl p-4 flex items-start gap-3">
                     <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
                     <div>
-                      <div className="font-bold text-destructive text-sm">Helper Application Not Approved</div>
-                      <p className="text-xs text-muted-foreground mt-0.5">Contact help@niakofa.community if you have questions about your application.</p>
+                      <div className="font-bold text-destructive text-sm">{t("profile.helper_application_not_approved")}</div>
+                      <p className="text-xs text-muted-foreground mt-0.5">{t("profile.contact_helpniakofacommunity_if_you_have_questions")}</p>
                     </div>
                   </div>
                 );
@@ -1195,7 +1202,7 @@ export default function ProfileScreen() {
 
             <div className="bg-card/50 border border-border/50 rounded-2xl p-4">
               <p className="text-xs text-muted-foreground leading-relaxed text-center">
-                This isn't charity — it's neighbors helping neighbors. Help when you can. Ask when you need. Pay forward when you're able.
+                {t("profile.this_isnt_charity_its_neighbors_helping")}
               </p>
             </div>
           </>
@@ -1205,21 +1212,21 @@ export default function ProfileScreen() {
         {tab === "history" && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-xs text-muted-foreground font-bold uppercase tracking-widest">
-              <Clock className="w-3.5 h-3.5" /> Your Timeline
+              <Clock className="w-3.5 h-3.5" /> {t("profile.your_timeline")}
             </div>
 
             {txLoading && (
               <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
                 <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                <span className="text-sm">Loading history…</span>
+                <span className="text-sm">{t("profile.loading_history")}</span>
               </div>
             )}
 
             {!txLoading && transactions.length === 0 && (
               <div className="text-center py-12 text-muted-foreground">
                 <Heart className="w-8 h-8 mx-auto mb-3 text-primary/30" />
-                <div className="font-bold text-sm">No activity yet</div>
-                <div className="text-xs mt-1">Complete a job or make a pledge to see it here</div>
+                <div className="font-bold text-sm">{t("profile.no_activity_yet")}</div>
+                <div className="text-xs mt-1">{t("profile.complete_a_job_or_make_a")}</div>
               </div>
             )}
 
@@ -1247,9 +1254,9 @@ export default function ProfileScreen() {
                     <div className="flex items-center gap-2 mt-1">
                       <span className={`text-[10px] font-bold flex items-center gap-0.5 ${color}`}>
                         {tx.type === "goodwill"
-                          ? <><Gift className="w-2.5 h-2.5" /> Goodwill</>
+                          ? <><Gift className="w-2.5 h-2.5" /> {t("profile.goodwill_2")}</>
                           : tx.type === "pledge_received"
-                          ? <><Heart className="w-2.5 h-2.5" /> Niakofa</>
+                          ? <><Heart className="w-2.5 h-2.5" /> {t("profile.niakofa")}</>
                           : <><DollarSign className="w-2.5 h-2.5" />{tx.amount > 0 ? `+$${tx.amount.toFixed(2)}` : `-$${Math.abs(tx.amount).toFixed(2)}`}</>
                         }
                       </span>
@@ -1269,9 +1276,9 @@ export default function ProfileScreen() {
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-border">
                 <div className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-green-400" /> Identity Verification
+                  <CheckCircle2 className="w-4 h-4 text-green-400" /> {t("profile.identity_verification")}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Verified profiles build trust with the community</p>
+                <p className="text-xs text-muted-foreground mt-1">{t("profile.verified_profiles_build_trust_with_the")}</p>
               </div>
               <div className="p-4 space-y-3">
                 {[
@@ -1308,7 +1315,7 @@ export default function ProfileScreen() {
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-border">
                 <div className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
-                  <Building2 className="w-4 h-4 text-primary" /> County / Civic Connection
+                  <Building2 className="w-4 h-4 text-primary" /> {t("profile.county_civic_connection")}
                 </div>
                 {civicData && !civicLoading ? (
                   <div className="flex items-center gap-1.5 mt-1">
@@ -1331,19 +1338,19 @@ export default function ProfileScreen() {
                 {civicLoading && (
                   <div className="flex items-center justify-center py-6 gap-2 text-muted-foreground">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span className="text-sm">Finding resources near you…</span>
+                    <span className="text-sm">{t("profile.finding_resources_near_you")}</span>
                   </div>
                 )}
                 {!civicLoading && (!civicData || civicData.resources.length === 0) && (
                   <div className="text-center py-4">
                     <BookOpen className="w-6 h-6 mx-auto mb-2 text-muted-foreground/40" />
-                    <p className="text-sm text-muted-foreground font-semibold">No local resources yet</p>
+                    <p className="text-sm text-muted-foreground font-semibold">{t("profile.no_local_resources_yet")}</p>
                     <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
-                      We don't have resources for your area yet. Email{" "}
+                      {t("profile.we_dont_have_resources_for_your")}{" "}
                       <a href="mailto:resources@niakofa.community" className="text-primary hover:underline">
-                        resources@niakofa.community
+                        {t("profile.resourcesniakofacommunity")}
                       </a>{" "}
-                      to add your county.
+                      {t("profile.to_add_your_county")}
                     </p>
                   </div>
                 )}
@@ -1351,7 +1358,7 @@ export default function ProfileScreen() {
                   <>
                     {civicData.match_level === "fallback" && (
                       <p className="text-[10px] text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2 mb-2">
-                        Showing general resources — enable location for local results
+                        {t("profile.showing_general_resources_enable_location_for")}
                       </p>
                     )}
                     {civicData.resources.map(org => (
@@ -1384,7 +1391,7 @@ export default function ProfileScreen() {
                       </a>
                     ))}
                     <p className="text-[10px] text-muted-foreground pt-1">
-                      Resources matched to your detected location. Links open in your browser.
+                      {t("profile.resources_matched_to_your_detected_location")}
                     </p>
                   </>
                 )}
@@ -1395,7 +1402,7 @@ export default function ProfileScreen() {
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-border">
                 <div className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-yellow-400" /> Support & Safety
+                  <AlertCircle className="w-4 h-4 text-yellow-400" /> {t("profile.support_safety")}
                 </div>
               </div>
               <div className="divide-y divide-border">
@@ -1422,7 +1429,7 @@ export default function ProfileScreen() {
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-border">
                 <div className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
-                  <Settings className="w-4 h-4 text-muted-foreground" /> Account
+                  <Settings className="w-4 h-4 text-muted-foreground" /> {t("profile.account")}
                 </div>
               </div>
               <div className="divide-y divide-border">
@@ -1432,7 +1439,7 @@ export default function ProfileScreen() {
                 >
                   <div className="flex items-center gap-2">
                     <Bell className="w-4 h-4 text-muted-foreground" />
-                    <span>Notification preferences</span>
+                    <span>{t("profile.notification_preferences_2")}</span>
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
@@ -1442,7 +1449,7 @@ export default function ProfileScreen() {
                 >
                   <div className="flex items-center gap-2">
                     <Lock className="w-4 h-4 text-muted-foreground" />
-                    <span>Account privacy</span>
+                    <span>{t("profile.account_privacy_2")}</span>
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
@@ -1452,7 +1459,7 @@ export default function ProfileScreen() {
                 >
                   <div className="flex items-center gap-2">
                     <Trash2 className="w-4 h-4" />
-                    <span>Delete account</span>
+                    <span>{t("profile.delete_account_2")}</span>
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
@@ -1463,9 +1470,9 @@ export default function ProfileScreen() {
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-border">
                 <div className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-destructive" /> Admin
+                  <Shield className="w-4 h-4 text-destructive" /> {t("profile.admin")}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Trust &amp; safety review queue</p>
+                <p className="text-xs text-muted-foreground mt-1">{t("profile.trust_amp_safety_review_queue")}</p>
               </div>
               <div className="divide-y divide-border">
                 <button
@@ -1474,7 +1481,7 @@ export default function ProfileScreen() {
                 >
                   <div className="flex items-center gap-2">
                     <Flag className="w-4 h-4 text-muted-foreground" />
-                    <span>Reports &amp; disputes queue</span>
+                    <span>{t("profile.reports_amp_disputes_queue")}</span>
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
@@ -1491,7 +1498,7 @@ export default function ProfileScreen() {
                 className="w-full flex items-center gap-3 p-4 text-sm text-destructive hover:bg-destructive/5 transition-colors"
               >
                 <Lock className="w-4 h-4" />
-                <span className="font-semibold">Sign Out</span>
+                <span className="font-semibold">{t("profile.sign_out")}</span>
               </button>
             </div>
 
@@ -1500,9 +1507,9 @@ export default function ProfileScreen() {
               <div className="bg-card border border-border rounded-2xl overflow-hidden">
                 <div className="p-4 border-b border-border">
                   <div className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-primary" /> Helper Profile
+                    <Activity className="w-4 h-4 text-primary" /> {t("profile.helper_profile")}
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">Service radius, specialties, and payout setup</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t("profile.service_radius_specialties_and_payout_setup")}</p>
                 </div>
                 <div className="divide-y divide-border">
                   <button
@@ -1511,7 +1518,7 @@ export default function ProfileScreen() {
                   >
                     <div className="flex items-center gap-2">
                       <Sliders className="w-4 h-4 text-muted-foreground" />
-                      <span>Service radius &amp; specialties</span>
+                      <span>{t("profile.service_radius_amp_specialties")}</span>
                     </div>
                     <ChevronRight className="w-4 h-4 text-muted-foreground" />
                   </button>
@@ -1521,7 +1528,7 @@ export default function ProfileScreen() {
                   >
                     <div className="flex items-center gap-2">
                       <CreditCard className="w-4 h-4 text-muted-foreground" />
-                      <span>Payout setup (Stripe Connect)</span>
+                      <span>{t("profile.payout_setup_stripe_connect")}</span>
                     </div>
                     <ChevronRight className="w-4 h-4 text-muted-foreground" />
                   </button>
