@@ -1,10 +1,11 @@
 import { pgTable, serial, integer, text, real, numeric, boolean, timestamp, index } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const recurringRequestsTable = pgTable("recurring_requests", {
   id: serial("id").primaryKey(),
-  user_id: integer("user_id").notNull(),
+  user_id: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
   category: text("category").notNull().default("other"),

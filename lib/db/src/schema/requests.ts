@@ -1,4 +1,5 @@
 import { pgTable, serial, text, boolean, real, numeric, integer, timestamp, pgEnum, index } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -27,8 +28,8 @@ export const requestsTable = pgTable("help_requests", {
   urgency: requestUrgencyEnum("urgency").notNull().default("medium"),
   status: requestStatusEnum("status").notNull().default("open"),
   payment_type: requestPaymentTypeEnum("payment_type").notNull().default("pay_it_forward"),
-  requester_id: integer("requester_id").notNull(),
-  helper_id: integer("helper_id"),
+  requester_id: integer("requester_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  helper_id: integer("helper_id").references(() => usersTable.id, { onDelete: "set null" }),
   lat: real("lat").notNull(),
   lng: real("lng").notNull(),
   neighborhood: text("neighborhood"),

@@ -1,4 +1,5 @@
 import { pgTable, serial, integer, numeric, text, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
 
 // Payment state machine for every financial transaction in the platform.
 // States: unpaid → authorized → escrowed → pending_contribution / sponsored → completed
@@ -15,8 +16,8 @@ export const paymentTransactionPaymentTypeEnum = pgEnum("payment_transaction_pay
 export const paymentTransactionsTable = pgTable("payment_transactions", {
   id: serial("id").primaryKey(),
   request_id: integer("request_id").notNull(),
-  helper_id: integer("helper_id"),
-  requester_id: integer("requester_id").notNull(),
+  helper_id: integer("helper_id").references(() => usersTable.id, { onDelete: "set null" }),
+  requester_id: integer("requester_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   // numeric(10,2) instead of real (float32) — avoids floating-point rounding
   // error accumulating across repeated SQL-side increments (e.g. wallet/
   // pledge balance updates done via `sql\`${col} + ${amount}\``).

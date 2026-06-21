@@ -794,10 +794,25 @@ router.post("/requests/:id/rate", requireAuth, async (req, res) => {
   const isBanned = currentRatee?.trust_score === -1;
 
   if (!isBanned) {
-    const allRatings = await db.select({ stars: ratingsTable.stars })
+    // Recency-weighted average — a rating from today counts more than one
+    // from a year ago, so the score reflects current behavior rather than
+    // being permanently anchored by old ratings. Exponential decay with a
+    // 90-day half-life: a rating's weight halves every ~90 days.
+    const RECENCY_HALF_LIFE_DAYS = 90;
+    const allRatings = await db.select({ stars: ratingsTable.stars, created_at: ratingsTable.created_at })
       .from(ratingsTable)
       .where(eq(ratingsTable.ratee_id, rateeId));
-    const avgStars = allRatings.reduce((s, r) => s + r.stars, 0) / allRatings.length;
+
+    const now = Date.now();
+    let weightedSum = 0;
+    let totalWeight = 0;
+    for (const r of allRatings) {
+      const daysAgo = (now - r.created_at.getTime()) / (1000 * 60 * 60 * 24);
+      const weight = Math.pow(0.5, daysAgo / RECENCY_HALF_LIFE_DAYS);
+      weightedSum += r.stars * weight;
+      totalWeight += weight;
+    }
+    const avgStars = totalWeight > 0 ? weightedSum / totalWeight : 0;
     const newTrustScore = Math.round(avgStars * 20);
 
     await db.update(usersTable)

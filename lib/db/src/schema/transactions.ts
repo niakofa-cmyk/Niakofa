@@ -1,10 +1,11 @@
 import { pgTable, serial, text, numeric, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const transactionsTable = pgTable("transactions", {
   id: serial("id").primaryKey(),
-  user_id: integer("user_id").notNull(),
+  user_id: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   request_id: integer("request_id"),
   type: text("type").notNull(),
   amount: numeric("amount", { precision: 10, scale: 2, mode: "number" }).notNull().default(0),

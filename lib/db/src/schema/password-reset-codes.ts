@@ -1,11 +1,12 @@
 import { pgTable, serial, integer, text, timestamp, index } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
 
 // One-time codes proving email ownership for the legacy set-initial-password
 // flow. Replaces the previous "proof" of just matching user_id + email
 // (both non-secret, guessable values) with an actual emailed secret.
 export const passwordResetCodesTable = pgTable("password_reset_codes", {
   id: serial("id").primaryKey(),
-  user_id: integer("user_id").notNull(),
+  user_id: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   code_hash: text("code_hash").notNull(),
   expires_at: timestamp("expires_at").notNull(),
   used_at: timestamp("used_at"),
