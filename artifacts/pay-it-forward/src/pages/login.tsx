@@ -314,6 +314,8 @@ export default function LoginScreen() {
 
   // Legacy account set-password flow
   const [pendingLegacyUser, setPendingLegacyUser] = useState<{ id: number; email: string; name: string } | null>(null);
+  const [resetCode, setResetCode] = useState("");
+  const [codeSentMessage, setCodeSentMessage] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNewPass, setShowNewPass] = useState(false);
@@ -408,6 +410,13 @@ export default function LoginScreen() {
 
         if (!res.ok && res.status === 403 && data.error_code === "LEGACY_PASSWORD_REQUIRED") {
           setPendingLegacyUser({ id: data.user_id, email: data.user_email, name: data.user_name });
+          // Fire the emailed verification code immediately — no extra tap needed
+          fetch("/api/users/request-password-reset", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: data.user_email }),
+          }).then(() => setCodeSentMessage(`We sent a 6-digit code to ${data.user_email}`))
+            .catch(() => setCodeSentMessage("Enter the 6-digit code sent to your email"));
           return;
         }
 
@@ -442,6 +451,10 @@ export default function LoginScreen() {
       toast({ title: "Passwords do not match", variant: "destructive" });
       return;
     }
+    if (resetCode.trim().length !== 6) {
+      toast({ title: "Enter the 6-digit code sent to your email", variant: "destructive" });
+      return;
+    }
     setSavingPassword(true);
     try {
       const res = await fetch("/api/users/set-initial-password", {
@@ -450,6 +463,7 @@ export default function LoginScreen() {
         body: JSON.stringify({
           user_id: pendingLegacyUser.id,
           email: pendingLegacyUser.email,
+          code: resetCode.trim(),
           new_password: newPassword,
         }),
       });
@@ -497,6 +511,22 @@ export default function LoginScreen() {
                 </motion.div>
               ) : (
                 <motion.div key="form" className="space-y-3">
+                  {codeSentMessage && (
+                    <p className="text-xs text-muted-foreground text-center px-1 mb-1">{codeSentMessage}</p>
+                  )}
+                  <div className="relative">
+                    <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="6-digit code from your email"
+                      value={resetCode}
+                      onChange={e => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      className="w-full bg-card border border-border rounded-2xl pl-11 pr-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground tracking-widest"
+                      autoComplete="one-time-code"
+                    />
+                  </div>
                   <div className="relative">
                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <input
@@ -528,7 +558,7 @@ export default function LoginScreen() {
                       Passwords do not match
                     </motion.p>
                   )}
-                  <Button className="w-full h-13 font-black text-base mt-2" onClick={handleSetPassword} disabled={savingPassword || newPassword.length < 8 || newPassword !== confirmPassword}>
+                  <Button className="w-full h-13 font-black text-base mt-2" onClick={handleSetPassword} disabled={savingPassword || resetCode.length !== 6 || newPassword.length < 8 || newPassword !== confirmPassword}>
                     {savingPassword ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Saving…</span> : t("auth.set_password")}
                   </Button>
                 </motion.div>

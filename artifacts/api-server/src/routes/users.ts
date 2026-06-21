@@ -1,6 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, pushSubscriptionsTable, recurringRequestsTable, ratingsTable, gratitudeLikesTable, gratitudePostsTable, chatMessagesTable, reportsTable } from "@workspace/db";
+import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, pushSubscriptionsTable, recurringRequestsTable, ratingsTable, gratitudeLikesTable, gratitudePostsTable, chatMessagesTable, reportsTable, passwordResetCodesTable } from "@workspace/db";
+import { createHash, randomInt } from "crypto";
 import { eq, and, sql, inArray, or } from "drizzle-orm";
 import {
   GetUserParams,
@@ -22,7 +23,7 @@ import { authLimiter, gpsLimiter } from "../middlewares/rate-limit";
 import { requireAuth, signTokenById } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import { logger } from "../lib/logger";
-import { sendHelperApplicationDecision } from "../lib/mailer";
+import { sendHelperApplicationDecision, sendAlertEmail } from "../lib/mailer";
 
 const BCRYPT_ROUNDS = 12;
 
@@ -74,19 +75,59 @@ router.post("/users/login", authLimiter, async (req, res) => {
   return res.json({ user: safeUser, token });
 });
 
+// POST /users/request-password-reset — sends a one-time 6-digit code via
+// email, proving the caller actually controls the account's email address.
+// Replaces the old "proof" of just knowing user_id + email (both non-secret,
+// guessable values) with an actual emailed secret. Always returns the same
+// generic success message regardless of whether the email exists or
+// already has a password — avoids leaking account existence/state.
+router.post("/users/request-password-reset", authLimiter, async (req, res) => {
+  const { email } = req.body as { email?: string };
+  const GENERIC_RESPONSE = { ok: true, message: "If that email has a legacy account, a code has been sent." };
+
+  if (!email || typeof email !== "string") return res.json(GENERIC_RESPONSE);
+
+  const [user] = await db.select().from(usersTable)
+    .where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
+
+  if (!user || user.password_hash) return res.json(GENERIC_RESPONSE);
+
+  const code = randomInt(100000, 999999).toString();
+  const codeHash = createHash("sha256").update(code).digest("hex");
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+  await db.insert(passwordResetCodesTable).values({
+    user_id: user.id,
+    code_hash: codeHash,
+    expires_at: expiresAt,
+  });
+
+  sendAlertEmail({
+    to: user.email,
+    subject: "Your Niakofa verification code",
+    title: "Verify it's you",
+    body: `Your one-time code is <strong style="color:#00d4ff;font-size:24px;letter-spacing:4px">${code}</strong>. It expires in 15 minutes. If you didn't request this, you can safely ignore this email.`,
+  }).catch(() => {}); // already logs internally
+
+  logger.info({ user_id: user.id }, "users: password reset code sent");
+  return res.json(GENERIC_RESPONSE);
+});
+
 // POST /users/set-initial-password — unauthenticated, rate-limited one-time password setup.
 // ONLY works for legacy accounts where password_hash is NULL (pre-password-era accounts).
-// Verifies user_id + email match before allowing the change — proves account ownership.
+// Requires a valid, unexpired, unused code from request-password-reset above —
+// proving actual email ownership, not just knowledge of non-secret user_id+email.
 // On success, returns a full auth token so the user lands directly in the app.
 router.post("/users/set-initial-password", authLimiter, async (req, res) => {
-  const { user_id, email, new_password } = req.body as {
+  const { user_id, email, code, new_password } = req.body as {
     user_id?: number;
     email?: string;
+    code?: string;
     new_password?: string;
   };
 
-  if (!user_id || !email || !new_password) {
-    return res.status(400).json({ error: "user_id, email, and new_password are required" });
+  if (!user_id || !email || !code || !new_password) {
+    return res.status(400).json({ error: "user_id, email, code, and new_password are required" });
   }
   if (typeof new_password !== "string" || new_password.length < 8) {
     return res.status(400).json({ error: "Password must be at least 8 characters" });
@@ -103,7 +144,6 @@ router.post("/users/set-initial-password", authLimiter, async (req, res) => {
 
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  // Email must match to prove account ownership — no additional token needed
   if (user.email.toLowerCase() !== String(email).trim().toLowerCase()) {
     return res.status(403).json({ error: "Email does not match account" });
   }
@@ -114,6 +154,25 @@ router.post("/users/set-initial-password", authLimiter, async (req, res) => {
       error: "This account already has a password. Use the normal sign-in form.",
     });
   }
+
+  // Verify the emailed one-time code — the actual proof of account
+  // ownership now, not just knowing the (non-secret, guessable) user_id+email.
+  const codeHash = createHash("sha256").update(String(code).trim()).digest("hex");
+  const [resetCode] = await db.select().from(passwordResetCodesTable)
+    .where(and(
+      eq(passwordResetCodesTable.user_id, user.id),
+      eq(passwordResetCodesTable.code_hash, codeHash),
+    ))
+    .orderBy(sql`${passwordResetCodesTable.created_at} DESC`)
+    .limit(1);
+
+  if (!resetCode || resetCode.used_at || resetCode.expires_at < new Date()) {
+    return res.status(403).json({ error: "Invalid or expired code. Please request a new one." });
+  }
+
+  await db.update(passwordResetCodesTable)
+    .set({ used_at: new Date() })
+    .where(eq(passwordResetCodesTable.id, resetCode.id));
 
   const password_hash = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
   const [updated] = await db
