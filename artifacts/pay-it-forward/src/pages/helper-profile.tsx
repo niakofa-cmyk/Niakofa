@@ -77,13 +77,12 @@ export default function HelperProfileScreen() {
     );
   }
 
-  const h = helper as any;
-  const skills: string[] = h.helper_skills ?? h.specialties ?? [];
-  const languages: string[] = h.helper_languages ?? [];
-  const qualifications: string[] = h.helper_qualifications ?? [];
-  const bio: string | null = h.helper_bio ?? null;
-  const vehicle: string | null = h.helper_vehicle ?? null;
-  const socialLinks: string | null = h.helper_social_links ?? null;
+  const skills: string[] = helper.helper_skills ?? helper.specialties ?? [];
+  const languages: string[] = helper.helper_languages ?? [];
+  const qualifications: string[] = helper.helper_qualifications ?? [];
+  const bio: string | null = helper.helper_bio ?? null;
+  const vehicle: string | null = helper.helper_vehicle ?? null;
+  const socialLinks: string | null = helper.helper_social_links ?? null;
 
   const tier = helper.trust_score != null && helper.help_count != null
     ? { trust: helper.trust_score, helps: helper.help_count }
@@ -127,7 +126,7 @@ export default function HelperProfileScreen() {
               </div>
             )}
             {/* Approved helper badge */}
-            {h.helper_status === "approved" && (
+            {helper.helper_status === "approved" && (
               <div className="inline-flex items-center gap-1.5 mt-2 bg-primary/10 border border-primary/30 rounded-full px-3 py-1">
                 <CheckCircle2 className="w-3 h-3 text-primary" />
                 <span className="text-[11px] font-black text-primary uppercase tracking-wider">Verified Helper</span>
@@ -232,9 +231,9 @@ export default function HelperProfileScreen() {
           <div className="flex flex-wrap gap-2">
             {[
               { label: "Email verified", done: true },
-              { label: "Phone verified", done: !!h.phone_masked },
+              { label: "Phone verified", done: !!helper.phone_masked },
               { label: "Background check", done: (helper.help_count ?? 0) >= 15 },
-              { label: "Admin approved", done: h.helper_status === "approved" },
+              { label: "Admin approved", done: helper.helper_status === "approved" },
               { label: "Community member", done: true },
             ].map(({ label, done }) => (
               <div key={label} className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${

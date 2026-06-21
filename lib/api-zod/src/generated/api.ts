@@ -46,6 +46,8 @@ export const GetUserResponse = zod.object({
   "goodwill_score": zod.number().describe('Community reputation score'),
   "identity_verified": zod.boolean().optional(),
   "background_check_status": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish(),
+  "phone_masked": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 
@@ -90,6 +92,8 @@ export const UpdateUserResponse = zod.object({
   "goodwill_score": zod.number().describe('Community reputation score'),
   "identity_verified": zod.boolean().optional(),
   "background_check_status": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish(),
+  "phone_masked": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 
@@ -131,6 +135,8 @@ export const UpdateUserLocationResponse = zod.object({
   "goodwill_score": zod.number().describe('Community reputation score'),
   "identity_verified": zod.boolean().optional(),
   "background_check_status": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish(),
+  "phone_masked": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 
@@ -169,6 +175,8 @@ export const UpdateHelperModeResponse = zod.object({
   "goodwill_score": zod.number().describe('Community reputation score'),
   "identity_verified": zod.boolean().optional(),
   "background_check_status": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish(),
+  "phone_masked": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 
@@ -257,6 +265,8 @@ export const RegisterUserResponse = zod.object({
   "goodwill_score": zod.number().describe('Community reputation score'),
   "identity_verified": zod.boolean().optional(),
   "background_check_status": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish(),
+  "phone_masked": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 
@@ -1028,6 +1038,8 @@ export const SubmitHelperApplicationResponse = zod.object({
   "goodwill_score": zod.number().describe('Community reputation score'),
   "identity_verified": zod.boolean().optional(),
   "background_check_status": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish(),
+  "phone_masked": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 
@@ -1062,6 +1074,8 @@ export const GetHelperApplicationsResponseItem = zod.object({
   "goodwill_score": zod.number().describe('Community reputation score'),
   "identity_verified": zod.boolean().optional(),
   "background_check_status": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish(),
+  "phone_masked": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 export const GetHelperApplicationsResponse = zod.array(GetHelperApplicationsResponseItem)
@@ -1102,6 +1116,8 @@ export const ReviewHelperApplicationResponse = zod.object({
   "goodwill_score": zod.number().describe('Community reputation score'),
   "identity_verified": zod.boolean().optional(),
   "background_check_status": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish(),
+  "phone_masked": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 
@@ -1240,6 +1256,8 @@ export const SetInitialPasswordResponse = zod.object({
   "goodwill_score": zod.number().describe('Community reputation score'),
   "identity_verified": zod.boolean().optional(),
   "background_check_status": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish(),
+  "phone_masked": zod.string().nullish(),
   "created_at": zod.string().optional()
 }),
   "token": zod.string()

@@ -54,5 +54,9 @@ export interface User {
   identity_verified?: boolean;
   /** @nullable */
   background_check_status?: string | null;
+  /** @nullable */
+  specialties?: string[] | null;
+  /** @nullable */
+  phone_masked?: string | null;
   created_at?: string;
 }

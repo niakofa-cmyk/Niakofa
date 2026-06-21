@@ -939,6 +939,12 @@ components:
           type: boolean
         background_check_status:
           type: ["string", "null"]
+        specialties:
+          type: ["array", "null"]
+          items:
+            type: string
+        phone_masked:
+          type: ["string", "null"]
         created_at:
           type: string
 

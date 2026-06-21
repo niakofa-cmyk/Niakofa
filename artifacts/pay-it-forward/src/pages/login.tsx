@@ -8,6 +8,17 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
+import type { User as AppUser } from "@/lib/AppContext";
+
+type ApiAuthResponse = Partial<AppUser> & {
+  error?: string;
+  error_code?: string;
+  user_id?: number;
+  user_email?: string;
+  user_name?: string;
+  token?: string;
+  user?: AppUser;
+};
 import { setToken } from "@/lib/auth";
 import { toast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
@@ -360,13 +371,14 @@ export default function LoginScreen() {
             organization_description: organizationDescription.trim() || undefined,
           }),
         });
-        const data = await res.json().catch(() => ({})) as any;
+        const data = await res.json().catch(() => ({})) as ApiAuthResponse;
         if (!res.ok) {
           const msgKey = data.error === "Email already registered" ? "auth.email_taken" : null;
           throw new Error(msgKey ? t(msgKey) : (data.error ?? "Registration failed"));
         }
 
-        const user = data.user ?? data;
+        if (!data.user) throw new Error("Registration failed");
+        const user = data.user;
         if (data.token) setToken(data.token);
 
         // If they want to be a helper, submit their profile application
@@ -416,9 +428,9 @@ export default function LoginScreen() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: email.trim(), password }),
         });
-        const data = await res.json().catch(() => ({})) as any;
+        const data = await res.json().catch(() => ({})) as ApiAuthResponse;
 
-        if (!res.ok && res.status === 403 && data.error_code === "LEGACY_PASSWORD_REQUIRED") {
+        if (!res.ok && res.status === 403 && data.error_code === "LEGACY_PASSWORD_REQUIRED" && data.user_id && data.user_email && data.user_name) {
           setPendingLegacyUser({ id: data.user_id, email: data.user_email, name: data.user_name });
           // Fire the emailed verification code immediately — no extra tap needed
           fetch("/api/users/request-password-reset", {
@@ -437,7 +449,8 @@ export default function LoginScreen() {
           throw new Error(msgKey ? t(msgKey) : (data.error ?? t("common.error")));
         }
 
-        const user = data.user ?? data;
+        if (!data.user) throw new Error(t("common.error"));
+        const user = data.user;
         if (data.token) setToken(data.token);
         setCurrentUser(user);
         localStorage.setItem("niakofa_user", JSON.stringify(user));
@@ -477,8 +490,8 @@ export default function LoginScreen() {
           new_password: newPassword,
         }),
       });
-      const data = await res.json().catch(() => ({})) as any;
-      if (!res.ok) throw new Error(data.error ?? "Failed to save password");
+      const data = await res.json().catch(() => ({})) as ApiAuthResponse;
+      if (!res.ok || !data.user) throw new Error(data.error ?? "Failed to save password");
       if (data.token) setToken(data.token);
       setCurrentUser(data.user);
       localStorage.setItem("niakofa_user", JSON.stringify(data.user));
@@ -536,14 +549,15 @@ export default function LoginScreen() {
           new_password: forgotNewPassword,
         }),
       });
-      const data = await res.json().catch(() => ({})) as any;
-      if (!res.ok) throw new Error(data.error ?? "Failed to reset password");
+      const data = await res.json().catch(() => ({})) as ApiAuthResponse;
+      if (!res.ok || !data.user) throw new Error(data.error ?? "Failed to reset password");
       if (data.token) setToken(data.token);
       setCurrentUser(data.user);
       localStorage.setItem("niakofa_user", JSON.stringify(data.user));
       setForgotPasswordSaved(true);
+      const resetUserName = data.user.name;
       setTimeout(() => {
-        toast({ title: `Welcome back, ${data.user.name}!` });
+        toast({ title: `Welcome back, ${resetUserName}!` });
         setLocation("/");
       }, 1400);
     } catch (err) {
