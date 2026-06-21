@@ -19,6 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import i18n from "../i18n";
 import { authHeaders } from "@/lib/auth";
+import { useTranslation } from "react-i18next";
 
 // ── API helpers (kept in sync with profile.tsx) ───────────────────────────────
 // BUG-006: Both fetch and save must include the Authorization header.
@@ -51,6 +52,7 @@ async function saveSettings(
 // ── Notification Preferences ──────────────────────────────────────────────────
 
 function NotificationPreferences({ userId }: { userId: number }) {
+  const { t } = useTranslation();
   const [prefs, setPrefs] = useState({
     notif_nearby_requests: true,
     notif_emergency: true,
@@ -94,9 +96,9 @@ function NotificationPreferences({ userId }: { userId: number }) {
     setSaving(true);
     try {
       await saveSettings(userId, prefs);
-      toast({ title: "Notification preferences saved" });
+      toast({ title: t("settings.notification_preferences_saved") });
     } catch {
-      toast({ title: "Failed to save", variant: "destructive" });
+      toast({ title: t("settings.failed_to_save"), variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -104,7 +106,7 @@ function NotificationPreferences({ userId }: { userId: number }) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold">Notification Preferences</h2>
+      <h2 className="text-xl font-bold">{t("settings.notification_preferences")}</h2>
       {loading ? (
         <div className="flex items-center justify-center py-8">
           <Loader2 className="w-6 h-6 animate-spin" />
@@ -113,7 +115,7 @@ function NotificationPreferences({ userId }: { userId: number }) {
         <div className="space-y-3">
           <div className="pt-1 border-t border-border/60">
             <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wider font-bold">
-              In-App Notification Types
+              {t("settings.inapp_notification_types")}
             </p>
             {(Object.keys(prefs) as (keyof typeof prefs)[]).map((key) => (
               <div
@@ -144,6 +146,7 @@ function NotificationPreferences({ userId }: { userId: number }) {
 // ── Account Privacy ───────────────────────────────────────────────────────────
 
 function LanguageSwitcher(_: { userId: number }) {
+  const { t } = useTranslation();
   const [lang, setLang] = useState(i18n.language ?? "en");
 
   const languages = [
@@ -161,7 +164,7 @@ function LanguageSwitcher(_: { userId: number }) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Choose your preferred language for the Niakofa app.
+        {t("settings.choose_your_preferred_language_for_the")}
       </p>
       {languages.map(l => (
         <button
@@ -185,6 +188,7 @@ function LanguageSwitcher(_: { userId: number }) {
 }
 
 function AccountPrivacy({ userId }: { userId: number }) {
+  const { t } = useTranslation();
   const [prefs, setPrefs] = useState({
     privacy_profile_visible: true,
     privacy_live_location: false,
@@ -238,9 +242,9 @@ function AccountPrivacy({ userId }: { userId: number }) {
     setSaving(true);
     try {
       await saveSettings(userId, prefs);
-      toast({ title: "Privacy settings saved" });
+      toast({ title: t("settings.privacy_settings_saved") });
     } catch {
-      toast({ title: "Failed to save", variant: "destructive" });
+      toast({ title: t("settings.failed_to_save_2"), variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -248,7 +252,7 @@ function AccountPrivacy({ userId }: { userId: number }) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold">Account Privacy</h2>
+      <h2 className="text-xl font-bold">{t("settings.account_privacy")}</h2>
       {loading ? (
         <div className="flex items-center justify-center py-8">
           <Loader2 className="w-6 h-6 animate-spin" />
@@ -286,6 +290,7 @@ function AccountPrivacy({ userId }: { userId: number }) {
 // ── Helper Settings ───────────────────────────────────────────────────────────
 
 function HelperSettings({ userId }: { userId: number }) {
+  const { t } = useTranslation();
   const [prefs, setPrefs] = useState({
     service_radius_miles: 5,
     max_travel_miles: 10,
@@ -309,9 +314,9 @@ function HelperSettings({ userId }: { userId: number }) {
     setSaving(true);
     try {
       await saveSettings(userId, prefs);
-      toast({ title: "Helper settings saved" });
+      toast({ title: t("settings.helper_settings_saved") });
     } catch {
-      toast({ title: "Failed to save", variant: "destructive" });
+      toast({ title: t("settings.failed_to_save_3"), variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -319,7 +324,7 @@ function HelperSettings({ userId }: { userId: number }) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold">Helper Settings</h2>
+      <h2 className="text-xl font-bold">{t("settings.helper_settings")}</h2>
       {loading ? (
         <div className="flex items-center justify-center py-8">
           <Loader2 className="w-6 h-6 animate-spin" />
@@ -331,7 +336,7 @@ function HelperSettings({ userId }: { userId: number }) {
               htmlFor="service_radius"
               className="text-sm font-semibold"
             >
-              Service Radius (miles)
+              {t("settings.service_radius_miles")}
             </label>
             <input
               id="service_radius"
@@ -353,7 +358,7 @@ function HelperSettings({ userId }: { userId: number }) {
               htmlFor="max_travel"
               className="text-sm font-semibold"
             >
-              Max Travel Distance (miles)
+              {t("settings.max_travel_distance_miles")}
             </label>
             <input
               id="max_travel"
@@ -386,6 +391,7 @@ function HelperSettings({ userId }: { userId: number }) {
 // ── Payout Setup ──────────────────────────────────────────────────────────────
 
 function PayoutSetup({ userId }: { userId: number }) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [stripeAccountStatus, setStripeAccountStatus] = useState<string | null>(
     null
@@ -436,7 +442,7 @@ function PayoutSetup({ userId }: { userId: number }) {
       }
     } catch {
       toast({
-        title: "Could not connect to Stripe — please try again",
+        title: t("settings.could_not_connect_to_stripe_please"),
         variant: "destructive",
       });
     } finally {
@@ -446,7 +452,7 @@ function PayoutSetup({ userId }: { userId: number }) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold">Payout Setup</h2>
+      <h2 className="text-xl font-bold">{t("settings.payout_setup")}</h2>
       {loading ? (
         <div className="flex items-center justify-center py-8">
           <Loader2 className="w-6 h-6 animate-spin" />
@@ -457,14 +463,14 @@ function PayoutSetup({ userId }: { userId: number }) {
             <div className="flex items-center gap-2 p-3 bg-green-500/10 rounded-xl border border-green-500/30">
               <CheckCircle2 className="w-5 h-5 text-green-400" />
               <span className="text-sm font-semibold text-green-400">
-                Stripe Connected
+                {t("settings.stripe_connected")}
               </span>
             </div>
           ) : stripeAccountStatus === "pending_requirements" ? (
             <div className="flex items-center gap-2 p-3 bg-yellow-500/10 rounded-xl border border-yellow-500/30">
               <AlertCircle className="w-5 h-5 text-yellow-400" />
               <span className="text-sm font-semibold text-yellow-400">
-                Action Required: Complete Stripe Onboarding
+                {t("settings.action_required_complete_stripe_onboarding")}
               </span>
               <Button
                 variant="outline"
@@ -473,7 +479,7 @@ function PayoutSetup({ userId }: { userId: number }) {
                 disabled={loading}
                 className="ml-auto"
               >
-                Continue Setup
+                {t("settings.continue_setup")}
               </Button>
             </div>
           ) : (
@@ -482,12 +488,11 @@ function PayoutSetup({ userId }: { userId: number }) {
               onClick={handleConnectStripe}
               disabled={loading}
             >
-              Connect with Stripe
+              {t("settings.connect_with_stripe")}
             </Button>
           )}
           <p className="text-xs text-muted-foreground">
-            Connect your Stripe account to receive payouts for completed help
-            requests.
+            {t("settings.connect_your_stripe_account_to_receive")}
           </p>
         </div>
       )}
@@ -509,6 +514,7 @@ interface SettingsSection {
 // ── Main Settings Page ────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
+  const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { currentUser } = useAppContext();
 
@@ -622,41 +628,36 @@ export default function SettingsPage() {
 
             {activeSection === "delete-account" && (
               <div className="space-y-4">
-                <h2 className="text-xl font-bold">Delete Account</h2>
+                <h2 className="text-xl font-bold">{t("settings.delete_account")}</h2>
                 <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4">
                   <p className="text-sm text-destructive font-bold mb-1">
-                    This cannot be undone.
+                    {t("settings.this_cannot_be_undone")}
                   </p>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Deleting your account will permanently remove your profile,
-                    transaction history, goodwill score, and benevolence wallet
-                    balance. Scheduled payments will be cancelled. This action
-                    is irreversible and cannot be recovered.
+                    {t("settings.deleting_your_account_will_permanently_remove")}
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Under GDPR/CCPA regulations, you have the right to request
-                  deletion of your personal data. Your data will be removed
-                  within 30 days of confirmation. To request deletion, contact:
+                  {t("settings.under_gdprccpa_regulations_you_have_the")}
                 </p>
                 <a
                   href="mailto:privacy@niakofa.community?subject=Account%20Deletion%20Request"
                   className="block bg-card border border-border rounded-xl p-3 text-sm text-primary hover:border-primary/50 transition-colors"
                 >
-                  privacy@niakofa.community
+                  {t("settings.privacyniakofacommunity")}
                 </a>
                 <Button
                   variant="destructive"
                   className="w-full"
                   onClick={() => {
                     toast({
-                      title: "Deletion request submitted",
+                      title: t("settings.deletion_request_submitted"),
                       description:
-                        "You will receive a confirmation email within 24 hours.",
+                        t("settings.you_will_receive_a_confirmation_email"),
                     });
                   }}
                 >
-                  Request Deletion
+                  {t("settings.request_deletion")}
                 </Button>
               </div>
             )}
