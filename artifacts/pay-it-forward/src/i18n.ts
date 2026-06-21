@@ -105,6 +105,30 @@ const en = {
     password_setup_prompt: "Your account was created before passwords were required. Please set a password for security.",
     set_password: "Set Password",
   },
+  not_found: {
+    title: "404 Page Not Found",
+    description: "Did you forget to add the page to the router?",
+  },
+  pending_approval: {
+    under_review_title: "Application Under Review",
+    not_approved_title: "Application Not Approved",
+    not_approved_body: "Your account application wasn't approved at this time.",
+    under_review_body: "Thanks for signing up! Every new account — individuals, businesses, and sponsors alike — is reviewed by our team before getting access to Niakofa.",
+    registered_as: "Registered as a {{accountType}} account",
+    wont_take_long: "This usually doesn't take long. We'll notify you the moment a decision is made.",
+    sign_out: "Sign out",
+  },
+  stripe_connected: {
+    payouts_enabled: "Payouts Enabled! 🎉",
+    payouts_enabled_body: "Your Stripe account is connected and payouts are active. You'll receive payments directly when you complete paid requests.",
+    benefit_automatic: "Automatic payouts after each completed request",
+    benefit_fee: "5% platform fee supports the community",
+    benefit_arrival: "Funds arrive within 2 business days",
+    view_wallet: "View My Wallet",
+    almost_there: "Almost There",
+    almost_there_body: "Your Stripe account is being reviewed. Payouts will activate once Stripe verifies your information — usually within a few minutes.",
+    back_to_wallet: "Back to Wallet",
+  },
 };
 
 const es: typeof en = {
@@ -210,6 +234,30 @@ const es: typeof en = {
     no_account: "No se encontró cuenta con ese correo",
     password_setup_prompt: "Tu cuenta fue creada antes de que se requirieran contraseñas. Por favor establece una contraseña por seguridad.",
     set_password: "Establecer Contraseña",
+  },
+  not_found: {
+    title: "404 Página No Encontrada",
+    description: "¿Olvidaste agregar la página al enrutador?",
+  },
+  pending_approval: {
+    under_review_title: "Solicitud en Revisión",
+    not_approved_title: "Solicitud No Aprobada",
+    not_approved_body: "Tu solicitud de cuenta no fue aprobada en este momento.",
+    under_review_body: "¡Gracias por registrarte! Toda cuenta nueva — individuos, negocios y patrocinadores por igual — es revisada por nuestro equipo antes de obtener acceso a Niakofa.",
+    registered_as: "Registrado como cuenta de tipo {{accountType}}",
+    wont_take_long: "Esto normalmente no toma mucho tiempo. Te notificaremos en cuanto se tome una decisión.",
+    sign_out: "Cerrar sesión",
+  },
+  stripe_connected: {
+    payouts_enabled: "¡Pagos Activados! 🎉",
+    payouts_enabled_body: "Tu cuenta de Stripe está conectada y los pagos están activos. Recibirás pagos directamente cuando completes solicitudes pagadas.",
+    benefit_automatic: "Pagos automáticos después de cada solicitud completada",
+    benefit_fee: "Tarifa de plataforma del 5% apoya a la comunidad",
+    benefit_arrival: "Los fondos llegan dentro de 2 días hábiles",
+    view_wallet: "Ver Mi Cartera",
+    almost_there: "Casi Listo",
+    almost_there_body: "Tu cuenta de Stripe está siendo revisada. Los pagos se activarán una vez que Stripe verifique tu información — usualmente en unos minutos.",
+    back_to_wallet: "Volver a la Cartera",
   },
 };
 

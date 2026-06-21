@@ -2,6 +2,7 @@ import { Clock, ShieldCheck, XCircle, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { clearToken } from "@/lib/auth";
+import { useTranslation } from "react-i18next";
 
 /**
  * Shown instead of the normal app when a user's account is "pending" or
@@ -10,6 +11,7 @@ import { clearToken } from "@/lib/auth";
  * is purely about explaining the state to the person, not enforcing it.
  */
 export default function PendingApprovalScreen() {
+  const { t } = useTranslation();
   const { currentUser, setCurrentUser } = useAppContext();
   const status = currentUser?.approval_status ?? "pending";
   const isDenied = status === "denied";
@@ -32,26 +34,26 @@ export default function PendingApprovalScreen() {
       </div>
 
       <h1 className="text-2xl font-black mb-2">
-        {isDenied ? "Application Not Approved" : "Application Under Review"}
+        {isDenied ? t("pending_approval.not_approved_title") : t("pending_approval.under_review_title")}
       </h1>
 
       <p className="text-muted-foreground text-sm max-w-sm leading-relaxed mb-1">
         {isDenied
-          ? "Your account application wasn't approved at this time."
-          : "Thanks for signing up! Every new account — individuals, businesses, and sponsors alike — is reviewed by our team before getting access to Niakofa."}
+          ? t("pending_approval.not_approved_body")
+          : t("pending_approval.under_review_body")}
       </p>
 
       {currentUser?.account_type && currentUser.account_type !== "individual" && (
         <p className="text-muted-foreground text-xs max-w-sm leading-relaxed mt-2 flex items-center gap-1.5 justify-center">
           <ShieldCheck className="w-3.5 h-3.5 text-primary" />
-          Registered as a {currentUser.account_type} account
+          {t("pending_approval.registered_as", { accountType: currentUser.account_type })}
           {currentUser.organization_name ? ` — ${currentUser.organization_name}` : ""}
         </p>
       )}
 
       {!isDenied && (
         <p className="text-muted-foreground text-xs max-w-sm mt-4">
-          This usually doesn't take long. We'll notify you the moment a decision is made.
+          {t("pending_approval.wont_take_long")}
         </p>
       )}
 
@@ -61,7 +63,7 @@ export default function PendingApprovalScreen() {
         className="mt-8 font-black text-xs"
       >
         <LogOut className="w-3.5 h-3.5 mr-1.5" />
-        Sign out
+        {t("pending_approval.sign_out")}
       </Button>
     </div>
   );
