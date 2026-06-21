@@ -6,6 +6,7 @@ import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetReque
 import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { authHeaders } from "@/lib/auth";
+import { useTranslation } from "react-i18next";
 
 interface GratitudePost {
   id: number;
@@ -63,6 +64,7 @@ interface SuggestionForm {
 }
 
 function CivicResourcesTab() {
+  const { t } = useTranslation();
   const [resources, setResources] = useState<CivicResource[]>([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("all");
@@ -105,8 +107,8 @@ function CivicResourcesTab() {
   if (resources.length === 0) return (
     <div className="text-center py-16 px-4">
       <div className="text-4xl mb-3">🏛️</div>
-      <div className="font-bold text-sm text-muted-foreground">No resources listed yet</div>
-      <div className="text-xs text-muted-foreground/60 mt-1">Community resources will appear here</div>
+      <div className="font-bold text-sm text-muted-foreground">{t("community.no_resources_listed_yet")}</div>
+      <div className="text-xs text-muted-foreground/60 mt-1">{t("community.community_resources_will_appear_here")}</div>
     </div>
   );
 
@@ -145,12 +147,12 @@ function CivicResourcesTab() {
               <div className="flex gap-2 mt-3">
                 {r.phone && (
                   <a href={`tel:${r.phone}`} className="flex items-center gap-1 text-xs text-primary font-bold bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-full active:scale-95 transition-all">
-                    📞 Call
+                    {t("community.call")}
                   </a>
                 )}
                 {r.website && (
                   <a href={r.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-muted-foreground font-bold bg-muted border border-border px-3 py-1.5 rounded-full active:scale-95 transition-all">
-                    🌐 Website
+                    {t("community.website")}
                   </a>
                 )}
               </div>
@@ -165,7 +167,7 @@ function CivicResourcesTab() {
         className="w-full flex items-center justify-center gap-2 p-3 border border-dashed border-primary/30 rounded-2xl text-sm text-primary/70 hover:text-primary hover:border-primary/60 transition-all"
       >
         <PlusCircle className="w-4 h-4" />
-        Know a resource we're missing? Suggest it
+        {t("community.know_a_resource_were_missing_suggest")}
       </button>
 
       {/* Suggestion modal */}
@@ -186,7 +188,7 @@ function CivicResourcesTab() {
               <div className="flex items-center justify-between p-5 pb-3 border-b border-border">
                 <div className="flex items-center gap-2">
                   <PlusCircle className="w-5 h-5 text-primary" />
-                  <h3 className="font-black text-lg">Suggest a Resource</h3>
+                  <h3 className="font-black text-lg">{t("community.suggest_a_resource")}</h3>
                 </div>
                 <button onClick={() => setShowSuggest(false)} className="p-2 rounded-full hover:bg-muted transition-colors">
                   <X className="w-5 h-5" />
@@ -196,22 +198,22 @@ function CivicResourcesTab() {
                 {suggestionSent ? (
                   <div className="text-center py-8">
                     <div className="text-4xl mb-3">🙏</div>
-                    <div className="font-black text-lg">Thank you!</div>
-                    <p className="text-sm text-muted-foreground mt-1">Your suggestion will be reviewed by the Niakofa team.</p>
+                    <div className="font-black text-lg">{t("community.thank_you")}</div>
+                    <p className="text-sm text-muted-foreground mt-1">{t("community.your_suggestion_will_be_reviewed_by")}</p>
                   </div>
                 ) : (
                   <>
                     <div>
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Organization Name *</label>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{t("community.organization_name")}</label>
                       <input
                         className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
-                        placeholder="e.g. Tarrant County Food Bank"
+                        placeholder={t("community.eg_tarrant_county_food_bank")}
                         value={suggestion.name}
                         onChange={e => setSuggestion(s => ({ ...s, name: e.target.value }))}
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Category</label>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{t("community.category")}</label>
                       <select
                         className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
                         value={suggestion.category}
@@ -223,17 +225,17 @@ function CivicResourcesTab() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Description</label>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{t("community.description")}</label>
                       <textarea
                         className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors min-h-[80px] resize-none"
-                        placeholder="What services do they provide?"
+                        placeholder={t("community.what_services_do_they_provide")}
                         value={suggestion.description}
                         onChange={e => setSuggestion(s => ({ ...s, description: e.target.value }))}
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Phone</label>
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{t("community.phone")}</label>
                         <input
                           className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
                           placeholder="(817) 555-0000"
@@ -242,10 +244,10 @@ function CivicResourcesTab() {
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Website</label>
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{t("community.website_2")}</label>
                         <input
                           className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
-                          placeholder="https://..."
+                          placeholder={t("community.https")}
                           value={suggestion.website}
                           onChange={e => setSuggestion(s => ({ ...s, website: e.target.value }))}
                         />
@@ -257,7 +259,7 @@ function CivicResourcesTab() {
                       className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground font-bold py-3.5 rounded-xl disabled:opacity-40 transition-all active:scale-[0.98]"
                     >
                       <Send className="w-4 h-4" />
-                      Submit Suggestion
+                      {t("community.submit_suggestion")}
                     </button>
                   </>
                 )}
@@ -283,6 +285,7 @@ const FORT_WORTH_NEIGHBORHOODS = [
 ];
 
 function NeighborhoodCirclesTab() {
+  const { t } = useTranslation();
   const [selected, setSelected] = useState<string | null>(null);
   const { currentUser } = useAppContext();
   const userHood = currentUser?.neighborhood?.toLowerCase().replace(/\s+/g, "_");
@@ -291,10 +294,10 @@ function NeighborhoodCirclesTab() {
     <div className="space-y-4">
       <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
         <h3 className="font-black text-sm flex items-center gap-2 mb-1">
-          <MapPin className="w-4 h-4 text-primary" /> Neighborhood Circles
+          <MapPin className="w-4 h-4 text-primary" /> {t("community.neighborhood_circles")}
         </h3>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          Your circle connects you with neighbors. Requests from your circle appear first on the map. "My neighbors helped me" — that's the power of local belonging.
+          {t("community.your_circle_connects_you_with_neighbors")}
         </p>
       </div>
 
@@ -320,7 +323,7 @@ function NeighborhoodCirclesTab() {
                   <div className="font-black text-sm">{hood.name}</div>
                   {isYours && (
                     <span className="text-[10px] font-black text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
-                      Your Circle
+                      {t("community.your_circle")}
                     </span>
                   )}
                 </div>
@@ -334,8 +337,8 @@ function NeighborhoodCirclesTab() {
 
       <div className="bg-card/50 border border-dashed border-border rounded-2xl p-4 text-center">
         <Globe className="w-6 h-6 text-primary/40 mx-auto mb-2" />
-        <div className="text-sm font-bold text-muted-foreground">Circle chat &amp; leaderboards coming soon</div>
-        <div className="text-xs text-muted-foreground/60 mt-1">Your neighborhood, your impact, your leaderboard</div>
+        <div className="text-sm font-bold text-muted-foreground">{t("community.circle_chat_amp_leaderboards_coming_soon")}</div>
+        <div className="text-xs text-muted-foreground/60 mt-1">{t("community.your_neighborhood_your_impact_your_leaderboard")}</div>
       </div>
     </div>
   );
@@ -362,16 +365,17 @@ const CAT_LABELS: Record<string, string> = {
 };
 
 function SkillsMarketplaceTab() {
+  const { t } = useTranslation();
   const [active, setActive] = useState<string | null>(null);
 
   return (
     <div className="space-y-4">
       <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
         <h3 className="font-black text-sm flex items-center gap-2 mb-1">
-          <Wrench className="w-4 h-4 text-primary" /> Skills Directory
+          <Wrench className="w-4 h-4 text-primary" /> {t("community.skills_directory")}
         </h3>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          Helpers tag their specialties so requesters find the right person. Skill-matched requests get dispatch priority.
+          {t("community.helpers_tag_their_specialties_so_requesters")}
         </p>
       </div>
 
@@ -410,7 +414,7 @@ function SkillsMarketplaceTab() {
                   <div className="text-xs text-muted-foreground">{skill.desc}</div>
                 </div>
               </div>
-              <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Helps With</div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">{t("community.helps_with")}</div>
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {skill.cats.map(cat => (
                   <span key={cat} className="text-[10px] font-bold bg-muted border border-border px-2 py-1 rounded-full">
@@ -419,7 +423,7 @@ function SkillsMarketplaceTab() {
                 ))}
               </div>
               <p className="text-[10px] text-muted-foreground leading-relaxed">
-                Add this skill in Profile → Settings to get matched with relevant requests automatically.
+                {t("community.add_this_skill_in_profile_settings")}
               </p>
             </motion.div>
           );
@@ -428,14 +432,15 @@ function SkillsMarketplaceTab() {
 
       <div className="bg-card/50 border border-dashed border-border rounded-2xl p-4 text-center">
         <Award className="w-5 h-5 text-primary/40 mx-auto mb-2" />
-        <div className="text-sm font-bold text-muted-foreground">Add skills in Profile Settings</div>
-        <div className="text-xs text-muted-foreground/60 mt-1">Skill-matched helpers get priority in dispatch</div>
+        <div className="text-sm font-bold text-muted-foreground">{t("community.add_skills_in_profile_settings")}</div>
+        <div className="text-xs text-muted-foreground/60 mt-1">{t("community.skillmatched_helpers_get_priority_in_dispatch")}</div>
       </div>
     </div>
   );
 }
 
 export default function CommunityScreen() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>("feed");
   const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
   const [posts, setPosts] = useState<GratitudePost[]>([]);
@@ -507,7 +512,7 @@ export default function CommunityScreen() {
     <div className="min-h-screen bg-background text-foreground flex flex-col pb-24">
       <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-xl border-b border-border p-4 pt-safe">
         <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2">
-          <Users className="w-5 h-5 text-primary" /> Community
+          <Users className="w-5 h-5 text-primary" /> {t("community.community")}
         </h1>
         <div className="flex gap-1 mt-3 overflow-x-auto pb-1 scrollbar-none">
           {tabs.map(t => (
@@ -531,7 +536,7 @@ export default function CommunityScreen() {
           <div className="space-y-4">
             {recentCompleted.length > 0 && (
               <div className="space-y-2">
-                <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2">Recent Help</h3>
+                <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2">{t("community.recent_help")}</h3>
                 {recentCompleted.slice(0, 3).map(req => (
                   <div key={req.id} className="bg-card border border-border rounded-xl p-3.5 flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
@@ -540,7 +545,7 @@ export default function CommunityScreen() {
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold truncate">{req.title}</div>
                       <div className="text-[10px] text-muted-foreground flex items-center gap-1">
-                        <span className="text-green-400 font-bold">✓ Completed</span>
+                        <span className="text-green-400 font-bold">{t("community.completed")}</span>
                         <span>·</span>
                         <span>{req.requester_name}</span>
                       </div>
@@ -549,7 +554,7 @@ export default function CommunityScreen() {
                 ))}
               </div>
             )}
-            <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Gratitude &amp; Stories</h3>
+            <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">{t("community.gratitude_amp_stories")}</h3>
             {postsLoading ? (
               <div className="flex justify-center items-center py-10">
                 <motion.div
@@ -563,8 +568,8 @@ export default function CommunityScreen() {
               <div className="flex flex-col items-center gap-3 py-10 text-center">
                 <Heart className="w-8 h-8 text-muted-foreground/30" />
                 <div className="text-sm text-muted-foreground leading-relaxed">
-                  No gratitude posts yet.<br />
-                  <span className="text-primary font-semibold">Complete a request</span> to add the first one!
+                  {t("community.no_gratitude_posts_yet")}<br />
+                  <span className="text-primary font-semibold">{t("community.complete_a_request")}</span> {t("community.to_add_the_first_one")}
                 </div>
               </div>
             ) : (
@@ -588,7 +593,7 @@ export default function CommunityScreen() {
                         <div className="text-[10px] text-muted-foreground flex items-center gap-1 flex-wrap">
                           {post.helper_name && (
                             <>
-                              <span className="text-primary font-medium">Thanks to {post.helper_name}</span>
+                              <span className="text-primary font-medium">{t("community.thanks_to")} {post.helper_name}</span>
                               <span>·</span>
                             </>
                           )}
@@ -633,16 +638,16 @@ export default function CommunityScreen() {
                 <DollarSign className="w-6 h-6 text-primary" />
               </div>
               <div className="text-center">
-                <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Community Pool</div>
+                <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{t("community.community_pool")}</div>
                 <div className="text-4xl font-black text-primary mt-1">${totalPledgeVolume.toFixed(2)}</div>
-                <div className="text-xs text-muted-foreground mt-1">Total paid forward by neighbors</div>
+                <div className="text-xs text-muted-foreground mt-1">{t("community.total_paid_forward_by_neighbors")}</div>
               </div>
 
               {/* Progress to milestone */}
               <div className="w-full">
                 <div className="flex justify-between text-[10px] text-muted-foreground mb-1.5">
-                  <span>Community milestone</span>
-                  <span className="font-bold text-primary">{poolPct}% to ${poolTarget}</span>
+                  <span>{t("community.community_milestone")}</span>
+                  <span className="font-bold text-primary">{poolPct}{t("community.to")}{poolTarget}</span>
                 </div>
                 <div className="h-2 bg-muted rounded-full overflow-hidden">
                   <motion.div
@@ -653,7 +658,7 @@ export default function CommunityScreen() {
                   />
                 </div>
                 <div className="text-[10px] text-muted-foreground mt-1.5 text-center">
-                  When we hit $500, we unlock the Emergency Assistance Reserve 🏦
+                  {t("community.when_we_hit_500_we_unlock")}
                 </div>
               </div>
             </motion.div>
@@ -661,7 +666,7 @@ export default function CommunityScreen() {
             {/* Pool breakdown */}
             <div className="bg-card border border-border rounded-2xl p-4 space-y-4">
               <h3 className="font-black text-sm flex items-center gap-2">
-                <Shield className="w-4 h-4 text-primary" /> How the Pool is Allocated
+                <Shield className="w-4 h-4 text-primary" /> {t("community.how_the_pool_is_allocated")}
               </h3>
               {FUND_POOLS.map((pool, i) => (
                 <motion.div
@@ -690,7 +695,7 @@ export default function CommunityScreen() {
             {/* How it works */}
             <div className="bg-card/50 border border-border/50 rounded-2xl p-4">
               <h3 className="font-bold text-sm mb-3 flex items-center gap-2">
-                <Heart className="w-4 h-4 text-primary" /> How Niakofa Works
+                <Heart className="w-4 h-4 text-primary" /> {t("community.how_niakofa_works")}
               </h3>
               <div className="space-y-3">
                 {[
@@ -715,9 +720,9 @@ export default function CommunityScreen() {
               <div className="flex items-start gap-3">
                 <Sparkles className="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
                 <div>
-                  <div className="font-bold text-sm text-yellow-400">Sponsor a Neighbor</div>
+                  <div className="font-bold text-sm text-yellow-400">{t("community.sponsor_a_neighbor")}</div>
                   <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                    Businesses and individuals can sponsor the community pool directly. Coming soon.
+                    {t("community.businesses_and_individuals_can_sponsor_the")}
                   </p>
                 </div>
               </div>
@@ -740,7 +745,7 @@ export default function CommunityScreen() {
                 <div className="text-3xl font-black text-primary">
                   {stats ? stats.total_completed.toLocaleString() : "—"}
                 </div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Requests Fulfilled</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">{t("community.requests_fulfilled")}</div>
               </div>
               <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
                 <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
@@ -749,7 +754,7 @@ export default function CommunityScreen() {
                 <div className="text-3xl font-black text-green-400">
                   {stats ? stats.total_helpers_online : "—"}
                 </div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Active Helpers</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">{t("community.active_helpers")}</div>
               </div>
               <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
                 <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
@@ -758,7 +763,7 @@ export default function CommunityScreen() {
                 <div className="text-3xl font-black text-yellow-400">
                   {stats ? stats.total_open : "—"}
                 </div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Open Requests</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">{t("community.open_requests")}</div>
               </div>
               <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
                 <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
@@ -767,14 +772,14 @@ export default function CommunityScreen() {
                 <div className="text-3xl font-black text-primary">
                   ${stats?.total_pledge_volume?.toFixed(0) ?? "0"}
                 </div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Paid Forward</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">{t("community.paid_forward")}</div>
               </div>
             </div>
 
             {stats && stats.requests_by_category.length > 0 && (
               <div className="bg-card border border-border rounded-2xl p-4">
                 <h3 className="font-black text-sm mb-3 flex items-center gap-2">
-                  <Star className="w-4 h-4 text-yellow-400" /> By Category
+                  <Star className="w-4 h-4 text-yellow-400" /> {t("community.by_category")}
                 </h3>
                 <div className="space-y-2">
                   {[...stats.requests_by_category]
@@ -799,9 +804,9 @@ export default function CommunityScreen() {
             )}
 
             <div className="bg-gradient-to-br from-primary/20 to-background border border-primary/30 rounded-2xl p-5">
-              <h3 className="font-black text-base mb-2">About Niakofa</h3>
+              <h3 className="font-black text-base mb-2">{t("community.about_niakofa")}</h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                This isn't charity — it's neighbors helping neighbors. Every act of help strengthens our community network. When you're able, give back. When you need help, ask. That's how communities thrive.
+                {t("community.this_isnt_charity_its_neighbors_helping")}
               </p>
               <div className="mt-4 space-y-2">
                 {[
