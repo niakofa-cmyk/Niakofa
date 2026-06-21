@@ -10,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, Activity, Star, MapPin, Clock, Heart, Award, Wrench, Zap, Filter } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 
 const CATEGORY_LABELS: Record<string, string> = {
   groceries: "🛒 Groceries", transportation: "🚗 Transportation", errands: "📦 Errands",
@@ -41,6 +42,7 @@ const ALL_SKILLS = [
 type FilterKey = "all" | "emergency" | "near";
 
 export default function HelperDashboardScreen() {
+  const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { currentUser, helperModeActive, myLocation } = useAppContext();
   const queryClient = useQueryClient();
@@ -70,7 +72,7 @@ export default function HelperDashboardScreen() {
             <button onClick={() => setLocation("/")} className="p-2 rounded-xl hover:bg-muted transition-colors">
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <h1 className="text-lg font-black">Helper Dashboard</h1>
+            <h1 className="text-lg font-black">{t("helper_dashboard.helper_dashboard")}</h1>
           </div>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center p-8 gap-5 text-center max-w-sm mx-auto">
@@ -80,15 +82,15 @@ export default function HelperDashboardScreen() {
                 <Clock className="w-10 h-10 text-yellow-400" />
               </div>
               <div>
-                <h2 className="text-xl font-black mb-2">Application Under Review</h2>
+                <h2 className="text-xl font-black mb-2">{t("helper_dashboard.application_under_review")}</h2>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  Your helper application is pending admin review. You'll be notified once it's approved. Thank you for your patience!
+                  {t("helper_dashboard.your_helper_application_is_pending_admin")}
                 </p>
               </div>
               <div className="w-full bg-card border border-yellow-500/20 rounded-2xl p-4 text-left">
-                <div className="text-[10px] font-black uppercase tracking-wider text-yellow-400 mb-1">Status</div>
-                <div className="text-sm font-bold text-yellow-300">Pending Admin Review</div>
-                <div className="text-xs text-muted-foreground mt-1">Applications are typically reviewed within 1–2 business days.</div>
+                <div className="text-[10px] font-black uppercase tracking-wider text-yellow-400 mb-1">{t("helper_dashboard.status")}</div>
+                <div className="text-sm font-bold text-yellow-300">{t("helper_dashboard.pending_admin_review")}</div>
+                <div className="text-xs text-muted-foreground mt-1">{t("helper_dashboard.applications_are_typically_reviewed_within_12")}</div>
               </div>
             </>
           ) : helperStatus === "denied" ? (
@@ -97,9 +99,9 @@ export default function HelperDashboardScreen() {
                 <Award className="w-10 h-10 text-destructive" />
               </div>
               <div>
-                <h2 className="text-xl font-black mb-2">Application Not Approved</h2>
+                <h2 className="text-xl font-black mb-2">{t("helper_dashboard.application_not_approved")}</h2>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  Your helper application was not approved at this time. Contact us at help@niakofa.community if you have questions.
+                  {t("helper_dashboard.your_helper_application_was_not_approved")}
                 </p>
               </div>
             </>
@@ -109,16 +111,16 @@ export default function HelperDashboardScreen() {
                 <Heart className="w-10 h-10 text-primary" />
               </div>
               <div>
-                <h2 className="text-xl font-black mb-2">Become a Helper</h2>
+                <h2 className="text-xl font-black mb-2">{t("helper_dashboard.become_a_helper")}</h2>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  Apply to become a verified Niakofa helper. You'll be able to accept requests and earn goodwill from your community.
+                  {t("helper_dashboard.apply_to_become_a_verified_niakofa")}
                 </p>
               </div>
               <button
                 onClick={() => setLocation("/login")}
                 className="w-full bg-primary text-primary-foreground font-black py-3 rounded-2xl transition-all active:scale-[0.98]"
               >
-                Apply as Helper
+                {t("helper_dashboard.apply_as_helper")}
               </button>
             </>
           )}
@@ -147,10 +149,10 @@ export default function HelperDashboardScreen() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
-          toast({ title: "Request claimed!", description: `Heading to "${req.title}"` });
+          toast({ title: t("helper_dashboard.request_claimed"), description: `Heading to "${req.title}"` });
           setLocation(`/request/${req.id}`);
         },
-        onError: () => toast({ title: "Failed to claim", variant: "destructive" }),
+        onError: () => toast({ title: t("helper_dashboard.failed_to_claim"), variant: "destructive" }),
       }
     );
   };
@@ -164,15 +166,15 @@ export default function HelperDashboardScreen() {
           </button>
           <div className="flex-1">
             <h1 className="text-lg font-black flex items-center gap-2">
-              Helper Dashboard
+              {t("helper_dashboard.helper_dashboard_2")}
               {helperModeActive && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
             </h1>
-            <p className="text-xs text-muted-foreground">{openNearby.length} open requests nearby</p>
+            <p className="text-xs text-muted-foreground">{openNearby.length} {t("helper_dashboard.open_requests_nearby")}</p>
           </div>
           {isAnchor && (
             <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-full">
               <span className="text-sm">⚓</span>
-              <span className="text-xs font-black text-amber-400">Anchor</span>
+              <span className="text-xs font-black text-amber-400">{t("helper_dashboard.anchor")}</span>
             </div>
           )}
         </div>
@@ -184,12 +186,12 @@ export default function HelperDashboardScreen() {
           <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
             <Heart className="w-4 h-4 text-primary mb-1" />
             <div className="text-2xl font-black text-primary">{helpCount}</div>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Completed</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{t("helper_dashboard.completed")}</div>
           </div>
           <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
             <Star className="w-4 h-4 text-yellow-400 mb-1" />
             <div className="text-2xl font-black text-yellow-400">{trustScore.toFixed(0)}%</div>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Trust Score</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{t("helper_dashboard.trust_score")}</div>
           </div>
           <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
             <Activity className="w-4 h-4 text-green-400 mb-1" />
@@ -197,7 +199,7 @@ export default function HelperDashboardScreen() {
                 Real earnings from Stripe transfers are tracked separately in transactions (type: "earned").
                 Labeling this as "Earned" is misleading — renamed to "Goodwill Fund". */}
             <div className="text-2xl font-black text-green-400">${(currentUser.benevolence_wallet ?? 0).toFixed(0)}</div>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Goodwill Fund</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{t("helper_dashboard.goodwill_fund")}</div>
           </div>
         </div>
 
@@ -205,7 +207,7 @@ export default function HelperDashboardScreen() {
         {(((currentUser as unknown as { specialties?: string[] }).specialties)?.length ?? 0) > 0 && (
           <div className="bg-card border border-border rounded-2xl p-4">
             <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
-              <Wrench className="w-3.5 h-3.5 text-primary" /> Your Skills
+              <Wrench className="w-3.5 h-3.5 text-primary" /> {t("helper_dashboard.your_skills")}
             </h3>
             <div className="flex flex-wrap gap-2">
               {((currentUser as unknown as { specialties?: string[] }).specialties ?? []).map(skill => {
@@ -224,7 +226,7 @@ export default function HelperDashboardScreen() {
         {myActiveRequests.length > 0 && (
           <div className="bg-card border border-primary/30 rounded-2xl p-4">
             <h3 className="text-xs font-black uppercase tracking-widest text-primary mb-3 flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5" /> Active Claims
+              <Zap className="w-3.5 h-3.5" /> {t("helper_dashboard.active_claims")}
             </h3>
             <div className="space-y-2">
               {myActiveRequests.map(req => (
@@ -239,7 +241,7 @@ export default function HelperDashboardScreen() {
                       {req.urgency}
                     </span>
                     <span>{CATEGORY_LABELS[req.category ?? "other"] ?? req.category}</span>
-                    {req.distance_miles != null && <span>· {req.distance_miles.toFixed(1)} mi</span>}
+                    {req.distance_miles != null && <span>· {req.distance_miles.toFixed(1)} {t("helper_dashboard.mi")}</span>}
                   </div>
                 </button>
               ))}
@@ -251,7 +253,7 @@ export default function HelperDashboardScreen() {
         <div className="bg-card border border-border rounded-2xl p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-              <MapPin className="w-3.5 h-3.5 text-primary" /> Nearby Queue ({filtered.length})
+              <MapPin className="w-3.5 h-3.5 text-primary" /> {t("helper_dashboard.nearby_queue")}{filtered.length})
             </h3>
             <Filter className="w-3.5 h-3.5 text-muted-foreground" />
           </div>
@@ -277,7 +279,7 @@ export default function HelperDashboardScreen() {
           {filtered.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <MapPin className="w-6 h-6 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No requests match this filter</p>
+              <p className="text-sm">{t("helper_dashboard.no_requests_match_this_filter")}</p>
             </div>
           ) : (
             <AnimatePresence initial={false}>
@@ -301,13 +303,13 @@ export default function HelperDashboardScreen() {
                           {req.urgency}
                         </span>
                         <span>{CATEGORY_LABELS[req.category ?? "other"] ?? req.category}</span>
-                        {req.distance_miles != null && <span>· {req.distance_miles.toFixed(1)} mi</span>}
+                        {req.distance_miles != null && <span>· {req.distance_miles.toFixed(1)} {t("helper_dashboard.mi_2")}</span>}
                         {req.requester_name && <span>· {req.requester_name}</span>}
                       </div>
                       {req.created_at && (
                         <div className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground">
                           <Clock className="w-3 h-3" />
-                          {Math.round((Date.now() - new Date(req.created_at).getTime()) / 60000)} min ago
+                          {Math.round((Date.now() - new Date(req.created_at).getTime()) / 60000)} {t("helper_dashboard.min_ago")}
                         </div>
                       )}
                     </div>
@@ -317,7 +319,7 @@ export default function HelperDashboardScreen() {
                         disabled={claimMutation.isPending}
                         className="shrink-0 bg-primary text-primary-foreground text-xs font-black px-3 py-1.5 rounded-xl disabled:opacity-50 active:scale-95 transition-all"
                       >
-                        Claim
+                        {t("helper_dashboard.claim")}
                       </button>
                     )}
                   </div>
@@ -333,24 +335,24 @@ export default function HelperDashboardScreen() {
             <div className="flex items-center gap-2 mb-2">
               <span className="text-2xl">⚓</span>
               <div>
-                <div className="font-black text-sm text-amber-400">You're an Anchor Helper</div>
-                <div className="text-xs text-muted-foreground">Top pillar of the Niakofa community</div>
+                <div className="font-black text-sm text-amber-400">{t("helper_dashboard.youre_an_anchor_helper")}</div>
+                <div className="text-xs text-muted-foreground">{t("helper_dashboard.top_pillar_of_the_niakofa_community")}</div>
               </div>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Anchor Helpers are the backbone of Niakofa. New helpers in your area look to you as an informal mentor. Your consistency and high trust score make this community stronger every day.
+              {t("helper_dashboard.anchor_helpers_are_the_backbone_of")}
             </p>
           </div>
         ) : (
           <div className="bg-card border border-border rounded-2xl p-4">
             <div className="flex items-center gap-2 mb-3">
               <Award className="w-4 h-4 text-primary" />
-              <div className="font-bold text-sm">Path to Anchor Helper ⚓</div>
+              <div className="font-bold text-sm">{t("helper_dashboard.path_to_anchor_helper")}</div>
             </div>
             <div className="space-y-3">
               <div>
                 <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-muted-foreground">Helps completed</span>
+                  <span className="text-muted-foreground">{t("helper_dashboard.helps_completed")}</span>
                   <span className="font-bold">{helpCount} / 50</span>
                 </div>
                 <div className="h-1.5 bg-muted rounded-full overflow-hidden">
@@ -359,7 +361,7 @@ export default function HelperDashboardScreen() {
               </div>
               <div>
                 <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-muted-foreground">Trust score</span>
+                  <span className="text-muted-foreground">{t("helper_dashboard.trust_score_2")}</span>
                   <span className="font-bold">{trustScore.toFixed(0)}% / 97%</span>
                 </div>
                 <div className="h-1.5 bg-muted rounded-full overflow-hidden">
