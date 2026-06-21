@@ -73,6 +73,7 @@ autoInstallPeers: false
 dangerouslyAllowAllBuilds: true
 
 overrides:
+  "js-yaml": "^4.2.0"
   # pin ioredis to a single version to avoid BullMQ type conflicts
   "ioredis": "^5.6.0"
   # replit uses linux-x64 only, we can exclude all other platforms
