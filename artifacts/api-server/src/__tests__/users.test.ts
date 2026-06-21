@@ -11,11 +11,12 @@
  *
  * DB interactions are mocked so no real Postgres connection is needed.
  */
+import { jest } from "@jest/globals";
 import request from "supertest";
 import express, { Express } from "express";
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
-jest.mock("@workspace/db", () => {
+jest.unstable_mockModule("@workspace/db", () => {
   const mockDb: Record<string, unknown> = {
     select: jest.fn().mockReturnThis(),
     update: jest.fn().mockReturnThis(),
@@ -41,26 +42,42 @@ jest.mock("@workspace/db", () => {
     paymentTransactionsTable: {},
     scheduledPaymentsTable: {},
     userSettingsTable: {},
+    pushSubscriptionsTable: {},
+    recurringRequestsTable: {},
+    ratingsTable: {},
+    gratitudeLikesTable: {},
+    gratitudePostsTable: {},
+    chatMessagesTable: {},
+    reportsTable: {},
+    passwordResetCodesTable: {},
   };
 });
 
-jest.mock("drizzle-orm", () => ({
+jest.unstable_mockModule("drizzle-orm", () => ({
   eq: jest.fn(),
   and: jest.fn(),
+  or: jest.fn(),
   sql: jest.fn(),
   inArray: jest.fn(),
+  lte: jest.fn(),
 }));
 
-jest.mock("../lib/ws-hub.js", () => ({
+jest.unstable_mockModule("../lib/ws-hub.js", () => ({
   broadcast: jest.fn(),
+  broadcastToAdmins: jest.fn(),
+  sendToUser: jest.fn(),
 }));
 
-jest.mock("../lib/queue.js", () => ({
+jest.unstable_mockModule("../lib/queue.js", () => ({
   enqueuePayoutRetry: jest.fn().mockResolvedValue(undefined),
+  getRedisConnection: jest.fn(() => null),
 }));
 
-jest.mock("../lib/mailer.js", () => ({
+jest.unstable_mockModule("../lib/mailer.js", () => ({
   sendReceipt: jest.fn().mockResolvedValue(undefined),
+  sendAlertEmail: jest.fn().mockResolvedValue(undefined),
+  sendHelperApplicationDecision: jest.fn().mockResolvedValue(undefined),
+  sendTipNotification: jest.fn().mockResolvedValue(undefined),
 }));
 
 // ── App setup ─────────────────────────────────────────────────────────────────
@@ -76,16 +93,20 @@ beforeAll(async () => {
 // ── Reset mocks between tests ─────────────────────────────────────────────────
 beforeEach(async () => {
   const { db } = await import("@workspace/db");
-  (db.select as jest.Mock).mockClear().mockReturnThis();
-  (db.update as jest.Mock).mockClear().mockReturnThis();
-  (db.insert as jest.Mock).mockClear().mockReturnThis();
-  (db.delete as jest.Mock).mockClear().mockReturnThis();
-  (db.from as jest.Mock).mockClear().mockReturnThis();
-  (db.where as jest.Mock).mockClear().mockReturnThis();
-  (db.set as jest.Mock).mockClear().mockReturnThis();
-  (db.values as jest.Mock).mockClear().mockReturnThis();
-  (db.limit as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
-  (db.returning as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
+  // mockReset (not mockClear) -- clears any leftover queued
+  // mockResolvedValueOnce() values from a previous test, which would
+  // otherwise leak into this test's first call (test-isolation bug).
+  (db.select as jest.Mock).mockReset().mockReturnThis();
+  (db.update as jest.Mock).mockReset().mockReturnThis();
+  (db.insert as jest.Mock).mockReset().mockReturnThis();
+  (db.delete as jest.Mock).mockReset().mockReturnThis();
+  (db.from as jest.Mock).mockReset().mockReturnThis();
+  (db.where as jest.Mock).mockReset().mockReturnThis();
+  (db.set as jest.Mock).mockReset().mockReturnThis();
+  (db.values as jest.Mock).mockReset().mockReturnThis();
+  (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
+  (db.returning as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
+  (db.orderBy as jest.Mock).mockReset().mockReturnThis();
 });
 
 // ── Registration tests ────────────────────────────────────────────────────────
@@ -140,22 +161,13 @@ describe("POST /api/users/register", () => {
     expect(res.body.user.password_hash).toBeUndefined();
   });
 
-  it("registers successfully without a password (legacy/no-password account)", async () => {
-    const { db } = await import("@workspace/db");
-    (db.limit as jest.Mock).mockResolvedValueOnce([]);
-    (db.returning as jest.Mock).mockResolvedValueOnce([{
-      id: 43, name: "Legacy User", email: "legacy@example.com",
-      is_helper: false, trust_score: 50, help_count: 0, benevolence_wallet: 0,
-      password_hash: null,
-    }]);
-
+  it("rejects registration with no password (BUG-001: no-password accounts are no longer created)", async () => {
     const res = await request(app)
       .post("/api/users/register")
       .send({ name: "Legacy User", email: "legacy@example.com" });
 
-    expect(res.status).toBe(201);
-    expect(res.body.user).toBeDefined();
-    expect(res.body.token).toBeDefined();
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/password is required/i);
   });
 });
 
@@ -208,7 +220,7 @@ describe("POST /api/users/login", () => {
     expect(res.body.error).toMatch(/incorrect password/i);
   });
 
-  it("returns 200 with password_reset_required for legacy accounts", async () => {
+  it("returns 403 LEGACY_PASSWORD_REQUIRED for legacy (no-password) accounts", async () => {
     const { db } = await import("@workspace/db");
     // Legacy account — no password_hash
     (db.limit as jest.Mock).mockResolvedValueOnce([{
@@ -220,9 +232,8 @@ describe("POST /api/users/login", () => {
       .post("/api/users/login")
       .send({ email: "legacy@example.com", password: "anything" });
 
-    expect(res.status).toBe(200);
-    expect(res.body.password_reset_required).toBe(true);
-    expect(res.body.token).toBeDefined();
-    expect(res.body.user.id).toBe(5);
+    expect(res.status).toBe(403);
+    expect(res.body.error_code).toBe("LEGACY_PASSWORD_REQUIRED");
+    expect(res.body.user_id).toBe(5);
   });
 });

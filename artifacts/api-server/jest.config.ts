@@ -19,6 +19,7 @@ const config: Config = {
       },
     ],
   },
+  setupFiles: ["<rootDir>/jest.setup.ts"],
   testMatch: ["**/__tests__/**/*.test.ts"],
   testTimeout: 15000,
 };

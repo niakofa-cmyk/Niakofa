@@ -8,7 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --experimental-vm-modules node_modules/.bin/jest --passWithNoTests"
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --passWithNoTests"
   },
   "dependencies": {
     "@workspace/api-spec": "workspace:*",

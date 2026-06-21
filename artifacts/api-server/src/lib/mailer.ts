@@ -18,7 +18,7 @@ const transporter = nodemailer.createTransport({
 // the Niakofa address — an HTML/phishing-link injection risk. This escapes
 // the characters that matter for both HTML text content and double-quoted
 // attribute contexts (e.g. href="...").
-function escapeHtml(input: string): string {
+export function escapeHtml(input: string): string {
   return input
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -29,7 +29,7 @@ function escapeHtml(input: string): string {
 
 // Email subjects become SMTP headers — strip CR/LF so user content can't
 // inject extra headers into the message.
-function sanitizeHeaderValue(input: string): string {
+export function sanitizeHeaderValue(input: string): string {
   return input.replace(/[\r\n]+/g, " ").trim();
 }
 
