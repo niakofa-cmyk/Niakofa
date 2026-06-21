@@ -44,7 +44,7 @@ const formSchema = z.object({
   category: z.enum([
     "groceries", "transportation", "errands", "home_repair", "medical", "emergency",
     "stock_shelves", "event_setup", "delivery_run", "tech_support", "other",
-  ] as [string, ...string[]]),
+  ]),
   urgency: z.enum(["low", "medium", "high", "emergency"]),
   pay_it_forward_amount: z.number().optional(),
   pledge_amount: z.number().optional(),
@@ -133,7 +133,7 @@ export default function NewRequestScreen() {
         form.reset({
           title:       String(vals.title ?? ""),
           description: String(vals.description ?? ""),
-          category:    String(vals.category ?? "other"),
+          category:    (vals.category as typeof formSchema.shape.category._def.values[number]) ?? "other",
           urgency:     (vals.urgency as "low" | "medium" | "high" | "emergency") ?? "medium",
         });
         toast({ title: "✏️ Draft restored", description: "Your previous unfinished request has been loaded." });
@@ -194,9 +194,8 @@ export default function NewRequestScreen() {
       data: {
         title: values.title,
         description: fullDescription || undefined,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        category: values.category as any,
-        urgency: values.urgency as any,
+        category: values.category,
+        urgency: values.urgency,
         payment_type: paymentType,
         requester_id: currentUser.id,
         lat: pinLocation.lat,

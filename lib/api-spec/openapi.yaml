@@ -935,6 +935,10 @@ components:
         goodwill_score:
           type: integer
           description: Community reputation score
+        identity_verified:
+          type: boolean
+        background_check_status:
+          type: ["string", "null"]
         created_at:
           type: string
 

@@ -216,7 +216,7 @@ export function TopBar() {
           </button>
 
           {(() => {
-            const helperStatus = (currentUser as any)?.helper_status as string | null | undefined;
+            const helperStatus = currentUser?.helper_status;
             const isApproved = helperStatus === "approved";
             const isPending = helperStatus === "pending";
             if (isPending) {

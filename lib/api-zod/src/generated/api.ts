@@ -44,6 +44,8 @@ export const GetUserResponse = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
+  "identity_verified": zod.boolean().optional(),
+  "background_check_status": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 
@@ -86,6 +88,8 @@ export const UpdateUserResponse = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
+  "identity_verified": zod.boolean().optional(),
+  "background_check_status": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 
@@ -125,6 +129,8 @@ export const UpdateUserLocationResponse = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
+  "identity_verified": zod.boolean().optional(),
+  "background_check_status": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 
@@ -161,6 +167,8 @@ export const UpdateHelperModeResponse = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
+  "identity_verified": zod.boolean().optional(),
+  "background_check_status": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 
@@ -247,6 +255,8 @@ export const RegisterUserResponse = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
+  "identity_verified": zod.boolean().optional(),
+  "background_check_status": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 
@@ -1016,6 +1026,8 @@ export const SubmitHelperApplicationResponse = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
+  "identity_verified": zod.boolean().optional(),
+  "background_check_status": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 
@@ -1048,6 +1060,8 @@ export const GetHelperApplicationsResponseItem = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
+  "identity_verified": zod.boolean().optional(),
+  "background_check_status": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 export const GetHelperApplicationsResponse = zod.array(GetHelperApplicationsResponseItem)
@@ -1086,6 +1100,8 @@ export const ReviewHelperApplicationResponse = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
+  "identity_verified": zod.boolean().optional(),
+  "background_check_status": zod.string().nullish(),
   "created_at": zod.string().optional()
 })
 
@@ -1222,6 +1238,8 @@ export const SetInitialPasswordResponse = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
+  "identity_verified": zod.boolean().optional(),
+  "background_check_status": zod.string().nullish(),
   "created_at": zod.string().optional()
 }),
   "token": zod.string()

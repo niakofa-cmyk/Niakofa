@@ -93,7 +93,7 @@ export default function HelperProfileScreen() {
     <div className="min-h-[100dvh] bg-background">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-md border-b border-border px-4 py-3 flex items-center gap-3 pt-safe">
-        <Button variant="ghost" size="icon" onClick={() => setLocation(-1 as any)} className="rounded-full shrink-0" aria-label="Go back">
+        <Button variant="ghost" size="icon" onClick={() => window.history.back()} className="rounded-full shrink-0" aria-label="Go back">
           <ChevronLeft className="w-5 h-5" />
         </Button>
         <span className="font-black text-base truncate">{helper.name}</span>

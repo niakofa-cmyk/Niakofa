@@ -61,7 +61,7 @@ export default function HelperDashboardScreen() {
   if (!currentUser) return null;
 
   // Gate: only approved helpers can access the dashboard
-  const helperStatus = (currentUser as any).helper_status as string | null | undefined;
+  const helperStatus = currentUser.helper_status;
   if (helperStatus !== "approved") {
     return (
       <div className="min-h-screen bg-background text-foreground flex flex-col">

@@ -896,14 +896,14 @@ router.get("/admin/helper-applications", requireAuth, requireAdmin(), async (req
     identity_verified: usersTable.identity_verified,
     created_at: usersTable.created_at,
     updated_at: usersTable.updated_at,
-  }).from(usersTable);
+  }).from(usersTable).$dynamic();
 
   const limit = Math.min(parseInt(req.query.limit as string) || 200, 200);
   const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
 
   const rows = filterStatus
-    ? await (query as any).where(eq(usersTable.helper_status, filterStatus)).limit(limit).offset(offset)
-    : await (query as any).where(sql`${usersTable.helper_status} IS NOT NULL`).limit(limit).offset(offset);
+    ? await query.where(eq(usersTable.helper_status, filterStatus)).limit(limit).offset(offset)
+    : await query.where(sql`${usersTable.helper_status} IS NOT NULL`).limit(limit).offset(offset);
 
   return res.json(rows);
 });
@@ -982,7 +982,7 @@ router.get("/admin/account-applications", requireAuth, requireAdmin(), async (re
     identity_verified: usersTable.identity_verified,
     created_at: usersTable.created_at,
     updated_at: usersTable.updated_at,
-  }).from(usersTable);
+  }).from(usersTable).$dynamic();
 
   const conditions = [];
   if (filterStatus) conditions.push(eq(usersTable.approval_status, filterStatus));
@@ -992,8 +992,8 @@ router.get("/admin/account-applications", requireAuth, requireAdmin(), async (re
   const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
 
   const rows = conditions.length > 0
-    ? await (query as any).where(and(...conditions)).orderBy(sql`${usersTable.created_at} DESC`).limit(limit).offset(offset)
-    : await (query as any).orderBy(sql`${usersTable.created_at} DESC`).limit(limit).offset(offset);
+    ? await query.where(and(...conditions)).orderBy(sql`${usersTable.created_at} DESC`).limit(limit).offset(offset)
+    : await query.orderBy(sql`${usersTable.created_at} DESC`).limit(limit).offset(offset);
 
   return res.json(rows);
 });

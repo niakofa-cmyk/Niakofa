@@ -51,5 +51,8 @@ export interface User {
   benevolence_wallet: number;
   /** Community reputation score */
   goodwill_score: number;
+  identity_verified?: boolean;
+  /** @nullable */
+  background_check_status?: string | null;
   created_at?: string;
 }
