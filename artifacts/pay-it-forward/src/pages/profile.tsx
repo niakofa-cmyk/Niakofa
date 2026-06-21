@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { usePushNotifications } from "@/lib/usePushNotifications";
+import { authHeaders } from "@/lib/auth";
 import {
   User as UserIcon, Shield, MapPin, Settings, Wallet, Heart, Star,
   DollarSign, Gift, Clock, ChevronRight, AlertCircle, CheckCircle2,
@@ -131,7 +132,7 @@ function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId:
                 const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
                 const res = await fetch(`${base}/api/users/${userId}`, {
                   method: "DELETE",
-                  headers: { "Content-Type": "application/json" },
+                  headers: { "Content-Type": "application/json", ...authHeaders() },
                 });
                 if (!res.ok) {
                   const err = await res.json() as { error?: string };
@@ -159,7 +160,7 @@ function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId:
 
 async function fetchSettings(userId: number) {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-  const res = await fetch(`${base}/api/users/${userId}/settings`);
+  const res = await fetch(`${base}/api/users/${userId}/settings`, { headers: authHeaders() });
   if (!res.ok) return null;
   return res.json();
 }
@@ -168,7 +169,7 @@ async function saveSettings(userId: number, updates: Record<string, boolean | nu
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   const res = await fetch(`${base}/api/users/${userId}/settings`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(updates),
   });
   if (!res.ok) throw new Error("Failed to save settings");

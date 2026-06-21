@@ -9,6 +9,7 @@ import { KindnessImpactRing } from "@/components/KindnessImpactRing";
 import { PayItForwardBadge } from "@/components/PayItForwardBadge";
 import { RepaymentSchedulerModal } from "@/components/RepaymentSchedulerModal";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
+import { authHeaders } from "@/lib/auth";
 import {
   useMakePledgePayment,
   useGetUserTransactions,
@@ -56,6 +57,7 @@ async function cancelScheduledPaymentFetch(userId: number, paymentId: number): P
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   const res = await fetch(`${base}/api/users/${userId}/scheduled-payment/${paymentId}`, {
     method: "DELETE",
+    headers: authHeaders(),
   });
   if (!res.ok) throw new Error("Failed to cancel scheduled payment");
 }
@@ -112,7 +114,7 @@ export default function WalletScreen() {
   useEffect(() => {
     if (!currentUser?.is_helper || !userId) return;
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-    fetch(`${base}/api/stripe/connect/status/${userId}`)
+    fetch(`${base}/api/stripe/connect/status/${userId}`, { headers: authHeaders() })
       .then(r => r.json())
       .then(setStripeStatus)
       .catch(() => setStripeStatus({ connected: false }));
@@ -125,7 +127,7 @@ export default function WalletScreen() {
       const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
       const res = await fetch(`${base}/api/stripe/connect/onboard`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ userId: currentUser.id }),
       });
       if (!res.ok) {
@@ -189,7 +191,7 @@ export default function WalletScreen() {
         const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
         const res = await fetch(`${base}/api/stripe/payment-intent`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify({
             requestId: selectedRequest.id,
             amount: amt,
@@ -265,7 +267,7 @@ export default function WalletScreen() {
         const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
         const res = await fetch(`${base}/api/stripe/payment-intent`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify({
             requestId: reqId,
             amount: amt,

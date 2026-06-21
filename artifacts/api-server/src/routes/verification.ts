@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
 import { db, usersTable, reportsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import Stripe from "stripe";
 import { logger } from "../lib/logger";
 import { sendSms } from "../lib/sms";
@@ -61,11 +61,15 @@ router.post("/verification/identity/webhook", async (req, res) => {
     const session = event.data.object as Stripe.Identity.VerificationSession;
     const userId = parseInt(session.metadata?.user_id ?? "0");
     if (userId) {
+      // Boost new users toward a baseline of 95 on verification, but never
+      // lower an already-higher, earned trust_score (e.g. 100 after many
+      // completed requests). Previously this unconditionally overwrote the
+      // score, damaging established helpers' standing on verification.
       await db.update(usersTable)
         .set({
           identity_verified: true,
           identity_verification_status: "verified",
-          trust_score: 95,
+          trust_score: sql`GREATEST(${usersTable.trust_score}, 95)`,
         })
         .where(eq(usersTable.id, userId));
 
