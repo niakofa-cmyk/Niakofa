@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { useAppContext } from "@/lib/AppContext";
+import { useTranslation } from "react-i18next";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -92,6 +93,7 @@ function categoryLabel(cat: string) {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function RecurringScreen() {
+  const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { currentUser } = useAppContext();
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -117,7 +119,7 @@ export default function RecurringScreen() {
       const data = await res.json() as RecurringRequest[];
       setSubscriptions(Array.isArray(data) ? data : []);
     } catch {
-      toast({ title: "Couldn't load recurring requests", variant: "destructive" });
+      toast({ title: t("recurring.couldnt_load_recurring_requests"), variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -137,7 +139,7 @@ export default function RecurringScreen() {
       setSubscriptions(prev => prev.map(s => s.id === id ? { ...s, active } : s));
       toast({ title: active ? "▶ Recurring request resumed" : "⏸ Recurring request paused" });
     } catch {
-      toast({ title: "Action failed", variant: "destructive" });
+      toast({ title: t("recurring.action_failed"), variant: "destructive" });
     } finally {
       setActionLoading(null);
     }
@@ -153,9 +155,9 @@ export default function RecurringScreen() {
       if (!res.ok) throw new Error("Failed");
       setSubscriptions(prev => prev.filter(s => s.id !== id));
       setDeleteConfirm(null);
-      toast({ title: "Recurring request removed" });
+      toast({ title: t("recurring.recurring_request_removed") });
     } catch {
-      toast({ title: "Delete failed", variant: "destructive" });
+      toast({ title: t("recurring.delete_failed"), variant: "destructive" });
     } finally {
       setActionLoading(null);
     }
@@ -169,20 +171,20 @@ export default function RecurringScreen() {
       {/* Header */}
       <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-xl border-b border-border">
         <div className="flex items-center gap-3 px-4 py-3" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}>
-          <Button variant="ghost" size="icon" onClick={() => setLocation("/wallet")} className="rounded-full shrink-0 -ml-1" aria-label="Back to wallet">
+          <Button variant="ghost" size="icon" onClick={() => setLocation("/wallet")} className="rounded-full shrink-0 -ml-1" aria-label={t("recurring.back_to_wallet")}>
             <ChevronLeft className="w-5 h-5" />
           </Button>
           <div className="flex-1">
-            <h1 className="font-black text-base">Recurring Requests</h1>
-            <p className="text-[10px] text-muted-foreground">Auto-post help requests on a schedule</p>
+            <h1 className="font-black text-base">{t("recurring.recurring_requests")}</h1>
+            <p className="text-[10px] text-muted-foreground">{t("recurring.autopost_help_requests_on_a_schedule")}</p>
           </div>
           <button
             onClick={() => setShowCreate(true)}
             className="flex items-center gap-1.5 bg-primary text-primary-foreground px-3 py-1.5 rounded-xl text-xs font-black transition-all active:scale-95"
-            aria-label="Create new recurring request"
+            aria-label={t("recurring.create_new_recurring_request")}
           >
             <Plus className="w-3.5 h-3.5" />
-            New
+            {t("recurring.new")}
           </button>
         </div>
       </div>
@@ -192,7 +194,7 @@ export default function RecurringScreen() {
         {loading ? (
           <div className="flex items-center justify-center py-20 gap-2 text-muted-foreground">
             <RefreshCw className="w-5 h-5 animate-spin" />
-            <span className="text-sm">Loading…</span>
+            <span className="text-sm">{t("recurring.loading")}</span>
           </div>
         ) : subscriptions.length === 0 ? (
           <EmptyState onCreate={() => setShowCreate(true)} />
@@ -201,7 +203,7 @@ export default function RecurringScreen() {
             {active.length > 0 && (
               <section className="space-y-3">
                 <div className="text-[10px] font-black uppercase tracking-wider text-primary">
-                  Active · {active.length}
+                  {t("recurring.active")} {active.length}
                 </div>
                 {active.map(s => (
                   <SubscriptionCard
@@ -218,7 +220,7 @@ export default function RecurringScreen() {
             {paused.length > 0 && (
               <section className="space-y-3">
                 <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-                  Paused · {paused.length}
+                  {t("recurring.paused")} {paused.length}
                 </div>
                 {paused.map(s => (
                   <SubscriptionCard
@@ -242,9 +244,9 @@ export default function RecurringScreen() {
           <div className="flex gap-3">
             <RotateCcw className="w-5 h-5 text-primary shrink-0 mt-0.5" />
             <div>
-              <div className="font-bold text-sm text-primary mb-1">How recurring requests work</div>
+              <div className="font-bold text-sm text-primary mb-1">{t("recurring.how_recurring_requests_work")}</div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Set a schedule — daily, weekly, or monthly — and Niakofa will automatically post a new help request for you at that time, notifying nearby helpers instantly. Perfect for regular needs like grocery pickup every Tuesday or a weekly ride to a medical appointment.
+                {t("recurring.set_a_schedule_daily_weekly_or")}
               </p>
             </div>
           </div>
@@ -273,13 +275,13 @@ export default function RecurringScreen() {
                   <AlertCircle className="w-5 h-5 text-red-400" />
                 </div>
                 <div>
-                  <div className="font-black text-base">Delete recurring request?</div>
-                  <p className="text-xs text-muted-foreground mt-0.5">This can't be undone. Future postings will stop immediately.</p>
+                  <div className="font-black text-base">{t("recurring.delete_recurring_request")}</div>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t("recurring.this_cant_be_undone_future_postings")}</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Button variant="outline" onClick={() => setDeleteConfirm(null)} className="rounded-2xl h-12">
-                  Keep it
+                  {t("recurring.keep_it")}
                 </Button>
                 <Button
                   variant="destructive"
@@ -322,6 +324,7 @@ function SubscriptionCard({
   onToggle: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
@@ -348,12 +351,12 @@ function SubscriptionCard({
           </div>
           {sub.active && (
             <div className="mt-1.5 text-[10px] text-primary font-bold">
-              Next: {fmtNext(sub.next_fire_at)}
+              {t("recurring.next")} {fmtNext(sub.next_fire_at)}
             </div>
           )}
           {sub.last_fired_at && (
             <div className="text-[10px] text-muted-foreground/60 mt-0.5">
-              Last posted {new Date(sub.last_fired_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              {t("recurring.last_posted")} {new Date(sub.last_fired_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
             </div>
           )}
         </div>
@@ -376,7 +379,7 @@ function SubscriptionCard({
             onClick={onDelete}
             disabled={loading}
             className="p-2 rounded-xl border border-border hover:border-red-500/40 transition-colors disabled:opacity-50"
-            aria-label="Delete recurring request"
+            aria-label={t("recurring.delete_recurring_request_2")}
           >
             <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
           </button>
@@ -389,6 +392,7 @@ function SubscriptionCard({
 // ── Empty State ───────────────────────────────────────────────────────────────
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
+  const { t } = useTranslation();
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
@@ -397,14 +401,13 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       <div className="w-20 h-20 bg-primary/10 rounded-3xl flex items-center justify-center mx-auto mb-4">
         <Calendar className="w-10 h-10 text-primary/60" />
       </div>
-      <div className="font-black text-lg mb-2">No recurring requests yet</div>
+      <div className="font-black text-lg mb-2">{t("recurring.no_recurring_requests_yet")}</div>
       <p className="text-sm text-muted-foreground leading-relaxed mb-6">
-        Schedule repeating help requests that auto-post to your neighborhood.
-        Perfect for regular grocery runs, weekly rides, or monthly errands.
+        {t("recurring.schedule_repeating_help_requests_that_autopost")}
       </p>
       <Button onClick={onCreate} className="rounded-2xl px-6 font-black gap-2">
         <Plus className="w-4 h-4" />
-        Schedule Your First Request
+        {t("recurring.schedule_your_first_request")}
       </Button>
     </motion.div>
   );
@@ -422,6 +425,7 @@ function CreateSheet({
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const { t } = useTranslation();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("groceries");
@@ -457,7 +461,7 @@ function CreateSheet({
         const err = await res.json() as { error?: string };
         throw new Error(err.error ?? "Failed");
       }
-      toast({ title: "✅ Recurring request scheduled!" });
+      toast({ title: t("recurring.recurring_request_scheduled") });
       onCreated();
     } catch (err) {
       toast({ title: err instanceof Error ? err.message : "Failed to create", variant: "destructive" });
@@ -486,12 +490,12 @@ function CreateSheet({
         {/* Header */}
         <div className="flex items-center justify-between px-5 pb-4 border-b border-border">
           <div>
-            <div className="font-black text-base">Schedule Recurring Request</div>
+            <div className="font-black text-base">{t("recurring.schedule_recurring_request")}</div>
             <div className="text-[10px] text-muted-foreground mt-0.5">
-              Step {step === "details" ? "1" : "2"} of 2 — {step === "details" ? "Request details" : "Schedule"}
+              {t("recurring.step")} {step === "details" ? "1" : "2"} {t("recurring.of_2")} {step === "details" ? "Request details" : "Schedule"}
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-muted transition-colors" aria-label="Close">
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-muted transition-colors" aria-label={t("recurring.close")}>
             <ChevronLeft className="w-4 h-4 rotate-180 text-muted-foreground" />
           </button>
         </div>
@@ -503,12 +507,12 @@ function CreateSheet({
                 {/* Title */}
                 <div>
                   <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1.5">
-                    What do you need help with?
+                    {t("recurring.what_do_you_need_help_with")}
                   </label>
                   <Input
                     value={title}
                     onChange={e => setTitle(e.target.value)}
-                    placeholder="e.g. Grocery pickup from Walmart"
+                    placeholder={t("recurring.eg_grocery_pickup_from_walmart")}
                     maxLength={120}
                     className="bg-muted border-border rounded-xl h-11"
                   />
@@ -517,12 +521,12 @@ function CreateSheet({
                 {/* Description */}
                 <div>
                   <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1.5">
-                    Details (optional)
+                    {t("recurring.details_optional")}
                   </label>
                   <textarea
                     value={description}
                     onChange={e => setDescription(e.target.value)}
-                    placeholder="Any helpful details for your helper…"
+                    placeholder={t("recurring.any_helpful_details_for_your_helper")}
                     rows={2}
                     maxLength={500}
                     className="w-full bg-muted border border-border rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary"
@@ -531,7 +535,7 @@ function CreateSheet({
 
                 {/* Category */}
                 <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1.5">Category</label>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1.5">{t("recurring.category")}</label>
                   <div className="grid grid-cols-4 gap-2">
                     {CATEGORIES.map(c => (
                       <button
@@ -549,7 +553,7 @@ function CreateSheet({
 
                 {/* Payment type */}
                 <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1.5">Payment</label>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1.5">{t("recurring.payment")}</label>
                   <div className="grid grid-cols-3 gap-2">
                     {PAYMENT_TYPES.map(p => (
                       <button
@@ -569,7 +573,7 @@ function CreateSheet({
               <motion.div key="schedule" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 16 }} className="space-y-4">
                 {/* Recurrence */}
                 <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1.5">Repeat</label>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1.5">{t("recurring.repeat")}</label>
                   <div className="grid grid-cols-3 gap-2">
                     {RECURRENCES.map(r => (
                       <button
@@ -588,7 +592,7 @@ function CreateSheet({
                 {/* Day of week (weekly only) */}
                 {recurrence === "weekly" && (
                   <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1.5">Day of Week</label>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1.5">{t("recurring.day_of_week")}</label>
                     <div className="grid grid-cols-7 gap-1">
                       {DAYS.map((d, i) => (
                         <button
@@ -602,13 +606,13 @@ function CreateSheet({
                         </button>
                       ))}
                     </div>
-                    <div className="text-[10px] text-primary font-bold mt-1">Every {DAYS[dayOfWeek]}</div>
+                    <div className="text-[10px] text-primary font-bold mt-1">{t("recurring.every")} {DAYS[dayOfWeek]}</div>
                   </div>
                 )}
 
                 {/* Time */}
                 <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1.5">Time</label>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1.5">{t("recurring.time")}</label>
                   <input
                     type="time"
                     value={timeOfDay}
@@ -616,13 +620,13 @@ function CreateSheet({
                     className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                   <div className="text-[10px] text-muted-foreground mt-1">
-                    A new request will be posted automatically at this time
+                    {t("recurring.a_new_request_will_be_posted")}
                   </div>
                 </div>
 
                 {/* Summary */}
                 <div className="bg-primary/5 border border-primary/20 rounded-2xl p-3">
-                  <div className="text-[10px] font-black uppercase tracking-wider text-primary mb-1">Summary</div>
+                  <div className="text-[10px] font-black uppercase tracking-wider text-primary mb-1">{t("recurring.summary")}</div>
                   <div className="text-sm font-bold truncate">{title}</div>
                   <div className="text-xs text-muted-foreground mt-1">
                     {recurrence === "daily" && `Posts daily at ${fmt12(timeOfDay)}`}
@@ -639,24 +643,24 @@ function CreateSheet({
         <div className="px-5 pt-3 flex gap-3">
           {step === "details" ? (
             <>
-              <Button variant="outline" onClick={onClose} className="flex-1 rounded-2xl h-12">Cancel</Button>
+              <Button variant="outline" onClick={onClose} className="flex-1 rounded-2xl h-12">{t("recurring.cancel")}</Button>
               <Button
                 onClick={() => setStep("schedule")}
                 disabled={!valid}
                 className="flex-1 rounded-2xl h-12 font-black"
               >
-                Next: Schedule →
+                {t("recurring.next_schedule")}
               </Button>
             </>
           ) : (
             <>
-              <Button variant="outline" onClick={() => setStep("details")} className="rounded-2xl h-12 w-24">← Back</Button>
+              <Button variant="outline" onClick={() => setStep("details")} className="rounded-2xl h-12 w-24">{t("recurring.back")}</Button>
               <Button
                 onClick={submit}
                 disabled={loading || !valid}
                 className="flex-1 rounded-2xl h-12 font-black gap-2"
               >
-                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><Calendar className="w-4 h-4" /> Schedule</>}
+                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><Calendar className="w-4 h-4" /> {t("recurring.schedule")}</>}
               </Button>
             </>
           )}
