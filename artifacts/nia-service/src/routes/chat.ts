@@ -62,11 +62,20 @@ router.post("/chat", injectLocation, async (req: Request, res: Response) => {
   let fullResponse = "";
 
   try {
+    // Web search tool — lets Nia fetch live shelter availability, pantry hours,
+    // emergency declarations, and breaking resource info for the user's location.
+    const WEB_SEARCH_TOOL: Anthropic.Tool = {
+      name: "web_search",
+      // @ts-expect-error — web_search_20250305 is a special Anthropic tool type
+      type: "web_search_20250305",
+    };
+
     const stream = await anthropic.messages.stream({
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
       system: buildLocationPrefix((req as any).locationContext as LocationContext | undefined) + NIA_SYSTEM_PROMPT,
       messages: [...history, { role: "user", content: message }],
+      tools: [WEB_SEARCH_TOOL],
     });
 
     for await (const chunk of stream) {
