@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Loader2, Sparkles, RotateCcw } from "lucide-react";
+import { X, Send, Loader2, Sparkles, RotateCcw, MapPin, MapPinOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const NIA_SERVICE_URL = import.meta.env.VITE_NIA_SERVICE_URL ?? "/nia";
@@ -31,6 +31,8 @@ export function NiaDrawer({ open, onClose, initialMessage }: NiaDrawerProps) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [locationStatus, setLocationStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
+  const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const sessionId = getSessionId();
@@ -72,6 +74,27 @@ export function NiaDrawer({ open, onClose, initialMessage }: NiaDrawerProps) {
     if (open) setTimeout(() => inputRef.current?.focus(), 300);
   }, [open]);
 
+  const requestLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setLocationStatus("denied");
+      return;
+    }
+    setLocationStatus("requesting");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+        setLocationStatus("granted");
+      },
+      () => setLocationStatus("denied"),
+      { timeout: 8000, maximumAge: 300000 }
+    );
+  }, []);
+
+  // Auto-request location when drawer first opens
+  useEffect(() => {
+    if (open && locationStatus === "idle") requestLocation();
+  }, [open]);
+
   const sendMessage = useCallback(async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
@@ -84,7 +107,7 @@ export function NiaDrawer({ open, onClose, initialMessage }: NiaDrawerProps) {
       const res = await fetch(`${NIA_SERVICE_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, sessionId, userId: null }),
+        body: JSON.stringify({ message: trimmed, sessionId, userId: null, ...(userCoords ?? {}) }),
       });
 
       if (res.status === 429) {
@@ -150,7 +173,7 @@ export function NiaDrawer({ open, onClose, initialMessage }: NiaDrawerProps) {
     } finally {
       setLoading(false);
     }
-  }, [loading, sessionId]);
+  }, [loading, sessionId, userCoords]);
 
   const handleReset = () => {
     sessionStorage.removeItem("nia_session_id");
@@ -183,6 +206,16 @@ export function NiaDrawer({ open, onClose, initialMessage }: NiaDrawerProps) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {locationStatus === "granted" && (
+                  <span className="flex items-center gap-1 text-[10px] text-emerald-500 font-medium">
+                    <MapPin className="w-3 h-3" /> Location on
+                  </span>
+                )}
+                {locationStatus === "denied" && (
+                  <button onClick={requestLocation} className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                    <MapPinOff className="w-3 h-3" /> Enable location
+                  </button>
+                )}
                 <Button variant="ghost" size="icon" className="rounded-full w-8 h-8" onClick={handleReset} title="New conversation">
                   <RotateCcw className="w-4 h-4 text-muted-foreground" />
                 </Button>
