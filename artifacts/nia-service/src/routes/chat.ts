@@ -76,7 +76,7 @@ router.post("/chat", async (req: Request, res: Response) => {
 router.get("/history/:sessionId", async (req: Request, res: Response) => {
   const sessionId = req.params.sessionId;
   if (!sessionId) return res.status(400).json({ error: "sessionId required" });
-  return res.json(await getScrollbackHistory(sessionId));
+  return res.json(await getScrollbackHistory(Array.isArray(sessionId) ? sessionId[0] : sessionId));
 });
 
 router.get("/health", (_req, res) => res.json({ status: "ok", service: "nia" }));
