@@ -1,9 +1,9 @@
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { checkSafety } from "../lib/safety.js";
-import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit } from "../lib/db.js";
+import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit, getActiveRequest } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
-import { injectLocation, buildLocationPrefix, LocationContext } from "../middleware/location.js";
+import { injectLocation, buildLocationPrefix, buildAppContextPrefix, LocationContext } from "../middleware/location.js";
 
 const router = Router();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
@@ -15,6 +15,15 @@ router.post("/chat", injectLocation, async (req: Request, res: Response) => {
   const userId = typeof body.userId === "number" ? body.userId : null;
   const gpsLat = typeof body.lat === "number" ? body.lat : null;
   const gpsLon = typeof body.lon === "number" ? body.lon : null;
+  const userName = typeof body.userName === "string" ? body.userName : null;
+  const accountType = typeof body.accountType === "string" ? body.accountType : null;
+  const helperModeActive = body.helperModeActive === true;
+  const activeRequestId =
+    typeof body.activeRequestId === "number"
+      ? body.activeRequestId
+      : typeof body.activeRequestId === "string" && body.activeRequestId.trim() !== ""
+        ? Number(body.activeRequestId)
+        : null;
 
   if (!message.trim() || !sessionId) {
     return res.status(400).json({ error: "message and sessionId required" });
@@ -55,6 +64,13 @@ router.post("/chat", injectLocation, async (req: Request, res: Response) => {
 
   const history = await getRecentHistory(sessionId);
 
+  // Best-effort: if the user has an active request open, pull its real details
+  // so Nia can reference it specifically rather than just knowing an ID exists.
+  const activeRequest =
+    activeRequestId !== null && !Number.isNaN(activeRequestId)
+      ? await getActiveRequest(activeRequestId, userId).catch(() => null)
+      : null;
+
   // If soft distress detected, prepend a care directive to the system prompt
   // so Nia leads with empathy before pivoting to resources — not skipped, not clinical.
   const softPrefix = safety.soft
@@ -81,7 +97,26 @@ router.post("/chat", injectLocation, async (req: Request, res: Response) => {
     const stream = await anthropic.messages.stream({
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
-      system: softPrefix + buildLocationPrefix((req as any).locationContext as LocationContext | undefined) + NIA_SYSTEM_PROMPT,
+      system:
+        softPrefix +
+        buildLocationPrefix((req as any).locationContext as LocationContext | undefined) +
+        buildAppContextPrefix({
+          userName,
+          accountType,
+          helperModeActive,
+          activeRequest: activeRequest
+            ? {
+                title: activeRequest.title,
+                description: activeRequest.description,
+                category: activeRequest.category,
+                urgency: activeRequest.urgency,
+                status: activeRequest.status,
+                neighborhood: activeRequest.neighborhood,
+                viewerRole: activeRequest.viewerRole,
+              }
+            : null,
+        }) +
+        NIA_SYSTEM_PROMPT,
       messages: [...history, { role: "user", content: message }],
       tools: [WEB_SEARCH_TOOL],
     });
@@ -106,7 +141,8 @@ router.post("/chat", injectLocation, async (req: Request, res: Response) => {
     res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
     res.end();
     await saveConversation(userId, sessionId, message, fullResponse);
-  } catch {
+  } catch (err) {
+    console.error("nia: chat error", err);
     res.write(`data: ${JSON.stringify({ type: "error", message: "Nia is unavailable right now. Please try again." })}\n\n`);
     res.end();
   }
