@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { Heart, MapPin, Bell, Shield, ChevronRight, Check, Loader2 } from "lucide-react";
+import { Heart, MapPin, Bell, Shield, Sparkles, ChevronRight, Check, Loader2 } from "lucide-react";
+import { NiaDrawer } from "@/components/NiaDrawer";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { subscribeToPush } from "@/lib/push";
@@ -42,6 +43,14 @@ const STEPS: Step[] = [
     action: "Enable Notifications",
   },
   {
+    id: "nia",
+    icon: Sparkles,
+    title: "Meet Nia",
+    description: "Nia is your personal Niakofa community assistant. Ask her anything — how to request help, how to become a helper, or anything about the community.",
+    color: "text-primary",
+    action: "Say Hi to Nia",
+  },
+  {
     id: "trust",
     icon: Shield,
     title: "Community Trust",
@@ -59,6 +68,7 @@ export default function OnboardingScreen() {
   const [locationGranted, setLocationGranted] = useState(false);
   const [notifGranted, setNotifGranted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [niaOpen, setNiaOpen] = useState(false);
 
   const current = STEPS[step];
 
@@ -73,6 +83,12 @@ export default function OnboardingScreen() {
           { timeout: 5000 }
         );
       }
+    }
+
+    if (current.id === "nia") {
+      setLoading(false);
+      setNiaOpen(true);
+      return;
     }
 
     if (current.id === "notifications" && currentUser) {
