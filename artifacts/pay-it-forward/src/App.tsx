@@ -1,5 +1,5 @@
 import "./i18n";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Switch, Route, Router as WouterRouter, useRoute } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -8,6 +8,7 @@ import { AppProvider, useAppContext } from "@/lib/AppContext";
 import { BottomNav } from "@/components/BottomNav";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Spinner } from "@/components/ui/spinner";
+import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
 
 const MapScreen = lazy(() => import("@/pages/map"));
 const NewRequestScreen = lazy(() => import("@/pages/request-new"));
@@ -98,6 +99,7 @@ function AppShell() {
 }
 
 function App() {
+  const [niaOpen, setNiaOpen] = useState(false);
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
@@ -110,6 +112,9 @@ function App() {
           </AppProvider>
         </TooltipProvider>
       </QueryClientProvider>
+      {/* Nia is always available — before login, on every screen */}
+      <NiaFab onClick={() => setNiaOpen(true)} />
+      <NiaDrawer open={niaOpen} onClose={() => setNiaOpen(false)} />
     </ErrorBoundary>
   );
 }

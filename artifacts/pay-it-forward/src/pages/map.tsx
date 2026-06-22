@@ -144,7 +144,6 @@ export default function MapScreen() {
   const [wsConnected, setWsConnected] = useState(() => wsIsConnected());
   const [statsVisible, setStatsVisible] = useState(true);
   const [bestMatchDismissed, setBestMatchDismissed] = useState<number | null>(null);
-  const [niaOpen, setNiaOpen] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [neighborhoodFilter, setNeighborhoodFilter] = useState<string | null>(null);
   const prevHelperMode = useRef(false);
@@ -700,8 +699,6 @@ export default function MapScreen() {
           </div>
         </div>
       )}
-      <NiaFab onClick={() => setNiaOpen(true)} />
-      <NiaDrawer open={niaOpen} onClose={() => setNiaOpen(false)} />
     </div>
   );
 }
