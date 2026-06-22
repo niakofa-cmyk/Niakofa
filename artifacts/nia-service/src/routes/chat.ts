@@ -8,27 +8,27 @@ const router = Router();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
 
 router.post("/chat", async (req: Request, res: Response) => {
-  const { message, sessionId: rawSessionId, userId } = req.body as {
-    message: string;
-    sessionId: string | string[];
-    userId?: number;
-  };
-  const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
+  const body = req.body as Record<string, unknown>;
+  const message = typeof body.message === "string" ? body.message : "";
+  const sessionId = Array.isArray(body.sessionId) ? body.sessionId[0] : typeof body.sessionId === "string" ? body.sessionId : "";
+  const userId = typeof body.userId === "number" ? body.userId : null;
 
-  if (!message?.trim() || !sessionId) {
+  if (!message.trim() || !sessionId) {
     return res.status(400).json({ error: "message and sessionId required" });
   }
 
   // Rate limit check
-  const rateLimit = await checkRateLimit(userId ?? null, sessionId);
+  const rateLimit = await checkRateLimit(userId, sessionId);
   if (!rateLimit.allowed) {
+    const reset = new Date(rateLimit.resetAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     return res.status(429).json({
       error: "Daily message limit reached",
       resetAt: rateLimit.resetAt,
-      message: "You\'ve reached your daily limit with Nia. Come back tomorrow!",
+      message: `You've reached your daily limit with Nia. Come back at ${reset}!`,
     });
   }
 
+  // Safety check
   const safety = checkSafety(message);
   if (safety.flagged) {
     res.setHeader("Content-Type", "text/event-stream");
@@ -36,7 +36,7 @@ router.post("/chat", async (req: Request, res: Response) => {
     res.setHeader("Connection", "keep-alive");
     res.write(`data: ${JSON.stringify({ type: "delta", text: safety.escalationMessage })}\n\n`);
     res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
-    await saveConversation(userId ?? null, sessionId, message, safety.escalationMessage!);
+    await saveConversation(userId, sessionId, message, safety.escalationMessage!);
     return res.end();
   }
 
@@ -66,7 +66,7 @@ router.post("/chat", async (req: Request, res: Response) => {
 
     res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
     res.end();
-    await saveConversation(userId ?? null, sessionId, message, fullResponse);
+    await saveConversation(userId, sessionId, message, fullResponse);
   } catch {
     res.write(`data: ${JSON.stringify({ type: "error", message: "Nia is unavailable right now. Please try again." })}\n\n`);
     res.end();
@@ -74,7 +74,7 @@ router.post("/chat", async (req: Request, res: Response) => {
 });
 
 router.get("/history/:sessionId", async (req: Request, res: Response) => {
-  const { sessionId } = req.params;
+  const sessionId = req.params.sessionId;
   if (!sessionId) return res.status(400).json({ error: "sessionId required" });
   return res.json(await getScrollbackHistory(sessionId));
 });
