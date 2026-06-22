@@ -1,4 +1,5 @@
 import "./i18n";
+import { NiaChat } from "@/components/NiaChat";
 import { lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter, useRoute } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -110,6 +111,7 @@ function App() {
           </AppProvider>
         </TooltipProvider>
       </QueryClientProvider>
+      <NiaChat />
     </ErrorBoundary>
   );
 }
