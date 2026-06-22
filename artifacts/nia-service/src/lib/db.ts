@@ -59,16 +59,17 @@ export async function purgeExpiredConversations() {
 // 20 messages per user per day — resets at midnight UTC
 export async function checkRateLimit(
   userId: number | null,
-  sessionId: string
+  sessionId: string | string[]
 ): Promise<{ allowed: boolean; remaining: number; resetAt: string }> {
-  const key = userId ? `user:${userId}` : `session:${sessionId}`;
+  const sid = Array.isArray(sessionId) ? sessionId[0] : sessionId;
+  const key = userId ? `user:${userId}` : `session:${sid}`;
   const isUser = !!userId;
 
   const result = await pool.query(
     `SELECT COUNT(*) as count FROM nia_conversations
      WHERE ${isUser ? "user_id = $1" : "session_id = $1"}
        AND created_at > NOW() - INTERVAL '24 hours'`,
-    [isUser ? userId : sessionId]
+    [isUser ? userId : (Array.isArray(sessionId) ? sessionId[0] : sessionId)]
   );
 
   const count = parseInt(result.rows[0].count, 10);
