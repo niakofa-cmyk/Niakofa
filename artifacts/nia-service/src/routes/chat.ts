@@ -8,11 +8,12 @@ const router = Router();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
 
 router.post("/chat", async (req: Request, res: Response) => {
-  const { message, sessionId, userId } = req.body as {
+  const { message, sessionId: rawSessionId, userId } = req.body as {
     message: string;
-    sessionId: string;
+    sessionId: string | string[];
     userId?: number;
   };
+  const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
 
   if (!message?.trim() || !sessionId) {
     return res.status(400).json({ error: "message and sessionId required" });
