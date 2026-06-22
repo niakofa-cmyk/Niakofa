@@ -1,7 +1,4 @@
 import "./i18n";
-import { useState } from "react";
-import { NiaDrawer } from "@/components/NiaDrawer";
-import { NiaFab } from "@/components/NiaDrawer";
 import { lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter, useRoute } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -101,7 +98,6 @@ function AppShell() {
 }
 
 function App() {
-  const [niaOpen, setNiaOpen] = useState(false);
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
@@ -114,8 +110,6 @@ function App() {
           </AppProvider>
         </TooltipProvider>
       </QueryClientProvider>
-      <NiaFab onClick={() => setNiaOpen(true)} />
-      <NiaDrawer open={niaOpen} onClose={() => setNiaOpen(false)} />
     </ErrorBoundary>
   );
 }

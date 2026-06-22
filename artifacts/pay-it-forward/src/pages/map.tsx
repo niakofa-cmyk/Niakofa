@@ -689,8 +689,6 @@ export default function MapScreen() {
       {helperModeActive && openRequests.length > 0 && webGLSupported && !mapError && !showBestMatch && (
         <div className="pb-20">
           <BottomSheet requests={openRequests} onClaim={handleClaim} isClaiming={claimMutation.isPending} dismissedId={bestMatchDismissed} />
-          <NiaFab onClick={() => setNiaOpen(true)} />
-          <NiaDrawer open={niaOpen} onClose={() => setNiaOpen(false)} />
         </div>
       )}
 
@@ -702,6 +700,8 @@ export default function MapScreen() {
           </div>
         </div>
       )}
+      <NiaFab onClick={() => setNiaOpen(true)} />
+      <NiaDrawer open={niaOpen} onClose={() => setNiaOpen(false)} />
     </div>
   );
 }
