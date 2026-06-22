@@ -150,7 +150,7 @@ export function NiaDrawer({ open, onClose, initialMessage }: NiaDrawerProps) {
     } finally {
       setLoading(false);
     }
-  }, [loading, sessionId, currentUser?.id]);
+  }, [loading, sessionId]);
 
   const handleReset = () => {
     sessionStorage.removeItem("nia_session_id");
