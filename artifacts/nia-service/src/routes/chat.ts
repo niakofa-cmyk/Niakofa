@@ -55,6 +55,14 @@ router.post("/chat", injectLocation, async (req: Request, res: Response) => {
 
   const history = await getRecentHistory(sessionId);
 
+  // If soft distress detected, prepend a care directive to the system prompt
+  // so Nia leads with empathy before pivoting to resources — not skipped, not clinical.
+  const softPrefix = safety.soft
+    ? "CARE DIRECTIVE: This person is showing signs of distress (struggling, overwhelmed, scared, or facing hardship). " +
+      "Lead with warmth and acknowledgment before offering any resources. Do not rush to solutions. " +
+      "Ask one gentle question to understand their situation better. Stay present.\n\n"
+    : "";
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -73,7 +81,7 @@ router.post("/chat", injectLocation, async (req: Request, res: Response) => {
     const stream = await anthropic.messages.stream({
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
-      system: buildLocationPrefix((req as any).locationContext as LocationContext | undefined) + NIA_SYSTEM_PROMPT,
+      system: softPrefix + buildLocationPrefix((req as any).locationContext as LocationContext | undefined) + NIA_SYSTEM_PROMPT,
       messages: [...history, { role: "user", content: message }],
       tools: [WEB_SEARCH_TOOL],
     });
@@ -83,6 +91,15 @@ router.post("/chat", injectLocation, async (req: Request, res: Response) => {
         const text = chunk.delta.text;
         fullResponse += text;
         res.write(`data: ${JSON.stringify({ type: "delta", text })}\n\n`);
+      }
+      // Capture web search tool result text so fullResponse saved to DB is complete
+      // even when Nia's reply is driven primarily by search results.
+      if (
+        chunk.type === "content_block_delta" &&
+        chunk.delta.type === "input_json_delta" &&
+        typeof (chunk.delta as any).partial_json === "string"
+      ) {
+        fullResponse += (chunk.delta as any).partial_json;
       }
     }
 
