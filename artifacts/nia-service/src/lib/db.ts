@@ -54,3 +54,32 @@ export async function getScrollbackHistory(sessionId: string) {
 export async function purgeExpiredConversations() {
   await pool.query(`DELETE FROM nia_conversations WHERE created_at < NOW() - INTERVAL '24 hours'`);
 }
+
+// ── Rate limiting ─────────────────────────────────────────────────────────────
+// 20 messages per user per day — resets at midnight UTC
+export async function checkRateLimit(
+  userId: number | null,
+  sessionId: string
+): Promise<{ allowed: boolean; remaining: number; resetAt: string }> {
+  const key = userId ? `user:${userId}` : `session:${sessionId}`;
+  const isUser = !!userId;
+
+  const result = await pool.query(
+    `SELECT COUNT(*) as count FROM nia_conversations
+     WHERE ${isUser ? "user_id = $1" : "session_id = $1"}
+       AND created_at > NOW() - INTERVAL '24 hours'`,
+    [isUser ? userId : sessionId]
+  );
+
+  const count = parseInt(result.rows[0].count, 10);
+  const limit = isUser ? 20 : 10; // logged-in users get 20/day, guests get 10/day
+  const remaining = Math.max(0, limit - count);
+  const resetAt = new Date();
+  resetAt.setUTCHours(24, 0, 0, 0);
+
+  return {
+    allowed: count < limit,
+    remaining,
+    resetAt: resetAt.toISOString(),
+  };
+}

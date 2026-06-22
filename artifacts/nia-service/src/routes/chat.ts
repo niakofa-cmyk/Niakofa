@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { checkSafety } from "../lib/safety.js";
-import { saveConversation, getRecentHistory, getScrollbackHistory } from "../lib/db.js";
+import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
 
 const router = Router();
@@ -16,6 +16,16 @@ router.post("/chat", async (req: Request, res: Response) => {
 
   if (!message?.trim() || !sessionId) {
     return res.status(400).json({ error: "message and sessionId required" });
+  }
+
+  // Rate limit check
+  const rateLimit = await checkRateLimit(userId ?? null, sessionId);
+  if (!rateLimit.allowed) {
+    return res.status(429).json({
+      error: "Daily message limit reached",
+      resetAt: rateLimit.resetAt,
+      message: "You\'ve reached your daily limit with Nia. Come back tomorrow!",
+    });
   }
 
   const safety = checkSafety(message);

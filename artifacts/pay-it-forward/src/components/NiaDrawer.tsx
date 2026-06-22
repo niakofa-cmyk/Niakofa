@@ -89,6 +89,24 @@ export function NiaDrawer({ open, onClose, initialMessage }: NiaDrawerProps) {
         body: JSON.stringify({ message: trimmed, sessionId, userId: currentUser?.id ?? null }),
       });
 
+      if (res.status === 429) {
+        const err = await res.json();
+        const reset = new Date(err.resetAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        setMessages((prev) => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last?.role === "nia" && last.streaming) {
+            updated[updated.length - 1] = {
+              role: "nia",
+              content: `You've reached your daily message limit with Nia. 💜\n\nYour limit resets at ${reset}. See you then!`,
+              streaming: false,
+            };
+          }
+          return updated;
+        });
+        setLoading(false);
+        return;
+      }
       if (!res.ok || !res.body) throw new Error("unavailable");
 
       const reader = res.body.getReader();
