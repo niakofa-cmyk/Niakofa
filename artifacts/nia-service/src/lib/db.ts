@@ -3,7 +3,7 @@ const { Pool } = pg;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+  ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
@@ -63,6 +63,54 @@ export async function getScrollbackHistory(sessionId: string) {
     niaResponse: r.nia_response,
     createdAt: r.created_at,
   }));
+}
+
+export interface ActiveRequestInfo {
+  id: number;
+  title: string;
+  description: string | null;
+  category: string;
+  urgency: string;
+  status: string;
+  neighborhood: string | null;
+  lat: number;
+  lng: number;
+  createdAt: Date;
+  // Which role this user has on the request — Nia phrases things very
+  // differently for "your request" (requester) vs. "the job you're helping
+  // with" (helper).
+  viewerRole: "requester" | "helper";
+}
+
+export async function getActiveRequest(
+  requestId: number,
+  userId: number | null
+): Promise<ActiveRequestInfo | null> {
+  // Scoped to requests this user is actually party to, either as the person
+  // who posted it or the helper assigned to it — never an arbitrary request.
+  if (!userId) return null;
+  const result = await pool.query(
+    `SELECT id, title, description, category, urgency, status, neighborhood, lat, lng, created_at, requester_id, helper_id
+     FROM help_requests
+     WHERE id = $1 AND (requester_id = $2 OR helper_id = $2)
+     LIMIT 1`,
+    [requestId, userId]
+  );
+  if (result.rows.length === 0) return null;
+  const r = result.rows[0];
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description,
+    category: r.category,
+    urgency: r.urgency,
+    status: r.status,
+    neighborhood: r.neighborhood,
+    lat: r.lat,
+    lng: r.lng,
+    createdAt: r.created_at,
+    viewerRole: r.requester_id === userId ? "requester" : "helper",
+  };
 }
 
 export async function purgeExpiredConversations() {
