@@ -13,9 +13,21 @@ router.post("/chat", injectLocation, async (req: Request, res: Response) => {
   const message = typeof body.message === "string" ? body.message : "";
   const sessionId = Array.isArray(body.sessionId) ? body.sessionId[0] : typeof body.sessionId === "string" ? body.sessionId : "";
   const userId = typeof body.userId === "number" ? body.userId : null;
+  const gpsLat = typeof body.lat === "number" ? body.lat : null;
+  const gpsLon = typeof body.lon === "number" ? body.lon : null;
 
   if (!message.trim() || !sessionId) {
     return res.status(400).json({ error: "message and sessionId required" });
+  }
+
+  // If GPS coords sent from browser, override IP-based location
+  if (gpsLat !== null && gpsLon !== null) {
+    (req as any).locationContext = {
+      ...(req as any).locationContext,
+      lat: gpsLat,
+      lon: gpsLon,
+      gpsAccurate: true,
+    };
   }
 
   // Rate limit check
