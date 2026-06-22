@@ -250,7 +250,7 @@ export function NiaFab({ onClick }: { onClick: () => void }) {
     <motion.button
       whileTap={{ scale: 0.92 }}
       onClick={onClick}
-      className="fixed bottom-36 right-4 z-40 w-12 h-12 rounded-full bg-primary shadow-[0_0_20px_rgba(139,92,246,0.4)] flex items-center justify-center border border-primary/30"
+      className="fixed bottom-36 right-4 z-[9999] w-14 h-14 rounded-full bg-primary shadow-[0_0_20px_rgba(139,92,246,0.4)] flex items-center justify-center border border-primary/30" style={{outline: "4px solid red"}}
       aria-label="Open Nia assistant"
     >
       <Sparkles className="w-5 h-5 text-primary-foreground" />
