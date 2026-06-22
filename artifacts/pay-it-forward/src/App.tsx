@@ -117,6 +117,7 @@ function App() {
         </TooltipProvider>
       </QueryClientProvider>
     </ErrorBoundary>
+    <NiaFab onClick={() => setNiaOpen(true)} />
   );
 }
 
