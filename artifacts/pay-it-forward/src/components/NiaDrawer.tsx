@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown } from "lucide-react";
 
-const NIA_SERVICE_URL = import.meta.env.VITE_NIA_SERVICE_URL ?? "/nia";
+const NIA_SERVICE_URL = import.meta.env.VITE_NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app";
 
 const WELCOME_PHRASES = [
   "Sawubona — I see you.",
@@ -38,6 +38,11 @@ interface NiaDrawerProps {
   onClose: () => void;
   initialMessage?: string;
   userId?: number | null;
+  userName?: string | null;
+  userLocation?: { lat: number; lon: number } | null;
+  helperModeActive?: boolean;
+  activeRequestId?: string | number | null;
+  accountType?: string | null;
 }
 
 function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: boolean }) {
@@ -309,7 +314,17 @@ function QuickPrompts({ onSelect }: { onSelect: (text: string) => void }) {
   );
 }
 
-export function NiaDrawer({ open, onClose, initialMessage, userId = null }: NiaDrawerProps) {
+export function NiaDrawer({
+  open,
+  onClose,
+  initialMessage,
+  userId = null,
+  userName = null,
+  userLocation = null,
+  helperModeActive = false,
+  activeRequestId = null,
+  accountType = null,
+}: NiaDrawerProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -409,7 +424,16 @@ export function NiaDrawer({ open, onClose, initialMessage, userId = null }: NiaD
       const res = await fetch(`${NIA_SERVICE_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, sessionId, userId: userId ?? null, ...(userCoords ?? {}) }),
+        body: JSON.stringify({
+          message: trimmed,
+          sessionId,
+          userId: userId ?? null,
+          userName: userName ?? null,
+          helperModeActive,
+          activeRequestId: activeRequestId ?? null,
+          accountType: accountType ?? null,
+          ...(userCoords ?? userLocation ?? {}),
+        }),
       });
 
       if (res.status === 429) {
@@ -486,7 +510,7 @@ export function NiaDrawer({ open, onClose, initialMessage, userId = null }: NiaD
     } finally {
       setLoading(false);
     }
-  }, [loading, sessionId, userCoords, userId]);
+  }, [loading, sessionId, userCoords, userId, userName, userLocation, helperModeActive, activeRequestId, accountType]);
 
   const handleReset = () => {
     sessionStorage.removeItem("nia_session_id");
