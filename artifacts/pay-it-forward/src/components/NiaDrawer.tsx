@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Send, Loader2, Sparkles, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useAppContext } from "@/lib/AppContext";
 
 const NIA_SERVICE_URL = import.meta.env.VITE_NIA_SERVICE_URL ?? "/nia";
 
@@ -28,7 +27,6 @@ interface NiaDrawerProps {
 }
 
 export function NiaDrawer({ open, onClose, initialMessage }: NiaDrawerProps) {
-  const { currentUser } = useAppContext();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -86,7 +84,7 @@ export function NiaDrawer({ open, onClose, initialMessage }: NiaDrawerProps) {
       const res = await fetch(`${NIA_SERVICE_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, sessionId, userId: currentUser?.id ?? null }),
+        body: JSON.stringify({ message: trimmed, sessionId, userId: null }),
       });
 
       if (res.status === 429) {

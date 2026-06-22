@@ -111,11 +111,11 @@ function App() {
               <AppShell />
             </WouterRouter>
             <Toaster />
-            <NiaFab onClick={() => setNiaOpen(true)} />
-            <NiaDrawer open={niaOpen} onClose={() => setNiaOpen(false)} />
           </AppProvider>
         </TooltipProvider>
       </QueryClientProvider>
+      <NiaFab onClick={() => setNiaOpen(true)} />
+      <NiaDrawer open={niaOpen} onClose={() => setNiaOpen(false)} />
     </ErrorBoundary>
   );
 }
