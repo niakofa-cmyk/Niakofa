@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, chatMessagesTable, requestsTable } from "@workspace/db";
 import { eq, and, lt, desc, isNull, ne } from "drizzle-orm";
 import { sendToUser } from "../lib/ws-hub";
-import { chatLimiter } from "../middlewares/rate-limit";
+import { crisisAwareChatLimiter } from "../middlewares/rate-limit";
 import { requireAuth } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 
@@ -45,7 +45,7 @@ router.get("/requests/:id/chat", requireAuth, async (req, res) => {
 // POST /requests/:id/chat
 // requireAuth verifies the Bearer token and sets req.authenticatedUserId.
 // sender_id is taken from the verified token — never trusted from the client body.
-router.post("/requests/:id/chat", requireAuth, chatLimiter, async (req, res) => {
+router.post("/requests/:id/chat", requireAuth, crisisAwareChatLimiter, async (req, res) => {
   const requestId = parseInt(req.params.id as string);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 

@@ -152,6 +152,37 @@ export const chatLimiter = rateLimit({
   message: { error: "You're sending messages too fast. Slow down a little." },
 });
 
+// ── 6b. Crisis-exempt Chat Limiter ──────────────────────────────────────────
+// During a crisis, users may need to send rapid check-ins, safety updates,
+// or resource requests. This limiter is used instead of chatLimiter when
+// req.crisisMode === true (set by the crisis bypass middleware below).
+// 120/min (4x normal) — generous enough for real emergencies, still blocks bots.
+export const crisisChatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  store: createStore("chat-crisis"),
+  keyGenerator: (req) => {
+    const r = req as typeof req & { authenticatedUserId?: number };
+    return `chat-crisis-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
+  },
+  message: { error: "Please slow down a little — even during an emergency." },
+});
+
+// ── 6c. Crisis Mode Bypass Middleware ────────────────────────────────────────
+// Checks if crisis mode is active (via CRISIS_MODE_ACTIVE env var set by
+// the crisis/activate route). If active, skips the normal chatLimiter and
+// uses crisisChatLimiter instead so users are never cut off during emergencies.
+import type { Request, Response, NextFunction } from "express";
+export function crisisAwareChatLimiter(req: Request, res: Response, next: NextFunction) {
+  const crisisActive = process.env["CRISIS_MODE_ACTIVE"] === "true";
+  if (crisisActive) {
+    return crisisChatLimiter(req, res, next);
+  }
+  return chatLimiter(req, res, next);
+}
+
 // ── 7. Navigation/Directions (60 / 15 min per user) ──────────────────────────
 // Protects against unmetered cost-amplification against the paid Mapbox
 // Directions API — this route proxies directly to a billed third-party API.
