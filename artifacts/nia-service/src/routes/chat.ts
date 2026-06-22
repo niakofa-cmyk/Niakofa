@@ -3,11 +3,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { checkSafety } from "../lib/safety.js";
 import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
+import { injectLocation, buildLocationPrefix, LocationContext } from "../middleware/location.js";
 
 const router = Router();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
 
-router.post("/chat", async (req: Request, res: Response) => {
+router.post("/chat", injectLocation, async (req: Request, res: Response) => {
   const body = req.body as Record<string, unknown>;
   const message = typeof body.message === "string" ? body.message : "";
   const sessionId = Array.isArray(body.sessionId) ? body.sessionId[0] : typeof body.sessionId === "string" ? body.sessionId : "";
@@ -52,7 +53,7 @@ router.post("/chat", async (req: Request, res: Response) => {
     const stream = await anthropic.messages.stream({
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
-      system: NIA_SYSTEM_PROMPT,
+      system: buildLocationPrefix((req as any).locationContext as LocationContext | undefined) + NIA_SYSTEM_PROMPT,
       messages: [...history, { role: "user", content: message }],
     });
 
