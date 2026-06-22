@@ -1,6 +1,5 @@
 [build]
-builder = "dockerfile"
-dockerfilePath = "artifacts/nia-service/Dockerfile"
+builder = "railpack"
 
 [deploy]
-startCommand = "node dist/index.js"
+startCommand = "pnpm --filter @workspace/db run migrate && node --enable-source-maps artifacts/api-server/dist/index.mjs"
