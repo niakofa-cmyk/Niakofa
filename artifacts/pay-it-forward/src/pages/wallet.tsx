@@ -134,13 +134,13 @@ export default function WalletScreen() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { setup?: string };
-        toast({ title: err.setup ?? "Stripe not configured by admin yet", variant: "destructive" });
+        toast({ title: err.setup ?? "Payout setup not available yet", variant: "destructive" });
         return;
       }
       const data = await res.json() as { url: string };
       window.open(data.url, "_blank", "noopener noreferrer");
     } catch {
-      toast({ title: "Could not start Stripe setup", variant: "destructive" });
+      toast({ title: "Could not start payout setup", variant: "destructive" });
     } finally {
       setStripeOnboarding(false);
     }

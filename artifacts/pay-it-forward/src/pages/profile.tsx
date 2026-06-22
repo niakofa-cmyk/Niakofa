@@ -614,13 +614,13 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
       });
       if (!res.ok) {
         const err = await res.json() as { setup?: string };
-        toast({ title: err.setup ?? "Stripe not configured by admin", variant: "destructive" });
+        toast({ title: err.setup ?? "Payout setup not available yet", variant: "destructive" });
         return;
       }
       const data = await res.json() as { url: string };
       window.open(data.url, "_blank", "noopener noreferrer");
     } catch {
-      toast({ title: "Could not start Stripe setup — please try again", variant: "destructive" });
+      toast({ title: "Could not start payout setup — please try again", variant: "destructive" });
     } finally { setOnboarding(false); }
   };
 
@@ -661,7 +661,7 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
             ))}
           </div>
           <Button className="w-full" onClick={handleSetupPayouts} disabled={onboarding}>
-            {onboarding ? "Opening Stripe…" : "Complete Setup on Stripe"}
+            {onboarding ? "Setting up your payout account…" : "Complete Payout Setup"}
           </Button>
         </div>
       ) : (
@@ -673,7 +673,7 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
             </p>
           </div>
           <div className="space-y-2">
-            {["Takes ~5 minutes to complete", "Powered by Stripe — bank-level security",
+            {["Takes ~5 minutes to complete", "Bank-level security — your data is encrypted",
               "Payouts directly to your bank account", "No upfront fees from Niakofa"].map(item => (
               <div key={item} className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="text-primary">✓</span><span>{item}</span>
@@ -683,7 +683,7 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
           <Button className="w-full h-12 font-black" onClick={handleSetupPayouts} disabled={onboarding}>
             {onboarding
               ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{t("profile.opening_stripe")}</span>
-              : "Set Up Payouts via Stripe"
+              : "Set Up Direct Payouts"
             }
           </Button>
           <p className="text-[10px] text-muted-foreground text-center">{t("profile.requires_stripesecretkey_to_be_configured_by")}</p>
