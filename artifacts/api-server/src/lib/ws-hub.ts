@@ -256,7 +256,12 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
     // ── Cleanup on close ──────────────────────────────────────────────────────
     socket.on("close", () => {
       const remaining = Math.max(0, (ipConnectionCount.get(ip) ?? 1) - 1);
-      ipConnectionCount.set(ip, remaining);
+      if (remaining === 0) {
+        ipConnectionCount.delete(ip);
+        ipLastConnectTime.delete(ip);
+      } else {
+        ipConnectionCount.set(ip, remaining);
+      }
       socketAlive.delete(socket);
       adminSockets.delete(socket);
 
