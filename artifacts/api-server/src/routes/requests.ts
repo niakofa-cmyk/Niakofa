@@ -167,21 +167,51 @@ router.get("/requests", requireAuth, async (req, res) => {
   const limitParam = rawLimit !== null && !isNaN(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 500) : 200;
 
   // Push every filter we can into SQL instead of loading the entire table —
-  // only the haversine radius filter (no PostGIS available) stays in JS,
-  // and even that runs against an already-narrowed result set.
+  // only the haversine radius filter (no PostGIS available) stays in JS.
   const conditions = [];
   if (helperId !== null) conditions.push(eq(requestsTable.helper_id, helperId));
   if (requesterId !== null) conditions.push(eq(requestsTable.requester_id, requesterId));
   if (params.success && params.data.status) conditions.push(eq(requestsTable.status, params.data.status));
 
-  // Always push LIMIT into SQL — never load more than limitParam rows into memory
+  const hasGeoFilter = params.success && !!params.data.lat && !!params.data.lng;
+  let radius = 10;
+  if (hasGeoFilter) {
+    radius = params.data.radius_miles ?? 10;
+    const lat = params.data.lat!;
+    const lng = params.data.lng!;
+    // HIGH-006/HIGH-007: same bounding-box SQL pre-filter used by
+    // /requests/nearby — applied BEFORE the SQL LIMIT, so the haversine
+    // filter below runs against geo-narrowed candidates instead of an
+    // arbitrary top-N-by-date slice. Previously LIMIT ran first, so a busy
+    // area could fill the entire limitParam with far-away rows and silently
+    // under-return (or zero-return) nearby results.
+    const latDelta = radius / 69;
+    const clampedLat = Math.max(-89.9, Math.min(89.9, lat));
+    const lngDelta = Math.min(radius / (69 * Math.cos(clampedLat * Math.PI / 180)), 180);
+    conditions.push(sql`${requestsTable.lat} BETWEEN ${lat - latDelta} AND ${lat + latDelta}`);
+    conditions.push(sql`${requestsTable.lng} BETWEEN ${lng - lngDelta} AND ${lng + lngDelta}`);
+  }
+
+  // Always push LIMIT into SQL — never load more than limitParam rows into memory.
+  // When a geo filter is active, the bounding-box conditions above are already
+  // applied at the SQL level, so this LIMIT now caps the geo-narrowed set
+  // rather than truncating before geo-filtering happens.
   let rows = conditions.length > 0
     ? await db.select().from(requestsTable).where(and(...conditions)).orderBy(desc(requestsTable.created_at)).limit(limitParam)
     : await db.select().from(requestsTable).orderBy(desc(requestsTable.created_at)).limit(limitParam);
 
-  if (params.success && params.data.lat && params.data.lng) {
-    const radius = params.data.radius_miles ?? 10;
-    rows = rows.filter(r => distanceMiles(params.data.lat!, params.data.lng!, r.lat, r.lng) <= radius);
+  let distanceById: Record<number, number> = {};
+  if (hasGeoFilter) {
+    const lat = params.data.lat!;
+    const lng = params.data.lng!;
+    rows = rows.filter(r => {
+      const d = distanceMiles(lat, lng, r.lat, r.lng);
+      if (d <= radius) {
+        distanceById[r.id] = d;
+        return true;
+      }
+      return false;
+    });
   }
 
   // Collect all relevant user IDs (requesters + helpers) for a single batch fetch
@@ -196,15 +226,23 @@ router.get("/requests", requireAuth, async (req, res) => {
     : [];
   const userMap = Object.fromEntries(users.map(u => [u.id, u]));
 
-  return res.json(rows.map(r => ({
-    ...r,
-    requester_name: userMap[r.requester_id]?.name ?? null,
-    requester_avatar: userMap[r.requester_id]?.avatar_url ?? null,
-    helper_name: r.helper_id ? (userMap[r.helper_id]?.name ?? null) : null,
-    helper_avatar: r.helper_id ? (userMap[r.helper_id]?.avatar_url ?? null) : null,
-    distance_miles: null,
-    estimated_duration_min: null,
-  })));
+  return res.json(rows.map(r => {
+    // HIGH-010: when a geo filter was applied, distance is already known —
+    // surface it instead of hardcoding null, matching /requests/nearby's
+    // Math.round(distance * 3) ETA estimate. Endpoints with no viewer
+    // coordinates (GET /requests/:id, claim, complete, en-route, etc.)
+    // have no distance to compute from and correctly remain null.
+    const distance = distanceById[r.id] ?? null;
+    return {
+      ...r,
+      requester_name: userMap[r.requester_id]?.name ?? null,
+      requester_avatar: userMap[r.requester_id]?.avatar_url ?? null,
+      helper_name: r.helper_id ? (userMap[r.helper_id]?.name ?? null) : null,
+      helper_avatar: r.helper_id ? (userMap[r.helper_id]?.avatar_url ?? null) : null,
+      distance_miles: distance,
+      estimated_duration_min: distance !== null ? Math.round(distance * 3) : null,
+    };
+  }));
 });
 
 router.post("/requests", requireAuth, requireOwnership("requester_id"), requestCreationLimiter, async (req, res) => {
