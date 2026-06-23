@@ -1,4 +1,5 @@
-import { pgTable, serial, integer, numeric, text, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, numeric, text, timestamp, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { usersTable } from "./users";
 
 // Payment state machine for every financial transaction in the platform.
@@ -43,7 +44,14 @@ export const paymentTransactionsTable = pgTable("payment_transactions", {
 
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  // CRIT-005: prevent a duplicate "completed" payout row for the same
+  // request_id — the retry worker uses onConflictDoNothing() against this
+  // constraint to guarantee at-most-one completed payout per request.
+  uniqueIndex("payment_transactions_one_completed_per_request")
+    .on(t.request_id)
+    .where(sql`${t.state} = 'completed'`),
+]);
 
 export type PaymentTransaction = typeof paymentTransactionsTable.$inferSelect;
 export type InsertPaymentTransaction = typeof paymentTransactionsTable.$inferInsert;
