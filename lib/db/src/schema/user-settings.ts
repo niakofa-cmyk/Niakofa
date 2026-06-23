@@ -1,8 +1,9 @@
 import { pgTable, serial, integer, boolean, real, text, timestamp } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
 
 export const userSettingsTable = pgTable("user_settings", {
   id: serial("id").primaryKey(),
-  user_id: integer("user_id").notNull().unique(),
+  user_id: integer("user_id").notNull().unique().references(() => usersTable.id, { onDelete: "cascade" }),
 
   // Notification preferences
   notif_nearby_requests: boolean("notif_nearby_requests").notNull().default(true),

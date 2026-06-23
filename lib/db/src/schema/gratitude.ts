@@ -1,4 +1,5 @@
 import { pgTable, serial, integer, text, timestamp } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
 
 // Public thank-you messages created by requesters after their request is completed.
 // Appears in the Community feed in real time via WebSocket.
@@ -9,12 +10,12 @@ export const gratitudePostsTable = pgTable("gratitude_posts", {
   request_id: integer("request_id"),
 
   // Who wrote the post (requester)
-  author_id: integer("author_id").notNull(),
+  author_id: integer("author_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   author_name: text("author_name").notNull(),
   author_avatar: text("author_avatar"),
 
   // The helper being thanked
-  helper_id: integer("helper_id"),
+  helper_id: integer("helper_id").references(() => usersTable.id, { onDelete: "set null" }),
   helper_name: text("helper_name"),
 
   // The actual thank-you message
