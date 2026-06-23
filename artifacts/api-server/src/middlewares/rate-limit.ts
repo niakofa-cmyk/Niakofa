@@ -215,3 +215,14 @@ export const requestActionLimiter = rateLimit({
   },
   message: { error: "Too many request actions in a short period. Please wait a few minutes." },
 });
+
+// ── SOS panic button (3/hour per user) ───────────────────────────────────────
+export const sosLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 3,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  store: createStore("sos"),
+  keyGenerator: (req) => String(req.authenticatedUserId ?? req.ip),
+  message: { error: "SOS limit reached — please call 911 for immediate emergencies." },
+});

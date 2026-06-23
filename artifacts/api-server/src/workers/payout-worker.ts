@@ -60,8 +60,8 @@ async function processPayout(job: Job<PayoutJobData>): Promise<void> {
     state: "completed",
     payment_type: "immediate",
     stripe_transfer_id: transfer.id,
-    notes: `Retry payout (attempt ${job.attemptsMade + 1}). Platform fee: $${(platform_fee_cents / 100).toFixed(2)}`,
-  });
+    notes: `Retry payout (attempt ${job.attemptsMade + 1}). Platform fee: ${(platform_fee_cents / 100).toFixed(2)}`,
+  }).onConflictDoNothing();
 
   // NOTE: deliberately NOT inserting another transactionsTable row here —
   // the original completion handler in requests.ts already recorded an

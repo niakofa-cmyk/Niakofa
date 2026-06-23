@@ -1,4 +1,5 @@
 import express, { type Express } from "express";
+import helmet from "helmet";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import path from "path";
@@ -12,6 +13,21 @@ const app: Express = express();
 
 // Trust Railway / Railway proxy headers so req.ip is the real client IP
 app.set("trust proxy", 1);
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:", "https:"],
+      connectSrc: ["'self'", "https:", "wss:"],
+      fontSrc: ["'self'", "https:"],
+      workerSrc: ["'self'", "blob:"],
+      frameSrc: ["'none'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+}));
 
 // General API rate limit — broad protection, generous limit (200/15min)
 app.use("/api", generalApiLimiter);

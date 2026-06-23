@@ -1,20 +1,11 @@
 import { Router } from "express";
+import { distanceMiles } from "../lib/geo.js";
 import { db, usersTable, requestsTable, userSettingsTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { GetOnlineHelpersQueryParams } from "@workspace/api-zod";
 
 const router = Router();
-
-function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 3958.8;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
 
 router.get("/helpers/online", requireAuth, async (req, res) => {
   const params = GetOnlineHelpersQueryParams.safeParse({
@@ -38,7 +29,7 @@ router.get("/helpers/online", requireAuth, async (req, res) => {
 
   // SQL bounding-box pre-filter — avoids full table scan
   let query = db.select().from(usersTable).$dynamic();
-  const conditions = [eq(usersTable.helper_mode_active, true), sql`${usersTable.id} IN ${optedInIdSet}`];
+  const conditions = [eq(usersTable.helper_mode_active, true), inArray(usersTable.id, optedInIdSet)];
   if (lat && lng) {
     const latDelta = radius / 69;
     const lngDelta = radius / (69 * Math.cos(lat * Math.PI / 180));

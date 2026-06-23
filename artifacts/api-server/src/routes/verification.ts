@@ -80,7 +80,10 @@ router.post("/verification/identity/webhook", async (req, res) => {
           identity_verification_status: "verified",
           trust_score: sql`GREATEST(${usersTable.trust_score}, 95)`,
         })
-        .where(eq(usersTable.id, userId));
+        .where(and(
+          eq(usersTable.id, userId),
+          sql`${usersTable.trust_score} != -1`,
+        ));
 
       broadcast({ type: "presence_update", payload: { user_id: userId, identity_verified: true } });
       logger.info({ user_id: userId }, "identity verified");
@@ -113,7 +116,7 @@ router.post("/verification/safety-checkin/:userId", requireAuth, requireOwnershi
 });
 
 // ── SOS panic alert ───────────────────────────────────────────────────────────
-router.post("/verification/sos", requireAuth, requireOwnership("user_id"), async (req, res) => {
+router.post("/verification/sos", requireAuth, requireOwnership("user_id"), sosLimiter, async (req, res) => {
   const { user_id, lat, lng, message } = req.body as {
     user_id: number;
     lat?: number;
