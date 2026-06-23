@@ -1,7 +1,7 @@
 import { Router } from "express";
 import webpush from "web-push";
 import { db, pushSubscriptionsTable, usersTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { sendAlertEmail } from "../lib/mailer";
 import { logger } from "../lib/logger";
 import { requireAuth } from "../middlewares/auth";
@@ -210,16 +210,19 @@ export async function sendPushToNearbyHelpers(
     return;
   }
 
-  // Fetch all active helpers that have a stored lat/lng
-  const helpers = await db
-    .select({ id: usersTable.id, lat: usersTable.lat, lng: usersTable.lng, email: usersTable.email })
+  // PostGIS ST_DWithin — let the database return only active helpers within
+  // radius using the GiST index on users.geog, instead of loading every
+  // active helper and filtering in JS. Radius converted miles → meters.
+  const radiusMeters = radiusMiles * 1609.34;
+  const origin = sql`ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography`;
+  const nearbyHelpers = await db
+    .select({ id: usersTable.id, email: usersTable.email })
     .from(usersTable)
-    .where(eq(usersTable.helper_mode_active, true));
-
-  // Filter to those within radius
-  const nearbyHelpers = helpers
-    .filter(h => h.lat != null && h.lng != null)
-    .filter(h => haversineMiles(lat, lng, h.lat!, h.lng!) <= radiusMiles);
+    .where(and(
+      eq(usersTable.helper_mode_active, true),
+      sql`${usersTable.geog} IS NOT NULL`,
+      sql`ST_DWithin(${usersTable.geog}, ${origin}, ${radiusMeters})`,
+    ));
 
   if (nearbyHelpers.length === 0) return;
 

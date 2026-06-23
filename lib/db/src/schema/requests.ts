@@ -1,5 +1,6 @@
 import { pgTable, serial, text, boolean, real, numeric, integer, timestamp, pgEnum, index } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
+import { geographyPoint } from "./geography";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -32,6 +33,8 @@ export const requestsTable = pgTable("help_requests", {
   helper_id: integer("helper_id").references(() => usersTable.id, { onDelete: "set null" }),
   lat: real("lat").notNull(),
   lng: real("lng").notNull(),
+  // PostGIS geography point; auto-synced from lat/lng by a DB trigger.
+  geog: geographyPoint("geog"),
   neighborhood: text("neighborhood"),
   // Currency fields use numeric(10,2) instead of real (float32) to avoid
   // floating-point rounding error accumulating across transactions.

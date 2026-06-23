@@ -1,6 +1,7 @@
 import { pgTable, serial, text, boolean, real, numeric, integer, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { geographyPoint } from "./geography";
 
 export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -21,6 +22,8 @@ export const usersTable = pgTable("users", {
   helper_social_links: text("helper_social_links"),
   lat: real("lat"),
   lng: real("lng"),
+  // PostGIS geography point; auto-synced from lat/lng by a DB trigger.
+  geog: geographyPoint("geog"),
   heading: real("heading"),
   speed: real("speed"),
   trust_score: real("trust_score").default(50), // neutral midpoint on the real 0-100 scale — was 5.0, making every new helper appear near-banned before their first rating

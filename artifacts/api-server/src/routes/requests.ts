@@ -99,25 +99,24 @@ router.get("/requests/nearby", requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "lat and lng are required" });
   const { lat, lng, radius_miles } = parsed.data;
   const radius = radius_miles ?? 5;
-  // SQL bounding-box pre-filter — avoids loading every open request
-  // platform-wide on every call. The precise haversine distance is still
-  // computed in JS afterward, just on a much smaller candidate set.
-  const latDelta = radius / 69;
-  // HIGH-007: clamp the cosine denominator so lngDelta can't blow up near
-  // the poles (cos(lat) → 0) and cap it so it never spans more than half
-  // the globe in longitude.
-  const clampedLat = Math.max(-89.9, Math.min(89.9, lat));
-  const lngDelta = Math.min(radius / (69 * Math.cos(clampedLat * Math.PI / 180)), 180);
-  const requests = await db.select().from(requestsTable).where(
-    and(
+  // PostGIS ST_DWithin spatial filter — the database uses the GiST index on
+  // help_requests.geog to return only rows within `radius` miles, computing
+  // exact geodesic distance server-side instead of loading a bounding box of
+  // candidates and filtering in JS. Radius is converted miles → meters.
+  const radiusMeters = radius * 1609.34;
+  const origin = sql`ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography`;
+  const nearbyRows = await db.select({
+      row: requestsTable,
+      distance_meters: sql<number>`ST_Distance(${requestsTable.geog}, ${origin})`,
+    })
+    .from(requestsTable)
+    .where(and(
       eq(requestsTable.status, "open"),
-      sql`${requestsTable.lat} BETWEEN ${lat - latDelta} AND ${lat + latDelta}`,
-      sql`${requestsTable.lng} BETWEEN ${lng - lngDelta} AND ${lng + lngDelta}`,
-    )
-  );
-  const nearby = requests
-    .map(r => ({ ...r, distance_miles: distanceMiles(lat, lng, r.lat, r.lng) }))
-    .filter(r => r.distance_miles <= radius)
+      sql`${requestsTable.geog} IS NOT NULL`,
+      sql`ST_DWithin(${requestsTable.geog}, ${origin}, ${radiusMeters})`,
+    ));
+  const nearby = nearbyRows
+    .map((nr) => ({ ...nr.row, distance_miles: Number(nr.distance_meters) / 1609.34 }))
     .sort((a, b) => {
       const urgencyOrder: Record<string, number> = { emergency: 0, high: 1, medium: 2, low: 3 };
       const urgencyDiff = (urgencyOrder[a.urgency] ?? 2) - (urgencyOrder[b.urgency] ?? 2);
@@ -175,43 +174,43 @@ router.get("/requests", requireAuth, async (req, res) => {
 
   const hasGeoFilter = params.success && !!params.data.lat && !!params.data.lng;
   let radius = 10;
+  let geoOrigin: ReturnType<typeof sql> | null = null;
   if (hasGeoFilter) {
     radius = params.data.radius_miles ?? 10;
     const lat = params.data.lat!;
     const lng = params.data.lng!;
-    // HIGH-006/HIGH-007: same bounding-box SQL pre-filter used by
-    // /requests/nearby — applied BEFORE the SQL LIMIT, so the haversine
-    // filter below runs against geo-narrowed candidates instead of an
-    // arbitrary top-N-by-date slice. Previously LIMIT ran first, so a busy
-    // area could fill the entire limitParam with far-away rows and silently
-    // under-return (or zero-return) nearby results.
-    const latDelta = radius / 69;
-    const clampedLat = Math.max(-89.9, Math.min(89.9, lat));
-    const lngDelta = Math.min(radius / (69 * Math.cos(clampedLat * Math.PI / 180)), 180);
-    conditions.push(sql`${requestsTable.lat} BETWEEN ${lat - latDelta} AND ${lat + latDelta}`);
-    conditions.push(sql`${requestsTable.lng} BETWEEN ${lng - lngDelta} AND ${lng + lngDelta}`);
+    // HIGH-006/HIGH-007 + PostGIS: replace the JS haversine bounding-box with
+    // a true ST_DWithin spatial filter, pushed into SQL BEFORE the LIMIT so
+    // the GiST index narrows to in-radius rows and the LIMIT caps the
+    // geo-narrowed set (not an arbitrary top-N-by-date slice). Exact geodesic
+    // distance comes back from the same query via ST_Distance.
+    const radiusMeters = radius * 1609.34;
+    geoOrigin = sql`ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography`;
+    conditions.push(sql`${requestsTable.geog} IS NOT NULL`);
+    conditions.push(sql`ST_DWithin(${requestsTable.geog}, ${geoOrigin}, ${radiusMeters})`);
   }
 
   // Always push LIMIT into SQL — never load more than limitParam rows into memory.
-  // When a geo filter is active, the bounding-box conditions above are already
-  // applied at the SQL level, so this LIMIT now caps the geo-narrowed set
-  // rather than truncating before geo-filtering happens.
-  let rows = conditions.length > 0
+  // When a geo filter is active, the ST_DWithin condition above is already
+  // applied at the SQL level, so this LIMIT caps the geo-narrowed set.
+  const rows = conditions.length > 0
     ? await db.select().from(requestsTable).where(and(...conditions)).orderBy(desc(requestsTable.created_at)).limit(limitParam)
     : await db.select().from(requestsTable).orderBy(desc(requestsTable.created_at)).limit(limitParam);
 
-  let distanceById: Record<number, number> = {};
-  if (hasGeoFilter) {
-    const lat = params.data.lat!;
-    const lng = params.data.lng!;
-    rows = rows.filter(r => {
-      const d = distanceMiles(lat, lng, r.lat, r.lng);
-      if (d <= radius) {
-        distanceById[r.id] = d;
-        return true;
-      }
-      return false;
-    });
+  // Compute exact geodesic distances for the returned rows in one extra query
+  // (ST_Distance keyed by id) — keeps the main select fully typed while still
+  // using PostGIS for the distance math. Rows were already radius-filtered via
+  // ST_DWithin in the conditions above.
+  const distanceById: Record<number, number> = {};
+  if (hasGeoFilter && geoOrigin && rows.length > 0) {
+    const ids = rows.map(r => r.id);
+    const distRows = await db
+      .select({ id: requestsTable.id, d: sql<number>`ST_Distance(${requestsTable.geog}, ${geoOrigin})` })
+      .from(requestsTable)
+      .where(sql`${requestsTable.id} = ANY(ARRAY[${sql.join(ids.map(id => sql`${id}`), sql`, `)}]::int[])`);
+    for (const dr of distRows) {
+      if (dr.d != null) distanceById[dr.id] = Number(dr.d) / 1609.34;
+    }
   }
 
   // Collect all relevant user IDs (requesters + helpers) for a single batch fetch
