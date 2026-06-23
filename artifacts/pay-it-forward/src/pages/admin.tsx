@@ -14,6 +14,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area, CartesianGrid, Legend,
 } from "recharts";
+import { getToken as getAdminToken, setToken as setAdminToken, clearToken as clearAdminToken, authHeaders as sharedAuthHeaders } from "@/lib/auth";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -87,16 +88,15 @@ const CHART_COLORS = ["#06b6d4", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#e
 
 const STATUS_FILTERS = ["all", "pending", "under_review", "resolved_dismissed", "resolved_warned", "resolved_banned"];
 
-const SESSION_KEY = "admin_token";
+// CRIT-008: admin auth now shares the same token storage (lib/auth.ts,
+// backed by localStorage) and Bearer-token scheme as the main app, instead
+// of maintaining a separate sessionStorage-keyed session. The admin user id
+// is still tracked separately since it's an admin-panel-only concern.
 const SESSION_USER_KEY = "admin_user_id";
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-function getAdminToken(): string | null {
-  return sessionStorage.getItem(SESSION_KEY);
 }
 
 function getAdminUserId(): number | null {
@@ -105,10 +105,7 @@ function getAdminUserId(): number | null {
 }
 
 function authHeaders(): Record<string, string> {
-  const token = getAdminToken();
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  return headers;
+  return { "Content-Type": "application/json", ...sharedAuthHeaders() };
 }
 
 // ── Login Screen ──────────────────────────────────────────────────────────────
@@ -134,7 +131,7 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
       if (!res.ok) { setError(data.error ?? "Login failed"); return; }
       if (!data.user?.is_admin) { setError("Access denied — admin account required"); return; }
       if (!data.token) { setError("Login error — no token returned"); return; }
-      sessionStorage.setItem(SESSION_KEY, data.token);
+      setAdminToken(data.token);
       sessionStorage.setItem(SESSION_USER_KEY, String(data.user.id));
       onLogin();
     } catch {
@@ -1386,7 +1383,7 @@ export default function AdminScreen() {
   const [, setLocation] = useLocation();
 
   const handleLogout = () => {
-    sessionStorage.removeItem(SESSION_KEY);
+    clearAdminToken();
     sessionStorage.removeItem(SESSION_USER_KEY);
     setAuthed(false);
   };
