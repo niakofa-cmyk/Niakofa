@@ -26,6 +26,8 @@ export function getRedisConnection(): IORedis | null {
     maxRetriesPerRequest: null,   // required by BullMQ
     enableReadyCheck: false,
     lazyConnect: false,
+    keepAlive: 10_000,            // TCP keepalive — prevents idle connections being silently dropped by the proxy, which surfaces as ECONNRESET
+    retryStrategy: (times: number) => Math.min(times * 200, 5_000), // bounded backoff instead of default unbounded growth
   });
 
   _connection.on("connect", () => logger.info("redis: connected"));
