@@ -151,9 +151,31 @@ export default function MapScreen() {
 
   useEffect(() => {
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    const token = localStorage.getItem("niakofa_token") ?? "";
     fetch(`${base}/api/crisis/status`)
       .then(r => r.json())
-      .then((data: CrisisState) => { if (data.active) setCrisis(data); })
+      .then(async (data: CrisisState) => {
+        if (!data.active) return;
+        // Fetch verified regional resources and merge — regional contacts take
+        // precedence over anything the admin typed into the crisis status payload.
+        try {
+          const loc = (window as unknown as { __niakofaRegion?: string }).__niakofaRegion ?? currentUser?.city ?? undefined;
+          const qs = loc ? `?region=${encodeURIComponent(loc)}` : "";
+          const rr = await fetch(`${base}/api/crisis/resources${qs}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (rr.ok) {
+            const rd = await rr.json() as { region?: string; verified: boolean; resources: CrisisState["resources"] };
+            setCrisis({
+              ...data,
+              region: rd.region ?? data.region,
+              resources: rd.resources && rd.resources.length > 0 ? rd.resources : (data.resources ?? []),
+            });
+            return;
+          }
+        } catch { /* fall through to plain crisis state */ }
+        setCrisis(data);
+      })
       .catch(() => {});
   }, []);
 

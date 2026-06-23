@@ -4,7 +4,7 @@ import {
   Shield, AlertCircle, CheckCircle2, Clock, X, ChevronLeft,
   Eye, Flag, User as UserIcon, RefreshCw, Filter,
   Users, Search, Ban, AlertTriangle, Star, BarChart3,
-  TrendingUp, Heart, Activity, Inbox, CheckCheck, ThumbsDown, Globe
+  TrendingUp, Heart, Activity, Inbox, CheckCheck, ThumbsDown, Globe, PhoneCall
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1547,7 +1547,201 @@ function HelpersTab() {
 
 // ── Main Admin Screen ─────────────────────────────────────────────────────────
 
-type TabId = "reports" | "users" | "analytics" | "civic" | "helpers" | "neighborhoods";
+
+// ── Crisis Resources Tab ──────────────────────────────────────────────────────
+
+type CrisisResource = { label: string; phone?: string; url?: string };
+interface CrisisRegion {
+  id: number; region_key: string; region_display: string;
+  state_code: string | null; verified: boolean; notes: string | null;
+  resources: CrisisResource[]; verified_at: string | null;
+}
+
+function CrisisResourcesTab() {
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  const [regions, setRegions] = useState<CrisisRegion[]>([]);
+  const [filter, setFilter] = useState<"pending" | "verified" | "all">("pending");
+  const [editing, setEditing] = useState<number | null>(null);
+  const [form, setForm] = useState<Partial<CrisisRegion> & { resources: CrisisResource[] }>({ resources: [] });
+  const [saving, setSaving] = useState(false);
+  const [suggesting, setSuggesting] = useState<number | null>(null);
+  const [msg, setMsg] = useState("");
+
+  async function askNia(r: CrisisRegion) {
+    setSuggesting(r.id);
+    setMsg("");
+    try {
+      const res = await fetch(`${base}/api/admin/region-crisis-resources/${r.id}/suggest`, {
+        method: "POST", headers: authHeaders(),
+      });
+      const data = await res.json() as { resources?: CrisisResource[]; note?: string; error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? "Suggestion failed");
+      startEdit(r);
+      setForm(f => ({ ...f, resources: data.resources ?? [], notes: data.note ?? "" }));
+      setMsg("🤖 Nia suggested these contacts — review carefully before verifying.");
+    } catch (e: unknown) {
+      setMsg("❌ " + (e instanceof Error ? e.message : "Suggestion failed"));
+    } finally { setSuggesting(null); }
+  }
+
+  async function load() {
+    const qs = filter === "all" ? "" : `?verified=${filter === "verified"}`;
+    const res = await fetch(`${base}/api/admin/region-crisis-resources${qs}`, { headers: authHeaders() });
+    const data = await res.json() as CrisisRegion[];
+    setRegions(data);
+  }
+  useEffect(() => { load(); }, [filter]);
+
+  function startEdit(r: CrisisRegion) {
+    setEditing(r.id);
+    setForm({ ...r, resources: r.resources.length ? r.resources : [{ label: "", phone: "", url: "" }] });
+    setMsg("");
+  }
+  function cancelEdit() { setEditing(null); setForm({ resources: [] }); setMsg(""); }
+
+  function setRes(i: number, field: keyof CrisisResource, val: string) {
+    setForm(f => { const rs = [...f.resources]; rs[i] = { ...rs[i], [field]: val }; return { ...f, resources: rs }; });
+  }
+  function addRes() { setForm(f => ({ ...f, resources: [...f.resources, { label: "", phone: "", url: "" }] })); }
+  function removeRes(i: number) { setForm(f => ({ ...f, resources: f.resources.filter((_, j) => j !== i) })); }
+
+  async function save(verify: boolean) {
+    setSaving(true); setMsg("");
+    try {
+      const body: Record<string, unknown> = {
+        region_display: form.region_display, state_code: form.state_code,
+        notes: form.notes, resources: form.resources.filter(r => r.label.trim()),
+      };
+      if (verify) body.verified = true;
+      const res = await fetch(`${base}/api/admin/region-crisis-resources/${editing}`, {
+        method: "PATCH", headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      if (!res.ok) { const e = await res.json() as { error?: string }; throw new Error(e.error ?? "Save failed"); }
+      toast({ title: verify ? "✅ Region verified" : "💾 Draft saved" });
+      cancelEdit(); load();
+    } catch (e: unknown) {
+      setMsg("❌ " + (e instanceof Error ? e.message : "Save failed"));
+    } finally { setSaving(false); }
+  }
+
+  async function del(id: number, display: string) {
+    if (!confirm(`Delete region "${display}"?`)) return;
+    await fetch(`${base}/api/admin/region-crisis-resources/${id}`, { method: "DELETE", headers: authHeaders() });
+    load();
+  }
+
+  return (
+    <div className="p-4 max-w-3xl">
+      <h2 className="text-lg font-semibold mb-1">Regional Crisis Resources</h2>
+      <p className="text-sm text-muted-foreground mb-4">
+        Regions appear when activity is first seen there. Enter real local emergency contacts and
+        verify — until verified, users see the national fallback (911 / 211 / 988 / SAMHSA) only.
+      </p>
+      <div className="flex gap-2 mb-5">
+        {(["pending","verified","all"] as const).map(f => (
+          <Button key={f} size="sm" variant={filter === f ? "default" : "outline"} onClick={() => setFilter(f)}>
+            {f === "pending" ? "⏳ Pending" : f === "verified" ? "✅ Verified" : "All"}
+          </Button>
+        ))}
+      </div>
+
+      {regions.length === 0 && (
+        <p className="text-sm text-muted-foreground italic">
+          {filter === "pending" ? "No pending regions." : "No regions yet."}
+        </p>
+      )}
+
+      {regions.map(r => (
+        <div key={r.id} className={`border rounded-lg mb-3 p-4 ${r.verified ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`}>
+          {editing === r.id ? (
+            <div className="space-y-3">
+              <div className="flex gap-3 flex-wrap">
+                <div>
+                  <label className="text-xs text-muted-foreground">Display name</label>
+                  <input value={form.region_display ?? ""} onChange={e => setForm(f => ({ ...f, region_display: e.target.value }))}
+                    className="block mt-1 px-2 py-1.5 rounded border text-sm w-56" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">State</label>
+                  <input value={form.state_code ?? ""} placeholder="TX" onChange={e => setForm(f => ({ ...f, state_code: e.target.value }))}
+                    className="block mt-1 px-2 py-1.5 rounded border text-sm w-16" />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-muted-foreground">Resources (label + phone or URL)</label>
+                {form.resources.map((res, i) => (
+                  <div key={i} className="flex gap-2 mt-1.5 flex-wrap items-center">
+                    <input placeholder="Label" value={res.label} onChange={e => setRes(i, "label", e.target.value)}
+                      className="px-2 py-1 rounded border text-sm w-44" />
+                    <input placeholder="Phone" value={res.phone ?? ""} onChange={e => setRes(i, "phone", e.target.value)}
+                      className="px-2 py-1 rounded border text-sm w-36" />
+                    <input placeholder="URL" value={res.url ?? ""} onChange={e => setRes(i, "url", e.target.value)}
+                      className="px-2 py-1 rounded border text-sm w-48" />
+                    <button onClick={() => removeRes(i)} className="text-red-500 hover:text-red-700 text-lg leading-none">×</button>
+                  </div>
+                ))}
+                <button onClick={addRes} className="mt-2 text-xs text-blue-600 hover:underline">+ Add resource</button>
+              </div>
+
+              <div>
+                <label className="text-xs text-muted-foreground">Admin notes</label>
+                <textarea value={form.notes ?? ""} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                  rows={2} className="block mt-1 w-full px-2 py-1.5 rounded border text-sm resize-y" />
+              </div>
+
+              {msg && <p className={`text-sm ${msg.startsWith("❌") ? "text-red-600" : "text-green-700"}`}>{msg}</p>}
+
+              <div className="flex gap-2">
+                <Button size="sm" disabled={saving} onClick={() => save(true)} className="bg-green-700 hover:bg-green-800">
+                  {saving ? "Saving…" : "✅ Save & Verify"}
+                </Button>
+                <Button size="sm" variant="outline" disabled={saving} onClick={() => save(false)}>Save draft</Button>
+                <Button size="sm" variant="ghost" onClick={cancelEdit}>Cancel</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-between items-start gap-3">
+              <div>
+                <div className="font-medium text-sm">
+                  {r.verified ? "✅" : "⏳"} {r.region_display}
+                  {r.state_code && <span className="text-muted-foreground font-normal ml-1">({r.state_code})</span>}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">key: {r.region_key}</div>
+                {r.verified && r.verified_at && (
+                  <div className="text-xs text-green-700 mt-0.5">Verified {new Date(r.verified_at).toLocaleDateString()}</div>
+                )}
+                {r.resources.length > 0 ? (
+                  <ul className="mt-1.5 text-xs text-gray-600 space-y-0.5 list-disc list-inside">
+                    {r.resources.map((res, i) => (
+                      <li key={i}>{res.label}{res.phone ? ` — ${res.phone}` : ""}{res.url ? ` — ${res.url}` : ""}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="text-xs text-amber-700 mt-1">No local resources — national fallback shown to users.</div>
+                )}
+                {r.notes && <div className="text-xs text-muted-foreground mt-1 italic">📝 {r.notes}</div>}
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <Button size="sm" onClick={() => startEdit(r)}>Edit</Button>
+                {!r.verified && (
+                  <Button size="sm" variant="outline" className="text-purple-600 border-purple-300"
+                    disabled={suggesting === r.id}
+                    onClick={() => askNia(r)}>
+                    {suggesting === r.id ? "Asking…" : "🤖 Ask Nia"}
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" className="text-red-600 border-red-300" onClick={() => del(r.id, r.region_display)}>Delete</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+type TabId = "reports" | "users" | "analytics" | "civic" | "helpers" | "neighborhoods" | "crisis";
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "reports",       label: "Reports",   icon: Flag },
@@ -1556,6 +1750,7 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "analytics",     label: "Analytics", icon: BarChart3 },
   { id: "civic",         label: "Civic",     icon: Inbox },
   { id: "neighborhoods", label: "Hoods",     icon: Globe },
+  { id: "crisis",         label: "Crisis",    icon: PhoneCall },
 ];
 
 export default function AdminScreen() {
@@ -1628,6 +1823,7 @@ export default function AdminScreen() {
             {activeTab === "analytics" && <AnalyticsTab />}
             {activeTab === "civic"     && <CivicTab />}
             {activeTab === "neighborhoods" && <NeighborhoodsTab />}
+            {activeTab === "crisis"         && <CrisisResourcesTab />}
           </motion.div>
         </AnimatePresence>
       </div>
