@@ -1,7 +1,12 @@
 import pg from "pg";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { pino } from "pino";
 const logger = pino({ level: "info" });
 const { Pool } = pg;
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -14,6 +19,13 @@ const pool = new Pool({
 pool.on("error", (err) => {
   logger.error({ err }, "nia: pg pool error");
 });
+
+export async function runMigrations(): Promise<void> {
+  const sqlPath = path.join(__dirname, "..", "..", "migrate.sql");
+  const sql = fs.readFileSync(sqlPath, "utf8");
+  await pool.query(sql);
+  logger.info("nia: migrations applied (nia_conversations, nia_memories)");
+}
 
 const MAX_STORED_CHARS = 8000;
 
@@ -78,9 +90,6 @@ export interface ActiveRequestInfo {
   lat: number;
   lng: number;
   createdAt: Date;
-  // Which role this user has on the request — Nia phrases things very
-  // differently for "your request" (requester) vs. "the job you're helping
-  // with" (helper).
   viewerRole: "requester" | "helper";
 }
 
@@ -88,8 +97,6 @@ export async function getActiveRequest(
   requestId: number,
   userId: number | null
 ): Promise<ActiveRequestInfo | null> {
-  // Scoped to requests this user is actually party to, either as the person
-  // who posted it or the helper assigned to it — never an arbitrary request.
   if (!userId) return null;
   const result = await pool.query(
     `SELECT id, title, description, category, urgency, status, neighborhood, lat, lng, created_at, requester_id, helper_id

@@ -9,3 +9,10 @@ CREATE TABLE IF NOT EXISTS nia_conversations (
 
 CREATE INDEX IF NOT EXISTS nia_conversations_session_idx ON nia_conversations (session_id);
 CREATE INDEX IF NOT EXISTS nia_conversations_created_at_idx ON nia_conversations (created_at);
+
+CREATE TABLE IF NOT EXISTS nia_memories (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  memory TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

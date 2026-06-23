@@ -19,3 +19,5 @@ export * from "./password-reset-codes";
 export * from "./city-neighborhoods";
 export * from "./geography";
 export * from "./region-crisis-resources";
+export * from "./nia-conversations";
+export * from "./nia-memories";

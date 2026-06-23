@@ -6,7 +6,7 @@ import chatRouter from "./routes/chat.js";
 import neighborhoodsRouter from "./routes/neighborhoods.js";
 import crisisResourcesRouter from "./routes/crisis-resources.js";
 import "./lib/auth.js"; // fail fast at boot if SESSION_SECRET is missing
-import { purgeExpiredConversations } from "./lib/db.js";
+import { purgeExpiredConversations, runMigrations } from "./lib/db.js";
 
 const logger = pino({ level: "info" });
 const app = express();
@@ -28,4 +28,12 @@ setInterval(async () => {
 }, 60 * 60 * 1000);
 
 const port = Number(process.env.PORT ?? 3001);
-app.listen(port, () => logger.info({ port }, "Nia service listening"));
+
+runMigrations()
+  .catch((err) => {
+    logger.error({ err }, "nia: startup migration failed");
+    process.exit(1);
+  })
+  .then(() => {
+    app.listen(port, () => logger.info({ port }, "Nia service listening"));
+  });

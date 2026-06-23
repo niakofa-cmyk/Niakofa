@@ -43,6 +43,13 @@
       "when": 1782241404642,
       "tag": "0005_empty_magik",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782252726024,
+      "tag": "0006_nia_tables",
+      "breakpoints": true
     }
   ]
 }
