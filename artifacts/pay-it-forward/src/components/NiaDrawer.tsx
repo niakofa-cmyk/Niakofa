@@ -541,7 +541,7 @@ export function NiaDrawer({
             style={{
               position: "fixed", bottom: 0, left: 0, right: 0,
               zIndex: 9999,
-              height: "88dvh",
+              height: "96dvh",
               display: "flex",
               flexDirection: "column",
               background: "var(--color-background-primary)",
