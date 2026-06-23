@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { Heart, MapPin, Bell, Shield, Sparkles, ChevronRight, Check, Loader2 } from "lucide-react";
-import { NiaDrawer } from "@/components/NiaDrawer";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { subscribeToPush } from "@/lib/push";
@@ -63,13 +62,11 @@ const STEPS: Step[] = [
 export default function OnboardingScreen() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  const { currentUser } = useAppContext();
+  const { currentUser, openNia } = useAppContext();
   const [step, setStep] = useState(0);
   const [locationGranted, setLocationGranted] = useState(false);
   const [notifGranted, setNotifGranted] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [niaOpen, setNiaOpen] = useState(false);
-
   const current = STEPS[step];
 
   const handleAction = async () => {
@@ -87,7 +84,7 @@ export default function OnboardingScreen() {
 
     if (current.id === "nia") {
       setLoading(false);
-      setNiaOpen(true);
+      openNia();
       return;
     }
 

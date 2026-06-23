@@ -38,6 +38,10 @@ interface AppContextType {
   myLocation: Location | null;
   activeRequestId: number | null;
   setActiveRequestId: (id: number | null) => void;
+  openNia: (initialMessage?: string) => void;
+  niaOpen: boolean;
+  setNiaOpen: (open: boolean) => void;
+  niaInitialMessage: string | undefined;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -103,6 +107,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     authorAvatar?: string;
   } | null>(null);
   const [activeRequestId, setActiveRequestId] = useState<number | null>(null);
+  const [niaOpen, setNiaOpen] = useState(false);
+  const [niaInitialMessage, setNiaInitialMessage] = useState<string | undefined>(undefined);
 
   // ── All useRef calls ─────────────────────────────────────────────────────
   const locationRef = useRef<Location | null>(loadLastLocation());
@@ -159,6 +165,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         { onError: () => {} }
       );
     }
+  };
+
+  const openNia = (initialMessage?: string) => {
+    setNiaInitialMessage(initialMessage);
+    setNiaOpen(true);
   };
 
   // ── useWebSocket subscriptions ────────────────────────────────────────────
@@ -420,6 +431,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       myLocation,
       activeRequestId,
       setActiveRequestId,
+      openNia,
+      niaOpen,
+      setNiaOpen,
+      niaInitialMessage,
     }}>
       {children}
       <GratitudeModal

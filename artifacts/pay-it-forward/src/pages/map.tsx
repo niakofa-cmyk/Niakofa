@@ -14,7 +14,6 @@ import type { HelpRequest, HelperLocation } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { TopBar } from "@/components/TopBar";
 import { BottomSheet } from "@/components/BottomSheet";
-import { NiaDrawer, NiaFab } from "@/components/NiaDrawer";
 import { RequestMarker } from "@/components/RequestMarker";
 import { HelperMarker } from "@/components/HelperMarker";
 import { DispatchIntelligenceCard } from "@/components/DispatchIntelligenceCard";

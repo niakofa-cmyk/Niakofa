@@ -1,5 +1,5 @@
 import "./i18n";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter, useRoute } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -98,8 +98,27 @@ function AppShell() {
   );
 }
 
+function NiaWrapper() {
+  const { currentUser, myLocation, helperModeActive, activeRequestId, niaOpen, setNiaOpen, niaInitialMessage } = useAppContext();
+  return (
+    <>
+      <NiaFab onClick={() => setNiaOpen(true)} />
+      <NiaDrawer
+        open={niaOpen}
+        onClose={() => setNiaOpen(false)}
+        userId={currentUser?.id ?? null}
+        userName={currentUser?.name ?? null}
+        userLocation={myLocation ? { lat: myLocation.lat, lon: myLocation.lng } : null}
+        helperModeActive={helperModeActive}
+        activeRequestId={activeRequestId}
+        accountType={currentUser?.account_type ?? null}
+        initialMessage={niaInitialMessage}
+      />
+    </>
+  );
+}
+
 function App() {
-  const [niaOpen, setNiaOpen] = useState(false);
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
@@ -109,12 +128,11 @@ function App() {
               <AppShell />
             </WouterRouter>
             <Toaster />
+            {/* Nia is always available — before login, on every screen */}
+            <NiaWrapper />
           </AppProvider>
         </TooltipProvider>
       </QueryClientProvider>
-      {/* Nia is always available — before login, on every screen */}
-      <NiaFab onClick={() => setNiaOpen(true)} />
-      <NiaDrawer open={niaOpen} onClose={() => setNiaOpen(false)} />
     </ErrorBoundary>
   );
 }
