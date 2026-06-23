@@ -616,6 +616,9 @@ router.post("/requests/:id/tip", requireAuth, paymentLimiter, async (req, res) =
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 
   const { tip_amount } = req.body as { tip_amount: number };
+  if (typeof tip_amount !== "number" || isNaN(tip_amount) || tip_amount <= 0 || tip_amount > 10000) {
+    return res.status(400).json({ error: "tip_amount must be a number between 0 and 10000" });
+  }
   const MAX_TIP_AMOUNT = 500; // sanity cap — tips are smaller-scale than pledges/payments
   if (!tip_amount || tip_amount <= 0 || tip_amount > MAX_TIP_AMOUNT) {
     return res.status(400).json({ error: `tip_amount must be greater than 0 and no more than $${MAX_TIP_AMOUNT}` });
@@ -785,6 +788,9 @@ router.post("/requests/:id/rate", requireAuth, async (req, res) => {
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
 
   const { stars, review } = req.body as { stars?: number; review?: string };
+  if (stars !== undefined && (typeof stars !== "number" || !Number.isInteger(stars) || stars < 1 || stars > 5)) {
+    return res.status(400).json({ error: "stars must be an integer between 1 and 5" });
+  }
   const starsNum = Number(stars);
   if (!starsNum || starsNum < 1 || starsNum > 5 || !Number.isInteger(starsNum)) {
     return res.status(400).json({ error: "stars must be an integer from 1 to 5" });

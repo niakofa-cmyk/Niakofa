@@ -1,4 +1,6 @@
 import pg from "pg";
+import { pino } from "pino";
+const logger = pino({ level: "info" });
 const { Pool } = pg;
 
 const pool = new Pool({
@@ -10,7 +12,7 @@ const pool = new Pool({
 });
 
 pool.on("error", (err) => {
-  console.error("nia: unexpected pg pool error", err);
+  logger.error({ err }, "nia: pg pool error");
 });
 
 const MAX_STORED_CHARS = 8000;
