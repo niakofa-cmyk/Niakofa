@@ -249,7 +249,13 @@ router.post("/stripe/webhook", async (req, res) => {
 });
 
 // ── PAYMENT INTENT (Phase 1 — immediate pay) ────────────────────────────────
-router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId"), paymentLimiter, async (req, res) => {
+// HIGH-004: requireOwnership("requesterId") was checking req.body.requesterId,
+// a field that doesn't exist on this route (the body has requestId/helperId,
+// and the actual requester is always req.authenticatedUserId, set below) —
+// so targetId was always undefined and EVERY call 403'd. Ownership here is
+// inherent (the payer is whoever is authenticated), so the extra middleware
+// is removed rather than fixed to check a field that was never meant to exist.
+router.post("/stripe/payment-intent", requireAuth, paymentLimiter, async (req, res) => {
   if (!stripeRequired(res)) return;
 
   const { requestId, amount, helperId, paymentType } = req.body as {
