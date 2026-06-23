@@ -1,9 +1,10 @@
 import { useLocation, Link } from "wouter";
 import { Map, Users, Plus, Wallet, User, Bell } from "lucide-react";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NotificationsDrawer, type LiveNotification } from "./NotificationsDrawer";
 import { useWebSocket } from "@/lib/useWebSocket";
+import { authHeaders } from "@/lib/auth";
 import type { HelpRequest } from "@workspace/api-client-react";
 import { useTranslation } from "react-i18next";
 
@@ -55,6 +56,19 @@ export function BottomNav() {
   const [notifications, setNotifications] = useState<LiveNotification[]>(SEED_NOTIFICATIONS);
   const [unreadCount, setUnreadCount] = useState(0);
   const seenIds = useRef(new Set<string>());
+
+  // ENH-015: seed the badge with the real persisted unread count when the
+  // app opens — previously this always started at 0 on every load/reload
+  // and only reflected messages received live during the current session.
+  useEffect(() => {
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/chat/unread-count`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { unread_count?: number } | null) => {
+        if (data?.unread_count) setUnreadCount(prev => prev + data.unread_count!);
+      })
+      .catch(() => {});
+  }, []);
 
   const addNotif = (n: LiveNotification) => {
     if (seenIds.current.has(n.id)) return;

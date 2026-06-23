@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, chatMessagesTable, requestsTable } from "@workspace/db";
-import { eq, and, lt, desc, isNull, ne } from "drizzle-orm";
+import { eq, and, lt, desc, isNull, ne, or, sql } from "drizzle-orm";
 import { sendToUser } from "../lib/ws-hub";
 import { crisisAwareChatLimiter } from "../middlewares/rate-limit";
 import { requireAuth } from "../middlewares/auth";
@@ -125,6 +125,30 @@ router.patch("/requests/:id/chat/read", requireAuth, async (req, res) => {
     );
 
   return res.json({ ok: true });
+});
+
+// GET /chat/unread-count — total unread messages across every request the
+// authenticated user participates in (as requester or helper). ENH-015:
+// the frontend's Alerts badge only tracked unread counts in memory and
+// always reset to 0 on reload — this gives it a real starting count to
+// seed from when the app opens.
+router.get("/chat/unread-count", requireAuth, async (req, res) => {
+  const r = req as typeof req & { authenticatedUserId: number };
+  const userId = r.authenticatedUserId;
+
+  const [row] = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(chatMessagesTable)
+    .innerJoin(requestsTable, eq(chatMessagesTable.request_id, requestsTable.id))
+    .where(
+      and(
+        or(eq(requestsTable.requester_id, userId), eq(requestsTable.helper_id, userId)),
+        ne(chatMessagesTable.sender_id, userId),
+        isNull(chatMessagesTable.read_at),
+      ),
+    );
+
+  return res.json({ unread_count: row?.count ?? 0 });
 });
 
 export default router;
