@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -305,6 +305,20 @@ export default function LoginScreen() {
   const [, setLocation] = useLocation();
   const { setCurrentUser } = useAppContext();
   const [mode, setMode] = useState<Mode>("login");
+
+  // ENH-003: show a clear message when we landed here because a 401
+  // bounced the user out of an expired session, instead of leaving them
+  // wondering why they were suddenly logged out.
+  useEffect(() => {
+    if (sessionStorage.getItem("niakofa_session_expired")) {
+      sessionStorage.removeItem("niakofa_session_expired");
+      toast({
+        title: "Session expired",
+        description: "Please sign in again to continue.",
+        variant: "destructive",
+      });
+    }
+  }, []);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
