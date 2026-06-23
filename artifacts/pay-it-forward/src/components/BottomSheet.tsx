@@ -78,6 +78,7 @@ export function BottomSheet({ requests, onClaim, isClaiming, dismissedId }: Bott
     <motion.div
       initial={{ y: "100%" }}
       animate={{ y: 0 }}
+      exit={{ y: "100%" }}
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
       className="absolute bottom-0 left-0 right-0 z-20 bg-card border-t border-border rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.5)] flex flex-col max-h-[65vh]"
     >

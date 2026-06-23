@@ -237,7 +237,7 @@ function CrisisStrip() {
           <ChevronDown size={14} color="#993C1D" />
         </motion.div>
       </button>
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         {expanded && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
@@ -521,7 +521,7 @@ export function NiaDrawer({
   const showQuickPrompts = historyLoaded && !showSplash && messages.length <= 1 && !loading;
 
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="wait">
       {open && (
         <>
           <motion.div
@@ -617,7 +617,7 @@ export function NiaDrawer({
                 <div style={{ paddingTop: 10, flexShrink: 0 }}>
                   <CrisisStrip />
                 </div>
-                <AnimatePresence>
+                <AnimatePresence mode="wait">
                   {showQuickPrompts && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
