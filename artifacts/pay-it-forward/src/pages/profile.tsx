@@ -1014,7 +1014,7 @@ export default function ProfileScreen() {
               <div>
                 <h2 className="text-xl font-black">{currentUser.name}</h2>
                 <p className="text-muted-foreground flex items-center gap-1 text-sm">
-                  <MapPin className="w-3.5 h-3.5" /> {currentUser.neighborhood || "Fort Worth Community"}
+                  <MapPin className="w-3.5 h-3.5" /> {currentUser.neighborhood || "Your Community"}
                 </p>
                 <div className="flex items-center flex-wrap gap-1.5 mt-1">
                   <TrustTierBadge

@@ -31,9 +31,11 @@ async function getCurrentCrisisState(): Promise<CrisisState> {
     message: row.message,
     level: row.level as CrisisState["level"],
     // BUG-033: Include region in the API response so the frontend can render
-    // a configurable banner subtitle. CRISIS_DEFAULT_REGION defaults to
-    // "Tarrant County" to match the app's primary deployment area.
-    region: process.env["CRISIS_DEFAULT_REGION"] ?? "Tarrant County",
+    // a configurable banner subtitle. No hardcoded regional default — Niakofa
+    // operates globally, and defaulting every unconfigured deployment to a
+    // single US county would be actively wrong for users elsewhere. Each
+    // deployment sets CRISIS_DEFAULT_REGION for its own area.
+    region: process.env["CRISIS_DEFAULT_REGION"] ?? undefined,
     activatedAt: row.created_at.toISOString(),
     resources: row.resources ? JSON.parse(row.resources) : [],
   };
@@ -55,9 +57,10 @@ router.post("/crisis/activate", requireAuth, requireAdmin(), async (req, res) =>
     resources?: CrisisState["resources"];
   };
   // Default resources are configurable via CRISIS_DEFAULT_RESOURCES (JSON
-  // array) so a deployment outside Tarrant County/Fort Worth isn't
-  // permanently hardcoded to the wrong emergency contacts. Falls back to
-  // the original Fort Worth defaults if unset or malformed.
+  // array). Niakofa is a global platform — there is no safe universal
+  // default emergency contact, so an unconfigured deployment falls back to
+  // an empty list rather than a US-specific phone number that would be
+  // wrong (and potentially dangerous) for users outside that one county.
   // Validate that a parsed value is an array of { label, phone?, url? } objects —
   // the TypeScript cast alone does not check the runtime shape.
   function isValidResources(val: unknown): val is CrisisState["resources"] {
@@ -79,14 +82,11 @@ router.post("/crisis/activate", requireAuth, requireAdmin(), async (req, res) =>
       return null;
     }
   })();
-  const finalResources = resources ?? envDefaults ?? [
-    { label: "Fort Worth Emergency Mgmt", phone: "817-392-6100" },
-    { label: "Tarrant County 211", phone: "211" },
-    { label: "Red Cross North TX", url: "https://www.redcross.org" },
-  ];
-  // Allow deployments outside Tarrant County / Fort Worth to set a custom
-  // default message via CRISIS_DEFAULT_MESSAGE env var.
-  const finalMessage = message ?? process.env["CRISIS_DEFAULT_MESSAGE"] ?? "⚠️ Emergency situation active in Tarrant County. Check nearby requests and stay safe.";
+  const finalResources = resources ?? envDefaults ?? [];
+  // Allow each deployment to set a custom default message via
+  // CRISIS_DEFAULT_MESSAGE. No region-specific fallback text — "Tarrant
+  // County" would be wrong (and confusing) for every other deployment.
+  const finalMessage = message ?? process.env["CRISIS_DEFAULT_MESSAGE"] ?? "⚠️ Emergency situation active in your area. Check nearby requests and stay safe.";
   const finalLevel = (level as CrisisState["level"]) ?? "warning";
 
   const [row] = await db.insert(crisisStateTable).values({

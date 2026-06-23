@@ -88,7 +88,7 @@ export async function sendReceipt(data: ReceiptData): Promise<void> {
     </div>
     <p style="text-align:center;font-size:12px;color:#64748b">
       Thank you for being part of the Niakofa community.<br>
-      Your kindness makes Fort Worth stronger.
+      Your kindness makes your community stronger.
     </p>
   </div>
 </body>
@@ -208,7 +208,7 @@ export async function sendHelperApplicationDecision(data: HelperDecisionData): P
     </div>` : ""}
 
     <p style="text-align:center;font-size:12px;color:#475569;line-height:1.6">
-      ${isApproved ? "Welcome to the team, neighbor. Fort Worth is stronger because of you." : "Thank you for your interest in making Tarrant County stronger."}<br>
+      ${isApproved ? "Welcome to the team, neighbor. Your community is stronger because of you." : "Thank you for your interest in making your community stronger."}<br>
       — The Niakofa Community
     </p>
   </div>

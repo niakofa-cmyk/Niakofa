@@ -1,7 +1,7 @@
 {
   "name": "Niakofa — Community Help",
   "short_name": "Niakofa",
-  "description": "Help Today. Pay It Forward Tomorrow. Real-time mutual aid for Tarrant County, TX.",
+  "description": "Help Today. Pay It Forward Tomorrow. Real-time mutual aid, anywhere in the world.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
