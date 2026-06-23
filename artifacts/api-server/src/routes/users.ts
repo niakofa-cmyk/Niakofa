@@ -85,6 +85,13 @@ router.post("/users/login", authLimiter, async (req, res) => {
 router.post("/users/request-password-reset", authLimiter, async (req, res) => {
   res.setHeader("Deprecation", "true");
   res.setHeader("Link", '</users/forgot-password>; rel="successor-version"');
+  // LOW-001: log every caller of this deprecated endpoint (User-Agent + IP)
+  // so we have actual usage data to decide on a sunset date, instead of an
+  // untracked TODO comment.
+  logger.warn(
+    { ip: req.ip, userAgent: req.headers["user-agent"] },
+    "deprecated: /users/request-password-reset was called — track for removal"
+  );
   const { email } = req.body as { email?: string };
   const GENERIC_RESPONSE = { ok: true, message: "If that email has a legacy account, a code has been sent." };
 

@@ -196,6 +196,9 @@ importers:
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
+      '@workspace/trust-tiers':
+        specifier: workspace:*
+        version: link:../../lib/trust-tiers
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
@@ -546,6 +549,9 @@ importers:
       '@stripe/stripe-js':
         specifier: ^7.9.0
         version: 7.9.0
+      '@workspace/trust-tiers':
+        specifier: workspace:*
+        version: link:../../lib/trust-tiers
       i18next:
         specifier: ^26.3.1
         version: 26.3.1(typescript@5.9.3)
@@ -791,6 +797,8 @@ importers:
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
+
+  lib/trust-tiers: {}
 
   scripts:
     dependencies:

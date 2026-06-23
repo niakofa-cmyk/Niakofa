@@ -31,7 +31,8 @@
     "twilio": "^6.0.2",
     "web-push": "^3.6.7",
     "ws": "^8.21.0",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "@workspace/trust-tiers": "workspace:*"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
