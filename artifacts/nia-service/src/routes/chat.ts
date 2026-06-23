@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { checkSafety } from "../lib/safety.js";
-import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit, getActiveRequest } from "../lib/db.js";
+import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit, getActiveRequest, getUserMemory, upsertUserMemory } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
 import { injectLocation, buildLocationPrefix, buildAppContextPrefix, LocationContext } from "../middleware/location.js";
 
@@ -64,6 +64,12 @@ router.post("/chat", injectLocation, async (req: Request, res: Response) => {
 
   const history = await getRecentHistory(sessionId);
 
+  // Load persistent memory for logged-in users
+  const userMemory = userId ? await getUserMemory(userId).catch(() => null) : null;
+  const memoryPrefix = userMemory
+    ? `MEMORY OF THIS USER:\n${userMemory}\n\nUse this memory naturally — reference it when relevant, like a friend who remembers. Don't recite it robotically.\n\n`
+    : "";
+
   // Best-effort: if the user has an active request open, pull its real details
   // so Nia can reference it specifically rather than just knowing an ID exists.
   const activeRequest =
@@ -98,6 +104,7 @@ router.post("/chat", injectLocation, async (req: Request, res: Response) => {
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
       system:
+        memoryPrefix +
         softPrefix +
         buildLocationPrefix((req as any).locationContext as LocationContext | undefined) +
         buildAppContextPrefix({
@@ -141,6 +148,11 @@ router.post("/chat", injectLocation, async (req: Request, res: Response) => {
     res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
     res.end();
     await saveConversation(userId, sessionId, message, fullResponse);
+
+    // Extract and update memory for logged-in users (fire and forget)
+    if (userId) {
+      extractAndUpdateMemory(userId, userMemory, message, fullResponse, anthropic).catch(() => {});
+    }
   } catch (err) {
     console.error("nia: chat error", err);
     res.write(`data: ${JSON.stringify({ type: "error", message: "Nia is unavailable right now. Please try again." })}\n\n`);
@@ -157,3 +169,42 @@ router.get("/history/:sessionId", async (req: Request, res: Response) => {
 router.get("/health", (_req, res) => res.json({ status: "ok", service: "nia" }));
 
 export default router;
+
+// Extracts key facts from the conversation and merges them into the user's memory
+async function extractAndUpdateMemory(
+  userId: number,
+  existingMemory: string | null,
+  userMessage: string,
+  niaResponse: string,
+  anthropic: Anthropic
+): Promise<void> {
+  const prompt = `You are Nia's memory system. Extract any meaningful, lasting facts about this user from the conversation below.
+
+Existing memory:
+${existingMemory ?? "None yet."}
+
+New conversation:
+User: ${userMessage}
+Nia: ${niaResponse}
+
+Rules:
+- Only extract facts that would help Nia be more personal and helpful in FUTURE conversations
+- Include: life situation, needs, family, struggles, wins, goals, preferences, location details
+- Merge with existing memory — don't duplicate, update if changed
+- Keep it under 400 words, written as bullet points
+- If nothing meaningful to remember, return the existing memory unchanged
+- Return ONLY the updated memory bullets, no preamble
+
+Updated memory:`;
+
+  const response = await anthropic.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 500,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const newMemory = response.content[0].type === "text" ? response.content[0].text.trim() : null;
+  if (newMemory && newMemory.length > 10) {
+    await upsertUserMemory(userId, newMemory);
+  }
+}

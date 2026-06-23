@@ -181,3 +181,21 @@ function getTimezoneOffsetMinutes(timeZone: string, date: Date): number {
   );
   return (asUtc - date.getTime()) / 60_000;
 }
+
+export async function getUserMemory(userId: number): Promise<string | null> {
+  const result = await pool.query(
+    `SELECT memory FROM nia_memories WHERE user_id = $1`,
+    [userId]
+  );
+  return result.rows[0]?.memory ?? null;
+}
+
+export async function upsertUserMemory(userId: number, memory: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO nia_memories (user_id, memory, created_at, updated_at)
+     VALUES ($1, $2, NOW(), NOW())
+     ON CONFLICT (user_id) DO UPDATE
+     SET memory = $2, updated_at = NOW()`,
+    [userId, memory]
+  );
+}
