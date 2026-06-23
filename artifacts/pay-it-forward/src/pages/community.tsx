@@ -272,23 +272,42 @@ function CivicResourcesTab() {
   );
 }
 
-const FORT_WORTH_NEIGHBORHOODS = [
-  { id: "southside",       name: "Southside",         emoji: "🏘️", description: "Historic community south of downtown" },
-  { id: "near_southside",  name: "Near Southside",    emoji: "🌳", description: "Creative district near Magnolia Ave" },
-  { id: "polytechnic",     name: "Polytechnic",       emoji: "🎓", description: "Home of Texas Wesleyan University" },
-  { id: "riverside",       name: "Riverside",         emoji: "🌊", description: "Diverse neighborhood along the Trinity River" },
-  { id: "downtown",        name: "Downtown",          emoji: "🏙️", description: "Urban core of Fort Worth" },
-  { id: "east_fort_worth", name: "East Fort Worth",   emoji: "🌅", description: "Working-class roots and tight-knit community" },
-  { id: "north_fort_worth",name: "North Fort Worth",  emoji: "🤠", description: "Stockyards district and growing suburbs" },
-  { id: "stop_six",        name: "Stop Six",          emoji: "✊", description: "Resilient community with deep history" },
-  { id: "wedgwood",        name: "Wedgwood",          emoji: "🏡", description: "Family-friendly neighborhood in southwest FW" },
-];
+interface CityNeighborhood {
+  id: number;
+  neighborhood_id: string;
+  name: string;
+  emoji: string;
+  description: string;
+}
+
+// ENH (global neighborhoods): the static Fort Worth list was replaced by a
+// per-city fetch — Fort Worth's content is preserved server-side as
+// curated/verified seed data; every other city is generated on first
+// request via Nia and cached. See artifacts/api-server/src/routes/community-neighborhoods.ts.
+function useCityNeighborhoods(city: string | null | undefined) {
+  const [neighborhoods, setNeighborhoods] = useState<CityNeighborhood[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!city) { setNeighborhoods([]); return; }
+    setLoading(true);
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/community/neighborhoods?city=${encodeURIComponent(city)}`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : { neighborhoods: [] })
+      .then((data: { neighborhoods?: CityNeighborhood[] }) => setNeighborhoods(data.neighborhoods ?? []))
+      .catch(() => setNeighborhoods([]))
+      .finally(() => setLoading(false));
+  }, [city]);
+
+  return { neighborhoods, loading };
+}
 
 function NeighborhoodCirclesTab() {
   const { t } = useTranslation();
   const [selected, setSelected] = useState<string | null>(null);
   const { currentUser } = useAppContext();
   const userHood = currentUser?.neighborhood?.toLowerCase().replace(/\s+/g, "_");
+  const { neighborhoods, loading } = useCityNeighborhoods(currentUser?.city);
 
   return (
     <div className="space-y-4">
@@ -301,9 +320,20 @@ function NeighborhoodCirclesTab() {
         </p>
       </div>
 
-      {FORT_WORTH_NEIGHBORHOODS.map(hood => {
-        const isYours = userHood === hood.id || currentUser?.neighborhood?.toLowerCase() === hood.name.toLowerCase();
-        const isOpen = selected === hood.id;
+      {!currentUser?.city && (
+        <div className="bg-card/50 border border-dashed border-border rounded-2xl p-4 text-center">
+          <Globe className="w-6 h-6 text-primary/40 mx-auto mb-2" />
+          <div className="text-sm font-bold text-muted-foreground">Add your city in your profile to see local neighborhoods</div>
+        </div>
+      )}
+
+      {currentUser?.city && loading && (
+        <div className="text-center text-xs text-muted-foreground py-6">Loading neighborhoods…</div>
+      )}
+
+      {neighborhoods.map(hood => {
+        const isYours = userHood === hood.neighborhood_id || currentUser?.neighborhood?.toLowerCase() === hood.name.toLowerCase();
+        const isOpen = selected === hood.neighborhood_id;
         return (
           <motion.div
             key={hood.id}
@@ -312,7 +342,7 @@ function NeighborhoodCirclesTab() {
             className={`bg-card border rounded-2xl p-4 cursor-pointer transition-all ${
               isYours ? "border-primary/60 bg-primary/5" : "border-border hover:border-primary/30"
             }`}
-            onClick={() => setSelected(isOpen ? null : hood.id)}
+            onClick={() => setSelected(isOpen ? null : hood.neighborhood_id)}
           >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl shrink-0">
