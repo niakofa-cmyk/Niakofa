@@ -1,8 +1,6 @@
 import pg from "pg";
 import { pino } from "pino";
 const logger = pino({ level: "info" });
-import { pino } from "pino";
-const logger = pino({ level: "info" });
 const { Pool } = pg;
 
 const pool = new Pool({

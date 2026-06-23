@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppContext } from "../lib/AppContext";
+import { authHeaders } from "../lib/auth";
 
 const NIA_URL = import.meta.env.VITE_NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app";
 
@@ -43,11 +44,13 @@ export function NiaChat() {
     try {
       const res = await fetch(`${NIA_URL}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // HIGH-002: identity comes from the verified Bearer token, not a
+        // client-supplied userId — nia-service no longer trusts a userId
+        // sent in the request body.
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           message: text,
           sessionId: sessionId.current,
-          userId: currentUser?.id ?? null,
           userName: currentUser?.name ?? null,
           accountType: currentUser?.account_type ?? null,
           helperModeActive: helperModeActive ?? false,

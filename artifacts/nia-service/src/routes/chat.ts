@@ -5,6 +5,7 @@ import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimi
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
 import { injectLocation, buildLocationPrefix, buildAppContextPrefix, LocationContext } from "../middleware/location.js";
 import { pino } from "pino";
+import { parseOptionalAuth } from "../lib/auth.js";
 
 const logger = pino({ level: "info" });
 const router = Router();
@@ -17,11 +18,14 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" })
 
 const NIA_TIMEOUT_MS = 60_000;
 
-router.post("/chat", injectLocation, async (req: Request, res: Response) => {
+router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res: Response) => {
   const body = req.body as Record<string, unknown>;
   const message = typeof body.message === "string" ? body.message : "";
   const sessionId = Array.isArray(body.sessionId) ? body.sessionId[0] : typeof body.sessionId === "string" ? body.sessionId : "";
-  const userId = typeof body.userId === "number" ? body.userId : null;
+  // HIGH-002: userId now comes ONLY from a verified Bearer token, never from
+  // the client-supplied body — a body.userId previously let any caller read
+  // or write another user's memory, history, and rate-limit bucket.
+  const userId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId ?? null;
   const gpsLat = typeof body.lat === "number" ? body.lat : null;
   const gpsLon = typeof body.lon === "number" ? body.lon : null;
   const userName = typeof body.userName === "string" ? body.userName : null;

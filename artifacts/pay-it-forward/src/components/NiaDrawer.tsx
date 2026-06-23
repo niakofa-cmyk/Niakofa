@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown } from "lucide-react";
+import { authHeaders } from "../lib/auth";
 
 const NIA_SERVICE_URL = import.meta.env.VITE_NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app";
 
@@ -423,11 +424,13 @@ export function NiaDrawer({
     try {
       const res = await fetch(`${NIA_SERVICE_URL}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // HIGH-002: identity comes from the verified Bearer token, not a
+        // client-supplied userId — nia-service no longer trusts a userId
+        // sent in the request body.
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           message: trimmed,
           sessionId,
-          userId: userId ?? null,
           userName: userName ?? null,
           helperModeActive,
           activeRequestId: activeRequestId ?? null,
