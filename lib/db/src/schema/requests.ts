@@ -35,6 +35,15 @@ export const requestsTable = pgTable("help_requests", {
   neighborhood: text("neighborhood"),
   // Currency fields use numeric(10,2) instead of real (float32) to avoid
   // floating-point rounding error accumulating across transactions.
+  // LOW-008: despite the name, this column holds the payment amount for
+  // BOTH payment_type === "pay_it_forward" (pledge system) AND
+  // payment_type === "immediate" (direct pay) — the "complete" handler in
+  // requests.ts checks this same field to decide whether to fire a Stripe
+  // payout regardless of which payment_type the request used. Renaming the
+  // column is a real migration touching every read/write site in
+  // api-server and the pay-it-forward frontend (wallet, request-new,
+  // request-detail) — flagged for a dedicated pass with sign-off rather
+  // than folded into this fix batch.
   pay_it_forward_amount: numeric("pay_it_forward_amount", { precision: 10, scale: 2, mode: "number" }),
   pledge_amount: numeric("pledge_amount", { precision: 10, scale: 2, mode: "number" }),
   pledge_paid: numeric("pledge_paid", { precision: 10, scale: 2, mode: "number" }).notNull().default(0),

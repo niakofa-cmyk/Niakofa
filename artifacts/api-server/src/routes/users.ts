@@ -323,6 +323,19 @@ router.post("/users/register", authLimiter, async (req, res) => {
   const rawBody = req.body as Record<string, unknown>;
   const rawPassword = rawBody.password;
 
+  // LOW-017: the generated Zod schema's email validator accepts technically-
+  // valid-but-junk addresses (user@localhost, user@example, bare IP literals).
+  // Added here at the route level rather than in the generated schema file,
+  // which is regenerated from the OpenAPI spec and shouldn't be hand-edited.
+  // This is a lightweight syntactic check, not an MX/deliverability check —
+  // it rejects the cheapest, most obviously-fake patterns at the door.
+  const emailDomain = email.split("@")[1]?.toLowerCase() ?? "";
+  const isIpLiteral = /^\[?\d{1,3}(\.\d{1,3}){3}\]?$/.test(emailDomain);
+  const isBareOrLocalDomain = !emailDomain.includes(".") || emailDomain === "localhost";
+  if (isIpLiteral || isBareOrLocalDomain) {
+    return res.status(400).json({ error: "Please use a valid email address" });
+  }
+
   // BUG-001: Enforce minimum 8-character password at registration, matching all
   // other password-change flows (forgot-password, set-initial-password).
   // Reject registration entirely if no password is provided — never create a
