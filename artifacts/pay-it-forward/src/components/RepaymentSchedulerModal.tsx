@@ -156,7 +156,7 @@ export function RepaymentSchedulerModal({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: "100%", opacity: 0 }}
             transition={{ type: "spring", damping: 28, stiffness: 230 }}
-            className="fixed bottom-0 left-0 right-0 z-[60] bg-card border-t border-border rounded-t-3xl shadow-2xl max-h-[92dvh] overflow-y-auto"
+            className="fixed bottom-0 left-0 right-0 z-[60] bg-card border-t border-border rounded-t-3xl shadow-2xl max-h-[96dvh] overflow-y-auto"
           >
             <div className="p-5 space-y-5">
               <div className="flex items-center justify-between">
