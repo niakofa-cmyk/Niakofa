@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import { pino } from "pino";
 import chatRouter from "./routes/chat.js";
+import neighborhoodsRouter from "./routes/neighborhoods.js";
 import "./lib/auth.js"; // fail fast at boot if SESSION_SECRET is missing
 import { purgeExpiredConversations } from "./lib/db.js";
 
@@ -13,6 +14,7 @@ app.set("trust proxy", 1);
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN ?? "*" }));
 app.use(express.json());
 app.use("/", chatRouter);
+app.use("/", neighborhoodsRouter);
 
 setInterval(async () => {
   try {
