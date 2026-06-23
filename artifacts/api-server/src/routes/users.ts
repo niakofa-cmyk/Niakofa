@@ -725,8 +725,9 @@ router.post("/users/:id/avatar", requireAuth, requireOwnership(), async (req, re
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const { dataUrl } = req.body as { dataUrl?: string };
-  if (!dataUrl || !dataUrl.startsWith("data:image/")) {
-    return res.status(400).json({ error: "Invalid image data — must be a base64 data URL starting with data:image/" });
+  const ALLOWED_IMG = ["data:image/jpeg;","data:image/jpg;","data:image/png;","data:image/webp;","data:image/gif;"];
+  if (!dataUrl || !ALLOWED_IMG.some(t => dataUrl.startsWith(t))) {
+    return res.status(400).json({ error: "Invalid image — must be jpeg, png, webp, or gif" });
   }
   // BUG-005: 5 MB hard cap — base64 string length, not decoded bytes.
   // Decoded size = length * 0.75; a 5 MB string ≈ 3.75 MB image.
