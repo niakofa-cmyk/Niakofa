@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
-import { requireOwnership } from "../middlewares/authz";
+import { requireOwnership, requireApproved } from "../middlewares/authz";
 import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, ratingsTable } from "@workspace/db";
 // BUG-030: distanceMiles moved to shared lib/geo.ts — single server-side source of truth
 import { distanceMiles } from "../lib/geo";
@@ -103,7 +103,11 @@ router.get("/requests/nearby", requireAuth, async (req, res) => {
   // platform-wide on every call. The precise haversine distance is still
   // computed in JS afterward, just on a much smaller candidate set.
   const latDelta = radius / 69;
-  const lngDelta = radius / (69 * Math.cos(lat * Math.PI / 180));
+  // HIGH-007: clamp the cosine denominator so lngDelta can't blow up near
+  // the poles (cos(lat) → 0) and cap it so it never spans more than half
+  // the globe in longitude.
+  const clampedLat = Math.max(-89.9, Math.min(89.9, lat));
+  const lngDelta = Math.min(radius / (69 * Math.cos(clampedLat * Math.PI / 180)), 180);
   const requests = await db.select().from(requestsTable).where(
     and(
       eq(requestsTable.status, "open"),
@@ -323,7 +327,7 @@ router.patch("/requests/:id", requireAuth, async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/claim", requireAuth, requestActionLimiter, async (req, res) => {
+router.post("/requests/:id/claim", requireAuth, requireApproved, requestActionLimiter, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = ClaimRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });

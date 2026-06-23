@@ -1139,8 +1139,10 @@ function HelpersTab() {
         headers: { Authorization: `Bearer ${adminToken}` },
       });
       if (!res.ok) throw new Error("Failed to load");
-      const data = await res.json() as HelperApplicant[];
-      setApplicants(data);
+      const json = await res.json() as { data: HelperApplicant[] } | HelperApplicant[];
+      // Backend now returns { data, total, limit, offset, has_more } —
+      // unwrap it, staying tolerant of the old bare-array shape too.
+      setApplicants(Array.isArray(json) ? json : json.data);
     } catch {
       toast({ title: "Failed to load helper applications", variant: "destructive" });
     } finally {

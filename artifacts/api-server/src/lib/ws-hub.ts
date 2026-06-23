@@ -117,6 +117,20 @@ export function sendToUser(userId: number, event: WsEvent): void {
   });
 }
 
+// MED-004: force-close and deregister every socket for a user — call this
+// right after an account is deleted so the deleted user stops receiving
+// real-time events instead of lingering until their client disconnects.
+export function disconnectUserSockets(userId: number): void {
+  const sockets = userSockets.get(userId);
+  if (sockets) {
+    sockets.forEach((sock) => {
+      adminSockets.delete(sock);
+      try { sock.close(4001, "Account deleted"); } catch { /* already closed */ }
+    });
+  }
+  userSockets.delete(userId);
+}
+
 // ── Connection protection ─────────────────────────────────────────────────────
 const MAX_CONNECTIONS_PER_IP  = 10;
 const RECONNECT_COOLDOWN_MS   = 2_000;  // 1 new connection per 2s per IP

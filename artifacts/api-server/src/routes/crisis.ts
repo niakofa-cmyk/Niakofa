@@ -5,6 +5,7 @@ import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
+import { setCrisisModeActive } from "../lib/crisis-state";
 
 const router = Router();
 
@@ -38,7 +39,7 @@ async function getCurrentCrisisState(): Promise<CrisisState> {
   };
 }
 
-router.get("/crisis/status", async (_req, res) => {
+router.get("/crisis/status", requireAuth, async (_req, res) => {
   try {
     res.json(await getCurrentCrisisState());
   } catch (err) {
@@ -107,8 +108,9 @@ router.post("/crisis/activate", requireAuth, requireAdmin(), async (req, res) =>
   broadcast({ type: "crisis_update", payload: state });
   logger.warn({ state }, "crisis: mode activated");
 
-  // Set env var so crisisAwareChatLimiter switches to elevated limits immediately
-  process.env["CRISIS_MODE_ACTIVE"] = "true";
+  // Set shared (Redis-backed) flag so crisisAwareChatLimiter switches to
+  // elevated limits immediately, consistently across all instances.
+  await setCrisisModeActive(true);
 
   res.json(state);
 });
@@ -125,8 +127,9 @@ router.post("/crisis/deactivate", requireAuth, requireAdmin(), async (req, res) 
   broadcast({ type: "crisis_update", payload: DEFAULT_STATE });
   logger.info("crisis: mode deactivated");
 
-  // Clear env var so chat rate limits return to normal
-  process.env["CRISIS_MODE_ACTIVE"] = "false";
+  // Clear shared (Redis-backed) flag so chat rate limits return to normal
+  // consistently across all instances.
+  await setCrisisModeActive(false);
 
   res.json(DEFAULT_STATE);
 });

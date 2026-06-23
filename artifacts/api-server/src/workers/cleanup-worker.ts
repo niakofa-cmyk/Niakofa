@@ -17,7 +17,7 @@
 import { Worker, type Job } from "bullmq";
 import { db, requestsTable } from "@workspace/db";
 import { eq, and, lt, inArray, sql } from "drizzle-orm";
-import { getRedisConnection, QUEUE } from "../lib/queue";
+import { getRedisConnection, QUEUE, cleanupQueue } from "../lib/queue";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 
@@ -140,7 +140,6 @@ export async function startCleanupWorker(): Promise<Worker | null> {
     return null;
   }
 
-  const { cleanupQueue } = await import("../lib/queue");
   if (cleanupQueue) {
     await cleanupQueue.add(CLEANUP_JOB_NAME, {}, {
       repeat: CLEANUP_REPEAT,

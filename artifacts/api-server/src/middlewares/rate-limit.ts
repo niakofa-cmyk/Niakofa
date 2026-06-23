@@ -17,6 +17,8 @@
 import { rateLimit, type Store } from "express-rate-limit";
 import { RedisStore } from "rate-limit-redis";
 import { getRedisConnection } from "../lib/queue";
+import { isCrisisModeActive } from "../lib/crisis-state";
+import type { Request, Response, NextFunction } from "express";
 
 function createStore(prefix: string): Store | undefined {
   const redis = getRedisConnection();
@@ -174,9 +176,8 @@ export const crisisChatLimiter = rateLimit({
 // Checks if crisis mode is active (via CRISIS_MODE_ACTIVE env var set by
 // the crisis/activate route). If active, skips the normal chatLimiter and
 // uses crisisChatLimiter instead so users are never cut off during emergencies.
-import type { Request, Response, NextFunction } from "express";
-export function crisisAwareChatLimiter(req: Request, res: Response, next: NextFunction) {
-  const crisisActive = process.env["CRISIS_MODE_ACTIVE"] === "true";
+export async function crisisAwareChatLimiter(req: Request, res: Response, next: NextFunction) {
+  const crisisActive = await isCrisisModeActive();
   if (crisisActive) {
     return crisisChatLimiter(req, res, next);
   }

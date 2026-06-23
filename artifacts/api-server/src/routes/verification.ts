@@ -2,10 +2,11 @@ import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
 import { db, usersTable, reportsTable } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import Stripe from "stripe";
 import { logger } from "../lib/logger";
 import { sendSms } from "../lib/sms";
+import { sosLimiter } from "../middlewares/rate-limit";
 import { broadcast, broadcastToAdmins } from "../lib/ws-hub";
 
 const router = Router();
@@ -15,7 +16,7 @@ const stripe = STRIPE_SK ? new Stripe(STRIPE_SK, { apiVersion: "2024-06-20" as S
 const APP_URL = process.env["APP_URL"] ?? "https://niakofa.com";
 
 // ── Stripe Identity verification session ─────────────────────────────────────
-router.post("/verification/identity/start", requireAuth, async (req, res) => {
+router.post("/verification/identity/start", requireAuth, requireOwnership("user_id"), async (req, res) => {
   const { user_id } = req.body as { user_id: number };
   if (!user_id) return res.status(400).json({ error: "user_id required" });
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });

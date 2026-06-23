@@ -8,6 +8,11 @@ const CANCEL_THRESHOLD = 3;
 const LOW_TRUST_THRESHOLD = 2.0;
 const WINDOW_HOURS = 24;
 
+// LOW-009: track the last time each low-trust helper was alerted so admins
+// aren't re-notified every cycle for the same standing condition.
+const ALERT_COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
+const lastAlertedAt = new Map<number, number>();
+
 async function detectAnomalies() {
   try {
     const since = new Date(Date.now() - WINDOW_HOURS * 60 * 60 * 1000);
@@ -74,6 +79,10 @@ async function detectAnomalies() {
       );
 
     for (const user of lowTrustActiveHelpers) {
+      const lastAlert = lastAlertedAt.get(user.id);
+      if (lastAlert && Date.now() - lastAlert < ALERT_COOLDOWN_MS) continue;
+      lastAlertedAt.set(user.id, Date.now());
+
       logger.warn(
         { user_id: user.id, trust_score: user.trust_score, help_count: user.help_count },
         "anomaly: active helper with critically low trust score"

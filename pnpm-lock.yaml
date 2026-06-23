@@ -158,6 +158,13 @@ overrides:
 importers:
 
   .:
+    dependencies:
+      i18next:
+        specifier: ^26.3.1
+        version: 26.3.1(typescript@5.9.3)
+      react-i18next:
+        specifier: ^17.0.8
+        version: 17.0.8(i18next@26.3.1(typescript@5.9.3))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(typescript@5.9.3)
     devDependencies:
       '@rollup/rollup-darwin-x64':
         specifier: ^4.62.0
@@ -165,6 +172,9 @@ importers:
       '@tailwindcss/oxide-darwin-x64':
         specifier: ^4.3.1
         version: 4.3.1
+      '@types/jest':
+        specifier: ^30.0.0
+        version: 30.0.0
       lightningcss-darwin-x64:
         specifier: ^1.32.0
         version: 1.32.0

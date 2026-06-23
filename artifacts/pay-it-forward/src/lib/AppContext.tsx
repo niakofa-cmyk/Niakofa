@@ -389,7 +389,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Speed-based stationary suppression: skip broadcast when helper is
       // stationary (speed < 0.5 m/s ≈ 1mph) and NOT in an active request.
       // This reduces battery drain during idle waits.
-      if (!activeRequestId && loc.speed != null && loc.speed < 0.5) return;
+      // MED-010: apply stationary suppression even during an active request —
+      // a helper waiting at a location shouldn't broadcast every 2 seconds while not moving.
+      if (loc.speed != null && loc.speed < 0.5) return;
 
       prevBroadcastRef.current = loc;
       updateLocation.mutate(

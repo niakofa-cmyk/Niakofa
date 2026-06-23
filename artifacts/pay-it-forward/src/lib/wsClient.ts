@@ -136,9 +136,24 @@ export function wsStart(): void {
  * Register the current user with the WS hub so the server can use sendToUser.
  * Must be called after wsStart(), re-called whenever the logged-in user changes.
  */
+function isTokenExpired(token: string | null): boolean {
+  if (!token) return true;
+  const parts = token.split(".");
+  if (parts.length !== 4) return true;
+  const expiresAt = Number(parts[1]);
+  return !Number.isFinite(expiresAt) || Date.now() >= expiresAt;
+}
+
 export function wsRegister(userId: number): void {
   registeredUserId = userId;
-  send({ type: "register", payload: { userId, authToken: getToken() ?? undefined } });
+  const token = getToken();
+  if (isTokenExpired(token)) {
+    // LOW-006: sending a known-expired token just gets silently rejected
+    // server-side and the socket never registers. The normal app-level
+    // 401 handling will get the user a fresh token.
+    return;
+  }
+  send({ type: "register", payload: { userId, authToken: token ?? undefined } });
 }
 
 /** Clear registration (e.g. on logout). */

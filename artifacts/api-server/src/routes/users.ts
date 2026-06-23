@@ -18,7 +18,7 @@ import {
   CreateScheduledPaymentBody,
   GetScheduledPaymentsParams,
 } from "@workspace/api-zod";
-import { broadcast, broadcastToAdmins, sendToUser } from "../lib/ws-hub";
+import { broadcast, broadcastToAdmins, sendToUser, disconnectUserSockets } from "../lib/ws-hub";
 import { authLimiter, gpsLimiter } from "../middlewares/rate-limit";
 import { requireAuth, signTokenById } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
@@ -403,6 +403,7 @@ router.get("/users/:id", requireAuth, async (req, res) => {
       email: user.email,
       phone_masked: user.phone_masked,
       panic_contacts: user.panic_contacts,
+      stripe_identity_session_id: user.stripe_identity_session_id,
     });
   }
   return res.json(publicUser);
@@ -826,6 +827,7 @@ router.delete("/users/:id", requireAuth, requireOwnership(), async (req, res) =>
       await tx.delete(usersTable).where(eq(usersTable.id, userId));
     });
 
+    disconnectUserSockets(userId);
     return res.json({ ok: true, message: "Account deleted successfully" });
   } catch (error) {
     logger.error({ err: error, user_id: userId }, "users: failed to delete account");
@@ -851,9 +853,16 @@ router.patch("/users/:id/helper-application", requireAuth, requireOwnership(), a
   if (!helper_skills || !Array.isArray(helper_skills) || helper_skills.length === 0) {
     return res.status(400).json({ error: "At least one skill is required" });
   }
+
+  // MED-005: only force re-review if the helper isn't already approved —
+  // editing skills/bio shouldn't silently demote an approved helper.
+  const [currentHelperRow] = await db.select({ helper_status: usersTable.helper_status })
+    .from(usersTable).where(eq(usersTable.id, id)).limit(1);
+  const nextHelperStatus = currentHelperRow?.helper_status === "approved" ? "approved" : "pending";
+
   const updates: Partial<typeof usersTable.$inferInsert> = {
     is_helper: true,
-    helper_status: "pending",
+    helper_status: nextHelperStatus,
     helper_skills: helper_skills ?? [],
     helper_languages: helper_languages ?? [],
     helper_qualifications: helper_qualifications ?? [],
@@ -906,7 +915,17 @@ router.get("/admin/helper-applications", requireAuth, requireAdmin(), async (req
     ? await query.where(eq(usersTable.helper_status, filterStatus)).limit(limit).offset(offset)
     : await query.where(sql`${usersTable.helper_status} IS NOT NULL`).limit(limit).offset(offset);
 
-  return res.json(rows);
+  const [{ count: totalCount }] = filterStatus
+    ? await db.select({ count: sql<number>`cast(count(*) as int)` }).from(usersTable).where(eq(usersTable.helper_status, filterStatus))
+    : await db.select({ count: sql<number>`cast(count(*) as int)` }).from(usersTable).where(sql`${usersTable.helper_status} IS NOT NULL`);
+
+  return res.json({
+    data: rows,
+    total: totalCount,
+    limit,
+    offset,
+    has_more: offset + rows.length < totalCount,
+  });
 });
 
 // PATCH /admin/helper-applications/:id/review — approve or deny a helper application
