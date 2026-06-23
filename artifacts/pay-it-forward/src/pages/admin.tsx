@@ -4,7 +4,7 @@ import {
   Shield, AlertCircle, CheckCircle2, Clock, X, ChevronLeft,
   Eye, Flag, User as UserIcon, RefreshCw, Filter,
   Users, Search, Ban, AlertTriangle, Star, BarChart3,
-  TrendingUp, Heart, Activity, Inbox, CheckCheck, ThumbsDown
+  TrendingUp, Heart, Activity, Inbox, CheckCheck, ThumbsDown, Globe
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -913,6 +913,186 @@ const SUGGESTION_STATUS: Record<string, { label: string; color: string }> = {
   dismissed: { label: "Dismissed", color: "bg-muted text-muted-foreground border-border" },
 };
 
+interface CityNeighborhoodRow {
+  id: number;
+  city_key: string;
+  city_display: string;
+  neighborhood_id: string;
+  name: string;
+  emoji: string;
+  description: string;
+  source: string;
+  verified: boolean;
+}
+
+function NeighborhoodsTab() {
+  const [rows, setRows] = useState<CityNeighborhoodRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showVerified, setShowVerified] = useState(false);
+  const [editing, setEditing] = useState<Record<number, { name: string; emoji: string; description: string }>>({});
+  const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
+  const fetchRows = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${base}/api/admin/city-neighborhoods?verified=${showVerified}`, { headers: authHeaders() });
+      const data = await res.json() as CityNeighborhoodRow[];
+      if (Array.isArray(data)) {
+        setRows(data);
+        setEditing(Object.fromEntries(data.map(r => [r.id, { name: r.name, emoji: r.emoji, description: r.description }])));
+      }
+    } catch {
+      toast({ title: "Failed to load neighborhoods", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [base, showVerified]);
+
+  useEffect(() => { fetchRows(); }, [fetchRows]);
+
+  const handleApprove = async (id: number) => {
+    const edits = editing[id];
+    setActionLoading(id);
+    try {
+      const res = await fetch(`${base}/api/admin/city-neighborhoods/${id}`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ ...edits, verified: true }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: "✅ Neighborhood approved" });
+      await fetchRows();
+    } catch {
+      toast({ title: "Action failed", variant: "destructive" });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    setActionLoading(id);
+    try {
+      const res = await fetch(`${base}/api/admin/city-neighborhoods/${id}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: "Removed — will regenerate on next request" });
+      await fetchRows();
+    } catch {
+      toast({ title: "Action failed", variant: "destructive" });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const grouped = rows.reduce<Record<string, CityNeighborhoodRow[]>>((acc, r) => {
+    (acc[r.city_display] ??= []).push(r);
+    return acc;
+  }, {});
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-20 gap-2 text-muted-foreground">
+      <RefreshCw className="w-5 h-5 animate-spin" />
+      <span className="text-sm">Loading neighborhoods…</span>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">
+          {showVerified ? "Verified" : "Pending review"} · {rows.length}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowVerified(v => !v)}
+            className="text-[10px] font-black uppercase tracking-wider text-primary px-2 py-1 rounded-lg hover:bg-primary/10 transition-colors"
+          >
+            Show {showVerified ? "pending" : "verified"}
+          </button>
+          <button onClick={fetchRows} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+            <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+          </button>
+        </div>
+      </div>
+
+      {rows.length === 0 && (
+        <div className="text-center text-sm text-muted-foreground py-10">
+          {showVerified ? "No verified neighborhoods yet." : "Nothing pending — all generated content has been reviewed."}
+        </div>
+      )}
+
+      {Object.entries(grouped).map(([city, cityRows]) => (
+        <div key={city} className="space-y-2">
+          <div className="text-sm font-black flex items-center gap-1.5">
+            <Globe className="w-3.5 h-3.5 text-primary" /> {city}
+            <span className="text-[10px] font-bold text-muted-foreground normal-case">
+              ({cityRows[0]?.source === "curated" ? "curated" : "AI-generated"})
+            </span>
+          </div>
+          {cityRows.map(row => {
+            const edit = editing[row.id] ?? { name: row.name, emoji: row.emoji, description: row.description };
+            return (
+              <div key={row.id} className="bg-card border border-border rounded-2xl p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    value={edit.emoji}
+                    onChange={e => setEditing(prev => ({ ...prev, [row.id]: { ...edit, emoji: e.target.value } }))}
+                    className="w-10 h-10 text-center text-lg bg-muted rounded-xl border border-border"
+                    maxLength={4}
+                  />
+                  <input
+                    value={edit.name}
+                    onChange={e => setEditing(prev => ({ ...prev, [row.id]: { ...edit, name: e.target.value } }))}
+                    className="flex-1 bg-muted rounded-xl border border-border px-3 py-2 text-sm font-bold"
+                  />
+                </div>
+                <textarea
+                  value={edit.description}
+                  onChange={e => setEditing(prev => ({ ...prev, [row.id]: { ...edit, description: e.target.value } }))}
+                  className="w-full bg-muted rounded-xl border border-border px-3 py-2 text-xs resize-none"
+                  rows={2}
+                />
+                <div className="flex items-center gap-2">
+                  {!row.verified && (
+                    <button
+                      onClick={() => handleApprove(row.id)}
+                      disabled={actionLoading === row.id}
+                      className="flex-1 flex items-center justify-center gap-1 bg-primary text-primary-foreground rounded-xl py-2 text-xs font-black disabled:opacity-50"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                    </button>
+                  )}
+                  {row.verified && row.source !== "curated" && (
+                    <button
+                      onClick={() => handleApprove(row.id)}
+                      disabled={actionLoading === row.id}
+                      className="flex-1 flex items-center justify-center gap-1 bg-muted rounded-xl py-2 text-xs font-black disabled:opacity-50"
+                    >
+                      Save edits
+                    </button>
+                  )}
+                  {row.source !== "curated" && (
+                    <button
+                      onClick={() => handleDelete(row.id)}
+                      disabled={actionLoading === row.id}
+                      className="px-3 flex items-center justify-center gap-1 bg-destructive/10 text-destructive rounded-xl py-2 text-xs font-black disabled:opacity-50"
+                    >
+                      <X className="w-3.5 h-3.5" /> Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CivicTab() {
   const [suggestions, setSuggestions] = useState<CivicSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1367,14 +1547,15 @@ function HelpersTab() {
 
 // ── Main Admin Screen ─────────────────────────────────────────────────────────
 
-type TabId = "reports" | "users" | "analytics" | "civic" | "helpers";
+type TabId = "reports" | "users" | "analytics" | "civic" | "helpers" | "neighborhoods";
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
-  { id: "reports",   label: "Reports",   icon: Flag },
-  { id: "users",     label: "Users",     icon: Users },
-  { id: "helpers",   label: "Helpers",   icon: CheckCheck },
-  { id: "analytics", label: "Analytics", icon: BarChart3 },
-  { id: "civic",     label: "Civic",     icon: Inbox },
+  { id: "reports",       label: "Reports",   icon: Flag },
+  { id: "users",         label: "Users",     icon: Users },
+  { id: "helpers",       label: "Helpers",   icon: CheckCheck },
+  { id: "analytics",     label: "Analytics", icon: BarChart3 },
+  { id: "civic",         label: "Civic",     icon: Inbox },
+  { id: "neighborhoods", label: "Hoods",     icon: Globe },
 ];
 
 export default function AdminScreen() {
@@ -1446,6 +1627,7 @@ export default function AdminScreen() {
             {activeTab === "helpers"   && <HelpersTab />}
             {activeTab === "analytics" && <AnalyticsTab />}
             {activeTab === "civic"     && <CivicTab />}
+            {activeTab === "neighborhoods" && <NeighborhoodsTab />}
           </motion.div>
         </AnimatePresence>
       </div>
