@@ -66,5 +66,19 @@ export function useTerrain(map: Map | null, enabled = true) {
     } else {
       map.once("style.load", addLayers);
     }
+
+    // Cleanup: remove layers and sources added by this hook so remounts
+    // don't stack duplicate layers and trigger Mapbox errors.
+    return () => {
+      if (!map) return;
+      try {
+        if (map.getLayer("3d-buildings")) map.removeLayer("3d-buildings");
+        map.setTerrain(null);
+        if (map.getSource("mapbox-dem")) map.removeSource("mapbox-dem");
+        map.setFog({});
+      } catch {
+        // Map may already be destroyed on full unmount — ignore
+      }
+    };
   }, [map, enabled]);
 }

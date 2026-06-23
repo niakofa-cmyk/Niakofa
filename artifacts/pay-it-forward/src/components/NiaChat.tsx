@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppContext } from "../lib/AppContext";
 
-const NIA_URL = "https://niakofa-production.up.railway.app";
+const NIA_URL = import.meta.env.VITE_NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app";
 
 function getOrCreateSessionId(): string {
   const STORAGE_KEY = "niakofa_nia_session_id";
@@ -59,10 +59,12 @@ export function NiaChat() {
       if (!reader) return;
 
       let buffer = "";
+      const MAX_BUFFER = 1_048_576; // 1MB — prevent unbounded growth on malformed SSE
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
+        if (buffer.length > MAX_BUFFER) { buffer = ""; continue; }
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
         for (const line of lines) {
