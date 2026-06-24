@@ -13,7 +13,7 @@ const app = express();
 
 app.set("trust proxy", 1);
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN ?? "*" }));
-app.use(express.json());
+app.use(express.json({ limit: "8mb" })); // enlarged for image analysis base64 payloads
 app.use("/", chatRouter);
 app.use("/", neighborhoodsRouter);
 app.use("/", crisisResourcesRouter);

@@ -16,6 +16,29 @@ function getOrCreateSessionId(): string {
 interface Message {
   role: "user" | "nia";
   text: string;
+  imagePreview?: string; // data URL shown in the bubble for user-sent images
+}
+
+/** Resize an image to fit within maxDim×maxDim and return a JPEG data URL. */
+async function resizeImage(file: File, maxDim = 1024): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
 }
 
 export function NiaChat() {
@@ -28,6 +51,7 @@ export function NiaChat() {
   const [streaming, setStreaming] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const sessionId = useRef(getOrCreateSessionId());
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -101,6 +125,63 @@ export function NiaChat() {
     }
   }
 
+  async function sendImage(file: File) {
+    if (streaming) return;
+    setStreaming(true);
+
+    let dataUrl: string;
+    try {
+      dataUrl = await resizeImage(file);
+    } catch {
+      setStreaming(false);
+      setMessages((m) => [...m, { role: "nia", text: "I couldn't read that image. Please try a different file." }]);
+      return;
+    }
+
+    // Show thumbnail in chat as a user message
+    const question = input.trim();
+    setInput("");
+    setMessages((m) => [
+      ...m,
+      { role: "user", text: question || "📷 Photo", imagePreview: dataUrl },
+      { role: "nia", text: "" },
+    ]);
+
+    try {
+      const res = await fetch(`${NIA_URL}/analyze-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          imageBase64: dataUrl,
+          question: question || undefined,
+        }),
+      });
+
+      const data = await res.json() as { analysis?: string; error?: string };
+      const text = data.analysis ?? data.error ?? "I couldn't analyze that image.";
+      setMessages((m) => {
+        const copy = [...m];
+        copy[copy.length - 1] = { role: "nia", text };
+        return copy;
+      });
+    } catch {
+      setMessages((m) => {
+        const copy = [...m];
+        copy[copy.length - 1] = { role: "nia", text: "Sorry, I couldn't analyze that image right now." };
+        return copy;
+      });
+    } finally {
+      setStreaming(false);
+    }
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) sendImage(file);
+    // Reset so the same file can be re-selected
+    e.target.value = "";
+  }
+
   return (
     <>
       <button
@@ -142,17 +223,50 @@ export function NiaChat() {
                 background: m.role === "user" ? "#6c63ff" : "#1e2a45",
                 color: "#fff",
                 borderRadius: m.role === "user" ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
-                padding: "8px 12px", maxWidth: "80%",
+                padding: m.imagePreview ? "6px" : "8px 12px",
+                maxWidth: "80%",
                 fontFamily: "Inter, sans-serif", fontSize: "14px",
                 lineHeight: "1.5", whiteSpace: "pre-wrap",
               }}>
-                {m.text || (streaming && i === messages.length - 1 ? "▌" : "")}
+                {m.imagePreview && (
+                  <img
+                    src={m.imagePreview}
+                    alt="Sent image"
+                    style={{ display: "block", width: "100%", borderRadius: "8px", marginBottom: m.text && m.text !== "📷 Photo" ? "6px" : 0 }}
+                  />
+                )}
+                {(!m.imagePreview || (m.text && m.text !== "📷 Photo")) && (
+                  <span>{m.text || (streaming && i === messages.length - 1 ? "▌" : "")}</span>
+                )}
               </div>
             ))}
             <div ref={bottomRef} />
           </div>
 
-          <div style={{ borderTop: "1px solid #1e2a45", padding: "10px 12px", display: "flex", gap: "8px" }}>
+          <div style={{ borderTop: "1px solid #1e2a45", padding: "10px 12px", display: "flex", gap: "8px", alignItems: "center" }}>
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handleFileChange}
+            />
+            {/* Camera / image button */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={streaming}
+              title="Send an image to Nia"
+              style={{
+                background: "#1e2a45", color: "#fff", border: "none",
+                borderRadius: "8px", padding: "8px 10px",
+                cursor: streaming ? "not-allowed" : "pointer",
+                fontSize: "16px", opacity: streaming ? 0.5 : 1,
+                flexShrink: 0,
+              }}
+            >
+              📷
+            </button>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}

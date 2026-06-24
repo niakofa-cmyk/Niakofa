@@ -172,6 +172,96 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   }
 });
 
+
+// POST /analyze-image
+// One-shot vision analysis — no session history, no memory update.
+// Body: { imageBase64: string (data URL or raw base64), mediaType?: string, question?: string }
+// The image is passed directly to Claude vision; the optional question
+// focuses the analysis. Safety check runs on the question text.
+//
+// Size guard: the base64 body is capped at ~5MB (raw bytes ~3.75MB image)
+// which is well within Claude's image limits. The express.json() middleware
+// defaults to 100kb — callers must ensure their server allows larger bodies,
+// or this endpoint will 413 before reaching the handler.
+router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Response) => {
+  const body = req.body as Record<string, unknown>;
+
+  // Accept either a full data URL ("data:image/jpeg;base64,....") or raw base64
+  const rawImage = typeof body.imageBase64 === "string" ? body.imageBase64 : "";
+  if (!rawImage) return res.status(400).json({ error: "imageBase64 is required" });
+
+  // Strip data-URL prefix if present
+  const dataUrlMatch = rawImage.match(/^data:([^;]+);base64,(.+)$/s);
+  const mediaType: string = dataUrlMatch
+    ? dataUrlMatch[1]
+    : typeof body.mediaType === "string"
+      ? body.mediaType
+      : "image/jpeg";
+  const imageData: string = dataUrlMatch ? dataUrlMatch[2] : rawImage;
+
+  const SUPPORTED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+  if (!SUPPORTED_TYPES.includes(mediaType)) {
+    return res.status(400).json({ error: `Unsupported image type: ${mediaType}. Use JPEG, PNG, GIF, or WebP.` });
+  }
+
+  // Rough size check — base64 is ~4/3 the raw bytes; 6.8MB base64 ≈ 5MB raw
+  if (imageData.length > 6_800_000) {
+    return res.status(413).json({ error: "Image too large — please use an image under 5MB" });
+  }
+
+  const question = typeof body.question === "string" && body.question.trim()
+    ? body.question.trim()
+    : null;
+
+  // Safety check on the question text
+  if (question) {
+    const safety = checkSafety(question);
+    if (safety.flagged) {
+      return res.json({ analysis: safety.escalationMessage });
+    }
+  }
+
+  const userPrompt = question
+    ? `Please analyze this image. The user asks: "${question}"`
+    : "Please describe what you see in this image and note anything that might be relevant to community help or safety.";
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1024,
+      system:
+        "You are Nia, the Niakofa community assistant. When analyzing images, be helpful and community-minded. " +
+        "If the image shows a help request (e.g. broken appliance, medical situation, navigation question), " +
+        "describe what you see and suggest how the community might help. " +
+        "If the image shows something concerning (injury, unsafe conditions, distress), respond with care. " +
+        "Be concise — 2-4 sentences unless detail is clearly needed. Refer to yourself as Nia only.",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+                data: imageData,
+              },
+            },
+            { type: "text", text: userPrompt },
+          ],
+        },
+      ],
+    });
+
+    const analysis = response.content[0].type === "text" ? response.content[0].text : "I couldn't analyze that image.";
+    logger.info({ mediaType, questionLength: question?.length ?? 0 }, "nia: image analyzed");
+    return res.json({ analysis });
+  } catch (err) {
+    logger.error({ err }, "nia: image analysis error");
+    return res.status(500).json({ error: "Nia couldn't analyze the image right now. Please try again." });
+  }
+});
+
 router.get("/history/:sessionId", async (req: Request, res: Response) => {
   const sessionId = req.params.sessionId;
   if (!sessionId) return res.status(400).json({ error: "sessionId required" });
