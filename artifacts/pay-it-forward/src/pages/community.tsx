@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAppContext } from "@/lib/AppContext";
 import LiveLeaderboard from "@/components/LiveLeaderboard";
+import { CommunityPostComposer, type NewCommunityPost } from "@/components/CommunityPostComposer";
 import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, MapPin, Award, Wrench, Globe } from "lucide-react";
 import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -17,6 +18,8 @@ interface GratitudePost {
   request_title?: string | null;
   likes: number;
   created_at: string;
+  post_type?: "thanks" | "offer" | "resource" | "update";
+  photo_url?: string | null;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -475,6 +478,7 @@ export default function CommunityScreen() {
   const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
   const [posts, setPosts] = useState<GratitudePost[]>([]);
   const [postsLoading, setPostsLoading] = useState(true);
+  const [pendingNotice, setPendingNotice] = useState(false);
 
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -584,6 +588,21 @@ export default function CommunityScreen() {
                 ))}
               </div>
             )}
+            <CommunityPostComposer
+              onPosted={(post: NewCommunityPost) => {
+                if (post.moderation_status === "approved") {
+                  setPosts(prev => [post as GratitudePost, ...prev.slice(0, 49)]);
+                } else {
+                  setPendingNotice(true);
+                  setTimeout(() => setPendingNotice(false), 4000);
+                }
+              }}
+            />
+            {pendingNotice && (
+              <div className="text-xs text-center text-muted-foreground bg-muted rounded-xl py-2 px-3">
+                📋 Your post is awaiting a quick review before it goes live.
+              </div>
+            )}
             <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">{t("community.gratitude_amp_stories")}</h3>
             {postsLoading ? (
               <div className="flex justify-center items-center py-10">
@@ -631,12 +650,22 @@ export default function CommunityScreen() {
                         </div>
                       </div>
                     </div>
+                    {post.post_type && post.post_type !== "thanks" && (
+                      <div className="text-[10px] font-semibold text-muted-foreground bg-muted rounded-lg px-2 py-1 mb-2.5 inline-block">
+                        {post.post_type === "offer" && "✨ Offering help"}
+                        {post.post_type === "resource" && "📍 Resource"}
+                        {post.post_type === "update" && "📣 Update"}
+                      </div>
+                    )}
                     {post.request_title && (
                       <div className="text-[10px] font-semibold text-primary/80 bg-primary/10 rounded-lg px-2 py-1 mb-2.5 inline-block max-w-full truncate">
                         📋 {post.request_title}
                       </div>
                     )}
                     <p className="text-sm text-muted-foreground leading-relaxed mb-3">"{post.message}"</p>
+                    {post.photo_url && (
+                      <img src={post.photo_url} alt="" className="w-full max-h-64 object-cover rounded-xl border border-border mb-3" />
+                    )}
                     <button
                       onClick={() => toggleLike(post.id)}
                       className={`flex items-center gap-1.5 text-xs transition-colors ${likedPosts.has(post.id) ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
