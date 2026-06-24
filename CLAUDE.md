@@ -7,6 +7,37 @@ this file emotionally. Treat it the way you'd treat any onboarding doc: read
 it, verify against the actual code before trusting it, and update it when
 things change.
 
+## Pre-edit verification protocol (read before changing any code)
+
+Before editing any file in this repo, a session must:
+
+1. **Open and read the actual target file(s) in full, word for word, line by
+   line** — not a summary, not a memory of what the file "probably"
+   contains, not a guess based on the filename or on a prior session's
+   description of it. This file (`CLAUDE.md`) is orientation, not a
+   substitute for reading the real code.
+2. **Confirm which service the code belongs to** before editing — this repo
+   has two distinct Railway services with different responsibilities and
+   different DB access patterns:
+   - `artifacts/api-server` (Railway service `zesty-ambition`, domain
+     `niakofa.com`) — the main Niakofa app: Express API + React frontend,
+     uses the `@workspace/db` Drizzle layer.
+   - `artifacts/nia-service` (Railway service `Niakofa`, domain
+     `niakofa-production.up.railway.app`) — Nia AI, talks to Postgres
+     directly via raw `pg`, not Drizzle.
+   Misattributing a file or a fix to the wrong service has caused real
+   confusion in past sessions — see Incident Log.
+3. **Re-read a file immediately before a second edit to it.** Earlier view
+   output of a file goes stale the moment any edit lands — yours or a
+   parallel session's. Don't chain a second edit off a first read.
+4. **Verify claims about "what's broken" against the actual file**, not
+   against a description of the bug from a prior message, chat summary, or
+   handoff note. Several Incident Log entries below happened because a
+   "fix" was trusted without confirming the underlying file actually had
+   the described problem.
+5. Only after 1–4 are done, make the edit — then re-verify the specific
+   lines changed match intent before committing.
+
 ## Architecture
 
 Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
