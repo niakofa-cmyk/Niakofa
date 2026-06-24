@@ -352,7 +352,7 @@ router.patch("/users/:id/panic-contacts", requireAuth, requireOwnership(), async
 });
 
 // Admin moderation actions
-router.delete("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
+router.delete("/users/:id", requireAuth, requireAdmin(), async (req, res) => {
   const userId = parseInt(req.params.id);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
 
