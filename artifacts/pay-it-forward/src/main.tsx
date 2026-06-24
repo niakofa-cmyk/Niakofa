@@ -18,6 +18,8 @@ setAuthTokenGetter(getToken);
 let redirectingForSessionExpiry = false;
 setUnauthorizedHandler(() => {
   if (redirectingForSessionExpiry) return;
+  // Don't kick out of admin — admin has its own auth separate from user sessions
+  if (window.location.pathname.startsWith("/admin")) return;
   redirectingForSessionExpiry = true;
   clearToken();
   sessionStorage.setItem("niakofa_session_expired", "1");

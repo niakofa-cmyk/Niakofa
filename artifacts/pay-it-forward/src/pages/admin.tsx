@@ -350,12 +350,50 @@ function UsersTab() {
   );
 }
 
+const ADMIN_SESSION_MS = 10 * 60 * 1000; // 10 minutes
+const ADMIN_BUMP_MS   =  5 * 60 * 1000; // +5 minutes per bump
+
+function getAdminExpiry(): number {
+  return parseInt(sessionStorage.getItem("nia_admin_expiry") ?? "0", 10);
+}
+function setAdminExpiry(ms: number) {
+  sessionStorage.setItem("nia_admin_expiry", String(Date.now() + ms));
+}
+function clearAdminSession() {
+  sessionStorage.removeItem("nia_admin_authed");
+  sessionStorage.removeItem("nia_admin_expiry");
+}
+
 export default function AdminScreen() {
-  // Persist admin session across navigation within the same browser tab.
-  // sessionStorage clears when the tab closes — no long-lived admin cookies.
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem("nia_admin_authed") === "1");
+  const [authed, setAuthed] = useState(() => {
+    const expiry = getAdminExpiry();
+    if (sessionStorage.getItem("nia_admin_authed") === "1" && Date.now() < expiry) return true;
+    clearAdminSession();
+    return false;
+  });
   const [adminInput, setAdminInput] = useState("");
   const [, setLocation] = useLocation();
+  // Countdown display
+  const [secondsLeft, setSecondsLeft] = useState(() => Math.max(0, Math.floor((getAdminExpiry() - Date.now()) / 1000)));
+
+  // Countdown ticker + auto-logout
+  useEffect(() => {
+    if (!authed) return;
+    const tick = setInterval(() => {
+      const remaining = Math.max(0, Math.floor((getAdminExpiry() - Date.now()) / 1000));
+      setSecondsLeft(remaining);
+      if (remaining <= 0) {
+        clearAdminSession();
+        setAuthed(false);
+      }
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [authed]);
+
+  const bumpSession = () => {
+    setAdminExpiry(Math.max(getAdminExpiry() - Date.now(), 0) + ADMIN_BUMP_MS);
+    setSecondsLeft(s => s + ADMIN_BUMP_MS / 1000);
+  };
 
   const handleAuth = async (secret: string) => {
     if (!secret.trim()) return;
@@ -371,6 +409,8 @@ export default function AdminScreen() {
       });
       if (res.ok) {
         sessionStorage.setItem("nia_admin_authed", "1");
+        setAdminExpiry(ADMIN_SESSION_MS);
+        setSecondsLeft(ADMIN_SESSION_MS / 1000);
         setAuthed(true);
       } else {
         alert("Incorrect admin secret");
@@ -480,13 +520,27 @@ export default function AdminScreen() {
               )}
             </div>
           </div>
-          <button
-            onClick={() => fetchReports(statusFilter)}
-            disabled={loading}
-            className="p-2 rounded-xl hover:bg-muted transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Session countdown + bump */}
+            <button
+              onClick={bumpSession}
+              title="+5 min"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-yellow-500/10 border border-yellow-500/30 hover:bg-yellow-500/20 transition-colors"
+            >
+              <Clock className="w-3.5 h-3.5 text-yellow-400" />
+              <span className={`text-xs font-bold tabular-nums ${secondsLeft < 60 ? "text-destructive" : "text-yellow-400"}`}>
+                {String(Math.floor(secondsLeft / 60)).padStart(2,"0")}:{String(secondsLeft % 60).padStart(2,"0")}
+              </span>
+              <span className="text-[10px] text-yellow-500/70">+5m</span>
+            </button>
+            <button
+              onClick={() => fetchReports(statusFilter)}
+              disabled={loading}
+              className="p-2 rounded-xl hover:bg-muted transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
         </div>
 
         {/* Filter chips */}
