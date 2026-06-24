@@ -453,21 +453,76 @@ router.get("/users", requireAuth, requireAdmin(), async (_req, res) => {
 
 export default router;
 
-// PATCH /users/:id/helper-application — admin reviews a helper application
-router.patch("/users/:id/helper-application", requireAuth, requireAdmin(), async (req, res) => {
+// PATCH /users/:id/helper-application
+// Two modes:
+//   1. User submitting their own application (sends helper_skills, helper_bio, etc.) — requireOwnership
+//   2. Admin reviewing an application (sends status: approved|denied) — requireAdmin
+router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid user id" });
 
-  const { status } = req.body as { status?: string };
-  if (!status || !["pending", "approved", "denied"].includes(status)) {
-    return res.status(400).json({ error: "status must be pending | approved | denied" });
+  const {
+    status,
+    helper_skills,
+    helper_languages,
+    helper_qualifications,
+    helper_bio,
+    helper_vehicle,
+    helper_social_links,
+  } = req.body as {
+    status?: string;
+    helper_skills?: string[];
+    helper_languages?: string[];
+    helper_qualifications?: string[];
+    helper_bio?: string;
+    helper_vehicle?: string;
+    helper_social_links?: string;
+  };
+
+  const authenticatedUserId = req.authenticatedUserId;
+  if (!authenticatedUserId) return res.status(401).json({ error: "Authentication required" });
+
+  // Admin status review path
+  if (status !== undefined) {
+    const [admin] = await db.select({ is_admin: usersTable.is_admin }).from(usersTable).where(eq(usersTable.id, authenticatedUserId)).limit(1);
+    if (!admin?.is_admin) return res.status(403).json({ error: "Forbidden: Admin access required" });
+
+    if (!["pending", "approved", "denied"].includes(status)) {
+      return res.status(400).json({ error: "status must be pending | approved | denied" });
+    }
+
+    const [updated] = await db
+      .update(usersTable)
+      .set({
+        helper_status: status,
+        is_helper: status === "approved",
+        updated_at: new Date(),
+      })
+      .where(eq(usersTable.id, id))
+      .returning();
+
+    if (!updated) return res.status(404).json({ error: "User not found" });
+    const { password_hash, ...safe } = updated;
+    return res.json(safe);
+  }
+
+  // User submitting their own helper application
+  if (authenticatedUserId !== id) return res.status(403).json({ error: "Forbidden: You can only update your own application" });
+
+  if (!helper_skills || helper_skills.length === 0) {
+    return res.status(400).json({ error: "At least one skill is required" });
   }
 
   const [updated] = await db
     .update(usersTable)
     .set({
-      helper_status: status,
-      is_helper: status === "approved",
+      helper_skills,
+      helper_languages: helper_languages ?? [],
+      helper_qualifications: helper_qualifications ?? [],
+      helper_bio: helper_bio ?? null,
+      helper_vehicle: helper_vehicle ?? null,
+      helper_social_links: helper_social_links ?? null,
+      helper_status: "pending",
       updated_at: new Date(),
     })
     .where(eq(usersTable.id, id))

@@ -100,9 +100,14 @@ function AppShell() {
 
 function NiaWrapper() {
   const { currentUser, myLocation, helperModeActive, activeRequestId, niaOpen, setNiaOpen, niaInitialMessage } = useAppContext();
+  const [isLogin] = useRoute("/login");
+  const [isOnboarding] = useRoute("/onboarding");
+  // Hide NiaFab on login and onboarding — avoids overlapping form submit buttons
+  // and doesn't make sense before auth anyway
+  const hideNia = !currentUser || isLogin || isOnboarding;
   return (
     <>
-      <NiaFab onClick={() => setNiaOpen(true)} />
+      <NiaFab onClick={() => setNiaOpen(true)} hidden={hideNia} />
       <NiaDrawer
         open={niaOpen}
         onClose={() => setNiaOpen(false)}

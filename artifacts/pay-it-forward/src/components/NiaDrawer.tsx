@@ -798,28 +798,97 @@ export function NiaDrawer({
   );
 }
 
-export function NiaFab({ onClick }: { onClick: () => void }) {
+export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: boolean }) {
+  const FAB_SIZE = 56;
+  const SNAP_MARGIN = 18;
+  // Default position: bottom-right above bottom nav
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const isDragging = useRef(false);
+  const dragStart = useRef({ px: 0, py: 0, x: 0, y: 0 });
+  const fabRef = useRef<HTMLButtonElement>(null);
+
+  // Initialise position once on mount (needs window dimensions)
+  useEffect(() => {
+    setPos({
+      x: window.innerWidth - FAB_SIZE - SNAP_MARGIN,
+      y: window.innerHeight - FAB_SIZE - 80,
+    });
+  }, []);
+
+  const snapToEdge = useCallback((rawX: number, rawY: number) => {
+    const maxX = window.innerWidth - FAB_SIZE - SNAP_MARGIN;
+    const maxY = window.innerHeight - FAB_SIZE - SNAP_MARGIN;
+    const clampedX = Math.max(SNAP_MARGIN, Math.min(rawX, maxX));
+    const clampedY = Math.max(SNAP_MARGIN, Math.min(rawY, maxY));
+    // Snap to nearest horizontal edge
+    const snapLeft = clampedX < window.innerWidth / 2;
+    return {
+      x: snapLeft ? SNAP_MARGIN : maxX,
+      y: clampedY,
+    };
+  }, []);
+
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    if (!pos) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    isDragging.current = false;
+    dragStart.current = { px: e.clientX, py: e.clientY, x: pos.x, y: pos.y };
+  }, [pos]);
+
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    const dx = e.clientX - dragStart.current.px;
+    const dy = e.clientY - dragStart.current.py;
+    if (!isDragging.current && Math.sqrt(dx * dx + dy * dy) < 6) return;
+    isDragging.current = true;
+    const maxX = window.innerWidth - FAB_SIZE - SNAP_MARGIN;
+    const maxY = window.innerHeight - FAB_SIZE - SNAP_MARGIN;
+    setPos({
+      x: Math.max(SNAP_MARGIN, Math.min(dragStart.current.x + dx, maxX)),
+      y: Math.max(SNAP_MARGIN, Math.min(dragStart.current.y + dy, maxY)),
+    });
+  }, []);
+
+  const onPointerUp = useCallback((e: React.PointerEvent) => {
+    if (!pos) return;
+    if (!isDragging.current) {
+      onClick();
+    } else {
+      // Snap to nearest edge on release
+      const dx = e.clientX - dragStart.current.px;
+      const dy = e.clientY - dragStart.current.py;
+      setPos(snapToEdge(dragStart.current.x + dx, dragStart.current.y + dy));
+    }
+    isDragging.current = false;
+  }, [pos, onClick, snapToEdge]);
+
+  if (hidden || !pos) return null;
+
   return (
     <motion.button
-      onClick={onClick}
+      ref={fabRef}
       aria-label="Open Nia — your community assistant"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
       whileHover={{ scale: 1.07 }}
       whileTap={{ scale: 0.94 }}
       style={{
         position: "fixed",
-        bottom: 80,
-        right: 18,
+        left: pos.x,
+        top: pos.y,
         zIndex: 9997,
-        width: 56,
-        height: 56,
+        width: FAB_SIZE,
+        height: FAB_SIZE,
         borderRadius: "50%",
         background: "linear-gradient(135deg, #1D9E75 0%, #085041 100%)",
         border: "none",
-        cursor: "pointer",
+        cursor: "grab",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         boxShadow: "0 4px 20px rgba(10,61,46,0.35)",
+        touchAction: "none",
+        userSelect: "none",
       }}
     >
       <motion.div
@@ -838,6 +907,7 @@ export function NiaFab({ onClick }: { onClick: () => void }) {
         fontFamily: "var(--font-sans)",
         letterSpacing: "-0.01em",
         userSelect: "none", lineHeight: 1,
+        pointerEvents: "none",
       }}>
         N
       </span>
