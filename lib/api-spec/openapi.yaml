@@ -1035,6 +1035,7 @@ components:
         eta_text:
           type: string
         distance_text:
+          type: string
         initial_bearing:
           type: number
           description: Compass bearing (0-359) from start toward first waypoint
@@ -1042,7 +1043,7 @@ components:
           type: number
         waypoints:
           type: integer
-          type: string
+      
 
     Transaction:
       type: object
