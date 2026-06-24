@@ -431,7 +431,13 @@ export default function LoginScreen() {
         } else {
           setCurrentUser(user);
           localStorage.setItem("niakofa_user", JSON.stringify(user));
-          toast({ title: `Welcome to Niakofa, ${user.name}! 💙` });
+          const welcomeDesc =
+            accountType === "business"
+              ? "Your business account is pending admin review."
+              : accountType === "sponsor"
+                ? "Your sponsor account is pending admin review."
+                : undefined;
+          toast({ title: `Welcome to Niakofa, ${user.name}! 💙`, description: welcomeDesc });
         }
 
         const onboarded = localStorage.getItem("niakofa_onboarded");
@@ -994,7 +1000,15 @@ export default function LoginScreen() {
                 {mode === "login" ? "Signing in…" : "Creating account…"}
               </span>
             ) : (
-              mode === "login" ? "Sign In" : isHelper ? "Apply as Helper" : "Create Account"
+              mode === "login"
+                ? "Sign In"
+                : isHelper
+                  ? "Apply as Helper"
+                  : accountType === "business"
+                    ? "Register Business"
+                    : accountType === "sponsor"
+                      ? "Register as Sponsor"
+                      : "Create Account"
             )}
           </Button>
         </div>
