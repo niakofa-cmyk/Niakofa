@@ -104,15 +104,19 @@ function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: boolean }
 
 function NiaWelcomeSplash({ onDone }: { onDone: () => void }) {
   const [phraseIndex, setPhraseIndex] = useState(0);
+  const onDoneRef = useRef(onDone);
+  useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
     WELCOME_PHRASES.forEach((_, i) => {
       timers.push(setTimeout(() => setPhraseIndex(i), i * 900));
     });
-    timers.push(setTimeout(onDone, WELCOME_PHRASES.length * 900 + 400));
-    return () => timers.forEach(clearTimeout);
-  }, [onDone]);
+    const total = WELCOME_PHRASES.length * 900 + 600;
+    timers.push(setTimeout(() => onDoneRef.current(), total));
+    const safety = setTimeout(() => onDoneRef.current(), 5000);
+    return () => { timers.forEach(clearTimeout); clearTimeout(safety); };
+  }, []); // run once on mount only
 
   return (
     <motion.div

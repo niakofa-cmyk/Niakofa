@@ -75,6 +75,7 @@ router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => 
   if (specialties !== undefined) (updates as any).specialties = specialties;
   if (phone_masked !== undefined) (updates as any).phone_masked = phone_masked;
   if (quick_replies !== undefined) (updates as any).quick_replies = quick_replies;
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No fields to update" });
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });
   return res.json(user);

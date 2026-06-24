@@ -60,7 +60,7 @@ export function buildLocationPrefix(loc?: LocationContext): string {
   return `[User location: ${parts.join(", ")}${loc.zip ? ` ${loc.zip}` : ""}. Timezone: ${loc.timezone || "unknown"}. Lat/Lon: ${loc.lat},${loc.lon}. Use this to give hyper-local, immediately actionable resources.]\n\n`;
 }
 
-export interface AppContextInfo {
+export interface AppContext {
   userName?: string | null;
   accountType?: string | null;
   helperModeActive?: boolean;
@@ -70,27 +70,69 @@ export interface AppContextInfo {
     category: string;
     urgency: string;
     status: string;
-    neighborhood?: string | null;
-    viewerRole: string;
+    neighborhood: string | null;
+    viewerRole: "requester" | "helper";
   } | null;
 }
 
-/** Builds a system-prompt prefix describing the user's current in-app context
- *  (name, account type, helper mode, active request) so Nia can respond with
- *  situational awareness instead of generic answers. */
-export function buildAppContextPrefix(ctx: AppContextInfo): string {
+const CATEGORY_LABELS: Record<string, string> = {
+  groceries: "groceries",
+  transportation: "a ride",
+  errands: "errands",
+  home_repair: "a home repair",
+  medical: "medical help",
+  emergency: "an emergency",
+  other: "general help",
+  stock_shelves: "shelf stocking",
+  event_setup: "event setup",
+  delivery_run: "a delivery",
+  tech_support: "tech support",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  open: "still open, not yet claimed",
+  claimed: "claimed by a helper, not yet started",
+  en_route: "in progress \u2014 the helper is on the way",
+  arrived: "in progress \u2014 the helper has arrived",
+  completed: "completed",
+  pay_it_forward_pending: "completed, with a pay-it-forward pledge still pending",
+  cancelled: "cancelled",
+  expired: "expired",
+};
+
+const URGENCY_LABELS: Record<string, string> = {
+  low: "low urgency",
+  medium: "medium urgency",
+  high: "high urgency",
+  emergency: "an emergency, top priority",
+};
+
+function humanize(label: Record<string, string>, value: string): string {
+  return label[value] ?? value.replace(/_/g, " ");
+}
+
+export function buildAppContextPrefix(ctx?: AppContext): string {
+  if (!ctx) return "";
   const lines: string[] = [];
-  if (ctx.userName) lines.push(`User's name: ${ctx.userName}.`);
-  if (ctx.accountType) lines.push(`Account type: ${ctx.accountType}.`);
-  if (ctx.helperModeActive) lines.push(`This user currently has Helper Mode active.`);
+
+  if (ctx.userName) lines.push(`Name: ${ctx.userName}`);
+  if (ctx.accountType) lines.push(`Account type: ${ctx.accountType}`);
+  if (ctx.helperModeActive) lines.push(`Currently browsing in helper mode (looking to help others, not seeking help).`);
+
   if (ctx.activeRequest) {
     const r = ctx.activeRequest;
+    const loc = r.neighborhood ? ` near ${r.neighborhood}` : "";
+    const framing =
+      r.viewerRole === "requester"
+        ? `This user has an open help request they posted${loc}`
+        : `This user is the helper assigned to a job${loc}`;
     lines.push(
-      `User is currently viewing an active help request as the ${r.viewerRole}: ` +
-      `"${r.title}" (${r.category}, urgency: ${r.urgency}, status: ${r.status})` +
-      `${r.neighborhood ? ` in ${r.neighborhood}` : ""}. Description: ${r.description}`
+      `${framing}: "${r.title}" \u2014 ${humanize(CATEGORY_LABELS, r.category)}, ${humanize(URGENCY_LABELS, r.urgency)}, currently ${humanize(STATUS_LABELS, r.status)}.` +
+      (r.description ? ` Details: ${r.description}` : "")
     );
   }
+
   if (lines.length === 0) return "";
-  return `[App context: ${lines.join(" ")}]\n\n`;
+
+  return `[Niakofa platform context for this user — weave this in naturally, do not recite it as a list:\n${lines.join("\n")}]\n\n`;
 }

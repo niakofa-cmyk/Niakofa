@@ -99,7 +99,7 @@ export default function ActiveRequestScreen() {
   const { t } = useTranslation();
   const [, params] = useRoute("/request/:id");
   const [, setLocation] = useLocation();
-  const { currentUser, myLocation } = useAppContext();
+  const { currentUser, myLocation, setActiveRequestId } = useAppContext();
   const queryClient = useQueryClient();
   const requestId = parseInt(params?.id || "0", 10);
 
@@ -163,6 +163,24 @@ export default function ActiveRequestScreen() {
   // still be undefined here on first render, before data loads.
   const isArrived = request?.status === "arrived" || autoArrived;
   const isCompleted = request?.status === "completed";
+
+  // Keep AppContext's activeRequestId in sync with this screen so Nia (and
+  // anything else reading app-wide state) knows the helper currently has
+  // this request open. Cleared on unmount and once the request reaches a
+  // terminal status, so it never goes stale.
+  const TERMINAL_STATUSES = ["completed", "cancelled", "expired"];
+  useEffect(() => {
+    if (!request) return;
+    if (TERMINAL_STATUSES.includes(request.status)) {
+      setActiveRequestId(null);
+      return;
+    }
+    setActiveRequestId(requestId);
+  }, [request?.status, requestId, setActiveRequestId]);
+
+  useEffect(() => {
+    return () => setActiveRequestId(null);
+  }, [setActiveRequestId]);
 
   const routeParams = {
     start_lat: myLocation?.lat || 0,
