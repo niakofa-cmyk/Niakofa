@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { pino } from "pino";
+
 const logger = pino({ level: "info" });
 const { Pool } = pg;
 
@@ -43,7 +44,35 @@ export async function saveConversation(
   await pool.query(
     `INSERT INTO nia_conversations (user_id, session_id, user_message, nia_response, created_at)
      VALUES ($1, $2, $3, $4, NOW())`,
-    [userId, sessionId, truncateForStorage(userMessage), truncateForStorage(niaResponse)]
+    [
+      userId,
+      sessionId,
+      truncateForStorage(userMessage),
+      truncateForStorage(niaResponse),
+    ]
+  );
+}
+
+/**
+ * Save a check-in conversation initiated by the scheduler.
+ * The request_id is stored so we can later look up the context.
+ */
+export async function saveCheckinConversation(
+  userId: number,
+  sessionId: string,
+  openingPrompt: string,
+  niaResponse: string,
+  requestId: number | null
+) {
+  await pool.query(
+    `INSERT INTO nia_conversations (user_id, session_id, user_message, nia_response, created_at)
+     VALUES ($1, $2, $3, $4, NOW())`,
+    [
+      userId,
+      sessionId,
+      truncateForStorage(`[check-in:${requestId ?? "?"}] ${openingPrompt}`),
+      truncateForStorage(niaResponse),
+    ]
   );
 }
 
@@ -123,7 +152,9 @@ export async function getActiveRequest(
 }
 
 export async function purgeExpiredConversations() {
-  await pool.query(`DELETE FROM nia_conversations WHERE created_at < NOW() - INTERVAL '24 hours'`);
+  await pool.query(
+    `DELETE FROM nia_conversations WHERE created_at < NOW() - INTERVAL '24 hours'`
+  );
 }
 
 export async function checkRateLimit(
@@ -162,13 +193,13 @@ function nextLocalMidnight(timezone?: string): Date {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(now);
-  const get = (type: string) => Number(dateParts.find((p) => p.type === type)?.value);
+  const get = (type: string) =>
+    Number(dateParts.find((p) => p.type === type)?.value);
   const y = get("year");
   const m = get("month");
   const d = get("day");
 
   const offsetMinutes = getTimezoneOffsetMinutes(tz, now);
-
   return new Date(Date.UTC(y, m - 1, d + 1, 0, 0, 0) - offsetMinutes * 60_000);
 }
 
@@ -183,10 +214,15 @@ function getTimezoneOffsetMinutes(timeZone: string, date: Date): number {
     minute: "2-digit",
     second: "2-digit",
   }).formatToParts(date);
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  const get = (type: string) =>
+    Number(parts.find((p) => p.type === type)?.value);
   const asUtc = Date.UTC(
-    get("year"), get("month") - 1, get("day"),
-    get("hour"), get("minute"), get("second")
+    get("year"),
+    get("month") - 1,
+    get("day"),
+    get("hour"),
+    get("minute"),
+    get("second")
   );
   return (asUtc - date.getTime()) / 60_000;
 }
@@ -199,7 +235,10 @@ export async function getUserMemory(userId: number): Promise<string | null> {
   return result.rows[0]?.memory ?? null;
 }
 
-export async function upsertUserMemory(userId: number, memory: string): Promise<void> {
+export async function upsertUserMemory(
+  userId: number,
+  memory: string
+): Promise<void> {
   await pool.query(
     `INSERT INTO nia_memories (user_id, memory, created_at, updated_at)
      VALUES ($1, $2, NOW(), NOW())
