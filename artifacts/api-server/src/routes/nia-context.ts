@@ -47,7 +47,7 @@ export interface NiaContext {
 }
 
 router.get("/nia/context", requireAuth, async (req, res) => {
-  const userId = (req as any).user?.id as number | undefined;
+  const userId = (req as any).authenticatedUserId as number | undefined;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const latParam = req.query.lat ? parseFloat(req.query.lat as string) : null;
