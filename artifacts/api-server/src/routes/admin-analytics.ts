@@ -223,3 +223,12 @@ router.get("/admin/helper-applications", requireAuth, requireAdmin(), async (req
 
   return res.json(applicants);
 });
+
+// POST /admin/verify-secret — verify admin secret server-side (never exposes secret to frontend bundle)
+router.post("/admin/verify-secret", requireAuth, requireAdmin(), async (_req, res) => {
+  const secret = (_req.body as { secret?: string }).secret;
+  const expected = process.env.ADMIN_SECRET;
+  if (!expected) return res.status(500).json({ error: "ADMIN_SECRET not configured" });
+  if (secret !== expected) return res.status(403).json({ error: "Incorrect secret" });
+  return res.json({ ok: true });
+});

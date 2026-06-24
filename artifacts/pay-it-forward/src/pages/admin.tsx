@@ -351,10 +351,34 @@ function UsersTab() {
 }
 
 export default function AdminScreen() {
-  const [authed, setAuthed] = useState(false);
+  // Persist admin session across navigation within the same browser tab.
+  // sessionStorage clears when the tab closes — no long-lived admin cookies.
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem("nia_admin_authed") === "1");
   const [adminInput, setAdminInput] = useState("");
-  const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET ?? "niakofa-admin-2026";
   const [, setLocation] = useLocation();
+
+  const handleAuth = async (secret: string) => {
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const token = localStorage.getItem("niakofa_token");
+      const res = await fetch(`${base}/api/admin/verify-secret`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ secret }),
+      });
+      if (res.ok) {
+        sessionStorage.setItem("nia_admin_authed", "1");
+        setAuthed(true);
+      } else {
+        alert("Incorrect admin secret");
+      }
+    } catch {
+      alert("Could not verify — check your connection");
+    }
+  };
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -396,12 +420,12 @@ export default function AdminScreen() {
             placeholder="Admin secret"
             value={adminInput}
             onChange={e => setAdminInput(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && adminInput === ADMIN_SECRET) setAuthed(true); }}
+            onKeyDown={e => { if (e.key === "Enter") handleAuth(adminInput); }}
             className="w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             autoFocus
           />
           <button
-            onClick={() => { if (adminInput === ADMIN_SECRET) setAuthed(true); else alert("Incorrect secret"); }}
+            onClick={() => handleAuth(adminInput)}
             className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-black text-sm"
           >
             Enter Admin
