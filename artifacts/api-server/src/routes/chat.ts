@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, chatMessagesTable, requestsTable } from "@workspace/db";
+import { db, chatMessagesTable, requestsTable, requestHelpersTable } from "@workspace/db";
 import { eq, and, lt, desc, isNull, ne } from "drizzle-orm";
 import { sendToUser } from "../lib/ws-hub";
 import { chatLimiter } from "../middlewares/rate-limit";
@@ -61,9 +61,17 @@ router.post("/requests/:id/chat", requireAuth, chatLimiter, async (req, res) => 
 
   if (!request) return res.status(404).json({ error: "Request not found" });
 
-  // Only the requester and the claimed helper may send messages on this request
+  // Chain-aware participant check: requester, primary helper, or any chain member may chat
+  const chainMembers = await db
+    .select({ helper_id: requestHelpersTable.helper_id })
+    .from(requestHelpersTable)
+    .where(eq(requestHelpersTable.request_id, requestId));
+  const chainMemberIds = new Set(chainMembers.map(m => m.helper_id));
+
   const isParticipant =
-    senderId === request.requester_id || senderId === request.helper_id;
+    senderId === request.requester_id ||
+    senderId === request.helper_id ||
+    chainMemberIds.has(senderId);
   if (!isParticipant) {
     return res.status(403).json({ error: "You are not a participant in this request" });
   }
@@ -77,11 +85,13 @@ router.post("/requests/:id/chat", requireAuth, chatLimiter, async (req, res) => 
     })
     .returning();
 
-  // Targeted delivery — send only to the requester and helper, never broadcast to all
+  // Fan-out: deliver to requester, primary helper, and all chain members
   const eventPayload = { ...msg, request_id: requestId };
-  sendToUser(request.requester_id, { type: "chat_message", payload: eventPayload });
-  if (request.helper_id && request.helper_id !== request.requester_id) {
-    sendToUser(request.helper_id, { type: "chat_message", payload: eventPayload });
+  const recipients = new Set<number>([request.requester_id]);
+  if (request.helper_id) recipients.add(request.helper_id);
+  for (const id of chainMemberIds) recipients.add(id);
+  for (const recipientId of recipients) {
+    sendToUser(recipientId, { type: "chat_message", payload: eventPayload });
   }
 
   logger.info({ request_id: requestId, sender_id: senderId }, "chat: message sent");

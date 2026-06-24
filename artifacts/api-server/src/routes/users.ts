@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable } from "@workspace/db";
+import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, helperAvailabilityTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import {
   GetUserParams,
@@ -362,6 +362,39 @@ router.patch("/users/:id/moderation", requireAuth, requireAdmin(), async (req, r
       .where(eq(usersTable.id, userId));
   }
   return res.json({ ok: true, action, user_id: userId });
+});
+
+// PUT /users/:id/availability
+router.put("/users/:id/availability", requireAuth, requireOwnership(), async (req, res) => {
+  const userId = parseInt(req.params.id as string);
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+  const { windows } = req.body as { windows: Array<{ day_of_week: number; start_min: number; end_min: number }> };
+  if (!Array.isArray(windows)) return res.status(400).json({ error: "windows must be an array" });
+  for (const w of windows) {
+    if (w.day_of_week < 0 || w.day_of_week > 6) return res.status(400).json({ error: "day_of_week must be 0-6" });
+    if (w.start_min < 0 || w.start_min > 1439) return res.status(400).json({ error: "start_min must be 0-1439" });
+    if (w.end_min < 1 || w.end_min > 1440) return res.status(400).json({ error: "end_min must be 1-1440" });
+    if (w.start_min >= w.end_min) return res.status(400).json({ error: "start_min must be less than end_min" });
+  }
+  await db.delete(helperAvailabilityTable).where(eq(helperAvailabilityTable.user_id, userId));
+  if (windows.length > 0) {
+    await db.insert(helperAvailabilityTable).values(
+      windows.map(w => ({ user_id: userId, day_of_week: w.day_of_week, start_min: w.start_min, end_min: w.end_min }))
+    );
+  }
+  return res.json({ ok: true, count: windows.length });
+});
+
+// GET /users/:id/availability
+router.get("/users/:id/availability", requireAuth, requireOwnership(), async (req, res) => {
+  const userId = parseInt(req.params.id as string);
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+  const windows = await db
+    .select()
+    .from(helperAvailabilityTable)
+    .where(eq(helperAvailabilityTable.user_id, userId))
+    .orderBy(helperAvailabilityTable.day_of_week, helperAvailabilityTable.start_min);
+  return res.json(windows);
 });
 
 // GET all users (admin)

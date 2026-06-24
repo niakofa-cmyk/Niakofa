@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { ChevronLeft, Bell, Lock, Sliders, CreditCard, Trash2, CheckCircle2, AlertCircle } from "lucide-react";
+import { ChevronLeft, Bell, Lock, Sliders, CreditCard, Trash2, CheckCircle2, AlertCircle, Calendar, Plus, X, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { toast } from "@/hooks/use-toast";
@@ -329,6 +329,125 @@ function PayoutSetup({ userId }: { userId: number }) {
   );
 }
 
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function minToLabel(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  const ampm = h < 12 ? "AM" : "PM";
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${h12}:${m.toString().padStart(2, "0")} ${ampm}`;
+}
+
+// 30-min interval options: 0, 30, 60, ... 1440
+const TIME_OPTIONS = Array.from({ length: 49 }, (_, i) => i * 30);
+
+function AvailabilitySchedule({ userId }: { userId: number }) {
+  type Window = { day_of_week: number; start_min: number; end_min: number };
+  const [windows, setWindows] = useState<Window[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
+  useEffect(() => {
+    const token = localStorage.getItem("auth_token");
+    fetch(`${base}/api/users/${userId}/availability`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setWindows(data.map((w: Window) => ({ day_of_week: w.day_of_week, start_min: w.start_min, end_min: w.end_min }))))
+      .catch(() => setWindows([]))
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  function addWindow() {
+    setWindows(ws => [...ws, { day_of_week: 1, start_min: 540, end_min: 1020 }]);
+  }
+
+  function removeWindow(idx: number) {
+    setWindows(ws => ws.filter((_, i) => i !== idx));
+  }
+
+  function updateWindow(idx: number, field: keyof Window, value: number) {
+    setWindows(ws => ws.map((w, i) => i === idx ? { ...w, [field]: value } : w));
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(`${base}/api/users/${userId}/availability`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ windows }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      toast({ title: "Availability saved" });
+    } catch {
+      toast({ title: "Could not save availability", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>;
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-xl font-bold">Availability Schedule</h2>
+      <p className="text-sm text-muted-foreground">Set your weekly availability. Requests that match your active windows get a +10 score boost.</p>
+
+      <div className="space-y-3">
+        {windows.map((w, i) => (
+          <div key={i} className="flex items-center gap-2 bg-muted/40 rounded-xl p-3">
+            <select
+              value={w.day_of_week}
+              onChange={e => updateWindow(i, "day_of_week", parseInt(e.target.value))}
+              className="text-sm bg-background border border-border rounded-lg px-2 py-1"
+            >
+              {DAYS.map((d, idx) => <option key={d} value={idx}>{d}</option>)}
+            </select>
+            <select
+              value={w.start_min}
+              onChange={e => updateWindow(i, "start_min", parseInt(e.target.value))}
+              className="text-sm bg-background border border-border rounded-lg px-2 py-1"
+            >
+              {TIME_OPTIONS.filter(t => t < w.end_min).map(t => (
+                <option key={t} value={t}>{minToLabel(t)}</option>
+              ))}
+            </select>
+            <span className="text-xs text-muted-foreground">to</span>
+            <select
+              value={w.end_min}
+              onChange={e => updateWindow(i, "end_min", parseInt(e.target.value))}
+              className="text-sm bg-background border border-border rounded-lg px-2 py-1"
+            >
+              {TIME_OPTIONS.filter(t => t > w.start_min).map(t => (
+                <option key={t} value={t}>{minToLabel(t)}</option>
+              ))}
+            </select>
+            <button onClick={() => removeWindow(i)} className="ml-auto text-muted-foreground hover:text-destructive">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {windows.length === 0 && (
+        <p className="text-sm text-muted-foreground text-center py-4 bg-muted/20 rounded-xl">No windows set — you'll still appear in results, just without the availability bonus.</p>
+      )}
+
+      <Button variant="outline" className="w-full gap-2" onClick={addWindow} disabled={windows.length >= 14}>
+        <Plus className="w-4 h-4" /> Add Time Window
+      </Button>
+
+      <Button className="w-full" onClick={save} disabled={saving}>
+        {saving ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Saving…</> : "Save Schedule"}
+      </Button>
+    </div>
+  );
+}
+
 // Main Settings Page Component
 export default function SettingsPage() {
   const [, setLocation] = useLocation();
@@ -349,6 +468,7 @@ export default function SettingsPage() {
   if (currentUser.is_helper) {
     sections.push(
       { id: "helper-settings", title: "Helper Settings", icon: Sliders, component: HelperSettings },
+      { id: "availability-schedule", title: "Availability Schedule", icon: Calendar, component: AvailabilitySchedule },
       { id: "payout-setup", title: "Payout Setup", icon: CreditCard, component: PayoutSetup },
     );
   }

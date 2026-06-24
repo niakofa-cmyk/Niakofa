@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
-import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable } from "@workspace/db";
+import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -19,7 +19,7 @@ import {
   MarkArrivedParams,
   MarkArrivedBody,
 } from "@workspace/api-zod";
-import { broadcast, broadcastRequestEvent } from "../lib/ws-hub";
+import { broadcast, broadcastRequestEvent, sendToUser } from "../lib/ws-hub";
 import { requestCreationLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers } from "./push";
@@ -518,6 +518,82 @@ router.post("/requests/:id/tip", requireAuth, requireOwnership("requester_id"), 
   });
 
   return res.status(201).json({ ok: true, tip_amount, helper_id: request.helper_id });
+});
+
+// ── Help Chains ──────────────────────────────────────────────────────────────
+
+// POST /requests/:id/helpers/join — join the help chain for a request
+router.post("/requests/:id/helpers/join", requireAuth, async (req, res) => {
+  const requestId = parseInt(req.params.id as string);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+  const r = req as typeof req & { authenticatedUserId: number };
+  const helperId = r.authenticatedUserId;
+
+  const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.status !== "claimed" && request.status !== "en_route" && request.status !== "arrived") {
+    return res.status(409).json({ error: "Request must be claimed before joining the chain" });
+  }
+  if (request.requester_id === helperId) return res.status(409).json({ error: "Requester cannot join the help chain" });
+  if (request.helper_id === helperId) return res.status(409).json({ error: "Primary helper is already on this request" });
+
+  // Upsert — if already in chain, return 200 silently
+  const existing = await db.select().from(requestHelpersTable)
+    .where(and(eq(requestHelpersTable.request_id, requestId), eq(requestHelpersTable.helper_id, helperId)))
+    .limit(1);
+  if (existing.length > 0) return res.json({ ok: true, already_member: true });
+
+  const [row] = await db.insert(requestHelpersTable)
+    .values({ request_id: requestId, helper_id: helperId })
+    .returning();
+
+  // Notify requester and primary helper
+  sendToUser(request.requester_id, { type: "help_chain_joined", payload: { request_id: requestId, helper_id: helperId } });
+  if (request.helper_id) sendToUser(request.helper_id, { type: "help_chain_joined", payload: { request_id: requestId, helper_id: helperId } });
+
+  return res.status(201).json(row);
+});
+
+// DELETE /requests/:id/helpers/leave — leave the help chain
+router.delete("/requests/:id/helpers/leave", requireAuth, async (req, res) => {
+  const requestId = parseInt(req.params.id as string);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+  const r = req as typeof req & { authenticatedUserId: number };
+  const helperId = r.authenticatedUserId;
+
+  await db.delete(requestHelpersTable)
+    .where(and(eq(requestHelpersTable.request_id, requestId), eq(requestHelpersTable.helper_id, helperId)));
+
+  const [request] = await db.select({ requester_id: requestsTable.requester_id, helper_id: requestsTable.helper_id })
+    .from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+  if (request) {
+    sendToUser(request.requester_id, { type: "help_chain_left", payload: { request_id: requestId, helper_id: helperId } });
+    if (request.helper_id) sendToUser(request.helper_id, { type: "help_chain_left", payload: { request_id: requestId, helper_id: helperId } });
+  }
+
+  return res.json({ ok: true });
+});
+
+// GET /requests/:id/helpers — list all chain members with basic profile info
+router.get("/requests/:id/helpers", requireAuth, async (req, res) => {
+  const requestId = parseInt(req.params.id as string);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+
+  const members = await db
+    .select({
+      id: requestHelpersTable.id,
+      helper_id: requestHelpersTable.helper_id,
+      joined_at: requestHelpersTable.joined_at,
+      name: usersTable.name,
+      avatar_url: usersTable.avatar_url,
+      trust_score: usersTable.trust_score,
+    })
+    .from(requestHelpersTable)
+    .innerJoin(usersTable, eq(usersTable.id, requestHelpersTable.helper_id))
+    .where(eq(requestHelpersTable.request_id, requestId))
+    .orderBy(requestHelpersTable.joined_at);
+
+  return res.json(members);
 });
 
 export default router;
