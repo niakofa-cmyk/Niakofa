@@ -5,6 +5,7 @@ import { broadcast } from "../lib/ws-hub";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { moderatePostText } from "../lib/post-moderation";
+import { logger } from "../lib/logger";
 import { z } from "zod";
 
 const router = Router();
@@ -143,23 +144,29 @@ router.post("/community-posts", requireAuth, async (req, res) => {
   const finalStatus: "approved" | "pending" = photoCheck.value ? "pending" : moderation.status;
   const finalReason = photoCheck.value && moderation.status === "approved" ? "contains photo — awaiting review" : moderation.reason;
 
-  const [post] = await db
-    .insert(gratitudePostsTable)
-    .values({
-      request_id: null,
-      author_id: authorId,
-      author_name: author.name,
-      author_avatar: author.avatar_url,
-      helper_id: null,
-      helper_name: null,
-      message: parsed.data.message,
-      request_title: null,
-      post_type: parsed.data.post_type,
-      photo_url: photoCheck.value,
-      moderation_status: finalStatus,
-      flagged_reason: finalReason,
-    })
-    .returning();
+  let post;
+  try {
+    [post] = await db
+      .insert(gratitudePostsTable)
+      .values({
+        request_id: null,
+        author_id: authorId,
+        author_name: author.name,
+        author_avatar: author.avatar_url,
+        helper_id: null,
+        helper_name: null,
+        message: parsed.data.message,
+        request_title: null,
+        post_type: parsed.data.post_type,
+        photo_url: photoCheck.value,
+        moderation_status: finalStatus,
+        flagged_reason: finalReason,
+      })
+      .returning();
+  } catch (err) {
+    logger.error({ err, cause: err instanceof Error ? err.cause : undefined }, "community-posts: insert failed");
+    return res.status(500).json({ error: "Failed to create post" });
+  }
 
   if (finalStatus === "approved") {
     broadcast({ type: "new_gratitude", payload: post });
