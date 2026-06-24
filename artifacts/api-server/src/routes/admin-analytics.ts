@@ -224,11 +224,14 @@ router.get("/admin/helper-applications", requireAuth, requireAdmin(), async (req
   return res.json(applicants);
 });
 
-// POST /admin/verify-secret — verify admin secret server-side (never exposes secret to frontend bundle)
-router.post("/admin/verify-secret", requireAuth, requireAdmin(), async (_req, res) => {
-  const secret = (_req.body as { secret?: string }).secret;
+// POST /admin/verify-secret — verify admin secret server-side
+// No Bearer token required — this is the auth step itself.
+// Accepts secret via body or x-admin-secret header.
+router.post("/admin/verify-secret", async (req, res) => {
+  const secret = (req.body as { secret?: string }).secret
+    ?? req.headers["x-admin-secret"] as string | undefined;
   const expected = process.env.ADMIN_SECRET;
   if (!expected) return res.status(500).json({ error: "ADMIN_SECRET not configured" });
-  if (secret !== expected) return res.status(403).json({ error: "Incorrect secret" });
+  if (!secret || secret !== expected) return res.status(403).json({ error: "Incorrect secret" });
   return res.json({ ok: true });
 });

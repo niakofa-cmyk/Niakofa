@@ -358,14 +358,14 @@ export default function AdminScreen() {
   const [, setLocation] = useLocation();
 
   const handleAuth = async (secret: string) => {
+    if (!secret.trim()) return;
     try {
       const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-      const token = localStorage.getItem("niakofa_token");
       const res = await fetch(`${base}/api/admin/verify-secret`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+          "x-admin-secret": secret,
         },
         body: JSON.stringify({ secret }),
       });
