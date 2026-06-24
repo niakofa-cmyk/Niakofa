@@ -267,9 +267,9 @@ router.patch("/requests/:id", requireAuth, async (req, res) => {
   if (bParsed.data.status !== undefined) updates.status = bParsed.data.status;
   if (bParsed.data.description !== undefined) updates.description = bParsed.data.description;
   if (bParsed.data.urgency !== undefined) updates.urgency = bParsed.data.urgency;
-  const [request] = await db.update(requestsTable).set(updates).where(eq(requestsTable.id, pParsed.data.id)).returning();
-  if (!request) return res.status(404).json({ error: "Not found" });
-  const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
+  const [updatedRequest] = await db.update(requestsTable).set(updates).where(eq(requestsTable.id, pParsed.data.id)).returning();
+  if (!updatedRequest) return res.status(404).json({ error: "Not found" });
+  const enriched = { ...updatedRequest, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
   broadcast({ type: "request_updated", payload: enriched });
   return res.json(enriched);
 });
