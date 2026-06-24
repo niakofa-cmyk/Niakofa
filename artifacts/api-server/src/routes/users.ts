@@ -57,19 +57,25 @@ router.post("/users/register", authLimiter, async (req, res) => {
   const parsed = RegisterUserBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
   const { name, email, avatar_url, is_helper, neighborhood } = parsed.data;
+  const password = (req.body as any).password as string | undefined;
+
   const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
   if (existing.length > 0) {
     const { password_hash, ...safeExisting } = existing[0]!;
     return res.json(safeExisting);
   }
+
+  const password_hash = password ? await bcrypt.hash(password, 12) : null;
+
   const [user] = await db.insert(usersTable).values({
     name, email,
+    password_hash,
     avatar_url: avatar_url ?? null,
     is_helper: is_helper ?? false,
     neighborhood: neighborhood ?? null,
   }).returning();
   const token = signTokenById(user.id, user.token_version);
-  const { password_hash, ...safeUser } = user;
+  const { password_hash: _ph, ...safeUser } = user;
   return res.status(201).json({ user: safeUser, token });
 });
 
@@ -78,7 +84,8 @@ router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, parsed.data.id)).limit(1);
   if (!user) return res.status(404).json({ error: "User not found" });
-  return res.json(user);
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
 });
 
 router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
@@ -416,6 +423,18 @@ router.get("/users/:id/availability", requireAuth, requireOwnership(), async (re
     .where(eq(helperAvailabilityTable.user_id, userId))
     .orderBy(helperAvailabilityTable.day_of_week, helperAvailabilityTable.start_min);
   return res.json(windows);
+});
+
+// POST /users/:id/logout — server-side token revocation.
+// Bumps token_version so every previously issued token for this user
+// is immediately invalid, even ones that haven't expired yet.
+router.post("/users/:id/logout", requireAuth, requireOwnership(), async (req, res) => {
+  const userId = parseInt(req.params.id);
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+  await db.update(usersTable)
+    .set({ token_version: sql`${usersTable.token_version} + 1` })
+    .where(eq(usersTable.id, userId));
+  return res.json({ ok: true });
 });
 
 // GET all users (admin)
