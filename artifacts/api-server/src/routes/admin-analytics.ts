@@ -194,3 +194,32 @@ router.get("/admin/accounts", requireAuth, requireAdmin(), async (req, res) => {
 
   return res.json(users);
 });
+
+// GET /admin/helper-applications — list users who have applied to be helpers
+router.get("/admin/helper-applications", requireAuth, requireAdmin(), async (req, res) => {
+  const { status } = req.query as { status?: string };
+
+  const conditions = [sql`${usersTable.helper_status} IS NOT NULL`];
+  if (status) conditions.push(eq(usersTable.helper_status, status));
+
+  const applicants = await db
+    .select({
+      id: usersTable.id,
+      name: usersTable.name,
+      email: usersTable.email,
+      helper_status: usersTable.helper_status,
+      helper_skills: usersTable.helper_skills,
+      helper_bio: usersTable.helper_bio,
+      helper_languages: usersTable.helper_languages,
+      helper_qualifications: usersTable.helper_qualifications,
+      helper_vehicle: usersTable.helper_vehicle,
+      identity_verified: usersTable.identity_verified,
+      background_check_status: usersTable.background_check_status,
+      created_at: usersTable.created_at,
+    })
+    .from(usersTable)
+    .where(and(...conditions))
+    .orderBy(usersTable.created_at);
+
+  return res.json(applicants);
+});
