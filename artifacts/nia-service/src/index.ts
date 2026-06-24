@@ -5,6 +5,8 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { pino } from "pino";
 import chatRouter from "./routes/chat.js";
+import crisisResourcesRouter from "./routes/crisis-resources.js";
+import neighborhoodsRouter from "./routes/neighborhoods.js";
 import { purgeExpiredConversations } from "./lib/db.js";
 
 const logger = pino({ level: "info" });
@@ -26,6 +28,8 @@ const networkLimiter = rateLimit({
 app.use(networkLimiter);
 
 app.use("/", chatRouter);
+app.use("/", crisisResourcesRouter);
+app.use("/", neighborhoodsRouter);
 
 setInterval(async () => {
   try {
