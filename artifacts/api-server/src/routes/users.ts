@@ -1,4 +1,5 @@
 import { Router } from "express";
+import bcrypt from "bcryptjs";
 import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, helperAvailabilityTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import {
@@ -31,10 +32,25 @@ router.get("/users/register", (_req, res) => {
 router.post("/users/login", authLimiter, async (req, res) => {
   const { email, password } = req.body as { email: string; password: string };
   if (!email) return res.status(400).json({ error: "Email required" });
+  if (!password) return res.status(400).json({ error: "Password required" });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
   if (!user) return res.status(401).json({ error: "No account found with that email" });
-  const token = signTokenById(user.id);
-  return res.json({ user, token });
+
+  // Legacy accounts created before password auth was added have no
+  // password_hash at all — distinct from "wrong password" so the client
+  // can route them through a password-setup flow instead of a dead end.
+  if (!user.password_hash) {
+    return res.status(403).json({ error_code: "LEGACY_PASSWORD_REQUIRED", user_id: user.id });
+  }
+
+  const passwordMatches = await bcrypt.compare(password, user.password_hash);
+  if (!passwordMatches) {
+    return res.status(401).json({ error: "Incorrect password" });
+  }
+
+  const token = signTokenById(user.id, user.token_version);
+  const { password_hash, ...safeUser } = user;
+  return res.json({ user: safeUser, token });
 });
 
 router.post("/users/register", authLimiter, async (req, res) => {
@@ -42,15 +58,19 @@ router.post("/users/register", authLimiter, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
   const { name, email, avatar_url, is_helper, neighborhood } = parsed.data;
   const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
-  if (existing.length > 0) return res.json(existing[0]);
+  if (existing.length > 0) {
+    const { password_hash, ...safeExisting } = existing[0]!;
+    return res.json(safeExisting);
+  }
   const [user] = await db.insert(usersTable).values({
     name, email,
     avatar_url: avatar_url ?? null,
     is_helper: is_helper ?? false,
     neighborhood: neighborhood ?? null,
   }).returning();
-  const token = signTokenById(user.id);
-  return res.status(201).json({ user, token });
+  const token = signTokenById(user.id, user.token_version);
+  const { password_hash, ...safeUser } = user;
+  return res.status(201).json({ user: safeUser, token });
 });
 
 router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
