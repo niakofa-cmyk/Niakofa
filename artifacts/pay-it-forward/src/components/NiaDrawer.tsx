@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown } from "lucide-react";
+import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown, Mic } from "lucide-react";
 import { authHeaders } from "../lib/auth";
 
 const NIA_SERVICE_URL = import.meta.env.VITE_NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app";
+const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
 const WELCOME_PHRASES = [
   "Sawubona — I see you.",
@@ -16,6 +17,8 @@ const QUICK_PROMPTS = [
   { label: "🏠 Need shelter", text: "I need emergency shelter. Can you help me find a place tonight?" },
   { label: "💙 I'm struggling", text: "I'm really struggling right now and don't know where to turn." },
   { label: "📋 Benefits help", text: "Help me find out what benefits I might qualify for." },
+  { label: "🤝 Want to help", text: "I want to help someone in my neighborhood. What requests are open near me?" },
+  { label: "🗺️ What's nearby?", text: "What's happening in my community right now?" },
 ];
 
 function getSessionId(): string {
@@ -32,6 +35,14 @@ interface Message {
   content: string;
   streaming?: boolean;
   timestamp?: Date;
+}
+
+interface NiaContext {
+  openRequestsNearby: number;
+  helpersOnlineNearby: number;
+  topCategory: string | null;
+  estimatedResponseMinutes: number | null;
+  neighborhood: string | null;
 }
 
 interface NiaDrawerProps {
@@ -279,6 +290,44 @@ function CrisisStrip() {
   );
 }
 
+function LiveContextBadge({ context }: { context: NiaContext | null }) {
+  if (!context || (context.openRequestsNearby === 0 && context.helpersOnlineNearby === 0)) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: "auto" }}
+      style={{
+        margin: "4px 12px",
+        padding: "7px 12px",
+        background: "rgba(29,158,117,0.08)",
+        border: "0.5px solid rgba(29,158,117,0.2)",
+        borderRadius: 8,
+        display: "flex",
+        gap: 14,
+        flexWrap: "wrap",
+      }}
+    >
+      {context.openRequestsNearby > 0 && (
+        <span style={{ fontSize: 11, color: "#0A6B4E", display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#1D9E75", display: "inline-block" }} />
+          {context.openRequestsNearby} open request{context.openRequestsNearby !== 1 ? "s" : ""} nearby
+        </span>
+      )}
+      {context.helpersOnlineNearby > 0 && (
+        <span style={{ fontSize: 11, color: "#0A6B4E", display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#34d399", display: "inline-block" }} />
+          {context.helpersOnlineNearby} helper{context.helpersOnlineNearby !== 1 ? "s" : ""} active
+        </span>
+      )}
+      {context.estimatedResponseMinutes && (
+        <span style={{ fontSize: 11, color: "#0A6B4E" }}>
+          ~{context.estimatedResponseMinutes}min response
+        </span>
+      )}
+    </motion.div>
+  );
+}
+
 function QuickPrompts({ onSelect }: { onSelect: (text: string) => void }) {
   return (
     <div style={{ padding: "12px 12px 4px", display: "flex", flexWrap: "wrap", gap: 7 }}>
@@ -334,10 +383,12 @@ export function NiaDrawer({
   const [locationStatus, setLocationStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
   const [locationLabel, setLocationLabel] = useState<string | null>(null);
   const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const [liveContext, setLiveContext] = useState<NiaContext | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const sessionId = getSessionId();
   const isFirstOpen = useRef(!sessionStorage.getItem("nia_has_opened"));
+  const contextFetchedRef = useRef(false);
 
   const requestLocation = useCallback(() => {
     if (!navigator.geolocation) { setLocationStatus("denied"); return; }
@@ -358,6 +409,31 @@ export function NiaDrawer({
       { timeout: 8000, maximumAge: 300_000 }
     );
   }, []);
+
+  // Fetch live community context once we have coordinates
+  useEffect(() => {
+    const coords = userCoords ?? userLocation;
+    if (!coords || contextFetchedRef.current) return;
+    contextFetchedRef.current = true;
+
+    const lat = coords.lat;
+    const lng = (coords as { lat: number; lng?: number; lon?: number }).lng ?? (coords as { lat: number; lon?: number }).lon;
+    if (lat == null || lng == null) return;
+
+    fetch(`${API_BASE}/api/nia/context?lat=${lat}&lng=${lng}`, {
+      headers: authHeaders(),
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: NiaContext | null) => {
+        if (data) setLiveContext(data);
+      })
+      .catch(() => { /* non-critical */ });
+  }, [userCoords, userLocation]);
+
+  // Reset context fetch flag when coords change significantly
+  useEffect(() => {
+    contextFetchedRef.current = false;
+  }, [userCoords]);
 
   useEffect(() => {
     if (!open || historyLoaded) return;
@@ -421,12 +497,11 @@ export function NiaDrawer({
     setLoading(true);
     setMessages((prev) => [...prev, { role: "nia", content: "", streaming: true, timestamp: new Date() }]);
 
+    const coords = userCoords ?? userLocation;
+
     try {
       const res = await fetch(`${NIA_SERVICE_URL}/chat`, {
         method: "POST",
-        // HIGH-002: identity comes from the verified Bearer token, not a
-        // client-supplied userId — nia-service no longer trusts a userId
-        // sent in the request body.
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           message: trimmed,
@@ -435,7 +510,9 @@ export function NiaDrawer({
           helperModeActive,
           activeRequestId: activeRequestId ?? null,
           accountType: accountType ?? null,
-          ...(userCoords ?? userLocation ?? {}),
+          // Live context — Nia uses this to make grounded, specific statements
+          liveContext: liveContext ?? undefined,
+          ...(coords ?? {}),
         }),
       });
 
@@ -512,13 +589,27 @@ export function NiaDrawer({
       });
     } finally {
       setLoading(false);
+      // Refresh live context after each message (non-blocking)
+      const coords = userCoords ?? userLocation;
+      if (coords) {
+        const lat = coords.lat;
+        const lng = (coords as { lat: number; lng?: number; lon?: number }).lng ?? (coords as { lat: number; lon?: number }).lon;
+        if (lat != null && lng != null) {
+          fetch(`${API_BASE}/api/nia/context?lat=${lat}&lng=${lng}`, { headers: authHeaders() })
+            .then((r) => r.ok ? r.json() : null)
+            .then((data: NiaContext | null) => { if (data) setLiveContext(data); })
+            .catch(() => {});
+        }
+      }
     }
-  }, [loading, sessionId, userCoords, userId, userName, userLocation, helperModeActive, activeRequestId, accountType]);
+  }, [loading, sessionId, userCoords, userId, userName, userLocation, helperModeActive, activeRequestId, accountType, liveContext]);
 
   const handleReset = () => {
     sessionStorage.removeItem("nia_session_id");
     setHistoryLoaded(false);
     setMessages([]);
+    contextFetchedRef.current = false;
+    setLiveContext(null);
   };
 
   const showQuickPrompts = historyLoaded && !showSplash && messages.length <= 1 && !loading;
@@ -620,6 +711,7 @@ export function NiaDrawer({
                 <div style={{ paddingTop: 10, flexShrink: 0 }}>
                   <CrisisStrip />
                 </div>
+                <LiveContextBadge context={liveContext} />
                 <AnimatePresence mode="wait">
                   {showQuickPrompts && (
                     <motion.div

@@ -17,6 +17,7 @@ import crisisRouter from "./crisis";
 import recurringRouter from "./recurring";
 import communityNeighborhoodsRouter from "./community-neighborhoods";
 import regionCrisisResourcesRouter from "./region-crisis-resources";
+import niaContextRouter from "./nia-context";
 
 const router: IRouter = Router();
 
@@ -38,5 +39,6 @@ router.use(crisisRouter);
 router.use(recurringRouter);
 router.use(communityNeighborhoodsRouter);
 router.use(regionCrisisResourcesRouter);
+router.use(niaContextRouter);
 
 export default router;
