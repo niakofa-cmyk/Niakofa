@@ -45,7 +45,7 @@ export default function RequesterTrackingScreen() {
   const { t } = useTranslation();
   const [, params] = useRoute("/request/:id/track");
   const [, setLocation] = useLocation();
-  const { currentUser } = useAppContext();
+  const { currentUser, setActiveRequestId } = useAppContext();
   const queryClient = useQueryClient();
   const requestId = parseInt(params?.id || "0", 10);
   const mapRef = useRef<MapRef>(null);
@@ -144,6 +144,19 @@ export default function RequesterTrackingScreen() {
       </div>
     );
   }
+
+  useEffect(() => {
+    const TERMINAL_STATUSES = ["completed", "cancelled", "expired"];
+    if (TERMINAL_STATUSES.includes(request.status)) {
+      setActiveRequestId(null);
+      return;
+    }
+    setActiveRequestId(requestId);
+  }, [request.status, requestId, setActiveRequestId]);
+
+  useEffect(() => {
+    return () => setActiveRequestId(null);
+  }, [setActiveRequestId]);
 
   const currentStatusIdx = STATUS_ORDER.indexOf(request.status);
   const isCompleted = request.status === "completed";
