@@ -53,7 +53,7 @@ Profile: trust score, helper mode toggle, payout setup, skills
 Community tab: neighborhood activity, leaderboard, gratitude posts
 Settings: notifications, privacy, language, availability schedule
 
-Request categories: grocery runs, rides, home repair, medical, emergency, childcare, elder care, tech help, food, other
+Request categories: groceries, transportation (rides), errands, home repair, medical, emergency, stock shelves, event setup, delivery runs, tech support, other
 
 To become a helper: Profile → turn on Helper Mode
 To set up payouts: Profile → Payout Setup (Stripe)
