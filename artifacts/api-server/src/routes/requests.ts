@@ -4,6 +4,7 @@ import { requireOwnership, requireApproved } from "../middlewares/authz";
 import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, ratingsTable } from "@workspace/db";
 // BUG-030: distanceMiles moved to shared lib/geo.ts — single server-side source of truth
 import { distanceMiles } from "../lib/geo";
+import { computeMatchScore } from "../lib/matching";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -115,14 +116,28 @@ router.get("/requests/nearby", requireAuth, async (req, res) => {
       sql`${requestsTable.geog} IS NOT NULL`,
       sql`ST_DWithin(${requestsTable.geog}, ${origin}, ${radiusMeters})`,
     ));
+
+  // Pull the requesting helper's own skills so results can be ranked by
+  // relevance, not just urgency+distance. Falls back to an empty profile
+  // (no skill bonus, ranking degrades gracefully to the old behavior) if
+  // the caller isn't a helper or has no skills listed yet.
+  const [helperProfile] = await db.select({
+    helper_skills: usersTable.helper_skills,
+    specialties: usersTable.specialties,
+  }).from(usersTable).where(eq(usersTable.id, req.authenticatedUserId!)).limit(1);
+
   const nearby = nearbyRows
-    .map((nr) => ({ ...nr.row, distance_miles: Number(nr.distance_meters) / 1609.34 }))
-    .sort((a, b) => {
-      const urgencyOrder: Record<string, number> = { emergency: 0, high: 1, medium: 2, low: 3 };
-      const urgencyDiff = (urgencyOrder[a.urgency] ?? 2) - (urgencyOrder[b.urgency] ?? 2);
-      if (urgencyDiff !== 0) return urgencyDiff;
-      return a.distance_miles - b.distance_miles;
-    });
+    .map((nr) => {
+      const distance_miles = Number(nr.distance_meters) / 1609.34;
+      const { score, reasons } = computeMatchScore(
+        helperProfile ?? { helper_skills: [], specialties: [] },
+        nr.row.category,
+        nr.row.urgency,
+        distance_miles
+      );
+      return { ...nr.row, distance_miles, match_score: score, match_reasons: reasons };
+    })
+    .sort((a, b) => b.match_score - a.match_score);
 
   const userIds = [...new Set(nearby.map(r => r.requester_id))];
   const users = userIds.length > 0

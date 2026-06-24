@@ -306,6 +306,18 @@ export default function HelperDashboardScreen() {
                         {req.distance_miles != null && <span>· {req.distance_miles.toFixed(1)} {t("helper_dashboard.mi_2")}</span>}
                         {req.requester_name && <span>· {req.requester_name}</span>}
                       </div>
+                      {/* match_reasons isn't in the generated OpenAPI types yet (added server-side
+                          without a spec/codegen cycle) — accessed via a narrow cast rather than
+                          widening HelpRequest's type for one optional field. */}
+                      {(req as unknown as { match_reasons?: string[] }).match_reasons?.length ? (
+                        <div className="flex items-center gap-1 mt-1 flex-wrap">
+                          {(req as unknown as { match_reasons?: string[] }).match_reasons!.map((reason) => (
+                            <span key={reason} className="text-[10px] font-semibold text-primary bg-primary/10 rounded-full px-1.5 py-0.5">
+                              ✨ {reason}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                       {req.created_at && (
                         <div className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground">
                           <Clock className="w-3 h-3" />
