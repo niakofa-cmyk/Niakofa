@@ -45,7 +45,7 @@ export function NiaChat() {
   const { currentUser, helperModeActive } = useAppContext();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { role: "nia", text: "Sawubona — I see you. I am Nia. How can I support you today?" },
+    { role: "nia", text: "Hi, I'm Nia 👋 How can I help you today?" },
   ]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);

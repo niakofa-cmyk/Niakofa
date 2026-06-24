@@ -59,28 +59,48 @@ function enrichRequest(r: typeof requestsTable.$inferSelect, userMap: Record<num
 }
 
 router.get("/requests/stats", async (_req, res) => {
-  const allRequests = await db.select().from(requestsTable);
-  const open = allRequests.filter(r => r.status === "open").length;
-  const completed = allRequests.filter(r => r.status === "completed").length;
-  const recentCompletions = allRequests.filter(r => {
-    if (!r.completed_at) return false;
-    return Date.now() - new Date(r.completed_at).getTime() < 86400000;
-  }).length;
-  const onlineHelpers = await db.select().from(usersTable).where(eq(usersTable.helper_mode_active, true));
-  const catMap: Record<string, number> = {};
-  for (const r of allRequests) catMap[r.category] = (catMap[r.category] ?? 0) + 1;
-  const requests_by_category = Object.entries(catMap).map(([category, count]) => ({ category, count }));
+  // All counts done in the DB — never load the full table into memory.
+  const [openRow] = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(requestsTable)
+    .where(eq(requestsTable.status, "open"));
 
-  // Total pay-it-forward pledge volume
-  const pledgeVolume = allRequests.reduce((s, r) => s + (r.pledge_paid || 0), 0);
+  const [completedRow] = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(requestsTable)
+    .where(eq(requestsTable.status, "completed"));
+
+  const [recentRow] = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(requestsTable)
+    .where(
+      and(
+        eq(requestsTable.status, "completed"),
+        sql`${requestsTable.completed_at} > NOW() - INTERVAL '24 hours'`
+      )
+    );
+
+  const [pledgeRow] = await db
+    .select({ total: sql<number>`COALESCE(SUM(pledge_paid), 0)::float` })
+    .from(requestsTable);
+
+  const categoryRows = await db
+    .select({ category: requestsTable.category, count: sql<number>`COUNT(*)::int` })
+    .from(requestsTable)
+    .groupBy(requestsTable.category);
+
+  const [helperRow] = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(usersTable)
+    .where(eq(usersTable.helper_mode_active, true));
 
   return res.json({
-    total_open: open,
-    total_completed: completed,
-    total_helpers_online: onlineHelpers.length,
-    requests_by_category,
-    recent_completions: recentCompletions,
-    total_pledge_volume: pledgeVolume,
+    total_open: openRow?.count ?? 0,
+    total_completed: completedRow?.count ?? 0,
+    total_helpers_online: helperRow?.count ?? 0,
+    requests_by_category: categoryRows.map(r => ({ category: r.category, count: r.count })),
+    recent_completions: recentRow?.count ?? 0,
+    total_pledge_volume: pledgeRow?.total ?? 0,
   });
 });
 
@@ -129,26 +149,41 @@ router.get("/requests", async (req, res) => {
     radius_miles: req.query.radius_miles ? parseFloat(req.query.radius_miles as string) : undefined,
   });
 
-  // Optional helper_id filter — used by helper profile page
   const helperId = req.query.helper_id ? parseInt(req.query.helper_id as string) : null;
-  // Optional requester_id filter — used by profile page to fetch user's own requests
   const requesterId = req.query.requester_id ? parseInt(req.query.requester_id as string) : null;
-  // Optional limit
-  const limitParam = req.query.limit ? parseInt(req.query.limit as string) : null;
+  const limitParam = req.query.limit ? parseInt(req.query.limit as string) : 200;
 
-  let rows = await db.select().from(requestsTable);
-  if (helperId) rows = rows.filter(r => r.helper_id === helperId);
-  if (requesterId) rows = rows.filter(r => r.requester_id === requesterId);
-  if (params.success && params.data.status) rows = rows.filter(r => r.status === params.data.status);
+  // Build WHERE conditions in the DB — never load the full table.
+  const conditions = [];
+  if (params.success && params.data.status) {
+    conditions.push(eq(requestsTable.status, params.data.status as any));
+  }
+  if (helperId) conditions.push(eq(requestsTable.helper_id, helperId));
+  if (requesterId) conditions.push(eq(requestsTable.requester_id, requesterId));
+
+  // Bounding-box pre-filter when lat/lng provided (PostGIS not required).
+  // Exact haversine filter applied in JS after for accuracy.
+  if (params.success && params.data.lat && params.data.lng) {
+    const radius = params.data.radius_miles ?? 10;
+    const latDelta = radius / 69;
+    const lngDelta = radius / (69 * Math.cos((params.data.lat * Math.PI) / 180));
+    conditions.push(sql`${requestsTable.lat} BETWEEN ${params.data.lat - latDelta} AND ${params.data.lat + latDelta}`);
+    conditions.push(sql`${requestsTable.lng} BETWEEN ${params.data.lng - lngDelta} AND ${params.data.lng + lngDelta}`);
+  }
+
+  let rows = await db
+    .select()
+    .from(requestsTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(sql`${requestsTable.created_at} DESC`)
+    .limit(Math.min(limitParam > 0 ? limitParam : 200, 500));
+
+  // Exact radius filter in JS (bounding box above is a fast pre-filter)
   if (params.success && params.data.lat && params.data.lng) {
     const radius = params.data.radius_miles ?? 10;
     rows = rows.filter(r => distanceMiles(params.data.lat!, params.data.lng!, r.lat, r.lng) <= radius);
   }
-  // Sort newest first, then apply limit
-  rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  if (limitParam && limitParam > 0) rows = rows.slice(0, limitParam);
 
-  // Collect all relevant user IDs (requesters + helpers) for a single batch fetch
   const allUserIds = [...new Set([
     ...rows.map(r => r.requester_id),
     ...rows.map(r => r.helper_id).filter((id): id is number => id != null),
