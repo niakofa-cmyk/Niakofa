@@ -452,3 +452,28 @@ router.get("/users", requireAuth, requireAdmin(), async (_req, res) => {
 });
 
 export default router;
+
+// PATCH /users/:id/helper-application — admin reviews a helper application
+router.patch("/users/:id/helper-application", requireAuth, requireAdmin(), async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid user id" });
+
+  const { status } = req.body as { status?: string };
+  if (!status || !["pending", "approved", "denied"].includes(status)) {
+    return res.status(400).json({ error: "status must be pending | approved | denied" });
+  }
+
+  const [updated] = await db
+    .update(usersTable)
+    .set({
+      helper_status: status,
+      is_helper: status === "approved",
+      updated_at: new Date(),
+    })
+    .where(eq(usersTable.id, id))
+    .returning();
+
+  if (!updated) return res.status(404).json({ error: "User not found" });
+  const { password_hash, ...safe } = updated;
+  return res.json(safe);
+});

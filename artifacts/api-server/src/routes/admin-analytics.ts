@@ -163,3 +163,34 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), async (_req, res) =>
 });
 
 export default router;
+
+// GET /admin/accounts — list all accounts for admin review
+router.get("/admin/accounts", requireAuth, requireAdmin(), async (req, res) => {
+  const { approval_status, account_type } = req.query as {
+    approval_status?: string;
+    account_type?: string;
+  };
+
+  const conditions = [];
+  if (approval_status) conditions.push(eq(usersTable.approval_status, approval_status));
+  if (account_type) conditions.push(eq(usersTable.account_type, account_type));
+
+  const users = await db
+    .select({
+      id: usersTable.id,
+      name: usersTable.name,
+      email: usersTable.email,
+      account_type: usersTable.account_type,
+      approval_status: usersTable.approval_status,
+      is_helper: usersTable.is_helper,
+      helper_status: usersTable.helper_status,
+      is_admin: usersTable.is_admin,
+      organization_name: usersTable.organization_name,
+      created_at: usersTable.created_at,
+    })
+    .from(usersTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(usersTable.created_at);
+
+  return res.json(users);
+});
