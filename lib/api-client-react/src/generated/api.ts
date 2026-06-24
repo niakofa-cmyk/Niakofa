@@ -27,6 +27,8 @@ import type {
   CompleteInput,
   CreateReportInput,
   GetCivicResourcesParams,
+  AccountApprovalReview,
+  GetAccountApplicationsParams,
   GetHelperApplicationsParams,
   GetNearbyRequestsParams,
   GetOnlineHelpersParams,
