@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { distanceMiles } from "../lib/geo.js";
-import { db, usersTable, requestsTable, userSettingsTable } from "@workspace/db";
+import { db, usersTable, requestsTable, userSettingsTable, helperAvailabilityTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { GetOnlineHelpersQueryParams } from "@workspace/api-zod";
+import { computeMatchScore } from "../lib/matching";
 
 const router = Router();
 
@@ -98,11 +99,35 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, async (req, res) => 
 
   if (helpers.length === 0) return res.status(404).json({ error: "No helpers available nearby" });
 
-  const nearest = helpers
-    .filter(h => h.lat && h.lng)
-    .map(h => ({ ...h, dist: distanceMiles(request.lat, request.lng, h.lat!, h.lng!) }))
-    .sort((a, b) => a.dist - b.dist)[0];
+  // Fetch availability windows for all candidate helpers in one query
+  const helperIds = helpers.filter(h => h.lat && h.lng).map(h => h.id);
+  const allWindows = helperIds.length > 0
+    ? await db.select().from(helperAvailabilityTable).where(inArray(helperAvailabilityTable.user_id, helperIds))
+    : [];
+  const windowsByHelper: Record<number, typeof allWindows> = {};
+  for (const w of allWindows) {
+    (windowsByHelper[w.user_id] ??= []).push(w);
+  }
 
+  const now = new Date();
+  const scored = helpers
+    .filter(h => h.lat && h.lng)
+    .map(h => {
+      const dist = distanceMiles(request.lat, request.lng, h.lat!, h.lng!);
+      const { score } = computeMatchScore(
+        { helper_skills: h.helper_skills, specialties: h.specialties },
+        request.category,
+        request.urgency,
+        dist,
+        windowsByHelper[h.id] ?? [],
+        now
+      );
+      return { ...h, dist, score };
+    })
+    // Higher score wins; distance breaks ties among equal scores
+    .sort((a, b) => b.score !== a.score ? b.score - a.score : a.dist - b.dist);
+
+  const nearest = scored[0];
   if (!nearest) return res.status(404).json({ error: "No helpers with valid location" });
 
   return res.json({
@@ -110,6 +135,7 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, async (req, res) => 
     helper_name: nearest.name,
     distance_miles: nearest.dist,
     eta_minutes: Math.round(nearest.dist * 3),
+    match_score: nearest.score,
   });
 });
 

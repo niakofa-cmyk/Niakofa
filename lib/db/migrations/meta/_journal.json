@@ -64,6 +64,13 @@
       "when": 1782263000000,
       "tag": "0008_community_post_types_retry",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782272527000,
+      "tag": "0009_helper_availability",
+      "breakpoints": true
     }
   ]
 }
