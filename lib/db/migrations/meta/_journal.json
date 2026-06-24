@@ -71,6 +71,13 @@
       "when": 1782272527000,
       "tag": "0009_helper_availability",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782273394000,
+      "tag": "0010_help_chains",
+      "breakpoints": true
     }
   ]
 }
