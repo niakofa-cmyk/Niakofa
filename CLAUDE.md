@@ -195,6 +195,17 @@ time. Listed so the same mistakes aren't repeated.
   the same GitHub account. `git log --oneline` regularly, and `git pull`
   before assuming you know the current state.
 
+## Local development environment
+
+- **GitHub remote:** `https://github.com/niakofa-cmyk/Niakofa.git`
+- **Local repo path (Treazure's Mac):** `~/niakofa` (i.e. `/Users/treazurenewhouse8/niakofa`)
+- **Frontend source:** `~/niakofa/artifacts/pay-it-forward/src`
+- **macOS note:** `sha256sum` is not available on macOS — use `shasum -a 256` instead,
+  or use Node crypto which works on all platforms and matches drizzle-kit's algorithm.
+- **psql:** when connecting to the Railway DB from a container, run `psql $DATABASE_URL`
+  first to enter the psql shell, then paste SQL at the `railway=#` prompt.
+  Do not paste SQL into the bash shell — it fails with syntax errors.
+
 ## Session handoff protocol
 
 Claude has no memory between sessions — this section is the substitute: a
