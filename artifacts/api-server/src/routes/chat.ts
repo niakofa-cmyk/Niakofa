@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db, chatMessagesTable, requestsTable } from "@workspace/db";
-import { eq, and, lt, desc, isNull, ne, or, sql } from "drizzle-orm";
+import { eq, and, lt, desc, isNull, ne } from "drizzle-orm";
 import { sendToUser } from "../lib/ws-hub";
-import { crisisAwareChatLimiter } from "../middlewares/rate-limit";
+import { chatLimiter } from "../middlewares/rate-limit";
 import { requireAuth } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 
@@ -13,14 +13,6 @@ const router = Router();
 router.get("/requests/:id/chat", requireAuth, async (req, res) => {
   const requestId = parseInt(req.params.id as string);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
-
-  const r = req as typeof req & { authenticatedUserId: number };
-  const [request] = await db.select({ requester_id: requestsTable.requester_id, helper_id: requestsTable.helper_id })
-    .from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
-  if (!request) return res.status(404).json({ error: "Request not found" });
-  if (request.requester_id !== r.authenticatedUserId && request.helper_id !== r.authenticatedUserId) {
-    return res.status(403).json({ error: "Forbidden: you are not a participant in this conversation" });
-  }
 
   const limit = Math.min(parseInt((req.query.limit as string) || "50"), 100);
   const before = req.query.before ? new Date(req.query.before as string) : null;
@@ -45,7 +37,7 @@ router.get("/requests/:id/chat", requireAuth, async (req, res) => {
 // POST /requests/:id/chat
 // requireAuth verifies the Bearer token and sets req.authenticatedUserId.
 // sender_id is taken from the verified token — never trusted from the client body.
-router.post("/requests/:id/chat", requireAuth, crisisAwareChatLimiter, async (req, res) => {
+router.post("/requests/:id/chat", requireAuth, chatLimiter, async (req, res) => {
   const requestId = parseInt(req.params.id as string);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 
@@ -106,13 +98,6 @@ router.patch("/requests/:id/chat/read", requireAuth, async (req, res) => {
   const r = req as typeof req & { authenticatedUserId: number };
   const readerId = r.authenticatedUserId;
 
-  const [request] = await db.select({ requester_id: requestsTable.requester_id, helper_id: requestsTable.helper_id })
-    .from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
-  if (!request) return res.status(404).json({ error: "Request not found" });
-  if (request.requester_id !== readerId && request.helper_id !== readerId) {
-    return res.status(403).json({ error: "Forbidden: you are not a participant in this conversation" });
-  }
-
   await db
     .update(chatMessagesTable)
     .set({ read_at: new Date() })
@@ -125,30 +110,6 @@ router.patch("/requests/:id/chat/read", requireAuth, async (req, res) => {
     );
 
   return res.json({ ok: true });
-});
-
-// GET /chat/unread-count — total unread messages across every request the
-// authenticated user participates in (as requester or helper). ENH-015:
-// the frontend's Alerts badge only tracked unread counts in memory and
-// always reset to 0 on reload — this gives it a real starting count to
-// seed from when the app opens.
-router.get("/chat/unread-count", requireAuth, async (req, res) => {
-  const r = req as typeof req & { authenticatedUserId: number };
-  const userId = r.authenticatedUserId;
-
-  const [row] = await db
-    .select({ count: sql<number>`COUNT(*)::int` })
-    .from(chatMessagesTable)
-    .innerJoin(requestsTable, eq(chatMessagesTable.request_id, requestsTable.id))
-    .where(
-      and(
-        or(eq(requestsTable.requester_id, userId), eq(requestsTable.helper_id, userId)),
-        ne(chatMessagesTable.sender_id, userId),
-        isNull(chatMessagesTable.read_at),
-      ),
-    );
-
-  return res.json({ unread_count: row?.count ?? 0 });
 });
 
 export default router;

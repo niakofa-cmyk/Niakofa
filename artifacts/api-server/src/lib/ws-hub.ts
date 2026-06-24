@@ -58,6 +58,8 @@ export type WsEventType =
   | "helper_application_approved"
   | "helper_application_denied"
   | "account_approved"
+  | "help_chain_joined"
+  | "help_chain_left"
   | "account_denied"
   | "requester_location";
 
