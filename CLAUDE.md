@@ -164,7 +164,58 @@ time. Listed so the same mistakes aren't repeated.
   the same GitHub account. `git log --oneline` regularly, and `git pull`
   before assuming you know the current state.
 
-## A note on `docs/LETTER_TO_NIA.md`
+## Session handoff protocol
+
+Claude has no memory between sessions — this section is the substitute: a
+standing instruction any session reading this file should follow.
+
+**At the start of a session working on this repo:** read this whole file
+before making changes. Check `git log --oneline -15` to see what's landed
+since this file was last updated — if there are commits not reflected below,
+treat the file as partially stale and verify the relevant code directly
+rather than trusting the doc.
+
+**Before ending a session** (or before a long pause), update this file:
+1. Add any new real bugs found/fixed to the Incident Log, in the same format
+   as the existing entries — what broke, how it was found, what the fix was.
+2. Add any new design decisions to "Known design choices" if they could be
+   mistaken for bugs by a future session.
+3. Add any newly discovered gaps to "Known gaps."
+4. Update this section itself if the handoff process needs to change.
+5. Commit the update in the same push as the code changes it documents,
+   not as an afterthought — e.g. `git add <code files> CLAUDE.md && git commit`.
+
+**What this can and can't do:** this file makes the *next* session faster if
+that session is told to read it — it does not make Claude automatically
+read or update it without being asked, since Claude has no background
+process that fires on session end. If you're starting a fresh conversation
+to keep working on this repo, explicitly say "read CLAUDE.md first." If
+you're using a tool that auto-loads a root-level `CLAUDE.md` at session
+start (e.g. Claude Code), that mechanism is the tool's, not something this
+file can guarantee on its own.
+
+## Current state as of last update (2026-06-24, session covering commits
+`5db087f2` through `936ccb0d`)
+
+- Both Railway services (`zesty-ambition`, `Niakofa`) confirmed Online and
+  healthy via direct health-check + functional curl tests.
+- `/users/login` confirmed fixed and verified: wrong password → 401, correct
+  password → 200 with no `password_hash` in the response and a well-formed
+  token (no `undefined` segment).
+- Claim/en-route/arrived/complete routes confirmed using server-derived
+  `helperId` from the auth token, not a client-supplied body field.
+- Nia's system prompt confirmed deduplicated (single copy) with a category
+  list matching the real `help_request_category` enum.
+- Community Feed (offer/resource/update posts + moderation queue) and the
+  Help Chains / matching-engine features (built by a separate, uncoordinated
+  parallel session same night) are both live and were spot-checked, not
+  exhaustively reviewed line-by-line — see Incident Log for what was found
+  and fixed versus what's merely unverified.
+- Not yet done: a full line-by-line review of the parallel session's
+  large rewrites to `users.ts` and `requests.ts` beyond the specific bugs
+  already caught and listed above. Treat those two files as higher-risk
+  for undiscovered issues than the rest of the codebase until that review
+  happens.
 
 An earlier contributor wrote a document using a father/daughter metaphor for
 the relationship between Claude (as an editor of this codebase) and Nia (the
