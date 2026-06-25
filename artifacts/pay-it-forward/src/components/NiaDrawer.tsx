@@ -805,35 +805,35 @@ export function NiaDrawer({
   );
 }
 
+// Nia's living orb — sparkle particle positions (degrees around the circle)
+const NIA_SPARK_ANGLES = [0, 72, 144, 216, 288];
+
 export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: boolean }) {
-  const FAB_SIZE = 64;
+  const FAB_SIZE = 70;
   const MARGIN = 14;
-  const STORAGE_KEY = "nia_fab_pos";
+  // v2 key resets any old bottom-right saved position → defaults to top-center
+  const STORAGE_KEY = "nia_fab_pos_v2";
 
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  const isDragging = useRef(false);
-  const hasMoved = useRef(false);
-  const dragStart = useRef({ px: 0, py: 0, x: 0, y: 0 });
-  const fabRef = useRef<HTMLButtonElement>(null);
+  // Use a ref for drag state so we never close over stale pos
+  const drag = useRef({ active: false, moved: false, px: 0, py: 0, ox: 0, oy: 0 });
+  const divRef = useRef<HTMLDivElement>(null);
 
-  // On mount: restore persisted position or default to top-center
+  // Mount: restore persisted position, or default to top-center
   useEffect(() => {
     const defaultPos = () => ({
       x: Math.round(window.innerWidth / 2 - FAB_SIZE / 2),
-      y: Math.max(MARGIN + 10, 60),
+      y: 58,
     });
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved) as { x: number; y: number };
+        const p = JSON.parse(saved) as { x: number; y: number };
         const maxX = window.innerWidth - FAB_SIZE - MARGIN;
         const maxY = window.innerHeight - FAB_SIZE - MARGIN;
-        if (
-          typeof parsed.x === "number" && typeof parsed.y === "number" &&
-          parsed.x >= MARGIN && parsed.x <= maxX &&
-          parsed.y >= MARGIN && parsed.y <= maxY
-        ) {
-          setPos(parsed);
+        if (typeof p.x === "number" && typeof p.y === "number" &&
+            p.x >= MARGIN && p.x <= maxX && p.y >= MARGIN && p.y <= maxY) {
+          setPos(p);
           return;
         }
       }
@@ -841,123 +841,229 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
     setPos(defaultPos());
   }, []);
 
-  const onPointerDown = useCallback((e: React.PointerEvent) => {
-    if (!pos) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    isDragging.current = false;
-    hasMoved.current = false;
-    dragStart.current = { px: e.clientX, py: e.clientY, x: pos.x, y: pos.y };
+  // Raw pointer handlers on a plain div — most reliable on mobile + desktop
+  const onPD = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    divRef.current?.setPointerCapture(e.pointerId);
+    const cur = pos ?? { x: 0, y: 0 };
+    drag.current = { active: true, moved: false, px: e.clientX, py: e.clientY, ox: cur.x, oy: cur.y };
   }, [pos]);
 
-  const onPointerMove = useCallback((e: React.PointerEvent) => {
-    const dx = e.clientX - dragStart.current.px;
-    const dy = e.clientY - dragStart.current.py;
-    // 8px threshold before we call it a drag (prevents accidental drags on tap)
-    if (!hasMoved.current && Math.sqrt(dx * dx + dy * dy) < 8) return;
-    hasMoved.current = true;
-    isDragging.current = true;
+  const onPM = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d.active) return;
+    const dx = e.clientX - d.px;
+    const dy = e.clientY - d.py;
+    if (!d.moved && Math.sqrt(dx * dx + dy * dy) < 7) return;
+    d.moved = true;
     const maxX = window.innerWidth - FAB_SIZE - MARGIN;
     const maxY = window.innerHeight - FAB_SIZE - MARGIN;
     setPos({
-      x: Math.max(MARGIN, Math.min(dragStart.current.x + dx, maxX)),
-      y: Math.max(MARGIN, Math.min(dragStart.current.y + dy, maxY)),
+      x: Math.max(MARGIN, Math.min(d.ox + dx, maxX)),
+      y: Math.max(MARGIN, Math.min(d.oy + dy, maxY)),
     });
   }, []);
 
-  const onPointerUp = useCallback((e: React.PointerEvent) => {
-    if (!pos) return;
-    if (!isDragging.current) {
-      // Pure tap — open Nia
+  const onPU = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d.active) return;
+    d.active = false;
+    if (!d.moved) {
       onClick();
     } else {
-      // Drag ended — compute final clamped position and persist it
-      const dx = e.clientX - dragStart.current.px;
-      const dy = e.clientY - dragStart.current.py;
+      const dx = e.clientX - d.px;
+      const dy = e.clientY - d.py;
       const maxX = window.innerWidth - FAB_SIZE - MARGIN;
       const maxY = window.innerHeight - FAB_SIZE - MARGIN;
       const newPos = {
-        x: Math.max(MARGIN, Math.min(dragStart.current.x + dx, maxX)),
-        y: Math.max(MARGIN, Math.min(dragStart.current.y + dy, maxY)),
+        x: Math.max(MARGIN, Math.min(d.ox + dx, maxX)),
+        y: Math.max(MARGIN, Math.min(d.oy + dy, maxY)),
       };
       setPos(newPos);
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newPos)); } catch { /* ignore */ }
     }
-    isDragging.current = false;
-    hasMoved.current = false;
-  }, [pos, onClick]);
+    d.moved = false;
+  }, [onClick]);
 
   if (hidden || !pos) return null;
 
   return (
-    <motion.button
-      ref={fabRef}
+    // Plain div — no Framer Motion wrapper so pointer capture is unobstructed
+    <div
+      ref={divRef}
+      role="button"
       aria-label="Open Nia — your community assistant"
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
+      onPointerDown={onPD}
+      onPointerMove={onPM}
+      onPointerUp={onPU}
+      onPointerCancel={onPU}
       style={{
         position: "fixed",
         left: pos.x,
         top: pos.y,
-        zIndex: 9997,
+        // Maximum z-index — Nia floats above every app layer
+        zIndex: 2147483647,
         width: FAB_SIZE,
         height: FAB_SIZE,
-        borderRadius: "50%",
-        background: "linear-gradient(135deg, #1D9E75 0%, #0A6B4E 55%, #085041 100%)",
-        border: "2px solid rgba(93,202,165,0.45)",
-        cursor: "grab",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        boxShadow: "0 6px 28px rgba(10,61,46,0.5), 0 0 0 1px rgba(29,158,117,0.15), inset 0 1px 0 rgba(255,255,255,0.1)",
         touchAction: "none",
         userSelect: "none",
         WebkitUserSelect: "none",
+        cursor: "grab",
+        // No transform on outer container — keeps drag hit-area aligned with pointer
       }}
     >
-      {/* Outer pulse ring */}
+      {/* ── Layer 1: Far outer aura ── */}
       <motion.div
-        animate={{ scale: [1, 1.55, 1], opacity: [0.45, 0, 0.45] }}
-        transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
+        animate={{ scale: [1, 1.8, 1], opacity: [0.22, 0, 0.22] }}
+        transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
         style={{
           position: "absolute",
-          inset: -6,
+          inset: -18,
           borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(29,158,117,0.25) 0%, transparent 70%)",
+          background: "radial-gradient(circle, rgba(29,158,117,0.5) 0%, rgba(29,158,117,0.15) 50%, transparent 75%)",
           pointerEvents: "none",
         }}
       />
-      {/* Inner border ring pulse */}
+
+      {/* ── Layer 2: Heartbeat ring ── */}
       <motion.div
-        animate={{ scale: [1, 1.35, 1], opacity: [0.6, 0, 0.6] }}
-        transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut", delay: 0.4 }}
+        animate={{ scale: [1, 1.45, 1], opacity: [0.55, 0, 0.55] }}
+        transition={{ duration: 2.2, repeat: Infinity, ease: [0.2, 0, 0.8, 1], delay: 0.3 }}
         style={{
           position: "absolute",
-          inset: -3,
+          inset: -5,
           borderRadius: "50%",
-          border: "1.5px solid rgba(93,202,165,0.55)",
+          border: "1.5px solid rgba(93,202,165,0.7)",
           pointerEvents: "none",
         }}
       />
-      {/* Breathing "N" */}
-      <motion.span
-        animate={{ scale: [1, 1.04, 1] }}
-        transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
+
+      {/* ── Layer 3: Secondary slower ring ── */}
+      <motion.div
+        animate={{ scale: [1, 1.25, 1], opacity: [0.4, 0, 0.4] }}
+        transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut", delay: 1.1 }}
         style={{
-          fontSize: 26,
-          fontWeight: 800,
-          color: "#E1F5EE",
-          fontFamily: "var(--font-sans)",
-          letterSpacing: "-0.01em",
-          userSelect: "none",
-          lineHeight: 1,
+          position: "absolute",
+          inset: -2,
+          borderRadius: "50%",
+          border: "1px solid rgba(93,202,165,0.45)",
           pointerEvents: "none",
-          display: "block",
-          textShadow: "0 1px 6px rgba(0,0,0,0.3)",
+        }}
+      />
+
+      {/* ── Layer 4: Main orb body — floats + heartbeat ── */}
+      <motion.div
+        animate={{
+          scale: [1, 1.05, 1, 1.03, 1],
+          y: [0, -7, -5, -9, -6, 0],
+        }}
+        transition={{
+          scale: { duration: 2.6, repeat: Infinity, ease: [0.4, 0, 0.6, 1], times: [0, 0.25, 0.5, 0.75, 1] },
+          y: { duration: 4.2, repeat: Infinity, ease: "easeInOut" },
+        }}
+        style={{
+          position: "absolute",
+          inset: 0,
+          borderRadius: "50%",
+          background: "linear-gradient(140deg, #30D9A0 0%, #1D9E75 30%, #0E7A5A 65%, #085041 100%)",
+          border: "2px solid rgba(93,202,165,0.55)",
+          boxShadow: [
+            "0 8px 36px rgba(10,61,46,0.65)",
+            "0 2px 10px rgba(10,61,46,0.4)",
+            "inset 0 1px 0 rgba(255,255,255,0.18)",
+            "inset 0 -2px 6px rgba(0,0,0,0.2)",
+            "0 0 0 1px rgba(29,158,117,0.2)",
+          ].join(", "),
+          overflow: "hidden",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          pointerEvents: "none",
         }}
       >
-        N
-      </motion.span>
-    </motion.button>
+        {/* ── Inner rotating shimmer ── */}
+        <motion.div
+          animate={{ rotate: [0, 360] }}
+          transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "50%",
+            background: "conic-gradient(from 0deg, transparent 0%, rgba(255,255,255,0.18) 20%, transparent 40%, rgba(255,255,255,0.08) 60%, transparent 80%)",
+            pointerEvents: "none",
+          }}
+        />
+        {/* ── Glint highlight ── */}
+        <div style={{
+          position: "absolute",
+          top: 6,
+          left: 10,
+          width: 18,
+          height: 10,
+          borderRadius: "50%",
+          background: "rgba(255,255,255,0.22)",
+          filter: "blur(3px)",
+          pointerEvents: "none",
+        }} />
+        {/* ── N lettermark ── */}
+        <motion.span
+          animate={{
+            textShadow: [
+              "0 1px 8px rgba(0,0,0,0.35)",
+              "0 1px 16px rgba(0,200,140,0.5)",
+              "0 1px 8px rgba(0,0,0,0.35)",
+            ],
+          }}
+          transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
+          style={{
+            fontSize: 28,
+            fontWeight: 800,
+            color: "#E8FFF6",
+            fontFamily: "var(--font-sans)",
+            letterSpacing: "-0.01em",
+            userSelect: "none",
+            lineHeight: 1,
+            pointerEvents: "none",
+            position: "relative",
+            zIndex: 1,
+          }}
+        >
+          N
+        </motion.span>
+      </motion.div>
+
+      {/* ── Layer 5: Orbiting sparkle particles ── */}
+      {NIA_SPARK_ANGLES.map((deg, i) => (
+        <motion.div
+          key={i}
+          animate={{
+            opacity: [0, 0.9, 0.6, 0],
+            scale: [0, 1.2, 0.8, 0],
+            x: [0, Math.round(Math.cos((deg * Math.PI) / 180) * 40)],
+            y: [0, Math.round(Math.sin((deg * Math.PI) / 180) * 40)],
+          }}
+          transition={{
+            duration: 2.8,
+            repeat: Infinity,
+            delay: i * 0.55,
+            ease: "easeOut",
+            times: [0, 0.4, 0.7, 1],
+          }}
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            width: 5,
+            height: 5,
+            marginTop: -2.5,
+            marginLeft: -2.5,
+            borderRadius: "50%",
+            background: i % 2 === 0 ? "#5DCAA5" : "#A8F0D8",
+            boxShadow: "0 0 4px rgba(93,202,165,0.8)",
+            pointerEvents: "none",
+          }}
+        />
+      ))}
+    </div>
   );
 }

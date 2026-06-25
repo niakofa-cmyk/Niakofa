@@ -358,6 +358,14 @@
   }
 }
 
+/* ── Nia living orb animations (compositor-thread, no React re-renders) ── */
+@keyframes nia-float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  25%       { transform: translateY(-7px) rotate(0.4deg); }
+  50%       { transform: translateY(-5px) rotate(0deg); }
+  75%       { transform: translateY(-9px) rotate(-0.4deg); }
+}
+
 /* Nia quick-prompt chips — touch-friendly active state (no hover needed on mobile) */
 .nia-quick-prompt:active,
 .nia-quick-prompt:focus-visible {
