@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { ChevronLeft, Bell, Lock, Sliders, CreditCard, Trash2, CheckCircle2, AlertCircle, Calendar, Plus, X, ChevronRight } from "lucide-react";
+import { ChevronLeft, Bell, Lock, Sliders, CreditCard, Trash2, CheckCircle2, AlertCircle, Calendar, Plus, X, ChevronRight, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { toast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
+import { LanguageSelector } from "@/components/LanguageSelector";
+import { CulturalLanguage } from "@/lib/culturalGreetings";
 
 // Re-use fetchSettings and saveSettings from profile.tsx
 async function fetchSettings(userId: number) {
@@ -449,6 +451,50 @@ function AvailabilitySchedule({ userId }: { userId: number }) {
 }
 
 // Main Settings Page Component
+// Nia Language Settings — Phase 7b
+function NiaLanguageSettings({ userId }: { userId: number }) {
+  const [language, setLanguage] = useState<CulturalLanguage>("en");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchSettings(userId).then(data => {
+      if (data?.preferred_language) {
+        setLanguage(data.preferred_language as CulturalLanguage);
+      }
+    });
+  }, [userId]);
+
+  const handleSave = async (lang: CulturalLanguage) => {
+    setLanguage(lang);
+    setSaving(true);
+    try {
+      await saveSettings(userId, { preferred_language: lang });
+      toast({ title: "Nia language updated" });
+    } catch {
+      toast({ title: "Failed to save", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-xl font-bold">Nia Language / Lugha ya Nia</h2>
+      <p className="text-sm text-muted-foreground">
+        Choose the language Nia greets and speaks with you. Say your wake word in any language and Nia will respond.
+      </p>
+      <LanguageSelector value={language} onChange={handleSave} />
+      {saving && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Saving…
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function SettingsPage() {
   const [, setLocation] = useLocation();
   const { currentUser } = useAppContext();
@@ -460,6 +506,12 @@ export default function SettingsPage() {
   }
 
   const sections = [
+    {
+      id: "nia-language",
+      title: "Nia Language",
+      icon: Volume2,
+      component: NiaLanguageSettings,
+    },
     { id: "notifications", title: "Notification Preferences", icon: Bell, component: NotificationPreferences },
     { id: "privacy", title: "Account Privacy", icon: Lock, component: AccountPrivacy },
     { id: "delete-account", title: "Delete Account", icon: Trash2, component: null }, // Special case for delete
