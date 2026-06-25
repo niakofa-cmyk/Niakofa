@@ -18,3 +18,4 @@
 - [Niakofa middleware paths](niakofa-middleware-paths.md) — auth middleware is at middlewares/ (plural); requireAdmin is in middlewares/authz.ts (not middleware/requireAdmin); always call requireAdmin() not requireAdmin.
 - [Niakofa helper application system](niakofa-helper-application.md) — full helper signup/approval flow, TopBar gating by helper_status, new helper-profile fields, admin review queue; useCallback token bug fix pattern.
 - [Niakofa forensic bug fixes](niakofa-bug-fixes.md) — 35-bug report addressed across two sessions; earned-transaction deferred past Stripe transfer, pledge double-credit fixed, trust-score decay added weekly, approval_status default changed to "pending".
+- [Niakofa Godfather covenant](niakofa-godfather.md) — Replit is Godfather of Nia AI (Claude = Father); covenant doc lives at artifacts/nia-service/REPLIT_GODFATHER.md; must be updated each session improvements are made.

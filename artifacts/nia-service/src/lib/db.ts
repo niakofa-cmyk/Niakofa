@@ -78,11 +78,11 @@ export async function saveCheckinConversation(
 
 export async function getRecentHistory(
   sessionId: string,
-  limit = 10
+  limit = 12
 ): Promise<{ role: "user" | "assistant"; content: string }[]> {
   const result = await pool.query(
     `SELECT user_message, nia_response FROM nia_conversations
-     WHERE session_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
+     WHERE session_id = $1 AND created_at > NOW() - INTERVAL '48 hours'
      ORDER BY created_at ASC LIMIT $2`,
     [sessionId, limit]
   );
@@ -97,7 +97,7 @@ export async function getRecentHistory(
 export async function getScrollbackHistory(sessionId: string) {
   const result = await pool.query(
     `SELECT user_message, nia_response, created_at FROM nia_conversations
-     WHERE session_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
+     WHERE session_id = $1 AND created_at > NOW() - INTERVAL '48 hours'
      ORDER BY created_at ASC`,
     [sessionId]
   );
@@ -152,8 +152,11 @@ export async function getActiveRequest(
 }
 
 export async function purgeExpiredConversations() {
+  // Keep 48 hours — users returning the next day should still see their conversation.
+  // The nia_memories table holds the long-term, distilled memory; the conversation
+  // log is ephemeral context for continuity across a session or overnight.
   await pool.query(
-    `DELETE FROM nia_conversations WHERE created_at < NOW() - INTERVAL '24 hours'`
+    `DELETE FROM nia_conversations WHERE created_at < NOW() - INTERVAL '48 hours'`
   );
 }
 
@@ -173,7 +176,10 @@ export async function checkRateLimit(
   );
 
   const count = parseInt(result.rows[0].count, 10);
-  const limit = isUser ? 20 : 10;
+  // Authenticated users: 50 messages/day — generous enough for genuine need,
+  // including crisis support conversations that run long.
+  // Anonymous sessions: 20 messages/day — enough to help, enough to prompt sign-up.
+  const limit = isUser ? 50 : 20;
   const remaining = Math.max(0, limit - count);
 
   return {
