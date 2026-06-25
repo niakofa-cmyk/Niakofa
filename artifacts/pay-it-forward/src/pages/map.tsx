@@ -305,6 +305,21 @@ export default function MapScreen() {
   const claimMutation = useClaimRequest();
   const mapRef = useRef<mapboxgl.Map | null>(null);
   useTerrain(mapRef);
+
+  // BUG-5-M02: React 19 strict mode double-invokes effects (mount → cleanup → remount).
+  // react-map-gl creates a Mapbox GL WebGL context on each mount. Without this guard,
+  // the fake strict-mode unmount leaves the GL context alive (react-map-gl's internal
+  // cleanup is async) and the second remount's effects try to operate on the first
+  // (about-to-be-destroyed) GL context, causing "Cannot read properties of null" or
+  // "WebGL context lost" errors. Nulling our ref synchronously on unmount ensures every
+  // downstream useEffect and hook (useTerrain, flyTo, etc.) sees null and bails early
+  // rather than touching a dead context. react-map-gl itself handles map.remove().
+  useEffect(() => {
+    return () => {
+      (mapRef as React.MutableRefObject<mapboxgl.Map | null>).current = null;
+    };
+  }, []);
+
   // Main map screen stays locked to north-up always — heading-up rotation
   // and auto-follow are reserved for the active-navigation screen, matching
   // how Uber/DoorDash only auto-rotate/follow during a live trip, not while
@@ -542,7 +557,11 @@ export default function MapScreen() {
           pitch: myLocation ? 45 : 0,
           bearing: 0,
         }}
-        ref={(ref) => { if (ref) (mapRef as React.MutableRefObject<mapboxgl.Map | null>).current = ref.getMap(); }}
+        ref={(ref) => {
+          // BUG-5-M02: Also null out on unmount (ref === null) so the cleanup
+          // effect above and react-map-gl's own teardown don't race each other.
+          (mapRef as React.MutableRefObject<mapboxgl.Map | null>).current = ref ? ref.getMap() : null;
+        }}
       >
         {/* My location dot with accuracy ring */}
         {myLocation && (
