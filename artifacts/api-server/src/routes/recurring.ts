@@ -5,8 +5,9 @@
  * The scheduler worker fires these at the right time and posts them to the open pool.
  */
 import { Router } from "express";
+import { isHelperAvailableNow } from "../lib/matching";
 import { requireAuth } from "../middlewares/auth";
-import { db, recurringRequestsTable, requestsTable, usersTable } from "@workspace/db";
+import { db, recurringRequestsTable, requestsTable, usersTable, helperAvailabilityTable } from "@workspace/db";
 import { eq, and, desc, lte } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { z } from "zod/v4";
@@ -220,6 +221,161 @@ router.delete("/recurring/:id", requireAuth, async (req, res) => {
     logger.error({ err, id, userId }, "recurring: failed to delete");
     return res.status(500).json({ error: "Failed to delete" });
   }
+});
+
+
+// GET /recurring/matched-helpers — Phase 10F
+// Returns helpers whose recurring availability overlaps with the calling
+// user's recurring request schedule. Surfaces repeat-requester → repeat-helper
+// pairings so the community builds lasting relationships.
+//
+// Query params:
+//   category  (optional) — filter helpers whose skills cover this category
+//   lat + lng (optional) — sort by distance (requires both)
+//   limit     (optional, default 10, max 50)
+router.get("/recurring/matched-helpers", requireAuth, async (req, res) => {
+  const userId = (req as any).user.id as number;
+  const { category, lat, lng, limit: limitStr } = req.query as Record<string, string | undefined>;
+  const limit = Math.min(parseInt(limitStr ?? "10", 10) || 10, 50);
+
+  // 1. Load the requesting user's recurring requests to get their schedule
+  const myRecurring = await db
+    .select({
+      day_of_week: recurringRequestsTable.day_of_week,
+      time_of_day: recurringRequestsTable.time_of_day,
+      category: recurringRequestsTable.category,
+    })
+    .from(recurringRequestsTable)
+    .where(and(
+      eq(recurringRequestsTable.user_id, userId),
+      eq(recurringRequestsTable.active, true)
+    ));
+
+  if (myRecurring.length === 0) {
+    return res.json({ helpers: [], message: "No active recurring requests found" });
+  }
+
+  // 2. Find helpers who have availability on the same days
+  const myDays = [...new Set(myRecurring.map(r => r.day_of_week).filter((d): d is number => d !== null))];
+
+  const availableWindows = myDays.length > 0
+    ? await db
+        .select({
+          user_id: helperAvailabilityTable.user_id,
+          day_of_week: helperAvailabilityTable.day_of_week,
+          start_min: helperAvailabilityTable.start_min,
+          end_min: helperAvailabilityTable.end_min,
+        })
+        .from(helperAvailabilityTable)
+        .where(inArray(helperAvailabilityTable.day_of_week, myDays.map(d => d as unknown as number & { __brand: "smallint" })))
+    : await db
+        .select({
+          user_id: helperAvailabilityTable.user_id,
+          day_of_week: helperAvailabilityTable.day_of_week,
+          start_min: helperAvailabilityTable.start_min,
+          end_min: helperAvailabilityTable.end_min,
+        })
+        .from(helperAvailabilityTable);
+
+  if (availableWindows.length === 0) {
+    return res.json({ helpers: [], message: "No helpers with matching availability found" });
+  }
+
+  // 3. Group windows by helper
+  const windowsByHelper = new Map<number, typeof availableWindows>();
+  for (const w of availableWindows) {
+    const existing = windowsByHelper.get(w.user_id) ?? [];
+    existing.push(w);
+    windowsByHelper.set(w.user_id, existing);
+  }
+
+  // 4. Check overlap: helper must cover at least one of the requester's time slots
+  const myTimeSlotsMin = myRecurring
+    .filter(r => r.day_of_week !== null && r.time_of_day)
+    .map(r => {
+      const [h, m] = (r.time_of_day ?? "09:00").split(":").map(Number);
+      return { day: r.day_of_week as number, min: h * 60 + m };
+    });
+
+  const matchedHelperIds: number[] = [];
+  for (const [helperId, windows] of windowsByHelper.entries()) {
+    const overlaps = myTimeSlotsMin.some(slot =>
+      windows.some(w =>
+        w.day_of_week === slot.day &&
+        w.start_min <= slot.min &&
+        w.end_min > slot.min
+      )
+    );
+    if (overlaps) matchedHelperIds.push(helperId);
+  }
+
+  if (matchedHelperIds.length === 0) {
+    return res.json({ helpers: [], message: "No helpers with overlapping time slots" });
+  }
+
+  // 5. Load helper profiles
+  const helpers = await db
+    .select({
+      id: usersTable.id,
+      name: usersTable.name,
+      avatar_url: usersTable.avatar_url,
+      trust_score: usersTable.trust_score,
+      help_count: usersTable.help_count,
+      helper_bio: usersTable.helper_bio,
+      helper_skills: usersTable.helper_skills,
+      identity_verified: usersTable.identity_verified,
+      lat: usersTable.lat,
+      lng: usersTable.lng,
+      city: usersTable.city,
+    })
+    .from(usersTable)
+    .where(and(
+      eq(usersTable.is_helper, true),
+      eq(usersTable.helper_mode_active, true),
+      inArray(usersTable.id, matchedHelperIds.slice(0, 200))
+    ));
+
+  // 6. Filter by category skill match if requested
+  let filtered = helpers;
+  if (category) {
+    filtered = helpers.filter(h => {
+      const skills = (h.helper_skills ?? []).map((s: string) => s.toLowerCase().replace(/\s+/g, "_"));
+      return skills.some((s: string) =>
+        s.includes(category.replace(/_/g, " ")) ||
+        category.replace(/_/g, " ").includes(s)
+      );
+    });
+    // Fall back to all matched helpers if no skill match
+    if (filtered.length === 0) filtered = helpers;
+  }
+
+  // 7. Sort by distance if lat/lng provided, else by trust_score desc
+  const userLat = lat ? parseFloat(lat) : null;
+  const userLng = lng ? parseFloat(lng) : null;
+
+  const scored = filtered.map(h => {
+    let distanceMiles: number | null = null;
+    if (userLat !== null && userLng !== null && h.lat !== null && h.lng !== null) {
+      const R = 3958.8;
+      const dLat = ((h.lat - userLat) * Math.PI) / 180;
+      const dLng = ((h.lng - userLng) * Math.PI) / 180;
+      const a = Math.sin(dLat/2)**2 +
+        Math.cos((userLat*Math.PI)/180) * Math.cos((h.lat*Math.PI)/180) * Math.sin(dLng/2)**2;
+      distanceMiles = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+    const availabilityWindows = windowsByHelper.get(h.id) ?? [];
+    const isAvailableNow = isHelperAvailableNow(availabilityWindows);
+    return { ...h, distance_miles: distanceMiles ? Math.round(distanceMiles * 10) / 10 : null, is_available_now: isAvailableNow, availability_windows: availabilityWindows };
+  }).sort((a, b) => {
+    // Available now first
+    if (a.is_available_now !== b.is_available_now) return a.is_available_now ? -1 : 1;
+    // Then by distance if we have it
+    if (a.distance_miles !== null && b.distance_miles !== null) return a.distance_miles - b.distance_miles;
+    // Finally by trust score
+    return (b.trust_score ?? 0) - (a.trust_score ?? 0);
+  });
+
+  return res.json({ helpers: scored.slice(0, limit) });
 });
 
 export default router;

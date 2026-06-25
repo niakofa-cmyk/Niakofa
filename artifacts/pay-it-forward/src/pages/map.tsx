@@ -144,6 +144,7 @@ export default function MapScreen() {
   const [statsVisible, setStatsVisible] = useState(true);
   const [bestMatchDismissed, setBestMatchDismissed] = useState<number | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [showDensity, setShowDensity] = useState(false);
   const [neighborhoodFilter, setNeighborhoodFilter] = useState<string | null>(null);
   const prevHelperMode = useRef(false);
   const [crisis, setCrisis] = useState<CrisisState | null>(null);
@@ -371,6 +372,33 @@ export default function MapScreen() {
       })),
   };
 
+  // Request density GeoJSON — all open requests as weighted points (Phase 10E)
+  const requestDensityGeoJSON: GeoJSON.FeatureCollection = useMemo(() => ({
+    type: "FeatureCollection",
+    features: allOpenRequests
+      .filter(r => typeof r.lat === "number" && typeof r.lng === "number" && isFinite(r.lat) && isFinite(r.lng))
+      .map(r => ({
+        type: "Feature" as const,
+        geometry: { type: "Point" as const, coordinates: [r.lng, r.lat] },
+        properties: {
+          weight: r.urgency === "emergency" ? 1.0 : r.urgency === "high" ? 0.7 : r.urgency === "medium" ? 0.4 : 0.2,
+        },
+      })),
+  }), [allOpenRequests]);
+
+  // Cluster GeoJSON — same points, used by Mapbox cluster source
+  const requestClusterGeoJSON: GeoJSON.FeatureCollection = useMemo(() => ({
+    type: "FeatureCollection",
+    features: allOpenRequests
+      .filter(r => typeof r.lat === "number" && typeof r.lng === "number" && isFinite(r.lat) && isFinite(r.lng))
+      .map(r => ({
+        type: "Feature" as const,
+        geometry: { type: "Point" as const, coordinates: [r.lng, r.lat] },
+        properties: { id: r.id, urgency: r.urgency ?? "low", category: r.category ?? "other" },
+      })),
+  }), [allOpenRequests]);
+
+    // Request density GeoJSON — all open requests as weighted points (Phase 10E)
   // Compute which categories the current helper's skills cover
   const helperSkillCategories = useMemo(() => {
     // BUG-025: Two separate skill columns exist — helper_skills (new helper-application field)
@@ -633,7 +661,203 @@ export default function MapScreen() {
           </Source>
         )}
 
-        {/* Heatmap legend overlay */}
+        {/* Request density heatmap — Phase 10E */}
+        {showDensity && requestDensityGeoJSON.features.length > 0 && (
+          <Source id="request-density" type="geojson" data={requestDensityGeoJSON}>
+            <Layer
+              id="request-density-layer"
+              type="heatmap"
+              paint={{
+                "heatmap-weight": ["interpolate", ["linear"], ["get", "weight"], 0, 0, 1, 1],
+                "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 1, 15, 3],
+                "heatmap-color": [
+                  "interpolate", ["linear"], ["heatmap-density"],
+                  0,   "rgba(0,0,0,0)",
+                  0.2, "rgba(255,60,0,0.25)",
+                  0.5, "rgba(255,100,0,0.55)",
+                  0.8, "rgba(255,180,0,0.8)",
+                  1.0, "rgba(255,255,100,1)"
+                ],
+                "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 18, 15, 40],
+                "heatmap-opacity": 0.68,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Request clusters — shown when zoom < 13, individual markers at zoom >= 13 */}
+        <Source
+          id="request-clusters"
+          type="geojson"
+          data={requestClusterGeoJSON}
+          cluster={true}
+          clusterMaxZoom={12}
+          clusterRadius={50}
+        >
+          {/* Cluster circle */}
+          <Layer
+            id="request-cluster-circle"
+            type="circle"
+            filter={["has", "point_count"]}
+            paint={{
+              "circle-color": [
+                "step", ["get", "point_count"],
+                "#FF3C00", 5,
+                "#f97316", 15,
+                "#eab308"
+              ],
+              "circle-radius": ["step", ["get", "point_count"], 18, 5, 24, 15, 32],
+              "circle-opacity": 0.88,
+              "circle-stroke-width": 2,
+              "circle-stroke-color": "#fff",
+              "circle-stroke-opacity": 0.3,
+            }}
+          />
+          {/* Cluster count label */}
+          <Layer
+            id="request-cluster-count"
+            type="symbol"
+            filter={["has", "point_count"]}
+            layout={{
+              "text-field": "{point_count_abbreviated}",
+              "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
+              "text-size": 13,
+            }}
+            paint={{ "text-color": "#ffffff" }}
+          />
+          {/* Unclustered point — small dot (individual markers render on top at high zoom) */}
+          <Layer
+            id="request-unclustered"
+            type="circle"
+            filter={["!", ["has", "point_count"]]}
+            paint={{
+              "circle-color": [
+                "match", ["get", "urgency"],
+                "emergency", "#ef4444",
+                "high",      "#f97316",
+                "medium",    "#FF3C00",
+                "#6366f1"
+              ],
+              "circle-radius": 0,
+              "circle-opacity": 0,
+            }}
+          />
+        </Source>
+
+                {/* Request density legend */}
+        {showDensity && (
+          <div className="absolute bottom-48 left-4 z-10 bg-black/70 backdrop-blur-sm rounded-xl px-3 py-2 pointer-events-none">
+            <div className="text-[9px] text-white/60 uppercase tracking-wider mb-1.5">Request Density</div>
+            <div className="flex items-center gap-0.5">
+              {["rgba(255,60,0,0.4)", "rgba(255,100,0,0.65)", "rgba(255,180,0,0.85)", "rgba(255,255,100,1)"].map((c, i) => (
+                <div key={i} className="w-5 h-2 rounded-sm" style={{ background: c }} />
+              ))}
+            </div>
+            <div className="flex justify-between text-[8px] text-white/50 mt-0.5">
+              <span>Low</span><span>High</span>
+            </div>
+          </div>
+        )}
+
+                {/* Request density heatmap — Phase 10E */}
+        {showDensity && requestDensityGeoJSON.features.length > 0 && (
+          <Source id="request-density" type="geojson" data={requestDensityGeoJSON}>
+            <Layer
+              id="request-density-layer"
+              type="heatmap"
+              paint={{
+                "heatmap-weight": ["interpolate", ["linear"], ["get", "weight"], 0, 0, 1, 1],
+                "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 1, 15, 3],
+                "heatmap-color": [
+                  "interpolate", ["linear"], ["heatmap-density"],
+                  0,   "rgba(0,0,0,0)",
+                  0.2, "rgba(255,60,0,0.25)",
+                  0.5, "rgba(255,100,0,0.55)",
+                  0.8, "rgba(255,180,0,0.8)",
+                  1.0, "rgba(255,255,100,1)"
+                ],
+                "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 18, 15, 40],
+                "heatmap-opacity": 0.68,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Request clusters — shown when zoom < 13, individual markers at zoom >= 13 */}
+        <Source
+          id="request-clusters"
+          type="geojson"
+          data={requestClusterGeoJSON}
+          cluster={true}
+          clusterMaxZoom={12}
+          clusterRadius={50}
+        >
+          {/* Cluster circle */}
+          <Layer
+            id="request-cluster-circle"
+            type="circle"
+            filter={["has", "point_count"]}
+            paint={{
+              "circle-color": [
+                "step", ["get", "point_count"],
+                "#FF3C00", 5,
+                "#f97316", 15,
+                "#eab308"
+              ],
+              "circle-radius": ["step", ["get", "point_count"], 18, 5, 24, 15, 32],
+              "circle-opacity": 0.88,
+              "circle-stroke-width": 2,
+              "circle-stroke-color": "#fff",
+              "circle-stroke-opacity": 0.3,
+            }}
+          />
+          {/* Cluster count label */}
+          <Layer
+            id="request-cluster-count"
+            type="symbol"
+            filter={["has", "point_count"]}
+            layout={{
+              "text-field": "{point_count_abbreviated}",
+              "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
+              "text-size": 13,
+            }}
+            paint={{ "text-color": "#ffffff" }}
+          />
+          {/* Unclustered point — small dot (individual markers render on top at high zoom) */}
+          <Layer
+            id="request-unclustered"
+            type="circle"
+            filter={["!", ["has", "point_count"]]}
+            paint={{
+              "circle-color": [
+                "match", ["get", "urgency"],
+                "emergency", "#ef4444",
+                "high",      "#f97316",
+                "medium",    "#FF3C00",
+                "#6366f1"
+              ],
+              "circle-radius": 0,
+              "circle-opacity": 0,
+            }}
+          />
+        </Source>
+
+                {/* Request density legend */}
+        {showDensity && (
+          <div className="absolute bottom-48 left-4 z-10 bg-black/70 backdrop-blur-sm rounded-xl px-3 py-2 pointer-events-none">
+            <div className="text-[9px] text-white/60 uppercase tracking-wider mb-1.5">Request Density</div>
+            <div className="flex items-center gap-0.5">
+              {["rgba(255,60,0,0.4)", "rgba(255,100,0,0.65)", "rgba(255,180,0,0.85)", "rgba(255,255,100,1)"].map((c, i) => (
+                <div key={i} className="w-5 h-2 rounded-sm" style={{ background: c }} />
+              ))}
+            </div>
+            <div className="flex justify-between text-[8px] text-white/50 mt-0.5">
+              <span>Low</span><span>High</span>
+            </div>
+          </div>
+        )}
+
+                {/* Heatmap legend overlay */}
         {showHeatmap && (
           <div className="absolute bottom-32 left-4 z-10 bg-black/70 backdrop-blur-sm rounded-xl px-3 py-2 pointer-events-none">
             <div className="text-[9px] text-white/60 uppercase tracking-wider mb-1.5">Helper Density</div>
@@ -698,7 +922,41 @@ export default function MapScreen() {
         </div>
       )}
 
-      {/* Heatmap toggle button */}
+      {/* Request density toggle button — Phase 10E */}
+      {webGLSupported && !mapError && (
+        <button
+          onClick={() => setShowDensity(v => !v)}
+          title={showDensity ? "Hide request density" : "Show request density heatmap"}
+          aria-label={showDensity ? "Hide request density" : "Show request density heatmap"}
+          aria-pressed={showDensity}
+          className={`absolute bottom-40 right-4 z-10 w-11 h-11 rounded-xl border flex items-center justify-center shadow-lg transition-all ${
+            showDensity
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-card/90 backdrop-blur-sm border-border text-muted-foreground hover:border-primary/50"
+          }`}
+        >
+          <Activity className="w-4 h-4" />
+        </button>
+      )}
+
+            {/* Request density toggle button — Phase 10E */}
+      {webGLSupported && !mapError && (
+        <button
+          onClick={() => setShowDensity(v => !v)}
+          title={showDensity ? "Hide request density" : "Show request density heatmap"}
+          aria-label={showDensity ? "Hide request density" : "Show request density heatmap"}
+          aria-pressed={showDensity}
+          className={`absolute bottom-40 right-4 z-10 w-11 h-11 rounded-xl border flex items-center justify-center shadow-lg transition-all ${
+            showDensity
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-card/90 backdrop-blur-sm border-border text-muted-foreground hover:border-primary/50"
+          }`}
+        >
+          <Activity className="w-4 h-4" />
+        </button>
+      )}
+
+            {/* Heatmap toggle button */}
       {webGLSupported && !mapError && (
         <button
           onClick={() => setShowHeatmap(v => !v)}

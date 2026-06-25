@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { useAppContext } from "@/lib/AppContext";
 import { useTranslation } from "react-i18next";
+import { Star, CheckCircle2, MapPin as MapPinIcon } from "lucide-react";
+import { TrustTierBadge } from "@/components/TrustTierBadge";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -91,6 +93,115 @@ function categoryLabel(cat: string) {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
+
+
+// ── Matched Helper Types + Component (Phase 10F) ─────────────────────────────
+interface MatchedHelper {
+  id: number;
+  name: string;
+  avatar_url: string | null;
+  trust_score: number | null;
+  help_count: number | null;
+  helper_bio: string | null;
+  helper_skills: string[] | null;
+  identity_verified: boolean | null;
+  distance_miles: number | null;
+  is_available_now: boolean;
+  city: string | null;
+}
+
+function MatchedHelperCard({ helper }: { helper: MatchedHelper }) {
+  return (
+    <div className="bg-card border border-border rounded-2xl p-3 flex items-start gap-3">
+      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0 text-base font-black text-primary">
+        {helper.avatar_url
+          ? <img src={helper.avatar_url} alt={helper.name} className="w-10 h-10 rounded-full object-cover" />
+          : helper.name[0]}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="font-black text-sm text-foreground">{helper.name}</span>
+          {helper.identity_verified && (
+            <span className="inline-flex items-center gap-0.5 text-[9px] font-black text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 rounded-full">
+              <CheckCircle2 className="w-2.5 h-2.5" /> ID Verified
+            </span>
+          )}
+          {helper.is_available_now && (
+            <span className="inline-flex items-center gap-0.5 text-[9px] font-black text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-full">
+              ● Available Now
+            </span>
+          )}
+        </div>
+        <TrustTierBadge trustScore={helper.trust_score ?? 0} helpCount={helper.help_count ?? 0} size="xs" />
+        {helper.helper_bio && (
+          <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">{helper.helper_bio}</p>
+        )}
+        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+          {helper.distance_miles !== null && (
+            <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+              <MapPinIcon className="w-2.5 h-2.5" />{helper.distance_miles} mi
+            </span>
+          )}
+          {(helper.helper_skills ?? []).slice(0, 3).map((s: string) => (
+            <span key={s} className="text-[9px] bg-muted text-muted-foreground rounded-full px-2 py-0.5 capitalize">
+              {s.replace(/_/g, " ")}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MatchedHelpersSection({ lat, lng }: { lat: number | null; lng: number | null }) {
+  const [helpers, setHelpers] = useState<MatchedHelper[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams({ limit: "8" });
+    if (lat !== null && lng !== null) {
+      params.set("lat", String(lat));
+      params.set("lng", String(lng));
+    }
+    fetch(`/api/recurring/matched-helpers?${params}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem("nia_token") ?? ""}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        setHelpers(data.helpers ?? []);
+        setMessage(data.message ?? null);
+      })
+      .catch(() => setMessage("Could not load matched helpers"))
+      .finally(() => setLoading(false));
+  }, [lat, lng]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+
+  if (helpers.length === 0) {
+    return (
+      <div className="text-center py-6 px-4">
+        <Star className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+        <p className="text-xs text-muted-foreground">{message ?? "No matched helpers found yet — check back as more helpers set their availability."}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {message && helpers.length > 0 && (
+        <p className="text-[11px] text-muted-foreground px-1">{message}</p>
+      )}
+      {helpers.map(h => <MatchedHelperCard key={h.id} helper={h} />)}
+    </div>
+  );
+}
 
 export default function RecurringScreen() {
   const { t } = useTranslation();
