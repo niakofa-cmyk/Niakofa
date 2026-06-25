@@ -53,7 +53,7 @@ async function streamNiaResponse(
 
   const stream = await anthropic.messages.stream(
     {
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-6",
       max_tokens: 1024,
       system: systemPrompt,
       messages,
@@ -403,7 +403,7 @@ router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Respo
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-6",
       max_tokens: 1024,
       system:
         "You are Nia, the Niakofa community assistant. " +
