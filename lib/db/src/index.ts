@@ -29,7 +29,21 @@ if (!process.env.DATABASE_URL) {
   }
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// Bounded pool: the pg default (max 10, no timeouts) silently queues requests
+// forever under load and can exhaust a small managed Postgres instance. These
+// limits are tunable via env so deploys on larger tiers can raise the ceiling.
+// envInt falls back to the default if the env var is unset or non-numeric, so a
+// typo'd value can never crash startup with a NaN pool config.
+const envInt = (value: string | undefined, fallback: number): number => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: envInt(process.env.PG_POOL_MAX, 10),
+  idleTimeoutMillis: envInt(process.env.PG_IDLE_TIMEOUT_MS, 30_000),
+  connectionTimeoutMillis: envInt(process.env.PG_CONN_TIMEOUT_MS, 10_000),
+});
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";

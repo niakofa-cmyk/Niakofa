@@ -165,3 +165,21 @@ Drag pointer handlers now imperatively update `divRef.current.style.cursor` (`gr
 **pb-safe — bottom-sheet audit**
 Six fixed bottom sheets were missing `pb-safe`: `community.tsx`, `profile.tsx` (ModalShell), `RepaymentSchedulerModal.tsx`, `admin.tsx` (ReportDetailSheet), and two others. All now have `pb-safe` on the outermost sheet container.
 
+---
+
+### Session: June 25, 2026 (fourth session — forensic DB hardening)
+
+A second forensic report (BUG-001..037, MISSING-001..017) was reviewed line-by-line against the real codebase. Many entries were false positives (source code exists under `artifacts/`, the migrations directory is populated, Nia endpoints are intentionally proxied rather than specced). The verified, real issues were fixed:
+
+**Foreign keys added** — `gratitude_likes.post_id` → `gratitude_posts` (CASCADE), `reports.reported_request_id` → `help_requests` (SET NULL), `reports.reviewed_by` → `users` (SET NULL). Orphaned rows can no longer accumulate; reports survive the deletion of a referenced request or reviewing admin.
+
+**Timezone correctness** — `reports`, `civic_suggestions`, `password_reset_codes`, and `gratitude_likes` timestamps converted to `timestamptz`. Password-reset expiry comparisons are now timezone-correct regardless of server locale — a real safety fix for the reset flow.
+
+**Nia history index** — added `nia_conversations.user_id` index. Querying a user's Nia conversation history no longer does a full table scan, so Nia's memory of a person stays fast as the table grows.
+
+**Status integrity** — `civic_suggestions.status` now has a DB check constraint (`pending`/`approved`/`dismissed`) matching the review route, so a typo can never silently enter the admin queue.
+
+**Trust-tier anti-spam** — `getTrustTier` "verified" now requires at least neutral trust alongside help count, so a bad actor cannot grind to verified through low-quality requests.
+
+**Infra** — bounded the pg connection pool (env-tunable, NaN-guarded), removed an ESM `__dirname` hazard in `drizzle.config.ts`, added `sos` to the report-type API enum (regenerated client + Zod), and corrected two broken civic-resource URLs. A new idempotent `0011_forensic_schema_hardening.sql` mirrors every schema change for production.
+

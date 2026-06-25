@@ -8,12 +8,14 @@ export const passwordResetCodesTable = pgTable("password_reset_codes", {
   id: serial("id").primaryKey(),
   user_id: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   code_hash: text("code_hash").notNull(),
-  expires_at: timestamp("expires_at").notNull(),
-  used_at: timestamp("used_at"),
+  // withTimezone: expiry comparisons must be timezone-correct regardless of
+  // the server's local TZ, or a reset code can appear valid/expired wrongly.
+  expires_at: timestamp("expires_at", { withTimezone: true }).notNull(),
+  used_at: timestamp("used_at", { withTimezone: true }),
   // Per-code attempt counter — closes the distributed-brute-force gap that
   // a purely per-IP rate limit leaves open against a 6-digit (1M-combo) code.
   failed_attempts: integer("failed_attempts").notNull().default(0),
-  created_at: timestamp("created_at").defaultNow().notNull(),
+  created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index("password_reset_codes_user_id_idx").on(t.user_id),
   index("password_reset_codes_expires_at_idx").on(t.expires_at),

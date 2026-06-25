@@ -14,6 +14,11 @@ export function getTrustTier(trustScore: number, helpCount: number): TrustTier {
   if (helpCount >= 50 && trustScore >= 97) return "anchor";
   if (helpCount >= 30 && trustScore >= 95) return "elite";
   if (helpCount >= 15 && trustScore >= 90) return "trusted";
-  if (helpCount >= 5 || trustScore >= 85) return "verified";
+  // Two paths to "verified", but neither rewards spam:
+  //   - 5+ completed helps AND at least neutral trust (50 = default midpoint),
+  //     so a bad actor whose ratings have dragged their score below neutral
+  //     cannot grind to "verified" by completing low-quality requests; or
+  //   - a high trust score (85+) on its own, for users vouched into the system.
+  if ((helpCount >= 5 && trustScore >= 50) || trustScore >= 85) return "verified";
   return "member";
 }

@@ -11,6 +11,9 @@ export const niaConversationsTable = pgTable("nia_conversations", {
 }, (t) => [
   index("nia_conversations_session_idx").on(t.session_id),
   index("nia_conversations_created_at_idx").on(t.created_at),
+  // Without this, querying a user's Nia history (e.g. profile/history page)
+  // does a full table scan; session_id was indexed but user_id was not.
+  index("nia_conversations_user_id_idx").on(t.user_id),
 ]);
 
 export type NiaConversation = typeof niaConversationsTable.$inferSelect;

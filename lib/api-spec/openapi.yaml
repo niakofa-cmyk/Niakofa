@@ -1144,7 +1144,7 @@ components:
           type: ["integer", "null"]
         type:
           type: string
-          enum: [suspicious_request, suspicious_helper, fraud, harassment, fake_profile, dangerous_behavior, spam, other]
+          enum: [suspicious_request, suspicious_helper, fraud, harassment, fake_profile, dangerous_behavior, spam, sos, other]
         description:
           type: string
           minLength: 10
@@ -1176,7 +1176,7 @@ components:
           type: ["integer", "null"]
         type:
           type: string
-          enum: [suspicious_request, suspicious_helper, fraud, harassment, fake_profile, dangerous_behavior, spam, other]
+          enum: [suspicious_request, suspicious_helper, fraud, harassment, fake_profile, dangerous_behavior, spam, sos, other]
         description:
           type: string
         status:
