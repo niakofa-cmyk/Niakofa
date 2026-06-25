@@ -1,4 +1,5 @@
 import { pgTable, serial, text, boolean, real, numeric, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { geographyPoint } from "./geography";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
