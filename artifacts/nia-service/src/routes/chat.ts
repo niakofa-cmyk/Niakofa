@@ -439,13 +439,18 @@ router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Respo
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /history/:sessionId
+// BUG-21: Require authentication and verify the session belongs to the requesting user
+// so that guessable session IDs cannot expose another user's conversation history.
 // ─────────────────────────────────────────────────────────────────────────────
-router.get("/history/:sessionId", async (req: Request, res: Response) => {
-  const sessionId = req.params.sessionId;
+router.get("/history/:sessionId", parseOptionalAuth, async (req: Request, res: Response) => {
+  const authenticatedUserId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId;
+  if (!authenticatedUserId) {
+    return res.status(401).json({ error: "Authentication required to access chat history" });
+  }
+  const sessionId = Array.isArray(req.params.sessionId) ? req.params.sessionId[0] : req.params.sessionId;
   if (!sessionId) return res.status(400).json({ error: "sessionId required" });
-  return res.json(
-    await getScrollbackHistory(Array.isArray(sessionId) ? sessionId[0] : sessionId)
-  );
+  const history = await getScrollbackHistory(sessionId, authenticatedUserId);
+  return res.json(history);
 });
 
 router.get("/health", (_req, res) => res.json({ status: "ok", service: "nia" }));

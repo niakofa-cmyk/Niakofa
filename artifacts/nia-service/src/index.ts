@@ -16,7 +16,17 @@ app.set("trust proxy", 1);
 
 app.use(helmet());
 
-app.use(cors({ origin: process.env.ALLOWED_ORIGIN ?? "*" }));
+// BUG-22: Never default CORS to wildcard (*) in production. If ALLOWED_ORIGIN
+// is not set, block all cross-origin requests rather than opening up to everyone.
+const allowedOrigin = process.env.ALLOWED_ORIGIN;
+if (!allowedOrigin) {
+  logger.warn("ALLOWED_ORIGIN not set — cross-origin requests will be blocked by CORS");
+}
+app.use(cors({
+  origin: allowedOrigin
+    ? allowedOrigin.split(",").map(s => s.trim())
+    : false,
+}));
 app.use(express.json({ limit: "256kb" }));
 
 const networkLimiter = rateLimit({

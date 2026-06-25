@@ -94,13 +94,19 @@ export async function getRecentHistory(
   return history;
 }
 
-export async function getScrollbackHistory(sessionId: string) {
-  const result = await pool.query(
-    `SELECT user_message, nia_response, created_at FROM nia_conversations
-     WHERE session_id = $1 AND created_at > NOW() - INTERVAL '48 hours'
-     ORDER BY created_at ASC`,
-    [sessionId]
-  );
+// BUG-21: Accept userId so we can verify the session belongs to the requesting user.
+// If a userId is provided, the query additionally filters by user_id so that
+// guessable session IDs cannot expose another user's conversation history.
+export async function getScrollbackHistory(sessionId: string, userId?: number) {
+  const params: (string | number)[] = [sessionId];
+  let query = `SELECT user_message, nia_response, created_at FROM nia_conversations
+     WHERE session_id = $1 AND created_at > NOW() - INTERVAL '48 hours'`;
+  if (userId !== undefined) {
+    params.push(userId);
+    query += ` AND user_id = $${params.length}`;
+  }
+  query += ` ORDER BY created_at ASC`;
+  const result = await pool.query(query, params);
   return result.rows.map((r) => ({
     userMessage: r.user_message,
     niaResponse: r.nia_response,

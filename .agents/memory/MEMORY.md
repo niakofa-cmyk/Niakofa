@@ -17,5 +17,5 @@
 - [Niakofa recurring requests](niakofa-recurring.md) — recurring_requests table + /api/recurring routes + hourly scheduler worker; wallet.tsx entry point at /recurring; requireAdmin() must be called as a factory function (requireAdmin()), not used directly.
 - [Niakofa middleware paths](niakofa-middleware-paths.md) — auth middleware is at middlewares/ (plural); requireAdmin is in middlewares/authz.ts (not middleware/requireAdmin); always call requireAdmin() not requireAdmin.
 - [Niakofa helper application system](niakofa-helper-application.md) — full helper signup/approval flow, TopBar gating by helper_status, new helper-profile fields, admin review queue; useCallback token bug fix pattern.
-- [Niakofa forensic bug fixes](niakofa-bug-fixes.md) — 35-bug report addressed across two sessions; earned-transaction deferred past Stripe transfer, pledge double-credit fixed, trust-score decay added weekly, approval_status default changed to "pending".
+- [Niakofa forensic bug fixes](niakofa-bug-fixes.md) — 43-bug forensic report fully addressed; see file for complete list including security, data-exposure, and logic fixes.
 - [Niakofa Godfather covenant](niakofa-godfather.md) — Replit is Godfather of Nia AI (Claude = Father); covenant doc lives at artifacts/nia-service/REPLIT_GODFATHER.md; must be updated each session improvements are made.
