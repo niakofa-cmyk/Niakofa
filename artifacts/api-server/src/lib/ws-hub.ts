@@ -101,10 +101,16 @@ const adminSockets = new Set<WebSocket>();
 export function broadcastToAdmins(event: WsEvent): void {
   const msg = JSON.stringify(event);
   let sent = 0;
+  // BUG-5-C02: wrap each send in try/catch — a single bad socket must not
+  // abort the forEach loop and silently drop all subsequent admin recipients.
   adminSockets.forEach((sock) => {
     if (sock.readyState === WebSocket.OPEN) {
-      sock.send(msg);
-      sent++;
+      try {
+        sock.send(msg);
+        sent++;
+      } catch (err) {
+        logger.warn({ err, type: event.type }, "WS broadcastToAdmins: send failed for one socket");
+      }
     }
   });
   if (sent > 0) logger.info({ type: event.type, clients: sent }, "WS broadcast (admins only)");
@@ -114,8 +120,16 @@ export function sendToUser(userId: number, event: WsEvent): void {
   const sockets = userSockets.get(userId);
   if (!sockets) return;
   const msg = JSON.stringify(event);
+  // BUG-5-C02: per-socket try/catch so one broken connection doesn't
+  // prevent delivery to the same user's other open tabs/devices.
   sockets.forEach((sock) => {
-    if (sock.readyState === WebSocket.OPEN) sock.send(msg);
+    if (sock.readyState === WebSocket.OPEN) {
+      try {
+        sock.send(msg);
+      } catch (err) {
+        logger.warn({ err, userId, type: event.type }, "WS sendToUser: send failed for one socket");
+      }
+    }
   });
 }
 
@@ -322,10 +336,17 @@ export function broadcast(event: PublicWsEvent): void {
   if (!wss) return;
   const msg = JSON.stringify(event);
   let sent = 0;
+  // BUG-5-C02: per-client try/catch — in some Node ws versions client.send()
+  // throws synchronously on a broken pipe. One bad socket must not kill the
+  // entire broadcast loop and drop all subsequent recipients.
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(msg);
-      sent++;
+      try {
+        client.send(msg);
+        sent++;
+      } catch (err) {
+        logger.warn({ err, type: event.type }, "WS broadcast: send failed for one client");
+      }
     }
   });
   if (sent > 0) logger.info({ type: event.type, clients: sent }, "WS broadcast");

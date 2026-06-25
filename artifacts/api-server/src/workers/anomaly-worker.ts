@@ -7,7 +7,10 @@ const INTERVAL_MS = 10 * 60 * 1000;
 // BUG-4-M09: Thresholds are now configurable via env vars so fraud tuning
 // doesn't require a code deploy. Defaults preserve the original behaviour.
 const CANCEL_THRESHOLD = parseInt(process.env["ANOMALY_CANCEL_THRESHOLD"] ?? "3", 10);
-const LOW_TRUST_THRESHOLD = parseFloat(process.env["ANOMALY_LOW_TRUST_THRESHOLD"] ?? "2.0");
+// BUG-5-H07: Default was 2.0 on a 0–100 scale — effectively unreachable except
+// for the -1 banned sentinel. Changed to 25 (bottom quarter of the scale).
+// Override with ANOMALY_LOW_TRUST_THRESHOLD env var to tune without redeploy.
+const LOW_TRUST_THRESHOLD = parseFloat(process.env["ANOMALY_LOW_TRUST_THRESHOLD"] ?? "25.0");
 const WINDOW_HOURS = parseInt(process.env["ANOMALY_WINDOW_HOURS"] ?? "24", 10);
 /** Flag helpers who receive this many 1-star ratings within the window */
 const RATING_VELOCITY_THRESHOLD = parseInt(process.env["ANOMALY_RATING_VELOCITY_THRESHOLD"] ?? "3", 10);

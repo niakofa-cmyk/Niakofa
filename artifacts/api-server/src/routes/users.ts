@@ -93,16 +93,25 @@ router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => 
   const bParsed = UpdateUserBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { name, avatar_url, neighborhood, is_helper } = bParsed.data;
+
+  // BUG-5-H02: Build the update object from an explicit allowlist of safe
+  // fields only. Never allow is_admin, role, trust_score, token_version, or
+  // any other privileged column to be set via this user-facing endpoint, even
+  // if they somehow appear in the Zod-parsed body (the `as any` cast below
+  // was a potential vector for privilege escalation if the schema drifted).
   const updates: Partial<typeof usersTable.$inferInsert> = {};
   if (name !== undefined) updates.name = name;
   if (avatar_url !== undefined) updates.avatar_url = avatar_url;
   if (neighborhood !== undefined) updates.neighborhood = neighborhood;
   if (is_helper !== undefined) updates.is_helper = is_helper;
-  const { city, specialties, phone_masked, quick_replies } = bParsed.data as any;
-  if (city !== undefined) (updates as any).city = city;
-  if (specialties !== undefined) (updates as any).specialties = specialties;
-  if (phone_masked !== undefined) (updates as any).phone_masked = phone_masked;
-  if (quick_replies !== undefined) (updates as any).quick_replies = quick_replies;
+
+  // Extended profile fields — still allowlisted individually, never spread
+  const raw = req.body as Record<string, unknown>;
+  if (typeof raw.city === "string" && raw.city.length <= 100) (updates as any).city = raw.city;
+  if (Array.isArray(raw.specialties)) (updates as any).specialties = (raw.specialties as string[]).slice(0, 20).map(String);
+  if (typeof raw.phone_masked === "string") (updates as any).phone_masked = raw.phone_masked.slice(0, 20);
+  if (Array.isArray(raw.quick_replies)) (updates as any).quick_replies = (raw.quick_replies as string[]).slice(0, 10).map(String);
+
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No fields to update" });
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });

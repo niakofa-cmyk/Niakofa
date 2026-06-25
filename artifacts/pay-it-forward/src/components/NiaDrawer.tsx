@@ -819,6 +819,16 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
   const drag = useRef({ active: false, moved: false, px: 0, py: 0, ox: 0, oy: 0 });
   const divRef = useRef<HTMLDivElement>(null);
 
+  // Clamp a position to the current viewport bounds
+  const clampToViewport = useCallback((p: { x: number; y: number }): { x: number; y: number } => {
+    const maxX = window.innerWidth - FAB_SIZE - MARGIN;
+    const maxY = window.innerHeight - FAB_SIZE - MARGIN;
+    return {
+      x: Math.max(MARGIN, Math.min(p.x, maxX)),
+      y: Math.max(MARGIN, Math.min(p.y, maxY)),
+    };
+  }, []);
+
   // Mount: restore persisted position, or default to top-center
   useEffect(() => {
     const defaultPos = () => ({
@@ -843,6 +853,35 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
     } catch { /* ignore */ }
     setPos(defaultPos());
   }, []);
+
+  // Resize / orientation-change guard: re-clamp persisted position whenever
+  // the viewport dimensions change. Without this, rotating the device mid-session
+  // or resizing the browser window can strand the orb outside the new bounds.
+  // BUG-5 (remaining): "Drag clamp bounds still computed from window at drag-time only;
+  // rotating mid-session can leave the orb outside the new viewport bounds."
+  useEffect(() => {
+    const handleResize = () => {
+      setPos((prev) => {
+        if (!prev) return prev;
+        const clamped = clampToViewport(prev);
+        // Only update state (and trigger a re-render) if bounds actually changed
+        if (clamped.x === prev.x && clamped.y === prev.y) return prev;
+        return clamped;
+      });
+    };
+    window.addEventListener("resize", handleResize, { passive: true });
+    // screen.orientation is more reliable than resize for orientation changes
+    // on iOS PWAs and Android Chrome where resize fires inconsistently.
+    if (typeof screen !== "undefined" && screen.orientation) {
+      screen.orientation.addEventListener("change", handleResize);
+    }
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      if (typeof screen !== "undefined" && screen.orientation) {
+        screen.orientation.removeEventListener("change", handleResize);
+      }
+    };
+  }, [clampToViewport]);
 
   // Raw pointer handlers on a plain div — most reliable on mobile + desktop
   const onPD = useCallback((e: React.PointerEvent<HTMLDivElement>) => {

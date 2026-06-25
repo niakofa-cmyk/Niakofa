@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, gratitudePostsTable, gratitudeLikesTable, usersTable, requestsTable } from "@workspace/db";
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, sql, and } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
@@ -63,6 +63,27 @@ router.post("/gratitude", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Invalid body", details: parsed.error.issues });
   }
   const authorId = req.authenticatedUserId!;
+
+  // BUG-5-M08: Idempotency check — one gratitude post per author per request.
+  // Without this a double-tap or network retry inflates gratitude counts and
+  // fills the moderation queue with duplicate posts for the same exchange.
+  if (parsed.data.request_id) {
+    const [existing] = await db.select({ id: gratitudePostsTable.id })
+      .from(gratitudePostsTable)
+      .where(
+        and(
+          eq(gratitudePostsTable.author_id, authorId),
+          eq(gratitudePostsTable.request_id, parsed.data.request_id)
+        )
+      )
+      .limit(1);
+    if (existing) {
+      return res.status(409).json({
+        error: "You have already posted gratitude for this request.",
+        existing_id: existing.id,
+      });
+    }
+  }
 
   const [author] = await db.select({ name: usersTable.name, avatar_url: usersTable.avatar_url })
     .from(usersTable).where(eq(usersTable.id, authorId)).limit(1);

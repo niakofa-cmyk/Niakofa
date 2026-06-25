@@ -490,7 +490,8 @@ export default function SettingsPage() {
         <h1 className="text-lg font-black ml-2">{activeSection ? sections.find(s => s.id === activeSection)?.title : "Settings"}</h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      {/* pb-28 ensures content scrolls above the bottom navigation bar on mobile (nav ≈ 64px + env safe-area) */}
+      <div className="flex-1 overflow-y-auto p-4 pb-28">
         {!activeSection ? (
           <div className="space-y-3">
             {sections.map(section => (
