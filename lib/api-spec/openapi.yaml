@@ -184,7 +184,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, cancelled]
+            enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, cancelled, expired]
         - name: lat
           in: query
           schema:
@@ -732,6 +732,38 @@ components:
           type: integer
         neighborhood:
           type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        helper_status:
+          type: ["string", "null"]
+        helper_skills:
+          type: ["array", "null"]
+          items:
+            type: string
+        helper_languages:
+          type: ["array", "null"]
+          items:
+            type: string
+        helper_qualifications:
+          type: ["array", "null"]
+          items:
+            type: string
+        helper_bio:
+          type: ["string", "null"]
+        helper_vehicle:
+          type: ["string", "null"]
+        helper_social_links:
+          type: ["string", "null"]
+        specialties:
+          type: ["array", "null"]
+          items:
+            type: string
+        phone_masked:
+          type: ["string", "null"]
+        identity_verified:
+          type: boolean
+        background_check_status:
+          type: ["string", "null"]
         benevolence_wallet:
           type: number
           description: Accumulated helper earnings and contributions
@@ -749,6 +781,8 @@ components:
         avatar_url:
           type: string
         neighborhood:
+          type: string
+        city:
           type: string
         is_helper:
           type: boolean
@@ -810,13 +844,13 @@ components:
           type: ["string", "null"]
         category:
           type: string
-          enum: [groceries, transportation, errands, home_repair, medical, emergency, other]
+          enum: [groceries, transportation, errands, home_repair, medical, emergency, other, delivery_run, stock_shelves, event_setup, tech_support]
         urgency:
           type: string
           enum: [low, medium, high, emergency]
         status:
           type: string
-          enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, cancelled]
+          enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, cancelled, expired]
         payment_type:
           type: string
           enum: [immediate, pay_it_forward, goodwill]
@@ -858,6 +892,8 @@ components:
           type: ["string", "null"]
         completed_at:
           type: ["string", "null"]
+        cancelled_at:
+          type: ["string", "null"]
 
     HelpRequestInput:
       type: object
@@ -869,7 +905,7 @@ components:
           type: string
         category:
           type: string
-          enum: [groceries, transportation, errands, home_repair, medical, emergency, other]
+          enum: [groceries, transportation, errands, home_repair, medical, emergency, other, delivery_run, stock_shelves, event_setup, tech_support]
         urgency:
           type: string
           enum: [low, medium, high, emergency]
@@ -894,7 +930,7 @@ components:
       properties:
         status:
           type: string
-          enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, cancelled]
+          enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, cancelled, expired]
         description:
           type: string
         urgency:
@@ -1057,7 +1093,7 @@ components:
           type: ["integer", "null"]
         type:
           type: string
-          enum: [earned, pledge_received, pledge_sent, goodwill]
+          enum: [earned, pledge_received, pledge_sent, goodwill, tip_received]
           description: earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act
         amount:
           type: number

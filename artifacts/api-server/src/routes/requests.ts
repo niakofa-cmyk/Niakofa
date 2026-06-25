@@ -314,7 +314,7 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
 });
 
 router.get("/requests/:id", requireAuth, async (req, res) => {
-  const parsed = GetRequestParams.safeParse({ id: parseInt(req.params.id) });
+  const parsed = GetRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, parsed.data.id)).limit(1);
   if (!request) return res.status(404).json({ error: "Not found" });
@@ -330,13 +330,13 @@ router.get("/requests/:id", requireAuth, async (req, res) => {
 
 router.patch("/requests/:id", requireAuth, async (req, res) => {
   const authenticatedUserId = (req as any).authenticatedUserId;
-  const requestId = parseInt(req.params.id);
+  const requestId = parseInt(String(req.params.id));
   const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
   if (!request) return res.status(404).json({ error: "Request not found" });
   if (request.requester_id !== authenticatedUserId) {
     return res.status(403).json({ error: "Forbidden: You can only update your own requests" });
   }
-  const pParsed = UpdateRequestParams.safeParse({ id: parseInt(req.params.id) });
+  const pParsed = UpdateRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = UpdateRequestBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
   const updates: Record<string, unknown> = {};
@@ -359,7 +359,7 @@ router.patch("/requests/:id", requireAuth, async (req, res) => {
 // — safe, but a roundabout way to express "act as yourself."
 router.post("/requests/:id/claim", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
-  const pParsed = ClaimRequestParams.safeParse({ id: parseInt(req.params.id) });
+  const pParsed = ClaimRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
   const [request] = await db.update(requestsTable)
     .set({ status: "claimed", helper_id: helperId, claimed_at: new Date() })
@@ -374,7 +374,7 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
 
 router.post("/requests/:id/en-route", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
-  const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(req.params.id) });
+  const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
   const [request] = await db.update(requestsTable)
     .set({ status: "en_route", en_route_at: new Date() })
@@ -388,7 +388,7 @@ router.post("/requests/:id/en-route", requireAuth, async (req, res) => {
 
 router.post("/requests/:id/arrived", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
-  const pParsed = MarkArrivedParams.safeParse({ id: parseInt(req.params.id) });
+  const pParsed = MarkArrivedParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
   const [request] = await db.update(requestsTable)
     .set({ status: "arrived", arrived_at: new Date() })
@@ -402,7 +402,7 @@ router.post("/requests/:id/arrived", requireAuth, async (req, res) => {
 
 router.post("/requests/:id/complete", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
-  const pParsed = CompleteRequestParams.safeParse({ id: parseInt(req.params.id) });
+  const pParsed = CompleteRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = CompleteRequestBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
 
@@ -568,7 +568,7 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
 
 
 router.post("/requests/:id/tip", requireAuth, requireOwnership("requester_id"), async (req, res) => {
-  const requestId = parseInt(req.params.id);
+  const requestId = parseInt(String(req.params.id));
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 
   const { requester_id, tip_amount } = req.body as { requester_id: number; tip_amount: number };

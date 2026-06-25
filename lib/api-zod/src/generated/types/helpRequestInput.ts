@@ -10,12 +10,7 @@ import type { HelpRequestInputPaymentType } from './helpRequestInputPaymentType'
 import type { HelpRequestInputUrgency } from './helpRequestInputUrgency';
 
 export interface HelpRequestInput {
-  /**
-     * @minLength 3
-     * @maxLength 200
-     */
   title: string;
-  /** @maxLength 2000 */
   description?: string;
   category: HelpRequestInputCategory;
   urgency?: HelpRequestInputUrgency;
@@ -23,7 +18,6 @@ export interface HelpRequestInput {
   requester_id: number;
   lat: number;
   lng: number;
-  /** @maxLength 100 */
   neighborhood?: string;
   pay_it_forward_amount?: number;
   pledge_amount?: number;

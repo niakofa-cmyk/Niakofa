@@ -80,7 +80,7 @@ router.post("/users/register", authLimiter, async (req, res) => {
 });
 
 router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
-  const parsed = GetUserParams.safeParse({ id: parseInt(req.params.id) });
+  const parsed = GetUserParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, parsed.data.id)).limit(1);
   if (!user) return res.status(404).json({ error: "User not found" });
@@ -89,7 +89,7 @@ router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
 });
 
 router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
-  const pParsed = UpdateUserParams.safeParse({ id: parseInt(req.params.id) });
+  const pParsed = UpdateUserParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = UpdateUserBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { name, avatar_url, neighborhood, is_helper } = bParsed.data;
@@ -98,7 +98,8 @@ router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => 
   if (avatar_url !== undefined) updates.avatar_url = avatar_url;
   if (neighborhood !== undefined) updates.neighborhood = neighborhood;
   if (is_helper !== undefined) updates.is_helper = is_helper;
-  const { specialties, phone_masked, quick_replies } = bParsed.data as any;
+  const { city, specialties, phone_masked, quick_replies } = bParsed.data as any;
+  if (city !== undefined) (updates as any).city = city;
   if (specialties !== undefined) (updates as any).specialties = specialties;
   if (phone_masked !== undefined) (updates as any).phone_masked = phone_masked;
   if (quick_replies !== undefined) (updates as any).quick_replies = quick_replies;
@@ -132,7 +133,7 @@ router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter,
 });
 
 router.patch("/users/:id/helper-mode", requireAuth, requireOwnership(), async (req, res) => {
-  const pParsed = UpdateHelperModeParams.safeParse({ id: parseInt(req.params.id) });
+  const pParsed = UpdateHelperModeParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = UpdateHelperModeBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const [user] = await db.update(usersTable)
@@ -150,7 +151,7 @@ router.patch("/users/:id/helper-mode", requireAuth, requireOwnership(), async (r
 });
 
 router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, res) => {
-  const pParsed = MakePledgePaymentParams.safeParse({ id: parseInt(req.params.id) });
+  const pParsed = MakePledgePaymentParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = MakePledgePaymentBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { request_id, amount } = bParsed.data;
@@ -196,7 +197,7 @@ router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, re
 
 // GET /users/:id/transactions — real activity history
 router.get("/users/:id/transactions", requireAuth, requireOwnership(), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const txns = await db.select().from(transactionsTable)
     .where(eq(transactionsTable.user_id, id))
@@ -207,7 +208,7 @@ router.get("/users/:id/transactions", requireAuth, requireOwnership(), async (re
 
 // POST /users/:id/scheduled-payment — save a future repayment intent
 router.post("/users/:id/scheduled-payment", requireAuth, requireOwnership(), async (req, res) => {
-  const pParsed = CreateScheduledPaymentParams.safeParse({ id: parseInt(req.params.id) });
+  const pParsed = CreateScheduledPaymentParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = CreateScheduledPaymentBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { request_id, amount, scheduled_date, note } = bParsed.data;
@@ -236,7 +237,7 @@ router.post("/users/:id/scheduled-payment", requireAuth, requireOwnership(), asy
 
 // GET /users/:id/scheduled-payment — list future payment intents
 router.get("/users/:id/scheduled-payment", requireAuth, requireOwnership(), async (req, res) => {
-  const parsed = GetScheduledPaymentsParams.safeParse({ id: parseInt(req.params.id) });
+  const parsed = GetScheduledPaymentsParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const rows = await db.select().from(scheduledPaymentsTable)
     .where(eq(scheduledPaymentsTable.user_id, parsed.data.id))
@@ -246,8 +247,8 @@ router.get("/users/:id/scheduled-payment", requireAuth, requireOwnership(), asyn
 
 // DELETE /users/:id/scheduled-payment/:paymentId — cancel a scheduled payment
 router.delete("/users/:id/scheduled-payment/:paymentId", requireAuth, requireOwnership(), async (req, res) => {
-  const userId = parseInt(req.params.id);
-  const paymentId = parseInt(req.params.paymentId);
+  const userId = parseInt(String(req.params.id));
+  const paymentId = parseInt(String(req.params.paymentId));
   if (isNaN(userId) || isNaN(paymentId)) return res.status(400).json({ error: "Invalid id" });
   const [deleted] = await db.delete(scheduledPaymentsTable)
     .where(and(
@@ -261,7 +262,7 @@ router.delete("/users/:id/scheduled-payment/:paymentId", requireAuth, requireOwn
 
 // GET /users/:id/outstanding-pledges — requests with unpaid pledge balance
 router.get("/users/:id/outstanding-pledges", requireAuth, requireOwnership(), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const requests = await db.select().from(requestsTable)
     .where(
@@ -284,7 +285,7 @@ router.get("/users/:id/outstanding-pledges", requireAuth, requireOwnership(), as
 
 // POST /users/:id/avatar — update profile photo (base64 data URL)
 router.post("/users/:id/avatar", requireAuth, requireOwnership(), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const { dataUrl } = req.body as { dataUrl?: string };
   if (!dataUrl || !dataUrl.startsWith("data:image/")) {
@@ -307,7 +308,7 @@ router.post("/users/:id/avatar", requireAuth, requireOwnership(), async (req, re
 
 // GET /users/:id/settings — fetch user notification + privacy prefs (upserts defaults if first visit)
 router.get("/users/:id/settings", requireAuth, requireOwnership(), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const [existing] = await db.select().from(userSettingsTable).where(eq(userSettingsTable.user_id, id)).limit(1);
   if (existing) return res.json(existing);
@@ -318,7 +319,7 @@ router.get("/users/:id/settings", requireAuth, requireOwnership(), async (req, r
 
 // PUT /users/:id/settings — persist notification + privacy prefs
 router.put("/users/:id/settings", requireAuth, requireOwnership(), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const allowed = [
     "notif_nearby_requests", "notif_emergency", "notif_task_accepted",
@@ -362,7 +363,7 @@ router.patch("/users/:id/panic-contacts", requireAuth, requireOwnership(), async
 // BUG-H03: Account deletion is admin-only. requireOwnership() would let any
 // authenticated user delete any other account by crafting the path parameter.
 router.delete("/users/:id", requireAuth, requireAdmin(), async (req, res) => {
-  const userId = parseInt(req.params.id);
+  const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
 
   try {
@@ -382,7 +383,7 @@ router.delete("/users/:id", requireAuth, requireAdmin(), async (req, res) => {
 });
 
 router.patch("/users/:id/moderation", requireAuth, requireAdmin(), async (req, res) => {
-  const userId = parseInt(req.params.id);
+  const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
   const { action } = req.body as { action: "warn" | "ban" };
   if (!["warn", "ban"].includes(action)) return res.status(400).json({ error: "Invalid action" });
@@ -438,7 +439,7 @@ router.get("/users/:id/availability", requireAuth, requireOwnership(), async (re
 // Bumps token_version so every previously issued token for this user
 // is immediately invalid, even ones that haven't expired yet.
 router.post("/users/:id/logout", requireAuth, requireOwnership(), async (req, res) => {
-  const userId = parseInt(req.params.id);
+  const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
   await db.update(usersTable)
     .set({ token_version: sql`${usersTable.token_version} + 1` })
@@ -468,7 +469,7 @@ router.get("/users", requireAuth, requireAdmin(), async (_req, res) => {
 //   1. User submitting their own application (sends helper_skills, helper_bio, etc.) — requireOwnership
 //   2. Admin reviewing an application (sends status: approved|denied) — requireAdmin
 router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid user id" });
 
   const {

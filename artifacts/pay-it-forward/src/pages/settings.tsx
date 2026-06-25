@@ -15,7 +15,7 @@ async function fetchSettings(userId: number) {
   return res.json();
 }
 
-async function saveSettings(userId: number, updates: Record<string, boolean | number | string>) {
+async function saveSettings(userId: number, updates: Record<string, boolean | number | string | string[]>) {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   const res = await fetch(`${base}/api/users/${userId}/settings`, {
     method: "PUT",

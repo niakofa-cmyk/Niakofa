@@ -9,19 +9,6 @@ export interface HealthStatus {
   status: string;
 }
 
-/**
- * null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected
- * @nullable
- */
-export type UserHelperStatus = typeof UserHelperStatus[keyof typeof UserHelperStatus] | null;
-
-
-export const UserHelperStatus = {
-  pending: 'pending',
-  approved: 'approved',
-  denied: 'denied',
-} as const;
-
 export interface User {
   id: number;
   name: string;
@@ -30,29 +17,6 @@ export interface User {
   avatar_url?: string | null;
   is_helper: boolean;
   helper_mode_active: boolean;
-  /**
-     * null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected
-     * @nullable
-     */
-  helper_status?: UserHelperStatus;
-  /**
-     * Specific helper skills like plumbing, Spanish speaker, drives truck
-     * @nullable
-     */
-  helper_skills?: string[] | null;
-  /** @nullable */
-  helper_languages?: string[] | null;
-  /** @nullable */
-  helper_qualifications?: string[] | null;
-  /** @nullable */
-  helper_bio?: string | null;
-  /** @nullable */
-  helper_vehicle?: string | null;
-  /**
-     * JSON-encoded social media links
-     * @nullable
-     */
-  helper_social_links?: string | null;
   /** @nullable */
   lat?: number | null;
   /** @nullable */
@@ -62,28 +26,33 @@ export interface User {
   help_count: number;
   /** @nullable */
   neighborhood?: string | null;
-  /** Accumulated helper earnings and contributions */
-  benevolence_wallet: number;
-  /** Community reputation score */
-  goodwill_score: number;
-  /** Type of account */
-  account_type?: 'individual' | 'business' | 'sponsor';
-  /**
-     * Account approval status — null means not yet set
-     * @nullable
-     */
-  approval_status?: 'pending' | 'approved' | 'denied' | null;
   /** @nullable */
-  organization_name?: string | null;
+  city?: string | null;
   /** @nullable */
-  organization_description?: string | null;
-  identity_verified?: boolean;
+  helper_status?: string | null;
   /** @nullable */
-  background_check_status?: string | null;
+  helper_skills?: string[] | null;
+  /** @nullable */
+  helper_languages?: string[] | null;
+  /** @nullable */
+  helper_qualifications?: string[] | null;
+  /** @nullable */
+  helper_bio?: string | null;
+  /** @nullable */
+  helper_vehicle?: string | null;
+  /** @nullable */
+  helper_social_links?: string | null;
   /** @nullable */
   specialties?: string[] | null;
   /** @nullable */
   phone_masked?: string | null;
+  identity_verified?: boolean;
+  /** @nullable */
+  background_check_status?: string | null;
+  /** Accumulated helper earnings and contributions */
+  benevolence_wallet: number;
+  /** Community reputation score */
+  goodwill_score: number;
   created_at?: string;
 }
 
@@ -91,79 +60,16 @@ export interface UserUpdate {
   name?: string;
   avatar_url?: string;
   neighborhood?: string;
+  city?: string;
   is_helper?: boolean;
-  specialties?: string[];
-  phone_masked?: string;
-  quick_replies?: string[];
 }
-
-export interface HelperApplicationInput {
-  helper_skills: string[];
-  helper_languages?: string[];
-  helper_qualifications?: string[];
-  /** @maxLength 500 */
-  helper_bio?: string;
-  helper_vehicle?: string;
-  /** JSON-encoded social media links */
-  helper_social_links?: string;
-}
-
-export type HelperApplicationReviewDecision = typeof HelperApplicationReviewDecision[keyof typeof HelperApplicationReviewDecision];
-
-
-export const HelperApplicationReviewDecision = {
-  approved: 'approved',
-  denied: 'denied',
-} as const;
-
-export interface HelperApplicationReview {
-  decision: HelperApplicationReviewDecision;
-  admin_notes?: string;
-}
-
-export type AccountApprovalReviewDecision = typeof AccountApprovalReviewDecision[keyof typeof AccountApprovalReviewDecision];
-
-
-export const AccountApprovalReviewDecision = {
-  approved: 'approved',
-  denied: 'denied',
-} as const;
-
-export interface AccountApprovalReview {
-  decision: AccountApprovalReviewDecision;
-  admin_notes?: string;
-}
-
-export type GetAccountApplicationsStatus = typeof GetAccountApplicationsStatus[keyof typeof GetAccountApplicationsStatus];
-
-
-export const GetAccountApplicationsStatus = {
-  pending: 'pending',
-  approved: 'approved',
-  denied: 'denied',
-} as const;
-
-export type GetAccountApplicationsParams = {
-status?: GetAccountApplicationsStatus;
-};
 
 export interface UserRegistration {
   name: string;
   email: string;
   avatar_url?: string;
   is_helper?: boolean;
-  account_type?: 'individual' | 'business' | 'sponsor';
-  /** @maxLength 200 */
-  organization_name?: string;
-  /** @maxLength 1000 */
-  organization_description?: string;
   neighborhood?: string;
-  helper_skills?: string[];
-  helper_languages?: string[];
-  helper_qualifications?: string[];
-  helper_bio?: string;
-  helper_vehicle?: string;
-  helper_social_links?: string;
 }
 
 export interface LocationUpdate {
@@ -196,9 +102,9 @@ export const HelpRequestCategory = {
   medical: 'medical',
   emergency: 'emergency',
   other: 'other',
+  delivery_run: 'delivery_run',
   stock_shelves: 'stock_shelves',
   event_setup: 'event_setup',
-  delivery_run: 'delivery_run',
   tech_support: 'tech_support',
 } as const;
 
@@ -223,6 +129,7 @@ export const HelpRequestStatus = {
   completed: 'completed',
   pay_it_forward_pending: 'pay_it_forward_pending',
   cancelled: 'cancelled',
+  expired: 'expired',
 } as const;
 
 /**
@@ -293,9 +200,9 @@ export const HelpRequestInputCategory = {
   medical: 'medical',
   emergency: 'emergency',
   other: 'other',
+  delivery_run: 'delivery_run',
   stock_shelves: 'stock_shelves',
   event_setup: 'event_setup',
-  delivery_run: 'delivery_run',
   tech_support: 'tech_support',
 } as const;
 
@@ -319,12 +226,7 @@ export const HelpRequestInputPaymentType = {
 } as const;
 
 export interface HelpRequestInput {
-  /**
-     * @minLength 3
-     * @maxLength 200
-     */
   title: string;
-  /** @maxLength 2000 */
   description?: string;
   category: HelpRequestInputCategory;
   urgency?: HelpRequestInputUrgency;
@@ -332,7 +234,6 @@ export interface HelpRequestInput {
   requester_id: number;
   lat: number;
   lng: number;
-  /** @maxLength 100 */
   neighborhood?: string;
   pay_it_forward_amount?: number;
   pledge_amount?: number;
@@ -349,6 +250,7 @@ export const HelpRequestUpdateStatus = {
   completed: 'completed',
   pay_it_forward_pending: 'pay_it_forward_pending',
   cancelled: 'cancelled',
+  expired: 'expired',
 } as const;
 
 export type HelpRequestUpdateUrgency = typeof HelpRequestUpdateUrgency[keyof typeof HelpRequestUpdateUrgency];
@@ -474,7 +376,7 @@ export interface RouteData {
 }
 
 /**
- * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester
+ * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act
  */
 export type TransactionType = typeof TransactionType[keyof typeof TransactionType];
 
@@ -492,7 +394,7 @@ export interface Transaction {
   user_id: number;
   /** @nullable */
   request_id?: number | null;
-  /** earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester */
+  /** earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act */
   type: TransactionType;
   amount: number;
   /** @nullable */
@@ -623,52 +525,6 @@ export interface CivicResource {
   category?: string | null;
 }
 
-export type RatingRole = typeof RatingRole[keyof typeof RatingRole];
-
-
-export const RatingRole = {
-  requester: 'requester',
-  helper: 'helper',
-} as const;
-
-export interface Rating {
-  id: number;
-  request_id: number;
-  rater_id: number;
-  ratee_id: number;
-  /**
-     * @minimum 1
-     * @maximum 5
-     */
-  stars: number;
-  /** @nullable */
-  review?: string | null;
-  role: RatingRole;
-  created_at: string;
-}
-
-export interface RateInput {
-  /**
-     * @minimum 1
-     * @maximum 5
-     */
-  stars: number;
-  /** @maxLength 500 */
-  review?: string;
-}
-
-export interface SetInitialPasswordInput {
-  user_id: number;
-  email: string;
-  /** @minLength 8 */
-  new_password: string;
-}
-
-export interface AuthResponse {
-  user: User;
-  token: string;
-}
-
 /**
  * How specifically the resources were matched
  */
@@ -714,6 +570,7 @@ export const GetRequestsStatus = {
   completed: 'completed',
   pay_it_forward_pending: 'pay_it_forward_pending',
   cancelled: 'cancelled',
+  expired: 'expired',
 } as const;
 
 export type GetNearbyRequestsParams = {
@@ -733,17 +590,7 @@ start_lat: number;
 start_lng: number;
 end_lat: number;
 end_lng: number;
-profile?: GetRouteProfile;
 };
-
-export type GetRouteProfile = typeof GetRouteProfile[keyof typeof GetRouteProfile];
-
-
-export const GetRouteProfile = {
-  driving: 'driving',
-  walking: 'walking',
-  cycling: 'cycling',
-} as const;
 
 export type GetCivicResourcesParams = {
 lat: number;
@@ -763,18 +610,5 @@ export const GetReportsStatus = {
   resolved_dismissed: 'resolved_dismissed',
   resolved_warned: 'resolved_warned',
   resolved_banned: 'resolved_banned',
-} as const;
-
-export type GetHelperApplicationsParams = {
-status?: GetHelperApplicationsStatus;
-};
-
-export type GetHelperApplicationsStatus = typeof GetHelperApplicationsStatus[keyof typeof GetHelperApplicationsStatus];
-
-
-export const GetHelperApplicationsStatus = {
-  pending: 'pending',
-  approved: 'approved',
-  denied: 'denied',
 } as const;
 

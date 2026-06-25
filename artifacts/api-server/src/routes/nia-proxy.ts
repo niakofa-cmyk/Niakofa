@@ -94,9 +94,8 @@ router.post(
             : {}),
         },
         body: upstreamBody,
-        // @ts-expect-error — Node 18+ fetch supports duplex for streaming
         duplex: "half",
-      });
+      } as RequestInit & { duplex: "half" });
 
       if (upstream.status === 429) {
         const body = await upstream.json().catch(() => ({}));
@@ -127,6 +126,7 @@ router.post(
         if (!res.writableEnded) res.write(value);
       }
       if (!res.writableEnded) res.end();
+      return;
     } catch (err) {
       logger.error({ err }, "nia-proxy: upstream fetch failed");
       if (!res.headersSent) {
@@ -142,6 +142,7 @@ router.post(
         );
         res.end();
       }
+      return;
     }
   }
 );

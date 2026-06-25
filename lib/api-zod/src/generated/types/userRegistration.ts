@@ -11,14 +11,5 @@ export interface UserRegistration {
   email: string;
   avatar_url?: string;
   is_helper?: boolean;
-  account_type?: 'individual' | 'business' | 'sponsor';
-  organization_name?: string;
-  organization_description?: string;
   neighborhood?: string;
-  helper_skills?: string[];
-  helper_languages?: string[];
-  helper_qualifications?: string[];
-  helper_bio?: string;
-  helper_vehicle?: string;
-  helper_social_links?: string;
 }

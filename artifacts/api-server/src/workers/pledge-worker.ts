@@ -85,7 +85,7 @@ async function reconcilePledges(_job: Job): Promise<void> {
       }).catch(() => {});
 
       await db.update(scheduledPaymentsTable)
-        .set({ status: "overdue", updated_at: now })
+        .set({ status: "overdue" })
         .where(eq(scheduledPaymentsTable.id, scheduled.id))
         .catch(() => {});
 

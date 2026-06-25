@@ -5,7 +5,6 @@
  * Niakofa - Map-First Community Help Platform
  * OpenAPI spec version: 0.1.0
  */
-import type { UserHelperStatus } from './userHelperStatus';
 
 export interface User {
   id: number;
@@ -15,29 +14,6 @@ export interface User {
   avatar_url?: string | null;
   is_helper: boolean;
   helper_mode_active: boolean;
-  /**
-     * null=not applied, pending=awaiting admin review, approved=accepted, denied=rejected
-     * @nullable
-     */
-  helper_status?: UserHelperStatus;
-  /**
-     * Specific helper skills like plumbing, Spanish speaker, drives truck
-     * @nullable
-     */
-  helper_skills?: string[] | null;
-  /** @nullable */
-  helper_languages?: string[] | null;
-  /** @nullable */
-  helper_qualifications?: string[] | null;
-  /** @nullable */
-  helper_bio?: string | null;
-  /** @nullable */
-  helper_vehicle?: string | null;
-  /**
-     * JSON-encoded social media links
-     * @nullable
-     */
-  helper_social_links?: string | null;
   /** @nullable */
   lat?: number | null;
   /** @nullable */
@@ -47,27 +23,32 @@ export interface User {
   help_count: number;
   /** @nullable */
   neighborhood?: string | null;
-  /** Accumulated helper earnings and contributions */
-  benevolence_wallet: number;
-  /** Community reputation score */
-  goodwill_score: number;
-  /** Type of account */
-  account_type?: 'individual' | 'business' | 'sponsor';
-  /**
-     * Account approval status — null means not yet set
-     * @nullable
-     */
-  approval_status?: 'pending' | 'approved' | 'denied' | null;
   /** @nullable */
-  organization_name?: string | null;
+  city?: string | null;
   /** @nullable */
-  organization_description?: string | null;
-  identity_verified?: boolean;
+  helper_status?: string | null;
   /** @nullable */
-  background_check_status?: string | null;
+  helper_skills?: string[] | null;
+  /** @nullable */
+  helper_languages?: string[] | null;
+  /** @nullable */
+  helper_qualifications?: string[] | null;
+  /** @nullable */
+  helper_bio?: string | null;
+  /** @nullable */
+  helper_vehicle?: string | null;
+  /** @nullable */
+  helper_social_links?: string | null;
   /** @nullable */
   specialties?: string[] | null;
   /** @nullable */
   phone_masked?: string | null;
+  identity_verified?: boolean;
+  /** @nullable */
+  background_check_status?: string | null;
+  /** Accumulated helper earnings and contributions */
+  benevolence_wallet: number;
+  /** Community reputation score */
+  goodwill_score: number;
   created_at?: string;
 }

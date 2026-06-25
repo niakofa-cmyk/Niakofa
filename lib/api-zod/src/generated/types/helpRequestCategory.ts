@@ -17,8 +17,8 @@ export const HelpRequestCategory = {
   medical: 'medical',
   emergency: 'emergency',
   other: 'other',
+  delivery_run: 'delivery_run',
   stock_shelves: 'stock_shelves',
   event_setup: 'event_setup',
-  delivery_run: 'delivery_run',
   tech_support: 'tech_support',
 } as const;
