@@ -78,6 +78,27 @@
       "when": 1782273394000,
       "tag": "0010_help_chains",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782355168000,
+      "tag": "0011_forensic_schema_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782370825000,
+      "tag": "0012_nia_structured_memory",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1782400000000,
+      "tag": "0013_checkin_and_crisis_flag",
+      "breakpoints": true
     }
   ]
 }

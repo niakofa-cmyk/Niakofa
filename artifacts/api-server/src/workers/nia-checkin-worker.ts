@@ -28,8 +28,9 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 
 async function processNiaCheckins(): Promise<void> {
   // Find requests completed 23–25 hours ago that haven't been checked-in yet.
-  // We use a dedicated column `nia_checkin_sent_at` to track this; add a
-  // migration if it doesn't exist yet (see migrate.sql note below).
+  // We use a dedicated column `nia_checkin_sent_at` to track this — added in
+  // migration 0013_checkin_and_crisis_flag.sql, with a matching partial
+  // index for this exact query.
   let due: {
     id: number;
     title: string;
@@ -143,20 +144,3 @@ export function startNiaCheckinWorker(): () => void {
 
   return () => clearInterval(interval);
 }
-
-/*
- * MIGRATION NOTE
- * ──────────────
- * Add this column to help_requests if it doesn't exist:
- *
- *   ALTER TABLE help_requests
- *     ADD COLUMN IF NOT EXISTS nia_checkin_sent_at TIMESTAMPTZ;
- *
- *   CREATE INDEX IF NOT EXISTS help_requests_nia_checkin_idx
- *     ON help_requests (completed_at, nia_checkin_sent_at)
- *     WHERE status = 'completed' AND nia_checkin_sent_at IS NULL;
- *
- * Also needed in your Drizzle schema (lib/db/src/schema/requests.ts):
- *
- *   nia_checkin_sent_at: timestamp("nia_checkin_sent_at", { withTimezone: true }),
- */

@@ -42,6 +42,13 @@ interface AppContextType {
   niaOpen: boolean;
   setNiaOpen: (open: boolean) => void;
   niaInitialMessage: string | undefined;
+  // Phase 4: trust-aware explanations. Set by helper-dashboard.tsx when a
+  // helper views/expands a request card's match_reasons, so that if they
+  // then ask Nia "why was I matched with this?" she has the real,
+  // human-readable reasons from lib/matching.ts to answer with — never
+  // invented ones. Cleared when not relevant (e.g. helper navigates away).
+  lastViewedMatchReasons: string[] | null;
+  setLastViewedMatchReasons: (reasons: string[] | null) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -95,6 +102,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
 
   const [helperModeActive, setHelperModeActiveState] = useState(false);
+  const [lastViewedMatchReasons, setLastViewedMatchReasons] = useState<string[] | null>(null);
   // Use last-known location from localStorage; fall back to null (not a hardcoded city)
   const [myLocation, setMyLocation] = useState<Location | null>(loadLastLocation);
   const [gratitudePrompt, setGratitudePrompt] = useState<{
@@ -439,6 +447,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       niaOpen,
       setNiaOpen,
       niaInitialMessage,
+      lastViewedMatchReasons,
+      setLastViewedMatchReasons,
     }}>
       {children}
       <GratitudeModal

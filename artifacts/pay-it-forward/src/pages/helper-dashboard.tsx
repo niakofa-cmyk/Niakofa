@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAppContext } from "@/lib/AppContext";
 import {
@@ -44,7 +44,7 @@ type FilterKey = "all" | "emergency" | "near";
 export default function HelperDashboardScreen() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  const { currentUser, helperModeActive, myLocation } = useAppContext();
+  const { currentUser, helperModeActive, myLocation, setLastViewedMatchReasons } = useAppContext();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<FilterKey>("all");
 
@@ -59,6 +59,25 @@ export default function HelperDashboardScreen() {
   );
 
   const claimMutation = useClaimRequest();
+
+  // Phase 4: surface the real, already-displayed match_reasons for whatever
+  // open requests this helper currently sees, attributed by request title, so
+  // if they ask Nia "why was I matched with this" she answers from real data
+  // instead of guessing. Cleared on unmount so a stale list doesn't linger
+  // into an unrelated screen/conversation.
+  useEffect(() => {
+    const openWithReasons = (nearbyRaw as unknown as { title: string; status: string; match_reasons?: string[] }[])
+      .filter(r => r.status === "open" && r.match_reasons?.length);
+    if (openWithReasons.length === 0) {
+      setLastViewedMatchReasons(null);
+      return;
+    }
+    const attributed = openWithReasons.flatMap(r =>
+      r.match_reasons!.map(reason => `"${r.title}": ${reason}`)
+    );
+    setLastViewedMatchReasons(attributed);
+    return () => setLastViewedMatchReasons(null);
+  }, [nearbyRaw, setLastViewedMatchReasons]);
 
   if (!currentUser) return null;
 

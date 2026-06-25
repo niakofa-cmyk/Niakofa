@@ -166,7 +166,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       `data: ${JSON.stringify({ type: "delta", text: safety.escalationMessage })}\n\n`
     );
     res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
-    await saveConversation(userId, sessionId, message, safety.escalationMessage!);
+    await saveConversation(userId, sessionId, message, safety.escalationMessage!, true);
     return res.end();
   }
 
@@ -534,6 +534,19 @@ function buildLiveContextPrefix(ctx: Record<string, unknown>): string {
     lines.push(
       `- Estimated time to first helper response if they post now: ~${ctx.estimatedResponseMinutes} min`
     );
+  }
+  // Phase 4: explainable matching. matchReasons comes from
+  // api-server's lib/matching.ts scoring function — it's already
+  // human-readable ("closer to you", "matches your skills") and is the ONLY
+  // source Nia should use if asked why a specific helper was matched. She
+  // must never invent a reason that isn't in this list.
+  if (Array.isArray(ctx.matchReasons) && ctx.matchReasons.length > 0) {
+    const reasons = ctx.matchReasons.filter((r): r is string => typeof r === "string").slice(0, 6);
+    if (reasons.length > 0) {
+      lines.push(
+        `- If asked why a specific helper was matched/suggested, here are the real reasons: ${reasons.join("; ")}. Use ONLY these — never invent a reason not listed here.`
+      );
+    }
   }
   lines.push(
     "Use this context naturally if it's relevant. Never make up numbers that aren't here.\n"

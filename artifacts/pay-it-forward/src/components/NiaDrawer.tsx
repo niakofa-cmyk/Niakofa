@@ -59,6 +59,11 @@ interface NiaDrawerProps {
   helperModeActive?: boolean;
   activeRequestId?: string | number | null;
   accountType?: string | null;
+  // Phase 4: real match_reasons from lib/matching.ts, surfaced by
+  // helper-dashboard.tsx via AppContext when a helper is viewing open
+  // requests. Forwarded to the backend so Nia can explain a match using only
+  // real data, never invented reasons.
+  matchReasons?: string[] | null;
 }
 
 function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: boolean }) {
@@ -379,6 +384,7 @@ export function NiaDrawer({
   helperModeActive = false,
   activeRequestId = null,
   accountType = null,
+  matchReasons = null,
 }: NiaDrawerProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -521,7 +527,9 @@ export function NiaDrawer({
           activeRequestId: activeRequestId ?? null,
           accountType: accountType ?? null,
           // Live context — Nia uses this to make grounded, specific statements
-          liveContext: liveContext ?? undefined,
+          liveContext: (liveContext || matchReasons?.length)
+            ? { ...(liveContext ?? {}), ...(matchReasons?.length ? { matchReasons } : {}) }
+            : undefined,
           ...(coords ?? {}),
         }),
       });

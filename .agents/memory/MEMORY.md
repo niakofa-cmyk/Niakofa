@@ -28,3 +28,4 @@
 - [Niakofa mobile mandate](niakofa-mobile.md) — mobile-first is a core user preference; key rules: input font≥16px, active: not hover:, safe-area-inset-bottom on fixed bars, Nia always visible (even pre-login).
 - [Niakofa Zod/drizzle-zod contract](niakofa-zod-drizzle.md) — drizzle-zod v0.8.x uses Zod v4 types; must import z from "zod/v4" not "zod" in schema files.
 - [Niakofa Express error handler placement](niakofa-express-error-handler.md) — global 4-arg handler must go AFTER static/SPA middleware, as the absolute last app.use().
+- [Niakofa check-in dedup + crisis follow-up](niakofa-checkin-dedup-fix.md) — deleted duplicate nia-service check-in scheduler that raced api-server's; added real is_crisis column + the actual Phase 2 crisis follow-up worker; purge job was deleting crisis rows before their follow-up window opened, fixed.

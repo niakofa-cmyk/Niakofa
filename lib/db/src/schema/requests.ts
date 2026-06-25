@@ -56,6 +56,10 @@ export const requestsTable = pgTable("help_requests", {
   arrived_at: timestamp("arrived_at"),
   completed_at: timestamp("completed_at"),
   cancelled_at: timestamp("cancelled_at"),
+  // Set by nia-checkin-worker.ts once the 24h follow-up has been sent for this
+  // request, so it never gets sent twice. Added in migration 0013 — see
+  // CLAUDE.md incident log for why this was missing for a while.
+  nia_checkin_sent_at: timestamp("nia_checkin_sent_at", { withTimezone: true }),
 }, (t) => [
   index("help_requests_status_idx").on(t.status),
   index("help_requests_requester_id_idx").on(t.requester_id),
@@ -65,7 +69,7 @@ export const requestsTable = pgTable("help_requests", {
 ]);
 
 export const insertRequestSchema = createInsertSchema(requestsTable).omit({
-  id: true, created_at: true, claimed_at: true, en_route_at: true, arrived_at: true, completed_at: true,
+  id: true, created_at: true, claimed_at: true, en_route_at: true, arrived_at: true, completed_at: true, nia_checkin_sent_at: true,
 });
 export type InsertRequest = z.infer<typeof insertRequestSchema>;
 export type HelpRequest = typeof requestsTable.$inferSelect;

@@ -99,7 +99,7 @@ function AppShell() {
 }
 
 function NiaWrapper() {
-  const { currentUser, myLocation, helperModeActive, activeRequestId, niaOpen, setNiaOpen, niaInitialMessage } = useAppContext();
+  const { currentUser, myLocation, helperModeActive, activeRequestId, niaOpen, setNiaOpen, niaInitialMessage, lastViewedMatchReasons } = useAppContext();
   const [isOnboarding] = useRoute("/onboarding");
   // The floating NiaFab is hidden on login (the login screen's own Nia orb acts
   // as the tap target there) and on onboarding (full-screen multi-step form).
@@ -117,6 +117,7 @@ function NiaWrapper() {
         activeRequestId={activeRequestId}
         accountType={currentUser?.account_type ?? null}
         initialMessage={niaInitialMessage}
+        matchReasons={lastViewedMatchReasons}
       />
     </>
   );

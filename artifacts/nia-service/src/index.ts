@@ -8,7 +8,7 @@ import chatRouter from "./routes/chat.js";
 import crisisResourcesRouter from "./routes/crisis-resources.js";
 import neighborhoodsRouter from "./routes/neighborhoods.js";
 import { purgeExpiredConversations } from "./lib/db.js";
-import { startCheckinWorker } from "./workers/checkin-worker.js";
+import { startCrisisFollowupWorker } from "./workers/crisis-followup-worker.js";
 
 const logger = pino({ level: "info" });
 const app = express();
@@ -56,7 +56,20 @@ app.listen(port, () => {
     }
   }, 60 * 60 * 1000);
 
-  // 24-hour follow-up check-in worker — Nia reaches back after every completed
-  // request like a neighbor who actually remembered.
-  startCheckinWorker();
+  // 24-hour follow-up check-in: scheduling lives in api-server's
+  // nia-checkin-worker.ts (single source of truth — it owns the
+  // nia_checkin_sent_at column), which calls this service's POST /checkin
+  // to generate Nia's actual message. This service previously also ran its
+  // own internal startCheckinWorker() on the same hourly cadence, racing
+  // against the api-server worker with a different, weaker dedup mechanism
+  // (LIKE-matching nia_conversations text instead of a real column) — both
+  // could fire for the same request before either dedup caught up,
+  // double-messaging users. That duplicate scheduler has been removed; see
+  // CLAUDE.md incident log.
+
+  // Crisis follow-up (Phase 2): this one stays inside nia-service, since it
+  // queries nia_conversations directly (raw pg) and calls Anthropic itself —
+  // no api-server round-trip needed, and no duplicate-scheduler risk because
+  // this is the only place it runs.
+  startCrisisFollowupWorker();
 });

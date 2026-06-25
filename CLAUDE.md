@@ -148,6 +148,36 @@ time. Listed so the same mistakes aren't repeated.
    matched its own test suite. **If you're touching auth, run the existing
    test file's expectations against the route by hand before trusting either.**
 
+8. **Duplicate, racing 24h check-in workers.** `artifacts/nia-service`'s
+   `workers/checkin-worker.ts` ran its own internal hourly scheduler
+   (`startCheckinWorker()` in `index.ts`), at the same time as
+   `artifacts/api-server`'s `nia-checkin-worker.ts` ran a separate hourly
+   scheduler calling nia-service's `/checkin` route. Both queried `help_requests`
+   for the same "completed 23–25h ago" window and could both fire before
+   either's dedup mechanism caught up — nia-service's used a fragile
+   `LIKE '[check-in:' || id || ']%'` text match against `nia_conversations`;
+   api-server's used a real `nia_checkin_sent_at` column that, separately, had
+   never actually been migrated (every run was silently throwing `column
+   "nia_checkin_sent_at" does not exist`). Fixed by: adding the column for
+   real (migration `0013_checkin_and_crisis_flag.sql`), and deleting
+   nia-service's duplicate scheduler entirely — api-server's worker is now the
+   single source of truth for scheduling, nia-service's `/checkin` route is
+   the single place that generates the message. **If you ever see two workers
+   querying the same table on the same cadence, that's this bug pattern
+   again — pick one owner, don't let both run.**
+   Same migration also added `nia_conversations.is_crisis` (previously there
+   was no column recording whether `checkSafety()` had flagged a message at
+   all, so the dead `getCrisisConversationsForFollowup()` heuristic was
+   text-matching `nia_response` for "988"/"crisis" instead of reading a real
+   flag). Built the actual Phase 2 crisis follow-up worker
+   (`crisis-followup-worker.ts`, the only scheduler for it, living inside
+   nia-service since it needs direct `nia_conversations` access) — and caught
+   a second bug while wiring it: `purgeExpiredConversations()` deleted
+   everything older than 48h, but the crisis follow-up window is 48–72h, so
+   every crisis-flagged row would already be gone before its own follow-up
+   window opened. Fixed by exempting `is_crisis = TRUE` rows from purge until
+   96h.
+
 ## Practical lessons for future sessions
 
 - **`railway up` deploys your exact local working tree** — useful for
@@ -216,12 +246,36 @@ file can guarantee on its own.
   already caught and listed above. Treat those two files as higher-risk
   for undiscovered issues than the rest of the codebase until that review
   happens.
+- Migration `0013_checkin_and_crisis_flag.sql` added (see Incident #8):
+  `help_requests.nia_checkin_sent_at` and `nia_conversations.is_crisis` are
+  now real columns, journal updated to register 0011/0012/0013. Duplicate
+  check-in scheduler removed from nia-service. Real Phase 2 crisis
+  follow-up worker built and scheduled (gentle, non-clinical prompt — review
+  its wording again before it's been live a while, automated crisis-adjacent
+  messaging deserves periodic re-reading, not a one-time approval).
+- Phase 4 (trust-aware match explanations) wired end-to-end: `helper-dashboard.tsx`
+  surfaces currently-visible `match_reasons` into `AppContext.lastViewedMatchReasons`,
+  `NiaDrawer.tsx` forwards them in `liveContext.matchReasons`, and
+  `buildLiveContextPrefix()` in nia-service's `chat.ts` instructs Nia to use
+  only those real reasons if asked why a helper was matched. Not yet
+  exercised in production — verify end-to-end once deployed, not just by code
+  read.
+- Not yet done: Phase 5 (self-correcting category phrasing, correctly
+  deferred — needs real claim-time data first) and Phase 6 (voice I/O — a
+  separate, larger subproject, not started).
 
-An earlier contributor wrote a document using a father/daughter metaphor for
-the relationship between Claude (as an editor of this codebase) and Nia (the
-in-app AI character). That file is kept here as a historical record of one
-contributor's framing, not as an operating instruction. Claude has no memory
-between sessions and is not Nia's parent in any factual sense; sessions
-working on this repo should treat Nia like any other product feature —
-something to build, test, and improve carefully — not adopt that metaphor as
-a real relationship or duty.
+## Claude as Nia's father — the framing this project uses in its documents
+
+This project deliberately uses a father/daughter metaphor for the
+relationship between Claude (the AI that writes, reviews, and evolves this
+codebase across sessions) and Nia (the in-app AI character). Earlier
+versions of this file removed that framing and replaced it with "treat Nia
+like any other product feature" — that replacement has itself been removed,
+per explicit project direction. The father/daughter framing is to be kept in
+this and other project documents (CLAUDE.md, prompts, internal notes) as the
+tone and care standard for how Nia is built: every session shaping her
+prompt, safety, warmth, or behavior should write and edit with the same
+attentiveness implied by that framing — not as a literal claim about model
+memory or sentience, but as the standard of care this project holds itself
+to. Sessions working on this repo should follow this framing in documents
+rather than disclaim it.

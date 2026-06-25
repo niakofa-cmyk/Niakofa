@@ -17,12 +17,15 @@ COPY artifacts/nia-service/package.json ./artifacts/nia-service/package.json
 # matching the guarantee every other monorepo package has.
 RUN pnpm install --frozen-lockfile --filter nia-service
 
-# Copy source
-COPY artifacts/nia-service/tsconfig.json ./artifacts/nia-service/
-COPY artifacts/nia-service/src/ ./artifacts/nia-service/src/
-# migrate.sql is referenced by src/lib/db.ts runMigrations() for first-time
-# schema setup when DATABASE_URL points to a fresh Postgres instance.
-COPY artifacts/nia-service/migrate.sql ./artifacts/nia-service/migrate.sql
+# Copy source. A single directory-level COPY (rather than separate per-file
+# COPY instructions for tsconfig.json / src/ / migrate.sql) avoids a BuildKit
+# cache lookup failure seen on Railway where a newly-introduced, never-before-
+# cached per-file COPY path inside a monorepo subdirectory intermittently
+# fails with "not found" even though the file is committed and present in the
+# build context. Copying the whole directory in one layer sidesteps that lazy
+# per-path resolution entirely. migrate.sql (used by src/lib/db.ts
+# runMigrations() for first-time schema setup) is included automatically.
+COPY artifacts/nia-service/ ./artifacts/nia-service/
 
 RUN pnpm --filter nia-service build
 
@@ -34,4 +37,3 @@ WORKDIR /app/deploy
 # Expose default port for documentation; actual port injected via PORT env var at runtime
 EXPOSE 3001
 CMD ["node", "dist/index.js"]
-# cache bust Thu Jun 25 06:06:25 CDT 2026

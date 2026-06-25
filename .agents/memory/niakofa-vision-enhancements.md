@@ -4,6 +4,12 @@ description: 6-chunk upgrade from the vision/mission doc — Nia AI, dispatch, a
 ---
 
 ## Nia 24h Follow-up Check-in Worker
+> **STALE as of niakofa-checkin-dedup-fix.md**: the file/function described
+> below (`workers/checkin-worker.ts`, `getCompletedRequestsForCheckin()`) was
+> a duplicate scheduler racing against api-server's `nia-checkin-worker.ts`
+> and has been deleted. See `niakofa-checkin-dedup-fix.md` for the real,
+> current single-scheduler architecture. Left here for history, not as a
+> guide to current code.
 - New file: `artifacts/nia-service/src/workers/checkin-worker.ts`
 - New DB function: `getCompletedRequestsForCheckin()` in `artifacts/nia-service/src/lib/db.ts`
 - Queries `help_requests` completed 23–25h ago where no `[check-in:<id>]` row exists in `nia_conversations`
