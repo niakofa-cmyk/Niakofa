@@ -1,180 +1,66 @@
-// ============================================================
-// VoiceWakeWordIndicator Component
-// Visual feedback when Nia is listening for wake words
-// ============================================================
+// VoiceWakeWordIndicator — Phase 7a
+// Visual feedback for voice listening states
 
-import { motion } from "framer-motion";
+import React from "react";
+import { ListeningState } from "../lib/voiceWakeWord";
+import { CulturalLanguage, getProfile } from "../lib/culturalGreetings";
 
 interface VoiceWakeWordIndicatorProps {
-  listeningState: "idle" | "listening" | "processing";
-  error?: string | null;
+  state: ListeningState;
+  language: CulturalLanguage;
+  className?: string;
 }
 
 export function VoiceWakeWordIndicator({
-  listeningState,
-  error,
+  state,
+  language,
+  className = "",
 }: VoiceWakeWordIndicatorProps) {
-  if (error) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -8 }}
-        style={{
-          padding: "8px 12px",
-          borderRadius: 8,
-          background: "rgba(239, 68, 68, 0.1)",
-          border: "0.5px solid rgb(239, 68, 68)",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <div
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: "rgb(239, 68, 68)",
-          }}
-        />
-        <span
-          style={{
-            fontSize: 12,
-            color: "rgb(239, 68, 68)",
-            fontWeight: 500,
-          }}
-        >
-          Mic access needed
-        </span>
-      </motion.div>
-    );
-  }
+  const profile = getProfile(language);
 
-  if (listeningState === "idle") {
-    return null;
-  }
-
-  if (listeningState === "listening") {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -8 }}
-        style={{
-          padding: "8px 12px",
-          borderRadius: 8,
-          background: "rgba(29, 158, 117, 0.1)",
-          border: "0.5px solid rgb(29, 158, 117)",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <motion.div
-          animate={{ scale: [1, 1.3, 1] }}
-          transition={{ duration: 1.5, repeat: Infinity }}
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: "rgb(29, 158, 117)",
-          }}
-        />
-        <span
-          style={{
-            fontSize: 12,
-            color: "var(--color-text-secondary)",
-            fontWeight: 500,
-          }}
-        >
-          Listening for "Hey Nia"…
-        </span>
-      </motion.div>
-    );
-  }
-
-  if (listeningState === "processing") {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -8 }}
-        style={{
-          padding: "8px 12px",
-          borderRadius: 8,
-          background: "rgba(168, 85, 247, 0.1)",
-          border: "0.5px solid rgb(168, 85, 247)",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            border: "1.5px solid rgb(168, 85, 247)",
-            borderTopColor: "transparent",
-          }}
-        />
-        <span
-          style={{
-            fontSize: 12,
-            color: "var(--color-text-secondary)",
-            fontWeight: 500,
-          }}
-        >
-          Wake word detected… responding
-        </span>
-      </motion.div>
-    );
-  }
-
-  return null;
-}
-
-/**
- * Floating microphone pulse indicator
- * Shows when voice listening is active
- */
-export function VoicePulseIndicator({
-  active = false,
-}: {
-  active?: boolean;
-}) {
-  if (!active) return null;
+  if (state === "idle") return null;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.8 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.8 }}
-      style={{
-        position: "fixed",
-        top: 16,
-        right: 16,
-        width: 14,
-        height: 14,
-        borderRadius: "50%",
-        background: "rgb(29, 158, 117)",
-        zIndex: 9999,
-      }}
+    <div
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+        state === "listening"
+          ? "bg-blue-100 text-blue-700"
+          : state === "detected"
+          ? "bg-green-100 text-green-700"
+          : "bg-red-100 text-red-700"
+      } ${className}`}
     >
-      <motion.div
-        animate={{ scale: [1, 1.8, 1], opacity: [1, 0.3, 1] }}
-        transition={{ duration: 2, repeat: Infinity }}
-        style={{
-          position: "absolute",
-          inset: -6,
-          borderRadius: "50%",
-          border: "1.5px solid rgb(29, 158, 117)",
-          pointerEvents: "none",
-        }}
+      <VoicePulseIndicator state={state} />
+      <span>
+        {state === "listening"
+          ? profile.listeningPrompt
+          : state === "detected"
+          ? profile.greetingResponse.slice(0, 40) + "…"
+          : profile.errorMessage}
+      </span>
+    </div>
+  );
+}
+
+interface VoicePulseIndicatorProps {
+  state: ListeningState;
+}
+
+export function VoicePulseIndicator({ state }: VoicePulseIndicatorProps) {
+  return (
+    <span className="relative flex h-2.5 w-2.5">
+      {state === "listening" && (
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+      )}
+      <span
+        className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+          state === "listening"
+            ? "bg-blue-500"
+            : state === "detected"
+            ? "bg-green-500"
+            : "bg-red-500"
+        }`}
       />
-    </motion.div>
+    </span>
   );
 }

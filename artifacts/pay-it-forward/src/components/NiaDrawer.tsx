@@ -2,6 +2,10 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown, Mic, Volume2, Square } from "lucide-react";
 import { authHeaders } from "../lib/auth";
+import { useVoiceWakeWord } from "../hooks/useVoiceWakeWord";
+import { VoiceWakeWordIndicator, VoicePulseIndicator } from "./VoiceWakeWordIndicator";
+import { detectUserLanguage, getProfile, CulturalLanguage } from "../lib/culturalGreetings";
+
 
 // All Nia traffic routes through the API server proxy at /api/nia/...
 // No hardcoded external URL — the api-server forwards to the nia-service.
@@ -67,6 +71,14 @@ interface NiaDrawerProps {
 }
 
 function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: boolean }) {
+  // Phase 7a: Stop voice when drawer closes
+  useEffect(() => {
+    if (!open) {
+      stopListening();
+      setVoiceActivated(false);
+    }
+  }, [open]);
+
   return (
     <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
       {pulse && (
@@ -113,6 +125,33 @@ function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: boolean }
 
 function NiaWelcomeSplash({ onDone }: { onDone: () => void }) {
   const [phraseIndex, setPhraseIndex] = useState(0);
+  const [voiceActivated, setVoiceActivated] = useState(false);
+  const [voiceLanguage, setVoiceLanguage] = useState<CulturalLanguage>("en");
+  // Phase 7a: Detect cultural language from browser
+  useEffect(() => {
+    const detected = detectUserLanguage();
+    setVoiceLanguage(detected);
+  }, []);
+
+  // Phase 7a: Voice wake word hook
+  const { listening, listeningState, stopListening, startListening } = useVoiceWakeWord({
+    enabled: true,
+    continuous: true,
+    onWakeWordDetected: (lang, transcript) => {
+      setVoiceActivated(true);
+      setVoiceLanguage(lang);
+      const profile = getProfile(lang);
+      setMessages((prev: Message[]) => [
+        ...prev,
+        {
+          role: "nia",
+          content: profile.greetingResponse,
+          timestamp: new Date(),
+        },
+      ]);
+    },
+  });
+
   const onDoneRef = useRef(onDone);
   useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
 
@@ -971,7 +1010,26 @@ export function NiaDrawer({
                     >
                       {loading
                         ? <Loader2 size={15} color="var(--color-text-tertiary)" />
-                        : <Send size={14} color={!input.trim() ? "var(--color-text-tertiary)" : "#E1F5EE"} />
+                        : <button
+                type="button"
+                onClick={listening ? stopListening : startListening}
+                className={`p-2 rounded-full transition-colors ${listening ? "bg-blue-500 text-white animate-pulse" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
+                aria-label={listening ? "Stop listening" : "Start voice"}
+              >
+                <Mic className="h-5 w-5" />
+              </button>
+              
+              <button
+                type="button"
+                onClick={listening ? stopListening : startListening}
+                className={`p-2 rounded-full transition-colors ${
+                  listening ? "bg-blue-500 text-white animate-pulse" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                }`}
+                aria-label={listening ? "Stop listening" : "Start voice"}
+              >
+                <Mic className="h-5 w-5" />
+              </button>
+<Send size={14} color={!input.trim() ? "var(--color-text-tertiary)" : "#E1F5EE"} />
                       }
                     </button>
                   </div>
