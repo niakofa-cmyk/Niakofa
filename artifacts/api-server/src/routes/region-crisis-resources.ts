@@ -129,7 +129,7 @@ router.get("/admin/region-crisis-resources", requireAuth, requireAdmin(), async 
         .where(eq(regionCrisisResourcesTable.verified, verifiedParam === "true"))
         .limit(limit).offset(offset)
     : await db.select().from(regionCrisisResourcesTable).limit(limit).offset(offset);
-  return res.json(rows.map(r => ({ ...r, resources: parseResources(r.resources) })));
+  return res.json(rows.map((r: (typeof rows)[number]) => ({ ...r, resources: parseResources(r.resources) })));
 });
 
 router.patch("/admin/region-crisis-resources/:id", requireAuth, requireAdmin(), async (req, res) => {

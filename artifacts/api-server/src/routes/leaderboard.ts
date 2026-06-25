@@ -59,13 +59,13 @@ async function fetchLeaderboard(city?: string) {
   // City/neighborhood filter (case-insensitive)
   const filtered = city
     ? helpers.filter(
-        (u) =>
+        (u: typeof helpers[number]) =>
           u.neighborhood?.toLowerCase().includes(city.toLowerCase()) ||
           u.city?.toLowerCase().includes(city.toLowerCase())
       )
     : helpers;
 
-  const entries = filtered.slice(0, 25).map((u, i) => ({
+  const entries = filtered.slice(0, 25).map((u: typeof helpers[number], i: number) => ({
     id: u.id,
     name: u.name,
     neighborhood: u.neighborhood ?? null,
@@ -91,7 +91,7 @@ async function fetchLeaderboard(city?: string) {
     }
   }
 
-  return entries.map((entry) => {
+  return entries.map((entry: typeof entries[number]) => {
     const hood = entry.neighborhood ?? entry.city ?? "";
     const isNeighborhoodTop = hood
       ? neighborhoodRank.get(hood) === entry.id
@@ -158,7 +158,7 @@ router.get("/leaderboard/cities", async (_req, res) => {
     .where(and(eq(usersTable.is_helper, true), sql`COALESCE(${usersTable.trust_score}, 0) >= 0`));
 
   const cities = new Set<string>();
-  for (const h of helpers) {
+  for (const h of helpers as Array<{ neighborhood: string | null; city: string | null }>) {
     if (h.neighborhood) cities.add(h.neighborhood);
     if (h.city) cities.add(h.city);
   }

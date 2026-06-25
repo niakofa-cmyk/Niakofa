@@ -99,7 +99,7 @@ router.get("/requests/stats", async (_req, res) => {
     total_open: openRow?.count ?? 0,
     total_completed: completedRow?.count ?? 0,
     total_helpers_online: helperRow?.count ?? 0,
-    requests_by_category: categoryRows.map(r => ({ category: r.category, count: r.count })),
+    requests_by_category: categoryRows.map((r: { category: string | null; count: number }) => ({ category: r.category, count: r.count })),
     recent_completions: recentRow?.count ?? 0,
     total_pledge_volume: pledgeRow?.total ?? 0,
   });
@@ -126,29 +126,29 @@ router.get("/requests/nearby", async (req, res) => {
     )
   );
   const nearby = requests
-    .map(r => ({ ...r, distance_miles: distanceMiles(lat, lng, r.lat, r.lng) }))
-    .filter(r => r.distance_miles <= radius)
-    .sort((a, b) => {
+    .map((r: (typeof requests)[number]) => ({ ...r, distance_miles: distanceMiles(lat, lng, r.lat, r.lng) }))
+    .filter((r: { distance_miles: number; urgency: string | null; requester_id: number; helper_id: number | null; [k: string]: unknown }) => r.distance_miles <= radius)
+    .sort((a: { distance_miles: number; urgency: string | null }, b: { distance_miles: number; urgency: string | null }) => {
       const urgencyOrder: Record<string, number> = { emergency: 0, high: 1, medium: 2, low: 3 };
-      const urgencyDiff = (urgencyOrder[a.urgency] ?? 2) - (urgencyOrder[b.urgency] ?? 2);
+      const urgencyDiff = (urgencyOrder[a.urgency ?? ""] ?? 2) - (urgencyOrder[b.urgency ?? ""] ?? 2);
       if (urgencyDiff !== 0) return urgencyDiff;
       return a.distance_miles - b.distance_miles;
     });
 
-  const userIds = [...new Set(nearby.map(r => r.requester_id))];
+  const userIds = [...new Set(nearby.map((r: { requester_id: number }) => r.requester_id))];
   const users = userIds.length > 0
     ? await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url })
         .from(usersTable)
         .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(userIds.map(id => sql`${id}`), sql`, `)}]::int[])`)
     : [];
-  const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+  const userMap = Object.fromEntries(users.map((u: { id: number; name: string | null; avatar_url: string | null }) => [u.id, u]));
 
-  return res.json(nearby.map(r => ({
+  return res.json(nearby.map((r: { requester_id: number; helper_id?: number | null; [k: string]: unknown }) => ({
     ...r,
     requester_name: userMap[r.requester_id]?.name ?? null,
     requester_avatar: userMap[r.requester_id]?.avatar_url ?? null,
     helper_name: null,
-    estimated_duration_min: Math.round(r.distance_miles * 3),
+    estimated_duration_min: Math.round((r.distance_miles as number) * 3),
   })));
 });
 
@@ -192,23 +192,23 @@ router.get("/requests", async (req, res) => {
   // Exact radius filter in JS (bounding box above is a fast pre-filter)
   if (params.success && params.data.lat && params.data.lng) {
     const radius = params.data.radius_miles ?? 10;
-    rows = rows.filter(r => distanceMiles(params.data.lat!, params.data.lng!, r.lat, r.lng) <= radius);
+    rows = rows.filter((r: (typeof rows)[number]) => distanceMiles(params.data.lat!, params.data.lng!, r.lat, r.lng) <= radius);
   }
 
   const allUserIds = [...new Set([
-    ...rows.map(r => r.requester_id),
-    ...rows.map(r => r.helper_id).filter((id): id is number => id != null),
+    ...rows.map((r: (typeof rows)[number]) => r.requester_id),
+    ...rows.map((r: (typeof rows)[number]) => r.helper_id).filter((id: number | null): id is number => id != null),
   ])];
   const users = allUserIds.length > 0
     ? await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url })
         .from(usersTable)
         .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(allUserIds.map(id => sql`${id}`), sql`, `)}]::int[])`)
     : [];
-  const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+  const userMap = Object.fromEntries(users.map((u: { id: number; name: string | null; avatar_url: string | null }) => [u.id, u]));
 
-  return res.json(rows.map(r => ({
+  return res.json(rows.map((r: (typeof rows)[number]) => ({
     ...r,
-    requester_name: userMap[r.requester_id]?.name ?? null,
+    requester_name: (userMap as Record<number, { id: number; name: string | null; avatar_url: string | null }>)[r.requester_id]?.name ?? null,
     requester_avatar: userMap[r.requester_id]?.avatar_url ?? null,
     helper_name: r.helper_id ? (userMap[r.helper_id]?.name ?? null) : null,
     helper_avatar: r.helper_id ? (userMap[r.helper_id]?.avatar_url ?? null) : null,
@@ -283,7 +283,7 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
           .from(usersTable)
           .where(eq(usersTable.id, request.requester_id))
           .limit(1)
-          .then(([requester]) => {
+          .then(([requester]: [{ panic_contacts: unknown; name: string | null } | undefined]) => {
             if (!requester) return;
             const contacts = Array.isArray(requester.panic_contacts)
               ? (requester.panic_contacts as string[]).filter((c) => typeof c === "string" && c.trim())
@@ -291,7 +291,7 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
             if (contacts.length > 0) {
               sendSosPanicContacts(
                 contacts,
-                requester.name,
+                requester.name ?? "",
                 request.neighborhood ?? null,
                 request.id
               ).catch(() => {});
@@ -305,7 +305,7 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
     // Phase 11J: confirmation email to requester
     db.select({ email: usersTable.email, name: usersTable.name })
       .from(usersTable).where(eq(usersTable.id, request.requester_id))
-      .then(([requester]) => {
+      .then(([requester]: [{ email: string | null; name: string | null } | undefined]) => {
         if (requester?.email) {
           sendRequestConfirmation({
             to: requester.email,
@@ -321,7 +321,7 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
     // Phase 11J: confirmation email to requester
     db.select({ email: usersTable.email, name: usersTable.name })
       .from(usersTable).where(eq(usersTable.id, request.requester_id))
-      .then(([requester]) => {
+      .then(([requester]: [{ email: string | null; name: string | null } | undefined]) => {
         if (requester?.email) {
           sendRequestConfirmation({
             to: requester.email,
@@ -402,10 +402,10 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
   // Phase 11J: notify requester that a helper has accepted
   db.select({ email: usersTable.email, name: usersTable.name, trust_score: usersTable.trust_score })
     .from(usersTable).where(eq(usersTable.id, helperId))
-    .then(([helper]) => {
+    .then(([helper]: [{ email: string | null; name: string | null; trust_score?: number | null } | undefined]) => {
       return db.select({ email: usersTable.email, name: usersTable.name })
         .from(usersTable).where(eq(usersTable.id, request.requester_id))
-        .then(([requester]) => {
+        .then(([requester]: [{ email: string | null; name: string | null } | undefined]) => {
           if (requester?.email && helper) {
             sendHelperAcceptedEmail({
               to: requester.email,
@@ -422,10 +422,10 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
   // Phase 11J: notify requester that a helper has accepted
   db.select({ email: usersTable.email, name: usersTable.name, trust_score: usersTable.trust_score })
     .from(usersTable).where(eq(usersTable.id, helperId))
-    .then(([helper]) => {
+    .then(([helper]: [{ email: string | null; name: string | null; trust_score?: number | null } | undefined]) => {
       return db.select({ email: usersTable.email, name: usersTable.name })
         .from(usersTable).where(eq(usersTable.id, request.requester_id))
-        .then(([requester]) => {
+        .then(([requester]: [{ email: string | null; name: string | null } | undefined]) => {
           if (requester?.email && helper) {
             sendHelperAcceptedEmail({
               to: requester.email,
@@ -609,6 +609,7 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
 
 
   // Phase 11J: schedule follow-up nudge 24h after completion (non-blocking)
+  {
   const completedRequestId = request.id;
   const completedTitle = request.title;
   setTimeout(async () => {
@@ -625,8 +626,10 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
       }
     } catch {}
   }, 24 * 60 * 60 * 1000);
+  }
 
   // Phase 11J: schedule follow-up nudge 24h after completion (non-blocking)
+  {
   const completedRequestId = request.id;
   const completedTitle = request.title;
   setTimeout(async () => {
@@ -643,6 +646,7 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
       }
     } catch {}
   }, 24 * 60 * 60 * 1000);
+  }
 
   // Fire receipt email async (non-blocking)
   const [requester] = await db.select({ email: usersTable.email, name: usersTable.name })

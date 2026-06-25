@@ -189,8 +189,10 @@ export default function RequesterTrackingScreen() {
               animate={{ opacity: 1, scale: 1 }}
               className="flex items-center gap-1.5 bg-primary/20 backdrop-blur-md border border-primary/40 px-3 py-1.5 rounded-full shadow-lg"
             >
-              <Navigation2 className="w-3 h-3 text-primary" />
-              <span className="text-xs font-black text-primary">{etaMin} {t("request_track.min_away")}</span>
+              <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }}>
+                <Navigation2 className="w-3 h-3 text-primary" />
+              </motion.div>
+              <span className="text-xs font-black text-primary">{etaMin} min away</span>
             </motion.div>
           )}
 
@@ -302,11 +304,32 @@ export default function RequesterTrackingScreen() {
       {/* No helper yet — waiting state */}
       {!hasHelper && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none">
-          <div className="bg-card/90 backdrop-blur-md border border-border rounded-2xl px-6 py-4 text-center shadow-2xl">
-            <div className="w-2 h-2 rounded-full bg-primary animate-pulse mx-auto mb-2" />
-            <p className="font-bold text-sm">{t("request_track.finding_a_helper_nearby")}</p>
-            <p className="text-xs text-muted-foreground mt-1">{t("request_track.youll_be_notified_when_someone_accepts")}</p>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-card/95 backdrop-blur-md border border-border rounded-2xl px-6 py-5 text-center shadow-2xl max-w-[260px]"
+          >
+            <div className="flex justify-center gap-1.5 mb-3">
+              {[0, 1, 2].map(i => (
+                <motion.div
+                  key={i}
+                  animate={{ y: [0, -6, 0] }}
+                  transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.15 }}
+                  className="w-2 h-2 rounded-full bg-primary"
+                />
+              ))}
+            </div>
+            <p className="font-black text-sm">Finding a helper nearby…</p>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              You'll be notified the moment someone accepts. Usually under 15 minutes.
+            </p>
+            {(request as any).urgency === "emergency" && (
+              <div className="mt-3 flex items-center gap-1.5 text-red-400 text-xs font-bold bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                Emergency — helpers are being prioritized
+              </div>
+            )}
+          </motion.div>
         </div>
       )}
 
@@ -316,26 +339,38 @@ export default function RequesterTrackingScreen() {
       >
         {/* Status progress bar */}
         <div className="px-5 pt-4 pb-3 border-b border-border">
-          <div className="flex items-center justify-between">
+          <div className="relative flex items-start justify-between">
+            {/* Connector track behind dots */}
+            <div className="absolute top-3 left-3 right-3 h-0.5 bg-border" />
+            <div
+              className="absolute top-3 left-3 h-0.5 bg-primary transition-all duration-700"
+              style={{ width: currentStatusIdx === 0 ? "0%" : `${(currentStatusIdx / (STATUS_STEPS.length - 1)) * 100}%` }}
+            />
             {STATUS_STEPS.map((step, i) => {
               const done = i <= currentStatusIdx;
               const active = i === currentStatusIdx;
               return (
-                <div key={step.key} className="flex flex-col items-center gap-1 flex-1">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all ${
-                    done
-                      ? "bg-primary border-primary"
-                      : "bg-muted border-border"
-                  } ${active ? "shadow-[0_0_10px_rgba(0,212,255,0.5)]" : ""}`}>
+                <div key={step.key} className="relative flex flex-col items-center gap-1.5 z-10" style={{ width: `${100 / STATUS_STEPS.length}%` }}>
+                  <motion.div
+                    animate={active ? { boxShadow: ["0 0 0px rgba(0,212,255,0)", "0 0 12px rgba(0,212,255,0.7)", "0 0 0px rgba(0,212,255,0)"] } : {}}
+                    transition={{ duration: 1.8, repeat: Infinity }}
+                    className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
+                      done ? "bg-primary border-primary" : "bg-card border-border"
+                    }`}
+                  >
                     <step.icon className={`w-3 h-3 ${done ? "text-primary-foreground" : "text-muted-foreground"}`} />
-                  </div>
-                  <span className={`text-[10px] font-bold text-center leading-tight ${done ? "text-primary" : "text-muted-foreground"}`}>
+                  </motion.div>
+                  <span className={`text-[9px] font-bold text-center leading-tight ${done ? "text-primary" : "text-muted-foreground"}`}>
                     {step.label}
                   </span>
-                  {i < STATUS_STEPS.length - 1 && (
-                    <div className={`absolute h-0.5 transition-all ${done ? "bg-primary" : "bg-border"}`}
-                      style={{ width: "calc(20% - 24px)", left: `calc(${i * 20 + 10}% + 12px)`, top: "22px" }}
-                    />
+                  {active && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -2 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap"
+                    >
+                      <span className="text-[9px] font-black text-primary bg-primary/10 border border-primary/30 px-1.5 py-0.5 rounded-full">Now</span>
+                    </motion.div>
                   )}
                 </div>
               );
@@ -346,25 +381,46 @@ export default function RequesterTrackingScreen() {
         <div className="px-5 py-4 space-y-3">
           {/* Helper info */}
           {hasHelper && (
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full bg-green-500/20 border-2 border-green-400/50 flex items-center justify-center shrink-0">
-                <span className="text-base font-black text-green-400">
-                  {request.helper_name?.[0] ?? "H"}
-                </span>
+            <div className="flex items-center gap-3 bg-muted/30 rounded-xl p-3 border border-border">
+              <div className="relative shrink-0">
+                <div className="w-12 h-12 rounded-full bg-green-500/20 border-2 border-green-400/50 flex items-center justify-center">
+                  <span className="text-base font-black text-green-400">
+                    {request.helper_name?.[0] ?? "H"}
+                  </span>
+                </div>
+                {/* Live pulse dot */}
+                {request.status === "en_route" && (
+                  <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-400 border-2 border-background">
+                    <span className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-75" />
+                  </span>
+                )}
+                {request.status === "arrived" && (
+                  <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-primary border-2 border-background" />
+                )}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-black text-sm">{request.helper_name ?? "Helper"}</div>
-                <div className="text-xs text-muted-foreground">
-                  {request.status === "en_route" ? "On their way to you" :
-                   request.status === "arrived" ? "Has arrived" :
-                   request.status === "completed" ? "Completed your request" :
-                   "Accepted your request"}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-black text-sm">{request.helper_name ?? "Helper"}</span>
+                  {(request as any).helper_trust_score != null && (
+                    <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/30 px-1.5 py-0.5 rounded-full">
+                      ★ {(request as any).helper_trust_score}
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {request.status === "en_route"
+                    ? etaMin ? `~${etaMin} min away` : "On their way to you"
+                    : request.status === "arrived"
+                    ? "🏠 Has arrived at your location"
+                    : request.status === "completed"
+                    ? "✅ Help completed — thank you!"
+                    : "Accepted your request"}
                 </div>
               </div>
               {distToHelper && !isArrived && (
-                <div className="text-right shrink-0">
-                  <div className="text-xs font-black text-primary">{distToHelper} {t("request_track.mi")}</div>
-                  <div className="text-[10px] text-muted-foreground">{t("request_track.away")}</div>
+                <div className="text-right shrink-0 bg-primary/10 border border-primary/20 rounded-lg px-2.5 py-1.5">
+                  <div className="text-sm font-black text-primary">{distToHelper}mi</div>
+                  <div className="text-[9px] text-muted-foreground">away</div>
                 </div>
               )}
             </div>

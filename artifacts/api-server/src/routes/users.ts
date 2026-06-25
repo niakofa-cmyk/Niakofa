@@ -252,7 +252,7 @@ router.get("/users/:id/scheduled-payment", requireAuth, requireOwnership(), asyn
   const rows = await db.select().from(scheduledPaymentsTable)
     .where(eq(scheduledPaymentsTable.user_id, parsed.data.id))
     .orderBy(scheduledPaymentsTable.scheduled_date);
-  return res.json(rows.map(r => ({ ...r, scheduled_date: r.scheduled_date.toISOString() })));
+  return res.json(rows.map((r: (typeof rows)[number]) => ({ ...r, scheduled_date: r.scheduled_date.toISOString() })));
 });
 
 // DELETE /users/:id/scheduled-payment/:paymentId — cancel a scheduled payment
@@ -282,8 +282,8 @@ router.get("/users/:id/outstanding-pledges", requireAuth, requireOwnership(), as
         eq(requestsTable.status, "completed"),
       )
     );
-  const outstanding = requests.filter(r => (r.pledge_amount ?? 0) > (r.pledge_paid ?? 0));
-  return res.json(outstanding.map(r => ({
+  const outstanding = requests.filter((r: (typeof requests)[number]) => (r.pledge_amount ?? 0) > (r.pledge_paid ?? 0));
+  return res.json(outstanding.map((r: (typeof outstanding)[number]) => ({
     ...r,
     requester_name: null,
     requester_avatar: null,

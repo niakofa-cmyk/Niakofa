@@ -25,7 +25,7 @@ router.get("/helpers/online", requireAuth, async (req, res) => {
     .select({ user_id: userSettingsTable.user_id })
     .from(userSettingsTable)
     .where(eq(userSettingsTable.privacy_live_location, true));
-  const optedInIdSet = optedInUserIds.map(r => r.user_id);
+  const optedInIdSet = optedInUserIds.map((r: { user_id: number }) => r.user_id);
   if (optedInIdSet.length === 0) return res.json([]);
 
   // SQL bounding-box pre-filter — avoids full table scan
@@ -42,8 +42,8 @@ router.get("/helpers/online", requireAuth, async (req, res) => {
   const helpers = await query.where(and(...conditions));
 
   const result = helpers
-    .filter(h => h.lat !== null && h.lng !== null)
-    .map(h => {
+    .filter((h: typeof helpers[number]) => h.lat !== null && h.lng !== null)
+    .map((h: typeof helpers[number]) => {
       const dist = lat && lng ? distanceMiles(lat, lng, h.lat!, h.lng!) : null;
       // Wait-time estimate: 3 min/mile walking baseline, adjusted by trust score
       const eta_minutes = dist != null ? Math.round(dist * 3) : null;
@@ -62,9 +62,9 @@ router.get("/helpers/online", requireAuth, async (req, res) => {
         eta_minutes,
       };
     })
-    .filter(h => lat && lng ? (h.distance_miles ?? 999) <= radius : true)
+    .filter((h: { distance_miles: number | null }) => lat && lng ? (h.distance_miles ?? 999) <= radius : true)
     // Trust-weighted sort: distance is primary, trust_score breaks ties
-    .sort((a, b) => {
+    .sort((a: { distance_miles: number | null; trust_score: number | null }, b: { distance_miles: number | null; trust_score: number | null }) => {
       const distDiff = (a.distance_miles ?? 999) - (b.distance_miles ?? 999);
       if (Math.abs(distDiff) > 0.1) return distDiff;
       return (b.trust_score ?? 0) - (a.trust_score ?? 0);
@@ -100,13 +100,13 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, async (req, res) => 
   if (helpers.length === 0) return res.status(404).json({ error: "No helpers available nearby" });
 
   // Fetch availability windows for all candidate helpers in one query
-  const helperIds = helpers.filter(h => h.lat && h.lng).map(h => h.id);
+  const helperIds = helpers.filter((h: typeof helpers[number]) => h.lat && h.lng).map((h: typeof helpers[number]) => h.id);
   const allWindows = helperIds.length > 0
     ? await db.select().from(helperAvailabilityTable).where(inArray(helperAvailabilityTable.user_id, helperIds))
     : [];
   const windowsByHelper: Record<number, typeof allWindows> = {};
   for (const w of allWindows) {
-    (windowsByHelper[w.user_id] ??= []).push(w);
+    (windowsByHelper[w.user_id] ??= []).push(w as typeof allWindows[number]);
   }
 
   // AI-Powered Dispatch: fetch active workload (claimed/en_route/arrived) for
@@ -120,7 +120,7 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, async (req, res) => 
         .from(requestsTable)
         .where(
           and(
-            sql`${requestsTable.helper_id} = ANY(ARRAY[${sql.join(helperIds.map(id => sql`${id}`), sql`, `)}]::int[])`,
+            sql`${requestsTable.helper_id} = ANY(ARRAY[${sql.join(helperIds.map((id: number) => sql`${id}`), sql`, `)}]::int[])`,
             sql`${requestsTable.status} IN ('claimed','en_route','arrived')`
           )
         )
@@ -133,8 +133,8 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, async (req, res) => 
 
   const now = new Date();
   const scored = helpers
-    .filter(h => h.lat && h.lng)
-    .map(h => {
+    .filter((h: typeof helpers[number]) => h.lat && h.lng)
+    .map((h: typeof helpers[number]) => {
       const dist = distanceMiles(request.lat, request.lng, h.lat!, h.lng!);
       // Trust score is stored 0–100 in the DB (0=untrusted, 100=perfect)
       const trustScore = h.trust_score ?? undefined;
@@ -163,7 +163,7 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, async (req, res) => 
       return { ...h, dist, score };
     })
     // Higher score wins; distance breaks ties among equal scores
-    .sort((a, b) => b.score !== a.score ? b.score - a.score : a.dist - b.dist);
+    .sort((a: { score: number; dist: number }, b: { score: number; dist: number }) => b.score !== a.score ? b.score - a.score : a.dist - b.dist);
 
   const nearest = scored[0];
   if (!nearest) return res.status(404).json({ error: "No helpers with valid location" });

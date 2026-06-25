@@ -66,7 +66,7 @@ router.post("/requests/:id/chat", requireAuth, chatLimiter, async (req, res) => 
     .select({ helper_id: requestHelpersTable.helper_id })
     .from(requestHelpersTable)
     .where(eq(requestHelpersTable.request_id, requestId));
-  const chainMemberIds = new Set(chainMembers.map(m => m.helper_id));
+  const chainMemberIds = new Set(chainMembers.map((m: { helper_id: number }) => m.helper_id));
 
   const isParticipant =
     senderId === request.requester_id ||
@@ -89,7 +89,7 @@ router.post("/requests/:id/chat", requireAuth, chatLimiter, async (req, res) => 
   const eventPayload = { ...msg, request_id: requestId };
   const recipients = new Set<number>([request.requester_id]);
   if (request.helper_id) recipients.add(request.helper_id);
-  for (const id of chainMemberIds) recipients.add(id);
+  for (const id of chainMemberIds) recipients.add(id as number);
   for (const recipientId of recipients) {
     sendToUser(recipientId, { type: "chat_message", payload: eventPayload });
   }

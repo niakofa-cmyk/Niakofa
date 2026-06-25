@@ -92,7 +92,7 @@ router.get("/nia/context", requireAuth, async (req, res) => {
       .limit(200);
 
     // Filter to true radius distance
-    const requestsInRadius = nearbyRequests.filter((r) => {
+    const requestsInRadius = nearbyRequests.filter((r: (typeof nearbyRequests)[number]) => {
       if (r.lat === null || r.lng === null) return false;
       return distanceMiles(lat, lng, r.lat, r.lng) <= NEARBY_RADIUS_MILES;
     });
@@ -113,7 +113,7 @@ router.get("/nia/context", requireAuth, async (req, res) => {
 
     // Neighborhood from closest request
     const neighborhood =
-      requestsInRadius.find((r) => r.neighborhood)?.neighborhood ?? null;
+      requestsInRadius.find((r: (typeof requestsInRadius)[number]) => r.neighborhood)?.neighborhood ?? null;
 
     // ── 2. Helpers online nearby ─────────────────────────────────────────────
     // Only count helpers who've opted into live location sharing
@@ -122,7 +122,7 @@ router.get("/nia/context", requireAuth, async (req, res) => {
       .from(userSettingsTable)
       .where(eq(userSettingsTable.privacy_live_location, true));
 
-    const optedInIds = optedIn.map((r) => r.user_id);
+    const optedInIds = optedIn.map((r: { user_id: number }) => r.user_id);
 
     let helpersOnlineNearby = 0;
     if (optedInIds.length > 0) {
@@ -139,7 +139,7 @@ router.get("/nia/context", requireAuth, async (req, res) => {
         );
 
       helpersOnlineNearby = nearbyHelpers.filter(
-        (h) =>
+        (h: (typeof nearbyHelpers)[number]) =>
           h.lat !== null &&
           h.lng !== null &&
           distanceMiles(lat, lng, h.lat, h.lng) <= NEARBY_RADIUS_MILES

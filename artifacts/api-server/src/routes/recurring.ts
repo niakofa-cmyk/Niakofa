@@ -8,7 +8,7 @@ import { Router } from "express";
 import { isHelperAvailableNow } from "../lib/matching";
 import { requireAuth } from "../middlewares/auth";
 import { db, recurringRequestsTable, requestsTable, usersTable, helperAvailabilityTable } from "@workspace/db";
-import { eq, and, desc, lte } from "drizzle-orm";
+import { eq, and, desc, lte, inArray } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { z } from "zod/v4";
 
@@ -256,7 +256,7 @@ router.get("/recurring/matched-helpers", requireAuth, async (req, res) => {
   }
 
   // 2. Find helpers who have availability on the same days
-  const myDays = [...new Set(myRecurring.map(r => r.day_of_week).filter((d): d is number => d !== null))];
+  const myDays = [...new Set(myRecurring.map((r: (typeof myRecurring)[number]) => r.day_of_week).filter((d: number | null): d is number => d !== null))];
 
   const availableWindows = myDays.length > 0
     ? await db
@@ -291,17 +291,18 @@ router.get("/recurring/matched-helpers", requireAuth, async (req, res) => {
 
   // 4. Check overlap: helper must cover at least one of the requester's time slots
   const myTimeSlotsMin = myRecurring
-    .filter(r => r.day_of_week !== null && r.time_of_day)
-    .map(r => {
+    .filter((r: (typeof myRecurring)[number]) => r.day_of_week !== null && r.time_of_day)
+    .map((r: (typeof myRecurring)[number]) => {
       const [h, m] = (r.time_of_day ?? "09:00").split(":").map(Number);
       return { day: r.day_of_week as number, min: h * 60 + m };
     });
 
   const matchedHelperIds: number[] = [];
   for (const [helperId, windows] of windowsByHelper.entries()) {
-    const overlaps = myTimeSlotsMin.some(slot =>
-      windows.some(w =>
+    const overlaps = myTimeSlotsMin.some((slot: { day: number; min: number }) =>
+      windows.some((w: { day_of_week: number | null; start_min: number | null; end_min: number | null }) =>
         w.day_of_week === slot.day &&
+        w.start_min !== null && w.end_min !== null &&
         w.start_min <= slot.min &&
         w.end_min > slot.min
       )
@@ -338,7 +339,7 @@ router.get("/recurring/matched-helpers", requireAuth, async (req, res) => {
   // 6. Filter by category skill match if requested
   let filtered = helpers;
   if (category) {
-    filtered = helpers.filter(h => {
+    filtered = helpers.filter((h: (typeof helpers)[number]) => {
       const skills = (h.helper_skills ?? []).map((s: string) => s.toLowerCase().replace(/\s+/g, "_"));
       return skills.some((s: string) =>
         s.includes(category.replace(/_/g, " ")) ||
@@ -353,7 +354,7 @@ router.get("/recurring/matched-helpers", requireAuth, async (req, res) => {
   const userLat = lat ? parseFloat(lat) : null;
   const userLng = lng ? parseFloat(lng) : null;
 
-  const scored = filtered.map(h => {
+  const scored = filtered.map((h: (typeof filtered)[number]) => {
     let distanceMiles: number | null = null;
     if (userLat !== null && userLng !== null && h.lat !== null && h.lng !== null) {
       const R = 3958.8;
@@ -366,7 +367,7 @@ router.get("/recurring/matched-helpers", requireAuth, async (req, res) => {
     const availabilityWindows = windowsByHelper.get(h.id) ?? [];
     const isAvailableNow = isHelperAvailableNow(availabilityWindows);
     return { ...h, distance_miles: distanceMiles ? Math.round(distanceMiles * 10) / 10 : null, is_available_now: isAvailableNow, availability_windows: availabilityWindows };
-  }).sort((a, b) => {
+  }).sort((a: { is_available_now: boolean; distance_miles: number | null; trust_score?: number | null }, b: { is_available_now: boolean; distance_miles: number | null; trust_score?: number | null }) => {
     // Available now first
     if (a.is_available_now !== b.is_available_now) return a.is_available_now ? -1 : 1;
     // Then by distance if we have it

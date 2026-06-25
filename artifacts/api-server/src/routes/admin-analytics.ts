@@ -165,8 +165,8 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), adminLimiter, async 
       .orderBy(sql`COUNT(*) DESC`),
   ]);
 
-  const openCount = statusCounts.find(s => s.status === "open")?.count ?? 0;
-  const completedCount = statusCounts.find(s => s.status === "completed")?.count ?? 0;
+  const openCount = statusCounts.find((s: { status: string; count: number }) => s.status === "open")?.count ?? 0;
+  const completedCount = statusCounts.find((s: { status: string; count: number }) => s.status === "completed")?.count ?? 0;
 
   return res.json({
     overview: {

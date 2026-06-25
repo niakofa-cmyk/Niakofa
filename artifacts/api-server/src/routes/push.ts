@@ -95,7 +95,7 @@ async function getSubsForUser(userId: number): Promise<webpush.PushSubscription[
     .select({ subscription: pushSubscriptionsTable.subscription })
     .from(pushSubscriptionsTable)
     .where(eq(pushSubscriptionsTable.user_id, userId));
-  return rows.map(r => r.subscription as unknown as webpush.PushSubscription);
+  return rows.map((r: { subscription: unknown }) => r.subscription as unknown as webpush.PushSubscription);
 }
 
 /**
@@ -167,7 +167,7 @@ export async function sendPushToUsers(
       .select({ id: usersTable.id, email: usersTable.email })
       .from(usersTable)
       .where(inArray(usersTable.id, userIds));
-    emailMap = new Map(users.map(u => [u.id, u.email]));
+    emailMap = new Map(users.map((u: { id: number; email: string | null }) => [u.id, u.email]));
   }
 
   await Promise.allSettled(
@@ -199,9 +199,9 @@ export async function sendPushToNearbyHelpers(
         .from(usersTable)
         .where(eq(usersTable.helper_mode_active, true));
       await Promise.allSettled(
-        helpers.map(h =>
+        helpers.filter((h: { email: string | null; name: string | null }) => !!h.email).map((h: { email: string | null; name: string | null }) =>
           sendAlertEmail({
-            to: h.email,
+            to: h.email!,
             subject: `🚨 Emergency request near you: ${payload.title}`,
             title: payload.title,
             body: payload.body,
@@ -232,7 +232,7 @@ export async function sendPushToNearbyHelpers(
 
   // Deliver push + email fallback for each nearby helper in parallel
   await Promise.allSettled(
-    nearbyHelpers.map(async h => {
+    nearbyHelpers.map(async (h: { id: number; email?: string | null }) => {
       const subs = await getSubsForUser(h.id);
       const delivered = await deliverToSubs(subs, payload);
       if (delivered === 0 && isEmergency && h.email) {
@@ -254,7 +254,7 @@ export async function sendPushToAllHelpers(payload: PushPayload): Promise<void> 
   const rows = await db
     .select({ subscription: pushSubscriptionsTable.subscription })
     .from(pushSubscriptionsTable);
-  const subs = rows.map(r => r.subscription as unknown as webpush.PushSubscription);
+  const subs = rows.map((r: { subscription: unknown }) => r.subscription as unknown as webpush.PushSubscription);
   await deliverToSubs(subs, payload);
 }
 

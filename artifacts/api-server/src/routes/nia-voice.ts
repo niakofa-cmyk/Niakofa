@@ -73,7 +73,7 @@ router.post(
 
     try {
       const form = new FormData();
-      form.append("file", new Blob([audio], { type: contentType }), `voice.${ext}`);
+      form.append("file", new Blob([new Uint8Array(audio)], { type: contentType }), `voice.${ext}`);
       form.append("model", "whisper-1");
 
       const upstream = await fetch("https://api.openai.com/v1/audio/transcriptions", {
@@ -151,13 +151,15 @@ router.post("/nia/voice/speak", requireAuth, voiceLimiter, async (req: Request, 
       if (!res.writableEnded) res.write(value);
     }
     if (!res.writableEnded) res.end();
+    return;
   } catch (err) {
     logger.error({ err }, "voice: TTS failed");
     if (!res.headersSent) {
-      res.status(502).json({ error: "Couldn't generate audio for that." });
+      return res.status(502).json({ error: "Couldn't generate audio for that." });
     } else if (!res.writableEnded) {
       res.end();
     }
+    return;
   }
 });
 
