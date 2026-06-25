@@ -604,6 +604,9 @@ export function NiaDrawer({
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           message: trimmed,
+          language: voiceLanguage !== "en" ? voiceLanguage : undefined,
+          voiceActivated,
+          wakeWordLanguage: voiceActivated ? voiceLanguage : undefined,
           sessionId,
           userName: userName ?? null,
           helperModeActive,

@@ -484,7 +484,7 @@ router.get("/history/:sessionId", parseOptionalAuth, async (req: Request, res: R
 // the authenticated Bearer token).
 router.get("/memory/:userId", parseOptionalAuth, async (req: Request, res: Response) => {
   const authenticatedUserId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId;
-  const requestedId = parseInt(req.params.userId, 10);
+  const requestedId = parseInt(req.params.userId as string, 10);
   if (isNaN(requestedId)) return res.status(400).json({ error: "Invalid userId" });
   if (!authenticatedUserId || authenticatedUserId !== requestedId) {
     return res.status(403).json({ error: "You may only view your own memory" });
@@ -496,7 +496,7 @@ router.get("/memory/:userId", parseOptionalAuth, async (req: Request, res: Respo
 // ── DELETE /memory/:userId — clear user's Nia memory ────────────────────────
 router.delete("/memory/:userId", parseOptionalAuth, async (req: Request, res: Response) => {
   const authenticatedUserId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId;
-  const requestedId = parseInt(req.params.userId, 10);
+  const requestedId = parseInt(req.params.userId as string, 10);
   if (isNaN(requestedId)) return res.status(400).json({ error: "Invalid userId" });
   if (!authenticatedUserId || authenticatedUserId !== requestedId) {
     return res.status(403).json({ error: "You may only clear your own memory" });
@@ -728,7 +728,7 @@ Return ONLY valid JSON, no preamble. If no new structured facts, return {}.`;
         const arr = updated[key as keyof StructuredMemory] as string[];
         updated[key as keyof StructuredMemory] = [
           ...new Set(arr),
-        ] as typeof arr;
+        ] as any;
       }
     });
 
