@@ -104,6 +104,44 @@ function AppShell() {
 
 function NiaWrapper() {
   const { currentUser, myLocation, helperModeActive, activeRequestId, niaOpen, setNiaOpen, niaInitialMessage, lastViewedMatchReasons } = useAppContext();
+  const [notifications, setNotifications] = React.useState<LiveNotification[]>([]);
+  const [notifOpen, setNotifOpen] = React.useState(false);
+  const { requestPermissionAndSubscribe } = usePushNotifications(currentUser?.id ?? null);
+
+  // Phase 8B: WebSocket events → live notifications
+  useWebSocket((event: any) => {
+    const id = `${event.type}-${Date.now()}`;
+    const time = new Date();
+    let notif: LiveNotification | null = null;
+    if (event.type === "new_request") {
+      notif = { id, type: "new_request", time, title: "New request nearby", body: event.title ?? "Someone needs help" };
+    } else if (event.type === "request_updated" && event.status === "completed") {
+      notif = { id, type: "completed", time, title: "Help completed!", body: `Request #${event.id} marked complete` };
+    } else if (event.type === "request_updated" && event.status === "claimed") {
+      notif = { id, type: "helper_accepted", time, title: "Helper on the way", body: `${event.helper_name ?? "A helper"} accepted` };
+    } else if (event.type === "pledge_paid") {
+      notif = { id, type: "pledge", time, title: "Pledge received!", body: `$${event.amount ?? "?"} pay-it-forward paid` };
+    } else if (event.type === "pledge_scheduled") {
+      notif = { id, type: "pledge_scheduled", time, title: "Recurring pledge set up", body: "Community thanks you" };
+    }
+    if (notif) {
+      setNotifications(prev => [notif!, ...prev].slice(0, 50));
+      if (document.hidden && Notification.permission === "granted") {
+        new Notification(notif.title, { body: notif.body, icon: "/icon-192.png" });
+      }
+    }
+  });
+
+  // Phase 8B: Auto-prompt push permission once per user, 8s after login
+  React.useEffect(() => {
+    if (!currentUser?.id) return;
+    const key = `push_prompted_${currentUser.id}`;
+    if (localStorage.getItem(key)) return;
+    const t = setTimeout(() => {
+      requestPermissionAndSubscribe().then(ok => { if (ok) localStorage.setItem(key, "1"); });
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [currentUser?.id]);
   const [isOnboarding] = useRoute("/onboarding");
   // The floating NiaFab is hidden on login (the login screen's own Nia orb acts
   // as the tap target there) and on onboarding (full-screen multi-step form).
