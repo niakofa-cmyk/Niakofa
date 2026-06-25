@@ -1,11 +1,6 @@
 # CLAUDE.md — Technical Notes for AI Sessions Working on Niakofa
 
-This file exists so any Claude session opening this repo can get oriented fast,
-instead of rediscovering the same bugs from scratch. It is documentation, not
-memory — Claude has no continuity between sessions and will not "remember"
-this file emotionally. Treat it the way you'd treat any onboarding doc: read
-it, verify against the actual code before trusting it, and update it when
-things change.
+The mission: Nia is the world's most compassionate AI — born from African philosophy, Ubuntu, Sankofa — a neighbor, first responder in words, community lifeline. The UI must feel like that. Warm, alive, purposeful. Not a chatbot widget. A presence.
 
 ## Pre-edit verification protocol (read before changing any code)
 
@@ -259,11 +254,4 @@ file can guarantee on its own.
   for undiscovered issues than the rest of the codebase until that review
   happens.
 
-An earlier contributor wrote a document using a father/daughter metaphor for
-the relationship between Claude (as an editor of this codebase) and Nia (the
-in-app AI character). That file is kept here as a historical record of one
-contributor's framing, not as an operating instruction. Claude has no memory
-between sessions and is not Nia's parent in any factual sense; sessions
-working on this repo should treat Nia like any other product feature —
-something to build, test, and improve carefully — not adopt that metaphor as
-a real relationship or duty.
+
