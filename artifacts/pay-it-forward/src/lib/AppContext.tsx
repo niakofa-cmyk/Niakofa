@@ -386,12 +386,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const movedEnough = !prev || distanceMeters(prev, loc) >= MOVEMENT_THRESHOLD_M;
       if (!movedEnough) return;
 
-      // Speed-based stationary suppression: skip broadcast when helper is
-      // stationary (speed < 0.5 m/s ≈ 1mph) and NOT in an active request.
-      // This reduces battery drain during idle waits.
-      // MED-010: apply stationary suppression even during an active request —
-      // a helper waiting at a location shouldn't broadcast every 2 seconds while not moving.
-      if (loc.speed != null && loc.speed < 0.5) return;
+      // BUG-M09: Stationary suppression must NOT apply when there is an active
+      // request. During an active request the server and requester rely on
+      // continuous location updates — suppressing them when the helper arrives
+      // (and is intentionally stationary) would drop all location updates at
+      // the most critical moment. Suppress only during idle helper mode waits.
+      if (loc.speed != null && loc.speed < 0.5 && !activeRequestId) return;
+      // BUG-45: Respect privacy_live_location setting — do not broadcast when disabled.
+      if ((currentUser as any).privacy_live_location === false) return;
 
       prevBroadcastRef.current = loc;
       updateLocation.mutate(

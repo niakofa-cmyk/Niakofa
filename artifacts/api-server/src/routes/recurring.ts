@@ -18,7 +18,8 @@ const router = Router();
 const createRecurringSchema = z.object({
   title: z.string().min(3).max(120),
   description: z.string().max(500).optional(),
-  category: z.enum(["groceries", "ride", "errand", "tech", "meal", "moving", "childcare", "other"]).default("other"),
+  // BUG-H09: must match requestCategoryEnum exactly (DB pgEnum)
+  category: z.enum(["groceries", "transportation", "errands", "home_repair", "medical", "emergency", "other", "stock_shelves", "event_setup", "delivery_run", "tech_support"]).default("other"),
   payment_type: z.enum(["immediate", "pay_it_forward", "goodwill"]).default("goodwill"),
   pay_it_forward_amount: z.number().min(1).max(500).optional(),
   lat: z.number().min(-90).max(90),
@@ -98,6 +99,17 @@ router.get("/recurring", requireAuth, async (req, res) => {
 // POST /recurring — create a new recurring request subscription
 router.post("/recurring", requireAuth, async (req, res) => {
   const userId = req.authenticatedUserId!;
+
+  // BUG-H08: Only approved users may create recurring requests.
+  // Pending/denied users could otherwise auto-fire requests at scale.
+  const [userRow] = await db
+    .select({ approval_status: usersTable.approval_status })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  if (userRow?.approval_status && userRow.approval_status !== "approved") {
+    return res.status(403).json({ error: "Your account must be approved before creating recurring requests" });
+  }
 
   const parsed = createRecurringSchema.safeParse(req.body);
   if (!parsed.success) {

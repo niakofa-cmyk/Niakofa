@@ -216,9 +216,11 @@ export default function NewRequestScreen() {
           setCreatingPaymentIntent(true);
           try {
             const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+            // BUG-44: include Authorization header for authenticated endpoint
+            const token = localStorage.getItem("niakofa_token");
             const res = await fetch(`${base}/api/stripe/payment-intent`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
               body: JSON.stringify({
                 requestId: request.id,
                 amount,

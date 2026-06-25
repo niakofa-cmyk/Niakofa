@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { authHeaders } from "@/lib/auth";
 import {
   Shield, AlertCircle, CheckCircle2, Clock, X, ChevronLeft,
   Eye, Flag, User as UserIcon, RefreshCw, Filter, ExternalLink,
@@ -67,10 +68,11 @@ function ReportDetailSheet({ report, onClose, onReviewed }: {
     setSaving(true);
     try {
       const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      // BUG-42: include Authorization header; do not hardcode reviewed_by — server derives it from JWT
       const res = await fetch(`${base}/api/reports/${report.id}/review`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, admin_notes: notes || null, reviewed_by: 1 }),
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ status, admin_notes: notes || null }),
       });
       if (!res.ok) throw new Error("Failed");
       const updated = await res.json() as Report;
@@ -209,7 +211,8 @@ function UsersTab() {
 
   useEffect(() => {
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-    fetch(`${base}/api/users?limit=100`)
+    // BUG-42: admin endpoints require Authorization header (requireAdmin checks JWT + is_admin flag)
+    fetch(`${base}/api/users?limit=100`, { headers: authHeaders() })
       .then(r => r.json())
       .then((data) => { if (Array.isArray(data)) setUsers(data); setLoading(false); })
       .catch(() => setLoading(false));
@@ -223,9 +226,10 @@ function UsersTab() {
   const handleAction = async (userId: number, action: "warn" | "ban") => {
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
     try {
+      // BUG-42: include Authorization header for admin-gated endpoint
       await fetch(`${base}/api/users/${userId}/moderation`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ action }),
       });
       toast({ title: action === "ban" ? "User banned" : "Warning issued" });
@@ -433,7 +437,8 @@ export default function AdminScreen() {
       const url = status && status !== "all"
         ? `${base}/api/reports?status=${status}`
         : `${base}/api/reports`;
-      const res = await fetch(url);
+      // BUG-42: admin endpoints require Authorization header
+      const res = await fetch(url, { headers: authHeaders() });
       if (!res.ok) throw new Error("Failed");
       const data = await res.json() as Report[];
       setReports(data);
@@ -478,7 +483,8 @@ export default function AdminScreen() {
   const openDetail = async (report: Report) => {
     setDetailLoading(true);
     try {
-      const res = await fetch(`${base}/api/reports/${report.id}`);
+      // BUG-42: admin endpoints require Authorization header
+      const res = await fetch(`${base}/api/reports/${report.id}`, { headers: authHeaders() });
       if (res.ok) {
         const detail = await res.json() as Report;
         setSelectedReport(detail);

@@ -10,7 +10,7 @@
 import { Worker, type Job } from "bullmq";
 import Stripe from "stripe";
 import { db, paymentTransactionsTable, transactionsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getRedisConnection, QUEUE, type PayoutJobData } from "../lib/queue";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
@@ -51,7 +51,8 @@ async function processPayout(job: Job<PayoutJobData>): Promise<void> {
     },
   });
 
-  // Record in payment ledger
+  // BUG-M08: Use onConflictDoUpdate so a retry that finds an existing "pending"
+  // or "failed" row correctly marks it as completed rather than silently skipping.
   await db.insert(paymentTransactionsTable).values({
     request_id,
     helper_id,
@@ -61,7 +62,14 @@ async function processPayout(job: Job<PayoutJobData>): Promise<void> {
     payment_type: "immediate",
     stripe_transfer_id: transfer.id,
     notes: `Retry payout (attempt ${job.attemptsMade + 1}). Platform fee: ${(platform_fee_cents / 100).toFixed(2)}`,
-  }).onConflictDoNothing();
+  }).onConflictDoUpdate({
+    target: [paymentTransactionsTable.request_id, paymentTransactionsTable.helper_id],
+    set: {
+      state: "completed",
+      stripe_transfer_id: transfer.id,
+      notes: sql`EXCLUDED.notes`,
+    },
+  });
 
   // NOTE: deliberately NOT inserting another transactionsTable row here —
   // the original completion handler in requests.ts already recorded an

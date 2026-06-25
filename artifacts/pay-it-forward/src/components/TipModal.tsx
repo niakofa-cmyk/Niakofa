@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Heart, X, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
+import { authHeaders } from "@/lib/auth";
 import { toast } from "@/hooks/use-toast";
 
 interface TipModalProps {
@@ -25,9 +26,10 @@ export function TipModal({ requestId, helperName, onClose }: TipModalProps) {
     if (!amount || !currentUser || submitting) return;
     setSubmitting(true);
     try {
+      // BUG-44: include Authorization header so the server can verify the requester
       const res = await fetch(`/api/requests/${requestId}/tip`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ requester_id: currentUser.id, tip_amount: amount }),
       });
       if (res.ok) {
@@ -67,7 +69,7 @@ export function TipModal({ requestId, helperName, onClose }: TipModalProps) {
           </div>
 
           <p className="text-sm text-muted-foreground mb-5">
-            Show <strong className="text-foreground">{helperName}</strong> some extra love. 100% goes to them.
+            Show <strong className="text-foreground">{helperName}</strong> some extra love — a token of thanks for their time.
           </p>
 
           <div className="grid grid-cols-5 gap-2 mb-4 min-w-0">

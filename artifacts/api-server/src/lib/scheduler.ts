@@ -108,10 +108,10 @@ async function processWeeklyTrustDecay(): Promise<void> {
   logger.info("trust-decay: starting weekly trust score recomputation");
 
   // Get all users who have ever been rated
-  let ratees: { id: number; trust_score: number | null }[] = [];
+  let ratees: { id: number; trust_score: number | null; identity_verified: boolean }[] = [];
   try {
     ratees = await db
-      .selectDistinct({ id: usersTable.id, trust_score: usersTable.trust_score })
+      .selectDistinct({ id: usersTable.id, trust_score: usersTable.trust_score, identity_verified: usersTable.identity_verified })
       .from(usersTable)
       .where(sql`${usersTable.id} IN (SELECT DISTINCT ratee_id FROM ratings)`);
   } catch (err) {
@@ -144,7 +144,11 @@ async function processWeeklyTrustDecay(): Promise<void> {
         totalWeight += weight;
       }
       const avgStars = totalWeight > 0 ? weightedSum / totalWeight : 0;
-      const newScore = Math.round(avgStars * 20);
+      const rawScore = Math.round(avgStars * 20);
+      // BUG-24: Identity-verified users have a trust floor of 40 (2★) so the
+      // decay job cannot drop them below baseline verification level.
+      const VERIFIED_FLOOR = 40;
+      const newScore = user.identity_verified ? Math.max(rawScore, VERIFIED_FLOOR) : rawScore;
 
       if (newScore !== user.trust_score) {
         await db.update(usersTable)

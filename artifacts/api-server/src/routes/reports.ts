@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, reportsTable, usersTable } from "@workspace/db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, or } from "drizzle-orm";
 import { z } from "zod";
 import { broadcast, broadcastToAdmins } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
@@ -218,10 +218,14 @@ router.get("/users/:id/reports", requireAuth, requireAdmin(), async (req, res) =
   const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
 
+  // BUG-M06: return reports the user filed AND reports filed against them
   const filed = await db
     .select()
     .from(reportsTable)
-    .where(eq(reportsTable.reporter_id, userId))
+    .where(or(
+      eq(reportsTable.reporter_id, userId),
+      eq(reportsTable.reported_user_id, userId)
+    ))
     .orderBy(desc(reportsTable.created_at))
     .limit(50);
 

@@ -61,8 +61,8 @@ router.post("/users/register", authLimiter, async (req, res) => {
 
   const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
   if (existing.length > 0) {
-    const { password_hash, ...safeExisting } = existing[0]!;
-    return res.json(safeExisting);
+    // BUG-C01: Never return an existing user row to an arbitrary registrant — leaks PII.
+    return res.status(409).json({ error: "An account with that email already exists. Please sign in instead." });
   }
 
   const password_hash = password ? await bcrypt.hash(password, 12) : null;
@@ -105,7 +105,9 @@ router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => 
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No fields to update" });
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  return res.json(user);
+  // BUG-C02: strip password_hash before returning
+  const { password_hash: _ph2, ...safeUser } = user;
+  return res.json(safeUser);
 });
 
 router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter, async (req, res) => {
@@ -124,7 +126,9 @@ router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter,
       payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng, heading: user.heading },
     });
   }
-  return res.json(user);
+  // BUG-C03: strip password_hash before returning
+  const { password_hash: _phLoc, ...safeLocUser } = user;
+  return res.json(safeLocUser);
 });
 
 router.patch("/users/:id/helper-mode", requireAuth, requireOwnership(), async (req, res) => {
@@ -140,7 +144,9 @@ router.patch("/users/:id/helper-mode", requireAuth, requireOwnership(), async (r
     type: bParsed.data.active ? "helper_online" : "helper_offline",
     payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng },
   });
-  return res.json(user);
+  // BUG-C04: strip password_hash before returning
+  const { password_hash: _phHM, ...safeHMUser } = user;
+  return res.json(safeHMUser);
 });
 
 router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, res) => {
@@ -158,18 +164,10 @@ router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, re
     .where(eq(requestsTable.id, request_id))
     .returning();
 
-  if (request.helper_id && amount > 0) {
-    await db.update(usersTable)
-      .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${amount}` })
-      .where(eq(usersTable.id, request.helper_id));
-    await db.insert(transactionsTable).values({
-      user_id: request.helper_id,
-      request_id: request_id,
-      type: "pledge_received",
-      amount: amount,
-      description: request.title,
-    });
-  }
+  // BUG-C07/C08: Do NOT credit benevolence_wallet or insert pledge_received here.
+  // The Stripe webhook (payment_intent.succeeded) is the sole authoritative path
+  // for crediting the helper's wallet. Doing it here causes double-credit when
+  // the webhook fires for the same payment.
   await db.insert(transactionsTable).values({
     user_id: pParsed.data.id,
     request_id: request_id,
@@ -216,6 +214,11 @@ router.post("/users/:id/scheduled-payment", requireAuth, requireOwnership(), asy
   const userId = pParsed.data.id;
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (!user) return res.status(404).json({ error: "User not found" });
+  // BUG-H07: Verify the requester owns the request they're scheduling a payment for
+  const [requestRow] = await db.select({ requester_id: requestsTable.requester_id })
+    .from(requestsTable).where(eq(requestsTable.id, request_id)).limit(1);
+  if (!requestRow) return res.status(404).json({ error: "Request not found" });
+  if (requestRow.requester_id !== userId) return res.status(403).json({ error: "You can only schedule payments for your own requests" });
   const [scheduled] = await db.insert(scheduledPaymentsTable).values({
     user_id: userId,
     request_id,
@@ -297,7 +300,9 @@ router.post("/users/:id/avatar", requireAuth, requireOwnership(), async (req, re
     .where(eq(usersTable.id, id))
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  return res.json(user);
+  // BUG-C06: strip password_hash before returning
+  const { password_hash: _phAv, ...safeAvUser } = user;
+  return res.json(safeAvUser);
 });
 
 // GET /users/:id/settings — fetch user notification + privacy prefs (upserts defaults if first visit)
@@ -348,11 +353,15 @@ router.patch("/users/:id/panic-contacts", requireAuth, requireOwnership(), async
     .set({ panic_contacts: contacts })
     .where(eq(usersTable.id, id))
     .returning();
-  return res.json(user);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  // BUG-C05: strip password_hash before returning
+  const { password_hash: _phPC, ...safePCUser } = user;
+  return res.json(safePCUser);
 });
 
-// Admin moderation actions
-router.delete("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
+// BUG-H03: Account deletion is admin-only. requireOwnership() would let any
+// authenticated user delete any other account by crafting the path parameter.
+router.delete("/users/:id", requireAuth, requireAdmin(), async (req, res) => {
   const userId = parseInt(req.params.id);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
 
@@ -451,7 +460,8 @@ router.get("/users", requireAuth, requireAdmin(), async (_req, res) => {
   return res.json(users);
 });
 
-export default router;
+// BUG-H02: moved export default to AFTER this route so it is registered
+// before the module is consumed by routes/index.ts.
 
 // PATCH /users/:id/helper-application
 // Two modes:
@@ -532,3 +542,5 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
   const { password_hash, ...safe } = updated;
   return res.json(safe);
 });
+
+export default router;

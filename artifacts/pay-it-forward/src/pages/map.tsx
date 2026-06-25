@@ -152,7 +152,8 @@ export default function MapScreen() {
   useEffect(() => {
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
     const token = localStorage.getItem("niakofa_token") ?? "";
-    fetch(`${base}/api/crisis/status`)
+    // BUG-M03: include auth header so authenticated users get personalised crisis state
+    fetch(`${base}/api/crisis/status`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then(r => r.json())
       .then(async (data: CrisisState) => {
         if (!data.active) return;
