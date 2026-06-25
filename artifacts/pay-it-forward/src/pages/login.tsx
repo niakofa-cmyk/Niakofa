@@ -303,7 +303,7 @@ function HelperProfileForm({
 export default function LoginScreen() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  const { setCurrentUser, setNiaOpen } = useAppContext();
+  const { setCurrentUser } = useAppContext();
   const [mode, setMode] = useState<Mode>("login");
 
   // ENH-003: show a clear message when we landed here because a 401
@@ -802,28 +802,7 @@ export default function LoginScreen() {
           transition={{ type: "spring", stiffness: 200, damping: 20 }}
           className="flex flex-col items-center mb-8"
         >
-          {/* Nia orb — she is the face of Niakofa, tappable even before login */}
-          <button
-            onClick={() => setNiaOpen(true)}
-            className="relative mb-5 focus:outline-none active:scale-95 transition-transform"
-            aria-label="Chat with Nia"
-            style={{ touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}
-          >
-            <motion.div
-              animate={{ scale: [1, 1.06, 1] }}
-              transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
-              className="w-20 h-20 rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(29,158,117,0.35)]"
-              style={{ background: "linear-gradient(135deg, #1D9E75 0%, #0A6B4E 60%, #085041 100%)", border: "2px solid rgba(93,202,165,0.4)" }}
-            >
-              <span className="text-3xl font-black text-[#E1F5EE] tracking-tight select-none">N</span>
-            </motion.div>
-            <motion.div
-              animate={{ scale: [1, 1.55, 1], opacity: [0.35, 0, 0.35] }}
-              transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
-              className="absolute inset-[-6px] rounded-full pointer-events-none"
-              style={{ background: "radial-gradient(circle, rgba(29,158,117,0.3) 0%, transparent 70%)" }}
-            />
-          </button>
+          {/* Nia's single, real, draggable orb (NiaFab) renders on this screen too — see App.tsx NiaWrapper. This page no longer has its own static Nia button. */}
           <h1 className="text-3xl font-black tracking-tight text-foreground">Niakofa</h1>
           <p className="text-sm text-muted-foreground mt-1 text-center max-w-xs">
             Help Today. Pay It Forward Tomorrow.

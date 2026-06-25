@@ -100,11 +100,10 @@ function AppShell() {
 
 function NiaWrapper() {
   const { currentUser, myLocation, helperModeActive, activeRequestId, niaOpen, setNiaOpen, niaInitialMessage } = useAppContext();
-  const [isLogin] = useRoute("/login");
   const [isOnboarding] = useRoute("/onboarding");
   // The floating NiaFab is hidden on login (the login screen's own Nia orb acts
   // as the tap target there) and on onboarding (full-screen multi-step form).
-  const hideNia = isLogin || isOnboarding;
+  const hideNia = isOnboarding;
   return (
     <>
       <NiaFab onClick={() => setNiaOpen(true)} hidden={hideNia} />
