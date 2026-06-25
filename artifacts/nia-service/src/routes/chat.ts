@@ -53,8 +53,8 @@ async function streamNiaResponse(
 
   const stream = await anthropic.messages.stream(
     {
-      model: "claude-sonnet-4-5",
-      max_tokens: 1024,
+      model: "claude-sonnet-4-6",
+      max_tokens: 2048,
       system: systemPrompt,
       messages,
       tools: [WEB_SEARCH_TOOL],
@@ -117,6 +117,12 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   const liveContext =
     typeof body.liveContext === "object" && body.liveContext !== null
       ? (body.liveContext as Record<string, unknown>)
+      : null;
+
+  // Phase 11K: match reasons forwarded from helper-dashboard via AppContext
+  const matchReasons: string[] | null =
+    Array.isArray(liveContext?.matchReasons)
+      ? (liveContext!.matchReasons as string[])
       : null;
 
   // Phase 3: Language preference — from Accept-Language or explicit body field.
@@ -210,12 +216,22 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
 
   try {
     const voiceContextPrefix = buildVoiceContextPrefix(voiceActivated, wakeWordLanguage);
+    const matchReasonsPrefix = matchReasons?.length
+      ? buildMatchReasonsPrefix(matchReasons)
+      : "";
+
+    const proactiveSuggestionsDirective = liveContext
+      ? buildProactiveSuggestionsDirective(liveContext, helperModeActive, accountType)
+      : "";
+
     const systemPrompt =
       buildLanguagePrefix(language) +
       memoryPrefix +
       softPrefix +
       voiceContextPrefix +
       liveContextPrefix +
+      matchReasonsPrefix +
+      proactiveSuggestionsDirective +
       buildLocationPrefix((req as any).locationContext as LocationContext | undefined) +
       buildAppContextPrefix({
         userName,
@@ -411,8 +427,8 @@ router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Respo
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5",
-      max_tokens: 1024,
+      model: "claude-sonnet-4-6",
+      max_tokens: 2048,
       system:
         "You are Nia, the Niakofa community assistant. " +
         "When analyzing images, be helpful and community-minded. " +
@@ -806,6 +822,72 @@ function buildImagePrompt(question: string | null, context: string | null): stri
     );
   }
   return "Please describe what you see in this image and note anything relevant to community help or safety.";
+}
+
+
+/**
+ * Build match reasons prefix — explains why a helper was matched.
+ * Only injected when real match_reasons are forwarded from the helper dashboard.
+ */
+function buildMatchReasonsPrefix(reasons: string[]): string {
+  if (!reasons.length) return "";
+  return (
+    "MATCH CONTEXT: If the user asks why this helper was matched or why they were selected, " +
+    "explain using ONLY these reasons (never invent additional ones):\n" +
+    reasons.map((r) => `- ${r}`).join("\n") +
+    "\n\n"
+  );
+}
+
+/**
+ * Build proactive suggestions directive — tells Nia to append relevant action chips.
+ * The frontend (NiaDrawer) already renders [SUGGEST:...] tags as tappable chips.
+ *
+ * Format Nia must use at END of response when relevant:
+ * [SUGGEST: View open requests nearby | Start helper application | Post a request | Find food assistance]
+ *
+ * Rules:
+ * - Only append when genuinely relevant to what the user asked
+ * - Max 3 suggestions per response
+ * - Use pipe | as separator
+ * - Never suggest things the user just did or said they already did
+ */
+function buildProactiveSuggestionsDirective(
+  ctx: Record<string, unknown>,
+  helperMode: boolean,
+  accountType: string | null
+): string {
+  const lines: string[] = [
+    "PROACTIVE SUGGESTIONS: When your response would naturally lead somewhere actionable,",
+    "append a suggestion line at the very end in this exact format:",
+    "[SUGGEST: Action one | Action two | Action three]",
+    "",
+    "Available actions based on current context:",
+  ];
+
+  if (typeof ctx.openRequestsNearby === "number" && ctx.openRequestsNearby > 0) {
+    lines.push(`- "View ${ctx.openRequestsNearby} open requests nearby" — use when user asks about helping or what's needed`);
+  }
+  if (!helperMode) {
+    lines.push('- "Become a helper" — use when user expresses desire to help their community');
+    lines.push('- "Start helper application" — use after explaining helper program');
+  }
+  if (helperMode) {
+    lines.push('- "View my active requests" — use when helper asks about their assignments');
+    lines.push('- "Turn off helper mode" — use if helper says they need a break');
+  }
+  lines.push('- "Post a request for help" — use when user describes a need they have not posted yet');
+  lines.push('- "Find food assistance near me" — use when user mentions hunger or food insecurity');
+  lines.push('- "Find shelter resources" — use when user mentions housing instability');
+  lines.push('- "Set up recurring help" — use when user describes a recurring need');
+  lines.push('- "Rate my recent helper" — use after discussing a completed request');
+  lines.push('- "Share to community board" — use when user has info that might help neighbors');
+  lines.push("");
+  lines.push("Only include [SUGGEST:...] when at least one action is genuinely relevant.");
+  lines.push("Omit entirely for crisis responses, pure emotional support, or when no action fits.");
+  lines.push("Never repeat the same suggestion twice in a conversation.\n");
+
+  return lines.join("\n") + "\n";
 }
 
 // Note: extractAndUpdateMemory is now defined in the HELPERS section above

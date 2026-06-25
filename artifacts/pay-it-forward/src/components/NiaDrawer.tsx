@@ -30,6 +30,16 @@ const QUICK_PROMPTS = [
   { label: "🌍 Need translation", text: "Can you help me communicate with a neighbor in a different language?" },
 ];
 
+
+// ── Parse [SUGGEST: ...] tags from Nia responses ─────────────────────────────
+function parseSuggestions(content: string): { text: string; suggestions: string[] } {
+  const match = content.match(/\[SUGGEST:\s*([^\]]+)\]/);
+  if (!match) return { text: content, suggestions: [] };
+  const suggestions = match[1].split("|").map((s) => s.trim()).filter(Boolean).slice(0, 3);
+  const text = content.replace(/\[SUGGEST:[^\]]+\]/, "").trimEnd();
+  return { text, suggestions };
+}
+
 function getSessionId(): string {
   let id = sessionStorage.getItem("nia_session_id");
   if (!id) {
@@ -194,12 +204,17 @@ function MessageBubble({
   msg,
   isSpeaking,
   onSpeak,
+  onSuggest,
 }: {
   msg: Message;
   isSpeaking?: boolean;
   onSpeak?: () => void;
+  onSuggest?: (text: string) => void;
 }) {
   const isUser = msg.role === "user";
+  const { text: displayText, suggestions } = isUser || msg.streaming
+    ? { text: msg.content, suggestions: [] }
+    : parseSuggestions(msg.content);
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -227,7 +242,7 @@ function MessageBubble({
         color: isUser ? "#E1F5EE" : "var(--color-text-primary)",
         border: isUser ? "none" : "0.5px solid var(--color-border-tertiary)",
       }}>
-        {msg.content}
+        {displayText}
         {!isUser && !msg.streaming && msg.content && onSpeak && (
           <button
             onClick={onSpeak}
@@ -266,6 +281,31 @@ function MessageBubble({
           />
         )}
       </div>
+      {!isUser && !msg.streaming && suggestions.length > 0 && onSuggest && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6, marginLeft: 34 }}>
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              onClick={() => onSuggest(s)}
+              style={{
+                fontSize: 12,
+                padding: "6px 12px",
+                borderRadius: 20,
+                border: "1px solid rgba(29,158,117,0.4)",
+                background: "rgba(29,158,117,0.08)",
+                color: "#0A6B4E",
+                cursor: "pointer",
+                fontWeight: 600,
+                lineHeight: 1.3,
+                transition: "all 0.15s",
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              {s} →
+            </button>
+          ))}
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -949,6 +989,7 @@ export function NiaDrawer({
                       msg={msg}
                       isSpeaking={speakingIndex === i}
                       onSpeak={() => speakMessage(i, msg.content)}
+                      onSuggest={(text) => sendMessage(text)}
                     />
                   ))}
                   <div ref={bottomRef} />
@@ -1017,17 +1058,7 @@ export function NiaDrawer({
                     >
                       {loading
                         ? <Loader2 size={15} color="var(--color-text-tertiary)" />
-                        : <>
-                            <button
-                              type="button"
-                              onClick={listening ? stopListening : startListening}
-                              className={`p-2 rounded-full transition-colors ${listening ? 'bg-blue-500 text-white animate-pulse' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                              aria-label={listening ? 'Stop listening' : 'Start voice'}
-                            >
-                              <Mic className="h-5 w-5" />
-                            </button>
-                            <Send size={14} color={!input.trim() ? 'var(--color-text-tertiary)' : '#E1F5EE'} />
-                          </>
+                        : <Send size={14} color={!input.trim() ? 'var(--color-text-tertiary)' : '#E1F5EE'} />
                       }
                     </button>
                   </div>
