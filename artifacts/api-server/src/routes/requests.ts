@@ -26,6 +26,7 @@ import { sendPushToNearbyHelpers, sendPushToAllHelpers } from "./push";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { logger } from "../lib/logger";
 import { sendReceipt } from "../lib/mailer";
+import { sendAdminSmsAlert, sendSosPanicContacts } from "../lib/sms";
 import Stripe from "stripe";
 
 // Lazy Stripe client — null when STRIPE_SECRET_KEY is not configured
@@ -265,10 +266,40 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
       urgency: request.urgency,
       requestId: request.id,
     };
-    // Notify helpers within 15 miles of the request; fall back to all helpers if no nearby ones found
+    // Notify helpers within 15 miles; fall back to all helpers if none nearby
     sendPushToNearbyHelpers(request.lat, request.lng, 15, payload).catch(() => {
       sendPushToAllHelpers(payload).catch(() => {});
     });
+
+    // Multi-modal fallback: SMS admin alert for emergency requests
+    if (isEmergency) {
+      sendAdminSmsAlert(
+        `🚨 NIAKOFA EMERGENCY: "${request.title}" in ${request.neighborhood ?? "unknown area"} — request #${request.id}`
+      ).catch(() => {});
+
+      // Alert requester's panic contacts if the request has a requester_id
+      if (request.requester_id) {
+        db.select({ name: usersTable.name, panic_contacts: usersTable.panic_contacts })
+          .from(usersTable)
+          .where(eq(usersTable.id, request.requester_id))
+          .limit(1)
+          .then(([requester]) => {
+            if (!requester) return;
+            const contacts = Array.isArray(requester.panic_contacts)
+              ? (requester.panic_contacts as string[]).filter((c) => typeof c === "string" && c.trim())
+              : [];
+            if (contacts.length > 0) {
+              sendSosPanicContacts(
+                contacts,
+                requester.name,
+                request.neighborhood ?? null,
+                request.id
+              ).catch(() => {});
+            }
+          })
+          .catch(() => {});
+      }
+    }
   } else {
     // For medium/low urgency, notify helpers within 5 miles
     sendPushToNearbyHelpers(request.lat, request.lng, 5, {

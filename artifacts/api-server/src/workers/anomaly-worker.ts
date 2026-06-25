@@ -1,5 +1,5 @@
-import { db, usersTable, requestsTable } from "@workspace/db";
-import { sql, and, gte, eq } from "drizzle-orm";
+import { db, usersTable, requestsTable, ratingsTable } from "@workspace/db";
+import { sql, and, gte, eq, lte } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { broadcastToAdmins } from "../lib/ws-hub";
 
@@ -7,6 +7,8 @@ const INTERVAL_MS = 10 * 60 * 1000;
 const CANCEL_THRESHOLD = 3;
 const LOW_TRUST_THRESHOLD = 2.0;
 const WINDOW_HOURS = 24;
+/** Flag helpers who receive this many 1-star ratings within 24 hours */
+const RATING_VELOCITY_THRESHOLD = 3;
 
 // LOW-009: track the last time each low-trust helper was alerted so admins
 // aren't re-notified every cycle for the same standing condition.
@@ -99,11 +101,117 @@ async function detectAnomalies() {
       });
     }
 
-    const totalFlagged = frequentRequesterCancels.length + lowTrustActiveHelpers.length;
+    // ── Rating velocity — 3+ one-star ratings in 24h ─────────────────────────
+    // A burst of 1-star ratings in a short window is a strong signal of
+    // bad-faith behaviour or a serious service failure. Surfaces it for
+    // immediate admin review before the helper's trust score decays naturally.
+    let ratingVelocityRows: { ratee_id: number; count: number }[] = [];
+    try {
+      ratingVelocityRows = await db
+        .select({
+          ratee_id: ratingsTable.ratee_id,
+          count: sql<number>`cast(count(*) as int)`,
+        })
+        .from(ratingsTable)
+        .where(
+          and(
+            eq(ratingsTable.stars, 1),
+            gte(ratingsTable.created_at, since)
+          )
+        )
+        .groupBy(ratingsTable.ratee_id)
+        .having(sql`count(*) >= ${RATING_VELOCITY_THRESHOLD}`);
+    } catch {
+      // ratings table may not exist in dev — silent skip
+    }
+
+    for (const row of ratingVelocityRows) {
+      const lastAlert = lastAlertedAt.get(row.ratee_id + 100_000); // offset to avoid key collision with low-trust map
+      if (lastAlert && Date.now() - lastAlert < ALERT_COOLDOWN_MS) continue;
+      lastAlertedAt.set(row.ratee_id + 100_000, Date.now());
+
+      logger.warn(
+        { user_id: row.ratee_id, one_star_count: row.count, window_hours: WINDOW_HOURS },
+        "anomaly: helper received multiple 1-star ratings in 24h — flagged for immediate review"
+      );
+      broadcastToAdmins({
+        type: "anomaly_detected",
+        payload: {
+          kind: "rating_velocity_spike",
+          user_id: row.ratee_id,
+          one_star_count: row.count,
+          window_hours: WINDOW_HOURS,
+          note: "Rapid 1-star rating burst — possible bad-faith experience or service failure",
+          severity: "high",
+        },
+      });
+    }
+
+    // ── No-show pattern — claimed but stalled requests ────────────────────────
+    // Helpers who claim a request and never move to en_route within 30 minutes
+    // are a drag on the requester experience. Flag for follow-up.
+    // We detect this by looking for requests in 'claimed' status for > 30 min.
+    let stalledRows: { id: number; helper_id: number | null; requester_id: number; title: string }[] = [];
+    try {
+      stalledRows = await db
+        .select({
+          id: requestsTable.id,
+          helper_id: requestsTable.helper_id,
+          requester_id: requestsTable.requester_id,
+          title: requestsTable.title,
+        })
+        .from(requestsTable)
+        .where(
+          and(
+            eq(requestsTable.status, "claimed"),
+            lte(requestsTable.claimed_at, new Date(Date.now() - 30 * 60 * 1000)),
+            sql`${requestsTable.helper_id} IS NOT NULL`
+          )
+        );
+    } catch {
+      // claimed_at column may not exist in older DB — silent skip
+    }
+
+    for (const row of stalledRows) {
+      if (!row.helper_id) continue;
+      const mapKey = row.id + 200_000;
+      const lastAlert = lastAlertedAt.get(mapKey);
+      if (lastAlert && Date.now() - lastAlert < ALERT_COOLDOWN_MS) continue;
+      lastAlertedAt.set(mapKey, Date.now());
+
+      logger.warn(
+        { request_id: row.id, helper_id: row.helper_id },
+        "anomaly: claimed request stalled — helper has not moved to en_route in 30+ minutes"
+      );
+      broadcastToAdmins({
+        type: "anomaly_detected",
+        payload: {
+          kind: "no_show_stall",
+          request_id: row.id,
+          helper_id: row.helper_id,
+          requester_id: row.requester_id,
+          request_title: row.title,
+          note: "Helper claimed but has not moved to en_route in 30+ minutes",
+          severity: "medium",
+        },
+      });
+    }
+
+    const totalFlagged =
+      frequentRequesterCancels.length +
+      lowTrustActiveHelpers.length +
+      ratingVelocityRows.length +
+      stalledRows.filter((r) => r.helper_id).length;
+
     if (totalFlagged > 0) {
       logger.info(
-        { frequent_requester_cancellers: frequentRequesterCancels.length, low_trust: lowTrustActiveHelpers.length },
-        "anomaly: scan complete — flagged users detected"
+        {
+          frequent_cancellers: frequentRequesterCancels.length,
+          low_trust: lowTrustActiveHelpers.length,
+          rating_spikes: ratingVelocityRows.length,
+          no_show_stalls: stalledRows.length,
+        },
+        "anomaly: scan complete — flagged events detected"
       );
     }
   } catch (err) {

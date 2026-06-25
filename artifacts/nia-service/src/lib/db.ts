@@ -259,3 +259,53 @@ export async function upsertUserMemory(
     [userId, memory]
   );
 }
+
+/**
+ * Find completed help requests eligible for a 24-hour Nia follow-up check-in.
+ *
+ * Eligible means:
+ *   - status = 'completed'
+ *   - completed_at is between 23 and 25 hours ago (2-hour window avoids double-fire
+ *     if the hourly worker runs slightly off-schedule)
+ *   - No nia_conversations checkin row already exists for this request + requester pair
+ *     (detected by the "[check-in:<id>]" prefix we write in saveCheckinConversation)
+ *
+ * Queries the main app DB (same DATABASE_URL) — nia-service has access to both
+ * the help_requests / users tables and its own nia_conversations table via the
+ * shared pool.
+ */
+export async function getCompletedRequestsForCheckin(): Promise<
+  {
+    id: number;
+    title: string;
+    category: string;
+    requester_id: number;
+    helper_name: string | null;
+  }[]
+> {
+  const result = await pool.query(`
+    SELECT
+      hr.id,
+      hr.title,
+      hr.category,
+      hr.requester_id,
+      u.name AS helper_name
+    FROM help_requests hr
+    LEFT JOIN users u ON u.id = hr.helper_id
+    WHERE hr.status = 'completed'
+      AND hr.completed_at BETWEEN NOW() - INTERVAL '25 hours' AND NOW() - INTERVAL '23 hours'
+      AND NOT EXISTS (
+        SELECT 1 FROM nia_conversations nc
+        WHERE nc.user_id = hr.requester_id
+          AND nc.user_message LIKE '[check-in:' || hr.id || ']%'
+      )
+    LIMIT 20
+  `);
+  return result.rows as {
+    id: number;
+    title: string;
+    category: string;
+    requester_id: number;
+    helper_name: string | null;
+  }[];
+}

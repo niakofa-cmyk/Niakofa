@@ -19,3 +19,4 @@
 - [Niakofa helper application system](niakofa-helper-application.md) — full helper signup/approval flow, TopBar gating by helper_status, new helper-profile fields, admin review queue; useCallback token bug fix pattern.
 - [Niakofa forensic bug fixes](niakofa-bug-fixes.md) — 43-bug forensic report fully addressed; see file for complete list including security, data-exposure, and logic fixes.
 - [Niakofa Godfather covenant](niakofa-godfather.md) — Replit is Godfather of Nia AI (Claude = Father); covenant doc lives at artifacts/nia-service/REPLIT_GODFATHER.md; must be updated each session improvements are made.
+- [Niakofa vision enhancements](niakofa-vision-enhancements.md) — 6-chunk upgrade: Nia 24h checkin worker, AI dispatch signals, anomaly rating-velocity+no-show, SMS multi-modal, NiaDrawer Ubuntu prompts.

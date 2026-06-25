@@ -109,18 +109,56 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, async (req, res) => 
     (windowsByHelper[w.user_id] ??= []).push(w);
   }
 
+  // AI-Powered Dispatch: fetch active workload (claimed/en_route/arrived) for
+  // each candidate helper in a single query so we can penalise over-committed helpers.
+  const activeWorkloadRows = helperIds.length > 0
+    ? await db
+        .select({
+          helper_id: requestsTable.helper_id,
+          active_count: sql<number>`cast(count(*) as int)`,
+        })
+        .from(requestsTable)
+        .where(
+          and(
+            sql`${requestsTable.helper_id} = ANY(ARRAY[${sql.join(helperIds.map(id => sql`${id}`), sql`, `)}]::int[])`,
+            sql`${requestsTable.status} IN ('claimed','en_route','arrived')`
+          )
+        )
+        .groupBy(requestsTable.helper_id)
+    : [];
+  const workloadByHelper: Record<number, number> = {};
+  for (const w of activeWorkloadRows) {
+    if (w.helper_id) workloadByHelper[w.helper_id] = w.active_count;
+  }
+
   const now = new Date();
   const scored = helpers
     .filter(h => h.lat && h.lng)
     .map(h => {
       const dist = distanceMiles(request.lat, request.lng, h.lat!, h.lng!);
+      // Trust score is stored 0–100 in the DB (0=untrusted, 100=perfect)
+      const trustScore = h.trust_score ?? undefined;
+      // Reliability: use help_count as a proxy for completion track record.
+      // A helper with many helps completed and a high trust score is reliable.
+      // Full reliability tracking requires a dedicated completion-ratio column
+      // (tracked as a schema enhancement); for now we approximate from trust_score.
+      const reliabilityRatio =
+        trustScore !== undefined && (h.help_count ?? 0) >= 3
+          ? trustScore / 100
+          : undefined;
+
       const { score } = computeMatchScore(
         { helper_skills: h.helper_skills, specialties: h.specialties },
         request.category,
         request.urgency,
         dist,
         windowsByHelper[h.id] ?? [],
-        now
+        now,
+        {
+          trustScore,
+          activeWorkload: workloadByHelper[h.id] ?? 0,
+          reliabilityRatio,
+        }
       );
       return { ...h, dist, score };
     })

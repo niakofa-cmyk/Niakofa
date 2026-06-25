@@ -8,6 +8,7 @@ import chatRouter from "./routes/chat.js";
 import crisisResourcesRouter from "./routes/crisis-resources.js";
 import neighborhoodsRouter from "./routes/neighborhoods.js";
 import { purgeExpiredConversations } from "./lib/db.js";
+import { startCheckinWorker } from "./workers/checkin-worker.js";
 
 const logger = pino({ level: "info" });
 const app = express();
@@ -41,14 +42,21 @@ app.use("/", chatRouter);
 app.use("/", crisisResourcesRouter);
 app.use("/", neighborhoodsRouter);
 
-setInterval(async () => {
-  try {
-    await purgeExpiredConversations();
-    logger.info("nia: purged expired conversations");
-  } catch (err) {
-    logger.error({ err }, "nia: purge failed");
-  }
-}, 60 * 60 * 1000);
-
 const port = Number(process.env.PORT ?? 3001);
-app.listen(port, () => logger.info({ port }, "Nia service listening"));
+app.listen(port, () => {
+  logger.info({ port }, "Nia service listening");
+
+  // Hourly conversation purge — keeps nia_conversations lean (48h TTL)
+  setInterval(async () => {
+    try {
+      await purgeExpiredConversations();
+      logger.info("nia: purged expired conversations");
+    } catch (err) {
+      logger.error({ err }, "nia: purge failed");
+    }
+  }, 60 * 60 * 1000);
+
+  // 24-hour follow-up check-in worker — Nia reaches back after every completed
+  // request like a neighbor who actually remembered.
+  startCheckinWorker();
+});

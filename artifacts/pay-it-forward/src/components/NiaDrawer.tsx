@@ -11,15 +11,18 @@ const WELCOME_PHRASES = [
   "Sawubona — I see you.",
   "Akwaaba — you are welcome here.",
   "Pamoja — together, we rise.",
+  "Ubuntu — I am because we are.",
 ];
 
 const QUICK_PROMPTS = [
   { label: "🍽️ Find food near me", text: "Where can I find food assistance near me today?" },
   { label: "🏠 Need shelter", text: "I need emergency shelter. Can you help me find a place tonight?" },
   { label: "💙 I'm struggling", text: "I'm really struggling right now and don't know where to turn." },
-  { label: "📋 Benefits help", text: "Help me find out what benefits I might qualify for." },
-  { label: "🤝 Want to help", text: "I want to help someone in my neighborhood. What requests are open near me?" },
+  { label: "📋 Benefits help", text: "Help me find out what benefits I qualify for." },
+  { label: "🤝 Become a helper", text: "I want to become a Niakofa helper. How do I get started and what should I know?" },
   { label: "🗺️ What's nearby?", text: "What's happening in my community right now?" },
+  { label: "💳 Payment question", text: "I have a question about my wallet or a payment on my account." },
+  { label: "🌍 Need translation", text: "Can you help me communicate with a neighbor in a different language?" },
 ];
 
 function getSessionId(): string {

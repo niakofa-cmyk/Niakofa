@@ -17,6 +17,13 @@
  * without any schedule set (or outside their windows) are still shown.
  * This is intentional — emergencies shouldn't be invisible to a helper
  * just because they forgot to set Saturday hours.
+ *
+ * AI-Powered Dispatch enhancement — additional factors beyond proximity:
+ *   • Trust score bonus: verified, high-rated helpers are preferred
+ *   • Active workload penalty: helpers juggling too many requests get
+ *     deprioritised so no one is overloaded (community sustainability)
+ *   • Historical reliability: helpers who consistently complete what they
+ *     accept earn a compounding bonus (rewards long-term commitment)
  */
 
 const URGENCY_WEIGHT: Record<string, number> = {
@@ -78,17 +85,51 @@ export function isHelperAvailableNow(
   );
 }
 
+/**
+ * AI-Powered Dispatch — extended match scoring parameters.
+ *
+ * All fields are optional so existing callers remain compatible.
+ * When provided, these signals refine the ranking beyond the core
+ * urgency + proximity + skills formula.
+ */
+export interface DispatchSignals {
+  /**
+   * Helper's current trust_score (0–100 scale).
+   * High-trust helpers (+75) earn a significant bonus — they've proven
+   * reliability to the community. Low-trust helpers get no bonus (not penalised
+   * here; the anomaly worker handles active helpers with critically low scores).
+   */
+  trustScore?: number;
+
+  /**
+   * Number of requests currently claimed/en_route/arrived by this helper.
+   * A helper with 0 active requests is preferred over one juggling 3.
+   * Penalty is -4 per active request above the first (1 is fine; 2+ is a flag).
+   */
+  activeWorkload?: number;
+
+  /**
+   * Ratio of completed requests to total accepted requests (0.0–1.0).
+   * Computed as: completed_count / max(1, completed_count + abandoned_count).
+   * Helpers who consistently finish what they start earn up to +10 bonus.
+   * Zero-history helpers get no bonus or penalty (they deserve a fair chance).
+   */
+  reliabilityRatio?: number;
+}
+
 export function computeMatchScore(
   helper: HelperProfile,
   category: string,
   urgency: string,
   distanceMiles: number,
   availabilityWindows: AvailabilityWindow[] = [],
-  now: Date = new Date()
+  now: Date = new Date(),
+  signals: DispatchSignals = {}
 ): MatchScoreResult {
   const reasons: string[] = [];
   let score = URGENCY_WEIGHT[urgency] ?? URGENCY_WEIGHT.medium;
 
+  // ── Skill overlap (+25) ──────────────────────────────────────────────────
   const allSkills = [...(helper.helper_skills ?? []), ...(helper.specialties ?? [])];
   const hasSkillMatch = allSkills.some((skill) => textsOverlap(category, skill));
   if (hasSkillMatch) {
@@ -96,6 +137,7 @@ export function computeMatchScore(
     reasons.push("matches your skills");
   }
 
+  // ── Proximity (up to +20) ────────────────────────────────────────────────
   // Decays linearly to 0 by 10 miles — close-by requests are easier and
   // faster to actually help with, so they're worth surfacing first among
   // otherwise-similar options.
@@ -106,7 +148,7 @@ export function computeMatchScore(
     else if (distanceMiles < 3) reasons.push("nearby");
   }
 
-  // Availability bonus — soft signal only (see module docstring).
+  // ── Availability bonus (+10) — soft signal only (see module docstring) ───
   // Only awarded when the helper has actually set a schedule; helpers with
   // no windows get neither a bonus nor a penalty.
   const is_available_now = availabilityWindows.length > 0
@@ -115,6 +157,45 @@ export function computeMatchScore(
   if (is_available_now) {
     score += 10;
     reasons.push("available now");
+  }
+
+  // ── Trust score bonus (up to +15) — AI-Powered Dispatch ─────────────────
+  // Community trust is earned through completed missions and ratings.
+  // 75+ = community pillar; 55+ = reliable neighbor; 40+ = building trust.
+  if (signals.trustScore !== undefined && signals.trustScore >= 0) {
+    if (signals.trustScore >= 75) {
+      score += 15;
+      reasons.push("trusted community helper");
+    } else if (signals.trustScore >= 55) {
+      score += 8;
+      reasons.push("reliable helper");
+    } else if (signals.trustScore >= 40) {
+      score += 3;
+      reasons.push("building trust");
+    }
+  }
+
+  // ── Active workload penalty (-4 per request above 1) ─────────────────────
+  // Prevents overloading committed helpers. One active request is normal;
+  // two or more suggests the helper's bandwidth is stretched.
+  if (signals.activeWorkload !== undefined && signals.activeWorkload > 1) {
+    const penalty = (signals.activeWorkload - 1) * 4;
+    score -= penalty;
+    if (signals.activeWorkload >= 3) {
+      reasons.push("currently handling multiple requests");
+    }
+  }
+
+  // ── Historical reliability bonus (up to +10) ─────────────────────────────
+  // Rewards helpers who follow through. Ratio = completed / (completed + abandoned).
+  // Zero history → no signal (fair chance for new helpers).
+  if (signals.reliabilityRatio !== undefined && signals.reliabilityRatio > 0) {
+    const reliabilityBonus = Math.round(signals.reliabilityRatio * 10);
+    if (reliabilityBonus > 0) {
+      score += reliabilityBonus;
+      if (signals.reliabilityRatio >= 0.9) reasons.push("highly dependable");
+      else if (signals.reliabilityRatio >= 0.75) reasons.push("dependable helper");
+    }
   }
 
   return { score, reasons, is_available_now };
