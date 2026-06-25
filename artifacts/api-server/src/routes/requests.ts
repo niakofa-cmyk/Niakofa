@@ -126,7 +126,7 @@ router.get("/requests/nearby", async (req, res) => {
     )
   );
   const nearby = requests
-    .map((r: (typeof requests)[number]) => ({ ...r, distance_miles: distanceMiles(lat, lng, r.lat, r.lng) }))
+    .map((r: (typeof requests)[number]) => ({ ...r, distance_miles: (r.lat != null && r.lng != null) ? distanceMiles(lat, lng, r.lat, r.lng) : 99999 }))
     .filter((r: { distance_miles: number; urgency: string | null; requester_id: number; helper_id: number | null; [k: string]: unknown }) => r.distance_miles <= radius)
     .sort((a: { distance_miles: number; urgency: string | null }, b: { distance_miles: number; urgency: string | null }) => {
       const urgencyOrder: Record<string, number> = { emergency: 0, high: 1, medium: 2, low: 3 };
@@ -139,7 +139,7 @@ router.get("/requests/nearby", async (req, res) => {
   const users = userIds.length > 0
     ? await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url })
         .from(usersTable)
-        .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(userIds.map(id => sql`${id}`), sql`, `)}]::int[])`)
+        .where(inArray(usersTable.id, userIds))
     : [];
   const userMap = Object.fromEntries(users.map((u: { id: number; name: string | null; avatar_url: string | null }) => [u.id, u]));
 
@@ -192,7 +192,7 @@ router.get("/requests", async (req, res) => {
   // Exact radius filter in JS (bounding box above is a fast pre-filter)
   if (params.success && params.data.lat && params.data.lng) {
     const radius = params.data.radius_miles ?? 10;
-    rows = rows.filter((r: (typeof rows)[number]) => distanceMiles(params.data.lat!, params.data.lng!, r.lat, r.lng) <= radius);
+    rows = rows.filter((r: (typeof rows)[number]) => r.lat != null && r.lng != null && distanceMiles(params.data.lat!, params.data.lng!, r.lat, r.lng) <= radius);
   }
 
   const allUserIds = [...new Set([
@@ -202,7 +202,7 @@ router.get("/requests", async (req, res) => {
   const users = allUserIds.length > 0
     ? await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url })
         .from(usersTable)
-        .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(allUserIds.map(id => sql`${id}`), sql`, `)}]::int[])`)
+        .where(inArray(usersTable.id, allUserIds))
     : [];
   const userMap = Object.fromEntries(users.map((u: { id: number; name: string | null; avatar_url: string | null }) => [u.id, u]));
 
