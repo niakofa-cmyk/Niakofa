@@ -24,6 +24,7 @@ import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import { signTokenById } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 import { requestSelect } from "../lib/request-select";
+import { userSelect } from "../lib/user-select";
 
 const router = Router();
 
@@ -224,7 +225,7 @@ router.post("/users/:id/scheduled-payment", requireAuth, requireOwnership(), asy
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { request_id, amount, scheduled_date, note } = bParsed.data;
   const userId = pParsed.data.id;
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (!user) return res.status(404).json({ error: "User not found" });
   // BUG-H07: Verify the requester owns the request they're scheduling a payment for
   const [requestRow] = await db.select({ requester_id: requestsTable.requester_id })

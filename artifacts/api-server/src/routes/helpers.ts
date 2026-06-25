@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { distanceMiles } from "../lib/geo.js";
 import { requestSelect } from "../lib/request-select";
+import { userSelect } from "../lib/user-select";
 import { db, usersTable, requestsTable, userSettingsTable, helperAvailabilityTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { eq, and, sql, inArray } from "drizzle-orm";
@@ -30,7 +31,7 @@ router.get("/helpers/online", requireAuth, async (req, res) => {
   if (optedInIdSet.length === 0) return res.json([]);
 
   // SQL bounding-box pre-filter — avoids full table scan
-  let query = db.select().from(usersTable).$dynamic();
+  let query = db.select(userSelect).from(usersTable).$dynamic();
   const conditions = [eq(usersTable.helper_mode_active, true), inArray(usersTable.id, optedInIdSet)];
   if (lat && lng) {
     const latDelta = radius / 69;
@@ -90,7 +91,7 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, async (req, res) => 
   const latDelta = 5 / 69;
   const lngDelta = 5 / (69 * Math.cos(request.lat * Math.PI / 180));
 
-  const helpers = await db.select().from(usersTable).where(
+  const helpers = await db.select(userSelect).from(usersTable).where(
     and(
       eq(usersTable.helper_mode_active, true),
       sql`${usersTable.lat} BETWEEN ${request.lat - latDelta} AND ${request.lat + latDelta}`,

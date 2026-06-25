@@ -51,6 +51,11 @@ export default function RequesterTrackingScreen() {
   const mapRef = useRef<MapRef>(null);
 
   const [helperLocation, setHelperLocation] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [tipAmount, setTipAmount] = useState<number | null>(null);
+  const [submittingCompletion, setSubmittingCompletion] = useState(false);
+  const completionShownRef = useRef(false);
   const [etaCountdown, setEtaCountdown] = useState(0);
   const [showChat, setShowChat] = useState(false);
   const [mapError, setMapError] = useState(false);
@@ -89,6 +94,33 @@ export default function RequesterTrackingScreen() {
     return () => clearInterval(id);
   }, [etaCountdown > 0]);
 
+  // B) Poll helper location every 8s when en_route (WS fallback)
+  useEffect(() => {
+    if (request?.status !== "en_route" || !request?.helper_id) return;
+    const fetchHelperLoc = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const r = await fetch(`/api/users/${request.helper_id}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!r.ok) return;
+        const u = await r.json();
+        if (u.lat && u.lng) setHelperLocation({ lat: u.lat, lng: u.lng, heading: u.heading ?? undefined });
+      } catch {}
+    };
+    fetchHelperLoc();
+    const id = setInterval(fetchHelperLoc, 8000);
+    return () => clearInterval(id);
+  }, [request?.status, request?.helper_id]);
+
+  // A) Show completion modal when status flips to completed
+  useEffect(() => {
+    if (request?.status === "completed" && !completionShownRef.current) {
+      completionShownRef.current = true;
+      setTimeout(() => setShowCompletionModal(true), 600);
+    }
+  }, [request?.status]);
+
   // Auto-zoom to show both helper and requester
   useEffect(() => {
     if (!mapRef.current || !helperLocation || !request) return;
@@ -123,6 +155,28 @@ export default function RequesterTrackingScreen() {
       await navigator.clipboard.writeText(url).catch(() => {});
       toast({ title: t("request_track.link_copied") });
     }
+  };
+
+
+  const handleSubmitCompletion = async () => {
+    setSubmittingCompletion(true);
+    try {
+      const token = localStorage.getItem("token");
+      if (rating > 0 && request?.helper_id) {
+        await fetch(`/api/requests/${requestId}/rate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ rating, helper_id: request.helper_id }),
+        });
+      }
+      if (tipAmount && tipAmount > 0) {
+        setShowCompletionModal(false);
+        setLocation("/wallet");
+        return;
+      }
+    } catch {}
+    setShowCompletionModal(false);
+    setLocation("/");
   };
 
   if (isLoading) {
@@ -483,6 +537,92 @@ export default function RequesterTrackingScreen() {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* A) Completion modal */}
+      <AnimatePresence>
+        {showCompletionModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-50 bg-background/80 backdrop-blur-md flex items-end justify-center pb-safe"
+          >
+            <motion.div
+              initial={{ y: 80, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 80, opacity: 0 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="w-full max-w-md bg-card border border-border rounded-t-3xl px-6 pt-6 pb-8 shadow-2xl"
+            >
+              {/* Celebration header */}
+              <div className="flex flex-col items-center mb-6">
+                <motion.div
+                  animate={{ scale: [0.8, 1.15, 1], rotate: [0, -8, 8, 0] }}
+                  transition={{ duration: 0.7 }}
+                  className="text-5xl mb-3"
+                >
+                  🎉
+                </motion.div>
+                <h2 className="text-xl font-black text-center">Help completed!</h2>
+                <p className="text-sm text-muted-foreground text-center mt-1">
+                  {request?.helper_name ?? "Your helper"} came through for you.
+                </p>
+              </div>
+
+              {/* Star rating */}
+              <div className="mb-5">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest text-center mb-3">Rate your helper</p>
+                <div className="flex justify-center gap-3">
+                  {[1,2,3,4,5].map(star => (
+                    <motion.button
+                      key={star}
+                      whileTap={{ scale: 0.85 }}
+                      onClick={() => setRating(star)}
+                      className={`text-3xl transition-all ${star <= rating ? "opacity-100" : "opacity-30"}`}
+                    >
+                      ★
+                    </motion.button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tip quick-select */}
+              <div className="mb-6">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest text-center mb-3">Add a tip (optional)</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {[null, 2, 5, 10].map(amt => (
+                    <button
+                      key={amt ?? "skip"}
+                      onClick={() => setTipAmount(amt)}
+                      className={`rounded-xl py-2.5 text-sm font-black border transition-all ${
+                        tipAmount === amt
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted/50 text-foreground border-border"
+                      }`}
+                    >
+                      {amt === null ? "Skip" : `$${amt}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Submit */}
+              <button
+                onClick={handleSubmitCompletion}
+                disabled={submittingCompletion}
+                className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-black text-sm disabled:opacity-50 transition-all active:scale-95"
+              >
+                {submittingCompletion ? "Submitting…" : tipAmount && tipAmount > 0 ? `Pay $${tipAmount} tip →` : rating > 0 ? "Submit rating" : "Done"}
+              </button>
+
+              {/* Pay it forward nudge */}
+              <p className="text-[11px] text-muted-foreground text-center mt-3 leading-relaxed">
+                Pay it forward — help someone else when you can 💙
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
