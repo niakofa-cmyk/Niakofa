@@ -1,31 +1,67 @@
 /**
- * Niakofa Service Worker
+ * Niakofa Service Worker v4
  *
- * Responsibilities:
- *  1. Web Push notifications for community members.
- *  2. Offline fallback — shows /offline.html instead of a blank screen
- *     when the user navigates with no network connection.
- *
- * Caching strategy:
- *  - Navigation requests  : network-first → cache → offline.html fallback
- *  - Static assets        : cache-first → network (stale-while-revalidate feel)
- *  - API requests (/api/) : network-only — never cache, let the app handle errors
+ * Phase 9C additions:
+ *  3. Offline POST queue — queues /api/requests POSTs when offline,
+ *     replays them via Background Sync ("niakofa-request-sync") when
+ *     connectivity is restored, and notifies the app via postMessage.
  */
 
-const CACHE_NAME = "niakofa-v3";
+const CACHE_NAME = "niakofa-v4";
+const PRECACHE_ASSETS = ["/offline.html", "/favicon.svg", "/manifest.json"];
+const QUEUE_KEY = "niakofa-offline-queue";
 
-// Assets to pre-cache during install — ensures core app shell works offline
-const PRECACHE_ASSETS = [
-  "/offline.html",
-  "/favicon.svg",
-  "/manifest.json",
-];
+// ── Helpers ───────────────────────────────────────────────────────────────────
+async function readQueue() {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction("queue", "readonly");
+    const req = tx.objectStore("queue").getAll();
+    req.onsuccess = () => resolve(req.result ?? []);
+    req.onerror = () => resolve([]);
+  });
+}
+
+async function writeQueue(items) {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction("queue", "readwrite");
+    const store = tx.objectStore("queue");
+    store.clear();
+    items.forEach((item) => store.add(item));
+    tx.oncomplete = () => resolve();
+  });
+}
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("niakofa-sw", 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore("queue", { autoIncrement: true });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function enqueue(entry) {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction("queue", "readwrite");
+    tx.objectStore("queue").add(entry);
+    tx.oncomplete = () => resolve();
+  });
+}
+
+async function notifyClients(msg) {
+  const clients = await self.clients.matchAll({ includeUncontrolled: true });
+  clients.forEach((c) => c.postMessage(msg));
+}
 
 // ── Install ───────────────────────────────────────────────────────────────────
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(CACHE_NAME)
+    caches.open(CACHE_NAME)
       .then((cache) => cache.addAll(PRECACHE_ASSETS))
       .then(() => self.skipWaiting())
   );
@@ -34,15 +70,10 @@ self.addEventListener("install", (event) => {
 // ── Activate ──────────────────────────────────────────────────────────────────
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((cacheNames) =>
-        Promise.all(
-          cacheNames
-            .filter((name) => name !== CACHE_NAME)
-            .map((name) => caches.delete(name))
-        )
-      )
+    caches.keys()
+      .then((names) => Promise.all(
+        names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))
+      ))
       .then(() => self.clients.claim())
   );
 });
@@ -52,59 +83,61 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Only handle same-origin requests; let cross-origin (Mapbox tiles, CDNs) pass through
   if (url.origin !== self.location.origin) return;
-
-  // API calls: network-only — never serve stale data for mutations or live queries
-  if (url.pathname.startsWith("/api/")) return;
-
-  // WebSocket upgrade requests: pass through untouched
   if (request.headers.get("upgrade") === "websocket") return;
 
+  // Phase 9C: Queue offline POST /api/requests
+  if (
+    url.pathname.startsWith("/api/requests") &&
+    request.method === "POST"
+  ) {
+    event.respondWith(
+      fetch(request.clone()).catch(async () => {
+        const body = await request.clone().text();
+        const authHeader = request.headers.get("Authorization") ?? "";
+        await enqueue({ url: request.url, body, authHeader, ts: Date.now() });
+        await self.registration.sync?.register("niakofa-request-sync").catch(() => {});
+        await notifyClients({ type: "OFFLINE_QUEUED", count: (await readQueue()).length });
+        return new Response(
+          JSON.stringify({ queued: true, offline: true }),
+          { status: 202, headers: { "Content-Type": "application/json" } }
+        );
+      })
+    );
+    return;
+  }
+
+  // All other API calls: network-only
+  if (url.pathname.startsWith("/api/")) return;
+
   if (request.mode === "navigate") {
-    // Navigation (HTML page loads): network-first → offline.html fallback
     event.respondWith(
       fetch(request)
         .then((response) => {
-          // Clone and cache a fresh copy of the page for next time
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
           return response;
         })
         .catch(() =>
-          // Network failed — try the cache first, then the offline page
           caches.match(request).then(
-            (cached) =>
-              cached ||
-              caches.match("/offline.html")
+            (cached) => cached || caches.match("/offline.html")
           )
         )
     );
     return;
   }
 
-  // Static assets (JS, CSS, images, fonts): cache-first → network fallback
+  // Static assets: cache-first → network
   event.respondWith(
     caches.match(request).then((cached) => {
       if (cached) {
-        // Refresh the cache in the background while returning the cached copy
-        fetch(request)
-          .then((response) => {
-            if (response && response.ok) {
-              caches
-                .open(CACHE_NAME)
-                .then((cache) => cache.put(request, response));
-            }
-          })
-          .catch(() => {});
+        fetch(request).then((r) => {
+          if (r?.ok) caches.open(CACHE_NAME).then((c) => c.put(request, r));
+        }).catch(() => {});
         return cached;
       }
-
-      // Not in cache — fetch from network and cache the result
       return fetch(request).then((response) => {
-        if (!response || !response.ok || response.type === "opaque") {
-          return response;
-        }
+        if (!response?.ok || response.type === "opaque") return response;
         const clone = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         return response;
@@ -113,79 +146,86 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
-// ── Push notifications ────────────────────────────────────────────────────────
-self.addEventListener("push", (event) => {
-  let data = {};
-  try {
-    data = event.data ? event.data.json() : {};
-  } catch {
-    data = {
-      title: "Niakofa",
-      body: event.data ? event.data.text() : "New notification",
-    };
+// ── Background Sync ───────────────────────────────────────────────────────────
+self.addEventListener("sync", (event) => {
+  if (event.tag === "niakofa-request-sync") {
+    event.waitUntil(replayQueue());
+  }
+});
+
+async function replayQueue() {
+  const items = await readQueue();
+  if (!items.length) return;
+
+  const remaining = [];
+  for (const item of items) {
+    try {
+      const res = await fetch(item.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(item.authHeader ? { Authorization: item.authHeader } : {}),
+        },
+        body: item.body,
+      });
+      if (!res.ok) remaining.push(item);
+      else {
+        const data = await res.json().catch(() => ({}));
+        await notifyClients({ type: "OFFLINE_SYNCED", request: data });
+      }
+    } catch {
+      remaining.push(item);
+    }
   }
 
+  await writeQueue(remaining);
+  await notifyClients({ type: "OFFLINE_QUEUE_STATUS", pending: remaining.length });
+}
+
+// ── Push ──────────────────────────────────────────────────────────────────────
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch {
+    data = { title: "Niakofa", body: event.data ? event.data.text() : "New notification" };
+  }
   const title = data.title || "Niakofa — Community Help";
   const options = {
     body: data.body || "Help Today. Pay It Forward Tomorrow.",
     icon: "/favicon.svg",
     badge: "/favicon.svg",
-    vibrate: [200, 100, 200],
-    tag: data.requestId
-      ? `request-${data.requestId}`
-      : "niakofa-notification",
+    vibrate: data.urgency === "emergency" ? [500, 200, 500, 200, 500] : [200, 100, 200],
+    tag: data.requestId ? `request-${data.requestId}` : "niakofa-notification",
     renotify: true,
-    data: {
-      requestId: data.requestId || null,
-      url: data.requestId ? `/?open_request=${data.requestId}` : "/",
-    },
+    requireInteraction: data.urgency === "emergency",
+    data: { requestId: data.requestId || null, url: data.requestId ? `/?open_request=${data.requestId}` : "/" },
     actions: data.requestId
-      ? [
-          { action: "view", title: "View Request" },
-          { action: "dismiss", title: "Dismiss" },
-        ]
+      ? [{ action: "view", title: "View Request" }, { action: "dismiss", title: "Dismiss" }]
       : [],
   };
-
-  if (data.urgency === "emergency") {
-    options.vibrate = [500, 200, 500, 200, 500];
-    options.requireInteraction = true;
-  }
-
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
 // ── Notification click ────────────────────────────────────────────────────────
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-
   if (event.action === "dismiss") return;
-
   const targetUrl = event.notification.data?.url || "/";
-
   event.waitUntil(
-    self.clients
-      .matchAll({ type: "window", includeUncontrolled: true })
-      .then((clientList) => {
-        for (const client of clientList) {
-          if ("focus" in client) {
-            client.focus();
-            client.postMessage({ type: "NOTIFICATION_CLICK", url: targetUrl });
-            return;
-          }
-        }
-        if (self.clients.openWindow) {
-          return self.clients.openWindow(targetUrl);
-        }
-      })
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const c of clients) {
+        if ("focus" in c) { c.focus(); c.postMessage({ type: "NOTIFICATION_CLICK", url: targetUrl }); return; }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+    })
   );
 });
 
-self.addEventListener("notificationclose", (_event) => {});
-
-// ── Message (from app) ────────────────────────────────────────────────────────
+// ── Message ───────────────────────────────────────────────────────────────────
 self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "SKIP_WAITING") {
-    self.skipWaiting();
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+  if (event.data?.type === "GET_QUEUE_STATUS") {
+    readQueue().then((items) =>
+      event.source?.postMessage({ type: "OFFLINE_QUEUE_STATUS", pending: items.length })
+    );
   }
 });

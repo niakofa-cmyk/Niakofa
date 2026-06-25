@@ -60,6 +60,9 @@ export const requestsTable = pgTable("help_requests", {
   // request, so it never gets sent twice. Added in migration 0013 — see
   // CLAUDE.md incident log for why this was missing for a while.
   nia_checkin_sent_at: timestamp("nia_checkin_sent_at", { withTimezone: true }),
+  // Phase 9D: Analytics — track voice-activated requests and which language
+  voice_activated: boolean("voice_activated").notNull().default(false),
+  voice_language: text("voice_language"),
 }, (t) => [
   index("help_requests_status_idx").on(t.status),
   index("help_requests_requester_id_idx").on(t.requester_id),

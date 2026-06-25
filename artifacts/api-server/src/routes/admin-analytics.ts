@@ -29,6 +29,8 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), adminLimiter, async 
     dailyRequests,
     trustScoreBuckets,
     newUsersWeek,
+    voiceStats,
+    languageDist,
   ] = await Promise.all([
     // 1. Requests by status
     db
@@ -136,6 +138,31 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), adminLimiter, async 
       .select({ count: sql<number>`COUNT(*)::int` })
       .from(usersTable)
       .where(gte(usersTable.created_at, sevenDaysAgo)),
+
+    // 12. Voice activation rate (last 7 days)
+    db
+      .select({
+        total: sql<number>`COUNT(*)::int`,
+        voice: sql<number>`COUNT(*) FILTER (WHERE ${requestsTable.voice_activated} = true)::int`,
+      })
+      .from(requestsTable)
+      .where(gte(requestsTable.created_at, sevenDaysAgo)),
+
+    // 13. Language distribution (last 7 days, voice-activated only)
+    db
+      .select({
+        language: sql<string>`COALESCE(${requestsTable.voice_language}, 'en')`,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(requestsTable)
+      .where(
+        and(
+          gte(requestsTable.created_at, sevenDaysAgo),
+          eq(requestsTable.voice_activated, true)
+        )
+      )
+      .groupBy(sql`COALESCE(${requestsTable.voice_language}, 'en')`)
+      .orderBy(sql`COUNT(*) DESC`),
   ]);
 
   const openCount = statusCounts.find(s => s.status === "open")?.count ?? 0;
@@ -160,6 +187,14 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), adminLimiter, async 
     reports_by_status: reportStatusCounts,
     reports_by_type: reportTypeCounts,
     trust_score_distribution: trustScoreBuckets,
+    voice_activation: {
+      total_requests_7d: voiceStats[0]?.total ?? 0,
+      voice_activated_7d: voiceStats[0]?.voice ?? 0,
+      rate_pct: voiceStats[0]?.total
+        ? Math.round(((voiceStats[0]?.voice ?? 0) / voiceStats[0].total) * 100)
+        : 0,
+    },
+    language_distribution: languageDist,
   });
 });
 

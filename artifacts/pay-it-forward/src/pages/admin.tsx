@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
+const AdminAnalyticsDashboard = lazy(() => import("./admin-analytics"));
 import { useLocation } from "wouter";
 import { authHeaders } from "@/lib/auth";
 import {

@@ -11,6 +11,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Spinner } from "@/components/ui/spinner";
 import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
 import { NotificationsDrawer, LiveNotification } from "@/components/NotificationsDrawer";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import { usePushNotifications } from "@/lib/usePushNotifications";
 import { useWebSocket } from "@/lib/useWebSocket";
 
@@ -76,6 +77,7 @@ function AppShell() {
 
   return (
     <>
+      <OfflineBanner />
       <Suspense fallback={<PageLoader />}>
         <Switch>
           <Route path="/login" component={LoginScreen} />
