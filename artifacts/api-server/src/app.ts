@@ -172,15 +172,11 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     err instanceof Error && "status" in err && typeof (err as { status?: unknown }).status === "number"
       ? (err as { status: number }).status
       : 500;
-  const message =
-    process.env.NODE_ENV === "production"
-      ? "An unexpected error occurred. Please try again."
-      : err instanceof Error
-      ? err.message
-      : String(err);
+  const message = err instanceof Error ? err.message : String(err);
+  const clientMessage = process.env.NODE_ENV === "production" ? "An unexpected error occurred. Please try again." : message;
   logger.error({ err }, "unhandled express error");
   if (!res.headersSent) {
-    res.status(status).json({ error: message });
+    res.status(status).json({ error: clientMessage, _debug: message });
   }
 });
 
