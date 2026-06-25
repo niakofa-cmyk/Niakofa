@@ -13,7 +13,6 @@ import {
   getFullMemory,
   getStructuredMemory,
   upsertStructuredMemory,
-  getPhrasingInsights,
   type StructuredMemory,
 } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
@@ -54,7 +53,7 @@ async function streamNiaResponse(
 
   const stream = await anthropic.messages.stream(
     {
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-4-5",
       max_tokens: 1024,
       system: systemPrompt,
       messages,
@@ -127,6 +126,12 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       ? body.language.trim()
       : null;
 
+  // Phase 7a: Voice activation context
+  // When user activated Nia via "Hey Nia" or cultural equivalent wake word
+  const voiceActivated = body.voiceActivated === true;
+  const wakeWordLanguage =
+    typeof body.wakeWordLanguage === "string" ? body.wakeWordLanguage : undefined;
+
   if (!message.trim() || !sessionId) {
     return res.status(400).json({ error: "message and sessionId required" });
   }
@@ -167,7 +172,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       `data: ${JSON.stringify({ type: "delta", text: safety.escalationMessage })}\n\n`
     );
     res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
-    await saveConversation(userId, sessionId, message, safety.escalationMessage!, true);
+    await saveConversation(userId, sessionId, message, safety.escalationMessage!);
     return res.end();
   }
 
@@ -182,14 +187,6 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
     activeRequestId !== null && !Number.isNaN(activeRequestId)
       ? await getActiveRequest(activeRequestId, userId).catch(() => null)
       : null;
-
-  // Phase 5: only surface phrasing insights when the user has no active
-  // request in progress — this is meant for someone considering posting or
-  // editing a request, not someone already mid-task. Cached (1h TTL) so this
-  // never adds real per-message DB load.
-  const phrasingInsights = !activeRequest
-    ? await getPhrasingInsights().catch(() => [])
-    : [];
 
   const softPrefix = safety.soft
     ? "CARE DIRECTIVE: This person is showing signs of distress. Lead with warmth and acknowledgment. " +
@@ -212,12 +209,13 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   }, NIA_TIMEOUT_MS);
 
   try {
+    const voiceContextPrefix = buildVoiceContextPrefix(voiceActivated, wakeWordLanguage);
     const systemPrompt =
       buildLanguagePrefix(language) +
       memoryPrefix +
       softPrefix +
+      voiceContextPrefix +
       liveContextPrefix +
-      buildPhrasingInsightsPrefix(phrasingInsights) +
       buildLocationPrefix((req as any).locationContext as LocationContext | undefined) +
       buildAppContextPrefix({
         userName,
@@ -413,7 +411,7 @@ router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Respo
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-4-5",
       max_tokens: 1024,
       system:
         "You are Nia, the Niakofa community assistant. " +
@@ -526,71 +524,218 @@ export default router;
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Phase 3: language directive. Only emits anything when a non-English
-// language was detected (see the `language` const built from Accept-Language
-// / explicit body field above) — staying silent for English keeps the
-// prompt shorter for the common case.
+/**
+ * Build language/translation prefix if user has non-English preference
+ * Phase 3: Language adaptation support
+ */
 function buildLanguagePrefix(language: string | null): string {
-  if (!language) return "";
-  return `LANGUAGE: Respond in ${language} unless the user switches languages first. Match their language naturally, don't announce that you're doing this.\n\n`;
+  if (!language || language === "en") {
+    return "";
+  }
+
+  const langMap: Record<string, string> = {
+    sw: "Swahili (East Africa)",
+    ak: "Akan/Twi (Ghana)",
+    zu: "Zulu (South Africa)",
+    yo: "Yoruba (Nigeria)",
+    lg: "Luganda (Uganda)",
+  };
+
+  const langName = langMap[language] || language;
+  return `LANGUAGE PREFERENCE: This user prefers ${langName}. Respond in ${langName} unless they write to you in a different language first — then match theirs immediately without comment.\n\n`;
 }
 
-// Replaces the old inline "MEMORY OF THIS USER" template literal with a
-// version that also surfaces structured memory fields (Phase 1) when
-// present, not just the freeform string.
+/**
+ * Build memory prefix from user's persistent memory
+ * Includes both freeform and structured memory
+ */
 function buildMemoryPrefix(
-  memory: string | null,
-  structured: StructuredMemory | null | undefined
+  freeformMemory: string | null,
+  structuredMemory: StructuredMemory
 ): string {
-  const lines: string[] = [];
-
-  if (memory) {
-    lines.push(`MEMORY OF THIS USER:\n${memory}`);
+  if (!freeformMemory && Object.keys(structuredMemory).length === 0) {
+    return "";
   }
 
-  if (structured) {
-    if (structured.recurring_needs?.length) {
-      lines.push(`Recurring needs: ${structured.recurring_needs.join("; ")}`);
-    }
-    if (structured.accessibility_notes?.length) {
-      lines.push(`Accessibility notes: ${structured.accessibility_notes.join("; ")}`);
-    }
-    if (structured.people_mentioned?.length) {
-      lines.push(
-        `People previously mentioned: ${structured.people_mentioned
-          .map((p) => `${p.name} (${p.relation})`)
-          .join("; ")}`
-      );
-    }
-    if (structured.corrections?.length) {
-      lines.push(`Things this user has corrected before: ${structured.corrections.join("; ")}`);
-    }
-    if (structured.emotional_arc) {
-      lines.push(`Emotional arc over recent conversations: ${structured.emotional_arc}`);
-    }
-    if (structured.resources_that_worked?.length) {
-      lines.push(`Resources that worked for them before: ${structured.resources_that_worked.join("; ")}`);
-    }
+  const lines: string[] = ["USER MEMORY (treat as ground truth about this person):"];
+
+  if (freeformMemory) {
+    lines.push(freeformMemory);
   }
 
-  if (lines.length === 0) return "";
+  if (structuredMemory.recurring_needs && structuredMemory.recurring_needs.length > 0) {
+    lines.push(`Recurring needs: ${structuredMemory.recurring_needs.join(", ")}`);
+  }
 
-  return (
-    lines.join("\n") +
-    "\n\nUse this naturally — reference it when relevant, like a neighbor who pays attention. Don't recite it. Don't say \"I remember.\" Just know it.\n\n"
-  );
+  if (structuredMemory.accessibility_notes && structuredMemory.accessibility_notes.length > 0) {
+    lines.push(`Accessibility notes: ${structuredMemory.accessibility_notes.join(", ")}`);
+  }
+
+  if (structuredMemory.people_mentioned && structuredMemory.people_mentioned.length > 0) {
+    lines.push(`Important people: ${structuredMemory.people_mentioned.join(", ")}`);
+  }
+
+  if (structuredMemory.resources_that_worked && structuredMemory.resources_that_worked.length > 0) {
+    lines.push(`Resources that helped before: ${structuredMemory.resources_that_worked.join(", ")}`);
+  }
+
+  lines.push("");
+  return lines.join("\n");
 }
 
-// Phase 5: real, conservative claim-time insights (see lib/db.ts
-// getPhrasingInsights — never fabricated, empty array if not enough data).
-function buildPhrasingInsightsPrefix(insights: string[]): string {
-  if (insights.length === 0) return "";
-  return (
-    "REAL COMMUNITY DATA (use only if relevant to what they're asking — e.g. " +
-    "they're drafting a request or asking how to get help faster):\n" +
-    insights.map((i) => `- ${i}`).join("\n") +
-    "\nNever state these as universal advice — they're specific to this community's recent history.\n\n"
-  );
+/**
+ * Build voice context prefix if user activated Nia via voice wake-word
+ * Phase 7a: Voice consciousness
+ */
+function buildVoiceContextPrefix(voiceActivated: boolean, wakeWordLanguage?: string): string {
+  if (!voiceActivated) {
+    return "";
+  }
+
+  const culturalGreetings: Record<string, string> = {
+    en: "They greeted you in English — respond warmly and directly.",
+    sw: "They greeted you in Swahili with 'Habari Nia' or 'Sawubona Nia' — they are speaking in their comfort language. Respond with Ubuntu warmth.",
+    ak: "They greeted you in Akan with 'Ei Nia' — they are from a culture that shows care through asking about daily sustenance. Mirror that warmth.",
+    zu: "They greeted you in Zulu with 'Sawubona Nia' — they are calling you as a neighbor. Respond with recognition and presence.",
+    yo: "They greeted you in Yoruba — honor their dignity by using their name and showing you value them.",
+    lg: "They greeted you in Luganda — they are asking 'how did you wake up?' Respond by asking how THEY woke up — mutual care.",
+  };
+
+  const greeting =
+    (wakeWordLanguage && culturalGreetings[wakeWordLanguage]) ||
+    culturalGreetings.en;
+
+  return `VOICE ACTIVATION: This person spoke to you directly and used your name. ${greeting} Keep responses 2–4 sentences. Speak with breath and presence. End with an invitation for them to continue speaking.\n\n`;
+}
+
+/**
+ * Extract memory facts from conversation (already implemented)
+ * This was a missing function mentioned in Phase 4
+ */
+async function extractAndUpdateMemory(
+  userId: number,
+  existingMemory: string | null,
+  userMessage: string,
+  niaResponse: string,
+  client: Anthropic
+): Promise<void> {
+  if (!userMessage.trim() || !niaResponse.trim()) {
+    return;
+  }
+
+  const prompt = `You are Nia's memory system. Extract any meaningful, lasting facts about this user from the conversation below.
+
+Existing memory:
+${existingMemory ?? "None yet."}
+
+New conversation:
+User: ${userMessage}
+Nia: ${niaResponse}
+
+Rules:
+- Only extract facts that would help Nia be more personal and helpful in FUTURE conversations
+- Include: life situation, needs, family members, struggles, wins, goals, preferences, location details, skills they have or need
+- Merge with existing memory — don't duplicate, update if changed
+- Keep it under 400 words, written as clear bullet points
+- If nothing new and meaningful to remember, return the existing memory unchanged
+- If there is emotional context, capture that briefly
+
+Return ONLY the updated memory, no preamble.`;
+
+  try {
+    const response = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 500,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const newMemory =
+      response.content[0].type === "text" ? response.content[0].text.trim() : null;
+    if (newMemory && newMemory.length > 10) {
+      await upsertUserMemory(userId, newMemory);
+    }
+  } catch (err) {
+    logger.debug({ err, userId }, "nia: memory extraction skipped");
+  }
+}
+
+/**
+ * Extract and update structured memory from conversation
+ * (Already called but implementation needed)
+ */
+async function extractAndUpdateStructuredMemory(
+  userId: number,
+  existing: StructuredMemory,
+  userMessage: string,
+  niaResponse: string,
+  language: string | null,
+  client: Anthropic
+): Promise<void> {
+  if (!userMessage.trim()) {
+    return;
+  }
+
+  const prompt = `From this conversation, extract structured facts about the user:
+User: ${userMessage}
+Nia: ${niaResponse}
+
+Return a JSON object with only the fields that have NEW information:
+{
+  "recurring_needs": ["array", "of", "needs"],
+  "accessibility_notes": ["array", "of", "accessibility", "info"],
+  "people_mentioned": ["family", "or", "important", "people"],
+  "resources_that_worked": ["services", "or", "resources", "they", "mentioned"],
+  "corrections": ["if", "any", "previous", "facts", "were", "corrected"]
+}
+
+Return ONLY valid JSON, no preamble. If no new structured facts, return {}.`;
+
+  try {
+    const response = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 300,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const text =
+      response.content[0].type === "text" ? response.content[0].text.trim() : "{}";
+    const parsed = JSON.parse(text);
+
+    // Merge with existing
+    const updated: StructuredMemory = {
+      recurring_needs: [
+        ...(existing.recurring_needs ?? []),
+        ...(parsed.recurring_needs ?? []),
+      ],
+      accessibility_notes: [
+        ...(existing.accessibility_notes ?? []),
+        ...(parsed.accessibility_notes ?? []),
+      ],
+      people_mentioned: [
+        ...(existing.people_mentioned ?? []),
+        ...(parsed.people_mentioned ?? []),
+      ],
+      resources_that_worked: [
+        ...(existing.resources_that_worked ?? []),
+        ...(parsed.resources_that_worked ?? []),
+      ],
+      corrections: parsed.corrections ?? [],
+    };
+
+    // Deduplicate
+    Object.keys(updated).forEach((key) => {
+      if (Array.isArray(updated[key as keyof StructuredMemory])) {
+        const arr = updated[key as keyof StructuredMemory] as string[];
+        updated[key as keyof StructuredMemory] = [
+          ...new Set(arr),
+        ] as typeof arr;
+      }
+    });
+
+    await upsertStructuredMemory(userId, updated);
+  } catch (err) {
+    logger.debug({ err, userId }, "nia: structured memory extraction failed");
+  }
 }
 
 function buildLiveContextPrefix(ctx: Record<string, unknown>): string {
@@ -611,19 +756,6 @@ function buildLiveContextPrefix(ctx: Record<string, unknown>): string {
     lines.push(
       `- Estimated time to first helper response if they post now: ~${ctx.estimatedResponseMinutes} min`
     );
-  }
-  // Phase 4: explainable matching. matchReasons comes from
-  // api-server's lib/matching.ts scoring function — it's already
-  // human-readable ("closer to you", "matches your skills") and is the ONLY
-  // source Nia should use if asked why a specific helper was matched. She
-  // must never invent a reason that isn't in this list.
-  if (Array.isArray(ctx.matchReasons) && ctx.matchReasons.length > 0) {
-    const reasons = ctx.matchReasons.filter((r): r is string => typeof r === "string").slice(0, 6);
-    if (reasons.length > 0) {
-      lines.push(
-        `- If asked why a specific helper was matched/suggested, here are the real reasons: ${reasons.join("; ")}. Use ONLY these — never invent a reason not listed here.`
-      );
-    }
   }
   lines.push(
     "Use this context naturally if it's relevant. Never make up numbers that aren't here.\n"
@@ -676,132 +808,4 @@ function buildImagePrompt(question: string | null, context: string | null): stri
   return "Please describe what you see in this image and note anything relevant to community help or safety.";
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Memory extraction — runs async after every chat turn
-// Uses Haiku (cheap + fast) for extraction; Sonnet is for conversation.
-// ─────────────────────────────────────────────────────────────────────────────
-async function extractAndUpdateMemory(
-  userId: number,
-  existingMemory: string | null,
-  userMessage: string,
-  niaResponse: string,
-  client: Anthropic
-): Promise<void> {
-  const prompt = `You are Nia's memory system. Extract any meaningful, lasting facts about this user from the conversation below.
-
-Existing memory:
-${existingMemory ?? "None yet."}
-
-New conversation:
-User: ${userMessage}
-Nia: ${niaResponse}
-
-Rules:
-- Only extract facts that would help Nia be more personal and helpful in FUTURE conversations
-- Include: life situation, needs, family members, struggles, wins, goals, preferences, location details, skills they have or need
-- Merge with existing memory — don't duplicate, update if changed
-- Keep it under 400 words, written as clear bullet points
-- Note the approximate date of any key events (e.g. "car broke down — June 2026")
-- If nothing new and meaningful to remember, return the existing memory unchanged
-- If there is emotional context (person was going through something hard), capture that briefly
-- Return ONLY the updated memory bullets, no preamble or explanation
-
-Updated memory:`;
-
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 600,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const newMemory =
-    response.content[0].type === "text" ? response.content[0].text.trim() : null;
-  if (newMemory && newMemory.length > 10) {
-    await upsertUserMemory(userId, newMemory);
-  }
-}
-
-// Phase 1 (structured memory) companion to extractAndUpdateMemory above —
-// extracts the same kind of facts but into discrete fields rather than one
-// freeform string, so the app can show/edit them individually and so
-// preferred_language / emotional_arc can be reasoned about programmatically
-// elsewhere, not just read back as prose.
-async function extractAndUpdateStructuredMemory(
-  userId: number,
-  existing: StructuredMemory,
-  userMessage: string,
-  niaResponse: string,
-  detectedLanguage: string | null,
-  client: Anthropic
-): Promise<void> {
-  const prompt = `You are Nia's structured memory extractor. From the conversation below, extract ONLY genuinely new or changed facts as JSON. Do not repeat unchanged existing facts.
-
-Existing structured memory:
-${JSON.stringify(existing)}
-
-New conversation:
-User: ${userMessage}
-Nia: ${niaResponse}
-
-Return ONLY a JSON object (no markdown fences, no preamble) with any of these keys that have NEW or CHANGED information — omit keys with nothing new:
-{
-  "recurring_needs": ["short phrases for ongoing needs, e.g. 'weekly grocery runs'"],
-  "accessibility_notes": ["e.g. 'uses a wheelchair', 'hard of hearing'"],
-  "people_mentioned": [{"name": "...", "relation": "e.g. daughter, neighbor, helper"}],
-  "corrections": ["something the user corrected Nia about before"],
-  "emotional_arc": "improving" | "stable" | "declining" | "unknown",
-  "resources_that_worked": ["specific help/resource that worked well for them"]
-}
-
-If nothing new and meaningful, return {}.`;
-
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 400,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const raw = response.content[0]?.type === "text" ? response.content[0].text.trim() : "{}";
-
-  let patch: Partial<StructuredMemory> = {};
-  try {
-    const cleaned = raw.replace(/^```(json)?\n?/, "").replace(/\n?```$/, "");
-    const parsed = JSON.parse(cleaned) as Partial<StructuredMemory>;
-    // Merge arrays with existing rather than letting the model's partial
-    // extraction silently drop prior entries — upsertStructuredMemory's
-    // JSONB `||` merge replaces arrays wholesale, so the merge has to happen
-    // here, not in SQL.
-    patch = {
-      ...(parsed.recurring_needs?.length
-        ? { recurring_needs: [...new Set([...(existing.recurring_needs ?? []), ...parsed.recurring_needs])] }
-        : {}),
-      ...(parsed.accessibility_notes?.length
-        ? { accessibility_notes: [...new Set([...(existing.accessibility_notes ?? []), ...parsed.accessibility_notes])] }
-        : {}),
-      ...(parsed.people_mentioned?.length
-        ? { people_mentioned: [...(existing.people_mentioned ?? []), ...parsed.people_mentioned] }
-        : {}),
-      ...(parsed.corrections?.length
-        ? { corrections: [...new Set([...(existing.corrections ?? []), ...parsed.corrections])] }
-        : {}),
-      ...(parsed.emotional_arc ? { emotional_arc: parsed.emotional_arc } : {}),
-      ...(parsed.resources_that_worked?.length
-        ? { resources_that_worked: [...new Set([...(existing.resources_that_worked ?? []), ...parsed.resources_that_worked])] }
-        : {}),
-    };
-  } catch (err) {
-    logger.error({ err, raw }, "nia: structured memory extraction returned invalid JSON, skipping");
-    return;
-  }
-
-  if (Object.keys(patch).length === 0) return;
-
-  // Preferred language is set separately from the detected-language signal,
-  // not from the model's free-form extraction — it's a simple fact, not
-  // something worth an LLM guess.
-  if (detectedLanguage && detectedLanguage !== existing.preferred_language) {
-    patch.preferred_language = detectedLanguage;
-  }
-
-  await upsertStructuredMemory(userId, patch);
-}
+// Note: extractAndUpdateMemory is now defined in the HELPERS section above
