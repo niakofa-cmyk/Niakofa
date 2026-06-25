@@ -823,7 +823,10 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
   useEffect(() => {
     const defaultPos = () => ({
       x: Math.round(window.innerWidth / 2 - FAB_SIZE / 2),
-      y: 58,
+      // y: 16 keeps Nia at the very top of the viewport — visually above the
+      // TopBar and all page UI, confirming she floats OUTSIDE the app chrome.
+      // Users can drag her anywhere; position is persisted to localStorage.
+      y: 16,
     });
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -955,7 +958,9 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
       <motion.div
         animate={{
           scale: [1, 1.05, 1, 1.03, 1],
-          y: [0, -7, -5, -9, -6, 0],
+          // Bob DOWNWARD so visual never extends above the container's hit boundary.
+          // Positive y = moves down in CSS — entire orb stays within tap area.
+          y: [0, 5, 3, 7, 4, 0],
         }}
         transition={{
           scale: { duration: 2.6, repeat: Infinity, ease: [0.4, 0, 0.6, 1], times: [0, 0.25, 0.5, 0.75, 1] },
