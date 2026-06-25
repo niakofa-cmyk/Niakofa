@@ -67,10 +67,12 @@ async function streamNiaResponse(
     }
     if (
       chunk.type === "content_block_delta" &&
-      chunk.delta.type === "input_json_delta" &&
-      typeof (chunk.delta as any).partial_json === "string"
+      chunk.delta.type === "input_json_delta"
     ) {
-      fullResponse += (chunk.delta as any).partial_json;
+      const delta = chunk.delta as { type: "input_json_delta"; partial_json?: string };
+      if (typeof delta.partial_json === "string") {
+        fullResponse += delta.partial_json;
+      }
     }
   }
 

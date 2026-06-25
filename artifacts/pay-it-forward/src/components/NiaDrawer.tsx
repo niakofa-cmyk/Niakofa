@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown, Mic } from "lucide-react";
 import { authHeaders } from "../lib/auth";
 
-const NIA_SERVICE_URL = import.meta.env.VITE_NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app";
+// All Nia traffic routes through the API server proxy at /api/nia/...
+// No hardcoded external URL — the api-server forwards to the nia-service.
 const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
 const WELCOME_PHRASES = [
@@ -446,7 +447,9 @@ export function NiaDrawer({
       setShowSplash(true);
       isFirstOpen.current = false;
     }
-    fetch(`${NIA_SERVICE_URL}/history/${sessionId}`)
+    fetch(`${API_BASE}/api/nia/history/${sessionId}`, {
+      headers: authHeaders(),
+    })
       .then((r) => r.json())
       .then((rows: { userMessage: string; niaResponse: string }[]) => {
         if (rows.length > 0) {
@@ -504,7 +507,7 @@ export function NiaDrawer({
     const coords = userCoords ?? userLocation;
 
     try {
-      const res = await fetch(`${NIA_SERVICE_URL}/chat`, {
+      const res = await fetch(`${API_BASE}/api/nia/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({

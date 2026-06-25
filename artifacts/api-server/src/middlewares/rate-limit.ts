@@ -217,6 +217,31 @@ export const requestActionLimiter = rateLimit({
   message: { error: "Too many request actions in a short period. Please wait a few minutes." },
 });
 
+// ── 9. Community Posts (5 / 15 min per user) ─────────────────────────────────
+// Tighter limit than the general API — community posts go into the public feed
+// and a human moderator reviews pending ones. 5/15 min is generous for genuine
+// community members, tight enough to prevent feed-flooding by automated accounts.
+export const communityPostLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  store: createStore("community-post"),
+  keyGenerator: (req) => {
+    const r = req as typeof req & { authenticatedUserId?: number };
+    return `community-post-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
+  },
+  message: {
+    error:
+      "You've posted several times recently. " +
+      "Please wait a few minutes before posting again — this keeps the community feed fresh for everyone.",
+  },
+});
+
+// ── 10. Nia Chat (30 / min per user, crisis-aware) ───────────────────────────
+// Exported for use in the nia-proxy route in addition to the direct chat route.
+// Reuses crisisAwareChatLimiter — no need for a new limiter.
+
 // ── SOS panic button (3/hour per user) ───────────────────────────────────────
 export const sosLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,

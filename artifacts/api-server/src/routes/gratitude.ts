@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { db, gratitudePostsTable, gratitudeLikesTable, usersTable, requestsTable } from "@workspace/db";
-import { desc, eq, sql, and } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { moderatePostText } from "../lib/post-moderation";
+import { communityPostLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { z } from "zod";
 
@@ -35,17 +36,24 @@ const CreateGratitudeBody = z.object({
   message: z.string().min(3).max(500),
 });
 
-// ── GET /gratitude — latest 50 approved posts for Community feed ─────────────
+// ── GET /gratitude — paginated approved posts for Community feed ──────────────
 // Pending/rejected posts are withheld from the public feed until an admin
 // reviews them via the moderation queue below.
-router.get("/gratitude", async (_req, res) => {
+// Pagination: ?limit=20&offset=0 (max limit 100)
+router.get("/gratitude", async (req, res) => {
+  const rawLimit = parseInt(String(req.query.limit ?? "20"), 10);
+  const rawOffset = parseInt(String(req.query.offset ?? "0"), 10);
+  const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 20 : rawLimit), 100);
+  const offset = Math.max(0, isNaN(rawOffset) ? 0 : rawOffset);
+
   const posts = await db
     .select()
     .from(gratitudePostsTable)
     .where(eq(gratitudePostsTable.moderation_status, "approved"))
     .orderBy(desc(gratitudePostsTable.created_at))
-    .limit(50);
-  return res.json(posts);
+    .limit(limit)
+    .offset(offset);
+  return res.json({ posts, limit, offset, hasMore: posts.length === limit });
 });
 
 // ── POST /gratitude — create a new thank-you post ────────────────────────────
@@ -121,7 +129,7 @@ const CreateCommunityPostBody = z.object({
 });
 
 // ── POST /community-posts — general feed posts beyond gratitude ──────────────
-router.post("/community-posts", requireAuth, async (req, res) => {
+router.post("/community-posts", requireAuth, communityPostLimiter, async (req, res) => {
   const parsed = CreateCommunityPostBody.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid body", details: parsed.error.issues });

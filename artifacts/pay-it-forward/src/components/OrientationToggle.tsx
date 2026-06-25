@@ -31,7 +31,7 @@ export function OrientationToggle({ mode, onToggle }: OrientationToggleProps) {
       aria-label={isHeadingUp ? "Switch to North-Up map orientation" : "Switch to Heading-Up map orientation"}
       aria-pressed={isHeadingUp}
       className={`
-        absolute bottom-[278px] left-4 z-30
+        absolute bottom-[268px] sm:bottom-[278px] left-4 z-30
         flex items-center gap-1.5
         backdrop-blur-md border rounded-full
         px-3 py-1.5 shadow-lg

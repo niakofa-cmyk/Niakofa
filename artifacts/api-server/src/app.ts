@@ -105,10 +105,18 @@ const APPROVAL_EXEMPT_PATHS = new Set([
   "/version",
   "/stripe/webhook",
   "/verification/identity/webhook",
+  // Nia chat and history are available to unapproved/anonymous users —
+  // Nia is always free and always accessible, even before account approval.
+  "/nia/chat",
+  "/nia/history",
 ]);
 
 app.use("/api", (req, res, next) => {
-  if (APPROVAL_EXEMPT_PATHS.has(req.path)) return next();
+  // Prefix-match for parameterised exempt paths (e.g. /nia/history/:sessionId)
+  const isExempt =
+    APPROVAL_EXEMPT_PATHS.has(req.path) ||
+    req.path.startsWith("/nia/history/");
+  if (isExempt) return next();
   // Allow a user to fetch their own profile (already owner-locked by
   // requireOwnership downstream) so the frontend can display pending/denied
   // status without this gate creating a chicken-and-egg problem.
