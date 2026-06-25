@@ -213,8 +213,16 @@ router.post("/gratitude/:id/like", requireAuth, async (req, res) => {
   try {
     await db.insert(gratitudeLikesTable).values({ post_id: id, user_id: userId });
   } catch (err) {
-    // Unique constraint violation = already liked this post — treat as a
-    // no-op rather than an error, so a double-tap doesn't surface a 500.
+    // Only a Postgres unique-constraint violation (23505) means "already liked".
+    // Any other DB error is a real failure and must surface as a 500 rather than
+    // being silently masked as a successful no-op.
+    const code = (err as { code?: string; cause?: { code?: string } })?.code
+      ?? (err as { cause?: { code?: string } })?.cause?.code;
+    if (code !== "23505") {
+      logger.error({ err, postId: id, userId }, "gratitude: like insert failed");
+      return res.status(500).json({ error: "Failed to like post" });
+    }
+    // Already liked this post — treat as a no-op so a double-tap doesn't 500.
     const [existing] = await db.select({ likes: gratitudePostsTable.likes })
       .from(gratitudePostsTable).where(eq(gratitudePostsTable.id, id)).limit(1);
     if (!existing) return res.status(404).json({ error: "Post not found" });

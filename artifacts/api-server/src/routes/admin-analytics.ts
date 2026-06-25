@@ -174,6 +174,9 @@ router.get("/admin/accounts", requireAuth, requireAdmin(), adminLimiter, async (
   if (approval_status) conditions.push(eq(usersTable.approval_status, approval_status));
   if (account_type) conditions.push(eq(usersTable.account_type, account_type));
 
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "200"), 10) || 200, 1), 500);
+  const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
+
   const users = await db
     .select({
       id: usersTable.id,
@@ -189,7 +192,9 @@ router.get("/admin/accounts", requireAuth, requireAdmin(), adminLimiter, async (
     })
     .from(usersTable)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(usersTable.created_at);
+    .orderBy(usersTable.created_at)
+    .limit(limit)
+    .offset(offset);
 
   return res.json(users);
 });
@@ -200,6 +205,9 @@ router.get("/admin/helper-applications", requireAuth, requireAdmin(), adminLimit
 
   const conditions = [sql`${usersTable.helper_status} IS NOT NULL`];
   if (status) conditions.push(eq(usersTable.helper_status, status));
+
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "200"), 10) || 200, 1), 500);
+  const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
 
   const applicants = await db
     .select({
@@ -218,7 +226,9 @@ router.get("/admin/helper-applications", requireAuth, requireAdmin(), adminLimit
     })
     .from(usersTable)
     .where(and(...conditions))
-    .orderBy(usersTable.created_at);
+    .orderBy(usersTable.created_at)
+    .limit(limit)
+    .offset(offset);
 
   return res.json(applicants);
 });

@@ -49,7 +49,7 @@ async function streamNiaResponse(
 
   const stream = await anthropic.messages.stream(
     {
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-4-5",
       max_tokens: 1024,
       system: systemPrompt,
       messages,
@@ -117,6 +117,11 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
 
   if (!message.trim() || !sessionId) {
     return res.status(400).json({ error: "message and sessionId required" });
+  }
+
+  // Cap message length to bound token cost and prevent abuse via huge payloads.
+  if (message.length > 4000) {
+    return res.status(400).json({ error: "message is too long (max 4000 characters)" });
   }
 
   if (gpsLat !== null && gpsLon !== null) {
@@ -258,7 +263,8 @@ router.post("/checkin", async (req: Request, res: Response) => {
   // Internal calls from the scheduler bypass Bearer auth but must supply the
   // shared INTERNAL_SECRET header to prevent abuse from outside.
   const secret = req.headers["x-internal-secret"];
-  if (!process.env.INTERNAL_SECRET || secret !== process.env.INTERNAL_SECRET) {
+  const expectedSecret = process.env.INTERNAL_SECRET ?? process.env.SESSION_SECRET;
+  if (!expectedSecret || secret !== expectedSecret) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
@@ -386,10 +392,10 @@ router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Respo
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-4-5",
       max_tokens: 1024,
       system:
-        "You are Nia, the Niakofa community assistant for Fort Worth, TX. " +
+        "You are Nia, the Niakofa community assistant. " +
         "When analyzing images, be helpful and community-minded. " +
         "If the image shows something someone needs help with (broken appliance, medical situation, " +
         "navigation question, flooded area, prescription bottle), describe what you see clearly and " +

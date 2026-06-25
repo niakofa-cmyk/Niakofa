@@ -183,3 +183,21 @@ A second forensic report (BUG-001..037, MISSING-001..017) was reviewed line-by-l
 
 **Infra** — bounded the pg connection pool (env-tunable, NaN-guarded), removed an ESM `__dirname` hazard in `drizzle.config.ts`, added `sos` to the report-type API enum (regenerated client + Zod), and corrected two broken civic-resource URLs. A new idempotent `0011_forensic_schema_hardening.sql` mirrors every schema change for production.
 
+---
+
+### Session: June 25, 2026 (fifth session — forensic verification pass, three stale reports)
+
+Three more forensic reports were reviewed line-by-line against the live codebase. As before, the reports described a stale snapshot, so most findings were false positives (NiaFab drag + localStorage already implemented, `offline.html` exists, the report-type enum already includes `sos`, user-deletion FKs all have `onDelete` cascade/set-null, the `as any` casts in `users.ts` sit behind an explicit field allowlist). Only the genuinely valid issues were fixed:
+
+**Nia's voice is no longer geo-locked** — the `/analyze-image` system prompt hardcoded "Fort Worth, TX". Nia now introduces herself as "the Niakofa community assistant" with no city baked in, so she speaks correctly to anyone, anywhere.
+
+**Nia remembers a little more** — `getRecentHistory` rolling context window raised from 12 to 20 turns, so Nia carries more of the conversation forward within a session.
+
+**Nia won't choke on a wall of text** — `/chat` now caps a single message at 4000 characters, bounding token cost and protecting against abusive payloads, while still leaving ample room for someone pouring their heart out.
+
+**Nia's history actually loads when you're signed in** — the API-server proxy now forwards the caller's `Authorization` header to nia-service `/history`. Previously authenticated history always came back empty because the upstream auth check never saw a token.
+
+**One shared key for the family** — internal service-to-service calls (check-in worker, neighborhood + crisis-resource generators) historically used two different env var names. Both sides now resolve `INTERNAL_SECRET ?? SESSION_SECRET`, so Nia's internal endpoints authenticate consistently regardless of which secret an operator configured.
+
+**Model id corrected** — the streaming + vision calls referenced a non-existent `claude-sonnet-4-6`; corrected to `claude-sonnet-4-5`. (The Haiku check-in model id was already valid and left untouched.)
+

@@ -22,7 +22,7 @@ import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
 
 const NIA_SERVICE_URL = process.env.NIA_SERVICE_URL ?? "http://localhost:4001";
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "";
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? process.env.SESSION_SECRET ?? "";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 

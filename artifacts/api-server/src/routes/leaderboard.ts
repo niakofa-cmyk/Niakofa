@@ -3,7 +3,7 @@ import { getTierName } from "../lib/trust-tiers";
 import { db, usersTable, requestsTable } from "@workspace/db";
 import { eq, sql, and, gte } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
-import { cacheGet, cacheSet, cacheDel } from "../lib/cache";
+import { cacheGet, cacheSet, cacheDel, cacheDelPrefix } from "../lib/cache";
 
 const LEADERBOARD_CACHE_KEY = "leaderboard:all";
 const LEADERBOARD_TTL = 60; // 60 seconds
@@ -103,6 +103,9 @@ async function fetchLeaderboard(city?: string) {
 // ── Invalidate cache whenever the leaderboard changes ─────────────────────────
 export async function invalidateLeaderboardCache(): Promise<void> {
   await cacheDel(LEADERBOARD_CACHE_KEY);
+  // City-scoped leaderboards (`leaderboard:city:*`) must be evicted too, or
+  // they keep serving stale rankings until their TTL expires.
+  await cacheDelPrefix("leaderboard:city:");
 }
 
 // ── Broadcast helper (called by requests.ts after completion) ─────────────────

@@ -27,7 +27,7 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
       ? (rawProfile as RoutingProfile)
       : "driving";
 
-  const token = process.env.VITE_MAPBOX_TOKEN;
+  const token = process.env.MAPBOX_TOKEN ?? process.env.VITE_MAPBOX_TOKEN;
   if (!token) return res.status(500).json({ error: "Mapbox token not configured" });
 
   try {

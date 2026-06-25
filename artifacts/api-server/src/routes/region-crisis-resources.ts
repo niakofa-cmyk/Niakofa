@@ -33,7 +33,7 @@ function parseResources(raw: string): Resource[] {
 
 
 const NIA_SERVICE_URL = process.env["NIA_SERVICE_URL"] ?? "https://niakofa-production.up.railway.app";
-const INTERNAL_SECRET = process.env.SESSION_SECRET;
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? process.env.SESSION_SECRET;
 
 // Admin: ask Nia to suggest crisis resources for a pending region
 router.post("/admin/region-crisis-resources/:id/suggest", requireAuth, requireAdmin(), async (req, res) => {

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import webpush from "web-push";
 import { db, pushSubscriptionsTable, usersTable } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { sendAlertEmail } from "../lib/mailer";
 import { logger } from "../lib/logger";
 import { requireAuth } from "../middlewares/auth";
@@ -15,7 +15,7 @@ const VAPID_PRIVATE = process.env["VAPID_PRIVATE_KEY"] ?? "";
 
 if (VAPID_PUBLIC && VAPID_PRIVATE) {
   webpush.setVapidDetails(
-    "mailto:hello@payitforward.community",
+    "mailto:hello@niakofa.com",
     VAPID_PUBLIC,
     VAPID_PRIVATE
   );
@@ -165,7 +165,8 @@ export async function sendPushToUsers(
   if (options?.emailFallback) {
     const users = await db
       .select({ id: usersTable.id, email: usersTable.email })
-      .from(usersTable);
+      .from(usersTable)
+      .where(inArray(usersTable.id, userIds));
     emailMap = new Map(users.map(u => [u.id, u.email]));
   }
 

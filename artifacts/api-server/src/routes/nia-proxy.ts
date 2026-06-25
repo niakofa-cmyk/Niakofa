@@ -164,7 +164,14 @@ router.get("/nia/history/:sessionId", parseAuth, niaChatHistoryLimiter, async (r
   }
 
   try {
-    const upstream = await fetch(`${getNiaUrl()}/history/${encodeURIComponent(sessionId)}`);
+    const upstream = await fetch(`${getNiaUrl()}/history/${encodeURIComponent(sessionId)}`, {
+      // Forward the caller's bearer token so nia-service can authenticate the
+      // request and scope the history to the owning user. Without this, the
+      // upstream /history (which requires auth) always returns nothing.
+      headers: req.headers.authorization
+        ? { authorization: req.headers.authorization }
+        : {},
+    });
     if (!upstream.ok) return res.json([]);
     return res.json(await upstream.json());
   } catch {

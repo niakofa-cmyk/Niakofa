@@ -18,7 +18,7 @@ import { logger } from "../lib/logger";
 const router = Router();
 
 const NIA_SERVICE_URL = process.env["NIA_SERVICE_URL"] ?? "https://niakofa-production.up.railway.app";
-const INTERNAL_SECRET = process.env["SESSION_SECRET"];
+const INTERNAL_SECRET = process.env["INTERNAL_SECRET"] ?? process.env["SESSION_SECRET"];
 
 function normalizeCityKey(city: string): string {
   return city.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");

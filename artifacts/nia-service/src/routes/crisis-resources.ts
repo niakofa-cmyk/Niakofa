@@ -14,7 +14,7 @@ import { pino } from "pino";
 const logger = pino({ level: "info" });
 const router = Router();
 
-const INTERNAL_SECRET = process.env.SESSION_SECRET;
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? process.env.SESSION_SECRET;
 const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;

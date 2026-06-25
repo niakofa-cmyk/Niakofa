@@ -96,7 +96,7 @@ export async function saveCheckinConversation(
 
 export async function getRecentHistory(
   sessionId: string,
-  limit = 12
+  limit = 20
 ): Promise<{ role: "user" | "assistant"; content: string }[]> {
   const result = await pool.query(
     `SELECT user_message, nia_response FROM nia_conversations

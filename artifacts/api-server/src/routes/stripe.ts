@@ -177,14 +177,47 @@ router.post("/stripe/webhook", async (req, res) => {
       const transfer = event.data.object as Stripe.Transfer;
       try {
         if (transfer.destination) {
-          await db
+          // Match the originating payment_transactions row by the request+helper
+          // ids carried in the payout route's transfer metadata, constrained to a
+          // not-yet-completed row, so the webhook records the transfer even if it
+          // arrives before the payout route's own update — without ever touching an
+          // already-completed or unrelated row. Falls back to the transfer id for
+          // transfers created outside the payout route (no metadata).
+          const reqIdRaw = transfer.metadata?.requestId;
+          const helperIdRaw = transfer.metadata?.helperId;
+          const reqId = reqIdRaw ? parseInt(reqIdRaw, 10) : NaN;
+          const helperId = helperIdRaw ? parseInt(helperIdRaw, 10) : NaN;
+
+          let matchClause;
+          if (Number.isFinite(reqId)) {
+            const parts = [
+              eq(paymentTransactionsTable.request_id, reqId),
+              sql`${paymentTransactionsTable.state} != 'completed'`,
+            ];
+            if (Number.isFinite(helperId)) {
+              parts.push(eq(paymentTransactionsTable.helper_id, helperId));
+            }
+            matchClause = and(...parts);
+          } else {
+            matchClause = eq(paymentTransactionsTable.stripe_transfer_id, transfer.id);
+          }
+
+          const updatedRows = await db
             .update(paymentTransactionsTable)
             .set({
               stripe_transfer_id: transfer.id,
               state: "completed",
               updated_at: new Date(),
             })
-            .where(eq(paymentTransactionsTable.stripe_transfer_id, transfer.id));
+            .where(matchClause)
+            .returning({ id: paymentTransactionsTable.id });
+
+          if (updatedRows.length > 1) {
+            logger.warn(
+              { eventId: event.id, transferId: transfer.id, requestId: reqId, matched: updatedRows.length },
+              "Stripe webhook: transfer.created matched multiple payment_transactions rows — ambiguous match",
+            );
+          }
         }
       } catch (err) {
         logger.error(
@@ -534,7 +567,7 @@ router.post("/stripe/payout", requireAuth, requireAdmin(), paymentLimiter, async
     destination: acct.stripe_account_id,
     description: description ?? `Niakofa — Request #${requestId}`,
     metadata: { helperId: helperId.toString(), requestId: requestId?.toString() ?? "" },
-  });
+  }, requestId ? { idempotencyKey: `payout-req-${requestId}` } : undefined);
 
   // Update payment transaction state — guarded by state != 'completed' in
   // the WHERE clause itself (not just the earlier read-check) to close the

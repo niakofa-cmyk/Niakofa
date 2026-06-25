@@ -7,7 +7,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { db, recurringRequestsTable, requestsTable, usersTable } from "@workspace/db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, lte } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { z } from "zod/v4";
 
@@ -233,7 +233,6 @@ export async function processRecurringRequests(): Promise<void> {
   let due: (typeof recurringRequestsTable.$inferSelect)[] = [];
 
   try {
-    const { lte } = await import("drizzle-orm");
     due = await db
       .select()
       .from(recurringRequestsTable)
