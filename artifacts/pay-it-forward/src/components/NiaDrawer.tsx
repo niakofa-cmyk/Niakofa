@@ -886,7 +886,17 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newPos)); } catch { /* ignore */ }
     }
     d.moved = false;
+    try { divRef.current?.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
   }, [onClick]);
+
+  // System/browser-canceled gestures (e.g. OS swipe, incoming call) must NOT
+  // be treated as a tap — clear drag state without opening Nia or persisting.
+  const onPC = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    d.active = false;
+    d.moved = false;
+    try { divRef.current?.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+  }, []);
 
   if (hidden || !pos) return null;
 
@@ -899,7 +909,7 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
       onPointerDown={onPD}
       onPointerMove={onPM}
       onPointerUp={onPU}
-      onPointerCancel={onPU}
+      onPointerCancel={onPC}
       style={{
         position: "fixed",
         left: pos.x,
