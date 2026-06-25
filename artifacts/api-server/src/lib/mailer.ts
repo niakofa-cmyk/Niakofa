@@ -284,3 +284,154 @@ export async function sendTipNotification(data: TipData): Promise<void> {
     });
   }, "sendTipNotification");
 }
+
+// ── Phase 11J: Request lifecycle emails ──────────────────────────────────────
+
+export interface RequestConfirmationData {
+  to: string;
+  requesterName: string;
+  requestTitle: string;
+  category: string;
+  urgency: string;
+  requestId: number;
+  appUrl?: string;
+}
+
+export async function sendRequestConfirmation(data: RequestConfirmationData): Promise<void> {
+  if (!isSmtpConfigured()) return;
+  const smtpUser = process.env["SMTP_USER"]!;
+  const appUrl = data.appUrl ?? "https://niakofa.com";
+  const urgencyColor = data.urgency === "emergency" ? "#ef4444" : data.urgency === "high" ? "#f97316" : "#00d4ff";
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="background:#0a0f1e;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;margin:0;padding:0">
+  <div style="max-width:480px;margin:0 auto;padding:32px 24px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:30px;font-weight:900;color:#00d4ff;letter-spacing:-1px">Niakofa</div>
+      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:2px;margin-top:4px">Help Today · Pay It Forward Tomorrow</div>
+    </div>
+    <div style="background:#111827;border:1px solid #1e3a5f;border-radius:16px;padding:28px;margin-bottom:20px;text-align:center">
+      <div style="font-size:40px;margin-bottom:12px">📍</div>
+      <h1 style="font-size:20px;font-weight:900;margin:0 0 8px;color:#f1f5f9">Request Submitted!</h1>
+      <p style="color:#94a3b8;margin:0 0 20px;line-height:1.6">Hi ${escapeHtml(data.requesterName)}, your request is live and nearby helpers have been notified.</p>
+      <div style="background:#0a0f1e;border-radius:10px;padding:16px;margin-bottom:20px;text-align:left">
+        <div style="font-size:12px;color:#64748b;margin-bottom:4px">Request</div>
+        <div style="font-size:16px;font-weight:700">${escapeHtml(data.requestTitle)}</div>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+          <span style="font-size:11px;background:#1e3a5f;color:#94a3b8;padding:3px 8px;border-radius:20px;text-transform:capitalize">${escapeHtml(data.category.replace(/_/g, " "))}</span>
+          <span style="font-size:11px;background:${urgencyColor}22;color:${urgencyColor};padding:3px 8px;border-radius:20px;text-transform:capitalize;border:1px solid ${urgencyColor}44">${escapeHtml(data.urgency)}</span>
+        </div>
+      </div>
+      <a href="${escapeHtml(appUrl)}/request/${data.requestId}/track" style="display:inline-block;background:#00d4ff;color:#0a0f1e;font-weight:800;font-size:13px;padding:12px 24px;border-radius:10px;text-decoration:none">Track Your Request →</a>
+    </div>
+    <p style="text-align:center;font-size:12px;color:#475569">We'll notify you the moment a helper accepts.</p>
+  </div>
+</body></html>`;
+
+  await withSmtpRetry(async () => {
+    await transporter.sendMail({
+      from: `"Niakofa" <${smtpUser}>`,
+      to: data.to,
+      subject: sanitizeHeaderValue(`📍 Request submitted: ${data.requestTitle}`),
+      html,
+    });
+    logger.info({ to: data.to, requestId: data.requestId }, "lifecycle: confirmation email sent");
+  }, "sendRequestConfirmation");
+}
+
+export interface HelperAcceptedData {
+  to: string;
+  requesterName: string;
+  helperName: string;
+  helperTrustScore?: number;
+  requestTitle: string;
+  requestId: number;
+  appUrl?: string;
+}
+
+export async function sendHelperAcceptedEmail(data: HelperAcceptedData): Promise<void> {
+  if (!isSmtpConfigured()) return;
+  const smtpUser = process.env["SMTP_USER"]!;
+  const appUrl = data.appUrl ?? "https://niakofa.com";
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="background:#0a0f1e;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;margin:0;padding:0">
+  <div style="max-width:480px;margin:0 auto;padding:32px 24px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:30px;font-weight:900;color:#00d4ff">Niakofa</div>
+    </div>
+    <div style="background:#111827;border:1px solid #16a34a33;border-radius:16px;padding:28px;text-align:center">
+      <div style="font-size:40px;margin-bottom:12px">🙌</div>
+      <h1 style="font-size:20px;font-weight:900;margin:0 0 8px;color:#22c55e">Helper On The Way!</h1>
+      <p style="color:#94a3b8;margin:0 0 20px;line-height:1.6">
+        Hi ${escapeHtml(data.requesterName)}, <strong style="color:#f1f5f9">${escapeHtml(data.helperName)}</strong> has accepted your request and is on their way.
+      </p>
+      <div style="background:#0a0f1e;border-radius:10px;padding:14px;margin-bottom:20px">
+        <div style="font-size:13px;color:#94a3b8">For: <strong style="color:#f1f5f9">${escapeHtml(data.requestTitle)}</strong></div>
+        ${data.helperTrustScore !== undefined ? `<div style="font-size:11px;color:#64748b;margin-top:6px">Helper trust score: <span style="color:#00d4ff;font-weight:700">${data.helperTrustScore}</span></div>` : ""}
+      </div>
+      <a href="${escapeHtml(appUrl)}/request/${data.requestId}/track" style="display:inline-block;background:#22c55e;color:#fff;font-weight:800;font-size:13px;padding:12px 24px;border-radius:10px;text-decoration:none">Track in App →</a>
+    </div>
+    <p style="text-align:center;font-size:12px;color:#475569;margin-top:16px">Niakofa — Help Today · Pay It Forward Tomorrow</p>
+  </div>
+</body></html>`;
+
+  await withSmtpRetry(async () => {
+    await transporter.sendMail({
+      from: `"Niakofa" <${smtpUser}>`,
+      to: data.to,
+      subject: sanitizeHeaderValue(`🙌 Helper on the way: ${data.requestTitle}`),
+      html,
+    });
+    logger.info({ to: data.to, requestId: data.requestId }, "lifecycle: helper-accepted email sent");
+  }, "sendHelperAcceptedEmail");
+}
+
+export interface FollowUpNudgeData {
+  to: string;
+  requesterName: string;
+  requestTitle: string;
+  requestId: number;
+  appUrl?: string;
+}
+
+export async function sendFollowUpNudge(data: FollowUpNudgeData): Promise<void> {
+  if (!isSmtpConfigured()) return;
+  const smtpUser = process.env["SMTP_USER"]!;
+  const appUrl = data.appUrl ?? "https://niakofa.com";
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="background:#0a0f1e;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;margin:0;padding:0">
+  <div style="max-width:480px;margin:0 auto;padding:32px 24px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:30px;font-weight:900;color:#00d4ff">Niakofa</div>
+    </div>
+    <div style="background:#111827;border:1px solid #a78bfa33;border-radius:16px;padding:28px;text-align:center">
+      <div style="font-size:40px;margin-bottom:12px">💜</div>
+      <h1 style="font-size:20px;font-weight:900;margin:0 0 8px;color:#a78bfa">How did it go?</h1>
+      <p style="color:#94a3b8;margin:0 0 20px;line-height:1.6">
+        Hi ${escapeHtml(data.requesterName)}, your request <strong style="color:#f1f5f9">"${escapeHtml(data.requestTitle)}"</strong> was completed 24 hours ago.
+        If the help you received made a difference, consider paying it forward to someone else in need.
+      </p>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+        <a href="${escapeHtml(appUrl)}/request/${data.requestId}/view" style="display:inline-block;background:#a78bfa;color:#fff;font-weight:700;font-size:13px;padding:11px 20px;border-radius:10px;text-decoration:none">Rate Your Helper</a>
+        <a href="${escapeHtml(appUrl)}/request/new" style="display:inline-block;background:#1e293b;border:1px solid #334155;color:#94a3b8;font-weight:700;font-size:13px;padding:11px 20px;border-radius:10px;text-decoration:none">Pay It Forward</a>
+      </div>
+    </div>
+    <p style="text-align:center;font-size:12px;color:#475569;margin-top:16px">Niakofa — Help Today · Pay It Forward Tomorrow</p>
+  </div>
+</body></html>`;
+
+  await withSmtpRetry(async () => {
+    await transporter.sendMail({
+      from: `"Niakofa" <${smtpUser}>`,
+      to: data.to,
+      subject: sanitizeHeaderValue(`💜 How did it go? Rate your helper for: ${data.requestTitle}`),
+      html,
+    });
+    logger.info({ to: data.to, requestId: data.requestId }, "lifecycle: follow-up nudge sent");
+  }, "sendFollowUpNudge");
+}

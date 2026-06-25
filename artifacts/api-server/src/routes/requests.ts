@@ -25,7 +25,7 @@ import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers } from "./push";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { logger } from "../lib/logger";
-import { sendReceipt } from "../lib/mailer";
+import { sendReceipt, sendRequestConfirmation, sendHelperAcceptedEmail, sendFollowUpNudge } from "../lib/mailer";
 import { sendAdminSmsAlert, sendSosPanicContacts } from "../lib/sms";
 import Stripe from "stripe";
 
@@ -302,6 +302,22 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
     }
   } else {
     // For medium/low urgency, notify helpers within 5 miles
+    // Phase 11J: confirmation email to requester
+    db.select({ email: usersTable.email, name: usersTable.name })
+      .from(usersTable).where(eq(usersTable.id, request.requester_id))
+      .then(([requester]) => {
+        if (requester?.email) {
+          sendRequestConfirmation({
+            to: requester.email,
+            requesterName: requester.name ?? "Neighbor",
+            requestTitle: request.title,
+            category: request.category ?? "other",
+            urgency: request.urgency ?? "medium",
+            requestId: request.id,
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+
     sendPushToNearbyHelpers(request.lat, request.lng, 5, {
       title: "💙 Help Request Near You",
       body: request.title,
@@ -366,6 +382,26 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
     .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.status, "open")))
     .returning();
   if (!request) return res.status(409).json({ error: "Request already claimed or not found" });
+
+  // Phase 11J: notify requester that a helper has accepted
+  db.select({ email: usersTable.email, name: usersTable.name, trust_score: usersTable.trust_score })
+    .from(usersTable).where(eq(usersTable.id, helperId))
+    .then(([helper]) => {
+      return db.select({ email: usersTable.email, name: usersTable.name })
+        .from(usersTable).where(eq(usersTable.id, request.requester_id))
+        .then(([requester]) => {
+          if (requester?.email && helper) {
+            sendHelperAcceptedEmail({
+              to: requester.email,
+              requesterName: requester.name ?? "Neighbor",
+              helperName: helper.name ?? "A helper",
+              helperTrustScore: helper.trust_score ?? undefined,
+              requestTitle: request.title,
+              requestId: request.id,
+            }).catch(() => {});
+          }
+        });
+    }).catch(() => {});
   const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, helperId)).limit(1);
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: helper?.name ?? null, distance_miles: null, estimated_duration_min: null };
   broadcastRequestEvent("REQUEST_ACCEPTED", "request_updated", enriched);
@@ -535,6 +571,24 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
     helperBefore?.trust_score ?? 0
   ).catch(() => {});
 
+
+  // Phase 11J: schedule follow-up nudge 24h after completion (non-blocking)
+  const completedRequestId = request.id;
+  const completedTitle = request.title;
+  setTimeout(async () => {
+    try {
+      const [req24] = await db.select({ email: usersTable.email, name: usersTable.name })
+        .from(usersTable).where(eq(usersTable.id, request.requester_id));
+      if (req24?.email) {
+        await sendFollowUpNudge({
+          to: req24.email,
+          requesterName: req24.name ?? "Neighbor",
+          requestTitle: completedTitle,
+          requestId: completedRequestId,
+        });
+      }
+    } catch {}
+  }, 24 * 60 * 60 * 1000);
 
   // Fire receipt email async (non-blocking)
   const [requester] = await db.select({ email: usersTable.email, name: usersTable.name })

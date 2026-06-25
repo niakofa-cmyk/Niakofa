@@ -32,6 +32,7 @@ const RequestDetailScreen = lazy(() => import("@/pages/request-detail"));
 const OnboardingScreen = lazy(() => import("@/pages/onboarding"));
 const StripeConnectedScreen = lazy(() => import("@/pages/stripe-connected"));
 const HelperDashboardScreen = lazy(() => import("@/pages/helper-dashboard"));
+const HelperOnboardingScreen = lazy(() => import("@/pages/helper-onboarding"));
 const RecurringScreen = lazy(() => import("@/pages/recurring"));
 
 function PageLoader() {

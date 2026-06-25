@@ -1205,7 +1205,19 @@ export default function ProfileScreen() {
                   </div>
                 );
               }
-              return null;
+              return (
+                <button
+                  type="button"
+                  onClick={() => setLocation("/helper-onboarding")}
+                  className="w-full bg-card border border-border rounded-2xl p-4 flex items-center justify-between text-left hover:border-primary/50 transition-colors"
+                >
+                  <div>
+                    <div className="font-bold text-sm">Become a Helper</div>
+                    <p className="text-xs text-muted-foreground mt-0.5">Share your skills and get matched to nearby requests</p>
+                  </div>
+                  <span className="text-primary text-lg">→</span>
+                </button>
+              );
             })()}
 
             {/* Recent Helpers — derived from transaction history */}
