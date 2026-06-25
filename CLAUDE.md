@@ -257,12 +257,44 @@ file can guarantee on its own.
   surfaces currently-visible `match_reasons` into `AppContext.lastViewedMatchReasons`,
   `NiaDrawer.tsx` forwards them in `liveContext.matchReasons`, and
   `buildLiveContextPrefix()` in nia-service's `chat.ts` instructs Nia to use
-  only those real reasons if asked why a helper was matched. Not yet
-  exercised in production — verify end-to-end once deployed, not just by code
-  read.
-- Not yet done: Phase 5 (self-correcting category phrasing, correctly
-  deferred — needs real claim-time data first) and Phase 6 (voice I/O — a
-  separate, larger subproject, not started).
+  only those real reasons if asked why a helper was matched. Fixed a flicker
+  bug in this session: the `useEffect` was returning a cleanup that cleared
+  the value on every `nearbyRaw` refetch, not just on unmount — split into
+  two effects. Still not exercised in production — verify end-to-end once
+  deployed, not just by code read.
+- **Phase 5 (self-correcting category phrasing) — built, no new schema
+  needed.** The original plan called for a dedicated events table; turned out
+  unnecessary — `help_requests` already has `category`, `title`,
+  `created_at`, `claimed_at` for every request ever posted. New functions in
+  nia-service's `lib/db.ts` (`getPhrasingInsights()`, 1h in-memory cache):
+  fastest-claiming category, and which of a small fixed keyword list
+  ("urgent", "asap", etc.) correlates with faster claims — both require a
+  minimum sample size (8) before returning anything, real data only, never
+  fabricated. Wired into `chat.ts`'s system prompt via
+  `buildPhrasingInsightsPrefix()`, only when the user has no active request
+  (i.e. likely drafting/considering posting, not mid-task).
+- **Phase 6 (voice I/O) — first working version built, not the eventual
+  streaming version.** `POST /api/nia/voice/transcribe` (STT) and
+  `POST /api/nia/voice/speak` (TTS) in api-server's new `routes/nia-voice.ts`,
+  calling OpenAI's Whisper and TTS REST APIs directly via native `fetch`
+  (no new SDK dependency — avoided touching `package.json`/`pnpm-lock.yaml`).
+  **Requires `OPENAI_API_KEY` env var on the api-server service** — both
+  routes return 503 if unset, rather than fronting a broken/cost-incurring
+  call. New `voiceLimiter` (30/hour/user, `requireAuth`-only, no anonymous
+  voice). Frontend: push-to-talk mic button + per-message speaker/TTS button
+  in `NiaDrawer.tsx`. This is whole-utterance-in, whole-response-out — not
+  sentence-by-sentence streaming TTS layered onto the SSE chat pipe in
+  `nia-proxy.ts`, which is a separate, larger follow-up that changes the
+  latency contract of the entire chat response, not just adds an endpoint.
+- **Bugs caught and fixed while wiring Phase 5 into the existing chat
+  flow, not introduced by this session but found here:** `chat.ts` called
+  `buildLanguagePrefix()` and `buildMemoryPrefix()` — referenced nowhere else
+  in the entire repo, a real build-breaking regression from an earlier merge
+  that slipped past review because the verification pass checked logic and
+  security but not "does every referenced function actually exist."
+  `extractAndUpdateStructuredMemory()` had the same problem. All three are
+  now implemented. **Lesson: a clean `git diff` review is not the same as a
+  real `tsc --noEmit` pass — run one before trusting the other next time.**
 
 ## Claude as Nia's father — the framing this project uses in its documents
 

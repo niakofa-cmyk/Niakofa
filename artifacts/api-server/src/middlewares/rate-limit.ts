@@ -302,3 +302,21 @@ export const niaChatHistoryLimiter = rateLimit({
   },
   message: { error: "Too many Nia history requests. Please slow down." },
 });
+
+// ── Voice I/O (Phase 6) ───────────────────────────────────────────────────────
+// Voice (STT + TTS) is meaningfully more expensive per call than text chat —
+// a real per-minute provider cost on both legs, not just LLM tokens. Tighter
+// budget than chatLimiter, and per-user only (no anonymous voice — voice
+// routes require requireAuth, unlike text chat which allows anonymous use).
+export const voiceLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  store: createStore("nia-voice"),
+  keyGenerator: (req) => {
+    const r = req as typeof req & { authenticatedUserId?: number };
+    return `nia-voice-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
+  },
+  message: { error: "You've reached the hourly voice limit with Nia. Text chat is still available." },
+});

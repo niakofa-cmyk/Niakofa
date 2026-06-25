@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown, Mic } from "lucide-react";
+import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown, Mic, Volume2, Square } from "lucide-react";
 import { authHeaders } from "../lib/auth";
 
 // All Nia traffic routes through the API server proxy at /api/nia/...
@@ -183,7 +183,15 @@ function NiaWelcomeSplash({ onDone }: { onDone: () => void }) {
   );
 }
 
-function MessageBubble({ msg }: { msg: Message }) {
+function MessageBubble({
+  msg,
+  isSpeaking,
+  onSpeak,
+}: {
+  msg: Message;
+  isSpeaking?: boolean;
+  onSpeak?: () => void;
+}) {
   const isUser = msg.role === "user";
   return (
     <motion.div
@@ -213,6 +221,28 @@ function MessageBubble({ msg }: { msg: Message }) {
         border: isUser ? "none" : "0.5px solid var(--color-border-tertiary)",
       }}>
         {msg.content}
+        {!isUser && !msg.streaming && msg.content && onSpeak && (
+          <button
+            onClick={onSpeak}
+            aria-label={isSpeaking ? "Stop playback" : "Listen to this message"}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 20,
+              height: 20,
+              marginLeft: 6,
+              verticalAlign: "middle",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              color: isSpeaking ? "#1D9E75" : "var(--color-text-tertiary)",
+              padding: 0,
+            }}
+          >
+            {isSpeaking ? <Square size={13} /> : <Volume2 size={14} />}
+          </button>
+        )}
         {msg.streaming && (
           <motion.span
             animate={{ opacity: [1, 0, 1] }}
@@ -395,6 +425,16 @@ export function NiaDrawer({
   const [locationLabel, setLocationLabel] = useState<string | null>(null);
   const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [liveContext, setLiveContext] = useState<NiaContext | null>(null);
+  // Phase 6: voice I/O. speakingIndex tracks which message bubble (if any) is
+  // currently playing TTS audio, so only one plays at a time and the speaker
+  // button can show a stop icon for the active one. recording tracks mic
+  // capture state for the push-to-talk button.
+  const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const audioPlaybackRef = useRef<HTMLAudioElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const sessionId = getSessionId();
@@ -622,6 +662,116 @@ export function NiaDrawer({
     }
   }, [loading, sessionId, userCoords, userId, userName, userLocation, helperModeActive, activeRequestId, accountType, liveContext]);
 
+  // Phase 6: TTS playback for a given message bubble. Stops any
+  // currently-playing audio first (only one plays at a time). Clicking the
+  // speaker on an already-speaking message stops it instead of restarting.
+  const speakMessage = useCallback(async (index: number, text: string) => {
+    if (audioPlaybackRef.current) {
+      audioPlaybackRef.current.pause();
+      audioPlaybackRef.current = null;
+    }
+    if (speakingIndex === index) {
+      setSpeakingIndex(null);
+      return;
+    }
+    setSpeakingIndex(index);
+    try {
+      const res = await fetch(`${API_BASE}/api/nia/voice/speak`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) {
+        setSpeakingIndex(null);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioPlaybackRef.current = audio;
+      audio.onended = () => {
+        setSpeakingIndex((cur) => (cur === index ? null : cur));
+        URL.revokeObjectURL(url);
+      };
+      audio.onerror = () => {
+        setSpeakingIndex((cur) => (cur === index ? null : cur));
+        URL.revokeObjectURL(url);
+      };
+      await audio.play();
+    } catch {
+      setSpeakingIndex((cur) => (cur === index ? null : cur));
+    }
+  }, [speakingIndex]);
+
+  // Phase 6: push-to-talk recording. Records a single utterance, sends it to
+  // /api/nia/voice/transcribe, and feeds the transcribed text through the
+  // normal sendMessage flow — voice doesn't bypass any of the existing chat
+  // logic, it just supplies the text a different way.
+  const startRecording = useCallback(async () => {
+    if (recording || loading) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/mp4")
+        ? "audio/mp4"
+        : "";
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        audioChunksRef.current = [];
+        if (blob.size === 0) return;
+        setTranscribing(true);
+        try {
+          const res = await fetch(`${API_BASE}/api/nia/voice/transcribe`, {
+            method: "POST",
+            headers: { "Content-Type": blob.type, ...authHeaders() },
+            body: blob,
+          });
+          if (res.ok) {
+            const data = (await res.json()) as { text?: string };
+            if (data.text) {
+              setInput(data.text);
+              sendMessage(data.text);
+            }
+          }
+        } catch {
+          // Silent — user can just type instead if voice transcription fails.
+        } finally {
+          setTranscribing(false);
+        }
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+    } catch {
+      // Mic permission denied or unavailable — recording state never flips
+      // to true, so the UI stays in its normal (text-input) state.
+    }
+  }, [recording, loading, sendMessage]);
+
+  const stopRecording = useCallback(() => {
+    mediaRecorderRef.current?.stop();
+    mediaRecorderRef.current = null;
+    setRecording(false);
+  }, []);
+
+  // Stop any playing audio and release the mic if the drawer closes mid-recording.
+  useEffect(() => {
+    if (!open) {
+      audioPlaybackRef.current?.pause();
+      audioPlaybackRef.current = null;
+      setSpeakingIndex(null);
+      if (recording) stopRecording();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   const handleReset = () => {
     sessionStorage.removeItem("nia_session_id");
     setHistoryLoaded(false);
@@ -747,7 +897,14 @@ export function NiaDrawer({
                   padding: "12px 12px 4px",
                   display: "flex", flexDirection: "column", gap: 10,
                 }}>
-                  {messages.map((msg, i) => <MessageBubble key={i} msg={msg} />)}
+                  {messages.map((msg, i) => (
+                    <MessageBubble
+                      key={i}
+                      msg={msg}
+                      isSpeaking={speakingIndex === i}
+                      onSpeak={() => speakMessage(i, msg.content)}
+                    />
+                  ))}
                   <div ref={bottomRef} />
                 </div>
                 <div style={{
@@ -770,13 +927,34 @@ export function NiaDrawer({
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(input); } }}
-                      placeholder="Ask Nia anything…"
-                      disabled={loading}
+                      placeholder={recording ? "Listening…" : transcribing ? "Transcribing…" : "Ask Nia anything…"}
+                      disabled={loading || recording || transcribing}
                       style={{
                         flex: 1, background: "transparent", border: "none", outline: "none",
                         fontSize: 16, color: "var(--color-text-primary)", lineHeight: 1.4,
                       }}
                     />
+                    <button
+                      onClick={recording ? stopRecording : startRecording}
+                      disabled={loading || transcribing}
+                      aria-label={recording ? "Stop recording" : "Record a voice message"}
+                      style={{
+                        width: 34, height: 34, borderRadius: "50%",
+                        background: recording
+                          ? "linear-gradient(135deg, #E05252 0%, #B23A3A 100%)"
+                          : "var(--color-background-tertiary)",
+                        border: "none",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        cursor: loading || transcribing ? "not-allowed" : "pointer",
+                        flexShrink: 0, transition: "background 0.2s",
+                        opacity: loading || transcribing ? 0.5 : 1,
+                      }}
+                    >
+                      {transcribing
+                        ? <Loader2 size={14} color="var(--color-text-tertiary)" className="animate-spin" />
+                        : <Mic size={14} color={recording ? "#fff" : "var(--color-text-secondary)"} />
+                      }
+                    </button>
                     <button
                       onClick={() => sendMessage(input)}
                       disabled={loading || !input.trim()}

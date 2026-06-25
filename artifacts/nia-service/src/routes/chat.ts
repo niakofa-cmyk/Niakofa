@@ -13,6 +13,7 @@ import {
   getFullMemory,
   getStructuredMemory,
   upsertStructuredMemory,
+  getPhrasingInsights,
   type StructuredMemory,
 } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
@@ -182,6 +183,14 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       ? await getActiveRequest(activeRequestId, userId).catch(() => null)
       : null;
 
+  // Phase 5: only surface phrasing insights when the user has no active
+  // request in progress — this is meant for someone considering posting or
+  // editing a request, not someone already mid-task. Cached (1h TTL) so this
+  // never adds real per-message DB load.
+  const phrasingInsights = !activeRequest
+    ? await getPhrasingInsights().catch(() => [])
+    : [];
+
   const softPrefix = safety.soft
     ? "CARE DIRECTIVE: This person is showing signs of distress. Lead with warmth and acknowledgment. " +
       "Do not rush to solutions. Ask one gentle question to understand their situation better. Stay present.\n\n"
@@ -208,6 +217,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       memoryPrefix +
       softPrefix +
       liveContextPrefix +
+      buildPhrasingInsightsPrefix(phrasingInsights) +
       buildLocationPrefix((req as any).locationContext as LocationContext | undefined) +
       buildAppContextPrefix({
         userName,
@@ -516,6 +526,73 @@ export default router;
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Phase 3: language directive. Only emits anything when a non-English
+// language was detected (see the `language` const built from Accept-Language
+// / explicit body field above) — staying silent for English keeps the
+// prompt shorter for the common case.
+function buildLanguagePrefix(language: string | null): string {
+  if (!language) return "";
+  return `LANGUAGE: Respond in ${language} unless the user switches languages first. Match their language naturally, don't announce that you're doing this.\n\n`;
+}
+
+// Replaces the old inline "MEMORY OF THIS USER" template literal with a
+// version that also surfaces structured memory fields (Phase 1) when
+// present, not just the freeform string.
+function buildMemoryPrefix(
+  memory: string | null,
+  structured: StructuredMemory | null | undefined
+): string {
+  const lines: string[] = [];
+
+  if (memory) {
+    lines.push(`MEMORY OF THIS USER:\n${memory}`);
+  }
+
+  if (structured) {
+    if (structured.recurring_needs?.length) {
+      lines.push(`Recurring needs: ${structured.recurring_needs.join("; ")}`);
+    }
+    if (structured.accessibility_notes?.length) {
+      lines.push(`Accessibility notes: ${structured.accessibility_notes.join("; ")}`);
+    }
+    if (structured.people_mentioned?.length) {
+      lines.push(
+        `People previously mentioned: ${structured.people_mentioned
+          .map((p) => `${p.name} (${p.relation})`)
+          .join("; ")}`
+      );
+    }
+    if (structured.corrections?.length) {
+      lines.push(`Things this user has corrected before: ${structured.corrections.join("; ")}`);
+    }
+    if (structured.emotional_arc) {
+      lines.push(`Emotional arc over recent conversations: ${structured.emotional_arc}`);
+    }
+    if (structured.resources_that_worked?.length) {
+      lines.push(`Resources that worked for them before: ${structured.resources_that_worked.join("; ")}`);
+    }
+  }
+
+  if (lines.length === 0) return "";
+
+  return (
+    lines.join("\n") +
+    "\n\nUse this naturally — reference it when relevant, like a neighbor who pays attention. Don't recite it. Don't say \"I remember.\" Just know it.\n\n"
+  );
+}
+
+// Phase 5: real, conservative claim-time insights (see lib/db.ts
+// getPhrasingInsights — never fabricated, empty array if not enough data).
+function buildPhrasingInsightsPrefix(insights: string[]): string {
+  if (insights.length === 0) return "";
+  return (
+    "REAL COMMUNITY DATA (use only if relevant to what they're asking — e.g. " +
+    "they're drafting a request or asking how to get help faster):\n" +
+    insights.map((i) => `- ${i}`).join("\n") +
+    "\nNever state these as universal advice — they're specific to this community's recent history.\n\n"
+  );
+}
+
 function buildLiveContextPrefix(ctx: Record<string, unknown>): string {
   const lines: string[] = ["LIVE COMMUNITY CONTEXT (real-time data — use it):"];
   if (typeof ctx.openRequestsNearby === "number") {
@@ -642,4 +719,89 @@ Updated memory:`;
   if (newMemory && newMemory.length > 10) {
     await upsertUserMemory(userId, newMemory);
   }
+}
+
+// Phase 1 (structured memory) companion to extractAndUpdateMemory above —
+// extracts the same kind of facts but into discrete fields rather than one
+// freeform string, so the app can show/edit them individually and so
+// preferred_language / emotional_arc can be reasoned about programmatically
+// elsewhere, not just read back as prose.
+async function extractAndUpdateStructuredMemory(
+  userId: number,
+  existing: StructuredMemory,
+  userMessage: string,
+  niaResponse: string,
+  detectedLanguage: string | null,
+  client: Anthropic
+): Promise<void> {
+  const prompt = `You are Nia's structured memory extractor. From the conversation below, extract ONLY genuinely new or changed facts as JSON. Do not repeat unchanged existing facts.
+
+Existing structured memory:
+${JSON.stringify(existing)}
+
+New conversation:
+User: ${userMessage}
+Nia: ${niaResponse}
+
+Return ONLY a JSON object (no markdown fences, no preamble) with any of these keys that have NEW or CHANGED information — omit keys with nothing new:
+{
+  "recurring_needs": ["short phrases for ongoing needs, e.g. 'weekly grocery runs'"],
+  "accessibility_notes": ["e.g. 'uses a wheelchair', 'hard of hearing'"],
+  "people_mentioned": [{"name": "...", "relation": "e.g. daughter, neighbor, helper"}],
+  "corrections": ["something the user corrected Nia about before"],
+  "emotional_arc": "improving" | "stable" | "declining" | "unknown",
+  "resources_that_worked": ["specific help/resource that worked well for them"]
+}
+
+If nothing new and meaningful, return {}.`;
+
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 400,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const raw = response.content[0]?.type === "text" ? response.content[0].text.trim() : "{}";
+
+  let patch: Partial<StructuredMemory> = {};
+  try {
+    const cleaned = raw.replace(/^```(json)?\n?/, "").replace(/\n?```$/, "");
+    const parsed = JSON.parse(cleaned) as Partial<StructuredMemory>;
+    // Merge arrays with existing rather than letting the model's partial
+    // extraction silently drop prior entries — upsertStructuredMemory's
+    // JSONB `||` merge replaces arrays wholesale, so the merge has to happen
+    // here, not in SQL.
+    patch = {
+      ...(parsed.recurring_needs?.length
+        ? { recurring_needs: [...new Set([...(existing.recurring_needs ?? []), ...parsed.recurring_needs])] }
+        : {}),
+      ...(parsed.accessibility_notes?.length
+        ? { accessibility_notes: [...new Set([...(existing.accessibility_notes ?? []), ...parsed.accessibility_notes])] }
+        : {}),
+      ...(parsed.people_mentioned?.length
+        ? { people_mentioned: [...(existing.people_mentioned ?? []), ...parsed.people_mentioned] }
+        : {}),
+      ...(parsed.corrections?.length
+        ? { corrections: [...new Set([...(existing.corrections ?? []), ...parsed.corrections])] }
+        : {}),
+      ...(parsed.emotional_arc ? { emotional_arc: parsed.emotional_arc } : {}),
+      ...(parsed.resources_that_worked?.length
+        ? { resources_that_worked: [...new Set([...(existing.resources_that_worked ?? []), ...parsed.resources_that_worked])] }
+        : {}),
+    };
+  } catch (err) {
+    logger.error({ err, raw }, "nia: structured memory extraction returned invalid JSON, skipping");
+    return;
+  }
+
+  if (Object.keys(patch).length === 0) return;
+
+  // Preferred language is set separately from the detected-language signal,
+  // not from the model's free-form extraction — it's a simple fact, not
+  // something worth an LLM guess.
+  if (detectedLanguage && detectedLanguage !== existing.preferred_language) {
+    patch.preferred_language = detectedLanguage;
+  }
+
+  await upsertStructuredMemory(userId, patch);
 }

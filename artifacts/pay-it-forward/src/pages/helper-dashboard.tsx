@@ -63,8 +63,10 @@ export default function HelperDashboardScreen() {
   // Phase 4: surface the real, already-displayed match_reasons for whatever
   // open requests this helper currently sees, attributed by request title, so
   // if they ask Nia "why was I matched with this" she answers from real data
-  // instead of guessing. Cleared on unmount so a stale list doesn't linger
-  // into an unrelated screen/conversation.
+  // instead of guessing. Split into two effects: one that updates the value
+  // reactively without a cleanup (so periodic react-query refetches of
+  // nearbyRaw don't flicker the value to null and back), and one that clears
+  // it only on true component unmount.
   useEffect(() => {
     const openWithReasons = (nearbyRaw as unknown as { title: string; status: string; match_reasons?: string[] }[])
       .filter(r => r.status === "open" && r.match_reasons?.length);
@@ -76,8 +78,13 @@ export default function HelperDashboardScreen() {
       r.match_reasons!.map(reason => `"${r.title}": ${reason}`)
     );
     setLastViewedMatchReasons(attributed);
-    return () => setLastViewedMatchReasons(null);
   }, [nearbyRaw, setLastViewedMatchReasons]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally
+  // empty deps: this is the unmount-only cleanup, must not re-run per render.
+  useEffect(() => {
+    return () => setLastViewedMatchReasons(null);
+  }, []);
 
   if (!currentUser) return null;
 

@@ -4,6 +4,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import path from "path";
 import router from "./routes";
+import { voiceAudioRawParser } from "./routes/nia-voice";
 import { logger } from "./lib/logger";
 import { generalApiLimiter } from "./middlewares/rate-limit";
 import { parseAuth } from "./middlewares/auth";
@@ -85,6 +86,11 @@ app.use(
 // webhook batches and caused 413 Payload Too Large failures.
 app.use("/api/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 app.use("/api/verification/identity/webhook", express.raw({ type: "application/json", limit: "2mb" }));
+// Phase 6 voice transcription needs the raw audio Buffer, not JSON-parsed
+// body — same reasoning as the two webhooks above. /speak is unaffected
+// (it sends/receives JSON-in, audio-out, so the global express.json() below
+// handles its request body fine).
+app.use("/api/nia/voice/transcribe", voiceAudioRawParser);
 
 app.use(express.json({ limit: "10mb" })); // 10mb to allow base64 avatar uploads
 app.use(express.urlencoded({ extended: true }));
