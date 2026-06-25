@@ -303,7 +303,7 @@ function HelperProfileForm({
 export default function LoginScreen() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  const { setCurrentUser } = useAppContext();
+  const { setCurrentUser, setNiaOpen } = useAppContext();
   const [mode, setMode] = useState<Mode>("login");
 
   // ENH-003: show a clear message when we landed here because a 401
@@ -802,8 +802,13 @@ export default function LoginScreen() {
           transition={{ type: "spring", stiffness: 200, damping: 20 }}
           className="flex flex-col items-center mb-8"
         >
-          {/* Nia orb — she is the face of Niakofa, even before login */}
-          <div className="relative mb-5">
+          {/* Nia orb — she is the face of Niakofa, tappable even before login */}
+          <button
+            onClick={() => setNiaOpen(true)}
+            className="relative mb-5 focus:outline-none active:scale-95 transition-transform"
+            aria-label="Chat with Nia"
+            style={{ touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}
+          >
             <motion.div
               animate={{ scale: [1, 1.06, 1] }}
               transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
@@ -813,12 +818,12 @@ export default function LoginScreen() {
               <span className="text-3xl font-black text-[#E1F5EE] tracking-tight select-none">N</span>
             </motion.div>
             <motion.div
-              animate={{ scale: [1, 1.5, 1], opacity: [0.35, 0, 0.35] }}
+              animate={{ scale: [1, 1.55, 1], opacity: [0.35, 0, 0.35] }}
               transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
               className="absolute inset-[-6px] rounded-full pointer-events-none"
               style={{ background: "radial-gradient(circle, rgba(29,158,117,0.3) 0%, transparent 70%)" }}
             />
-          </div>
+          </button>
           <h1 className="text-3xl font-black tracking-tight text-foreground">Niakofa</h1>
           <p className="text-sm text-muted-foreground mt-1 text-center max-w-xs">
             Help Today. Pay It Forward Tomorrow.
@@ -830,7 +835,7 @@ export default function LoginScreen() {
             className="text-xs mt-2 font-medium"
             style={{ color: "#1D9E75" }}
           >
-            Sawubona — I see you. Nia is here.
+            Sawubona — I see you. Tap Nia to chat.
           </motion.p>
         </motion.div>
 

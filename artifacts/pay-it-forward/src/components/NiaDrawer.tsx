@@ -806,67 +806,85 @@ export function NiaDrawer({
 }
 
 export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: boolean }) {
-  const FAB_SIZE = 56;
-  const SNAP_MARGIN = 18;
-  // Default position: bottom-right above bottom nav
+  const FAB_SIZE = 64;
+  const MARGIN = 14;
+  const STORAGE_KEY = "nia_fab_pos";
+
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const isDragging = useRef(false);
+  const hasMoved = useRef(false);
   const dragStart = useRef({ px: 0, py: 0, x: 0, y: 0 });
   const fabRef = useRef<HTMLButtonElement>(null);
 
-  // Initialise position once on mount (needs window dimensions)
+  // On mount: restore persisted position or default to top-center
   useEffect(() => {
-    setPos({
-      x: window.innerWidth - FAB_SIZE - SNAP_MARGIN,
-      y: window.innerHeight - FAB_SIZE - 80,
+    const defaultPos = () => ({
+      x: Math.round(window.innerWidth / 2 - FAB_SIZE / 2),
+      y: Math.max(MARGIN + 10, 60),
     });
-  }, []);
-
-  const snapToEdge = useCallback((rawX: number, rawY: number) => {
-    const maxX = window.innerWidth - FAB_SIZE - SNAP_MARGIN;
-    const maxY = window.innerHeight - FAB_SIZE - SNAP_MARGIN;
-    const clampedX = Math.max(SNAP_MARGIN, Math.min(rawX, maxX));
-    const clampedY = Math.max(SNAP_MARGIN, Math.min(rawY, maxY));
-    // Snap to nearest horizontal edge
-    const snapLeft = clampedX < window.innerWidth / 2;
-    return {
-      x: snapLeft ? SNAP_MARGIN : maxX,
-      y: clampedY,
-    };
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as { x: number; y: number };
+        const maxX = window.innerWidth - FAB_SIZE - MARGIN;
+        const maxY = window.innerHeight - FAB_SIZE - MARGIN;
+        if (
+          typeof parsed.x === "number" && typeof parsed.y === "number" &&
+          parsed.x >= MARGIN && parsed.x <= maxX &&
+          parsed.y >= MARGIN && parsed.y <= maxY
+        ) {
+          setPos(parsed);
+          return;
+        }
+      }
+    } catch { /* ignore */ }
+    setPos(defaultPos());
   }, []);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if (!pos) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     isDragging.current = false;
+    hasMoved.current = false;
     dragStart.current = { px: e.clientX, py: e.clientY, x: pos.x, y: pos.y };
   }, [pos]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const dx = e.clientX - dragStart.current.px;
     const dy = e.clientY - dragStart.current.py;
-    if (!isDragging.current && Math.sqrt(dx * dx + dy * dy) < 6) return;
+    // 8px threshold before we call it a drag (prevents accidental drags on tap)
+    if (!hasMoved.current && Math.sqrt(dx * dx + dy * dy) < 8) return;
+    hasMoved.current = true;
     isDragging.current = true;
-    const maxX = window.innerWidth - FAB_SIZE - SNAP_MARGIN;
-    const maxY = window.innerHeight - FAB_SIZE - SNAP_MARGIN;
+    const maxX = window.innerWidth - FAB_SIZE - MARGIN;
+    const maxY = window.innerHeight - FAB_SIZE - MARGIN;
     setPos({
-      x: Math.max(SNAP_MARGIN, Math.min(dragStart.current.x + dx, maxX)),
-      y: Math.max(SNAP_MARGIN, Math.min(dragStart.current.y + dy, maxY)),
+      x: Math.max(MARGIN, Math.min(dragStart.current.x + dx, maxX)),
+      y: Math.max(MARGIN, Math.min(dragStart.current.y + dy, maxY)),
     });
   }, []);
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
     if (!pos) return;
     if (!isDragging.current) {
+      // Pure tap — open Nia
       onClick();
     } else {
-      // Snap to nearest edge on release
+      // Drag ended — compute final clamped position and persist it
       const dx = e.clientX - dragStart.current.px;
       const dy = e.clientY - dragStart.current.py;
-      setPos(snapToEdge(dragStart.current.x + dx, dragStart.current.y + dy));
+      const maxX = window.innerWidth - FAB_SIZE - MARGIN;
+      const maxY = window.innerHeight - FAB_SIZE - MARGIN;
+      const newPos = {
+        x: Math.max(MARGIN, Math.min(dragStart.current.x + dx, maxX)),
+        y: Math.max(MARGIN, Math.min(dragStart.current.y + dy, maxY)),
+      };
+      setPos(newPos);
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newPos)); } catch { /* ignore */ }
     }
     isDragging.current = false;
-  }, [pos, onClick, snapToEdge]);
+    hasMoved.current = false;
+  }, [pos, onClick]);
 
   if (hidden || !pos) return null;
 
@@ -877,8 +895,6 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      whileHover={{ scale: 1.07 }}
-      whileTap={{ scale: 0.94 }}
       style={{
         position: "fixed",
         left: pos.x,
@@ -887,37 +903,61 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
         width: FAB_SIZE,
         height: FAB_SIZE,
         borderRadius: "50%",
-        background: "linear-gradient(135deg, #1D9E75 0%, #085041 100%)",
-        border: "none",
+        background: "linear-gradient(135deg, #1D9E75 0%, #0A6B4E 55%, #085041 100%)",
+        border: "2px solid rgba(93,202,165,0.45)",
         cursor: "grab",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        boxShadow: "0 4px 20px rgba(10,61,46,0.35)",
+        boxShadow: "0 6px 28px rgba(10,61,46,0.5), 0 0 0 1px rgba(29,158,117,0.15), inset 0 1px 0 rgba(255,255,255,0.1)",
         touchAction: "none",
         userSelect: "none",
+        WebkitUserSelect: "none",
       }}
     >
+      {/* Outer pulse ring */}
       <motion.div
-        animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
-        transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+        animate={{ scale: [1, 1.55, 1], opacity: [0.45, 0, 0.45] }}
+        transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
         style={{
           position: "absolute",
-          inset: -4,
+          inset: -6,
           borderRadius: "50%",
-          border: "1.5px solid rgba(29,158,117,0.6)",
+          background: "radial-gradient(circle, rgba(29,158,117,0.25) 0%, transparent 70%)",
           pointerEvents: "none",
         }}
       />
-      <span style={{
-        fontSize: 22, fontWeight: 700, color: "#E1F5EE",
-        fontFamily: "var(--font-sans)",
-        letterSpacing: "-0.01em",
-        userSelect: "none", lineHeight: 1,
-        pointerEvents: "none",
-      }}>
+      {/* Inner border ring pulse */}
+      <motion.div
+        animate={{ scale: [1, 1.35, 1], opacity: [0.6, 0, 0.6] }}
+        transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut", delay: 0.4 }}
+        style={{
+          position: "absolute",
+          inset: -3,
+          borderRadius: "50%",
+          border: "1.5px solid rgba(93,202,165,0.55)",
+          pointerEvents: "none",
+        }}
+      />
+      {/* Breathing "N" */}
+      <motion.span
+        animate={{ scale: [1, 1.04, 1] }}
+        transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
+        style={{
+          fontSize: 26,
+          fontWeight: 800,
+          color: "#E1F5EE",
+          fontFamily: "var(--font-sans)",
+          letterSpacing: "-0.01em",
+          userSelect: "none",
+          lineHeight: 1,
+          pointerEvents: "none",
+          display: "block",
+          textShadow: "0 1px 6px rgba(0,0,0,0.3)",
+        }}
+      >
         N
-      </span>
+      </motion.span>
     </motion.button>
   );
 }
