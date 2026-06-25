@@ -64,8 +64,11 @@ export const UpdateUserBody = zod.object({
   "name": zod.string().optional(),
   "avatar_url": zod.string().optional(),
   "neighborhood": zod.string().optional(),
-  "city": zod.string().optional(),
-  "is_helper": zod.boolean().optional()
+  "city": zod.string().max(100).optional(),
+  "is_helper": zod.boolean().optional(),
+  "specialties": zod.array(zod.string()).max(20).optional(),
+  "phone_masked": zod.string().max(20).optional(),
+  "quick_replies": zod.array(zod.string()).max(10).optional(),
 })
 
 export const UpdateUserResponse = zod.object({

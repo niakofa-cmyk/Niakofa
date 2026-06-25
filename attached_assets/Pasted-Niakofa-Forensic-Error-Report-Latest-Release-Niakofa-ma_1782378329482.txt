@@ -1,0 +1,61 @@
+Niakofa Forensic Error Report - Latest Release (Niakofa-main (40))
+Critical Bugs:
+
+TopBar center Nia AI button drag-to-move still non-functional: missing pointer event handlers, no drag state/transform in TopBar.tsx/NiaFab.tsx/AppContext.tsx, CSS fixed positioning overrides prevent relocation from default top position; localStorage persistence absent.
+OpenAPI/generated User types miss helper_status, helper_skills, helper_* fields causing (as any) casts in profile/helper-profile.tsx.
+lib/db/src/schema/index.ts incomplete exports for request_helpers, recurring_requests, conversations, messages tables.
+Vite proxy/ws localhost-only; production SERVE_FRONTEND + ALLOWED_ORIGIN CORS failures on Railway.
+AppContext hook order violations persist on new useEffect additions breaking HMR.
+requireAdmin() factory/direct misuse in recurring.ts and authz routes.
+Migrations lack full idempotent PostGIS IF NOT EXISTS guards; dev provisioning silent failures.
+Stripe rawBodyParser no explicit limit; webhook size risk.
+No legacy specialties → helper_skills migration path.
+nia-service raw pg queries drift from Drizzle schema.
+/nia/chat proxy missing rate limiting.
+Stale .build-cache-bust and prod console.* leaks in workers/ErrorBoundary.
+No service worker registration/output.
+Trust decay/anomaly in-memory state lost on restart; missing indexes.
+Nia prompt enum/category mismatches with DB.
+Mobile fixed bars missing consistent pb-safe.
+Redis partial init silent errors.
+Routes assume authenticatedUserId without full guards.
+WS helper events desync risk.
+Incomplete helmet/CSRF beyond CORS.
+Test mock leaks in lifecycle/users tests.
+pnpm overrides and minimumReleaseAge risks.
+Railway migrate no health wait/rollback.
+Avatar upload no hard 5MB enforcement.
+Recurring worker no concurrency lock.
+NiaDrawer safe-area partial on some inputs.
+New Replit integrations (batch/chat/storage) unintegrated into main Nia proxy/routes; schema drift in shared/models/chat.ts.
+Zod/v4 import inconsistencies in new schema files.
+Express error handler placement comment not enforced after static/SPA.
+
+Security Issues:
+
+Token version rotation incomplete.
+Admin endpoint no dedicated rate limit.
+Push upsert no strict validation.
+SMS no consent/encryption.
+Geo push no radius bounds/sanitization.
+New chat routes no auth guards on all endpoints.
+
+Performance/UX:
+
+Non-transactional lifecycle ops.
+No pagination on lists/feeds.
+Worker full table scans.
+No static asset caching headers.
+Vite fs.allow root dev exposure.
+Nia drag state not persisted across reloads/sessions.
+New Replit batch/chat untested in main flow.
+
+Finishing Requirements for Niakofa + Nia Evolution:
+
+Implement full draggable Nia position (pointer events + localStorage + CSS transform + AppContext sync) in TopBar/NiaFab.
+Run full tsc --build + codegen + tests + schema exports + migrations.
+Integrate Replit chat/batch into nia-proxy and main AppContext.
+Update CLAUDE.md Incident Log, MEMORY.md, REPLIT_GODFATHER.md with Nia drag fix, new integrations, and final state.
+Enforce mobile pb-safe, hook order, error handler placement.
+Add transaction wrappers, indexes, rate limits, avatar limits.
+Verify Nia visibility pre-login and all screens.

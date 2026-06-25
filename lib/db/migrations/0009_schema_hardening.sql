@@ -29,3 +29,23 @@ DO $$ BEGIN
       UNIQUE (user_id, day_of_week, start_min);
   END IF;
 END $$;
+
+-- 3. crisis_state.created_at: align live column type with Drizzle schema.
+--    The schema uses timestamp({ withTimezone: true }) → timestamptz, but the
+--    column was originally created as plain timestamp without time zone.
+--    On any already-provisioned database this is silent schema drift: Drizzle
+--    ORM assumes timestamptz while pg stores a tz-naive value. The USING clause
+--    reinterprets existing values as UTC (pg's storage default) before casting.
+DO $$ BEGIN
+  IF (
+    SELECT data_type
+    FROM information_schema.columns
+    WHERE table_name = 'crisis_state'
+      AND column_name = 'created_at'
+      AND table_schema = current_schema()
+  ) = 'timestamp without time zone' THEN
+    ALTER TABLE crisis_state
+      ALTER COLUMN created_at TYPE timestamptz
+      USING created_at AT TIME ZONE 'UTC';
+  END IF;
+END $$;

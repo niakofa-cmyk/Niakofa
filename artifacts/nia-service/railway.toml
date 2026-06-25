@@ -1,6 +1,10 @@
 [build]
 builder = "dockerfile"
-dockerfilePath = "Dockerfile"
+# buildContext is the monorepo root so the Dockerfile can access the workspace
+# pnpm-lock.yaml and pin all transitive deps to the same versions used by the
+# rest of the monorepo (api-server, pay-it-forward, etc.).
+buildContext = "."
+dockerfilePath = "artifacts/nia-service/Dockerfile"
 
 [deploy]
 startCommand = "node dist/index.js"
