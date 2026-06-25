@@ -8,6 +8,7 @@ import type { User as GeneratedUser } from "@workspace/api-client-react";
  * as how `password` is handled — kept out of codegen to avoid spec churn).
  */
 export type User = GeneratedUser & {
+  city?: string | null;
   approval_status?: "pending" | "approved" | "denied";
   account_type?: "individual" | "business" | "sponsor";
   organization_name?: string | null;
