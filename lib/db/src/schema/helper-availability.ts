@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, smallint, check } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, smallint, check, unique } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { usersTable } from "./users";
 
@@ -30,6 +30,10 @@ export const helperAvailabilityTable = pgTable(
     check("availability_start_range", sql`${t.start_min}   BETWEEN 0 AND 1439`),
     check("availability_end_range",   sql`${t.end_min}     BETWEEN 1 AND 1440`),
     check("availability_start_before_end", sql`${t.start_min} < ${t.end_min}`),
+    // Composite unique: a helper can only have one time window per (day, start)
+    // pair, preventing duplicate rows from a race condition or double-submit
+    // during the schedule-replacement flow.
+    unique("helper_availability_user_day_start_uidx").on(t.user_id, t.day_of_week, t.start_min),
   ]
 );
 

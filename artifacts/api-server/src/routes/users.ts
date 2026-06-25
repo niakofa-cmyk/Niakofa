@@ -22,6 +22,7 @@ import { authLimiter, gpsLimiter } from "../middlewares/rate-limit";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import { signTokenById } from "../middlewares/auth";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -386,7 +387,7 @@ router.delete("/users/:id", requireAuth, requireAdmin(), async (req, res) => {
 
     return res.json({ ok: true, message: "Account deleted successfully" });
   } catch (error) {
-    console.error("Error deleting user account:", error);
+    logger.error({ err: error }, "delete-account: failed");
     return res.status(500).json({ error: "Failed to delete account" });
   }
 });

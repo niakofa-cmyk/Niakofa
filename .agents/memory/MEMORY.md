@@ -23,3 +23,5 @@
 - [Niakofa spec/generated drift](niakofa-openapi-codegen.md) — committed generated client/Zod can drift ahead of openapi.yaml; running codegen syncs them (may delete dead hooks frontend never imported); yaml must list every live route/field/enum or types silently mismatch DB.
 - [Niakofa vision enhancements](niakofa-vision-enhancements.md) — 6-chunk upgrade: Nia 24h checkin worker, AI dispatch signals, anomaly rating-velocity+no-show, SMS multi-modal, NiaDrawer Ubuntu prompts.
 - [Niakofa mobile mandate](niakofa-mobile.md) — mobile-first is a core user preference; key rules: input font≥16px, active: not hover:, safe-area-inset-bottom on fixed bars, Nia always visible (even pre-login).
+- [Niakofa Zod/drizzle-zod contract](niakofa-zod-drizzle.md) — drizzle-zod v0.8.x uses Zod v4 types; must import z from "zod/v4" not "zod" in schema files.
+- [Niakofa Express error handler placement](niakofa-express-error-handler.md) — global 4-arg handler must go AFTER static/SPA middleware, as the absolute last app.use().

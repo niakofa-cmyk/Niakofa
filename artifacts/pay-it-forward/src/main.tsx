@@ -15,11 +15,14 @@ setAuthTokenGetter(getToken);
 // login with a session-expired flag, instead of letting every subsequent
 // call silently fail. Guarded so a flood of concurrent 401s (e.g. several
 // in-flight requests when the token expires) only redirects once.
+// Note: the flag resets automatically on the next page load (module re-evaluation)
+// so it purely prevents duplicate redirects within the same page lifetime.
 let redirectingForSessionExpiry = false;
 setUnauthorizedHandler(() => {
   if (redirectingForSessionExpiry) return;
-  // Don't kick out of admin — admin has its own auth separate from user sessions
-  if (window.location.pathname.startsWith("/admin")) return;
+  // Admin tokens expire the same way as user tokens — redirect to login so the
+  // admin can re-authenticate. Without this, a stale admin token causes a flood
+  // of silent 401s with no feedback to the user.
   redirectingForSessionExpiry = true;
   clearToken();
   sessionStorage.setItem("niakofa_session_expired", "1");

@@ -51,6 +51,9 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // Never emit source maps in production builds — they expose original source
+    // code to anyone who opens DevTools on a production deployment.
+    sourcemap: false,
   },
   server: {
     port,

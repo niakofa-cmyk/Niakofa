@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import helmet from "helmet";
 import cors from "cors";
 import pinoHttp from "pino-http";
@@ -151,5 +151,28 @@ if (process.env.NODE_ENV === "production" && process.env.SERVE_FRONTEND === "tru
     }
   });
 }
+
+// ── Global error handler ──────────────────────────────────────────────────────
+// MUST be the very last app.use() — after all routes AND after static/SPA
+// handlers — so it catches errors from every handler in the chain.
+// Express identifies error middleware by its arity (4 arguments); the
+// eslint-disable comment prevents the linter from stripping the unused _next.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  const status =
+    err instanceof Error && "status" in err && typeof (err as { status?: unknown }).status === "number"
+      ? (err as { status: number }).status
+      : 500;
+  const message =
+    process.env.NODE_ENV === "production"
+      ? "An unexpected error occurred. Please try again."
+      : err instanceof Error
+      ? err.message
+      : String(err);
+  logger.error({ err }, "unhandled express error");
+  if (!res.headersSent) {
+    res.status(status).json({ error: message });
+  }
+});
 
 export default app;
