@@ -15,8 +15,6 @@ const pool = new Pool({
   max: 10,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
-  // BUG-4-L04: statement_timeout prevents runaway/deadlocked queries from
-  // hanging the Nia chat handler indefinitely.
   statement_timeout: 10_000,
 });
 
@@ -24,10 +22,6 @@ pool.on("error", (err) => {
   logger.error({ err }, "nia: pg pool error");
 });
 
-// BUG-4-H09: SIGTERM handler must await pool.end() so active queries finish
-// cleanly before process exit. Previously process.exit(0) was called without
-// draining the pool, which could corrupt in-progress Nia conversations during
-// Railway rolling deploys.
 process.on("SIGTERM", async () => {
   logger.info("nia: SIGTERM received — draining pool before exit");
   try {
@@ -43,7 +37,7 @@ export async function runMigrations(): Promise<void> {
   const sqlPath = path.join(__dirname, "..", "..", "migrate.sql");
   const sql = fs.readFileSync(sqlPath, "utf8");
   await pool.query(sql);
-  logger.info("nia: migrations applied (nia_conversations, nia_memories)");
+  logger.info("nia: migrations applied (nia_conversations, nia_memories, structured column)");
 }
 
 const MAX_STORED_CHARS = 8000;
@@ -71,10 +65,6 @@ export async function saveConversation(
   );
 }
 
-/**
- * Save a check-in conversation initiated by the scheduler.
- * The request_id is stored so we can later look up the context.
- */
 export async function saveCheckinConversation(
   userId: number,
   sessionId: string,
@@ -112,9 +102,6 @@ export async function getRecentHistory(
   return history;
 }
 
-// BUG-21: Accept userId so we can verify the session belongs to the requesting user.
-// If a userId is provided, the query additionally filters by user_id so that
-// guessable session IDs cannot expose another user's conversation history.
 export async function getScrollbackHistory(sessionId: string, userId?: number) {
   const params: (string | number)[] = [sessionId];
   let query = `SELECT user_message, nia_response, created_at FROM nia_conversations
@@ -176,9 +163,6 @@ export async function getActiveRequest(
 }
 
 export async function purgeExpiredConversations() {
-  // Keep 48 hours — users returning the next day should still see their conversation.
-  // The nia_memories table holds the long-term, distilled memory; the conversation
-  // log is ephemeral context for continuity across a session or overnight.
   await pool.query(
     `DELETE FROM nia_conversations WHERE created_at < NOW() - INTERVAL '48 hours'`
   );
@@ -200,9 +184,6 @@ export async function checkRateLimit(
   );
 
   const count = parseInt(result.rows[0].count, 10);
-  // Authenticated users: 50 messages/day — generous enough for genuine need,
-  // including crisis support conversations that run long.
-  // Anonymous sessions: 20 messages/day — enough to help, enough to prompt sign-up.
   const limit = isUser ? 50 : 20;
   const remaining = Math.max(0, limit - count);
 
@@ -278,20 +259,66 @@ export async function upsertUserMemory(
   );
 }
 
+// ── Structured memory (Phase 1) ───────────────────────────────────────────────
+
+export interface StructuredMemory {
+  recurring_needs: string[];
+  accessibility_notes: string[];
+  people_mentioned: { name: string; relation: string }[];
+  corrections: string[];
+  preferred_language?: string;
+  emotional_arc?: "improving" | "stable" | "declining" | "unknown";
+  resources_that_worked?: string[];
+}
+
+const EMPTY_STRUCTURED: StructuredMemory = {
+  recurring_needs: [],
+  accessibility_notes: [],
+  people_mentioned: [],
+  corrections: [],
+};
+
+export async function getStructuredMemory(userId: number): Promise<StructuredMemory> {
+  const result = await pool.query(
+    `SELECT structured FROM nia_memories WHERE user_id = $1`,
+    [userId]
+  );
+  if (!result.rows[0]?.structured) return { ...EMPTY_STRUCTURED };
+  return { ...EMPTY_STRUCTURED, ...(result.rows[0].structured as StructuredMemory) };
+}
+
 /**
- * Find completed help requests eligible for a 24-hour Nia follow-up check-in.
- *
- * Eligible means:
- *   - status = 'completed'
- *   - completed_at is between 23 and 25 hours ago (2-hour window avoids double-fire
- *     if the hourly worker runs slightly off-schedule)
- *   - No nia_conversations checkin row already exists for this request + requester pair
- *     (detected by the "[check-in:<id>]" prefix we write in saveCheckinConversation)
- *
- * Queries the main app DB (same DATABASE_URL) — nia-service has access to both
- * the help_requests / users tables and its own nia_conversations table via the
- * shared pool.
+ * Merge a partial structured memory patch into the existing JSONB.
+ * Uses Postgres || operator to merge at the top level — arrays are replaced,
+ * not appended (the caller is responsible for reading first, merging, then writing).
  */
+export async function upsertStructuredMemory(
+  userId: number,
+  patch: Partial<StructuredMemory>
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO nia_memories (user_id, memory, structured, created_at, updated_at)
+     VALUES ($1, '', $2::jsonb, NOW(), NOW())
+     ON CONFLICT (user_id) DO UPDATE
+     SET structured = nia_memories.structured || $2::jsonb,
+         updated_at = NOW()`,
+    [userId, JSON.stringify(patch)]
+  );
+}
+
+export async function getFullMemory(userId: number): Promise<{ memory: string | null; structured: StructuredMemory }> {
+  const result = await pool.query(
+    `SELECT memory, structured FROM nia_memories WHERE user_id = $1`,
+    [userId]
+  );
+  return {
+    memory: result.rows[0]?.memory ?? null,
+    structured: { ...EMPTY_STRUCTURED, ...(result.rows[0]?.structured ?? {}) },
+  };
+}
+
+// ── Completed requests for check-in worker ───────────────────────────────────
+
 export async function getCompletedRequestsForCheckin(): Promise<
   {
     id: number;
@@ -326,4 +353,43 @@ export async function getCompletedRequestsForCheckin(): Promise<
     requester_id: number;
     helper_name: string | null;
   }[];
+}
+
+// ── Crisis follow-up worker (Phase 2) ────────────────────────────────────────
+//
+// Finds users whose last Nia conversation (48–72 hours ago) contained crisis
+// resource numbers (indicating Nia responded to a crisis signal) and who have
+// not sent any message since. Nia reaches out gently — not re-triggering
+// distress, just letting them know she's still here.
+//
+// Heuristic: the nia_response contains "988" or "741741" (crisis hotline numbers
+// that only appear in Nia's crisis escalation messages from safety.ts).
+
+export async function getCrisisConversationsForFollowup(): Promise<
+  { user_id: number; session_id: string }[]
+> {
+  const result = await pool.query(`
+    SELECT DISTINCT ON (nc1.user_id) nc1.user_id, nc1.session_id
+    FROM nia_conversations nc1
+    WHERE nc1.user_id IS NOT NULL
+      AND nc1.created_at BETWEEN NOW() - INTERVAL '72 hours' AND NOW() - INTERVAL '48 hours'
+      AND (
+        nc1.nia_response LIKE '%988%'
+        OR nc1.nia_response LIKE '%741741%'
+        OR nc1.nia_response LIKE '%crisis%'
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM nia_conversations nc2
+        WHERE nc2.user_id = nc1.user_id
+          AND nc2.created_at > nc1.created_at
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM nia_conversations nc3
+        WHERE nc3.user_id = nc1.user_id
+          AND nc3.user_message LIKE '[crisis-followup:%]%'
+      )
+    ORDER BY nc1.user_id, nc1.created_at DESC
+    LIMIT 10
+  `);
+  return result.rows as { user_id: number; session_id: string }[];
 }

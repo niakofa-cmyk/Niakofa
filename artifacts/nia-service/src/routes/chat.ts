@@ -10,6 +10,10 @@ import {
   getUserMemory,
   upsertUserMemory,
   saveCheckinConversation,
+  getFullMemory,
+  getStructuredMemory,
+  upsertStructuredMemory,
+  type StructuredMemory,
 } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
 import {
@@ -115,6 +119,13 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       ? (body.liveContext as Record<string, unknown>)
       : null;
 
+  // Phase 3: Language preference — from Accept-Language or explicit body field.
+  // Only set when non-English. Injected into the system prompt prefix.
+  const language =
+    typeof body.language === "string" && body.language.trim() && body.language.trim() !== "en"
+      ? body.language.trim()
+      : null;
+
   if (!message.trim() || !sessionId) {
     return res.status(400).json({ error: "message and sessionId required" });
   }
@@ -160,11 +171,11 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   }
 
   const history = await getRecentHistory(sessionId);
-  const userMemory = userId ? await getUserMemory(userId).catch(() => null) : null;
+  const { memory: userMemory, structured: structuredMemory } = userId
+    ? await getFullMemory(userId).catch(() => ({ memory: null, structured: {} as StructuredMemory }))
+    : { memory: null, structured: {} as StructuredMemory };
 
-  const memoryPrefix = userMemory
-    ? `MEMORY OF THIS USER:\n${userMemory}\n\nUse this memory naturally — reference it when relevant, like a neighbor who pays attention. Don't recite it. Don't say "I remember." Just know it.\n\n`
-    : "";
+  const memoryPrefix = buildMemoryPrefix(userMemory, structuredMemory);
 
   const activeRequest =
     activeRequestId !== null && !Number.isNaN(activeRequestId)
@@ -193,6 +204,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
 
   try {
     const systemPrompt =
+      buildLanguagePrefix(language) +
       memoryPrefix +
       softPrefix +
       liveContextPrefix +
@@ -229,9 +241,8 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
     await saveConversation(userId, sessionId, message, fullResponse);
 
     if (userId) {
-      extractAndUpdateMemory(userId, userMemory, message, fullResponse, anthropic).catch(
-        () => {}
-      );
+      extractAndUpdateMemory(userId, userMemory, message, fullResponse, anthropic).catch(() => {});
+      extractAndUpdateStructuredMemory(userId, structuredMemory, message, fullResponse, language, anthropic).catch(() => {});
     }
   } catch (err) {
     clearTimeout(timeoutHandle);
@@ -457,6 +468,44 @@ router.get("/history/:sessionId", parseOptionalAuth, async (req: Request, res: R
   if (!sessionId) return res.status(400).json({ error: "sessionId required" });
   const history = await getScrollbackHistory(sessionId, authenticatedUserId);
   return res.json(history);
+});
+
+// ── GET /memory/:userId — privacy-facing memory view (Phase 1) ───────────────
+// Returns what Nia remembers about this user so they can review and delete it.
+// Only the user themselves may read their memory (userId in URL is checked against
+// the authenticated Bearer token).
+router.get("/memory/:userId", parseOptionalAuth, async (req: Request, res: Response) => {
+  const authenticatedUserId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId;
+  const requestedId = parseInt(req.params.userId, 10);
+  if (isNaN(requestedId)) return res.status(400).json({ error: "Invalid userId" });
+  if (!authenticatedUserId || authenticatedUserId !== requestedId) {
+    return res.status(403).json({ error: "You may only view your own memory" });
+  }
+  const { memory, structured } = await getFullMemory(requestedId).catch(() => ({ memory: null, structured: {} as StructuredMemory }));
+  return res.json({ memory, structured });
+});
+
+// ── DELETE /memory/:userId — clear user's Nia memory ────────────────────────
+router.delete("/memory/:userId", parseOptionalAuth, async (req: Request, res: Response) => {
+  const authenticatedUserId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId;
+  const requestedId = parseInt(req.params.userId, 10);
+  if (isNaN(requestedId)) return res.status(400).json({ error: "Invalid userId" });
+  if (!authenticatedUserId || authenticatedUserId !== requestedId) {
+    return res.status(403).json({ error: "You may only clear your own memory" });
+  }
+  try {
+    await upsertUserMemory(requestedId, "");
+    await upsertStructuredMemory(requestedId, {
+      recurring_needs: [],
+      accessibility_notes: [],
+      people_mentioned: [],
+      corrections: [],
+    });
+    return res.json({ cleared: true });
+  } catch (err) {
+    logger.error({ err, userId: requestedId }, "nia: memory clear failed");
+    return res.status(500).json({ error: "Failed to clear memory" });
+  }
 });
 
 router.get("/health", (_req, res) => res.json({ status: "ok", service: "nia" }));

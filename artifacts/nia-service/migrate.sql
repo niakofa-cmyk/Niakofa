@@ -16,3 +16,14 @@ CREATE TABLE IF NOT EXISTS nia_memories (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Phase 1: Structured memory — JSONB subfields for high-signal facts.
+-- Shape: { recurring_needs, accessibility_notes, people_mentioned, corrections,
+--          preferred_language, emotional_arc, resources_that_worked }
+-- Idempotent — safe to re-run.
+ALTER TABLE nia_memories
+  ADD COLUMN IF NOT EXISTS structured JSONB NOT NULL DEFAULT '{}';
+
+-- Index for crisis follow-up worker (queries by user_id)
+CREATE INDEX IF NOT EXISTS nia_conversations_user_id_idx
+  ON nia_conversations (user_id);

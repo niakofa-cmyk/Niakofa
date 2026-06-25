@@ -8,6 +8,7 @@
  *   - Rate limiting applied here (crisisAwareChatLimiter)
  *   - Input sanitization (message length cap, session ID validation)
  *   - SSE streaming is piped through cleanly
+ *   - Accept-Language is forwarded so Nia responds in the user's language
  *
  * The nia-service URL is configured via NIA_SERVICE_URL env var.
  * Falls back to localhost:3001 for local development.
@@ -61,10 +62,19 @@ router.post(
     // userId comes ONLY from the verified Bearer token — never from the body
     const userId = req.authenticatedUserId ?? null;
 
+    // Phase 3: Detect language from Accept-Language header and pass to nia-service.
+    // The nia-service injects this into the system prompt so Nia responds in the
+    // user's language. Frontend may also pass an explicit language preference.
+    const acceptLanguage = req.headers["accept-language"] ?? null;
+    const explicitLanguage =
+      typeof body.language === "string" && body.language.trim()
+        ? body.language.trim()
+        : null;
+    const resolvedLanguage = explicitLanguage ?? parsePrimaryLanguage(acceptLanguage);
+
     const upstreamBody = JSON.stringify({
       message,
       sessionId,
-      // Server-authoritative userId — overrides anything the client may have sent
       userId,
       userName: typeof body.userName === "string" ? body.userName.slice(0, 100) : null,
       accountType: typeof body.accountType === "string" ? body.accountType : null,
@@ -77,6 +87,7 @@ router.post(
           : null,
       lat: typeof body.lat === "number" ? body.lat : null,
       lon: typeof body.lon === "number" ? body.lon : null,
+      language: resolvedLanguage,
       liveContext:
         typeof body.liveContext === "object" && body.liveContext !== null
           ? body.liveContext
@@ -88,7 +99,6 @@ router.post(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // Forward auth token so nia-service can also verify it
           ...(req.headers.authorization
             ? { Authorization: req.headers.authorization }
             : {}),
@@ -109,7 +119,6 @@ router.post(
           .json({ error: "Nia is unavailable right now. Please try again." });
       }
 
-      // Forward SSE headers and pipe the stream
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
@@ -148,16 +157,10 @@ router.post(
 );
 
 // ── GET /api/nia/history/:sessionId — conversation history ───────────────────
-// Rate-limited to prevent session-ID enumeration / scraping. Only the user
-// who owns the session should be able to read it — sessionId is validated
-// against the authenticated userId when present.
 router.get("/nia/history/:sessionId", parseAuth, niaChatHistoryLimiter, async (req: Request, res: Response) => {
   const sessionId = sanitizeSessionId(req.params.sessionId);
   if (!sessionId) return res.status(400).json({ error: "Invalid sessionId" });
 
-  // Session IDs are generated as `userId-uuid` by the frontend. Validate that
-  // an authenticated user can only read sessions that start with their own userId
-  // prefix, preventing cross-user history scraping when sessionId is guessable.
   const userId = req.authenticatedUserId;
   if (userId !== undefined && !sessionId.startsWith(`${userId}-`) && !sessionId.startsWith(`anon-`)) {
     return res.status(403).json({ error: "You can only read your own conversation history" });
@@ -165,9 +168,6 @@ router.get("/nia/history/:sessionId", parseAuth, niaChatHistoryLimiter, async (r
 
   try {
     const upstream = await fetch(`${getNiaUrl()}/history/${encodeURIComponent(sessionId)}`, {
-      // Forward the caller's bearer token so nia-service can authenticate the
-      // request and scope the history to the owning user. Without this, the
-      // upstream /history (which requires auth) always returns nothing.
       headers: req.headers.authorization
         ? { authorization: req.headers.authorization }
         : {},
@@ -179,4 +179,61 @@ router.get("/nia/history/:sessionId", parseAuth, niaChatHistoryLimiter, async (r
   }
 });
 
+// ── GET /api/nia/memory — user's Nia memory (privacy-facing) ─────────────────
+// Phase 1: Returns what Nia remembers about the authenticated user so they can
+// review and understand their stored memory. Required for privacy/trust.
+router.get("/nia/memory", parseAuth, async (req: Request, res: Response) => {
+  const userId = req.authenticatedUserId;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
+
+  try {
+    const upstream = await fetch(`${getNiaUrl()}/memory/${userId}`, {
+      headers: req.headers.authorization
+        ? { Authorization: req.headers.authorization }
+        : {},
+    });
+    if (!upstream.ok) return res.json({ memory: null, structured: {} });
+    return res.json(await upstream.json());
+  } catch {
+    return res.json({ memory: null, structured: {} });
+  }
+});
+
+// ── DELETE /api/nia/memory — clear user's Nia memory ────────────────────────
+// Privacy right: users can erase what Nia remembers about them at any time.
+router.delete("/nia/memory", parseAuth, async (req: Request, res: Response) => {
+  const userId = req.authenticatedUserId;
+  if (!userId) return res.status(401).json({ error: "Authentication required" });
+
+  try {
+    const upstream = await fetch(`${getNiaUrl()}/memory/${userId}`, {
+      method: "DELETE",
+      headers: req.headers.authorization
+        ? { Authorization: req.headers.authorization }
+        : {},
+    });
+    if (!upstream.ok) return res.status(500).json({ error: "Failed to clear memory" });
+    return res.json({ cleared: true });
+  } catch {
+    return res.status(500).json({ error: "Failed to clear memory" });
+  }
+});
+
 export default router;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Extracts the primary language code from an Accept-Language header.
+ * "es-MX,es;q=0.9,en;q=0.8" → "es"
+ * Returns null if the header is absent or malformed, or if the primary
+ * language is English (no need to inject a directive for the default).
+ */
+function parsePrimaryLanguage(acceptLanguage: string | null): string | null {
+  if (!acceptLanguage) return null;
+  const primary = acceptLanguage.split(",")[0]?.split(";")[0]?.trim();
+  if (!primary) return null;
+  const lang = primary.split("-")[0]?.toLowerCase();
+  if (!lang || lang === "en") return null;
+  return lang;
+}
