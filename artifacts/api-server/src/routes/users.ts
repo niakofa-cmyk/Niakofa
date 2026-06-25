@@ -23,6 +23,7 @@ import { requireAuth } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import { signTokenById } from "../middlewares/auth";
 import { logger } from "../lib/logger";
+import { requestSelect } from "../lib/request-select";
 
 const router = Router();
 
@@ -165,7 +166,7 @@ router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, re
   const bParsed = MakePledgePaymentBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { request_id, amount } = bParsed.data;
-  const [request] = await db.select().from(requestsTable)
+  const [request] = await db.select(requestSelect).from(requestsTable)
     .where(and(eq(requestsTable.id, request_id), eq(requestsTable.requester_id, pParsed.data.id)))
     .limit(1);
   if (!request) return res.status(404).json({ error: "Request not found or unauthorized" });
@@ -274,7 +275,7 @@ router.delete("/users/:id/scheduled-payment/:paymentId", requireAuth, requireOwn
 router.get("/users/:id/outstanding-pledges", requireAuth, requireOwnership(), async (req, res) => {
   const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
-  const requests = await db.select().from(requestsTable)
+  const requests = await db.select(requestSelect).from(requestsTable)
     .where(
       and(
         eq(requestsTable.requester_id, id),

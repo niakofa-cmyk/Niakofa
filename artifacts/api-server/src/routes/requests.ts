@@ -25,6 +25,7 @@ import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers } from "./push";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { logger } from "../lib/logger";
+import { requestSelect } from "../lib/request-select";
 import { sendReceipt, sendRequestConfirmation, sendHelperAcceptedEmail, sendFollowUpNudge } from "../lib/mailer";
 import { sendAdminSmsAlert, sendSosPanicContacts } from "../lib/sms";
 import Stripe from "stripe";
@@ -36,35 +37,6 @@ const _stripe = _STRIPE_SK
   : null;
 
 const router = Router();
-
-// Explicit column list — omits geog (PostGIS geography column not available
-// on all DB instances; haversine distance is computed in JS from lat/lng).
-const requestSelect = {
-  id: requestsTable.id,
-  title: requestsTable.title,
-  description: requestsTable.description,
-  category: requestsTable.category,
-  urgency: requestsTable.urgency,
-  status: requestsTable.status,
-  payment_type: requestsTable.payment_type,
-  requester_id: requestsTable.requester_id,
-  helper_id: requestsTable.helper_id,
-  lat: requestsTable.lat,
-  lng: requestsTable.lng,
-  neighborhood: requestsTable.neighborhood,
-  pay_it_forward_amount: requestsTable.pay_it_forward_amount,
-  pledge_amount: requestsTable.pledge_amount,
-  pledge_paid: requestsTable.pledge_paid,
-  created_at: requestsTable.created_at,
-  claimed_at: requestsTable.claimed_at,
-  en_route_at: requestsTable.en_route_at,
-  arrived_at: requestsTable.arrived_at,
-  completed_at: requestsTable.completed_at,
-  cancelled_at: requestsTable.cancelled_at,
-  nia_checkin_sent_at: requestsTable.nia_checkin_sent_at,
-  voice_activated: requestsTable.voice_activated,
-  voice_language: requestsTable.voice_language,
-} as const;
 
 
 function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {

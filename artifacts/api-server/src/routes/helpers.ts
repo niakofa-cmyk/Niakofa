@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { distanceMiles } from "../lib/geo.js";
+import { requestSelect } from "../lib/request-select";
 import { db, usersTable, requestsTable, userSettingsTable, helperAvailabilityTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { eq, and, sql, inArray } from "drizzle-orm";
@@ -82,7 +83,7 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, async (req, res) => 
   const requestId = parseInt(req.params.requestId as string);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid requestId" });
 
-  const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+  const [request] = await db.select(requestSelect).from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
   if (!request) return res.status(404).json({ error: "Request not found" });
   if (request.status !== "open") return res.status(409).json({ error: "Request is not open" });
 
