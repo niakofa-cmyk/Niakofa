@@ -153,6 +153,7 @@ router.get("/requests/nearby", async (req, res) => {
 });
 
 router.get("/requests", async (req, res) => {
+  try {
   const params = GetRequestsQueryParams.safeParse({
     status: req.query.status,
     lat: req.query.lat ? parseFloat(req.query.lat as string) : undefined,
@@ -215,6 +216,10 @@ router.get("/requests", async (req, res) => {
     distance_miles: null,
     estimated_duration_min: null,
   })));
+  } catch (err) {
+    logger.error({ err, stack: (err as Error)?.stack, message: (err as Error)?.message }, "GET /requests unhandled error");
+    return res.status(500).json({ error: "An unexpected error occurred. Please try again.", debug: (err as Error)?.message });
+  }
 });
 
 router.post("/requests", requireAuth, requireOwnership("requester_id"), requestCreationLimiter, async (req, res) => {
