@@ -116,10 +116,19 @@ router.get("/crisis/resources", requireAuth, async (req, res) => {
 });
 
 router.get("/admin/region-crisis-resources", requireAuth, requireAdmin(), async (req, res) => {
+  // BUG-4-H08: Add pagination — without LIMIT this endpoint was an unbounded
+  // full-table scan. Default page size 50, max 200 to protect against DoS.
   const verifiedParam = req.query.verified as string | undefined;
+  const limitRaw = parseInt(req.query.limit as string ?? "50", 10);
+  const offsetRaw = parseInt(req.query.offset as string ?? "0", 10);
+  const limit = isNaN(limitRaw) || limitRaw < 1 ? 50 : Math.min(limitRaw, 200);
+  const offset = isNaN(offsetRaw) || offsetRaw < 0 ? 0 : offsetRaw;
+
   const rows = verifiedParam !== undefined
-    ? await db.select().from(regionCrisisResourcesTable).where(eq(regionCrisisResourcesTable.verified, verifiedParam === "true"))
-    : await db.select().from(regionCrisisResourcesTable);
+    ? await db.select().from(regionCrisisResourcesTable)
+        .where(eq(regionCrisisResourcesTable.verified, verifiedParam === "true"))
+        .limit(limit).offset(offset)
+    : await db.select().from(regionCrisisResourcesTable).limit(limit).offset(offset);
   return res.json(rows.map(r => ({ ...r, resources: parseResources(r.resources) })));
 });
 

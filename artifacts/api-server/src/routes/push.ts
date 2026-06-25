@@ -6,6 +6,7 @@ import { sendAlertEmail } from "../lib/mailer";
 import { logger } from "../lib/logger";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
+import { pushSubscribeLimiter } from "../middlewares/rate-limit";
 
 const router = Router();
 
@@ -24,7 +25,7 @@ router.get("/push/vapid-public-key", (_req, res) => {
   res.json({ publicKey: VAPID_PUBLIC });
 });
 
-router.post("/push/subscribe", requireAuth, requireOwnership("userId"), async (req, res) => {
+router.post("/push/subscribe", requireAuth, pushSubscribeLimiter, requireOwnership("userId"), async (req, res) => {
   const { userId, subscription } = req.body as { userId: number; subscription: webpush.PushSubscription };
   if (!userId || !subscription?.endpoint) return res.status(400).json({ error: "userId and subscription required" });
 
@@ -51,7 +52,7 @@ router.post("/push/subscribe", requireAuth, requireOwnership("userId"), async (r
   return res.json({ ok: true });
 });
 
-router.post("/push/unsubscribe", requireAuth, requireOwnership("userId"), async (req, res) => {
+router.post("/push/unsubscribe", requireAuth, pushSubscribeLimiter, requireOwnership("userId"), async (req, res) => {
   const { userId, endpoint } = req.body as { userId: number; endpoint: string };
   if (!userId) return res.status(400).json({ error: "userId required" });
   if (endpoint) {

@@ -19,7 +19,10 @@ export async function setCrisisModeActive(active: boolean): Promise<void> {
   }
   try {
     if (active) {
-      await redis.set(REDIS_KEY, "true");
+      // BUG-4-M07: Add a 24-hour TTL so a stale crisis flag can never lock the
+      // app in crisis mode forever if the scheduler or admin UI fails to clear it.
+      // An active crisis should be explicitly renewed by the admin before expiry.
+      await redis.set(REDIS_KEY, "true", "EX", 86400);
     } else {
       await redis.del(REDIS_KEY);
     }

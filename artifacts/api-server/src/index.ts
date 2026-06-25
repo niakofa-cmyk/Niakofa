@@ -9,6 +9,7 @@ import { startPledgeWorker } from "./workers/pledge-worker";
 import { startCleanupWorker } from "./workers/cleanup-worker";
 import { startNotificationWorker } from "./workers/notification-worker";
 import { startAnomalyDetectionWorker } from "./workers/anomaly-worker";
+import { startNiaCheckinWorker } from "./workers/nia-checkin-worker";
 
 const rawPort = process.env["PORT"];
 if (!rawPort) throw new Error("PORT environment variable is required but was not provided.");
@@ -67,6 +68,10 @@ server.listen(port, async () => {
   // BUG-018: Weekly trust score recency decay — recomputes trust_score for all
   // rated users so old ratings naturally decay even without a new rating event.
   startTrustScoreDecayWorker();
+
+  // Dead-code fix: Nia 24-hour check-in worker — was exported but never called.
+  // Now wired: finds completed requests from 23–25h ago and sends Nia follow-ups.
+  startNiaCheckinWorker();
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────

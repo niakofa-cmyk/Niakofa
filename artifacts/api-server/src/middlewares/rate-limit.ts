@@ -242,6 +242,23 @@ export const communityPostLimiter = rateLimit({
 // Exported for use in the nia-proxy route in addition to the direct chat route.
 // Reuses crisisAwareChatLimiter — no need for a new limiter.
 
+// ── 11. Push Subscribe/Unsubscribe (10/15 min per user) ─────────────────────
+// BUG-4-H03: Push notification endpoints had no per-user rate limit. A script
+// could trigger thousands of OS-level notifications to any user. This caps
+// subscribe/unsubscribe churn to prevent both spam and subscription flooding.
+export const pushSubscribeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  store: createStore("push-subscribe"),
+  keyGenerator: (req) => {
+    const r = req as typeof req & { authenticatedUserId?: number };
+    return `push-sub-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
+  },
+  message: { error: "Too many push subscription changes. Please try again later." },
+});
+
 // ── SOS panic button (3/hour per user) ───────────────────────────────────────
 export const sosLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,

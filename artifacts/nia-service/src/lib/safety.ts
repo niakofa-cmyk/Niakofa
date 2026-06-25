@@ -73,7 +73,20 @@ export interface SafetyResult {
 }
 
 export function checkSafety(message: string): SafetyResult {
-  const isCrisis = CRISIS_PATTERNS.some((p) => p.test(message));
+  // BUG-4-M06: Empty/blank messages must not pass safety gates — they waste
+  // LLM tokens and can produce confusing responses.
+  if (!message || !message.trim()) {
+    return { flagged: false };
+  }
+
+  // BUG-4-C04 / REC-4-05: Normalize to NFKC to collapse Unicode homoglyphs
+  // (e.g. "kíll" → "kill", "suicíde" → "suicide") and strip zero-width chars
+  // that bypass plain includes()/regex matching.
+  const normalized = message
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF\u00AD\u2060]/g, "");
+
+  const isCrisis = CRISIS_PATTERNS.some((p) => p.test(normalized));
   if (isCrisis) {
     return {
       flagged: true,
@@ -101,7 +114,7 @@ export function checkSafety(message: string): SafetyResult {
     };
   }
 
-  const isSoftDistress = SOFT_DISTRESS_PATTERNS.some((p) => p.test(message));
+  const isSoftDistress = SOFT_DISTRESS_PATTERNS.some((p) => p.test(normalized));
   if (isSoftDistress) {
     return { flagged: false, soft: true };
   }

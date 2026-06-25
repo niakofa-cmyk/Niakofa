@@ -847,9 +847,17 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
   // Raw pointer handlers on a plain div — most reliable on mobile + desktop
   const onPD = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
-    divRef.current?.setPointerCapture(e.pointerId);
     const cur = pos ?? { x: 0, y: 0 };
+    // BUG: Set drag.active = true BEFORE attempting setPointerCapture so that
+    // even if capture throws (WebKit/mobile WebViews can throw on touch-originated
+    // pointerIds), drag state is still active and onPointerMove will process moves.
     drag.current = { active: true, moved: false, px: e.clientX, py: e.clientY, ox: cur.x, oy: cur.y };
+    try {
+      divRef.current?.setPointerCapture(e.pointerId);
+    } catch {
+      // Capture failed (common on iOS WebKit with touch pointers) — drag still
+      // works via onPointerMove since drag.current.active is already true.
+    }
   }, [pos]);
 
   const onPM = useCallback((e: React.PointerEvent<HTMLDivElement>) => {

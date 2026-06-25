@@ -4,11 +4,13 @@ import { logger } from "../lib/logger";
 import { broadcastToAdmins } from "../lib/ws-hub";
 
 const INTERVAL_MS = 10 * 60 * 1000;
-const CANCEL_THRESHOLD = 3;
-const LOW_TRUST_THRESHOLD = 2.0;
-const WINDOW_HOURS = 24;
-/** Flag helpers who receive this many 1-star ratings within 24 hours */
-const RATING_VELOCITY_THRESHOLD = 3;
+// BUG-4-M09: Thresholds are now configurable via env vars so fraud tuning
+// doesn't require a code deploy. Defaults preserve the original behaviour.
+const CANCEL_THRESHOLD = parseInt(process.env["ANOMALY_CANCEL_THRESHOLD"] ?? "3", 10);
+const LOW_TRUST_THRESHOLD = parseFloat(process.env["ANOMALY_LOW_TRUST_THRESHOLD"] ?? "2.0");
+const WINDOW_HOURS = parseInt(process.env["ANOMALY_WINDOW_HOURS"] ?? "24", 10);
+/** Flag helpers who receive this many 1-star ratings within the window */
+const RATING_VELOCITY_THRESHOLD = parseInt(process.env["ANOMALY_RATING_VELOCITY_THRESHOLD"] ?? "3", 10);
 
 // LOW-009: track the last time each low-trust helper was alerted so admins
 // aren't re-notified every cycle for the same standing condition.
@@ -89,6 +91,23 @@ async function detectAnomalies() {
         { user_id: user.id, trust_score: user.trust_score, help_count: user.help_count },
         "anomaly: active helper with critically low trust score"
       );
+
+      // BUG-4-H04: Downstream action — automatically disable helper mode for
+      // critically low-trust active helpers. Previously the flag was written but
+      // never acted on, leaving dangerous helpers able to claim requests.
+      // Admins are still notified via WebSocket for manual review.
+      try {
+        await db.update(usersTable)
+          .set({ helper_mode_active: false })
+          .where(eq(usersTable.id, user.id));
+        logger.warn(
+          { user_id: user.id },
+          "anomaly: disabled helper_mode_active for critically low-trust helper — admin review required"
+        );
+      } catch (err) {
+        logger.error({ err, user_id: user.id }, "anomaly: failed to disable helper mode for low-trust helper");
+      }
+
       broadcastToAdmins({
         type: "anomaly_detected",
         payload: {
@@ -97,6 +116,7 @@ async function detectAnomalies() {
           name: user.name,
           trust_score: user.trust_score,
           help_count: user.help_count,
+          action_taken: "helper_mode_disabled",
         },
       });
     }

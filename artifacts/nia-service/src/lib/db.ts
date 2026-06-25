@@ -15,10 +15,28 @@ const pool = new Pool({
   max: 10,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
+  // BUG-4-L04: statement_timeout prevents runaway/deadlocked queries from
+  // hanging the Nia chat handler indefinitely.
+  statement_timeout: 10_000,
 });
 
 pool.on("error", (err) => {
   logger.error({ err }, "nia: pg pool error");
+});
+
+// BUG-4-H09: SIGTERM handler must await pool.end() so active queries finish
+// cleanly before process exit. Previously process.exit(0) was called without
+// draining the pool, which could corrupt in-progress Nia conversations during
+// Railway rolling deploys.
+process.on("SIGTERM", async () => {
+  logger.info("nia: SIGTERM received — draining pool before exit");
+  try {
+    await pool.end();
+    logger.info("nia: pool drained — exiting cleanly");
+  } catch (err) {
+    logger.error({ err }, "nia: pool.end() failed during SIGTERM");
+  }
+  process.exit(0);
 });
 
 export async function runMigrations(): Promise<void> {

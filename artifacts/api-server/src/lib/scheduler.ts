@@ -17,7 +17,30 @@ import { logger } from "./logger";
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
+// BUG-4-M08: Mutex flags — prevent overlapping cron executions if a previous
+// tick is still running when the next fires (slow DB / large dataset). Without
+// this, slow reconciliation and trust-decay jobs run concurrently, causing
+// double-payouts and duplicate reminders.
+const running: Record<string, boolean> = {
+  scheduledReminders: false,
+  recurringRequests: false,
+  weeklyTrustDecay: false,
+};
+
 async function processScheduledReminders(): Promise<void> {
+  if (running.scheduledReminders) {
+    logger.warn("scheduler: processScheduledReminders still running — skipping this tick");
+    return;
+  }
+  running.scheduledReminders = true;
+  try {
+    await _processScheduledReminders();
+  } finally {
+    running.scheduledReminders = false;
+  }
+}
+
+async function _processScheduledReminders(): Promise<void> {
   const now = new Date();
 
   let due: (typeof scheduledPaymentsTable.$inferSelect)[] = [];
@@ -74,12 +97,26 @@ export function startScheduledPaymentReminder(): () => void {
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** Mutex-guarded wrapper around processRecurringRequests */
+async function runRecurringRequestsGuarded(): Promise<void> {
+  if (running.recurringRequests) {
+    logger.warn("recurring-worker: previous run still in progress — skipping this tick");
+    return;
+  }
+  running.recurringRequests = true;
+  try {
+    await processRecurringRequests();
+  } finally {
+    running.recurringRequests = false;
+  }
+}
+
 /** Start the recurring request worker. Fires every hour. Returns a cleanup function. */
 export function startRecurringRequestWorker(): () => void {
   // Run once immediately on server start, then every hour
-  processRecurringRequests().catch(() => {});
+  runRecurringRequestsGuarded().catch(() => {});
   const interval = setInterval(() => {
-    processRecurringRequests().catch(() => {});
+    runRecurringRequestsGuarded().catch(() => {});
   }, ONE_HOUR_MS);
 
   logger.info({ intervalMs: ONE_HOUR_MS }, "recurring-worker: started");
@@ -164,12 +201,26 @@ async function processWeeklyTrustDecay(): Promise<void> {
   logger.info({ total: ratees.length, updated, skipped }, "trust-decay: weekly recomputation complete");
 }
 
+/** Mutex-guarded wrapper around processWeeklyTrustDecay */
+async function runWeeklyTrustDecayGuarded(): Promise<void> {
+  if (running.weeklyTrustDecay) {
+    logger.warn("trust-decay: previous run still in progress — skipping this tick");
+    return;
+  }
+  running.weeklyTrustDecay = true;
+  try {
+    await processWeeklyTrustDecay();
+  } finally {
+    running.weeklyTrustDecay = false;
+  }
+}
+
 /** Start the weekly trust-score recency decay worker. Returns a cleanup function. */
 export function startTrustScoreDecayWorker(): () => void {
   // Run once immediately on server start, then every week
-  processWeeklyTrustDecay().catch(() => {});
+  runWeeklyTrustDecayGuarded().catch(() => {});
   const interval = setInterval(() => {
-    processWeeklyTrustDecay().catch(() => {});
+    runWeeklyTrustDecayGuarded().catch(() => {});
   }, ONE_WEEK_MS);
 
   logger.info({ intervalMs: ONE_WEEK_MS }, "trust-decay: weekly recomputation worker started");

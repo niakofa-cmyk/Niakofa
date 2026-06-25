@@ -214,10 +214,19 @@ router.post("/civic/suggestions", civicSuggestionLimiter, async (req, res) => {
 });
 
 // GET /civic/suggestions — admin: list all community-submitted suggestions
-router.get("/civic/suggestions", requireAuth, requireAdmin(), async (_req, res) => {
+// BUG-4-M01: Add default LIMIT + pagination so large suggestion tables don't
+// return the entire dataset on every admin dashboard load.
+router.get("/civic/suggestions", requireAuth, requireAdmin(), async (req, res) => {
+  const limitRaw = parseInt(req.query.limit as string ?? "50", 10);
+  const offsetRaw = parseInt(req.query.offset as string ?? "0", 10);
+  const limit = isNaN(limitRaw) || limitRaw < 1 ? 50 : Math.min(limitRaw, 200);
+  const offset = isNaN(offsetRaw) || offsetRaw < 0 ? 0 : offsetRaw;
+
   const suggestions = await db.select()
     .from(civicSuggestionsTable)
-    .orderBy(desc(civicSuggestionsTable.created_at));
+    .orderBy(desc(civicSuggestionsTable.created_at))
+    .limit(limit)
+    .offset(offset);
   return res.json(suggestions);
 });
 

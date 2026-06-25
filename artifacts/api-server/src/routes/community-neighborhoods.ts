@@ -24,10 +24,18 @@ function normalizeCityKey(city: string): string {
   return city.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
+// BUG-4-H01: Hard cap on city string length — oversized payloads forwarded to
+// nia-service's /generate-neighborhoods could cause OOM/DoS and excessive
+// Claude token usage. 100 chars is more than enough for any real city name.
+const MAX_CITY_LEN = 100;
+
 router.get("/community/neighborhoods", requireAuth, async (req, res) => {
   const cityRaw = (req.query.city as string | undefined)?.trim();
   if (!cityRaw) {
     return res.json({ neighborhoods: [], city: null });
+  }
+  if (cityRaw.length > MAX_CITY_LEN) {
+    return res.status(400).json({ error: "city name too long" });
   }
   const cityKey = normalizeCityKey(cityRaw);
   if (!cityKey) {
@@ -68,15 +76,22 @@ router.get("/community/neighborhoods", requireAuth, async (req, res) => {
       return res.json({ neighborhoods: [], city: cityRaw });
     }
 
+    // BUG-4-M03: Strip any HTML/script tags from LLM-generated neighborhood
+    // names/descriptions before storing. If admin views are rendered raw, a
+    // malicious or hallucinated name like "<script>..." would be a stored XSS vector.
+    function stripTags(s: string): string {
+      return s.replace(/<[^>]*>/g, "").trim();
+    }
+
     const inserted = await db
       .insert(cityNeighborhoodsTable)
       .values(generated.map(n => ({
         city_key: cityKey,
         city_display: cityRaw,
         neighborhood_id: n.id,
-        name: n.name,
-        emoji: n.emoji,
-        description: n.description,
+        name: stripTags(n.name).slice(0, 120),
+        emoji: stripTags(n.emoji).slice(0, 10),
+        description: stripTags(n.description).slice(0, 500),
         source: "generated" as const,
         verified: false,
       })))

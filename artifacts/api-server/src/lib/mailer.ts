@@ -53,6 +53,31 @@ function isSmtpConfigured(): boolean {
   return true;
 }
 
+// BUG-4-M10: Retry helper with exponential backoff — transient SMTP 503s
+// previously silently dropped verification, payout, and crisis emails.
+// Retries up to maxAttempts times with 1s, 2s, 4s delays.
+async function withSmtpRetry(fn: () => Promise<void>, label: string, maxAttempts = 3): Promise<void> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await fn();
+      return;
+    } catch (err) {
+      const isTransient = (err as { responseCode?: number }).responseCode === 503
+        || (err as { code?: string }).code === "ECONNRESET"
+        || (err as { code?: string }).code === "ETIMEDOUT";
+      if (!isTransient || attempt === maxAttempts) {
+        // Non-transient or final attempt — log and give up (never send internal
+        // error details to end users — BUG-4-H06 guard).
+        logger.error({ label, attempt, code: (err as { code?: string }).code }, `mailer: ${label} failed after ${attempt} attempt(s)`);
+        return;
+      }
+      const delay = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s
+      logger.warn({ label, attempt, delay }, `mailer: transient SMTP error — retrying in ${delay}ms`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
 export async function sendReceipt(data: ReceiptData): Promise<void> {
   if (!isSmtpConfigured()) return;
   const smtpUser = process.env["SMTP_USER"]!;
@@ -94,7 +119,7 @@ export async function sendReceipt(data: ReceiptData): Promise<void> {
 </body>
 </html>`;
 
-  try {
+  await withSmtpRetry(async () => {
     await transporter.sendMail({
       from: `"Niakofa" <${smtpUser}>`,
       to: data.to,
@@ -102,9 +127,7 @@ export async function sendReceipt(data: ReceiptData): Promise<void> {
       html,
     });
     logger.info({ to: data.to }, "receipt: email sent");
-  } catch (err) {
-    logger.error({ err, to: data.to }, "receipt: email failed");
-  }
+  }, "sendReceipt");
 }
 
 export interface AlertEmailData {
@@ -143,7 +166,7 @@ export async function sendAlertEmail(data: AlertEmailData): Promise<void> {
 </body>
 </html>`;
 
-  try {
+  await withSmtpRetry(async () => {
     await transporter.sendMail({
       from: `"Niakofa" <${smtpUser}>`,
       to: data.to,
@@ -151,9 +174,7 @@ export async function sendAlertEmail(data: AlertEmailData): Promise<void> {
       html,
     });
     logger.info({ to: data.to, subject: data.subject }, "alert email sent");
-  } catch (err) {
-    logger.error({ err, to: data.to }, "alert email failed");
-  }
+  }, "sendAlertEmail");
 }
 
 export interface HelperDecisionData {
@@ -219,7 +240,7 @@ export async function sendHelperApplicationDecision(data: HelperDecisionData): P
     ? "🎉 You're approved — welcome to the Niakofa helper team!"
     : "Your Niakofa helper application update";
 
-  try {
+  await withSmtpRetry(async () => {
     await transporter.sendMail({
       from: `"Niakofa" <${smtpUser}>`,
       to: data.to,
@@ -227,9 +248,7 @@ export async function sendHelperApplicationDecision(data: HelperDecisionData): P
       html,
     });
     logger.info({ to: data.to, decision: data.decision }, "helper decision email sent");
-  } catch (err) {
-    logger.error({ err, to: data.to }, "helper decision email failed");
-  }
+  }, "sendHelperApplicationDecision");
 }
 
 export interface TipData {
@@ -256,14 +275,12 @@ export async function sendTipNotification(data: TipData): Promise<void> {
 </body>
 </html>`;
 
-  try {
+  await withSmtpRetry(async () => {
     await transporter.sendMail({
       from: `"Niakofa" <${smtpUser}>`,
       to: data.to,
       subject: sanitizeHeaderValue(`💚 You received a tip for: ${data.requestTitle}`),
       html,
     });
-  } catch (err) {
-    logger.error({ err }, "tip notification email failed");
-  }
+  }, "sendTipNotification");
 }
