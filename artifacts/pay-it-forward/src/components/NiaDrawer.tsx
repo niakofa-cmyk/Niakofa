@@ -71,13 +71,6 @@ interface NiaDrawerProps {
 }
 
 function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: boolean }) {
-  // Phase 7a: Stop voice when drawer closes
-  useEffect(() => {
-    if (!open) {
-      stopListening();
-      setVoiceActivated(false);
-    }
-  }, [open]);
 
   return (
     <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
@@ -125,32 +118,6 @@ function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: boolean }
 
 function NiaWelcomeSplash({ onDone }: { onDone: () => void }) {
   const [phraseIndex, setPhraseIndex] = useState(0);
-  const [voiceActivated, setVoiceActivated] = useState(false);
-  const [voiceLanguage, setVoiceLanguage] = useState<CulturalLanguage>("en");
-  // Phase 7a: Detect cultural language from browser
-  useEffect(() => {
-    const detected = detectUserLanguage();
-    setVoiceLanguage(detected);
-  }, []);
-
-  // Phase 7a: Voice wake word hook
-  const { listening, listeningState, stopListening, startListening } = useVoiceWakeWord({
-    enabled: true,
-    continuous: true,
-    onWakeWordDetected: (lang, transcript) => {
-      setVoiceActivated(true);
-      setVoiceLanguage(lang);
-      const profile = getProfile(lang);
-      setMessages((prev: Message[]) => [
-        ...prev,
-        {
-          role: "nia",
-          content: profile.greetingResponse,
-          timestamp: new Date(),
-        },
-      ]);
-    },
-  });
 
   const onDoneRef = useRef(onDone);
   useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
@@ -457,6 +424,37 @@ export function NiaDrawer({
 }: NiaDrawerProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [voiceActivated, setVoiceActivated] = useState(false);
+  const [voiceLanguage, setVoiceLanguage] = useState<CulturalLanguage>("en");
+
+  // Phase 7a: Detect cultural language
+  useEffect(() => {
+    setVoiceLanguage(detectUserLanguage());
+  }, []);
+
+  // Phase 7a: Voice wake word
+  const { listening, listeningState, stopListening, startListening } = useVoiceWakeWord({
+    enabled: true,
+    continuous: true,
+    onWakeWordDetected: (lang, _transcript) => {
+      setVoiceActivated(true);
+      setVoiceLanguage(lang);
+      const profile = getProfile(lang);
+      setMessages((prev: Message[]) => [
+        ...prev,
+        { role: "nia", content: profile.greetingResponse, timestamp: new Date() },
+      ]);
+    },
+  });
+
+  // Phase 7a: Stop voice when drawer closes
+  useEffect(() => {
+    if (!open) {
+      stopListening();
+      setVoiceActivated(false);
+    }
+  }, [open]);
+
   const [loading, setLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [showSplash, setShowSplash] = useState(false);
@@ -1010,26 +1008,17 @@ export function NiaDrawer({
                     >
                       {loading
                         ? <Loader2 size={15} color="var(--color-text-tertiary)" />
-                        : <button
-                type="button"
-                onClick={listening ? stopListening : startListening}
-                className={`p-2 rounded-full transition-colors ${listening ? "bg-blue-500 text-white animate-pulse" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
-                aria-label={listening ? "Stop listening" : "Start voice"}
-              >
-                <Mic className="h-5 w-5" />
-              </button>
-              
-              <button
-                type="button"
-                onClick={listening ? stopListening : startListening}
-                className={`p-2 rounded-full transition-colors ${
-                  listening ? "bg-blue-500 text-white animate-pulse" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                }`}
-                aria-label={listening ? "Stop listening" : "Start voice"}
-              >
-                <Mic className="h-5 w-5" />
-              </button>
-<Send size={14} color={!input.trim() ? "var(--color-text-tertiary)" : "#E1F5EE"} />
+                        : <>
+                            <button
+                              type="button"
+                              onClick={listening ? stopListening : startListening}
+                              className={`p-2 rounded-full transition-colors ${listening ? 'bg-blue-500 text-white animate-pulse' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                              aria-label={listening ? 'Stop listening' : 'Start voice'}
+                            >
+                              <Mic className="h-5 w-5" />
+                            </button>
+                            <Send size={14} color={!input.trim() ? 'var(--color-text-tertiary)' : '#E1F5EE'} />
+                          </>
                       }
                     </button>
                   </div>

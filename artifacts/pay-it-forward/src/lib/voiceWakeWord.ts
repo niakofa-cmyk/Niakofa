@@ -1,6 +1,3 @@
-// Niakofa Voice Wake Word Engine — Phase 7a
-// Uses Web Speech API (browser-native, no ML5/TF dependency needed for MVP)
-
 import { matchWakeWord, CulturalLanguage } from "./culturalGreetings";
 
 export type ListeningState = "idle" | "listening" | "detected" | "error";
@@ -14,7 +11,7 @@ export interface VoiceWakeWordOptions {
 }
 
 export class VoiceWakeWordEngine {
-  private recognition: SpeechRecognition | null = null;
+  private recognition: any = null;
   private options: VoiceWakeWordOptions;
   private state: ListeningState = "idle";
   private active = false;
@@ -39,22 +36,21 @@ export class VoiceWakeWordEngine {
       return;
     }
 
-    const SR = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     this.recognition = new SR();
     this.recognition.continuous = this.options.continuous ?? true;
     this.recognition.interimResults = true;
-    this.recognition.lang = ""; // auto-detect
+    this.recognition.lang = "";
 
     this.recognition.onstart = () => {
       this.active = true;
       this.setState("listening");
     };
 
-    this.recognition.onresult = (event: SpeechRecognitionEvent) => {
+    this.recognition.onresult = (event: any) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
         this.options.onTranscript?.(transcript);
-
         if (event.results[i].isFinal) {
           const lang = matchWakeWord(transcript);
           if (lang) {
@@ -65,7 +61,7 @@ export class VoiceWakeWordEngine {
       }
     };
 
-    this.recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+    this.recognition.onerror = (event: any) => {
       if (event.error !== "no-speech") {
         this.options.onError?.(event.error);
         this.setState("error");
@@ -73,7 +69,6 @@ export class VoiceWakeWordEngine {
     };
 
     this.recognition.onend = () => {
-      // Auto-restart if still active (continuous listening)
       if (this.active && this.options.continuous !== false) {
         setTimeout(() => this.recognition?.start(), 300);
       } else {
