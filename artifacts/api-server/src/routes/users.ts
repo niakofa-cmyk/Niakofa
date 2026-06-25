@@ -18,7 +18,7 @@ import {
   GetScheduledPaymentsParams,
 } from "@workspace/api-zod";
 import { broadcast } from "../lib/ws-hub";
-import { authLimiter, gpsLimiter } from "../middlewares/rate-limit";
+import { authLimiter, gpsLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import { signTokenById } from "../middlewares/auth";
@@ -372,7 +372,7 @@ router.patch("/users/:id/panic-contacts", requireAuth, requireOwnership(), async
 
 // BUG-H03: Account deletion is admin-only. requireOwnership() would let any
 // authenticated user delete any other account by crafting the path parameter.
-router.delete("/users/:id", requireAuth, requireAdmin(), async (req, res) => {
+router.delete("/users/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
 
@@ -392,7 +392,7 @@ router.delete("/users/:id", requireAuth, requireAdmin(), async (req, res) => {
   }
 });
 
-router.patch("/users/:id/moderation", requireAuth, requireAdmin(), async (req, res) => {
+router.patch("/users/:id/moderation", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
   const { action } = req.body as { action: "warn" | "ban" };
@@ -458,7 +458,7 @@ router.post("/users/:id/logout", requireAuth, requireOwnership(), async (req, re
 });
 
 // GET all users (admin)
-router.get("/users", requireAuth, requireAdmin(), async (_req, res) => {
+router.get("/users", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
   const users = await db.select({
     id: usersTable.id,
     name: usersTable.name,

@@ -13,7 +13,7 @@
 - [Niakofa openapi codegen](niakofa-openapi-codegen.md) — orval runs via root node_modules; duplicate YAML keys and null-valued properties silently break codegen with cryptic errors.
 - [Niakofa test setup](niakofa-test-setup.md) — Jest+Supertest in ESM mode (ts-jest esm preset); __tests__ excluded from main tsconfig to avoid type conflicts with jest globals.
 - [Niakofa auth flow](niakofa-auth-flow.md) — DB tables caused all 500s; logout used wrong localStorage keys; AppContext must own centralized logout(); last-known location persisted to localStorage as niakofa_last_location.
-- [Niakofa rate limiter](niakofa-rate-limit.md) — authLimiter is 10 req/15 min; rapid test loops hit 429; this is expected security behavior, not a bug.
+- [Niakofa rate limiter](niakofa-rate-limit.md) — authLimiter 10/15min; adminLimiter 100/15min; niaChatHistoryLimiter 60/15min; all admin endpoints must include adminLimiter after requireAdmin().
 - [Niakofa recurring requests](niakofa-recurring.md) — recurring_requests table + /api/recurring routes + hourly scheduler worker; wallet.tsx entry point at /recurring; requireAdmin() must be called as a factory function (requireAdmin()), not used directly.
 - [Niakofa middleware paths](niakofa-middleware-paths.md) — auth middleware is at middlewares/ (plural); requireAdmin is in middlewares/authz.ts (not middleware/requireAdmin); always call requireAdmin() not requireAdmin.
 - [Niakofa helper application system](niakofa-helper-application.md) — full helper signup/approval flow, TopBar gating by helper_status, new helper-profile fields, admin review queue; useCallback token bug fix pattern.
@@ -22,6 +22,8 @@
 - [Niakofa dev DB provisioning](niakofa-dev-db-provisioning.md) — empty dev DB floods logs; drizzle push can't (TTY/PostGIS/geography); enable postgis + apply migrations/*.sql via psql; needs extensionsFilters:["postgis"].
 - [Niakofa spec/generated drift](niakofa-openapi-codegen.md) — committed generated client/Zod can drift ahead of openapi.yaml; running codegen syncs them (may delete dead hooks frontend never imported); yaml must list every live route/field/enum or types silently mismatch DB.
 - [Niakofa vision enhancements](niakofa-vision-enhancements.md) — 6-chunk upgrade: Nia 24h checkin worker, AI dispatch signals, anomaly rating-velocity+no-show, SMS multi-modal, NiaDrawer Ubuntu prompts.
+- [Niakofa anomaly worker Redis dedup](niakofa-anomaly-dedup.md) — anomaly alerts deduped via Redis TTL (`anomaly:alert:${key}`, 7200s EX); in-memory fallback evicts at >500 entries; never use in-memory Map alone (lost on restart).
+- [Niakofa NiaFab safe-area hook order](niakofa-niafab-hooks.md) — safeAreaBottom useRef must be declared LAST in NiaFab (after all callbacks); closures capture the binding not the value, so reading .current at call time is safe despite TDZ ordering.
 - [Niakofa mobile mandate](niakofa-mobile.md) — mobile-first is a core user preference; key rules: input font≥16px, active: not hover:, safe-area-inset-bottom on fixed bars, Nia always visible (even pre-login).
 - [Niakofa Zod/drizzle-zod contract](niakofa-zod-drizzle.md) — drizzle-zod v0.8.x uses Zod v4 types; must import z from "zod/v4" not "zod" in schema files.
 - [Niakofa Express error handler placement](niakofa-express-error-handler.md) — global 4-arg handler must go AFTER static/SPA middleware, as the absolute last app.use().

@@ -819,10 +819,13 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
   const drag = useRef({ active: false, moved: false, px: 0, py: 0, ox: 0, oy: 0 });
   const divRef = useRef<HTMLDivElement>(null);
 
-  // Clamp a position to the current viewport bounds
+  // Clamp a position to the current viewport bounds.
+  // safeAreaBottom is a ref read at call time — no closure dep needed.
   const clampToViewport = useCallback((p: { x: number; y: number }): { x: number; y: number } => {
     const maxX = window.innerWidth - FAB_SIZE - MARGIN;
-    const maxY = window.innerHeight - FAB_SIZE - MARGIN;
+    // Account for safe-area-inset-bottom (iPhone home indicator, Android gesture bar)
+    // so Nia never lands behind the system UI at the screen bottom.
+    const maxY = window.innerHeight - FAB_SIZE - MARGIN - safeAreaBottom.current;
     return {
       x: Math.max(MARGIN, Math.min(p.x, maxX)),
       y: Math.max(MARGIN, Math.min(p.y, maxY)),
@@ -887,10 +890,12 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
   const onPD = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     const cur = pos ?? { x: 0, y: 0 };
-    // BUG: Set drag.active = true BEFORE attempting setPointerCapture so that
+    // Set drag.active = true BEFORE attempting setPointerCapture so that
     // even if capture throws (WebKit/mobile WebViews can throw on touch-originated
     // pointerIds), drag state is still active and onPointerMove will process moves.
     drag.current = { active: true, moved: false, px: e.clientX, py: e.clientY, ox: cur.x, oy: cur.y };
+    // Visual feedback: switch to grabbing cursor imperatively (no re-render cost)
+    if (divRef.current) divRef.current.style.cursor = "grabbing";
     try {
       divRef.current?.setPointerCapture(e.pointerId);
     } catch {
@@ -907,7 +912,7 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
     if (!d.moved && Math.sqrt(dx * dx + dy * dy) < 7) return;
     d.moved = true;
     const maxX = window.innerWidth - FAB_SIZE - MARGIN;
-    const maxY = window.innerHeight - FAB_SIZE - MARGIN;
+    const maxY = window.innerHeight - FAB_SIZE - MARGIN - safeAreaBottom.current;
     setPos({
       x: Math.max(MARGIN, Math.min(d.ox + dx, maxX)),
       y: Math.max(MARGIN, Math.min(d.oy + dy, maxY)),
@@ -918,13 +923,15 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
     const d = drag.current;
     if (!d.active) return;
     d.active = false;
+    // Reset cursor back to grab regardless of whether this was a tap or a drag
+    if (divRef.current) divRef.current.style.cursor = "grab";
     if (!d.moved) {
       onClick();
     } else {
       const dx = e.clientX - d.px;
       const dy = e.clientY - d.py;
       const maxX = window.innerWidth - FAB_SIZE - MARGIN;
-      const maxY = window.innerHeight - FAB_SIZE - MARGIN;
+      const maxY = window.innerHeight - FAB_SIZE - MARGIN - safeAreaBottom.current;
       const newPos = {
         x: Math.max(MARGIN, Math.min(d.ox + dx, maxX)),
         y: Math.max(MARGIN, Math.min(d.oy + dy, maxY)),
@@ -942,7 +949,24 @@ export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: bool
     const d = drag.current;
     d.active = false;
     d.moved = false;
+    if (divRef.current) divRef.current.style.cursor = "grab";
     try { divRef.current?.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+  }, []);
+
+  // ── Safe-area measurement (added LAST to preserve hook order) ────────────────
+  // Measures env(safe-area-inset-bottom) once on mount via a CSS env() probe so
+  // the clamp functions can account for the iPhone home indicator and Android
+  // gesture bar without requiring a CSS-to-JS polyfill. Stored as a ref so it
+  // never triggers re-renders; read at call time in drag handlers and clampToViewport.
+  const safeAreaBottom = useRef(0);
+  useEffect(() => {
+    const probe = document.createElement("div");
+    probe.style.cssText =
+      "position:fixed;pointer-events:none;visibility:hidden;" +
+      "bottom:env(safe-area-inset-bottom,0px);height:0";
+    document.body.appendChild(probe);
+    safeAreaBottom.current = parseFloat(getComputedStyle(probe).bottom) || 0;
+    document.body.removeChild(probe);
   }, []);
 
   if (hidden || !pos) return null;

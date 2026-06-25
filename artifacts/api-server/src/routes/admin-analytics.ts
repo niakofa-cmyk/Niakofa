@@ -9,11 +9,12 @@ import { db, requestsTable, usersTable, reportsTable } from "@workspace/db";
 import { eq, sql, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
+import { adminLimiter } from "../middlewares/rate-limit";
 
 const router = Router();
 
 // GET /admin/analytics — comprehensive platform health snapshot
-router.get("/admin/analytics", requireAuth, requireAdmin(), async (_req, res) => {
+router.get("/admin/analytics", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   const [
@@ -163,7 +164,7 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), async (_req, res) =>
 });
 
 // GET /admin/accounts — list all accounts for admin review
-router.get("/admin/accounts", requireAuth, requireAdmin(), async (req, res) => {
+router.get("/admin/accounts", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const { approval_status, account_type } = req.query as {
     approval_status?: string;
     account_type?: string;
@@ -194,7 +195,7 @@ router.get("/admin/accounts", requireAuth, requireAdmin(), async (req, res) => {
 });
 
 // GET /admin/helper-applications — list users who have applied to be helpers
-router.get("/admin/helper-applications", requireAuth, requireAdmin(), async (req, res) => {
+router.get("/admin/helper-applications", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const { status } = req.query as { status?: string };
 
   const conditions = [sql`${usersTable.helper_status} IS NOT NULL`];

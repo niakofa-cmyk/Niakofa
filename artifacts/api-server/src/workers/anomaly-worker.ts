@@ -2,6 +2,7 @@ import { db, usersTable, requestsTable, ratingsTable } from "@workspace/db";
 import { sql, and, gte, eq, lte } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { broadcastToAdmins } from "../lib/ws-hub";
+import { getRedisConnection } from "../lib/queue";
 
 const INTERVAL_MS = 10 * 60 * 1000;
 // BUG-4-M09: Thresholds are now configurable via env vars so fraud tuning
@@ -15,10 +16,51 @@ const WINDOW_HOURS = parseInt(process.env["ANOMALY_WINDOW_HOURS"] ?? "24", 10);
 /** Flag helpers who receive this many 1-star ratings within the window */
 const RATING_VELOCITY_THRESHOLD = parseInt(process.env["ANOMALY_RATING_VELOCITY_THRESHOLD"] ?? "3", 10);
 
-// LOW-009: track the last time each low-trust helper was alerted so admins
-// aren't re-notified every cycle for the same standing condition.
 const ALERT_COOLDOWN_MS = 2 * 60 * 60 * 1000; // 2 hours
-const lastAlertedAt = new Map<number, number>();
+const ALERT_COOLDOWN_SEC = Math.ceil(ALERT_COOLDOWN_MS / 1000);
+
+// ── Persistent alert deduplication ───────────────────────────────────────────
+// Uses Redis (with TTL) when available so alert cooldowns survive server
+// restarts and work correctly across multiple instances. Falls back to an
+// in-memory Map only when Redis is not configured (dev / single-instance).
+// The in-memory fallback grows only up to ~1 entry per alerted user/request;
+// entries are evicted naturally as cooldowns expire when Redis IS available.
+const _memLastAlertedAt = new Map<string, number>();
+
+async function wasAlertedRecently(key: string): Promise<boolean> {
+  const redis = getRedisConnection();
+  if (redis) {
+    try {
+      const val = await redis.get(`anomaly:alert:${key}`);
+      return val === "1";
+    } catch {
+      // Redis error — fall through to memory fallback
+    }
+  }
+  const last = _memLastAlertedAt.get(key);
+  return last !== undefined && Date.now() - last < ALERT_COOLDOWN_MS;
+}
+
+async function recordAlert(key: string): Promise<void> {
+  const redis = getRedisConnection();
+  if (redis) {
+    try {
+      await redis.set(`anomaly:alert:${key}`, "1", "EX", ALERT_COOLDOWN_SEC);
+      return;
+    } catch {
+      // Redis error — fall through to memory fallback
+    }
+  }
+  _memLastAlertedAt.set(key, Date.now());
+  // Evict expired in-memory entries whenever the map grows large to prevent
+  // unbounded growth in long-running single-instance deployments without Redis.
+  if (_memLastAlertedAt.size > 500) {
+    const cutoff = Date.now() - ALERT_COOLDOWN_MS;
+    for (const [k, ts] of _memLastAlertedAt) {
+      if (ts < cutoff) _memLastAlertedAt.delete(k);
+    }
+  }
+}
 
 async function detectAnomalies() {
   try {
@@ -53,6 +95,10 @@ async function detectAnomalies() {
       .having(sql`count(*) >= ${CANCEL_THRESHOLD}`);
 
     for (const row of frequentRequesterCancels) {
+      const alertKey = `req-cancel:${row.requester_id}`;
+      if (await wasAlertedRecently(alertKey)) continue;
+      await recordAlert(alertKey);
+
       logger.warn(
         { requester_id: row.requester_id, cancel_count: row.cancel_count, window_hours: WINDOW_HOURS },
         "anomaly: requester repeatedly cancelled claimed requests — flagged for admin review"
@@ -86,9 +132,9 @@ async function detectAnomalies() {
       );
 
     for (const user of lowTrustActiveHelpers) {
-      const lastAlert = lastAlertedAt.get(user.id);
-      if (lastAlert && Date.now() - lastAlert < ALERT_COOLDOWN_MS) continue;
-      lastAlertedAt.set(user.id, Date.now());
+      const alertKey = `low-trust:${user.id}`;
+      if (await wasAlertedRecently(alertKey)) continue;
+      await recordAlert(alertKey);
 
       logger.warn(
         { user_id: user.id, trust_score: user.trust_score, help_count: user.help_count },
@@ -125,9 +171,6 @@ async function detectAnomalies() {
     }
 
     // ── Rating velocity — 3+ one-star ratings in 24h ─────────────────────────
-    // A burst of 1-star ratings in a short window is a strong signal of
-    // bad-faith behaviour or a serious service failure. Surfaces it for
-    // immediate admin review before the helper's trust score decays naturally.
     let ratingVelocityRows: { ratee_id: number; count: number }[] = [];
     try {
       ratingVelocityRows = await db
@@ -149,9 +192,9 @@ async function detectAnomalies() {
     }
 
     for (const row of ratingVelocityRows) {
-      const lastAlert = lastAlertedAt.get(row.ratee_id + 100_000); // offset to avoid key collision with low-trust map
-      if (lastAlert && Date.now() - lastAlert < ALERT_COOLDOWN_MS) continue;
-      lastAlertedAt.set(row.ratee_id + 100_000, Date.now());
+      const alertKey = `rating-velocity:${row.ratee_id}`;
+      if (await wasAlertedRecently(alertKey)) continue;
+      await recordAlert(alertKey);
 
       logger.warn(
         { user_id: row.ratee_id, one_star_count: row.count, window_hours: WINDOW_HOURS },
@@ -171,9 +214,6 @@ async function detectAnomalies() {
     }
 
     // ── No-show pattern — claimed but stalled requests ────────────────────────
-    // Helpers who claim a request and never move to en_route within 30 minutes
-    // are a drag on the requester experience. Flag for follow-up.
-    // We detect this by looking for requests in 'claimed' status for > 30 min.
     let stalledRows: { id: number; helper_id: number | null; requester_id: number; title: string }[] = [];
     try {
       stalledRows = await db
@@ -197,10 +237,9 @@ async function detectAnomalies() {
 
     for (const row of stalledRows) {
       if (!row.helper_id) continue;
-      const mapKey = row.id + 200_000;
-      const lastAlert = lastAlertedAt.get(mapKey);
-      if (lastAlert && Date.now() - lastAlert < ALERT_COOLDOWN_MS) continue;
-      lastAlertedAt.set(mapKey, Date.now());
+      const alertKey = `no-show:${row.id}`;
+      if (await wasAlertedRecently(alertKey)) continue;
+      await recordAlert(alertKey);
 
       logger.warn(
         { request_id: row.id, helper_id: row.helper_id },

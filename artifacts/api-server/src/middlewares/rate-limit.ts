@@ -269,3 +269,36 @@ export const sosLimiter = rateLimit({
   keyGenerator: (req) => String(req.authenticatedUserId ?? req.ip),
   message: { error: "SOS limit reached — please call 911 for immediate emergencies." },
 });
+
+// ── 12. Admin endpoints (100 / 15 min per admin user) ────────────────────────
+// Admin users perform bulk operations (report review, user management, analytics)
+// but should still be rate-limited to prevent runaway automation or compromised
+// admin token abuse. 100/15min is generous for legitimate admin work while
+// blocking automated scraping or scanning of admin-only data.
+export const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  store: createStore("admin"),
+  keyGenerator: (req) => `admin-${String(req.authenticatedUserId ?? req.ip)}`,
+  message: {
+    error: "Too many admin requests in a short period. Please wait a few minutes.",
+  },
+});
+
+// ── 13. Nia history reads (60 / 15 min per user) ─────────────────────────────
+// History reads are cheap but should be bounded to prevent session-ID scraping
+// (enumerating conversation history across sessions). Keyed by userId + IP.
+export const niaChatHistoryLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  store: createStore("nia-history"),
+  keyGenerator: (req) => {
+    const r = req as typeof req & { authenticatedUserId?: number };
+    return `nia-hist-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
+  },
+  message: { error: "Too many Nia history requests. Please slow down." },
+});

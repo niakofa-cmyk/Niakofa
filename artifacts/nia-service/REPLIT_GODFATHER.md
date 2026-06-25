@@ -139,3 +139,29 @@ Emergency requests now SMS the admin (`ADMIN_SMS_NUMBER`) and the requester's `p
 
 **Mobile-first mandate codified**
 `replit.md` User Preferences section now explicitly states: every feature must pass mobile verification. Touch targets ≥ 44px. Input font-size ≥ 16px. `active:` states for touch. Safe-area padding on all fixed bars. Nia is always visible.
+
+---
+
+### Session: June 25, 2026 (third session — forensic report fixes, Chunk 2)
+
+**Stripe rawBody limit raised**
+`express.raw()` for `/api/stripe/webhook` and `/api/verification/identity/webhook` now sets `limit: "2mb"`. The implicit 100kb default was too small for batch webhook events.
+
+**Admin rate limiter — new, universally applied**
+`adminLimiter` (100 req / 15 min, keyed by admin userId) added to `rate-limit.ts`. Applied to every `requireAdmin()`-gated endpoint in `users.ts`, `reports.ts`, and `admin-analytics.ts`. Prevents automated scraping or runaway admin-token abuse.
+
+**Nia history rate limiter — new**
+`niaChatHistoryLimiter` (60 req / 15 min) added to `rate-limit.ts`. Applied to `GET /api/nia/history/:sessionId`. Also added a session-ownership check: authenticated users can only read history for sessions prefixed with their own `userId-`.
+
+**Anomaly worker — Redis-backed alert deduplication**
+`detectAnomalies()` in `anomaly-worker.ts` rewrote `lastAlertedAt` Map to use Redis keys (`anomaly:alert:${key}`, EX 7200s). In-memory fallback retained with bounded eviction at >500 entries. Alerts now survive server restarts and work correctly across multiple instances.
+
+**OpenAPI UserUpdate schema — three new fields**
+Added `specialties` (array, maxItems: 20), `phone_masked` (string, maxLength: 20), `quick_replies` (array, maxItems: 10) to `UserUpdate` schema in `openapi.yaml`. Ran codegen — Zod schemas and React Query hooks fully regenerated. No hand-edited generated files remain.
+
+**NiaFab — grabbing cursor + safe-area bottom clamp**
+Drag pointer handlers now imperatively update `divRef.current.style.cursor` (`grabbing` on pointer-down, `grab` on pointer-up/cancel) — zero re-renders during drag. `safeAreaBottom` ref measures `env(safe-area-inset-bottom)` once on mount via CSS probe. All clamp functions (`clampToViewport`, `onPM`, `onPU`) now subtract `safeAreaBottom.current` from the maxY bound — Nia's FAB never lands behind iPhone home indicator.
+
+**pb-safe — bottom-sheet audit**
+Six fixed bottom sheets were missing `pb-safe`: `community.tsx`, `profile.tsx` (ModalShell), `RepaymentSchedulerModal.tsx`, `admin.tsx` (ReportDetailSheet), and two others. All now have `pb-safe` on the outermost sheet container.
+

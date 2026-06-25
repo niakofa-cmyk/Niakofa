@@ -14,7 +14,7 @@
  */
 import { Router, type Request, type Response } from "express";
 import { parseAuth } from "../middlewares/auth";
-import { crisisAwareChatLimiter } from "../middlewares/rate-limit";
+import { crisisAwareChatLimiter, niaChatHistoryLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -148,9 +148,20 @@ router.post(
 );
 
 // ── GET /api/nia/history/:sessionId — conversation history ───────────────────
-router.get("/nia/history/:sessionId", parseAuth, async (req: Request, res: Response) => {
+// Rate-limited to prevent session-ID enumeration / scraping. Only the user
+// who owns the session should be able to read it — sessionId is validated
+// against the authenticated userId when present.
+router.get("/nia/history/:sessionId", parseAuth, niaChatHistoryLimiter, async (req: Request, res: Response) => {
   const sessionId = sanitizeSessionId(req.params.sessionId);
   if (!sessionId) return res.status(400).json({ error: "Invalid sessionId" });
+
+  // Session IDs are generated as `userId-uuid` by the frontend. Validate that
+  // an authenticated user can only read sessions that start with their own userId
+  // prefix, preventing cross-user history scraping when sessionId is guessable.
+  const userId = req.authenticatedUserId;
+  if (userId !== undefined && !sessionId.startsWith(`${userId}-`) && !sessionId.startsWith(`anon-`)) {
+    return res.status(403).json({ error: "You can only read your own conversation history" });
+  }
 
   try {
     const upstream = await fetch(`${getNiaUrl()}/history/${encodeURIComponent(sessionId)}`);

@@ -60,15 +60,25 @@ export const UpdateUserParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const updateUserBodyCityMax = 100;
+
+export const updateUserBodySpecialtiesMax = 20;
+
+export const updateUserBodyPhoneMaskedMax = 20;
+
+export const updateUserBodyQuickRepliesMax = 10;
+
+
+
 export const UpdateUserBody = zod.object({
   "name": zod.string().optional(),
   "avatar_url": zod.string().optional(),
   "neighborhood": zod.string().optional(),
-  "city": zod.string().max(100).optional(),
+  "city": zod.string().max(updateUserBodyCityMax).optional(),
   "is_helper": zod.boolean().optional(),
-  "specialties": zod.array(zod.string()).max(20).optional(),
-  "phone_masked": zod.string().max(20).optional(),
-  "quick_replies": zod.array(zod.string()).max(10).optional(),
+  "specialties": zod.array(zod.string()).max(updateUserBodySpecialtiesMax).optional(),
+  "phone_masked": zod.string().max(updateUserBodyPhoneMaskedMax).optional(),
+  "quick_replies": zod.array(zod.string()).max(updateUserBodyQuickRepliesMax).optional()
 })
 
 export const UpdateUserResponse = zod.object({

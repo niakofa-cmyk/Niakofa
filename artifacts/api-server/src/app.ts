@@ -80,8 +80,11 @@ app.use(
 
 // Stripe webhooks require the raw request body (Buffer) for signature verification.
 // This MUST come before express.json() so the /stripe/webhook route gets the raw body.
-app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
-app.use("/api/verification/identity/webhook", express.raw({ type: "application/json" }));
+// 2mb limit: Stripe's largest webhooks (batch events, complex checkout sessions) are
+// well under 2mb. The default 100kb express.raw limit was too small for high-volume
+// webhook batches and caused 413 Payload Too Large failures.
+app.use("/api/stripe/webhook", express.raw({ type: "application/json", limit: "2mb" }));
+app.use("/api/verification/identity/webhook", express.raw({ type: "application/json", limit: "2mb" }));
 
 app.use(express.json({ limit: "10mb" })); // 10mb to allow base64 avatar uploads
 app.use(express.urlencoded({ extended: true }));

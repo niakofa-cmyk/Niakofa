@@ -784,8 +784,22 @@ components:
           type: string
         city:
           type: string
+          maxLength: 100
         is_helper:
           type: boolean
+        specialties:
+          type: array
+          items:
+            type: string
+          maxItems: 20
+        phone_masked:
+          type: string
+          maxLength: 20
+        quick_replies:
+          type: array
+          items:
+            type: string
+          maxItems: 10
 
     UserRegistration:
       type: object
