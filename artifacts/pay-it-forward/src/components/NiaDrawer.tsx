@@ -5,6 +5,7 @@ import { authHeaders } from "../lib/auth";
 import { useVoiceWakeWord } from "../hooks/useVoiceWakeWord";
 import { VoiceWakeWordIndicator, VoicePulseIndicator } from "./VoiceWakeWordIndicator";
 import { detectUserLanguage, getProfile, CulturalLanguage } from "../lib/culturalGreetings";
+import { useNiaTTS } from "../hooks/useNiaTTS";
 
 
 // All Nia traffic routes through the API server proxy at /api/nia/...
@@ -444,13 +445,18 @@ export function NiaDrawer({
         ...prev,
         { role: "nia", content: profile.greetingResponse, timestamp: new Date() },
       ]);
+      niaSay(profile.greetingResponse, lang);
     },
   });
 
+
+  // Phase 7b: Nia speaks back
+  const { speak: niaSay, stop: niaStopSpeaking } = useNiaTTS({ enabled: true });
   // Phase 7a: Stop voice when drawer closes
   useEffect(() => {
     if (!open) {
       stopListening();
+      niaStopSpeaking();
       setVoiceActivated(false);
     }
   }, [open]);

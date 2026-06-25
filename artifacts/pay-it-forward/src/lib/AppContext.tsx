@@ -9,6 +9,7 @@ import type { User as GeneratedUser } from "@workspace/api-client-react";
  */
 export type User = GeneratedUser & {
   city?: string | null;
+  preferred_language?: string | null;
   approval_status?: "pending" | "approved" | "denied";
   account_type?: "individual" | "business" | "sponsor";
   organization_name?: string | null;
