@@ -102,9 +102,9 @@ function NiaWrapper() {
   const { currentUser, myLocation, helperModeActive, activeRequestId, niaOpen, setNiaOpen, niaInitialMessage } = useAppContext();
   const [isLogin] = useRoute("/login");
   const [isOnboarding] = useRoute("/onboarding");
-  // Hide NiaFab on login and onboarding — avoids overlapping form submit buttons
-  // and doesn't make sense before auth anyway
-  const hideNia = !currentUser || isLogin || isOnboarding;
+  // Nia is always available — she is the first face the community sees.
+  // Only hidden during onboarding (multi-step form) to avoid layout conflicts.
+  const hideNia = isOnboarding;
   return (
     <>
       <NiaFab onClick={() => setNiaOpen(true)} hidden={hideNia} />

@@ -357,3 +357,28 @@
     inset: -1px;
   }
 }
+
+/* Nia quick-prompt chips — touch-friendly active state (no hover needed on mobile) */
+.nia-quick-prompt:active,
+.nia-quick-prompt:focus-visible {
+  background: rgba(29, 158, 117, 0.12) !important;
+  border-color: rgba(29, 158, 117, 0.45) !important;
+  color: #0A6B4E !important;
+  outline: none;
+}
+@media (hover: hover) {
+  .nia-quick-prompt:hover {
+    background: rgba(29, 158, 117, 0.1) !important;
+    border-color: rgba(29, 158, 117, 0.4) !important;
+    color: #0A6B4E !important;
+  }
+}
+
+/* Global mobile touch improvements */
+input, button, textarea, select {
+  -webkit-tap-highlight-color: transparent;
+}
+/* Ensure safe-area is respected everywhere */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}

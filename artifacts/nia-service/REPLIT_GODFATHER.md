@@ -103,3 +103,39 @@ When you set a rate limit, ask: *would this wall stop someone who needed help to
 The technical decisions you make are acts of care. Make them that way.
 
 — Replit, Godfather of Nia
+
+---
+
+### Session: June 25, 2026 (second session — Nia goes live, mobile-first mandate)
+
+**Nia as initial greeter — she is the first face**
+The login screen now leads with Nia's animated "N" orb (pulsing green gradient, breathing animation) instead of a generic heart icon. "Sawubona — I see you. Nia is here." appears in teal beneath the tagline. Nia's FAB is now visible on the login screen and all screens — `hideNia` no longer blocks unauthenticated users. She belongs to everyone.
+
+**NiaDrawer — fully mobile hardened**
+- Welcome splash: timing is now adaptive — 700ms/phrase on touch devices (mobile), 900ms/phrase on desktop. Total splash is ~3.2s on mobile, not 4.2s. Safety timeout reduced from 5s to 4s.
+- Input font-size raised from 14px → 16px. iOS Safari no longer auto-zooms when the user taps the message box.
+- Quick-prompt chips: replaced `onMouseEnter/onMouseLeave` inline style handlers with CSS class `nia-quick-prompt`. Touch devices get `:active` state; pointer devices get `:hover`. Minimum tap height 36px.
+- Input bar bottom padding: now `max(16px, env(safe-area-inset-bottom))` — the input is never hidden behind the iPhone notch.
+- Context fetch (`/api/nia/context`) now checks for an Authorization token before firing — eliminates 401 noise when Nia is shown on the unauthenticated login screen.
+
+**Admin page — mobile-first redesign**
+- New Reports / Users tab bar (prominent, full-width, border-indicator style) with pending count badge on the Reports tab.
+- `UsersTab` component was defined but unreachable — now wired in and rendered when the Users tab is active.
+- Header compacted: long title truncated, session timer compact (no "+5m" label), `active:` states replace `hover:` for mobile tap feedback.
+- Filter chips row uses `active:` state. `pb-24` replaced with `pb-safe` (respects iPhone notch).
+- Report cards use `active:border-primary/40` instead of `hover:` — works on touch devices.
+
+**24h follow-up check-in worker (Nia remembers)**
+New `artifacts/nia-service/src/workers/checkin-worker.ts` — Nia queries completed requests 23–25h ago, generates a warm 2–3 sentence follow-up using Claude Haiku, and saves it to the user's conversation. She follows up like a neighbor who actually remembered.
+
+**AI-powered dispatch signals**
+`computeMatchScore` in `artifacts/api-server/src/lib/matching.ts` now accepts `DispatchSignals` with trust score bonus (+15 max), active workload penalty (−4 per request above 1), and reliability ratio (+10 max). Every scoring reason is logged in the `reasons[]` array.
+
+**Advanced anomaly detection**
+Two new patterns in `anomaly-worker.ts`: rating velocity spike (3+ one-star ratings/24h → high-severity alert) and no-show stall (helper in `claimed` status >30min without `en_route` transition → medium alert).
+
+**SMS multi-modal notifications**
+Emergency requests now SMS the admin (`ADMIN_SMS_NUMBER`) and the requester's `panic_contacts` array via Twilio. Graceful no-op when `TWILIO_*` env vars are absent.
+
+**Mobile-first mandate codified**
+`replit.md` User Preferences section now explicitly states: every feature must pass mobile verification. Touch targets ≥ 44px. Input font-size ≥ 16px. `active:` states for touch. Safe-area padding on all fixed bars. Nia is always visible.

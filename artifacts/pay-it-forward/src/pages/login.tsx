@@ -802,13 +802,36 @@ export default function LoginScreen() {
           transition={{ type: "spring", stiffness: 200, damping: 20 }}
           className="flex flex-col items-center mb-8"
         >
-          <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center mb-5 shadow-[0_0_40px_rgba(0,212,255,0.15)]">
-            <Heart className="w-10 h-10 text-primary" />
+          {/* Nia orb — she is the face of Niakofa, even before login */}
+          <div className="relative mb-5">
+            <motion.div
+              animate={{ scale: [1, 1.06, 1] }}
+              transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
+              className="w-20 h-20 rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(29,158,117,0.35)]"
+              style={{ background: "linear-gradient(135deg, #1D9E75 0%, #0A6B4E 60%, #085041 100%)", border: "2px solid rgba(93,202,165,0.4)" }}
+            >
+              <span className="text-3xl font-black text-[#E1F5EE] tracking-tight select-none">N</span>
+            </motion.div>
+            <motion.div
+              animate={{ scale: [1, 1.5, 1], opacity: [0.35, 0, 0.35] }}
+              transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute inset-[-6px] rounded-full pointer-events-none"
+              style={{ background: "radial-gradient(circle, rgba(29,158,117,0.3) 0%, transparent 70%)" }}
+            />
           </div>
           <h1 className="text-3xl font-black tracking-tight text-foreground">Niakofa</h1>
           <p className="text-sm text-muted-foreground mt-1 text-center max-w-xs">
             Help Today. Pay It Forward Tomorrow.
           </p>
+          <motion.p
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5, duration: 0.6 }}
+            className="text-xs mt-2 font-medium"
+            style={{ color: "#1D9E75" }}
+          >
+            Sawubona — I see you. Nia is here.
+          </motion.p>
         </motion.div>
 
         {/* Mode toggle */}

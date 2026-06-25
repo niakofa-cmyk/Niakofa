@@ -112,13 +112,16 @@ function NiaWelcomeSplash({ onDone }: { onDone: () => void }) {
   useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
 
   useEffect(() => {
+    // Detect mobile to use faster timing so the splash feels snappy, not slow
+    const isMobile = window.matchMedia("(pointer: coarse)").matches;
+    const phraseDuration = isMobile ? 700 : 900;
     const timers: ReturnType<typeof setTimeout>[] = [];
     WELCOME_PHRASES.forEach((_, i) => {
-      timers.push(setTimeout(() => setPhraseIndex(i), i * 900));
+      timers.push(setTimeout(() => setPhraseIndex(i), i * phraseDuration));
     });
-    const total = WELCOME_PHRASES.length * 900 + 600;
+    const total = WELCOME_PHRASES.length * phraseDuration + 400;
     timers.push(setTimeout(() => onDoneRef.current(), total));
-    const safety = setTimeout(() => onDoneRef.current(), 5000);
+    const safety = setTimeout(() => onDoneRef.current(), 4000);
     return () => { timers.forEach(clearTimeout); clearTimeout(safety); };
   }, []); // run once on mount only
 
@@ -343,9 +346,10 @@ function QuickPrompts({ onSelect }: { onSelect: (text: string) => void }) {
         <button
           key={label}
           onClick={() => onSelect(text)}
+          className="nia-quick-prompt"
           style={{
-            fontSize: 12,
-            padding: "6px 12px",
+            fontSize: 13,
+            padding: "8px 14px",
             borderRadius: 20,
             border: "0.5px solid var(--color-border-secondary)",
             background: "var(--color-background-secondary)",
@@ -353,16 +357,9 @@ function QuickPrompts({ onSelect }: { onSelect: (text: string) => void }) {
             cursor: "pointer",
             lineHeight: 1.3,
             transition: "all 0.15s",
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = "rgba(29,158,117,0.1)";
-            (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(29,158,117,0.4)";
-            (e.currentTarget as HTMLButtonElement).style.color = "#0A6B4E";
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = "var(--color-background-secondary)";
-            (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-border-secondary)";
-            (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-secondary)";
+            WebkitTapHighlightColor: "transparent",
+            touchAction: "manipulation",
+            minHeight: 36,
           }}
         >
           {label}
@@ -418,10 +415,13 @@ export function NiaDrawer({
     );
   }, []);
 
-  // Fetch live community context once we have coordinates
+  // Fetch live community context once we have coordinates — only when authenticated
   useEffect(() => {
     const coords = userCoords ?? userLocation;
     if (!coords || contextFetchedRef.current) return;
+    // Skip context fetch if no auth token — avoids 401 noise on login screen
+    const headers = authHeaders();
+    if (!headers["Authorization"]) return;
     contextFetchedRef.current = true;
 
     const lat = coords.lat;
@@ -429,7 +429,7 @@ export function NiaDrawer({
     if (lat == null || lng == null) return;
 
     fetch(`${API_BASE}/api/nia/context?lat=${lat}&lng=${lng}`, {
-      headers: authHeaders(),
+      headers,
     })
       .then((r) => r.ok ? r.json() : null)
       .then((data: NiaContext | null) => {
@@ -743,7 +743,8 @@ export function NiaDrawer({
                   <div ref={bottomRef} />
                 </div>
                 <div style={{
-                  padding: "10px 12px 16px",
+                  padding: "10px 12px",
+                  paddingBottom: "max(16px, env(safe-area-inset-bottom))",
                   borderTop: "0.5px solid var(--color-border-tertiary)",
                   flexShrink: 0,
                   background: "var(--color-background-primary)",
@@ -765,7 +766,7 @@ export function NiaDrawer({
                       disabled={loading}
                       style={{
                         flex: 1, background: "transparent", border: "none", outline: "none",
-                        fontSize: 14, color: "var(--color-text-primary)", lineHeight: 1.4,
+                        fontSize: 16, color: "var(--color-text-primary)", lineHeight: 1.4,
                       }}
                     />
                     <button
