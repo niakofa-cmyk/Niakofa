@@ -37,6 +37,36 @@ const _stripe = _STRIPE_SK
 
 const router = Router();
 
+// Explicit column list — omits geog (PostGIS geography column not available
+// on all DB instances; haversine distance is computed in JS from lat/lng).
+const requestSelect = {
+  id: requestsTable.id,
+  title: requestsTable.title,
+  description: requestsTable.description,
+  category: requestsTable.category,
+  urgency: requestsTable.urgency,
+  status: requestsTable.status,
+  payment_type: requestsTable.payment_type,
+  requester_id: requestsTable.requester_id,
+  helper_id: requestsTable.helper_id,
+  lat: requestsTable.lat,
+  lng: requestsTable.lng,
+  neighborhood: requestsTable.neighborhood,
+  pay_it_forward_amount: requestsTable.pay_it_forward_amount,
+  pledge_amount: requestsTable.pledge_amount,
+  pledge_paid: requestsTable.pledge_paid,
+  created_at: requestsTable.created_at,
+  claimed_at: requestsTable.claimed_at,
+  en_route_at: requestsTable.en_route_at,
+  arrived_at: requestsTable.arrived_at,
+  completed_at: requestsTable.completed_at,
+  cancelled_at: requestsTable.cancelled_at,
+  nia_checkin_sent_at: requestsTable.nia_checkin_sent_at,
+  voice_activated: requestsTable.voice_activated,
+  voice_language: requestsTable.voice_language,
+} as const;
+
+
 function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 3958.8;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -118,7 +148,7 @@ router.get("/requests/nearby", async (req, res) => {
   // Haversine exact filter still runs in JS after.
   const latDelta = radius / 69;
   const lngDelta = radius / (69 * Math.cos((lat * Math.PI) / 180));
-  const requests = await db.select().from(requestsTable).where(
+  const requests = await db.select(requestSelect).from(requestsTable).where(
     and(
       eq(requestsTable.status, "open"),
       sql`${requestsTable.lat} BETWEEN ${lat - latDelta} AND ${lat + latDelta}`,
@@ -353,7 +383,7 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
 router.get("/requests/:id", requireAuth, async (req, res) => {
   const parsed = GetRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
-  const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, parsed.data.id)).limit(1);
+  const [request] = await db.select(requestSelect).from(requestsTable).where(eq(requestsTable.id, parsed.data.id)).limit(1);
   if (!request) return res.status(404).json({ error: "Not found" });
   const [requester] = await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url })
     .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1);
@@ -368,7 +398,7 @@ router.get("/requests/:id", requireAuth, async (req, res) => {
 router.patch("/requests/:id", requireAuth, async (req, res) => {
   const authenticatedUserId = (req as any).authenticatedUserId;
   const requestId = parseInt(String(req.params.id));
-  const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+  const [request] = await db.select(requestSelect).from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
   if (!request) return res.status(404).json({ error: "Request not found" });
   if (request.requester_id !== authenticatedUserId) {
     return res.status(403).json({ error: "Forbidden: You can only update your own requests" });
@@ -693,7 +723,7 @@ router.post("/requests/:id/tip", requireAuth, requireOwnership("requester_id"), 
     return res.status(400).json({ error: "requester_id and tip_amount > 0 required" });
   }
 
-  const [request] = await db.select().from(requestsTable)
+  const [request] = await db.select(requestSelect).from(requestsTable)
     .where(and(eq(requestsTable.id, requestId), eq(requestsTable.requester_id, requester_id)))
     .limit(1);
   if (!request) return res.status(404).json({ error: "Request not found" });
@@ -730,7 +760,7 @@ router.post("/requests/:id/helpers/join", requireAuth, async (req, res) => {
   const r = req as typeof req & { authenticatedUserId: number };
   const helperId = r.authenticatedUserId;
 
-  const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+  const [request] = await db.select(requestSelect).from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
   if (!request) return res.status(404).json({ error: "Request not found" });
   if (request.status !== "claimed" && request.status !== "en_route" && request.status !== "arrived") {
     return res.status(409).json({ error: "Request must be claimed before joining the chain" });
