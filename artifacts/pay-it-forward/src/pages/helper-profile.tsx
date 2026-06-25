@@ -121,6 +121,18 @@ export default function HelperProfileScreen() {
           </div>
           <div>
             <h1 className="text-2xl font-black">{helper.name}</h1>
+          <div className="flex flex-wrap gap-2 justify-center mt-2">
+            <TrustTierBadge
+              trustScore={(helper as any).trust_score ?? 0}
+              helpCount={(helper as any).help_count ?? 0}
+              size="sm"
+            />
+            {(helper as any).identity_verified && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-black text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded-full">
+                ✓ ID Verified
+              </span>
+            )}
+          </div>
             {helper.neighborhood && (
               <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground mt-1">
                 <MapPin className="w-3.5 h-3.5" />

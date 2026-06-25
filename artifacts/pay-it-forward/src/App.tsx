@@ -1,5 +1,6 @@
+import React, { lazy, Suspense, useState, useEffect } from "react";
 import "./i18n";
-import { lazy, Suspense } from "react";
+
 import { Switch, Route, Router as WouterRouter, useRoute } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -9,6 +10,9 @@ import { BottomNav } from "@/components/BottomNav";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Spinner } from "@/components/ui/spinner";
 import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
+import { NotificationsDrawer, LiveNotification } from "@/components/NotificationsDrawer";
+import { usePushNotifications } from "@/lib/usePushNotifications";
+import { useWebSocket } from "@/lib/useWebSocket";
 
 const MapScreen = lazy(() => import("@/pages/map"));
 const NewRequestScreen = lazy(() => import("@/pages/request-new"));
@@ -106,6 +110,12 @@ function NiaWrapper() {
   const hideNia = isOnboarding;
   return (
     <>
+      
+      <NotificationsDrawer
+        open={notifOpen}
+        onClose={() => setNotifOpen(false)}
+        notifications={notifications}
+      />
       <NiaFab onClick={() => setNiaOpen(true)} hidden={hideNia} />
       <NiaDrawer
         open={niaOpen}

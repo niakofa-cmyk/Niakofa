@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { ChevronLeft, MapPin, Clock, DollarSign, Heart, Gift, AlertTriangle, Share2, Users, CheckCircle2, Navigation2 } from "lucide-react";
+import { TrustTierBadge } from "@/components/TrustTierBadge";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { useGetRequest, getGetRequestQueryKey } from "@workspace/api-client-react";
@@ -154,6 +155,13 @@ export default function RequestDetailScreen() {
                   {request.helper_name[0]}
                 </div>
                 <span className="font-black text-sm">{request.helper_name}</span>
+                {(request as any).helper_trust_score !== undefined && (
+                  <TrustTierBadge
+                    trustScore={(request as any).helper_trust_score ?? 0}
+                    helpCount={(request as any).helper_help_count ?? 0}
+                    size="xs"
+                  />
+                )}
               </div>
             </div>
           )}
