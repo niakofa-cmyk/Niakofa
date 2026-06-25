@@ -45,7 +45,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=8080 NODE_ENV=development node_modules/.bin/tsx --tsconfig artifacts/api-server/tsconfig.json artifacts/api-server/src/index.ts"
+args = "PORT=8080 pnpm --filter @workspace/api-server run dev"
 waitForPort = 8080
 
 [agent]

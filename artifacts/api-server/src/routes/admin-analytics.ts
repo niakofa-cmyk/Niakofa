@@ -162,8 +162,6 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), async (_req, res) =>
   });
 });
 
-export default router;
-
 // GET /admin/accounts — list all accounts for admin review
 router.get("/admin/accounts", requireAuth, requireAdmin(), async (req, res) => {
   const { approval_status, account_type } = req.query as {
@@ -235,3 +233,5 @@ router.post("/admin/verify-secret", async (req, res) => {
   if (!secret || secret !== expected) return res.status(403).json({ error: "Incorrect secret" });
   return res.json({ ok: true });
 });
+
+export default router;

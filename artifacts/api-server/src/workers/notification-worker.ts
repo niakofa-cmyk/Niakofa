@@ -30,21 +30,16 @@ export function startNotificationWorker(): Worker<NotificationJobData> | null {
     return null;
   }
 
-  // BUG-5-M11: Add retry config so failed push deliveries move to the failed
-  // queue with BullMQ standard backoff, rather than blocking the concurrency
-  // slot by lingering in "active". removeOnFail keeps the failed queue bounded.
+  // Retry config (attempts: 3, backoff: fixed 30s) lives on notificationQueue
+  // in lib/queue.ts — Worker does NOT support defaultJobOptions (BullMQ silently
+  // ignores that key on Worker; only Queue honours it). concurrency controls how
+  // many push deliveries run in parallel.
   const worker = new Worker<NotificationJobData>(
     QUEUE.NOTIFICATIONS,
     processNotification,
     {
       connection: conn,
       concurrency: 5,
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: "fixed", delay: 30_000 }, // 30s between push retries
-        removeOnComplete: { count: 500 },
-        removeOnFail: { count: 200 },
-      },
     }
   );
 
