@@ -347,33 +347,7 @@ router.get("/admin/suspended", requireAuth, requireAdmin(), adminLimiter, async 
 // api-server process. A Railway redeploy resets it to ON, which is the safe
 // default. If you need persistence across deploys, set NIA_ENABLED=false in
 // Railway env vars and the flag will boot to off.
-// Hydrate from DB on boot; falls back to env var / true
 let niaEnabled: boolean = process.env.NIA_ENABLED !== "false";
-
-// Lazy import to avoid circular deps
-async function getNiaEnabledFromDB(): Promise<boolean> {
-  try {
-    const { db } = await import("../lib/db");
-    const { systemSettings } = await import("@niakofa/db");
-    const { eq } = await import("drizzle-orm");
-    const row = await db.select().from(systemSettings).where(eq(systemSettings.key, "nia_enabled")).limit(1);
-    if (row.length > 0) return row[0].value === "true";
-  } catch { /* table may not exist yet */ }
-  return process.env.NIA_ENABLED !== "false";
-}
-
-async function setNiaEnabledInDB(val: boolean) {
-  try {
-    const { db } = await import("../lib/db");
-    const { systemSettings } = await import("@niakofa/db");
-    const { eq } = await import("drizzle-orm");
-    await db.insert(systemSettings).values({ key: "nia_enabled", value: String(val) })
-      .onConflictDoUpdate({ target: systemSettings.key, set: { value: String(val), updatedAt: new Date() } });
-  } catch (e) { /* non-fatal */ }
-}
-
-// Boot hydration (non-blocking)
-void getNiaEnabledFromDB().then((v) => { niaEnabled = v; });
 
 // GET /admin/nia-status — public, no auth. Frontend polls this to know
 // whether to show the NiaFab and drawer. Returns { enabled: boolean }.
@@ -388,7 +362,6 @@ router.post("/admin/nia-toggle", requireAuth, requireAdmin(), adminLimiter, asyn
     return res.status(400).json({ error: "enabled (boolean) is required" });
   }
   niaEnabled = enabled;
-  void setNiaEnabledInDB(enabled);
   logger.info({ niaEnabled }, "admin: Nia AI toggled");
   return res.json({ ok: true, enabled: niaEnabled });
 });
