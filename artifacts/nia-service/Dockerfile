@@ -25,6 +25,14 @@ RUN pnpm install --frozen-lockfile --filter nia-service
 # build context. Copying the whole directory in one layer sidesteps that lazy
 # per-path resolution entirely. migrate.sql (used by src/lib/db.ts
 # runMigrations() for first-time schema setup) is included automatically.
+#
+# CACHE_BUST is a real build arg (not just a comment) so it changes this
+# layer's instruction text and forces BuildKit to recompute its cache key
+# instead of reusing a stale/orphaned ref from a prior build — this is what
+# was producing "failed to calculate checksum of ref ...: not found" even
+# though the directory is present and unchanged in the build context. Bump
+# the default value any time this layer needs to be force-rebuilt again.
+ARG CACHE_BUST=2026-06-26a
 COPY artifacts/nia-service/ ./artifacts/nia-service/
 
 RUN pnpm --filter nia-service build
