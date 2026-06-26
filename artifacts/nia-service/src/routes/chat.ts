@@ -132,6 +132,14 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       ? body.language.trim()
       : null;
 
+  // Phase 7c: Food intent signal — set by client-side foodIntent.ts detection.
+  // Tells Nia what signal was detected BEFORE the API call so she can respond
+  // with precisely calibrated food awareness, not a generic offer.
+  const foodSignal =
+    typeof body.foodSignal === "string" ? body.foodSignal : null;
+  const foodSignalCount =
+    typeof body.foodSignalCount === "number" ? body.foodSignalCount : 0;
+
   // Phase 7a: Voice activation context
   // When user activated Nia via "Hey Nia" or cultural equivalent wake word
   const voiceActivated = body.voiceActivated === true;
@@ -224,11 +232,14 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       ? buildProactiveSuggestionsDirective(liveContext, helperModeActive, accountType)
       : "";
 
+    const foodIntentPrefix = buildFoodIntentPrefix(foodSignal, foodSignalCount, gpsLat, gpsLon);
+
     const systemPrompt =
       buildLanguagePrefix(language) +
       memoryPrefix +
       softPrefix +
       voiceContextPrefix +
+      foodIntentPrefix +
       liveContextPrefix +
       matchReasonsPrefix +
       proactiveSuggestionsDirective +
@@ -888,6 +899,66 @@ function buildProactiveSuggestionsDirective(
   lines.push("Never repeat the same suggestion twice in a conversation.\n");
 
   return lines.join("\n") + "\n";
+}
+
+
+/**
+ * Build food intent prefix — tells Nia what food signal was detected client-side
+ * so she responds with precision, not a generic food offer.
+ * Phase 7c: Food Intelligence
+ */
+function buildFoodIntentPrefix(
+  signal: string | null,
+  signalCount: number,
+  lat: number | null,
+  lon: number | null
+): string {
+  if (!signal || signal === "none" || signal === "affirmative") return "";
+
+  const locationHint = lat !== null && lon !== null
+    ? `User coordinates: ${lat.toFixed(4)}, ${lon.toFixed(4)}. Use these to recommend the nearest food resource or farm. `
+    : "";
+
+  const signalInstructions: Record<string, string> = {
+    explicit_no:
+      "FOOD SIGNAL — EXPLICIT NO: The user just said no when asked if they've eaten. " +
+      "Do not ask follow-up questions about why. Do not make them justify their need. " +
+      "Lead immediately with the most accessible food resource for right now. " +
+      "Warm, fast, specific. One or two options maximum. " + locationHint,
+
+    implicit_no:
+      "FOOD SIGNAL — IMPLICIT: The user signaled they may not have food (mentioned being busy, " +
+      "tight on money, or similar). Acknowledge the weight of what they said first. " +
+      "Then offer a food resource naturally — not as a diagnosis. " +
+      "Keep it brief and non-intrusive. " + locationHint,
+
+    distress:
+      "FOOD SIGNAL — DISTRESS: The user has directly expressed hunger or that their family has " +
+      "no food. This is urgent. Move fast. Lead with the fastest option first " +
+      "(Text FOOD to 877-877 for immediate locator, or Presbyterian Night Shelter if it's evening). " +
+      "Then one stable option. Do not pad. Do not philosophize. Help now. " + locationHint,
+
+    deflection:
+      "FOOD SIGNAL — DEFLECTION: The user said they're fine after a care check, but may not be. " +
+      "Do not push. Plant one seed gently — mention you know of nearby food spots if ever needed — " +
+      "then move on to whatever they actually came to talk about. " + locationHint,
+  };
+
+  const repeatNote = signalCount > 1
+    ? "REPEAT FOOD SIGNAL: This user has signaled food need more than once this session. " +
+      "After addressing the immediate need, gently mention Niakofa's recurring request feature " +
+      "— a neighbor who brings groceries weekly beats a pantry run every time. " +
+      "Also consider mentioning a local CSA or community garden if appropriate.
+
+"
+    : "";
+
+  const instruction = signalInstructions[signal];
+  if (!instruction) return "";
+
+  return `${instruction}
+
+${repeatNote}`;
 }
 
 // Note: extractAndUpdateMemory is now defined in the HELPERS section above

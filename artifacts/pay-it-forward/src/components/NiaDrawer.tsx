@@ -493,6 +493,7 @@ export function NiaDrawer({
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [voiceActivated, setVoiceActivated] = useState(false);
+  const [lastFoodSignal, setLastFoodSignal] = useState<string | null>(null);
   const [voiceLanguage, setVoiceLanguage] = useState<CulturalLanguage>("en");
 
   // Phase 7a: Detect cultural language
@@ -671,6 +672,7 @@ export function NiaDrawer({
       if (intent.shouldSurfaceResources && !foodResourcesAlreadyShown()) {
         recordFoodSignal();
         markFoodResourcesShown();
+        setLastFoodSignal(intent.signal);
         const resourceMsg = buildFoodResourceMessage({
           lang: voiceLanguage,
           userName,
@@ -716,6 +718,8 @@ export function NiaDrawer({
           sessionId,
           userName: userName ?? null,
           helperModeActive,
+          foodSignal: lastFoodSignal ?? undefined,
+          foodSignalCount: getFoodSignalCount() > 0 ? getFoodSignalCount() : undefined,
           activeRequestId: activeRequestId ?? null,
           accountType: accountType ?? null,
           // Live context — Nia uses this to make grounded, specific statements
