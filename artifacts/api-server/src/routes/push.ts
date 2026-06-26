@@ -252,11 +252,22 @@ export async function sendPushToNearbyHelpers(
   // PostGIS ST_DWithin — let the database return only active helpers within
   // radius using the GiST index on users.geog, instead of loading every
   // active helper and filtering in JS. Radius converted miles → meters.
+  // We query the flat system radius here (cheap, index-backed first pass);
+  // each helper's own service_radius_miles preference is then applied as an
+  // additional cap below, since a helper may have chosen a smaller radius
+  // than the system default for this urgency tier.
   const radiusMeters = radiusMiles * 1609.34;
   const origin = sql`ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography`;
   const nearbyHelpers = await db
-    .select({ id: usersTable.id, email: usersTable.email })
+    .select({
+      id: usersTable.id,
+      email: usersTable.email,
+      lat: usersTable.lat,
+      lng: usersTable.lng,
+      serviceRadiusMiles: userSettingsTable.service_radius_miles,
+    })
     .from(usersTable)
+    .leftJoin(userSettingsTable, eq(userSettingsTable.user_id, usersTable.id))
     .where(and(
       eq(usersTable.helper_mode_active, true),
       sql`${usersTable.geog} IS NOT NULL`,
@@ -265,8 +276,19 @@ export async function sendPushToNearbyHelpers(
 
   if (nearbyHelpers.length === 0) return;
 
-  const allowedIds = new Set(await filterByNotifPref(nearbyHelpers.map((h: { id: number }) => h.id), notifKey));
-  const notifiableHelpers = nearbyHelpers.filter((h: { id: number }) => allowedIds.has(h.id));
+  // Helpers with no saved preference (no settings row, or null) fall back to
+  // the system radius — same "no row yet" default used everywhere else.
+  const inServiceRadius = nearbyHelpers.filter(
+    (h: { lat: number | null; lng: number | null; serviceRadiusMiles: number | null }) => {
+      if (h.lat == null || h.lng == null) return false;
+      const distanceMiles = haversineMiles(lat, lng, h.lat, h.lng);
+      return distanceMiles <= (h.serviceRadiusMiles ?? radiusMiles);
+    }
+  );
+  if (inServiceRadius.length === 0) return;
+
+  const allowedIds = new Set(await filterByNotifPref(inServiceRadius.map((h: { id: number }) => h.id), notifKey));
+  const notifiableHelpers = inServiceRadius.filter((h: { id: number }) => allowedIds.has(h.id));
   if (notifiableHelpers.length === 0) return;
 
   const isEmergency = payload.urgency === "emergency";
