@@ -4,7 +4,8 @@ import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown, Mic, Volum
 import { authHeaders } from "../lib/auth";
 import { useVoiceWakeWord } from "../hooks/useVoiceWakeWord";
 import { VoiceWakeWordIndicator, VoicePulseIndicator } from "./VoiceWakeWordIndicator";
-import { detectUserLanguage, getProfile, getCareGreeting, CulturalLanguage } from "../lib/culturalGreetings";
+import { detectUserLanguage, getProfile, getCareGreeting, CulturalLanguage, getTimeOfDay } from "../lib/culturalGreetings";
+import { detectFoodIntent, buildFoodResourceMessage, recordFoodSignal, markFoodResourcesShown, foodResourcesAlreadyShown, getFoodSignalCount } from "../lib/foodIntent";
 import { useNiaTTS } from "../hooks/useNiaTTS";
 
 
@@ -12,12 +13,38 @@ import { useNiaTTS } from "../hooks/useNiaTTS";
 // No hardcoded external URL — the api-server forwards to the nia-service.
 const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
-const WELCOME_PHRASES = [
-  "Sawubona — I see you.",
-  "Akwaaba — you are welcome here.",
-  "Pamoja — together, we rise.",
-  "Ubuntu — I am because we are.",
-];
+// Phase 7c: time-of-day aware welcome phrases
+function getWelcomePhrases(): string[] {
+  const tod = getTimeOfDay();
+  const phrases: Record<string, string[]> = {
+    morning: [
+      "Habari ya asubuhi — good morning.",
+      "Akwaaba — you are welcome here.",
+      "Wasuze otya nno — how did you sleep?",
+      "Ubuntu — I am because we are.",
+    ],
+    afternoon: [
+      "Sawubona — I see you.",
+      "Akwaaba — you are welcome here.",
+      "Pamoja — together, we rise.",
+      "Ubuntu — I am because we are.",
+    ],
+    evening: [
+      "Sawubona — I see you tonight.",
+      "Akwaaba — you are welcome here.",
+      "Usiku wa amani — peace in the evening.",
+      "Ubuntu — I am because we are.",
+    ],
+    night: [
+      "Sawubona — I see you.",
+      "You are not alone in this.",
+      "Niko hapa — I am here.",
+      "Ubuntu — I am because we are.",
+    ],
+  };
+  return phrases[tod] ?? phrases.afternoon;
+}
+const WELCOME_PHRASES = getWelcomePhrases();
 
 const QUICK_PROMPTS = [
   { label: "🍽️ Find food near me", text: "Where can I find food assistance near me today?" },
@@ -632,7 +659,45 @@ export function NiaDrawer({
   const sendMessage = useCallback(async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
-    setMessages((prev) => [...prev, { role: "user", content: trimmed, timestamp: new Date() }]);
+
+    // Phase 7c: food intent detection — runs before the API call so we can
+    // inject a local food resource message instantly if confidence is high,
+    // rather than waiting for the full Nia API round-trip.
+    setMessages((prev) => {
+      const priorNia = [...prev].reverse().find((m) => m.role === "nia");
+      const priorContent = priorNia?.content ?? "";
+      const intent = detectFoodIntent(trimmed, priorContent);
+
+      if (intent.shouldSurfaceResources && !foodResourcesAlreadyShown()) {
+        recordFoodSignal();
+        markFoodResourcesShown();
+        const resourceMsg = buildFoodResourceMessage({
+          lang: voiceLanguage,
+          userName,
+          signal: intent.signal,
+          isRepeat: getFoodSignalCount() > 1,
+        });
+        // Inject resource message immediately — Nia's API response will follow
+        // as normal and can add more depth. We prepend so it appears right after
+        // the user's message, before the streaming bubble.
+        return [
+          ...prev,
+          { role: "user", content: trimmed, timestamp: new Date() },
+          { role: "nia", content: resourceMsg, timestamp: new Date() },
+        ];
+      }
+
+      if (intent.followUpPrompt && !foodResourcesAlreadyShown()) {
+        return [
+          ...prev,
+          { role: "user", content: trimmed, timestamp: new Date() },
+          { role: "nia", content: intent.followUpPrompt, timestamp: new Date() },
+        ];
+      }
+
+      return [...prev, { role: "user", content: trimmed, timestamp: new Date() }];
+    });
+
     setInput("");
     setLoading(true);
     setMessages((prev) => [...prev, { role: "nia", content: "", streaming: true, timestamp: new Date() }]);
