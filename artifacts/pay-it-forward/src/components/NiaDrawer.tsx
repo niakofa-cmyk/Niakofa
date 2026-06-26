@@ -4,7 +4,7 @@ import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown, Mic, Volum
 import { authHeaders } from "../lib/auth";
 import { useVoiceWakeWord } from "../hooks/useVoiceWakeWord";
 import { VoiceWakeWordIndicator, VoicePulseIndicator } from "./VoiceWakeWordIndicator";
-import { detectUserLanguage, getProfile, CulturalLanguage } from "../lib/culturalGreetings";
+import { detectUserLanguage, getProfile, getCareGreeting, CulturalLanguage } from "../lib/culturalGreetings";
 import { useNiaTTS } from "../hooks/useNiaTTS";
 
 
@@ -480,12 +480,13 @@ export function NiaDrawer({
     onWakeWordDetected: (lang, _transcript) => {
       setVoiceActivated(true);
       setVoiceLanguage(lang);
-      const profile = getProfile(lang);
+      // Phase 7b: culturally-aware care greeting (time-of-day + "have you eaten?")
+      const care = getCareGreeting(lang, userName);
       setMessages((prev: Message[]) => [
         ...prev,
-        { role: "nia", content: profile.greetingResponse, timestamp: new Date() },
+        { role: "nia", content: care.combined, timestamp: new Date() },
       ]);
-      niaSay(profile.greetingResponse, lang);
+      niaSay(care.combined, lang);
     },
   });
 
