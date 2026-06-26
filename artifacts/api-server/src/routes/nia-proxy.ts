@@ -17,6 +17,7 @@ import { Router, type Request, type Response } from "express";
 import { parseAuth } from "../middlewares/auth";
 import { crisisAwareChatLimiter, niaChatHistoryLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
+import { niaEnabled } from "./admin-analytics";
 
 const router = Router();
 
@@ -50,6 +51,11 @@ router.post(
   parseAuth,
   crisisAwareChatLimiter,
   async (req: Request, res: Response) => {
+    // Kill-switch: admin can disable Nia via /admin/nia-toggle
+    if (!niaEnabled) {
+      return res.status(503).json({ error: "Nia is temporarily unavailable." });
+    }
+
     const body = req.body as Record<string, unknown>;
 
     const message = sanitizeMessage(body.message);
@@ -171,6 +177,7 @@ router.post(
 
 // ── GET /api/nia/history/:sessionId — conversation history ───────────────────
 router.get("/nia/history/:sessionId", parseAuth, niaChatHistoryLimiter, async (req: Request, res: Response) => {
+    if (!niaEnabled) { return res.status(503).json({ error: "Nia is temporarily unavailable." }); }
   const sessionId = sanitizeSessionId(req.params.sessionId);
   if (!sessionId) return res.status(400).json({ error: "Invalid sessionId" });
 

@@ -513,3 +513,27 @@ export async function getPhrasingInsights(): Promise<string[]> {
     return phrasingInsightsCache?.insights ?? [];
   }
 }
+
+// ── Kill-switch: isNiaEnabled() ──────────────────────────────────────────────
+// Reads system_settings.nia_enabled from DB with a 10-second in-process cache.
+// Defense-in-depth backstop — the proxy already blocks disabled traffic.
+let _niaCachedEnabled: boolean | null = null;
+let _niaCacheTs = 0;
+const NIA_CACHE_TTL_MS = 10_000;
+
+export async function isNiaEnabled(): Promise<boolean> {
+  const now = Date.now();
+  if (_niaCachedEnabled !== null && now - _niaCacheTs < NIA_CACHE_TTL_MS) {
+    return _niaCachedEnabled;
+  }
+  try {
+    const row = await pool.query<{ value: string }>(
+      "SELECT value FROM system_settings WHERE key = 'nia_enabled' LIMIT 1"
+    );
+    _niaCachedEnabled = row.rows.length === 0 || row.rows[0].value !== "false";
+  } catch {
+    _niaCachedEnabled = true; // fail open
+  }
+  _niaCacheTs = now;
+  return _niaCachedEnabled;
+}

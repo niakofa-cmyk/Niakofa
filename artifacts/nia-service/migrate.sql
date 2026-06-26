@@ -27,3 +27,10 @@ ALTER TABLE nia_memories
 -- Index for crisis follow-up worker (queries by user_id)
 CREATE INDEX IF NOT EXISTS nia_conversations_user_id_idx
   ON nia_conversations (user_id);
+
+-- system_settings: persists admin toggles (e.g. nia_enabled) across redeploys
+CREATE TABLE IF NOT EXISTS system_settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

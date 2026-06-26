@@ -1,3 +1,4 @@
+import { isNiaEnabled } from "../lib/db";
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { checkSafety } from "../lib/safety.js";
@@ -87,6 +88,11 @@ async function streamNiaResponse(
 // POST /chat — main Nia conversation endpoint
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res: Response) => {
+  // Kill-switch backstop
+  if (!(await isNiaEnabled())) {
+    return res.status(503).json({ error: "Nia is temporarily unavailable." });
+  }
+
   const body = req.body as Record<string, unknown>;
   const message = typeof body.message === "string" ? body.message : "";
   const sessionId =
