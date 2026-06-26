@@ -56,6 +56,9 @@ const CIVIC_ICONS: Record<string, string> = {
   shelter: "🏠", food: "🍱", medical: "💊", mental_health: "🧠",
   legal: "⚖️", financial: "💰", employment: "💼", transportation: "🚌",
   childcare: "👶", education: "📚", other: "💙",
+  local_farm: "🌱", housing: "🏘️", emergency: "🚨", safety: "🛡️",
+  seniors: "🤝", youth: "⭐", health: "❤️", social_services: "🤲",
+  volunteering: "🙌", workforce: "🔨",
 };
 
 interface SuggestionForm {
