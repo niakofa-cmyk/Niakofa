@@ -46,6 +46,7 @@ interface AppContextType {
   niaOpen: boolean;
   setNiaOpen: (open: boolean) => void;
   niaInitialMessage: string | undefined;
+  niaEnabled: boolean;
   // Phase 4: trust-aware explanations. Set by helper-dashboard.tsx when a
   // helper views/expands a request card's match_reasons, so that if they
   // then ask Nia "why was I matched with this?" she has the real,
@@ -120,6 +121,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   const [activeRequestId, setActiveRequestId] = useState<number | null>(null);
   const [niaOpen, setNiaOpen] = useState(false);
+  const [niaEnabled, setNiaEnabled] = useState(true);
   const [niaInitialMessage, setNiaInitialMessage] = useState<string | undefined>(undefined);
 
   // ── All useRef calls ─────────────────────────────────────────────────────
@@ -426,6 +428,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id, helperModeActive, activeRequestId]);
 
+  // Poll /admin/nia-status every 30s so the frontend reflects killswitch changes.
+  useEffect(() => {
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    const check = () =>
+      fetch(`${base}/api/admin/nia-status`)
+        .then(r => r.ok ? r.json() : null)
+        .then((d: { enabled: boolean } | null) => { if (d != null) setNiaEnabled(d.enabled); })
+        .catch(() => {});
+    check();
+    const id = setInterval(check, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   // Start the shared WS singleton and register/unregister as the user changes.
   // This effect is LAST so it never disturbs the hook order above.
   useEffect(() => {
@@ -477,6 +492,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       niaOpen,
       setNiaOpen,
       niaInitialMessage,
+      niaEnabled,
       lastViewedMatchReasons,
       setLastViewedMatchReasons,
     }}>

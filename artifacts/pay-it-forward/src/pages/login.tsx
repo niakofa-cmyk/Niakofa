@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -306,6 +306,13 @@ export default function LoginScreen() {
   const [, setLocation] = useLocation();
   const { setCurrentUser } = useAppContext();
   const [mode, setMode] = useState<Mode>("login");
+  const [niaEnabled, setNiaEnabled] = useState(true);
+  useEffect(() => {
+    fetch("/api/admin/nia-status")
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { enabled: boolean } | null) => { if (d != null) setNiaEnabled(d.enabled); })
+      .catch(() => {});
+  }, []);
 
   // ENH-003: show a clear message when we landed here because a 401
   // bounced the user out of an expired session, instead of leaving them
@@ -807,7 +814,7 @@ export default function LoginScreen() {
             <Heart className="w-10 h-10 text-primary" />
           </div>
           <div className="mb-2">
-            <NiaLoginOrb killswitch={true} />
+            <NiaLoginOrb killswitch={niaEnabled} />
           </div>
           <h1 className="text-3xl font-black tracking-tight text-foreground">Niakofa</h1>
           <p className="text-sm text-muted-foreground mt-1 text-center max-w-xs">

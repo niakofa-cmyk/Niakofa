@@ -13,6 +13,7 @@ import {
 import type { HelpRequest, HelperLocation } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { TopBar } from "@/components/TopBar";
+import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
 import { BottomSheet } from "@/components/BottomSheet";
 import { RequestMarker } from "@/components/RequestMarker";
 import { HelperMarker } from "@/components/HelperMarker";
@@ -150,7 +151,7 @@ interface CrisisState {
 
 export default function MapScreen() {
   const [, setLocation] = useLocation();
-  const { currentUser, helperModeActive, myLocation } = useAppContext();
+  const { currentUser, helperModeActive, myLocation, activeRequestId, openNia, niaOpen, setNiaOpen, niaEnabled, niaInitialMessage } = useAppContext();
   const queryClient = useQueryClient();
   const [webGLSupported] = useState(checkWebGL);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -1055,6 +1056,23 @@ export default function MapScreen() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* Nia FAB — only when killswitch is on */}
+      {niaEnabled && (
+        <NiaFab onClick={() => openNia()} />
+      )}
+
+      {/* Nia Drawer */}
+      <NiaDrawer
+        open={niaOpen}
+        onClose={() => setNiaOpen(false)}
+        initialMessage={niaInitialMessage}
+        userId={currentUser?.id ?? null}
+        userName={currentUser?.name ?? null}
+        userLocation={myLocation ? { lat: myLocation.lat, lon: myLocation.lng } : null}
+        helperModeActive={helperModeActive}
+        activeRequestId={activeRequestId}
+        accountType={currentUser?.account_type ?? null}
+      />
     </div>
   );
 }
