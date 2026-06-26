@@ -38,6 +38,8 @@ const EXPLICIT_NO = [
   "maya", "ma cunin",
   // Amharic
   "aydelem", "albelam",
+  // Luganda
+  "nedda", "sirikuriire",
 ];
 
 const IMPLICIT_NO = [
@@ -51,6 +53,7 @@ const IMPLICIT_NO = [
   "yunwa",       // Hausa: hunger
   "gose",        // Amharic: hunger
   "gaajo",       // Somali: hunger
+  "enjala",      // Luganda: hunger
 ];
 
 const DISTRESS = [
@@ -70,6 +73,7 @@ const AFFIRMATIVE = [
   "yebo",                  // Zulu yes
   "haa",                   // Somali yes
   "awo",                   // Amharic yes
+  "yee",                   // Luganda yes
 ];
 
 const DEFLECTION = [
@@ -203,6 +207,10 @@ export function buildFoodResourceMessage(opts: FoodResourceOptions): string {
     ha:  `Ina nan don taimaka maka nemo abinci${name}.`,
     am:  `Migib lasigiz lante neno yimetal${name}.`,
     so:  `Halkan ayaan u joognaa si aan kaaga caawiyo helitaanka cunto${name}.`,
+    pcm: isDistress
+           ? `Make I help you find food sharp sharp${name}.`
+           : `I gatchu${name}. See where you fit get food today:`,
+    lg:  `Ndi wano okukuyamba okufuna emmere${name}.`,
   };
 
   // Fort Worth / Tarrant County food resources — time-aware

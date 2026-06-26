@@ -1,7 +1,7 @@
 // Niakofa Native Language System — Phase 7a
 // Greetings, prompts, and responses in community-first languages
 
-export type CulturalLanguage = "en" | "sw" | "zu" | "tw" | "yo" | "ha" | "am" | "so";
+export type CulturalLanguage = "en" | "sw" | "zu" | "tw" | "yo" | "ha" | "am" | "so" | "pcm" | "lg";
 
 export interface CulturalProfile {
   language: CulturalLanguage;
@@ -113,6 +113,30 @@ export const CULTURAL_PROFILES: Record<CulturalLanguage, CulturalProfile> = {
     errorMessage: "Ma maqlin. Mar kale isku day?",
     niaIntro: "Magacaygu waa Nia, saaxiibkaaga bulshada. Halkan ayaan u joognaa si aan kaa caawiyo inaad bixiso oo aad hesho taageero.",
   },
+  pcm: {
+    language: "pcm",
+    wakeWords: ["how far nia", "nia", "abeg nia"],
+    greeting: "How far Nia",
+    greetingResponse: "I dey! Na Nia be my name. Wetin I fit help you do today?",
+    helpPrompt: "Wetin you need help with?",
+    thankYou: "Thank you well well",
+    goodbye: "I go see you",
+    listeningPrompt: "I dey listen...",
+    errorMessage: "I no hear well. Try again?",
+    niaIntro: "Na Nia be my name, your community friend. I dey here to help you give and receive support.",
+  },
+  lg: {
+    language: "lg",
+    wakeWords: ["wasuze otya nia", "nia", "osiibye otya nia"],
+    greeting: "Wasuze otya Nia",
+    greetingResponse: "Gyendi! Nina Nia. Nyinza ntya okukuyamba leero?",
+    helpPrompt: "Oyetaaga buyambi ki?",
+    thankYou: "Weebale",
+    goodbye: "Weeraba",
+    listeningPrompt: "Mpuliriza...",
+    errorMessage: "Saawulidde bulungi. Ddamu gezaako?",
+    niaIntro: "Nina Nia, mukwano gwo gw'ekitundu. Ndi wano okukuyamba okuwa n'okufuna obuyambi.",
+  },
 };
 
 // Detect language from browser/system settings
@@ -126,6 +150,8 @@ export function detectUserLanguage(): CulturalLanguage {
   if (browserLang.startsWith("ha")) return "ha";
   if (browserLang.startsWith("am")) return "am";
   if (browserLang.startsWith("so")) return "so";
+  if (browserLang.startsWith("pcm")) return "pcm";
+  if (browserLang.startsWith("lg")) return "lg";
 
   return "en";
 }
@@ -354,23 +380,53 @@ export function getCareGreeting(lang: CulturalLanguage, userName?: string | null
         combined: `Nabad${name}. Sideed tahay? Magacaygu waa Nia — halkan ayaan joognaa.`,
       },
     },
+    pcm: {
+      // Nigerian Pidgin: "You don chop?" — have you eaten?
+      morning: {
+        greeting: `Gud mornin${name}.`,
+        careCheck: "You don chop?",
+        combined: `Gud mornin${name}. You don chop? Na Nia be my name — I dey here for you.`,
+      },
+      afternoon: {
+        greeting: `Gud afternoon${name}.`,
+        careCheck: "You don chop today?",
+        combined: `Gud afternoon${name}. You don chop today? Na Nia be my name — I dey here.`,
+      },
+      evening: {
+        greeting: `Gud evening${name}.`,
+        careCheck: "You don chop?",
+        combined: `Gud evening${name}. You don chop? Na Nia be my name — I dey here for you.`,
+      },
+      night: {
+        greeting: `Hey${name} — you still dey awake.`,
+        careCheck: "You dey okay?",
+        combined: `Hey${name}. You dey okay? Na Nia be my name — I dey here.`,
+      },
+    },
+    lg: {
+      // Luganda: "Olidde?" — have you eaten?
+      morning: {
+        greeting: `Wasuze otya nno${name}.`,
+        careCheck: "Olidde ku makya?",
+        combined: `Wasuze otya nno${name}. Olidde ku makya? Nina Nia — ndi wano gy'oli.`,
+      },
+      afternoon: {
+        greeting: `Osibye otya nno${name}.`,
+        careCheck: "Olidde leero?",
+        combined: `Osibye otya nno${name}. Olidde leero? Nina Nia — ndi wano.`,
+      },
+      evening: {
+        greeting: `Osiibye otya nno${name}.`,
+        careCheck: "Olidde akawungeezi?",
+        combined: `Osiibye otya nno${name}. Olidde akawungeezi? Nina Nia — ndi wano gy'oli.`,
+      },
+      night: {
+        greeting: `Wasuze${name} — okyali otunula?`,
+        careCheck: "Oli bulungi?",
+        combined: `Oli bulungi${name}? Nina Nia — ndi wano.`,
+      },
+    },
   };
 
   return greetings[lang]?.[tod] ?? greetings["en"][tod];
 }
-
-// Nigerian Pidgin care greeting (bonus — used when en is detected but location hints Nigeria)
-export const NIGERIAN_PIDGIN_CARE: Record<TimeOfDay, string> = {
-  morning: "Gud mornin! You don chop?",
-  afternoon: "Gud afternoon! You don chop today?",
-  evening: "Gud evening! You don chop?",
-  night: "Hey — you dey okay?",
-};
-
-// Luganda care greeting (Uganda)
-export const LUGANDA_CARE: Record<TimeOfDay, string> = {
-  morning: "Wasuze otya nno? Olidde?",     // How did you sleep? Have you eaten?
-  afternoon: "Osibye otya nno? Olidde?",   // How has your day been? Have you eaten?
-  evening: "Osiibye otya nno? Olidde?",    // How was your evening? Have you eaten?
-  night: "Otya? Oli bulungi?",             // How are you? Are you well?
-};

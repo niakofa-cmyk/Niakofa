@@ -13,6 +13,8 @@ const LANG_BCP47: Record<CulturalLanguage, string> = {
   ha: "ha-NG",
   am: "am-ET",
   so: "so-SO",
+  pcm: "en-NG",
+  lg: "lg-UG",
 };
 
 interface UseNiaTTSOptions {
@@ -103,6 +105,23 @@ const PHONETIC_HINTS: Record<string, [string, string][]> = {
     ["maya", "MAH-yah"],
   ],
   en: [], // no substitutions needed
+  pcm: [
+    ["How far", "How FAH"],
+    ["I dey", "Ah DEY"],
+    ["You don chop", "You don CHOP"],
+    ["Wetin", "WEH-tin"],
+    ["I gatchu", "Ah GOT-choo"],
+  ],
+  lg: [
+    ["Wasuze otya", "Wah-SOO-zeh OH-tyah"],
+    ["Osibye otya", "Oh-SEE-byeh OH-tyah"],
+    ["Osiibye otya", "Oh-SEE-byeh OH-tyah"],
+    ["Olidde", "Oh-LEE-deh"],
+    ["Weebale", "Weh-BAH-leh"],
+    ["Weeraba", "Weh-RAH-bah"],
+    ["Nina Nia", "NEE-nah NEE-ah"],
+    ["Ndi wano", "Ndee WAH-noh"],
+  ],
 };
 
 function applyPhoneticHints(text: string, lang: CulturalLanguage): string {

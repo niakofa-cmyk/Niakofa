@@ -13,6 +13,8 @@ const LANGUAGE_LABELS: Record<CulturalLanguage, string> = {
   ha: "Hausa",
   am: "አማርኛ (Amharic)",
   so: "Soomaali",
+  pcm: "Naijá (Pidgin)",
+  lg: "Luganda",
 };
 
 interface LanguageSelectorProps {

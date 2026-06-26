@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { pino } from "pino";
+import { CATEGORY_LABELS } from "../middleware/location.js";
 
 const logger = pino({ level: "info" });
 const { Pool } = pg;
@@ -451,8 +452,9 @@ async function computePhrasingInsights(): Promise<string[]> {
   `, [PHRASING_MIN_SAMPLE_SIZE]);
   const fastest = categoryResult.rows[0];
   if (fastest) {
+    const label = CATEGORY_LABELS[fastest.category] ?? fastest.category.replace(/_/g, " ");
     insights.push(
-      `${fastest.category} requests get claimed fastest on average, in about ${Math.round(Number(fastest.avg_minutes) * 10) / 10} minutes (based on ${fastest.sample_size} recent requests).`
+      `${label} requests get claimed fastest on average, in about ${Math.round(Number(fastest.avg_minutes) * 10) / 10} minutes (based on ${fastest.sample_size} recent requests).`
     );
   }
 

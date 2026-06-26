@@ -75,7 +75,7 @@ export interface AppContext {
   } | null;
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
+export const CATEGORY_LABELS: Record<string, string> = {
   groceries: "groceries",
   transportation: "a ride",
   errands: "errands",
