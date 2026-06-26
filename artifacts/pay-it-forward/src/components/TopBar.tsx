@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppContext } from "@/lib/AppContext";
+import { NiaOrb } from "@/components/NiaDrawer";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { subscribeToPush } from "@/lib/push";
@@ -205,7 +206,7 @@ function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
 }
 
 export function TopBar() {
-  const { helperModeActive, setHelperModeActive, currentUser } = useAppContext();
+  const { helperModeActive, setHelperModeActive, currentUser, setNiaOpen } = useAppContext();
   const [, setLocation] = useLocation();
   const [sosOpen, setSosOpen] = useState(false);
 
@@ -215,10 +216,16 @@ export function TopBar() {
     }
   }, [helperModeActive, currentUser]);
 
+  const helperStatus = currentUser?.helper_status;
+  const isApproved = helperStatus === "approved";
+  const isPending = helperStatus === "pending";
+
   return (
     <>
-      <div className="absolute top-0 left-0 right-0 z-10 p-4 bg-gradient-to-b from-background/90 to-transparent pt-safe pointer-events-none">
-        <div className="flex items-center justify-between pointer-events-auto">
+      <div className="absolute top-0 left-0 right-0 z-10 pt-safe pointer-events-none">
+        {/* ── Row 1: SOS | Nia Orb (center) | Avatar ── */}
+        <div className="flex items-center justify-between px-4 pt-3 pb-1 bg-gradient-to-b from-background/90 to-transparent pointer-events-auto">
+          {/* SOS */}
           <button
             onClick={() => setSosOpen(true)}
             className="flex items-center gap-1.5 px-3 py-2 min-h-[44px] rounded-full bg-destructive/15 border border-destructive/40 text-destructive active:bg-destructive/25 active:scale-95 transition-all shadow-lg"
@@ -227,26 +234,68 @@ export function TopBar() {
             <span className="text-[10px] font-black uppercase tracking-wider">SOS</span>
           </button>
 
-          {(() => {
-            const helperStatus = currentUser?.helper_status;
-            const isApproved = helperStatus === "approved";
-            const isPending = helperStatus === "pending";
-            if (isPending) {
-              return (
-                <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-500/10 border border-yellow-500/30 shadow-lg">
-                  <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
-                  <span className="text-[10px] font-black uppercase tracking-wider text-yellow-400">Under Review</span>
-                </div>
-              );
-            }
-            if (!isApproved) return null;
-            return (
-              <div className={`flex items-center gap-3 px-5 py-2.5 rounded-full backdrop-blur-md border shadow-lg transition-all ${
+          {/* ── Nia orb — center of TopBar — tappable ── */}
+          <motion.button
+            initial={{ scale: 0.7, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.1 }}
+            onClick={() => setNiaOpen(true)}
+            aria-label="Open Nia — your community assistant"
+            style={{
+              background: "none",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              position: "relative",
+              width: 60,
+              height: 60,
+            }}
+          >
+            {/* Soft green radial glow backdrop */}
+            <div style={{
+              position: "absolute",
+              inset: -16,
+              borderRadius: "50%",
+              background: "radial-gradient(circle, rgba(29,158,117,0.25) 0%, rgba(29,158,117,0.08) 55%, transparent 75%)",
+              pointerEvents: "none",
+            }} />
+            <NiaOrb size={56} pulse />
+          </motion.button>
+
+          {/* Profile avatar */}
+          <button
+            onClick={() => setLocation("/profile")}
+            className="w-9 h-9 rounded-full overflow-hidden border-2 border-border bg-card/80 backdrop-blur-sm flex items-center justify-center active:scale-95 transition-all shadow-lg"
+          >
+            {currentUser?.avatar_url ? (
+              <img src={currentUser.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-xs font-black text-foreground">
+                {currentUser?.name?.[0] ?? "?"}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* ── Row 2: Helper status pill (only for approved/pending helpers) ── */}
+        {(isPending || isApproved) && (
+          <div className="flex justify-center pb-1 pointer-events-auto">
+            {isPending && (
+              <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/30 shadow-lg">
+                <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+                <span className="text-[10px] font-black uppercase tracking-wider text-yellow-400">Under Review</span>
+              </div>
+            )}
+            {isApproved && (
+              <div className={`flex items-center gap-3 px-4 py-1.5 rounded-full backdrop-blur-md border shadow-lg transition-all ${
                 helperModeActive
-                  ? "bg-green-500/20 border-green-500/50 shadow-[0_0_20px_rgba(34,197,94,0.2)]"
-                  : "bg-card/90 border-border"
+                  ? "bg-green-500/20 border-green-500/50 shadow-[0_0_16px_rgba(34,197,94,0.2)]"
+                  : "bg-card/80 border-border"
               }`}>
-                <Label htmlFor="helper-mode" className="text-sm font-black tracking-widest uppercase cursor-pointer select-none">
+                <Label htmlFor="helper-mode" className="text-xs font-black tracking-widest uppercase cursor-pointer select-none">
                   {helperModeActive ? (
                     <span className="text-green-400 flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
@@ -263,23 +312,9 @@ export function TopBar() {
                   className="data-[state=checked]:bg-green-500"
                 />
               </div>
-            );
-          })()}
-
-          {/* Profile avatar */}
-          <button
-            onClick={() => setLocation("/profile")}
-            className="w-9 h-9 rounded-full overflow-hidden border-2 border-border bg-card/80 backdrop-blur-sm flex items-center justify-center active:scale-95 transition-all shadow-lg"
-          >
-            {currentUser?.avatar_url ? (
-              <img src={currentUser.avatar_url} alt="Profile" className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-xs font-black text-foreground">
-                {currentUser?.name?.[0] ?? "?"}
-              </span>
             )}
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
       <SOSModal open={sosOpen} onClose={() => setSosOpen(false)} />

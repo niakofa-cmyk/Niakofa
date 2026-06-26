@@ -1,13 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Mail, User, Lock, Eye, EyeOff, Loader2, MapPin, Shield,
+  Heart, Mail, User, Lock, Eye, EyeOff, Loader2, MapPin, Shield,
   KeyRound, CheckCircle2, ChevronDown, ChevronUp, Globe, Car, Wrench,
   Clock, AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
+import { NiaOrb } from "@/components/NiaDrawer";
 import type { User as AppUser } from "@/lib/AppContext";
 
 type ApiAuthResponse = Partial<AppUser> & {
@@ -20,7 +21,6 @@ type ApiAuthResponse = Partial<AppUser> & {
   user?: AppUser;
 };
 import { setToken } from "@/lib/auth";
-import { NiaLoginOrb } from "@/components/NiaDrawer";
 import { toast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
 
@@ -304,15 +304,8 @@ function HelperProfileForm({
 export default function LoginScreen() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  const { setCurrentUser } = useAppContext();
+  const { setCurrentUser, setNiaOpen } = useAppContext();
   const [mode, setMode] = useState<Mode>("login");
-  const [niaEnabled, setNiaEnabled] = useState(true);
-  useEffect(() => {
-    fetch("/api/admin/nia-status")
-      .then(r => r.ok ? r.json() : null)
-      .then((d: { enabled: boolean } | null) => { if (d != null) setNiaEnabled(d.enabled); })
-      .catch(() => {});
-  }, []);
 
   // ENH-003: show a clear message when we landed here because a 401
   // bounced the user out of an expired session, instead of leaving them
@@ -803,46 +796,20 @@ export default function LoginScreen() {
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col">
-      {/* ── Topbar — Nia orb pinned top-center ── */}
-      <div
-        className="relative flex items-center justify-center w-full"
-        style={{ height: 88, paddingTop: "env(safe-area-inset-top, 0px)" }}
-      >
-        <div style={{
-          position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)",
-          width: 120, height: 120, borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(29,158,117,0.18) 0%, transparent 70%)",
-          pointerEvents: "none",
-        }} />
-        <motion.div
-          initial={{ scale: 0.6, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 220, damping: 20 }}
-        >
-          <NiaLoginOrb killswitch={niaEnabled} size={70} />
-        </motion.div>
-      </div>
-
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-2 pb-8">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-12 pb-8">
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: "spring", stiffness: 200, damping: 20 }}
           className="flex flex-col items-center mb-8"
         >
+          <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center mb-5 shadow-[0_0_40px_rgba(0,212,255,0.15)]">
+            <Heart className="w-10 h-10 text-primary" />
+          </div>
           <h1 className="text-3xl font-black tracking-tight text-foreground">Niakofa</h1>
           <p className="text-sm text-muted-foreground mt-1 text-center max-w-xs">
             Help Today. Pay It Forward Tomorrow.
           </p>
-          <motion.p
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5, duration: 0.6 }}
-            className="text-xs mt-2 font-medium"
-            style={{ color: "#1D9E75" }}
-          >
-            Sawubona — I see you. Tap Nia to chat.
-          </motion.p>
         </motion.div>
 
         {/* Mode toggle */}
