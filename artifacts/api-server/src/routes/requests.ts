@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
-import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable } from "@workspace/db";
+import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, ratingsTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -325,21 +325,6 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
         }
       }).catch(() => {});
 
-    // Phase 11J: confirmation email to requester
-    db.select({ email: usersTable.email, name: usersTable.name })
-      .from(usersTable).where(eq(usersTable.id, request.requester_id))
-      .then(([requester]: [{ email: string | null; name: string | null } | undefined]) => {
-        if (requester?.email) {
-          sendRequestConfirmation({
-            to: requester.email,
-            requesterName: requester.name ?? "Neighbor",
-            requestTitle: request.title,
-            category: request.category ?? "other",
-            urgency: request.urgency ?? "medium",
-            requestId: request.id,
-          }).catch(() => {});
-        }
-      }).catch(() => {});
 
     sendPushToNearbyHelpers(request.lat, request.lng, 5, {
       title: "💙 Help Request Near You",
@@ -426,25 +411,6 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
         });
     }).catch(() => {});
 
-  // Phase 11J: notify requester that a helper has accepted
-  db.select({ email: usersTable.email, name: usersTable.name, trust_score: usersTable.trust_score })
-    .from(usersTable).where(eq(usersTable.id, helperId))
-    .then(([helper]: [{ email: string | null; name: string | null; trust_score?: number | null } | undefined]) => {
-      return db.select({ email: usersTable.email, name: usersTable.name })
-        .from(usersTable).where(eq(usersTable.id, request.requester_id))
-        .then(([requester]: [{ email: string | null; name: string | null } | undefined]) => {
-          if (requester?.email && helper) {
-            sendHelperAcceptedEmail({
-              to: requester.email,
-              requesterName: requester.name ?? "Neighbor",
-              helperName: helper.name ?? "A helper",
-              helperTrustScore: helper.trust_score ?? undefined,
-              requestTitle: request.title,
-              requestId: request.id,
-            }).catch(() => {});
-          }
-        });
-    }).catch(() => {});
   const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, helperId)).limit(1);
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: helper?.name ?? null, distance_miles: null, estimated_duration_min: null };
   broadcastRequestEvent("REQUEST_ACCEPTED", "request_updated", enriched);
@@ -635,26 +601,6 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
   }, 24 * 60 * 60 * 1000);
   }
 
-  // Phase 11J: schedule follow-up nudge 24h after completion (non-blocking)
-  {
-  const completedRequestId = request.id;
-  const completedTitle = request.title;
-  setTimeout(async () => {
-    try {
-      const [req24] = await db.select({ email: usersTable.email, name: usersTable.name })
-        .from(usersTable).where(eq(usersTable.id, request.requester_id));
-      if (req24?.email) {
-        await sendFollowUpNudge({
-          to: req24.email,
-          requesterName: req24.name ?? "Neighbor",
-          requestTitle: completedTitle,
-          requestId: completedRequestId,
-        });
-      }
-    } catch {}
-  }, 24 * 60 * 60 * 1000);
-  }
-
   // Fire receipt email async (non-blocking)
   const [requester] = await db.select({ email: usersTable.email, name: usersTable.name })
     .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1).catch(() => [null]);
@@ -797,6 +743,111 @@ router.get("/requests/:id/helpers", requireAuth, async (req, res) => {
     .orderBy(requestHelpersTable.joined_at);
 
   return res.json(members);
+});
+
+
+// POST /requests/:id/rate — requester rates helper after completion
+// Writes to ratingsTable and recomputes helper trust_score as weighted average
+router.post("/requests/:id/rate", requireAuth, async (req, res) => {
+  const raterId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id));
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+
+  const { stars, review } = req.body as { stars: number; review?: string };
+  if (!stars || stars < 1 || stars > 5) {
+    return res.status(400).json({ error: "stars must be 1–5" });
+  }
+
+  // Verify request exists and rater is the requester
+  const [request] = await db.select(requestSelect)
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.requester_id !== raterId) {
+    return res.status(403).json({ error: "Only the requester can rate this request" });
+  }
+  if (request.status !== "completed") {
+    return res.status(409).json({ error: "Can only rate completed requests" });
+  }
+  if (!request.helper_id) {
+    return res.status(400).json({ error: "No helper to rate" });
+  }
+
+  // Insert rating — unique constraint on (request_id, rater_id) prevents double-rating
+  let rating;
+  try {
+    [rating] = await db.insert(ratingsTable).values({
+      request_id: requestId,
+      rater_id: raterId,
+      ratee_id: request.helper_id,
+      stars,
+      review: review ?? null,
+      role: "requester",
+    }).returning();
+  } catch (err: unknown) {
+    const msg = (err as Error)?.message ?? "";
+    if (msg.includes("ratings_rater_request_unique")) {
+      return res.status(409).json({ error: "You have already rated this request" });
+    }
+    throw err;
+  }
+
+  // Recompute helper trust_score as weighted avg of all their ratings (0–100 scale)
+  // New ratings carry full weight; older ones decay slightly via recency weighting.
+  // Simple version: straight average mapped to 0–100, floored at 0.
+  const allRatings = await db
+    .select({ stars: ratingsTable.stars })
+    .from(ratingsTable)
+    .where(eq(ratingsTable.ratee_id, request.helper_id));
+
+  if (allRatings.length > 0) {
+    const avg = allRatings.reduce((sum: number, r: { stars: number }) => sum + r.stars, 0) / allRatings.length;
+    const newTrustScore = Math.round((avg / 5) * 100);
+    await db.update(usersTable)
+      .set({ trust_score: newTrustScore })
+      .where(eq(usersTable.id, request.helper_id));
+  }
+
+  return res.status(201).json({ ok: true, rating });
+});
+
+// GET /requests/:id/ratings — fetch ratings for a request
+router.get("/requests/:id/ratings", requireAuth, async (req, res) => {
+  const requestId = parseInt(String(req.params.id));
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+  const ratings = await db
+    .select({
+      id: ratingsTable.id,
+      stars: ratingsTable.stars,
+      review: ratingsTable.review,
+      role: ratingsTable.role,
+      created_at: ratingsTable.created_at,
+      rater_id: ratingsTable.rater_id,
+    })
+    .from(ratingsTable)
+    .where(eq(ratingsTable.request_id, requestId));
+  return res.json(ratings);
+});
+
+// GET /users/:id/ratings — fetch all ratings received by a user (helper profile)
+router.get("/users/:id/ratings", requireAuth, async (req, res) => {
+  const userId = parseInt(String(req.params.id));
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+  const ratings = await db
+    .select({
+      id: ratingsTable.id,
+      stars: ratingsTable.stars,
+      review: ratingsTable.review,
+      role: ratingsTable.role,
+      created_at: ratingsTable.created_at,
+      request_id: ratingsTable.request_id,
+    })
+    .from(ratingsTable)
+    .where(eq(ratingsTable.ratee_id, userId))
+    .orderBy(sql`${ratingsTable.created_at} DESC`)
+    .limit(50);
+  return res.json(ratings);
 });
 
 export default router;

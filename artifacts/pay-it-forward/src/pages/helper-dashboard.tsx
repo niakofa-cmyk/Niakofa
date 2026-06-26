@@ -7,7 +7,7 @@ import {
 } from "@workspace/api-client-react";
 import type { HelpRequest } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Activity, Star, MapPin, Clock, Heart, Award, Wrench, Zap, Filter } from "lucide-react";
+import { ChevronLeft, Activity, Star, MapPin, Clock, Heart, Award, Wrench, Zap, Filter, ThumbsUp, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
@@ -85,6 +85,42 @@ export default function HelperDashboardScreen() {
   useEffect(() => {
     return () => setLastViewedMatchReasons(null);
   }, []);
+
+  const [pendingRatings, setPendingRatings] = useState<Array<{ id: number; title: string; completed_at: string | null }>>([]);
+  const [recentRatings, setRecentRatings] = useState<Array<{ stars: number; review: string | null; created_at: string }>>([]);
+
+  // Fetch completed requests with no rating yet (pending acknowledgement)
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const token = localStorage.getItem("token");
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+    // Fetch helper's completed requests
+    fetch(`/api/requests?helper_id=${currentUser.id}&status=completed&limit=20`, { headers })
+      .then(r => r.json())
+      .then(async (completed: Array<{ id: number; title: string; completed_at: string | null }>) => {
+        if (!Array.isArray(completed)) return;
+        // For each, check if a rating exists
+        const pending: typeof completed = [];
+        await Promise.all(completed.slice(0, 10).map(async req => {
+          try {
+            const r = await fetch(`/api/requests/${req.id}/ratings`, { headers });
+            const ratings = await r.json();
+            if (!Array.isArray(ratings) || ratings.length === 0) {
+              pending.push(req);
+            }
+          } catch {}
+        }));
+        setPendingRatings(pending);
+      }).catch(() => {});
+
+    // Fetch recent ratings received
+    fetch(`/api/users/${currentUser.id}/ratings`, { headers })
+      .then(r => r.json())
+      .then((ratings: Array<{ stars: number; review: string | null; created_at: string }>) => {
+        if (Array.isArray(ratings)) setRecentRatings(ratings.slice(0, 5));
+      }).catch(() => {});
+  }, [currentUser?.id]);
 
   if (!currentUser) return null;
 
@@ -208,7 +244,7 @@ export default function HelperDashboardScreen() {
 
       <div className="p-4 space-y-4 max-w-lg mx-auto">
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
             <Heart className="w-4 h-4 text-primary mb-1" />
             <div className="text-2xl font-black text-primary">{helpCount}</div>
@@ -221,11 +257,17 @@ export default function HelperDashboardScreen() {
           </div>
           <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
             <Activity className="w-4 h-4 text-green-400 mb-1" />
-            {/* BUG-024: benevolence_wallet is the goodwill/donation pot — NOT real withdrawable earnings.
-                Real earnings from Stripe transfers are tracked separately in transactions (type: "earned").
-                Labeling this as "Earned" is misleading — renamed to "Goodwill Fund". */}
             <div className="text-2xl font-black text-green-400">${(currentUser.benevolence_wallet ?? 0).toFixed(0)}</div>
             <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{t("helper_dashboard.goodwill_fund")}</div>
+          </div>
+          <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
+            <ThumbsUp className="w-4 h-4 text-blue-400 mb-1" />
+            <div className="text-2xl font-black text-blue-400">
+              {recentRatings.length > 0
+                ? (recentRatings.reduce((s, r) => s + r.stars, 0) / recentRatings.length).toFixed(1)
+                : "—"}
+            </div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg Rating</div>
           </div>
         </div>
 
@@ -244,6 +286,60 @@ export default function HelperDashboardScreen() {
                   </span>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Pending ratings — completed requests awaiting requester feedback */}
+        {pendingRatings.length > 0 && (
+          <div className="bg-card border border-amber-500/30 rounded-2xl p-4">
+            <h3 className="text-xs font-black uppercase tracking-widest text-amber-400 mb-3 flex items-center gap-1.5">
+              <Star className="w-3.5 h-3.5" /> Awaiting Ratings ({pendingRatings.length})
+            </h3>
+            <div className="space-y-2">
+              {pendingRatings.map(req => (
+                <div key={req.id} className="flex items-center gap-3 bg-muted/30 rounded-xl p-3 border border-border">
+                  <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm truncate">{req.title}</div>
+                    {req.completed_at && (
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        Completed {Math.round((Date.now() - new Date(req.completed_at).getTime()) / 3600000)}h ago
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-1 rounded-full shrink-0">
+                    Pending ★
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-3 leading-relaxed">
+              Ratings appear here once requesters submit them. Your trust score updates automatically.
+            </p>
+          </div>
+        )}
+
+        {/* Recent ratings received */}
+        {recentRatings.length > 0 && (
+          <div className="bg-card border border-border rounded-2xl p-4">
+            <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
+              <Star className="w-3.5 h-3.5 text-yellow-400" /> Recent Ratings
+            </h3>
+            <div className="space-y-2">
+              {recentRatings.map((r, i) => (
+                <div key={i} className="flex items-start gap-3 bg-muted/30 rounded-xl p-3 border border-border">
+                  <div className="shrink-0 text-sm font-black text-yellow-400">
+                    {"★".repeat(r.stars)}{"☆".repeat(5 - r.stars)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {r.review && <p className="text-xs text-foreground leading-relaxed">&ldquo;{r.review}&rdquo;</p>}
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {Math.round((Date.now() - new Date(r.created_at).getTime()) / 86400000)}d ago
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
