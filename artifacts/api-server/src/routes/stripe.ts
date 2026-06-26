@@ -4,7 +4,7 @@ import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import Stripe from "stripe";
 import { db, stripeAccountsTable, paymentTransactionsTable, usersTable, requestsTable, transactionsTable } from "@workspace/db";
 import { eq, sql, and } from "drizzle-orm";
-import { broadcast } from "../lib/ws-hub";
+import { broadcast, sendToUser } from "../lib/ws-hub";
 import { sendPushToUser } from "./push";
 import { logger } from "../lib/logger";
 import { paymentLimiter } from "../middlewares/rate-limit";
@@ -123,17 +123,17 @@ router.post("/stripe/webhook", async (req, res) => {
             if (reqRow?.title) requestTitle = reqRow.title;
           } catch { /* non-fatal — title is cosmetic */ }
 
-          broadcast({
-            type: "pledge_paid",
-            payload: {
-              request_id: txRow.request_id,
-              request_title: requestTitle,
-              helper_id: txRow.helper_id,
-              requester_id: txRow.requester_id ?? null,
-              amount,
-              via: "stripe",
-            },
-          });
+          // Pledge confirmation is private to the parties on this request.
+          const pledgePaidPayload = {
+            request_id: txRow.request_id,
+            request_title: requestTitle,
+            helper_id: txRow.helper_id,
+            requester_id: txRow.requester_id ?? null,
+            amount,
+            via: "stripe",
+          };
+          sendToUser(txRow.helper_id, { type: "pledge_paid", payload: pledgePaidPayload });
+          if (txRow.requester_id) sendToUser(txRow.requester_id, { type: "pledge_paid", payload: pledgePaidPayload });
 
           sendPushToUser(txRow.helper_id, {
             title: "💙 Niakofa Received",
@@ -141,10 +141,15 @@ router.post("/stripe/webhook", async (req, res) => {
             requestId: txRow.request_id,
           }, { notifKey: "notif_wallet_updates" }).catch(() => {});
         } else {
-          broadcast({
-            type: "payment_completed",
-            payload: { paymentIntentId: pi.id, amount: pi.amount / 100 },
-          });
+          // payment_completed is private to the payer — scope to requester only.
+          const payerIdRaw = pi.metadata?.requesterId;
+          const payerId = payerIdRaw ? parseInt(payerIdRaw, 10) : NaN;
+          if (Number.isFinite(payerId)) {
+            sendToUser(payerId, {
+              type: "payment_completed",
+              payload: { paymentIntentId: pi.id, amount: pi.amount / 100 },
+            });
+          }
         }
       } catch (err) {
         logger.error(
@@ -250,7 +255,8 @@ router.post("/stripe/webhook", async (req, res) => {
             .where(eq(stripeAccountsTable.stripe_account_id, account.id));
 
           if (account.payouts_enabled && !existing.payouts_enabled) {
-            broadcast({
+            // payouts_enabled is personal account news — only notify the helper it affects.
+            sendToUser(existing.user_id, {
               type: "payouts_enabled",
               payload: { userId: existing.user_id },
             });

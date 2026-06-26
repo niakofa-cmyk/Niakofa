@@ -7,7 +7,7 @@ import Stripe from "stripe";
 import { logger } from "../lib/logger";
 import { sendSms } from "../lib/sms";
 import { sosLimiter } from "../middlewares/rate-limit";
-import { broadcast, broadcastToAdmins } from "../lib/ws-hub";
+import { broadcast, broadcastToAdmins, sendToUser } from "../lib/ws-hub";
 
 const router = Router();
 
@@ -86,7 +86,8 @@ router.post("/verification/identity/webhook", async (req, res) => {
           sql`${usersTable.trust_score} != -1`,
         ));
 
-      broadcast({ type: "presence_update", payload: { user_id: userId, identity_verified: true } });
+      // identity_verified is personal account status — only notify the user it concerns.
+      sendToUser(userId, { type: "presence_update", payload: { user_id: userId, identity_verified: true } });
       logger.info({ user_id: userId }, "identity verified");
     }
   } else if (event.type === "identity.verification_session.requires_input") {

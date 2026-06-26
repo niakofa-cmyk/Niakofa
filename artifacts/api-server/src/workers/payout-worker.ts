@@ -12,7 +12,7 @@ import Stripe from "stripe";
 import { db, paymentTransactionsTable, transactionsTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { getRedisConnection, QUEUE, type PayoutJobData } from "../lib/queue";
-import { broadcast } from "../lib/ws-hub";
+import { broadcast, sendToUser } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 
 // BUG-019: Instantiate the Stripe client once at module load time (singleton).
@@ -80,7 +80,8 @@ async function processPayout(job: Job<PayoutJobData>): Promise<void> {
   // The paymentTransactionsTable insert above is the correct, single
   // source of truth for the actual payment/transfer state.
 
-  broadcast({
+  // Retry payout confirmation is private — only the helper needs to know.
+  sendToUser(helper_id, {
     type: "payout_sent",
     payload: {
       request_id,

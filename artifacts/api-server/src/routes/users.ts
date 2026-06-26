@@ -250,8 +250,12 @@ router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, re
     notes: "Pay It Forward pledge",
   });
 
-  broadcast({ type: "request_updated", payload: { ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null } });
-  broadcast({ type: "pledge_paid", payload: { user_id: pParsed.data.id, request_id, amount, request_title: request.title } });
+  // Pledge events are private to the parties on this request.
+  const pledgeUpdatePayload = { ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
+  sendToUser(pParsed.data.id, { type: "request_updated", payload: pledgeUpdatePayload });
+  if (updated.helper_id) sendToUser(updated.helper_id, { type: "request_updated", payload: pledgeUpdatePayload });
+  sendToUser(pParsed.data.id, { type: "pledge_paid", payload: { user_id: pParsed.data.id, request_id, amount, request_title: request.title } });
+  if (updated.helper_id) sendToUser(updated.helper_id, { type: "pledge_paid", payload: { user_id: pParsed.data.id, request_id, amount, request_title: request.title } });
   return res.json({ ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null });
 });
 
@@ -288,7 +292,8 @@ router.post("/users/:id/scheduled-payment", requireAuth, requireOwnership(), asy
     status: "pending",
     note: note ?? null,
   }).returning();
-  broadcast({
+  // Scheduled pledge is private to the user who set it.
+  sendToUser(userId, {
     type: "pledge_scheduled",
     payload: { user_id: userId, request_id, amount, scheduled_date },
   });

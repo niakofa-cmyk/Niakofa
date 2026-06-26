@@ -371,7 +371,9 @@ router.patch("/requests/:id", requireAuth, async (req, res) => {
   const [updatedRequest] = await db.update(requestsTable).set(updates).where(eq(requestsTable.id, pParsed.data.id)).returning();
   if (!updatedRequest) return res.status(404).json({ error: "Not found" });
   const enriched = { ...updatedRequest, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
-  broadcast({ type: "request_updated", payload: enriched });
+  // Scope update to the parties involved — not every connected client.
+  sendToUser(updatedRequest.requester_id, { type: "request_updated", payload: enriched });
+  if (updatedRequest.helper_id) sendToUser(updatedRequest.helper_id, { type: "request_updated", payload: enriched });
   return res.json(enriched);
 });
 
@@ -581,7 +583,8 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
           notes: `Auto-payout on completion. Platform fee: $${(platformFeeCents / 100).toFixed(2)}`,
         });
 
-        broadcast({
+        // Stripe payout confirmation is private — only the helper needs to know.
+        sendToUser(helperId, {
           type: "payout_sent",
           payload: {
             helper_id: helperId,
@@ -657,7 +660,8 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
   }
 
   // Prompt the requester to write a public thank-you post
-  broadcast({
+  // Gratitude prompt is only relevant to the requester of this specific request.
+  sendToUser(request.requester_id, {
     type: "new_gratitude_prompt",
     payload: {
       request_id: request.id,
@@ -701,7 +705,8 @@ router.post("/requests/:id/tip", requireAuth, requireOwnership("requester_id"), 
     description: `Tip for: ${request.title}`,
   });
 
-  broadcast({
+  // Tip notification is private — only the helper receiving it needs to know.
+  sendToUser(request.helper_id, {
     type: "payout_sent",
     payload: { helper_id: request.helper_id, amount: tip_amount, type: "tip" },
   });
