@@ -803,8 +803,12 @@ export default function LoginScreen() {
           transition={{ type: "spring", stiffness: 200, damping: 20 }}
           className="flex flex-col items-center mb-8"
         >
-          <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center mb-5 shadow-[0_0_40px_rgba(0,212,255,0.15)]">
-            <Heart className="w-10 h-10 text-primary" />
+          {/* Nia orb — topbar center */}
+          <div style={{ position: "relative", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ position: "absolute", inset: -24, borderRadius: "50%", background: "radial-gradient(circle, rgba(29,158,117,0.30) 0%, rgba(29,158,117,0.10) 50%, transparent 72%)", pointerEvents: "none" }} />
+            <button onClick={() => setNiaOpen(true)} aria-label="Open Nia" style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+              <NiaOrb size={70} pulse />
+            </button>
           </div>
           <h1 className="text-3xl font-black tracking-tight text-foreground">Niakofa</h1>
           <p className="text-sm text-muted-foreground mt-1 text-center max-w-xs">
