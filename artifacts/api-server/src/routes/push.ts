@@ -1,6 +1,6 @@
 import { Router } from "express";
 import webpush from "web-push";
-import { db, pushSubscriptionsTable, usersTable } from "@workspace/db";
+import { db, pushSubscriptionsTable, usersTable, userSettingsTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { sendAlertEmail } from "../lib/mailer";
 import { logger } from "../lib/logger";
@@ -99,6 +99,36 @@ async function getSubsForUser(userId: number): Promise<webpush.PushSubscription[
 }
 
 /**
+ * Notification category a push belongs to, matching the toggles on the
+ * Settings screen (notif_nearby_requests, notif_emergency, etc). Passing a
+ * notifKey to the send functions below means recipients who turned that
+ * category off in Settings are skipped entirely — these toggles existed in
+ * the UI and were saved, but nothing ever checked them before this.
+ */
+export type NotifKey =
+  | "notif_nearby_requests"
+  | "notif_emergency"
+  | "notif_task_accepted"
+  | "notif_wallet_updates"
+  | "notif_community_activity"
+  | "notif_pledge_reminders";
+
+/**
+ * Filters userIds down to those who have notifKey enabled. Users with no
+ * user_settings row yet are kept — the column defaults to true, same as a
+ * fresh row would get on first GET /settings.
+ */
+async function filterByNotifPref(userIds: number[], notifKey?: NotifKey): Promise<number[]> {
+  if (!notifKey || userIds.length === 0) return userIds;
+  const rows = await db
+    .select({ user_id: userSettingsTable.user_id, enabled: userSettingsTable[notifKey] })
+    .from(userSettingsTable)
+    .where(inArray(userSettingsTable.user_id, userIds));
+  const disabled = new Set(rows.filter((r: { enabled: boolean }) => r.enabled === false).map((r: { user_id: number }) => r.user_id));
+  return userIds.filter(id => !disabled.has(id));
+}
+
+/**
  * Deliver to a set of push subscriptions.
  * Returns the count of successful deliveries.
  */
@@ -133,8 +163,12 @@ async function deliverToSubs(subs: webpush.PushSubscription[], payload: PushPayl
 export async function sendPushToUser(
   userId: number,
   payload: PushPayload,
-  options?: { fallbackEmail?: string; fallbackEmailSubject?: string }
+  options?: { fallbackEmail?: string; fallbackEmailSubject?: string; notifKey?: NotifKey }
 ): Promise<void> {
+  if (options?.notifKey) {
+    const [allowed] = await filterByNotifPref([userId], options.notifKey);
+    if (allowed === undefined) return;
+  }
   const subs = await getSubsForUser(userId);
   const delivered = await deliverToSubs(subs, payload);
 
@@ -156,7 +190,7 @@ export async function sendPushToUser(
 export async function sendPushToUsers(
   userIds: number[],
   payload: PushPayload,
-  options?: { emailFallback?: boolean }
+  options?: { emailFallback?: boolean; notifKey?: NotifKey }
 ): Promise<void> {
   if (userIds.length === 0) return;
 
@@ -172,10 +206,11 @@ export async function sendPushToUsers(
 
   await Promise.allSettled(
     userIds.map(id =>
-      sendPushToUser(id, payload, options?.emailFallback ? {
-        fallbackEmail: emailMap.get(id),
+      sendPushToUser(id, payload, {
+        fallbackEmail: options?.emailFallback ? emailMap.get(id) : undefined,
         fallbackEmailSubject: payload.title,
-      } : undefined)
+        notifKey: options?.notifKey,
+      })
     )
   );
 }
@@ -189,7 +224,8 @@ export async function sendPushToNearbyHelpers(
   lat: number,
   lng: number,
   radiusMiles: number,
-  payload: PushPayload
+  payload: PushPayload,
+  notifKey?: NotifKey
 ): Promise<void> {
   if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
     // No VAPID keys — email all active helpers as fallback for emergency
@@ -198,8 +234,9 @@ export async function sendPushToNearbyHelpers(
         .select({ id: usersTable.id, email: usersTable.email })
         .from(usersTable)
         .where(eq(usersTable.helper_mode_active, true));
+      const allowedIds = new Set(await filterByNotifPref(helpers.map((h: { id: number }) => h.id), notifKey));
       await Promise.allSettled(
-        helpers.filter((h: { email: string | null; name: string | null }) => !!h.email).map((h: { email: string | null; name: string | null }) =>
+        helpers.filter((h: { id: number; email: string | null }) => !!h.email && allowedIds.has(h.id)).map((h: { email: string | null; name: string | null }) =>
           sendAlertEmail({
             to: h.email!,
             subject: `🚨 Emergency request near you: ${payload.title}`,
@@ -228,11 +265,15 @@ export async function sendPushToNearbyHelpers(
 
   if (nearbyHelpers.length === 0) return;
 
+  const allowedIds = new Set(await filterByNotifPref(nearbyHelpers.map((h: { id: number }) => h.id), notifKey));
+  const notifiableHelpers = nearbyHelpers.filter((h: { id: number }) => allowedIds.has(h.id));
+  if (notifiableHelpers.length === 0) return;
+
   const isEmergency = payload.urgency === "emergency";
 
   // Deliver push + email fallback for each nearby helper in parallel
   await Promise.allSettled(
-    nearbyHelpers.map(async (h: { id: number; email?: string | null }) => {
+    notifiableHelpers.map(async (h: { id: number; email?: string | null }) => {
       const subs = await getSubsForUser(h.id);
       const delivered = await deliverToSubs(subs, payload);
       if (delivered === 0 && isEmergency && h.email) {
@@ -248,13 +289,16 @@ export async function sendPushToNearbyHelpers(
 }
 
 /** Send a push notification to all registered subscribers (broadcast fallback) */
-export async function sendPushToAllHelpers(payload: PushPayload): Promise<void> {
+export async function sendPushToAllHelpers(payload: PushPayload, notifKey?: NotifKey): Promise<void> {
   if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
 
   const rows = await db
-    .select({ subscription: pushSubscriptionsTable.subscription })
+    .select({ user_id: pushSubscriptionsTable.user_id, subscription: pushSubscriptionsTable.subscription })
     .from(pushSubscriptionsTable);
-  const subs = rows.map((r: { subscription: unknown }) => r.subscription as unknown as webpush.PushSubscription);
+  const allowedIds = new Set(await filterByNotifPref(rows.map((r: { user_id: number }) => r.user_id), notifKey));
+  const subs = rows
+    .filter((r: { user_id: number }) => allowedIds.has(r.user_id))
+    .map((r: { subscription: unknown }) => r.subscription as unknown as webpush.PushSubscription);
   await deliverToSubs(subs, payload);
 }
 

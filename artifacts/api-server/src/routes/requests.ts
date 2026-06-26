@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
-import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, ratingsTable } from "@workspace/db";
+import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, ratingsTable, userSettingsTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -22,7 +22,7 @@ import {
 import { broadcast, broadcastRequestEvent, sendToUser } from "../lib/ws-hub";
 import { requestCreationLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
-import { sendPushToNearbyHelpers, sendPushToAllHelpers } from "./push";
+import { sendPushToNearbyHelpers, sendPushToAllHelpers, NotifKey } from "./push";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { logger } from "../lib/logger";
 import { requestSelect } from "../lib/request-select";
@@ -274,8 +274,9 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
       requestId: request.id,
     };
     // Notify helpers within 15 miles; fall back to all helpers if none nearby
-    sendPushToNearbyHelpers(request.lat, request.lng, 15, payload).catch(() => {
-      sendPushToAllHelpers(payload).catch(() => {});
+    const urgentNotifKey: NotifKey = isEmergency ? "notif_emergency" : "notif_nearby_requests";
+    sendPushToNearbyHelpers(request.lat, request.lng, 15, payload, urgentNotifKey).catch(() => {
+      sendPushToAllHelpers(payload, urgentNotifKey).catch(() => {});
     });
 
     // Multi-modal fallback: SMS admin alert for emergency requests
@@ -331,7 +332,7 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
       body: request.title,
       urgency: request.urgency,
       requestId: request.id,
-    }).catch(() => {});
+    }, "notif_nearby_requests").catch(() => {});
   }
 
   return res.status(201).json(enriched);
@@ -397,17 +398,19 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
     .then(([helper]: [{ email: string | null; name: string | null; trust_score?: number | null } | undefined]) => {
       return db.select({ email: usersTable.email, name: usersTable.name })
         .from(usersTable).where(eq(usersTable.id, request.requester_id))
-        .then(([requester]: [{ email: string | null; name: string | null } | undefined]) => {
-          if (requester?.email && helper) {
-            sendHelperAcceptedEmail({
-              to: requester.email,
-              requesterName: requester.name ?? "Neighbor",
-              helperName: helper.name ?? "A helper",
-              helperTrustScore: helper.trust_score ?? undefined,
-              requestTitle: request.title,
-              requestId: request.id,
-            }).catch(() => {});
-          }
+        .then(async ([requester]: [{ email: string | null; name: string | null } | undefined]) => {
+          if (!requester?.email || !helper) return;
+          const [settings] = await db.select({ notif_task_accepted: userSettingsTable.notif_task_accepted })
+            .from(userSettingsTable).where(eq(userSettingsTable.user_id, request.requester_id)).limit(1);
+          if (settings?.notif_task_accepted === false) return;
+          sendHelperAcceptedEmail({
+            to: requester.email,
+            requesterName: requester.name ?? "Neighbor",
+            helperName: helper.name ?? "A helper",
+            helperTrustScore: helper.trust_score ?? undefined,
+            requestTitle: request.title,
+            requestId: request.id,
+          }).catch(() => {});
         });
     }).catch(() => {});
 
