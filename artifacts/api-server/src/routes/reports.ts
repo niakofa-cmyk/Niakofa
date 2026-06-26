@@ -112,7 +112,19 @@ router.get("/reports", requireAuth, requireAdmin(), adminLimiter, async (req, re
     .select()
     .from(reportsTable)
     .where(validStatus ? eq(reportsTable.status, validStatus as "pending" | "under_review" | "resolved_dismissed" | "resolved_warned" | "resolved_banned") : undefined)
-    .orderBy(desc(reportsTable.created_at))
+    .orderBy(
+      // Highest-severity report types surface first regardless of age, so an
+      // SOS or dangerous-behavior report can never get buried under a stack
+      // of newer low-priority reports (e.g. spam) in the admin queue.
+      sql`CASE ${reportsTable.type}
+            WHEN 'sos' THEN 0
+            WHEN 'dangerous_behavior' THEN 1
+            WHEN 'harassment' THEN 2
+            WHEN 'fraud' THEN 2
+            ELSE 3
+          END`,
+      desc(reportsTable.created_at)
+    )
     .limit(200);
 
   return res.json(rows);

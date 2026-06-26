@@ -39,6 +39,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 const TYPE_LABELS: Record<string, string> = {
+  sos: "🚨 SOS",
   suspicious_request: "Suspicious Request",
   suspicious_helper: "Suspicious Helper",
   fraud: "Fraud",
@@ -786,6 +787,7 @@ export default function AdminScreen() {
 
           {!loading && filteredReports.map(report => {
             const statusMeta = STATUS_LABELS[report.status] ?? { label: report.status, color: "bg-muted text-muted-foreground border-border" };
+            const isUrgent = report.type === "sos" || report.type === "dangerous_behavior";
             return (
               <motion.button
                 key={report.id}
@@ -794,7 +796,9 @@ export default function AdminScreen() {
                 animate={{ opacity: 1, y: 0 }}
                 onClick={() => openDetail(report)}
                 disabled={detailLoading}
-                className="w-full text-left bg-card border border-border rounded-2xl p-4 active:border-primary/40 transition-all"
+                className={`w-full text-left bg-card border rounded-2xl p-4 active:border-primary/40 transition-all ${
+                  isUrgent ? "border-destructive/50 ring-1 ring-destructive/20" : "border-border"
+                }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
@@ -802,7 +806,9 @@ export default function AdminScreen() {
                       <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${statusMeta.color}`}>
                         {statusMeta.label}
                       </span>
-                      <span className="text-[10px] font-semibold bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                        isUrgent ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground"
+                      }`}>
                         {TYPE_LABELS[report.type] ?? report.type}
                       </span>
                     </div>
