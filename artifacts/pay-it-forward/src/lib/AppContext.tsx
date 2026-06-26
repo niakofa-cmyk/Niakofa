@@ -14,6 +14,8 @@ export type User = GeneratedUser & {
   account_type?: "individual" | "business" | "sponsor";
   organization_name?: string | null;
   organization_description?: string | null;
+  is_suspended?: boolean;
+  suspended_reason?: string | null;
 };
 import { useUpdateUserLocation, useUpdateHelperMode } from "@workspace/api-client-react";
 import { useWebSocket } from "./useWebSocket";
@@ -434,6 +436,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
       wsUnregister();
     }
   }, [currentUser?.id]);
+
+  // Suspended screen — shown globally when account is suspended
+  if (currentUser?.is_suspended) {
+    return (
+      <div className="fixed inset-0 bg-background flex flex-col items-center justify-center p-8 gap-6 text-center">
+        <div className="w-20 h-20 rounded-full bg-destructive/10 border-2 border-destructive/30 flex items-center justify-center">
+          <span className="text-4xl">🚫</span>
+        </div>
+        <div>
+          <h1 className="text-2xl font-black text-destructive">Account Suspended</h1>
+          <p className="text-sm text-muted-foreground mt-2 leading-relaxed max-w-xs mx-auto">
+            {currentUser.suspended_reason ?? "Your account has been suspended. Please contact support for details."}
+          </p>
+        </div>
+        <button
+          onClick={logout}
+          className="px-6 py-3 rounded-2xl border border-border text-sm font-black text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Sign Out
+        </button>
+        <p className="text-xs text-muted-foreground">
+          Need help? Email <span className="text-primary">support@niakofa.com</span>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <AppContext.Provider value={{

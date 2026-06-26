@@ -5,7 +5,7 @@ import { authHeaders } from "@/lib/auth";
 import {
   Shield, AlertCircle, CheckCircle2, Clock, X, ChevronLeft,
   Eye, Flag, User as UserIcon, RefreshCw, Filter, ExternalLink,
-  Users, Search, Ban, AlertTriangle, Star
+  Users, Search, Ban, AlertTriangle, Star, OctagonX, Unlock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -202,6 +202,19 @@ interface AdminUser {
   trust_score: number | null;
   help_count: number;
   created_at: string;
+  is_suspended?: boolean;
+  suspended_at?: string | null;
+  suspended_reason?: string | null;
+}
+
+interface SuspendedUser {
+  id: number;
+  name: string;
+  email: string;
+  suspended_at: string | null;
+  suspended_reason: string | null;
+  is_helper: boolean;
+  trust_score: number | null;
 }
 
 function UsersTab() {
@@ -224,16 +237,32 @@ function UsersTab() {
     u.email.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleAction = async (userId: number, action: "warn" | "ban") => {
+  const handleAction = async (userId: number, action: "warn" | "ban" | "suspend" | "unsuspend") => {
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
     try {
-      // BUG-42: include Authorization header for admin-gated endpoint
-      await fetch(`${base}/api/users/${userId}/moderation`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ action }),
-      });
-      toast({ title: action === "ban" ? "User banned" : "Warning issued" });
+      if (action === "suspend") {
+        await fetch(`${base}/api/admin/users/${userId}/suspend`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ reason: "Suspended by admin" }),
+        });
+        setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_suspended: true } : u));
+        toast({ title: "Account suspended" });
+      } else if (action === "unsuspend") {
+        await fetch(`${base}/api/admin/users/${userId}/unsuspend`, {
+          method: "POST",
+          headers: authHeaders(),
+        });
+        setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_suspended: false } : u));
+        toast({ title: "Account unsuspended" });
+      } else {
+        await fetch(`${base}/api/users/${userId}/moderation`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ action }),
+        });
+        toast({ title: action === "ban" ? "User banned" : "Warning issued" });
+      }
       setActionUser(null);
     } catch {
       toast({ title: "Action failed", variant: "destructive" });
@@ -284,6 +313,9 @@ function UsersTab() {
                   <Star className="w-3 h-3" />{(user.trust_score ?? 0).toFixed(0)}%
                 </span>
                 <span className="text-[10px] text-muted-foreground">{user.help_count} helps</span>
+                {user.is_suspended && (
+                  <span className="text-[10px] bg-destructive/10 text-destructive border border-destructive/20 px-2 py-0.5 rounded-full font-bold">Suspended</span>
+                )}
               </div>
             </div>
             <button
@@ -340,6 +372,29 @@ function UsersTab() {
                     <div className="text-xs text-muted-foreground">Remove from platform permanently</div>
                   </div>
                 </button>
+                {actionUser.is_suspended ? (
+                  <button
+                    onClick={() => handleAction(actionUser.id, "unsuspend")}
+                    className="w-full flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/30 rounded-2xl active:scale-[0.98] transition-all"
+                  >
+                    <Unlock className="w-5 h-5 text-green-400" />
+                    <div className="text-left">
+                      <div className="font-black text-sm text-green-400">Unsuspend</div>
+                      <div className="text-xs text-muted-foreground">Restore account access</div>
+                    </div>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleAction(actionUser.id, "suspend")}
+                    className="w-full flex items-center gap-3 p-4 bg-orange-500/10 border border-orange-500/30 rounded-2xl active:scale-[0.98] transition-all"
+                  >
+                    <OctagonX className="w-5 h-5 text-orange-400" />
+                    <div className="text-left">
+                      <div className="font-black text-sm text-orange-400">Suspend Account</div>
+                      <div className="text-xs text-muted-foreground">Block access pending review</div>
+                    </div>
+                  </button>
+                )}
                 <button
                   onClick={() => setActionUser(null)}
                   className="w-full p-3 text-sm text-muted-foreground active:text-foreground transition-colors"
@@ -351,6 +406,97 @@ function UsersTab() {
           </>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+
+function SuspendedTab() {
+  const [suspended, setSuspended] = useState<SuspendedUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actioning, setActioning] = useState<number | null>(null);
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
+  const fetchSuspended = () => {
+    setLoading(true);
+    fetch(`${base}/api/admin/suspended`, { headers: authHeaders() })
+      .then(r => r.json())
+      .then((data) => { if (Array.isArray(data)) setSuspended(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchSuspended(); }, []);
+
+  const handleUnsuspend = async (userId: number) => {
+    setActioning(userId);
+    try {
+      const res = await fetch(`${base}/api/admin/users/${userId}/unsuspend`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setSuspended(prev => prev.filter(u => u.id !== userId));
+      toast({ title: "Account unsuspended" });
+    } catch {
+      toast({ title: "Failed to unsuspend", variant: "destructive" });
+    } finally {
+      setActioning(null);
+    }
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
+      <RefreshCw className="w-5 h-5 animate-spin" /><span className="text-sm">Loading…</span>
+    </div>
+  );
+
+  if (suspended.length === 0) return (
+    <div className="text-center py-16">
+      <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-green-400/40" />
+      <div className="font-bold text-sm text-muted-foreground">No suspended accounts</div>
+      <div className="text-xs text-muted-foreground/60 mt-1">All clear</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      {suspended.map(user => (
+        <motion.div
+          key={user.id}
+          layout
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-card border border-destructive/30 rounded-2xl p-4"
+        >
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-destructive/10 border border-destructive/20 flex items-center justify-center shrink-0 font-black text-destructive">
+              {user.name[0]}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-black text-sm truncate">{user.name}</div>
+              <div className="text-[10px] text-muted-foreground truncate">{user.email}</div>
+              {user.suspended_reason && (
+                <div className="text-[10px] text-destructive mt-1 leading-relaxed">{user.suspended_reason}</div>
+              )}
+              {user.suspended_at && (
+                <div className="text-[10px] text-muted-foreground mt-0.5">
+                  Since {new Date(user.suspended_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => handleUnsuspend(user.id)}
+              disabled={actioning === user.id}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400 text-xs font-black disabled:opacity-50 active:scale-95 transition-all"
+            >
+              {actioning === user.id
+                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                : <Unlock className="w-3.5 h-3.5" />}
+              Unsuspend
+            </button>
+          </div>
+        </motion.div>
+      ))}
     </div>
   );
 }
@@ -503,7 +649,7 @@ export default function AdminScreen() {
     setReports(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r));
   };
 
-  const [adminTab, setAdminTab] = useState<"reports" | "users">("reports");
+  const [adminTab, setAdminTab] = useState<"reports" | "users" | "suspended">("reports");
   const pendingCount = reports.filter(r => r.status === "pending").length;
   const filteredReports = statusFilter === "all" ? reports : reports.filter(r => r.status === statusFilter);
 
@@ -572,6 +718,17 @@ export default function AdminScreen() {
             <Users className="w-4 h-4" />
             Users
           </button>
+          <button
+            onClick={() => setAdminTab("suspended")}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-black transition-colors border-b-2 ${
+              adminTab === "suspended"
+                ? "border-destructive text-destructive"
+                : "border-transparent text-muted-foreground active:text-foreground"
+            }`}
+          >
+            <OctagonX className="w-4 h-4" />
+            Suspended
+          </button>
         </div>
 
         {/* Filter chips — only shown on reports tab */}
@@ -600,7 +757,11 @@ export default function AdminScreen() {
         )}
       </div>
 
-      {adminTab === "users" ? (
+      {adminTab === "suspended" ? (
+        <div className="flex-1 max-w-lg mx-auto w-full p-4">
+          <SuspendedTab />
+        </div>
+      ) : adminTab === "users" ? (
         <div className="flex-1 max-w-lg mx-auto w-full p-4">
           <UsersTab />
         </div>
