@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown, Mic } from "lucide-react";
 import { authHeaders } from "../lib/auth";
 
-// NIA_SERVICE_URL removed — all Nia calls route through /api/nia/* proxy
+const NIA_SERVICE_URL = import.meta.env.VITE_NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app";
 const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
 const WELCOME_PHRASES = [
@@ -442,7 +442,7 @@ export function NiaDrawer({
       setShowSplash(true);
       isFirstOpen.current = false;
     }
-    fetch(`${API_BASE}/api/nia/history/${sessionId}`, { headers: authHeaders() })
+    fetch(`${NIA_SERVICE_URL}/history/${sessionId}`)
       .then((r) => r.json())
       .then((rows: { userMessage: string; niaResponse: string }[]) => {
         if (rows.length > 0) {
@@ -500,7 +500,7 @@ export function NiaDrawer({
     const coords = userCoords ?? userLocation;
 
     try {
-      const res = await fetch(`${API_BASE}/api/nia/chat`, {
+      const res = await fetch(`${NIA_SERVICE_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
@@ -526,24 +526,6 @@ export function NiaDrawer({
             updated[updated.length - 1] = {
               role: "nia",
               content: `You've reached your daily message limit with me. 💜\n\nYour limit resets at ${reset}. Rest well — I'll be here when you return.\n\n🆘 If this is an emergency, call 911. Crisis line: 988.`,
-              streaming: false,
-              timestamp: new Date(),
-            };
-          }
-          return updated;
-        });
-        setLoading(false);
-        return;
-      }
-
-      if (res.status === 503) {
-        setMessages((prev) => {
-          const updated = [...prev];
-          const last = updated[updated.length - 1];
-          if (last?.role === "nia" && last.streaming) {
-            updated[updated.length - 1] = {
-              role: "nia",
-              content: "Nia is temporarily unavailable. Please try again in a moment. 💜\n\n🆘 If this is urgent, call 988 (Crisis Line) or 211 (Community Resources).",
               streaming: false,
               timestamp: new Date(),
             };

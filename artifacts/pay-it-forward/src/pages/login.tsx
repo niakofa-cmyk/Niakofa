@@ -802,20 +802,13 @@ export default function LoginScreen() {
           transition={{ type: "spring", stiffness: 200, damping: 20 }}
           className="flex flex-col items-center mb-8"
         >
-          {/* Nia's single, real, draggable orb (NiaFab) renders on this screen too — see App.tsx NiaWrapper. This page no longer has its own static Nia button. */}
+          <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center mb-5 shadow-[0_0_40px_rgba(0,212,255,0.15)]">
+            <Heart className="w-10 h-10 text-primary" />
+          </div>
           <h1 className="text-3xl font-black tracking-tight text-foreground">Niakofa</h1>
           <p className="text-sm text-muted-foreground mt-1 text-center max-w-xs">
             Help Today. Pay It Forward Tomorrow.
           </p>
-          <motion.p
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5, duration: 0.6 }}
-            className="text-xs mt-2 font-medium"
-            style={{ color: "#1D9E75" }}
-          >
-            Sawubona — I see you. Tap Nia to chat.
-          </motion.p>
         </motion.div>
 
         {/* Mode toggle */}
