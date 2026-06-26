@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, helperAvailabilityTable } from "@workspace/db";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import {
   GetUserParams,
   UpdateUserParams,
@@ -17,7 +17,7 @@ import {
   CreateScheduledPaymentBody,
   GetScheduledPaymentsParams,
 } from "@workspace/api-zod";
-import { broadcast, sendToUser } from "../lib/ws-hub";
+import { broadcast } from "../lib/ws-hub";
 import { authLimiter, gpsLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
@@ -134,42 +134,10 @@ router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter,
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
   if (user.helper_mode_active) {
-    // Privacy enforcement: only send live location to users who have consented
-    // (privacy_live_location = true) AND are actively tracking this helper.
-    // The old broadcast() here sent coordinates to every connected WebSocket
-    // client regardless of privacy setting. helpers.ts only filtered the
-    // initial GET /helpers/online fetch — not live GPS updates.
-    const [helperSettings] = await db
-      .select({ privacy_live_location: userSettingsTable.privacy_live_location })
-      .from(userSettingsTable)
-      .where(eq(userSettingsTable.user_id, user.id))
-      .limit(1);
-
-    if (helperSettings?.privacy_live_location) {
-      const activeRequests = await db
-        .select({ requester_id: requestsTable.requester_id })
-        .from(requestsTable)
-        .where(
-          and(
-            eq(requestsTable.helper_id, user.id),
-            inArray(requestsTable.status, ["open", "en_route", "arrived"])
-          )
-        );
-
-      const locationEvent = {
-        type: "helper_location" as const,
-        payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng, heading: user.heading },
-      };
-
-      const requesterIds = activeRequests
-        .map(r => r.requester_id)
-        .filter((id): id is number => id !== null);
-
-      for (const requesterId of requesterIds) {
-        sendToUser(requesterId, locationEvent);
-      }
-      sendToUser(user.id, locationEvent);
-    }
+    broadcast({
+      type: "helper_location",
+      payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng, heading: user.heading },
+    });
   }
   // BUG-C03: strip password_hash before returning
   const { password_hash: _phLoc, ...safeLocUser } = user;
@@ -250,12 +218,8 @@ router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, re
     notes: "Pay It Forward pledge",
   });
 
-  // Pledge events are private to the parties on this request.
-  const pledgeUpdatePayload = { ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
-  sendToUser(pParsed.data.id, { type: "request_updated", payload: pledgeUpdatePayload });
-  if (updated.helper_id) sendToUser(updated.helper_id, { type: "request_updated", payload: pledgeUpdatePayload });
-  sendToUser(pParsed.data.id, { type: "pledge_paid", payload: { user_id: pParsed.data.id, request_id, amount, request_title: request.title } });
-  if (updated.helper_id) sendToUser(updated.helper_id, { type: "pledge_paid", payload: { user_id: pParsed.data.id, request_id, amount, request_title: request.title } });
+  broadcast({ type: "request_updated", payload: { ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null } });
+  broadcast({ type: "pledge_paid", payload: { user_id: pParsed.data.id, request_id, amount, request_title: request.title } });
   return res.json({ ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null });
 });
 
@@ -292,8 +256,7 @@ router.post("/users/:id/scheduled-payment", requireAuth, requireOwnership(), asy
     status: "pending",
     note: note ?? null,
   }).returning();
-  // Scheduled pledge is private to the user who set it.
-  sendToUser(userId, {
+  broadcast({
     type: "pledge_scheduled",
     payload: { user_id: userId, request_id, amount, scheduled_date },
   });
