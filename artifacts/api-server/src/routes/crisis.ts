@@ -1,11 +1,8 @@
 import { Router } from "express";
-import { db, crisisStateTable } from "@workspace/db";
-import { desc } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
-import { setCrisisModeActive } from "../lib/crisis-state";
 
 const router = Router();
 
@@ -13,125 +10,48 @@ export interface CrisisState {
   active: boolean;
   message: string;
   level: "info" | "warning" | "critical";
-  /** BUG-033: region is the configurable deployment area name (e.g. "Tarrant County").
-   * Set via CRISIS_DEFAULT_REGION env var so the banner subtitle is not hardcoded
-   * in frontend JSX. Falls back to undefined — the frontend renders a generic label. */
-  region?: string;
   activatedAt?: string;
   resources?: Array<{ label: string; phone?: string; url?: string }>;
 }
 
-const DEFAULT_STATE: CrisisState = { active: false, message: "", level: "warning", resources: [] };
+let crisisState: CrisisState = {
+  active: false,
+  message: "",
+  level: "warning",
+  resources: [],
+};
 
-async function getCurrentCrisisState(): Promise<CrisisState> {
-  const [row] = await db.select().from(crisisStateTable).orderBy(desc(crisisStateTable.created_at)).limit(1);
-  if (!row) return DEFAULT_STATE;
-  return {
-    active: row.active,
-    message: row.message,
-    level: row.level as CrisisState["level"],
-    // BUG-033: Include region in the API response so the frontend can render
-    // a configurable banner subtitle. No hardcoded regional default — Niakofa
-    // operates globally, and defaulting every unconfigured deployment to a
-    // single US county would be actively wrong for users elsewhere. Each
-    // deployment sets CRISIS_DEFAULT_REGION for its own area.
-    region: process.env["CRISIS_DEFAULT_REGION"] ?? undefined,
-    activatedAt: row.created_at.toISOString(),
-    resources: row.resources ? JSON.parse(row.resources) : [],
-  };
-}
-
-router.get("/crisis/status", requireAuth, async (_req, res) => {
-  try {
-    res.json(await getCurrentCrisisState());
-  } catch (err) {
-    logger.error({ err }, "crisis/status: DB read failed");
-    res.json(DEFAULT_STATE);
-  }
+router.get("/crisis/status", (_req, res) => {
+  res.json(crisisState);
 });
 
-router.post("/crisis/activate", requireAuth, requireAdmin(), async (req, res) => {
+router.post("/crisis/activate", requireAuth, requireAdmin(), (req, res) => {
   const { message, level, resources } = req.body as {
     message?: string;
     level?: string;
     resources?: CrisisState["resources"];
   };
-  // Default resources are configurable via CRISIS_DEFAULT_RESOURCES (JSON
-  // array). Niakofa is a global platform — there is no safe universal
-  // default emergency contact, so an unconfigured deployment falls back to
-  // an empty list rather than a US-specific phone number that would be
-  // wrong (and potentially dangerous) for users outside that one county.
-  // Validate that a parsed value is an array of { label, phone?, url? } objects —
-  // the TypeScript cast alone does not check the runtime shape.
-  function isValidResources(val: unknown): val is CrisisState["resources"] {
-    return Array.isArray(val) && val.every(
-      (r) => r !== null && typeof r === "object" && typeof (r as Record<string, unknown>).label === "string",
-    );
-  }
-  const envDefaults = (() => {
-    try {
-      const raw = process.env["CRISIS_DEFAULT_RESOURCES"];
-      if (!raw) return null;
-      const parsed: unknown = JSON.parse(raw);
-      if (!isValidResources(parsed)) {
-        logger.warn("crisis: CRISIS_DEFAULT_RESOURCES is not a valid resource array — ignoring");
-        return null;
-      }
-      return parsed;
-    } catch {
-      return null;
-    }
-  })();
-  const finalResources = resources ?? envDefaults ?? [];
-  // Allow each deployment to set a custom default message via
-  // CRISIS_DEFAULT_MESSAGE. No region-specific fallback text — "Tarrant
-  // County" would be wrong (and confusing) for every other deployment.
-  const finalMessage = message ?? process.env["CRISIS_DEFAULT_MESSAGE"] ?? "⚠️ Emergency situation active in your area. Check nearby requests and stay safe.";
-  const finalLevel = (level as CrisisState["level"]) ?? "warning";
-
-  const [row] = await db.insert(crisisStateTable).values({
+  crisisState = {
     active: true,
-    message: finalMessage,
-    level: finalLevel,
-    resources: JSON.stringify(finalResources),
-    activated_by: req.authenticatedUserId ? String(req.authenticatedUserId) : null,
-  }).returning();
-
-  const state: CrisisState = {
-    active: true,
-    message: finalMessage,
-    level: finalLevel,
-    activatedAt: row.created_at.toISOString(),
-    resources: finalResources,
+    message: message ?? "⚠️ Emergency situation active in Tarrant County. Check nearby requests and stay safe.",
+    level: (level as CrisisState["level"]) ?? "warning",
+    activatedAt: new Date().toISOString(),
+    resources: resources ?? [
+      { label: "Fort Worth Emergency Mgmt", phone: "817-392-6100" },
+      { label: "Tarrant County 211", phone: "211" },
+      { label: "Red Cross North TX", url: "https://www.redcross.org" },
+    ],
   };
-
-  broadcast({ type: "crisis_update", payload: state });
-  logger.warn({ state }, "crisis: mode activated");
-
-  // Set shared (Redis-backed) flag so crisisAwareChatLimiter switches to
-  // elevated limits immediately, consistently across all instances.
-  await setCrisisModeActive(true);
-
-  res.json(state);
+  broadcast({ type: "crisis_update", payload: crisisState });
+  logger.warn({ crisisState }, "crisis: mode activated");
+  res.json(crisisState);
 });
 
-router.post("/crisis/deactivate", requireAuth, requireAdmin(), async (req, res) => {
-  await db.insert(crisisStateTable).values({
-    active: false,
-    message: "",
-    level: "warning",
-    resources: JSON.stringify([]),
-    activated_by: req.authenticatedUserId ? String(req.authenticatedUserId) : null,
-  });
-
-  broadcast({ type: "crisis_update", payload: DEFAULT_STATE });
+router.post("/crisis/deactivate", requireAuth, requireAdmin(), (_req, res) => {
+  crisisState = { active: false, message: "", level: "warning", resources: [] };
+  broadcast({ type: "crisis_update", payload: crisisState });
   logger.info("crisis: mode deactivated");
-
-  // Clear shared (Redis-backed) flag so chat rate limits return to normal
-  // consistently across all instances.
-  await setCrisisModeActive(false);
-
-  res.json(DEFAULT_STATE);
+  res.json(crisisState);
 });
 
 export default router;

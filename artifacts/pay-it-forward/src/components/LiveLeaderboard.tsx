@@ -367,7 +367,7 @@ export default function LiveLeaderboard() {
                     </div>
                     <div className="flex items-center gap-1 mt-0.5 text-[10px] text-muted-foreground">
                       <MapPin className="w-2.5 h-2.5 shrink-0" />
-                      <span className="truncate">{entry.neighborhood ?? entry.city ?? "Your area"}</span>
+                      <span className="truncate">{entry.neighborhood ?? entry.city ?? "Fort Worth"}</span>
                       <span className="text-muted-foreground/40 mx-0.5">·</span>
                       <span className="tabular-nums">{entry.help_count} helped</span>
                       {entry.monthly_contributions > 0 && (

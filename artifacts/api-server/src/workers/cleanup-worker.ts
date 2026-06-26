@@ -17,23 +17,20 @@
 import { Worker, type Job } from "bullmq";
 import { db, requestsTable } from "@workspace/db";
 import { eq, and, lt, inArray, sql } from "drizzle-orm";
-import { getRedisConnection, QUEUE, cleanupQueue } from "../lib/queue";
+import { getRedisConnection, QUEUE } from "../lib/queue";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 
 const CLEANUP_JOB_NAME = "daily-request-cleanup";
 const CLEANUP_REPEAT   = { pattern: "0 3 * * *" }; // 3 AM daily (low traffic)
 
-// Expiry thresholds by urgency (in milliseconds). Kept as a typed array
-// rather than Object.entries(Record<string, number>) — Object.entries always
-// widens keys back to plain `string`, which no longer satisfies the strict
-// urgency enum type after the help_request_urgency migration.
-const EXPIRY_THRESHOLDS: Array<{ urgency: "emergency" | "high" | "medium" | "low"; ms: number }> = [
-  { urgency: "emergency", ms: 2  * 60 * 60 * 1000 },
-  { urgency: "high",      ms: 6  * 60 * 60 * 1000 },
-  { urgency: "medium",    ms: 24 * 60 * 60 * 1000 },
-  { urgency: "low",       ms: 72 * 60 * 60 * 1000 },
-];
+// Expiry thresholds by urgency (in milliseconds)
+const EXPIRY_MS: Record<string, number> = {
+  emergency: 2  * 60 * 60 * 1000,
+  high:      6  * 60 * 60 * 1000,
+  medium:    24 * 60 * 60 * 1000,
+  low:       72 * 60 * 60 * 1000,
+};
 
 const ORPHAN_CLAIMED_MS = 4 * 60 * 60 * 1000; // 4 hours stuck in "claimed"
 
@@ -44,7 +41,7 @@ async function runCleanup(_job: Job): Promise<void> {
   let totalExpired = 0;
 
   // 1. Expire stale open requests per urgency threshold
-  for (const { urgency, ms: expiryMs } of EXPIRY_THRESHOLDS) {
+  for (const [urgency, expiryMs] of Object.entries(EXPIRY_MS)) {
     const cutoff = new Date(now.getTime() - expiryMs);
     const expired = await db
       .update(requestsTable)
@@ -75,42 +72,14 @@ async function runCleanup(_job: Job): Promise<void> {
     }
   }
 
-  // 2. Release orphaned "claimed" requests back to the open pool (stuck
-  // > 4 hours with no progress) — the helper presumably went unresponsive
-  // or abandoned it. Reset to "open" with no helper_id so it can actually
-  // be re-claimed by someone else, rather than terminating it outright.
-  //
-  // BUG-012: claimed_at is nullable. A NULL claimed_at compared with lt()
-  // evaluates to NULL (false) in PostgreSQL, silently skipping orphaned rows
-  // that have no timestamp. We guard with IS NOT NULL explicitly.
-  // Rows with status='claimed' AND claimed_at IS NULL are a data integrity
-  // issue and are logged separately below for admin visibility.
+  // 2. Expire orphaned "claimed" requests (stuck > 4 hours with no progress)
   const orphanCutoff = new Date(now.getTime() - ORPHAN_CLAIMED_MS);
-
-  // Log any claimed requests missing a timestamp — data integrity alert
-  const missingTimestamp = await db
-    .select({ id: requestsTable.id })
-    .from(requestsTable)
-    .where(
-      and(
-        eq(requestsTable.status, "claimed"),
-        sql`${requestsTable.claimed_at} IS NULL`
-      )
-    );
-  if (missingTimestamp.length > 0) {
-    logger.error(
-      { count: missingTimestamp.length, ids: missingTimestamp.map((r: Record<string, unknown>) => r.id) },
-      "cleanup-worker: data integrity — claimed requests with NULL claimed_at"
-    );
-  }
-
   const orphaned = await db
     .update(requestsTable)
-    .set({ status: "open", helper_id: null, claimed_at: null, en_route_at: null, arrived_at: null })
+    .set({ status: "expired", helper_id: null })
     .where(
       and(
         eq(requestsTable.status, "claimed"),
-        sql`${requestsTable.claimed_at} IS NOT NULL`,
         lt(requestsTable.claimed_at, orphanCutoff)
       )
     )
@@ -120,12 +89,14 @@ async function runCleanup(_job: Job): Promise<void> {
     totalExpired += orphaned.length;
     logger.warn(
       { count: orphaned.length },
-      "cleanup-worker: released orphaned claimed requests back to open"
+      "cleanup-worker: expired orphaned claimed requests"
     );
     for (const req of orphaned) {
+      // Re-broadcast as "open" so another helper can pick it up
+      // (in a real system, we'd reset to open and re-notify)
       broadcast({
         type: "request_updated",
-        payload: { id: req.id, status: "open" },
+        payload: { id: req.id, status: "expired" },
       });
     }
   }
@@ -140,6 +111,7 @@ export async function startCleanupWorker(): Promise<Worker | null> {
     return null;
   }
 
+  const { cleanupQueue } = await import("../lib/queue");
   if (cleanupQueue) {
     await cleanupQueue.add(CLEANUP_JOB_NAME, {}, {
       repeat: CLEANUP_REPEAT,

@@ -1,10 +1,4 @@
-// LOW-004: tier thresholds (the >= comparisons) now live in
-// @workspace/trust-tiers as the single shared source for both this file
-// and api-server's lib/trust-tiers.ts. TIER_CONFIG below (labels, colors,
-// icons, descriptions) stays local since it's UI-only and has no backend
-// equivalent to drift out of sync with.
-export type { TrustTier } from "@workspace/trust-tiers";
-import { getTrustTier as getTrustTierShared, type TrustTier } from "@workspace/trust-tiers";
+export type TrustTier = "member" | "verified" | "trusted" | "elite" | "anchor";
 
 interface TierConfig {
   label: string;
@@ -71,7 +65,13 @@ export const TIER_CONFIG: Record<TrustTier, TierConfig> = {
 };
 
 // Compute trust tier from trust_score (0-100) and help_count
-export const getTrustTier = getTrustTierShared;
+export function getTrustTier(trustScore: number, helpCount: number): TrustTier {
+  if (helpCount >= 50 && trustScore >= 97) return "anchor";
+  if (helpCount >= 30 && trustScore >= 95) return "elite";
+  if (helpCount >= 15 && trustScore >= 90) return "trusted";
+  if (helpCount >= 5 || trustScore >= 85) return "verified";
+  return "member";
+}
 
 // Progress toward next tier (0-1)
 export function tierProgress(trustScore: number, helpCount: number): { pct: number; nextLabel: string } {

@@ -17,19 +17,6 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
-let _unauthorizedHandler: ((response: Response) => void) | null = null;
-
-/**
- * ENH-003: register a callback invoked whenever any request made through
- * customFetch comes back with a 401. Previously a 401 just propagated as a
- * thrown ApiError up through whichever React Query hook triggered it, with
- * no app-wide reaction — every screen had to handle session expiry on its
- * own (most didn't), so an expired token silently failed call after call.
- * Pass `null` to clear the handler.
- */
-export function setUnauthorizedHandler(handler: ((response: Response) => void) | null): void {
-  _unauthorizedHandler = handler;
-}
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -376,9 +363,6 @@ export async function customFetch<T = unknown>(
   const response = await fetch(input, { ...init, method, headers });
 
   if (!response.ok) {
-    if (response.status === 401 && _unauthorizedHandler) {
-      _unauthorizedHandler(response);
-    }
     const errorData = await parseErrorBody(response, method);
     throw new ApiError(response, errorData, requestInfo);
   }

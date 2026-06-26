@@ -84,11 +84,6 @@ async function reconcilePledges(_job: Job): Promise<void> {
         requestId: request.id ?? undefined,
       }).catch(() => {});
 
-      await db.update(scheduledPaymentsTable)
-        .set({ status: "overdue" })
-        .where(eq(scheduledPaymentsTable.id, scheduled.id))
-        .catch(() => {});
-
       logger.info(
         { user_id: scheduled.user_id, request_id: request.id, amount: scheduled.amount },
         "pledge-worker: reminder sent"

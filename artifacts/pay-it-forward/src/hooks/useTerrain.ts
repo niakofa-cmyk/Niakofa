@@ -91,18 +91,7 @@ export function useTerrain(mapRef: RefObject<mapboxgl.Map | null>): void {
     return () => {
       removed = true;
       if (pollId) clearInterval(pollId);
-      // If unmount happens after the "load" listener was attached but
-      // before the map actually finished loading, remove it explicitly --
-      // otherwise it lingers on the map instance until the map itself is
-      // destroyed, even though `removed` already makes setup() a no-op.
       const m = mapRef.current;
-      if (m) {
-        try {
-          m.off("load", setup);
-        } catch {
-          // Map may already be destroyed
-        }
-      }
       if (!m || !m.isStyleLoaded()) return;
       try {
         if (m.getLayer("niakofa-3d-buildings")) m.removeLayer("niakofa-3d-buildings");

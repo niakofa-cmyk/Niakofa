@@ -8,10 +8,6 @@ interface BottomSheetProps {
   requests: HelpRequest[];
   onClaim: (request: HelpRequest) => void;
   isClaiming: boolean;
-  /** BUG-023: ID of the request the helper dismissed from DispatchIntelligenceCard.
-   * Dismissed requests are deprioritized (moved to the bottom) in this list
-   * so they don't immediately reappear after being dismissed from the card. */
-  dismissedId?: number | null;
 }
 
 function getCategoryIcon(category: string) {
@@ -57,17 +53,9 @@ function PaymentBadge({ type }: { type: string }) {
   }
 }
 
-export function BottomSheet({ requests, onClaim, isClaiming, dismissedId }: BottomSheetProps) {
+export function BottomSheet({ requests, onClaim, isClaiming }: BottomSheetProps) {
   const [, setLocation] = useLocation();
   const sorted = [...requests].sort((a, b) => {
-    // BUG-023: Deprioritize the dismissed request by sorting it to the bottom.
-    // When a helper dismisses the best-match card, that same request would
-    // otherwise immediately reappear at the top of this list. Moving it to
-    // the end gives the helper a chance to see other requests first.
-    if (dismissedId != null) {
-      if (a.id === dismissedId) return 1;
-      if (b.id === dismissedId) return -1;
-    }
     const urgencyOrder: Record<string, number> = { emergency: 0, high: 1, medium: 2, low: 3 };
     const urgencyDiff = (urgencyOrder[a.urgency ?? 'low'] ?? 3) - (urgencyOrder[b.urgency ?? 'low'] ?? 3);
     if (urgencyDiff !== 0) return urgencyDiff;
@@ -78,7 +66,6 @@ export function BottomSheet({ requests, onClaim, isClaiming, dismissedId }: Bott
     <motion.div
       initial={{ y: "100%" }}
       animate={{ y: 0 }}
-      exit={{ y: "100%" }}
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
       className="absolute bottom-0 left-0 right-0 z-20 bg-card border-t border-border rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.5)] flex flex-col max-h-[65vh]"
     >

@@ -1,10 +1,9 @@
 import { useLocation, Link } from "wouter";
 import { Map, Users, Plus, Wallet, User, Bell } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NotificationsDrawer, type LiveNotification } from "./NotificationsDrawer";
 import { useWebSocket } from "@/lib/useWebSocket";
-import { authHeaders } from "@/lib/auth";
 import type { HelpRequest } from "@workspace/api-client-react";
 import { useTranslation } from "react-i18next";
 
@@ -57,19 +56,6 @@ export function BottomNav() {
   const [unreadCount, setUnreadCount] = useState(0);
   const seenIds = useRef(new Set<string>());
 
-  // ENH-015: seed the badge with the real persisted unread count when the
-  // app opens — previously this always started at 0 on every load/reload
-  // and only reflected messages received live during the current session.
-  useEffect(() => {
-    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-    fetch(`${base}/api/chat/unread-count`, { headers: authHeaders() })
-      .then(r => r.ok ? r.json() : null)
-      .then((data: { unread_count?: number } | null) => {
-        if (data?.unread_count) setUnreadCount(prev => prev + data.unread_count!);
-      })
-      .catch(() => {});
-  }, []);
-
   const addNotif = (n: LiveNotification) => {
     if (seenIds.current.has(n.id)) return;
     seenIds.current.add(n.id);
@@ -98,9 +84,6 @@ export function BottomNav() {
         time: new Date(),
       });
     } else if (event.type === "request_updated") {
-      // request_updated is now scoped server-side to requester + helper only.
-      // No additional user_id guard needed here — every socket that receives
-      // this event is a party to the request.
       const req = event.payload as HelpRequest;
       if (req.status === "claimed" && req.helper_name) {
         addNotif({
@@ -120,7 +103,6 @@ export function BottomNav() {
         });
       }
     } else if (event.type === "pledge_paid") {
-      // Server scopes pledge_paid to requester + helper via sendToUser.
       const p = event.payload as { amount: number; request_title: string };
       addNotif({
         id: `pledge-paid-${Date.now()}`,
@@ -130,7 +112,6 @@ export function BottomNav() {
         time: new Date(),
       });
     } else if (event.type === "pledge_scheduled") {
-      // Server scopes pledge_scheduled to the scheduling user via sendToUser.
       const p = event.payload as { amount: number; scheduled_date: string };
       const d = new Date(p.scheduled_date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
       addNotif({
@@ -191,7 +172,6 @@ export function BottomNav() {
           {/* Alerts bell — unread count badge, clears on open */}
           <button
             onClick={openNotifications}
-            aria-label="Notifications"
             className="flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all min-w-[52px] relative active:scale-95"
           >
             <div className="relative">

@@ -11,28 +11,6 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// No HTML-escaping utility existed anywhere in this codebase (the "esc("
-// hits found earlier were false positives — substring matches on
-// drizzle-orm's `desc(...)`). User-supplied strings (names, request titles,
-// alert bodies) were being interpolated directly into HTML emails sent from
-// the Niakofa address — an HTML/phishing-link injection risk. This escapes
-// the characters that matter for both HTML text content and double-quoted
-// attribute contexts (e.g. href="...").
-export function escapeHtml(input: string): string {
-  return input
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-// Email subjects become SMTP headers — strip CR/LF so user content can't
-// inject extra headers into the message.
-export function sanitizeHeaderValue(input: string): string {
-  return input.replace(/[\r\n]+/g, " ").trim();
-}
-
 export interface ReceiptData {
   to: string;
   helperName: string;
@@ -43,44 +21,12 @@ export interface ReceiptData {
   completedAt: Date;
 }
 
-function isSmtpConfigured(): boolean {
-  const user = process.env["SMTP_USER"];
-  const pass = process.env["SMTP_PASS"];
-  if (!user || !pass) {
-    logger.warn({ hasUser: !!user, hasPass: !!pass }, "SMTP not fully configured — email disabled");
-    return false;
-  }
-  return true;
-}
-
-// BUG-4-M10: Retry helper with exponential backoff — transient SMTP 503s
-// previously silently dropped verification, payout, and crisis emails.
-// Retries up to maxAttempts times with 1s, 2s, 4s delays.
-async function withSmtpRetry(fn: () => Promise<void>, label: string, maxAttempts = 3): Promise<void> {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      await fn();
-      return;
-    } catch (err) {
-      const isTransient = (err as { responseCode?: number }).responseCode === 503
-        || (err as { code?: string }).code === "ECONNRESET"
-        || (err as { code?: string }).code === "ETIMEDOUT";
-      if (!isTransient || attempt === maxAttempts) {
-        // Non-transient or final attempt — log and give up (never send internal
-        // error details to end users — BUG-4-H06 guard).
-        logger.error({ label, attempt, code: (err as { code?: string }).code }, `mailer: ${label} failed after ${attempt} attempt(s)`);
-        return;
-      }
-      const delay = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s
-      logger.warn({ label, attempt, delay }, `mailer: transient SMTP error — retrying in ${delay}ms`);
-      await new Promise(r => setTimeout(r, delay));
-    }
-  }
-}
-
 export async function sendReceipt(data: ReceiptData): Promise<void> {
-  if (!isSmtpConfigured()) return;
-  const smtpUser = process.env["SMTP_USER"]!;
+  const smtpUser = process.env["SMTP_USER"];
+  if (!smtpUser) {
+    logger.warn("SMTP not configured — skipping receipt email");
+    return;
+  }
 
   const amountLine = data.amount
     ? `<p style="font-size:28px;font-weight:900;color:#00d4ff;margin:0">$${data.amount.toFixed(2)}</p>`
@@ -98,12 +44,12 @@ export async function sendReceipt(data: ReceiptData): Promise<void> {
     </div>
     <div style="background:#111827;border:1px solid #1e3a5f;border-radius:16px;padding:24px;margin-bottom:24px">
       <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Request Completed</div>
-      <div style="font-size:18px;font-weight:700;margin-bottom:16px">${escapeHtml(data.requestTitle)}</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:16px">${data.requestTitle}</div>
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-        <span style="color:#64748b">Helper</span><span style="font-weight:600">${escapeHtml(data.helperName)}</span>
+        <span style="color:#64748b">Helper</span><span style="font-weight:600">${data.helperName}</span>
       </div>
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-        <span style="color:#64748b">Requester</span><span style="font-weight:600">${escapeHtml(data.requesterName)}</span>
+        <span style="color:#64748b">Requester</span><span style="font-weight:600">${data.requesterName}</span>
       </div>
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
         <span style="color:#64748b">Completed</span><span>${data.completedAt.toLocaleString()}</span>
@@ -113,21 +59,23 @@ export async function sendReceipt(data: ReceiptData): Promise<void> {
     </div>
     <p style="text-align:center;font-size:12px;color:#64748b">
       Thank you for being part of the Niakofa community.<br>
-      Your kindness makes your community stronger.
+      Your kindness makes Fort Worth stronger.
     </p>
   </div>
 </body>
 </html>`;
 
-  await withSmtpRetry(async () => {
+  try {
     await transporter.sendMail({
       from: `"Niakofa" <${smtpUser}>`,
       to: data.to,
-      subject: `✅ Help completed: ${sanitizeHeaderValue(data.requestTitle)}`,
+      subject: `✅ Help completed: ${data.requestTitle}`,
       html,
     });
     logger.info({ to: data.to }, "receipt: email sent");
-  }, "sendReceipt");
+  } catch (err) {
+    logger.error({ err, to: data.to }, "receipt: email failed");
+  }
 }
 
 export interface AlertEmailData {
@@ -140,11 +88,11 @@ export interface AlertEmailData {
 }
 
 export async function sendAlertEmail(data: AlertEmailData): Promise<void> {
-  if (!isSmtpConfigured()) return;
-  const smtpUser = process.env["SMTP_USER"]!;
+  const smtpUser = process.env["SMTP_USER"];
+  if (!smtpUser) return;
 
   const ctaBlock = data.ctaText && data.ctaUrl
-    ? `<div style="text-align:center;margin-top:24px"><a href="${escapeHtml(data.ctaUrl)}" style="display:inline-block;background:#00d4ff;color:#0a0f1e;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;text-decoration:none">${escapeHtml(data.ctaText)}</a></div>`
+    ? `<div style="text-align:center;margin-top:24px"><a href="${data.ctaUrl}" style="display:inline-block;background:#00d4ff;color:#0a0f1e;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;text-decoration:none">${data.ctaText}</a></div>`
     : "";
 
   const html = `<!DOCTYPE html>
@@ -155,8 +103,8 @@ export async function sendAlertEmail(data: AlertEmailData): Promise<void> {
       <div style="font-size:28px;font-weight:900;color:#00d4ff">Niakofa</div>
     </div>
     <div style="background:#111827;border:1px solid #1e3a5f;border-radius:16px;padding:24px">
-      <div style="font-size:18px;font-weight:700;margin-bottom:12px">${escapeHtml(data.title)}</div>
-      <div style="color:#94a3b8;line-height:1.6">${escapeHtml(data.body)}</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:12px">${data.title}</div>
+      <div style="color:#94a3b8;line-height:1.6">${data.body}</div>
       ${ctaBlock}
     </div>
     <p style="text-align:center;font-size:12px;color:#475569;margin-top:16px">
@@ -166,89 +114,17 @@ export async function sendAlertEmail(data: AlertEmailData): Promise<void> {
 </body>
 </html>`;
 
-  await withSmtpRetry(async () => {
+  try {
     await transporter.sendMail({
       from: `"Niakofa" <${smtpUser}>`,
       to: data.to,
-      subject: sanitizeHeaderValue(data.subject),
+      subject: data.subject,
       html,
     });
     logger.info({ to: data.to, subject: data.subject }, "alert email sent");
-  }, "sendAlertEmail");
-}
-
-export interface HelperDecisionData {
-  to: string;
-  applicantName: string;
-  decision: "approved" | "denied";
-  appUrl?: string;
-}
-
-export async function sendHelperApplicationDecision(data: HelperDecisionData): Promise<void> {
-  if (!isSmtpConfigured()) return;
-  const smtpUser = process.env["SMTP_USER"]!;
-  const appUrl = escapeHtml(data.appUrl ?? "https://niakofa.community");
-
-  const isApproved = data.decision === "approved";
-  const safeApplicantName = escapeHtml(data.applicantName);
-
-  const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="background:#0a0f1e;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;margin:0;padding:0">
-  <div style="max-width:480px;margin:0 auto;padding:32px 24px">
-    <div style="text-align:center;margin-bottom:32px">
-      <div style="font-size:32px;font-weight:900;color:#00d4ff;letter-spacing:-1px">Niakofa</div>
-      <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:2px;margin-top:4px">Help Today · Pay It Forward Tomorrow</div>
-    </div>
-
-    <div style="background:#111827;border:1px solid ${isApproved ? "#16a34a33" : "#dc262633"};border-radius:16px;padding:32px;text-align:center;margin-bottom:24px">
-      <div style="font-size:48px;margin-bottom:16px">${isApproved ? "🎉" : "💙"}</div>
-      <h1 style="font-size:22px;font-weight:900;margin:0 0 12px;color:${isApproved ? "#22c55e" : "#94a3b8"}">
-        ${isApproved ? "You're Approved as a Helper!" : "Application Not Approved"}
-      </h1>
-      <p style="color:#94a3b8;line-height:1.6;margin:0 0 24px">
-        Hi ${safeApplicantName},<br><br>
-        ${isApproved
-          ? "Your Niakofa helper application has been <strong style='color:#22c55e'>approved</strong>. You can now activate Helper Mode and start accepting requests from neighbors who need your support."
-          : "Thank you for applying to be a Niakofa community helper. After review, we're unable to approve your application at this time. You may re-apply in 30 days. If you have questions, contact us at <a href='mailto:help@niakofa.community' style='color:#00d4ff'>help@niakofa.community</a>."}
-      </p>
-      ${isApproved ? `<a href="${appUrl}" style="display:inline-block;background:#00d4ff;color:#0a0f1e;font-weight:800;font-size:14px;padding:14px 28px;border-radius:10px;text-decoration:none;letter-spacing:0.5px">Open the App →</a>` : ""}
-    </div>
-
-    ${isApproved ? `
-    <div style="background:#111827;border:1px solid #1e3a5f;border-radius:12px;padding:20px;margin-bottom:24px">
-      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">What's next</div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        ${["Open your profile and enable Helper Mode", "Browse open requests near you on the map", "Claim a request and make someone's day"].map((step, i) => `
-        <div style="display:flex;align-items:center;gap:12px">
-          <div style="width:24px;height:24px;background:#00d4ff22;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#00d4ff;flex-shrink:0">${i + 1}</div>
-          <span style="font-size:13px;color:#cbd5e1">${step}</span>
-        </div>`).join("")}
-      </div>
-    </div>` : ""}
-
-    <p style="text-align:center;font-size:12px;color:#475569;line-height:1.6">
-      ${isApproved ? "Welcome to the team, neighbor. Your community is stronger because of you." : "Thank you for your interest in making your community stronger."}<br>
-      — The Niakofa Community
-    </p>
-  </div>
-</body>
-</html>`;
-
-  const subject = isApproved
-    ? "🎉 You're approved — welcome to the Niakofa helper team!"
-    : "Your Niakofa helper application update";
-
-  await withSmtpRetry(async () => {
-    await transporter.sendMail({
-      from: `"Niakofa" <${smtpUser}>`,
-      to: data.to,
-      subject,
-      html,
-    });
-    logger.info({ to: data.to, decision: data.decision }, "helper decision email sent");
-  }, "sendHelperApplicationDecision");
+  } catch (err) {
+    logger.error({ err, to: data.to }, "alert email failed");
+  }
 }
 
 export interface TipData {
@@ -259,8 +135,8 @@ export interface TipData {
 }
 
 export async function sendTipNotification(data: TipData): Promise<void> {
-  if (!isSmtpConfigured()) return;
-  const smtpUser = process.env["SMTP_USER"]!;
+  const smtpUser = process.env["SMTP_USER"];
+  if (!smtpUser) return;
 
   const html = `
 <!DOCTYPE html>
@@ -269,169 +145,20 @@ export async function sendTipNotification(data: TipData): Promise<void> {
   <div style="text-align:center;padding:32px;background:#111827;border:1px solid #16a34a33;border-radius:16px">
     <div style="font-size:48px;margin-bottom:16px">💚</div>
     <div style="font-size:28px;font-weight:900;color:#22c55e">+$${data.tipAmount.toFixed(2)}</div>
-    <div style="font-size:14px;color:#64748b;margin-top:8px">Tip received for: <strong style="color:#e2e8f0">${escapeHtml(data.requestTitle)}</strong></div>
-    <div style="font-size:12px;color:#64748b;margin-top:16px">Hi ${escapeHtml(data.helperName)}, someone appreciated your help so much they left a tip. It's been added to your wallet.</div>
+    <div style="font-size:14px;color:#64748b;margin-top:8px">Tip received for: <strong style="color:#e2e8f0">${data.requestTitle}</strong></div>
+    <div style="font-size:12px;color:#64748b;margin-top:16px">Hi ${data.helperName}, someone appreciated your help so much they left a tip. It's been added to your wallet.</div>
   </div>
 </body>
 </html>`;
 
-  await withSmtpRetry(async () => {
+  try {
     await transporter.sendMail({
       from: `"Niakofa" <${smtpUser}>`,
       to: data.to,
-      subject: sanitizeHeaderValue(`💚 You received a tip for: ${data.requestTitle}`),
+      subject: `💚 You received a tip for: ${data.requestTitle}`,
       html,
     });
-  }, "sendTipNotification");
-}
-
-// ── Phase 11J: Request lifecycle emails ──────────────────────────────────────
-
-export interface RequestConfirmationData {
-  to: string;
-  requesterName: string;
-  requestTitle: string;
-  category: string;
-  urgency: string;
-  requestId: number;
-  appUrl?: string;
-}
-
-export async function sendRequestConfirmation(data: RequestConfirmationData): Promise<void> {
-  if (!isSmtpConfigured()) return;
-  const smtpUser = process.env["SMTP_USER"]!;
-  const appUrl = data.appUrl ?? "https://niakofa.com";
-  const urgencyColor = data.urgency === "emergency" ? "#ef4444" : data.urgency === "high" ? "#f97316" : "#00d4ff";
-
-  const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="background:#0a0f1e;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;margin:0;padding:0">
-  <div style="max-width:480px;margin:0 auto;padding:32px 24px">
-    <div style="text-align:center;margin-bottom:28px">
-      <div style="font-size:30px;font-weight:900;color:#00d4ff;letter-spacing:-1px">Niakofa</div>
-      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:2px;margin-top:4px">Help Today · Pay It Forward Tomorrow</div>
-    </div>
-    <div style="background:#111827;border:1px solid #1e3a5f;border-radius:16px;padding:28px;margin-bottom:20px;text-align:center">
-      <div style="font-size:40px;margin-bottom:12px">📍</div>
-      <h1 style="font-size:20px;font-weight:900;margin:0 0 8px;color:#f1f5f9">Request Submitted!</h1>
-      <p style="color:#94a3b8;margin:0 0 20px;line-height:1.6">Hi ${escapeHtml(data.requesterName)}, your request is live and nearby helpers have been notified.</p>
-      <div style="background:#0a0f1e;border-radius:10px;padding:16px;margin-bottom:20px;text-align:left">
-        <div style="font-size:12px;color:#64748b;margin-bottom:4px">Request</div>
-        <div style="font-size:16px;font-weight:700">${escapeHtml(data.requestTitle)}</div>
-        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-          <span style="font-size:11px;background:#1e3a5f;color:#94a3b8;padding:3px 8px;border-radius:20px;text-transform:capitalize">${escapeHtml(data.category.replace(/_/g, " "))}</span>
-          <span style="font-size:11px;background:${urgencyColor}22;color:${urgencyColor};padding:3px 8px;border-radius:20px;text-transform:capitalize;border:1px solid ${urgencyColor}44">${escapeHtml(data.urgency)}</span>
-        </div>
-      </div>
-      <a href="${escapeHtml(appUrl)}/request/${data.requestId}/track" style="display:inline-block;background:#00d4ff;color:#0a0f1e;font-weight:800;font-size:13px;padding:12px 24px;border-radius:10px;text-decoration:none">Track Your Request →</a>
-    </div>
-    <p style="text-align:center;font-size:12px;color:#475569">We'll notify you the moment a helper accepts.</p>
-  </div>
-</body></html>`;
-
-  await withSmtpRetry(async () => {
-    await transporter.sendMail({
-      from: `"Niakofa" <${smtpUser}>`,
-      to: data.to,
-      subject: sanitizeHeaderValue(`📍 Request submitted: ${data.requestTitle}`),
-      html,
-    });
-    logger.info({ to: data.to, requestId: data.requestId }, "lifecycle: confirmation email sent");
-  }, "sendRequestConfirmation");
-}
-
-export interface HelperAcceptedData {
-  to: string;
-  requesterName: string;
-  helperName: string;
-  helperTrustScore?: number;
-  requestTitle: string;
-  requestId: number;
-  appUrl?: string;
-}
-
-export async function sendHelperAcceptedEmail(data: HelperAcceptedData): Promise<void> {
-  if (!isSmtpConfigured()) return;
-  const smtpUser = process.env["SMTP_USER"]!;
-  const appUrl = data.appUrl ?? "https://niakofa.com";
-
-  const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"></head>
-<body style="background:#0a0f1e;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;margin:0;padding:0">
-  <div style="max-width:480px;margin:0 auto;padding:32px 24px">
-    <div style="text-align:center;margin-bottom:28px">
-      <div style="font-size:30px;font-weight:900;color:#00d4ff">Niakofa</div>
-    </div>
-    <div style="background:#111827;border:1px solid #16a34a33;border-radius:16px;padding:28px;text-align:center">
-      <div style="font-size:40px;margin-bottom:12px">🙌</div>
-      <h1 style="font-size:20px;font-weight:900;margin:0 0 8px;color:#22c55e">Helper On The Way!</h1>
-      <p style="color:#94a3b8;margin:0 0 20px;line-height:1.6">
-        Hi ${escapeHtml(data.requesterName)}, <strong style="color:#f1f5f9">${escapeHtml(data.helperName)}</strong> has accepted your request and is on their way.
-      </p>
-      <div style="background:#0a0f1e;border-radius:10px;padding:14px;margin-bottom:20px">
-        <div style="font-size:13px;color:#94a3b8">For: <strong style="color:#f1f5f9">${escapeHtml(data.requestTitle)}</strong></div>
-        ${data.helperTrustScore !== undefined ? `<div style="font-size:11px;color:#64748b;margin-top:6px">Helper trust score: <span style="color:#00d4ff;font-weight:700">${data.helperTrustScore}</span></div>` : ""}
-      </div>
-      <a href="${escapeHtml(appUrl)}/request/${data.requestId}/track" style="display:inline-block;background:#22c55e;color:#fff;font-weight:800;font-size:13px;padding:12px 24px;border-radius:10px;text-decoration:none">Track in App →</a>
-    </div>
-    <p style="text-align:center;font-size:12px;color:#475569;margin-top:16px">Niakofa — Help Today · Pay It Forward Tomorrow</p>
-  </div>
-</body></html>`;
-
-  await withSmtpRetry(async () => {
-    await transporter.sendMail({
-      from: `"Niakofa" <${smtpUser}>`,
-      to: data.to,
-      subject: sanitizeHeaderValue(`🙌 Helper on the way: ${data.requestTitle}`),
-      html,
-    });
-    logger.info({ to: data.to, requestId: data.requestId }, "lifecycle: helper-accepted email sent");
-  }, "sendHelperAcceptedEmail");
-}
-
-export interface FollowUpNudgeData {
-  to: string;
-  requesterName: string;
-  requestTitle: string;
-  requestId: number;
-  appUrl?: string;
-}
-
-export async function sendFollowUpNudge(data: FollowUpNudgeData): Promise<void> {
-  if (!isSmtpConfigured()) return;
-  const smtpUser = process.env["SMTP_USER"]!;
-  const appUrl = data.appUrl ?? "https://niakofa.com";
-
-  const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"></head>
-<body style="background:#0a0f1e;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;margin:0;padding:0">
-  <div style="max-width:480px;margin:0 auto;padding:32px 24px">
-    <div style="text-align:center;margin-bottom:28px">
-      <div style="font-size:30px;font-weight:900;color:#00d4ff">Niakofa</div>
-    </div>
-    <div style="background:#111827;border:1px solid #a78bfa33;border-radius:16px;padding:28px;text-align:center">
-      <div style="font-size:40px;margin-bottom:12px">💜</div>
-      <h1 style="font-size:20px;font-weight:900;margin:0 0 8px;color:#a78bfa">How did it go?</h1>
-      <p style="color:#94a3b8;margin:0 0 20px;line-height:1.6">
-        Hi ${escapeHtml(data.requesterName)}, your request <strong style="color:#f1f5f9">"${escapeHtml(data.requestTitle)}"</strong> was completed 24 hours ago.
-        If the help you received made a difference, consider paying it forward to someone else in need.
-      </p>
-      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-        <a href="${escapeHtml(appUrl)}/request/${data.requestId}/view" style="display:inline-block;background:#a78bfa;color:#fff;font-weight:700;font-size:13px;padding:11px 20px;border-radius:10px;text-decoration:none">Rate Your Helper</a>
-        <a href="${escapeHtml(appUrl)}/request/new" style="display:inline-block;background:#1e293b;border:1px solid #334155;color:#94a3b8;font-weight:700;font-size:13px;padding:11px 20px;border-radius:10px;text-decoration:none">Pay It Forward</a>
-      </div>
-    </div>
-    <p style="text-align:center;font-size:12px;color:#475569;margin-top:16px">Niakofa — Help Today · Pay It Forward Tomorrow</p>
-  </div>
-</body></html>`;
-
-  await withSmtpRetry(async () => {
-    await transporter.sendMail({
-      from: `"Niakofa" <${smtpUser}>`,
-      to: data.to,
-      subject: sanitizeHeaderValue(`💜 How did it go? Rate your helper for: ${data.requestTitle}`),
-      html,
-    });
-    logger.info({ to: data.to, requestId: data.requestId }, "lifecycle: follow-up nudge sent");
-  }, "sendFollowUpNudge");
+  } catch (err) {
+    logger.error({ err }, "tip notification email failed");
+  }
 }

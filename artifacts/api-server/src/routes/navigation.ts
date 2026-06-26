@@ -1,15 +1,13 @@
 import { Router } from "express";
 import { GetRouteQueryParams } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
-import { requireAuth } from "../middlewares/auth";
-import { navigationLimiter } from "../middlewares/rate-limit";
 
 const router = Router();
 
 const ALLOWED_PROFILES = ["driving", "walking", "cycling"] as const;
 type RoutingProfile = (typeof ALLOWED_PROFILES)[number];
 
-router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res) => {
+router.get("/navigation/route", async (req, res) => {
   const parsed = GetRouteQueryParams.safeParse({
     start_lat: parseFloat(req.query.start_lat as string),
     start_lng: parseFloat(req.query.start_lng as string),
@@ -27,16 +25,13 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
       ? (rawProfile as RoutingProfile)
       : "driving";
 
-  const token = process.env.MAPBOX_TOKEN ?? process.env.VITE_MAPBOX_TOKEN;
+  const token = process.env.VITE_MAPBOX_TOKEN;
   if (!token) return res.status(500).json({ error: "Mapbox token not configured" });
 
   try {
     const departAt = profile === "driving" ? `&depart_at=${new Date().toISOString()}&annotations=congestion` : "";
     const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${start_lng},${start_lat};${end_lng},${end_lat}?steps=true&geometries=geojson&overview=full${departAt}&access_token=${token}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s — directions calls can legitimately take longer than geocoding
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
+    const response = await fetch(url);
     const data = await response.json() as {
       routes?: Array<{
         distance: number;
@@ -57,9 +52,6 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
     }
 
     const route = data.routes[0];
-    if (!route.legs || route.legs.length === 0) {
-      return res.status(404).json({ error: "Route had no legs — try different coordinates" });
-    }
     const steps = route.legs[0].steps.map(step => ({
       instruction: step.maneuver.instruction,
       distance_meters: step.distance,

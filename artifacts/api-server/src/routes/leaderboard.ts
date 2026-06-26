@@ -1,9 +1,8 @@
 import { Router } from "express";
-import { getTierName } from "../lib/trust-tiers";
 import { db, usersTable, requestsTable } from "@workspace/db";
 import { eq, sql, and, gte } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
-import { cacheGet, cacheSet, cacheDel, cacheDelPrefix } from "../lib/cache";
+import { cacheGet, cacheSet, cacheDel } from "../lib/cache";
 
 const LEADERBOARD_CACHE_KEY = "leaderboard:all";
 const LEADERBOARD_TTL = 60; // 60 seconds
@@ -11,7 +10,13 @@ const LEADERBOARD_TTL = 60; // 60 seconds
 const router = Router();
 
 // ── Tier helper (mirrors TrustTierBadge.tsx logic) ────────────────────────────
-
+export function getTierName(trustScore: number, helpCount: number): string {
+  if (helpCount >= 50 && trustScore >= 97) return "anchor";
+  if (helpCount >= 30 && trustScore >= 95) return "elite";
+  if (helpCount >= 15 && trustScore >= 90) return "trusted";
+  if (helpCount >= 5 || trustScore >= 85) return "verified";
+  return "member";
+}
 
 // ── Monthly contributions per helper ─────────────────────────────────────────
 async function fetchMonthlyContributions(): Promise<Map<number, number>> {
@@ -50,7 +55,7 @@ async function fetchLeaderboard(city?: string) {
     db
       .select()
       .from(usersTable)
-      .where(and(eq(usersTable.is_helper, true), sql`COALESCE(${usersTable.trust_score}, 0) >= 0`))
+      .where(eq(usersTable.is_helper, true))
       .orderBy(sql`${usersTable.help_count} * 10 + COALESCE(${usersTable.trust_score}, 0) DESC`)
       .limit(50),
     fetchMonthlyContributions(),
@@ -59,13 +64,13 @@ async function fetchLeaderboard(city?: string) {
   // City/neighborhood filter (case-insensitive)
   const filtered = city
     ? helpers.filter(
-        (u: typeof helpers[number]) =>
+        (u) =>
           u.neighborhood?.toLowerCase().includes(city.toLowerCase()) ||
           u.city?.toLowerCase().includes(city.toLowerCase())
       )
     : helpers;
 
-  const entries = filtered.slice(0, 25).map((u: typeof helpers[number], i: number) => ({
+  const entries = filtered.slice(0, 25).map((u, i) => ({
     id: u.id,
     name: u.name,
     neighborhood: u.neighborhood ?? null,
@@ -91,7 +96,7 @@ async function fetchLeaderboard(city?: string) {
     }
   }
 
-  return entries.map((entry: typeof entries[number]) => {
+  return entries.map((entry) => {
     const hood = entry.neighborhood ?? entry.city ?? "";
     const isNeighborhoodTop = hood
       ? neighborhoodRank.get(hood) === entry.id
@@ -103,9 +108,6 @@ async function fetchLeaderboard(city?: string) {
 // ── Invalidate cache whenever the leaderboard changes ─────────────────────────
 export async function invalidateLeaderboardCache(): Promise<void> {
   await cacheDel(LEADERBOARD_CACHE_KEY);
-  // City-scoped leaderboards (`leaderboard:city:*`) must be evicted too, or
-  // they keep serving stale rankings until their TTL expires.
-  await cacheDelPrefix("leaderboard:city:");
 }
 
 // ── Broadcast helper (called by requests.ts after completion) ─────────────────
@@ -155,10 +157,10 @@ router.get("/leaderboard/cities", async (_req, res) => {
   const helpers = await db
     .select({ neighborhood: usersTable.neighborhood, city: usersTable.city })
     .from(usersTable)
-    .where(and(eq(usersTable.is_helper, true), sql`COALESCE(${usersTable.trust_score}, 0) >= 0`));
+    .where(eq(usersTable.is_helper, true));
 
   const cities = new Set<string>();
-  for (const h of helpers as Array<{ neighborhood: string | null; city: string | null }>) {
+  for (const h of helpers) {
     if (h.neighborhood) cities.add(h.neighborhood);
     if (h.city) cities.add(h.city);
   }

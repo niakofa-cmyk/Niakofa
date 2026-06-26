@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { useAppContext } from "@/lib/AppContext";
 import {
@@ -7,16 +7,15 @@ import {
 } from "@workspace/api-client-react";
 import type { HelpRequest } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Activity, Star, MapPin, Clock, Heart, Award, Wrench, Zap, Filter, ThumbsUp, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, Activity, Star, MapPin, Clock, Heart, Award, Wrench, Zap, Filter } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "@/hooks/use-toast";
-import { useTranslation } from "react-i18next";
 
 const CATEGORY_LABELS: Record<string, string> = {
   groceries: "🛒 Groceries", transportation: "🚗 Transportation", errands: "📦 Errands",
   home_repair: "🔧 Home Repair", medical: "💊 Medical", emergency: "🚨 Emergency",
   stock_shelves: "📦 Stock", event_setup: "🎪 Event", delivery_run: "🚚 Delivery",
-  tech_support: "💻 Tech", other: "💙 Other", local_farm: "🌱 Farm Pickup", food_pantry: "🍱 Food Pantry",
+  tech_support: "💻 Tech", other: "💙 Other",
 };
 
 const URGENCY_COLORS: Record<string, string> = {
@@ -27,39 +26,23 @@ const URGENCY_COLORS: Record<string, string> = {
 };
 
 const ALL_SKILLS = [
-  { id: "bilingual",            label: "Bilingual",       emoji: "🌐" },
-  { id: "translation",          label: "Translation",     emoji: "🌍" },
-  { id: "truck_owner",          label: "Truck Owner",     emoji: "🚛" },
-  { id: "drives_truck",         label: "Drives Truck",    emoji: "🚛" },
-  { id: "cdl_driver",           label: "CDL Driver",      emoji: "🚚" },
-  { id: "food_delivery",        label: "Food Delivery",   emoji: "🛵" },
-  { id: "medical_background",   label: "Medical",         emoji: "🏥" },
-  { id: "medical_support",      label: "Medical Support", emoji: "💊" },
-  { id: "elder_care",           label: "Elder Care",      emoji: "🧓" },
-  { id: "pet_care",             label: "Pet Care",        emoji: "🐾" },
-  { id: "childcare",            label: "Childcare",       emoji: "👶" },
-  { id: "licensed_electrician", label: "Electrician",     emoji: "⚡" },
-  { id: "electrical",           label: "Electrical",      emoji: "⚡" },
-  { id: "licensed_plumber",     label: "Plumber",         emoji: "🔧" },
-  { id: "plumbing",             label: "Plumbing",        emoji: "🔧" },
-  { id: "carpenter",            label: "Carpenter",       emoji: "🪚" },
-  { id: "carpentry",            label: "Carpentry",       emoji: "🪚" },
-  { id: "painting",             label: "Painting",        emoji: "🎨" },
-  { id: "yard_work",            label: "Yard Work",       emoji: "🌿" },
-  { id: "heavy_lifting",        label: "Heavy Lifting",   emoji: "💪" },
-  { id: "tech_support",         label: "Tech Support",    emoji: "💻" },
-  { id: "grocery_shopping",     label: "Grocery Shopping",emoji: "🛒" },
-  { id: "cooking",               label: "Cooking",        emoji: "🍳" },
-  { id: "food_handler",         label: "Food Handler",    emoji: "🍽️" },
-  { id: "tutoring",              label: "Tutoring",       emoji: "📚" },
+  { id: "bilingual",            label: "Bilingual",     emoji: "🌐" },
+  { id: "truck_owner",          label: "Truck Owner",   emoji: "🚛" },
+  { id: "medical_background",   label: "Medical",       emoji: "🏥" },
+  { id: "licensed_electrician", label: "Electrician",   emoji: "⚡" },
+  { id: "licensed_plumber",     label: "Plumber",       emoji: "🔧" },
+  { id: "carpenter",            label: "Carpenter",     emoji: "🪚" },
+  { id: "tech_support",         label: "Tech Support",  emoji: "💻" },
+  { id: "cdl_driver",           label: "CDL Driver",    emoji: "🚛" },
+  { id: "food_handler",         label: "Food Handler",  emoji: "🍽️" },
+  { id: "childcare",            label: "Childcare",     emoji: "👶" },
 ];
 
 type FilterKey = "all" | "emergency" | "near";
 
 export default function HelperDashboardScreen() {
-  const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  const { currentUser, helperModeActive, myLocation, setLastViewedMatchReasons } = useAppContext();
+  const { currentUser, helperModeActive, myLocation } = useAppContext();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<FilterKey>("all");
 
@@ -75,150 +58,7 @@ export default function HelperDashboardScreen() {
 
   const claimMutation = useClaimRequest();
 
-  // Phase 4: surface the real, already-displayed match_reasons for whatever
-  // open requests this helper currently sees, attributed by request title, so
-  // if they ask Nia "why was I matched with this" she answers from real data
-  // instead of guessing. Split into two effects: one that updates the value
-  // reactively without a cleanup (so periodic react-query refetches of
-  // nearbyRaw don't flicker the value to null and back), and one that clears
-  // it only on true component unmount.
-  useEffect(() => {
-    const openWithReasons = (nearbyRaw as unknown as { title: string; status: string; match_reasons?: string[] }[])
-      .filter(r => r.status === "open" && r.match_reasons?.length);
-    if (openWithReasons.length === 0) {
-      setLastViewedMatchReasons(null);
-      return;
-    }
-    const attributed = openWithReasons.flatMap(r =>
-      r.match_reasons!.map(reason => `"${r.title}": ${reason}`)
-    );
-    setLastViewedMatchReasons(attributed);
-  }, [nearbyRaw, setLastViewedMatchReasons]);
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally
-  // empty deps: this is the unmount-only cleanup, must not re-run per render.
-  useEffect(() => {
-    return () => setLastViewedMatchReasons(null);
-  }, []);
-
-  const [pendingRatings, setPendingRatings] = useState<Array<{ id: number; title: string; completed_at: string | null }>>([]);
-  const [recentRatings, setRecentRatings] = useState<Array<{ stars: number; review: string | null; created_at: string }>>([]);
-  const [completionRate, setCompletionRate] = useState<number | null>(null);
-
-  // Fetch completed requests with no rating yet (pending acknowledgement)
-  useEffect(() => {
-    if (!currentUser?.id) return;
-    const token = localStorage.getItem("token");
-    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-
-    // Fetch helper's completed requests
-    fetch(`/api/requests?helper_id=${currentUser.id}&status=completed&limit=20`, { headers })
-      .then(r => r.json())
-      .then(async (completed: Array<{ id: number; title: string; completed_at: string | null }>) => {
-        if (!Array.isArray(completed)) return;
-        // For each, check if a rating exists
-        const pending: typeof completed = [];
-        await Promise.all(completed.slice(0, 10).map(async req => {
-          try {
-            const r = await fetch(`/api/requests/${req.id}/ratings`, { headers });
-            const ratings = await r.json();
-            if (!Array.isArray(ratings) || ratings.length === 0) {
-              pending.push(req);
-            }
-          } catch {}
-        }));
-        setPendingRatings(pending);
-      }).catch(() => {});
-
-    // Fetch completion rate: completed / (completed + cancelled_after_claim)
-    Promise.all([
-      fetch(`/api/requests?helper_id=${currentUser.id}&status=completed&limit=1`, { headers }).then(r => r.json()),
-      fetch(`/api/requests?helper_id=${currentUser.id}&status=cancelled&limit=1`, { headers }).then(r => r.json()),
-    ]).then(([comp, canc]) => {
-      // API returns array; use help_count from currentUser for completed (accurate)
-      // and cancelled array length as a proxy for now
-      const completed = currentUser.help_count ?? 0;
-      const cancelled = Array.isArray(canc) ? canc.length : 0;
-      const total = completed + cancelled;
-      setCompletionRate(total > 0 ? Math.round((completed / total) * 100) : null);
-    }).catch(() => {});
-
-    // Fetch recent ratings received
-    fetch(`/api/users/${currentUser.id}/ratings`, { headers })
-      .then(r => r.json())
-      .then((ratings: Array<{ stars: number; review: string | null; created_at: string }>) => {
-        if (Array.isArray(ratings)) setRecentRatings(ratings.slice(0, 5));
-      }).catch(() => {});
-  }, [currentUser?.id]);
-
   if (!currentUser) return null;
-
-  // Gate: only approved helpers can access the dashboard
-  const helperStatus = currentUser.helper_status;
-  if (helperStatus !== "approved") {
-    return (
-      <div className="min-h-screen bg-background text-foreground flex flex-col">
-        <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-xl border-b border-border p-4 pt-safe">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setLocation("/")} className="p-2 rounded-xl hover:bg-muted transition-colors">
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <h1 className="text-lg font-black">{t("helper_dashboard.helper_dashboard")}</h1>
-          </div>
-        </div>
-        <div className="flex-1 flex flex-col items-center justify-center p-8 gap-5 text-center max-w-sm mx-auto">
-          {helperStatus === "pending" ? (
-            <>
-              <div className="w-20 h-20 rounded-full bg-yellow-500/10 border-2 border-yellow-500/30 flex items-center justify-center">
-                <Clock className="w-10 h-10 text-yellow-400" />
-              </div>
-              <div>
-                <h2 className="text-xl font-black mb-2">{t("helper_dashboard.application_under_review")}</h2>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {t("helper_dashboard.your_helper_application_is_pending_admin")}
-                </p>
-              </div>
-              <div className="w-full bg-card border border-yellow-500/20 rounded-2xl p-4 text-left">
-                <div className="text-[10px] font-black uppercase tracking-wider text-yellow-400 mb-1">{t("helper_dashboard.status")}</div>
-                <div className="text-sm font-bold text-yellow-300">{t("helper_dashboard.pending_admin_review")}</div>
-                <div className="text-xs text-muted-foreground mt-1">{t("helper_dashboard.applications_are_typically_reviewed_within_12")}</div>
-              </div>
-            </>
-          ) : helperStatus === "denied" ? (
-            <>
-              <div className="w-20 h-20 rounded-full bg-destructive/10 border-2 border-destructive/30 flex items-center justify-center">
-                <Award className="w-10 h-10 text-destructive" />
-              </div>
-              <div>
-                <h2 className="text-xl font-black mb-2">{t("helper_dashboard.application_not_approved")}</h2>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {t("helper_dashboard.your_helper_application_was_not_approved")}
-                </p>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
-                <Heart className="w-10 h-10 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-xl font-black mb-2">{t("helper_dashboard.become_a_helper")}</h2>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {t("helper_dashboard.apply_to_become_a_verified_niakofa")}
-                </p>
-              </div>
-              <button
-                onClick={() => setLocation("/login")}
-                className="w-full bg-primary text-primary-foreground font-black py-3 rounded-2xl transition-all active:scale-[0.98]"
-              >
-                {t("helper_dashboard.apply_as_helper")}
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   const nearbyRequests = nearbyRaw as HelpRequest[];
   const myActiveRequests = (myActiveRaw as HelpRequest[]).filter(r => r.helper_id === currentUser.id);
@@ -240,10 +80,10 @@ export default function HelperDashboardScreen() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
-          toast({ title: t("helper_dashboard.request_claimed"), description: `Heading to "${req.title}"` });
+          toast({ title: "Request claimed!", description: `Heading to "${req.title}"` });
           setLocation(`/request/${req.id}`);
         },
-        onError: () => toast({ title: t("helper_dashboard.failed_to_claim"), variant: "destructive" }),
+        onError: () => toast({ title: "Failed to claim", variant: "destructive" }),
       }
     );
   };
@@ -257,15 +97,15 @@ export default function HelperDashboardScreen() {
           </button>
           <div className="flex-1">
             <h1 className="text-lg font-black flex items-center gap-2">
-              {t("helper_dashboard.helper_dashboard_2")}
+              Helper Dashboard
               {helperModeActive && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
             </h1>
-            <p className="text-xs text-muted-foreground">{openNearby.length} {t("helper_dashboard.open_requests_nearby")}</p>
+            <p className="text-xs text-muted-foreground">{openNearby.length} open requests nearby</p>
           </div>
           {isAnchor && (
             <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-full">
               <span className="text-sm">⚓</span>
-              <span className="text-xs font-black text-amber-400">{t("helper_dashboard.anchor")}</span>
+              <span className="text-xs font-black text-amber-400">Anchor</span>
             </div>
           )}
         </div>
@@ -273,48 +113,32 @@ export default function HelperDashboardScreen() {
 
       <div className="p-4 space-y-4 max-w-lg mx-auto">
         {/* Stats row */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
             <Heart className="w-4 h-4 text-primary mb-1" />
             <div className="text-2xl font-black text-primary">{helpCount}</div>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{t("helper_dashboard.completed")}</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Completed</div>
           </div>
           <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
             <Star className="w-4 h-4 text-yellow-400 mb-1" />
             <div className="text-2xl font-black text-yellow-400">{trustScore.toFixed(0)}%</div>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{t("helper_dashboard.trust_score")}</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Trust Score</div>
           </div>
           <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
             <Activity className="w-4 h-4 text-green-400 mb-1" />
             <div className="text-2xl font-black text-green-400">${(currentUser.benevolence_wallet ?? 0).toFixed(0)}</div>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{t("helper_dashboard.goodwill_fund")}</div>
-          </div>
-          <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
-            <ThumbsUp className="w-4 h-4 text-blue-400 mb-1" />
-            <div className="text-2xl font-black text-blue-400">
-              {recentRatings.length > 0
-                ? (recentRatings.reduce((s, r) => s + r.stars, 0) / recentRatings.length).toFixed(1)
-                : "—"}
-            </div>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg Rating</div>
-          </div>
-          <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center col-span-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 mb-1" />
-            <div className="text-2xl font-black text-emerald-400">
-              {completionRate !== null ? `${completionRate}%` : "—"}
-            </div>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Completion Rate</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Earned</div>
           </div>
         </div>
 
         {/* Skills */}
-        {(((currentUser as unknown as { specialties?: string[] }).specialties)?.length ?? 0) > 0 && (
+        {(currentUser.specialties?.length ?? 0) > 0 && (
           <div className="bg-card border border-border rounded-2xl p-4">
             <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
-              <Wrench className="w-3.5 h-3.5 text-primary" /> {t("helper_dashboard.your_skills")}
+              <Wrench className="w-3.5 h-3.5 text-primary" /> Your Skills
             </h3>
             <div className="flex flex-wrap gap-2">
-              {((currentUser as unknown as { specialties?: string[] }).specialties ?? []).map(skill => {
+              {currentUser.specialties!.map(skill => {
                 const match = ALL_SKILLS.find(s => s.id === skill.toLowerCase().replace(/\s+/g, "_"));
                 return (
                   <span key={skill} className="flex items-center gap-1 text-xs font-bold bg-primary/10 text-primary border border-primary/20 px-3 py-1.5 rounded-full">
@@ -326,65 +150,11 @@ export default function HelperDashboardScreen() {
           </div>
         )}
 
-        {/* Pending ratings — completed requests awaiting requester feedback */}
-        {pendingRatings.length > 0 && (
-          <div className="bg-card border border-amber-500/30 rounded-2xl p-4">
-            <h3 className="text-xs font-black uppercase tracking-widest text-amber-400 mb-3 flex items-center gap-1.5">
-              <Star className="w-3.5 h-3.5" /> Awaiting Ratings ({pendingRatings.length})
-            </h3>
-            <div className="space-y-2">
-              {pendingRatings.map(req => (
-                <div key={req.id} className="flex items-center gap-3 bg-muted/30 rounded-xl p-3 border border-border">
-                  <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold text-sm truncate">{req.title}</div>
-                    {req.completed_at && (
-                      <div className="text-[10px] text-muted-foreground mt-0.5">
-                        Completed {Math.round((Date.now() - new Date(req.completed_at).getTime()) / 3600000)}h ago
-                      </div>
-                    )}
-                  </div>
-                  <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-1 rounded-full shrink-0">
-                    Pending ★
-                  </span>
-                </div>
-              ))}
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-3 leading-relaxed">
-              Ratings appear here once requesters submit them. Your trust score updates automatically.
-            </p>
-          </div>
-        )}
-
-        {/* Recent ratings received */}
-        {recentRatings.length > 0 && (
-          <div className="bg-card border border-border rounded-2xl p-4">
-            <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
-              <Star className="w-3.5 h-3.5 text-yellow-400" /> Recent Ratings
-            </h3>
-            <div className="space-y-2">
-              {recentRatings.map((r, i) => (
-                <div key={i} className="flex items-start gap-3 bg-muted/30 rounded-xl p-3 border border-border">
-                  <div className="shrink-0 text-sm font-black text-yellow-400">
-                    {"★".repeat(r.stars)}{"☆".repeat(5 - r.stars)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    {r.review && <p className="text-xs text-foreground leading-relaxed">&ldquo;{r.review}&rdquo;</p>}
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      {Math.round((Date.now() - new Date(r.created_at).getTime()) / 86400000)}d ago
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Active claims */}
         {myActiveRequests.length > 0 && (
           <div className="bg-card border border-primary/30 rounded-2xl p-4">
             <h3 className="text-xs font-black uppercase tracking-widest text-primary mb-3 flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5" /> {t("helper_dashboard.active_claims")}
+              <Zap className="w-3.5 h-3.5" /> Active Claims
             </h3>
             <div className="space-y-2">
               {myActiveRequests.map(req => (
@@ -399,7 +169,7 @@ export default function HelperDashboardScreen() {
                       {req.urgency}
                     </span>
                     <span>{CATEGORY_LABELS[req.category ?? "other"] ?? req.category}</span>
-                    {req.distance_miles != null && <span>· {req.distance_miles.toFixed(1)} {t("helper_dashboard.mi")}</span>}
+                    {req.distance_miles != null && <span>· {req.distance_miles.toFixed(1)} mi</span>}
                   </div>
                 </button>
               ))}
@@ -411,7 +181,7 @@ export default function HelperDashboardScreen() {
         <div className="bg-card border border-border rounded-2xl p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-              <MapPin className="w-3.5 h-3.5 text-primary" /> {t("helper_dashboard.nearby_queue")}{filtered.length})
+              <MapPin className="w-3.5 h-3.5 text-primary" /> Nearby Queue ({filtered.length})
             </h3>
             <Filter className="w-3.5 h-3.5 text-muted-foreground" />
           </div>
@@ -437,7 +207,7 @@ export default function HelperDashboardScreen() {
           {filtered.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <MapPin className="w-6 h-6 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">{t("helper_dashboard.no_requests_match_this_filter")}</p>
+              <p className="text-sm">No requests match this filter</p>
             </div>
           ) : (
             <AnimatePresence initial={false}>
@@ -461,25 +231,13 @@ export default function HelperDashboardScreen() {
                           {req.urgency}
                         </span>
                         <span>{CATEGORY_LABELS[req.category ?? "other"] ?? req.category}</span>
-                        {req.distance_miles != null && <span>· {req.distance_miles.toFixed(1)} {t("helper_dashboard.mi_2")}</span>}
+                        {req.distance_miles != null && <span>· {req.distance_miles.toFixed(1)} mi</span>}
                         {req.requester_name && <span>· {req.requester_name}</span>}
                       </div>
-                      {/* match_reasons isn't in the generated OpenAPI types yet (added server-side
-                          without a spec/codegen cycle) — accessed via a narrow cast rather than
-                          widening HelpRequest's type for one optional field. */}
-                      {(req as unknown as { match_reasons?: string[] }).match_reasons?.length ? (
-                        <div className="flex items-center gap-1 mt-1 flex-wrap">
-                          {(req as unknown as { match_reasons?: string[] }).match_reasons!.map((reason) => (
-                            <span key={reason} className="text-[10px] font-semibold text-primary bg-primary/10 rounded-full px-1.5 py-0.5">
-                              ✨ {reason}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
                       {req.created_at && (
                         <div className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground">
                           <Clock className="w-3 h-3" />
-                          {Math.round((Date.now() - new Date(req.created_at).getTime()) / 60000)} {t("helper_dashboard.min_ago")}
+                          {Math.round((Date.now() - new Date(req.created_at).getTime()) / 60000)} min ago
                         </div>
                       )}
                     </div>
@@ -489,7 +247,7 @@ export default function HelperDashboardScreen() {
                         disabled={claimMutation.isPending}
                         className="shrink-0 bg-primary text-primary-foreground text-xs font-black px-3 py-1.5 rounded-xl disabled:opacity-50 active:scale-95 transition-all"
                       >
-                        {t("helper_dashboard.claim")}
+                        Claim
                       </button>
                     )}
                   </div>
@@ -505,24 +263,24 @@ export default function HelperDashboardScreen() {
             <div className="flex items-center gap-2 mb-2">
               <span className="text-2xl">⚓</span>
               <div>
-                <div className="font-black text-sm text-amber-400">{t("helper_dashboard.youre_an_anchor_helper")}</div>
-                <div className="text-xs text-muted-foreground">{t("helper_dashboard.top_pillar_of_the_niakofa_community")}</div>
+                <div className="font-black text-sm text-amber-400">You're an Anchor Helper</div>
+                <div className="text-xs text-muted-foreground">Top pillar of the Niakofa community</div>
               </div>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              {t("helper_dashboard.anchor_helpers_are_the_backbone_of")}
+              Anchor Helpers are the backbone of Niakofa. New helpers in your area look to you as an informal mentor. Your consistency and high trust score make this community stronger every day.
             </p>
           </div>
         ) : (
           <div className="bg-card border border-border rounded-2xl p-4">
             <div className="flex items-center gap-2 mb-3">
               <Award className="w-4 h-4 text-primary" />
-              <div className="font-bold text-sm">{t("helper_dashboard.path_to_anchor_helper")}</div>
+              <div className="font-bold text-sm">Path to Anchor Helper ⚓</div>
             </div>
             <div className="space-y-3">
               <div>
                 <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-muted-foreground">{t("helper_dashboard.helps_completed")}</span>
+                  <span className="text-muted-foreground">Helps completed</span>
                   <span className="font-bold">{helpCount} / 50</span>
                 </div>
                 <div className="h-1.5 bg-muted rounded-full overflow-hidden">
@@ -531,7 +289,7 @@ export default function HelperDashboardScreen() {
               </div>
               <div>
                 <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-muted-foreground">{t("helper_dashboard.trust_score_2")}</span>
+                  <span className="text-muted-foreground">Trust score</span>
                   <span className="font-bold">{trustScore.toFixed(0)}% / 97%</span>
                 </div>
                 <div className="h-1.5 bg-muted rounded-full overflow-hidden">

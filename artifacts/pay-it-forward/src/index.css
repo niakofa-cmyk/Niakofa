@@ -357,36 +357,3 @@
     inset: -1px;
   }
 }
-
-/* ── Nia living orb animations (compositor-thread, no React re-renders) ── */
-@keyframes nia-float {
-  0%, 100% { transform: translateY(0px) rotate(0deg); }
-  25%       { transform: translateY(-7px) rotate(0.4deg); }
-  50%       { transform: translateY(-5px) rotate(0deg); }
-  75%       { transform: translateY(-9px) rotate(-0.4deg); }
-}
-
-/* Nia quick-prompt chips — touch-friendly active state (no hover needed on mobile) */
-.nia-quick-prompt:active,
-.nia-quick-prompt:focus-visible {
-  background: rgba(29, 158, 117, 0.12) !important;
-  border-color: rgba(29, 158, 117, 0.45) !important;
-  color: #0A6B4E !important;
-  outline: none;
-}
-@media (hover: hover) {
-  .nia-quick-prompt:hover {
-    background: rgba(29, 158, 117, 0.1) !important;
-    border-color: rgba(29, 158, 117, 0.4) !important;
-    color: #0A6B4E !important;
-  }
-}
-
-/* Global mobile touch improvements */
-input, button, textarea, select {
-  -webkit-tap-highlight-color: transparent;
-}
-/* Ensure safe-area is respected everywhere */
-.pb-safe {
-  padding-bottom: env(safe-area-inset-bottom);
-}

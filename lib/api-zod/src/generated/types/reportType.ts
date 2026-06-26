@@ -17,6 +17,5 @@ export const ReportType = {
   fake_profile: 'fake_profile',
   dangerous_behavior: 'dangerous_behavior',
   spam: 'spam',
-  sos: 'sos',
   other: 'other',
 } as const;

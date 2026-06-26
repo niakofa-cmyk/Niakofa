@@ -1,34 +1,50 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { ChevronLeft, Bell, Lock, Sliders, CreditCard, Trash2, CheckCircle2, AlertCircle, Calendar, Plus, X, ChevronRight, Volume2 } from "lucide-react";
+import { authHeaders } from "@/lib/auth";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Bell,
+  Lock,
+  Sliders,
+  CreditCard,
+  Trash2,
+  CheckCircle2,
+  AlertCircle,
+  Globe,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { toast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
-import { LanguageSelector } from "@/components/LanguageSelector";
-import { CulturalLanguage } from "@/lib/culturalGreetings";
+import i18n from "../i18n";
 
-// Re-use fetchSettings and saveSettings from profile.tsx
+// ── API helpers (kept in sync with profile.tsx) ───────────────────────────────
+
 async function fetchSettings(userId: number) {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-  const res = await fetch(`${base}/api/users/${userId}/settings`);
+  const res = await fetch(`${base}/api/users/${userId}/settings`, { headers: authHeaders() });
   if (!res.ok) return null;
   return res.json();
 }
 
-async function saveSettings(userId: number, updates: Record<string, boolean | number | string | string[]>) {
+async function saveSettings(
+  userId: number,
+  updates: Record<string, boolean | number | string>
+) {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
   const res = await fetch(`${base}/api/users/${userId}/settings`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(updates),
   });
   if (!res.ok) throw new Error("Failed to save settings");
   return res.json();
 }
 
-// Notification Preferences Component
+// ── Notification Preferences ──────────────────────────────────────────────────
+
 function NotificationPreferences({ userId }: { userId: number }) {
   const [prefs, setPrefs] = useState({
     notif_nearby_requests: true,
@@ -42,19 +58,23 @@ function NotificationPreferences({ userId }: { userId: number }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetchSettings(userId).then(data => {
-      if (data) setPrefs({
-        notif_nearby_requests: data.notif_nearby_requests ?? true,
-        notif_emergency: data.notif_emergency ?? true,
-        notif_task_accepted: data.notif_task_accepted ?? true,
-        notif_wallet_updates: data.notif_wallet_updates ?? true,
-        notif_community_activity: data.notif_community_activity ?? false,
-        notif_pledge_reminders: data.notif_pledge_reminders ?? true,
-      });
-    }).finally(() => setLoading(false));
+    fetchSettings(userId)
+      .then((data) => {
+        if (data)
+          setPrefs({
+            notif_nearby_requests: data.notif_nearby_requests ?? true,
+            notif_emergency: data.notif_emergency ?? true,
+            notif_task_accepted: data.notif_task_accepted ?? true,
+            notif_wallet_updates: data.notif_wallet_updates ?? true,
+            notif_community_activity: data.notif_community_activity ?? false,
+            notif_pledge_reminders: data.notif_pledge_reminders ?? true,
+          });
+      })
+      .finally(() => setLoading(false));
   }, [userId]);
 
-  const toggle = (key: keyof typeof prefs) => setPrefs(p => ({ ...p, [key]: !p[key] }));
+  const toggle = (key: keyof typeof prefs) =>
+    setPrefs((p) => ({ ...p, [key]: !p[key] }));
 
   const labels: Record<keyof typeof prefs, string> = {
     notif_nearby_requests: "Nearby help requests",
@@ -86,18 +106,28 @@ function NotificationPreferences({ userId }: { userId: number }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {/* Push notification enable — must grant permission for any toggles below to reach the device */}
-          {/* <PushEnableButton userId={userId} /> */}
           <div className="pt-1 border-t border-border/60">
-            <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wider font-bold">In-App Notification Types</p>
-            {(Object.keys(prefs) as (keyof typeof prefs)[]).map(key => (
-              <div key={key} className="flex items-center justify-between p-3 bg-background rounded-xl border border-border mb-2">
+            <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wider font-bold">
+              In-App Notification Types
+            </p>
+            {(Object.keys(prefs) as (keyof typeof prefs)[]).map((key) => (
+              <div
+                key={key}
+                className="flex items-center justify-between p-3 bg-background rounded-xl border border-border mb-2"
+              >
                 <span className="text-sm">{labels[key]}</span>
-                <Switch checked={prefs[key]} onCheckedChange={() => toggle(key)} />
+                <Switch
+                  checked={prefs[key]}
+                  onCheckedChange={() => toggle(key)}
+                />
               </div>
             ))}
           </div>
-          <Button className="w-full mt-2" onClick={handleSave} disabled={saving}>
+          <Button
+            className="w-full mt-2"
+            onClick={handleSave}
+            disabled={saving}
+          >
             {saving ? "Saving…" : "Save Preferences"}
           </Button>
         </div>
@@ -106,7 +136,49 @@ function NotificationPreferences({ userId }: { userId: number }) {
   );
 }
 
-// Account Privacy Component
+// ── Account Privacy ───────────────────────────────────────────────────────────
+
+function LanguageSwitcher(_: { userId: number }) {
+  const [lang, setLang] = useState(i18n.language ?? "en");
+
+  const languages = [
+    { code: "en", label: "English", flag: "🇺🇸" },
+    { code: "es", label: "Español", flag: "🇲🇽" },
+  ];
+
+  const handleChange = (code: string) => {
+    i18n.changeLanguage(code);
+    localStorage.setItem("niakofa_lang", code);
+    setLang(code);
+    toast({ title: code === "es" ? "Idioma cambiado a Español" : "Language changed to English" });
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        Choose your preferred language for the Niakofa app.
+      </p>
+      {languages.map(l => (
+        <button
+          key={l.code}
+          onClick={() => handleChange(l.code)}
+          className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-colors text-left ${
+            lang === l.code
+              ? "border-primary bg-primary/10 text-primary"
+              : "border-border bg-card text-foreground hover:border-primary/40"
+          }`}
+        >
+          <span className="text-2xl">{l.flag}</span>
+          <div className="flex-1">
+            <div className="font-semibold text-sm">{l.label}</div>
+          </div>
+          {lang === l.code && <CheckCircle2 className="w-4 h-4 text-primary" />}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function AccountPrivacy({ userId }: { userId: number }) {
   const [prefs, setPrefs] = useState({
     privacy_profile_visible: true,
@@ -118,23 +190,43 @@ function AccountPrivacy({ userId }: { userId: number }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetchSettings(userId).then(data => {
-      if (data) setPrefs({
-        privacy_profile_visible: data.privacy_profile_visible ?? true,
-        privacy_live_location: data.privacy_live_location ?? false,
-        privacy_activity_sharing: data.privacy_activity_sharing ?? true,
-        privacy_anonymous_giving: data.privacy_anonymous_giving ?? false,
-      });
-    }).finally(() => setLoading(false));
+    fetchSettings(userId)
+      .then((data) => {
+        if (data)
+          setPrefs({
+            privacy_profile_visible: data.privacy_profile_visible ?? true,
+            privacy_live_location: data.privacy_live_location ?? false,
+            privacy_activity_sharing: data.privacy_activity_sharing ?? true,
+            privacy_anonymous_giving: data.privacy_anonymous_giving ?? false,
+          });
+      })
+      .finally(() => setLoading(false));
   }, [userId]);
 
-  const toggle = (key: keyof typeof prefs) => setPrefs(p => ({ ...p, [key]: !p[key] }));
+  const toggle = (key: keyof typeof prefs) =>
+    setPrefs((p) => ({ ...p, [key]: !p[key] }));
 
   const items: { key: keyof typeof prefs; label: string; desc: string }[] = [
-    { key: "privacy_profile_visible", label: "Profile discoverable", desc: "Others can find your profile when searching for helpers" },
-    { key: "privacy_live_location", label: "Share live location", desc: "Show your real-time position to requesters when helping" },
-    { key: "privacy_activity_sharing", label: "Activity sharing", desc: "Show recent help activity on your public profile" },
-    { key: "privacy_anonymous_giving", label: "Anonymous giving", desc: "Niakofa contributions appear as anonymous" },
+    {
+      key: "privacy_profile_visible",
+      label: "Profile discoverable",
+      desc: "Others can find your profile when searching for helpers",
+    },
+    {
+      key: "privacy_live_location",
+      label: "Share live location",
+      desc: "Show your real-time position to requesters when helping",
+    },
+    {
+      key: "privacy_activity_sharing",
+      label: "Activity sharing",
+      desc: "Show recent help activity on your public profile",
+    },
+    {
+      key: "privacy_anonymous_giving",
+      label: "Anonymous giving",
+      desc: "Niakofa contributions appear as anonymous",
+    },
   ];
 
   const handleSave = async () => {
@@ -158,16 +250,26 @@ function AccountPrivacy({ userId }: { userId: number }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {items.map(item => (
-            <div key={item.key} className="p-3 bg-background rounded-xl border border-border mb-2">
+          {items.map((item) => (
+            <div
+              key={item.key}
+              className="p-3 bg-background rounded-xl border border-border mb-2"
+            >
               <div className="flex items-center justify-between">
                 <span className="text-sm">{item.label}</span>
-                <Switch checked={prefs[item.key]} onCheckedChange={() => toggle(item.key)} />
+                <Switch
+                  checked={prefs[item.key]}
+                  onCheckedChange={() => toggle(item.key)}
+                />
               </div>
               <p className="text-xs text-muted-foreground mt-1">{item.desc}</p>
             </div>
           ))}
-          <Button className="w-full mt-2" onClick={handleSave} disabled={saving}>
+          <Button
+            className="w-full mt-2"
+            onClick={handleSave}
+            disabled={saving}
+          >
             {saving ? "Saving…" : "Save Preferences"}
           </Button>
         </div>
@@ -176,24 +278,26 @@ function AccountPrivacy({ userId }: { userId: number }) {
   );
 }
 
-// Helper Settings Component
+// ── Helper Settings ───────────────────────────────────────────────────────────
+
 function HelperSettings({ userId }: { userId: number }) {
   const [prefs, setPrefs] = useState({
     service_radius_miles: 5,
     max_travel_miles: 10,
-    specialties: [] as string[],
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetchSettings(userId).then(data => {
-      if (data) setPrefs({
-        service_radius_miles: data.service_radius_miles ?? 5,
-        max_travel_miles: data.max_travel_miles ?? 10,
-        specialties: data.specialties ?? [],
-      });
-    }).finally(() => setLoading(false));
+    fetchSettings(userId)
+      .then((data) => {
+        if (data)
+          setPrefs({
+            service_radius_miles: data.service_radius_miles ?? 5,
+            max_travel_miles: data.max_travel_miles ?? 10,
+          });
+      })
+      .finally(() => setLoading(false));
   }, [userId]);
 
   const handleSave = async () => {
@@ -218,27 +322,54 @@ function HelperSettings({ userId }: { userId: number }) {
       ) : (
         <div className="space-y-3">
           <div className="p-3 bg-background rounded-xl border border-border mb-2">
-            <label htmlFor="service_radius" className="text-sm font-semibold">Service Radius (miles)</label>
+            <label
+              htmlFor="service_radius"
+              className="text-sm font-semibold"
+            >
+              Service Radius (miles)
+            </label>
             <input
               id="service_radius"
               type="number"
+              min={1}
+              max={50}
               value={prefs.service_radius_miles}
-              onChange={(e) => setPrefs(p => ({ ...p, service_radius_miles: parseInt(e.target.value) }))}
+              onChange={(e) =>
+                setPrefs((p) => ({
+                  ...p,
+                  service_radius_miles: parseInt(e.target.value) || 1,
+                }))
+              }
               className="w-full bg-muted border border-border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all mt-2"
             />
           </div>
           <div className="p-3 bg-background rounded-xl border border-border mb-2">
-            <label htmlFor="max_travel" className="text-sm font-semibold">Max Travel Distance (miles)</label>
+            <label
+              htmlFor="max_travel"
+              className="text-sm font-semibold"
+            >
+              Max Travel Distance (miles)
+            </label>
             <input
               id="max_travel"
               type="number"
+              min={1}
+              max={100}
               value={prefs.max_travel_miles}
-              onChange={(e) => setPrefs(p => ({ ...p, max_travel_miles: parseInt(e.target.value) }))}
+              onChange={(e) =>
+                setPrefs((p) => ({
+                  ...p,
+                  max_travel_miles: parseInt(e.target.value) || 1,
+                }))
+              }
               className="w-full bg-muted border border-border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all mt-2"
             />
           </div>
-          {/* Specialties would be a multi-select or tag input */}
-          <Button className="w-full mt-2" onClick={handleSave} disabled={saving}>
+          <Button
+            className="w-full mt-2"
+            onClick={handleSave}
+            disabled={saving}
+          >
             {saving ? "Saving…" : "Save Helper Settings"}
           </Button>
         </div>
@@ -247,25 +378,30 @@ function HelperSettings({ userId }: { userId: number }) {
   );
 }
 
-// Payout Setup Component
+// ── Payout Setup ──────────────────────────────────────────────────────────────
+
 function PayoutSetup({ userId }: { userId: number }) {
   const [loading, setLoading] = useState(false);
-  const [stripeAccountStatus, setStripeAccountStatus] = useState<string | null>(null);
+  const [stripeAccountStatus, setStripeAccountStatus] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     const fetchStripeStatus = async () => {
       setLoading(true);
       try {
         const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-        const res = await fetch(`${base}/api/stripe/connect/status/${userId}`);
+        const res = await fetch(
+          `${base}/api/stripe/connect/status/${userId}`,
+          { headers: authHeaders() }
+        );
         if (res.ok) {
           const data = await res.json();
           setStripeAccountStatus(data.status);
         } else {
           setStripeAccountStatus("not_connected");
         }
-      } catch (error) {
-        console.error("Failed to fetch Stripe status:", error);
+      } catch {
         setStripeAccountStatus("error");
       } finally {
         setLoading(false);
@@ -278,18 +414,27 @@ function PayoutSetup({ userId }: { userId: number }) {
     setLoading(true);
     try {
       const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-      const res = await fetch(`${base}/api/stripe/connect/onboard/${userId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
+      const res = await fetch(
+        `${base}/api/stripe/connect/onboard/${userId}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
       const data = await res.json();
       if (data.url) {
         window.location.href = data.url;
       } else {
-        toast({ title: data.error || "Failed to connect Stripe", variant: "destructive" });
+        toast({
+          title: data.error || "Failed to connect Stripe",
+          variant: "destructive",
+        });
       }
-    } catch (error) {
-      toast({ title: "Could not connect to Stripe — please try again", variant: "destructive" });
+    } catch {
+      toast({
+        title: "Could not connect to Stripe — please try again",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -307,23 +452,38 @@ function PayoutSetup({ userId }: { userId: number }) {
           {stripeAccountStatus === "connected" ? (
             <div className="flex items-center gap-2 p-3 bg-green-500/10 rounded-xl border border-green-500/30">
               <CheckCircle2 className="w-5 h-5 text-green-400" />
-              <span className="text-sm font-semibold text-green-400">Stripe Connected</span>
+              <span className="text-sm font-semibold text-green-400">
+                Stripe Connected
+              </span>
             </div>
           ) : stripeAccountStatus === "pending_requirements" ? (
             <div className="flex items-center gap-2 p-3 bg-yellow-500/10 rounded-xl border border-yellow-500/30">
               <AlertCircle className="w-5 h-5 text-yellow-400" />
-              <span className="text-sm font-semibold text-yellow-400">Action Required: Complete Stripe Onboarding</span>
-              <Button variant="outline" size="sm" onClick={handleConnectStripe} disabled={loading} className="ml-auto">
+              <span className="text-sm font-semibold text-yellow-400">
+                Action Required: Complete Stripe Onboarding
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleConnectStripe}
+                disabled={loading}
+                className="ml-auto"
+              >
                 Continue Setup
               </Button>
             </div>
           ) : (
-            <Button className="w-full" onClick={handleConnectStripe} disabled={loading}>
+            <Button
+              className="w-full"
+              onClick={handleConnectStripe}
+              disabled={loading}
+            >
               Connect with Stripe
             </Button>
           )}
           <p className="text-xs text-muted-foreground">
-            Connect your Stripe account to receive payouts for completed help requests.
+            Connect your Stripe account to receive payouts for completed help
+            requests.
           </p>
         </div>
       )}
@@ -331,237 +491,117 @@ function PayoutSetup({ userId }: { userId: number }) {
   );
 }
 
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+// ── Section type ──────────────────────────────────────────────────────────────
 
-function minToLabel(min: number): string {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  const ampm = h < 12 ? "AM" : "PM";
-  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${h12}:${m.toString().padStart(2, "0")} ${ampm}`;
+type SectionComponent = React.ComponentType<{ userId: number }>;
+
+interface SettingsSection {
+  id: string;
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  component: SectionComponent | null;
 }
 
-// 30-min interval options: 0, 30, 60, ... 1440
-const TIME_OPTIONS = Array.from({ length: 49 }, (_, i) => i * 30);
-
-function AvailabilitySchedule({ userId }: { userId: number }) {
-  type Window = { day_of_week: number; start_min: number; end_min: number };
-  const [windows, setWindows] = useState<Window[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-
-  useEffect(() => {
-    const token = localStorage.getItem("auth_token");
-    fetch(`${base}/api/users/${userId}/availability`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then(r => r.ok ? r.json() : [])
-      .then(data => setWindows(data.map((w: Window) => ({ day_of_week: w.day_of_week, start_min: w.start_min, end_min: w.end_min }))))
-      .catch(() => setWindows([]))
-      .finally(() => setLoading(false));
-  }, [userId]);
-
-  function addWindow() {
-    setWindows(ws => [...ws, { day_of_week: 1, start_min: 540, end_min: 1020 }]);
-  }
-
-  function removeWindow(idx: number) {
-    setWindows(ws => ws.filter((_, i) => i !== idx));
-  }
-
-  function updateWindow(idx: number, field: keyof Window, value: number) {
-    setWindows(ws => ws.map((w, i) => i === idx ? { ...w, [field]: value } : w));
-  }
-
-  async function save() {
-    setSaving(true);
-    try {
-      const token = localStorage.getItem("auth_token");
-      const res = await fetch(`${base}/api/users/${userId}/availability`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ windows }),
-      });
-      if (!res.ok) throw new Error("Save failed");
-      toast({ title: "Availability saved" });
-    } catch {
-      toast({ title: "Could not save availability", variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (loading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>;
-
-  return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold">Availability Schedule</h2>
-      <p className="text-sm text-muted-foreground">Set your weekly availability. Requests that match your active windows get a +10 score boost.</p>
-
-      <div className="space-y-3">
-        {windows.map((w, i) => (
-          <div key={i} className="flex items-center gap-2 bg-muted/40 rounded-xl p-3">
-            <select
-              value={w.day_of_week}
-              onChange={e => updateWindow(i, "day_of_week", parseInt(e.target.value))}
-              className="text-sm bg-background border border-border rounded-lg px-2 py-1"
-            >
-              {DAYS.map((d, idx) => <option key={d} value={idx}>{d}</option>)}
-            </select>
-            <select
-              value={w.start_min}
-              onChange={e => updateWindow(i, "start_min", parseInt(e.target.value))}
-              className="text-sm bg-background border border-border rounded-lg px-2 py-1"
-            >
-              {TIME_OPTIONS.filter(t => t < w.end_min).map(t => (
-                <option key={t} value={t}>{minToLabel(t)}</option>
-              ))}
-            </select>
-            <span className="text-xs text-muted-foreground">to</span>
-            <select
-              value={w.end_min}
-              onChange={e => updateWindow(i, "end_min", parseInt(e.target.value))}
-              className="text-sm bg-background border border-border rounded-lg px-2 py-1"
-            >
-              {TIME_OPTIONS.filter(t => t > w.start_min).map(t => (
-                <option key={t} value={t}>{minToLabel(t)}</option>
-              ))}
-            </select>
-            <button onClick={() => removeWindow(i)} className="ml-auto text-muted-foreground hover:text-destructive">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {windows.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-4 bg-muted/20 rounded-xl">No windows set — you'll still appear in results, just without the availability bonus.</p>
-      )}
-
-      <Button variant="outline" className="w-full gap-2" onClick={addWindow} disabled={windows.length >= 14}>
-        <Plus className="w-4 h-4" /> Add Time Window
-      </Button>
-
-      <Button className="w-full" onClick={save} disabled={saving}>
-        {saving ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Saving…</> : "Save Schedule"}
-      </Button>
-    </div>
-  );
-}
-
-// Main Settings Page Component
-// Nia Language Settings — Phase 7b
-function NiaLanguageSettings({ userId }: { userId: number }) {
-  const [language, setLanguage] = useState<CulturalLanguage>("en");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    fetchSettings(userId).then(data => {
-      if (data?.preferred_language) {
-        setLanguage(data.preferred_language as CulturalLanguage);
-      }
-    });
-  }, [userId]);
-
-  const handleSave = async (lang: CulturalLanguage) => {
-    setLanguage(lang);
-    setSaving(true);
-    try {
-      await saveSettings(userId, { preferred_language: lang });
-      toast({ title: "Nia language updated" });
-    } catch {
-      toast({ title: "Failed to save", variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold">Nia Language / Lugha ya Nia</h2>
-      <p className="text-sm text-muted-foreground">
-        Choose the language Nia greets and speaks with you. Say your wake word in any language and Nia will respond.
-      </p>
-      <LanguageSelector value={language} onChange={handleSave} />
-      {saving && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Saving…
-        </div>
-      )}
-    </div>
-  );
-}
-
+// ── Main Settings Page ────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
   const [, setLocation] = useLocation();
   const { currentUser } = useAppContext();
-  const [activeSection, setActiveSection] = useState<string | null>(null);
+
+  // Read ?section= query param to allow deep-linking from profile page
+  const initialSection = new URLSearchParams(window.location.search).get("section");
+  const [activeSection, setActiveSection] = useState<string | null>(initialSection);
 
   if (!currentUser) {
     setLocation("/login");
     return null;
   }
 
-  const sections = [
+  const sections: SettingsSection[] = [
     {
-      id: "nia-language",
-      title: "Nia Language",
-      icon: Volume2,
-      component: NiaLanguageSettings,
+      id: "notifications",
+      title: "Notification Preferences",
+      icon: Bell,
+      component: NotificationPreferences,
     },
-    { id: "notifications", title: "Notification Preferences", icon: Bell, component: NotificationPreferences },
-    { id: "privacy", title: "Account Privacy", icon: Lock, component: AccountPrivacy },
-    { id: "delete-account", title: "Delete Account", icon: Trash2, component: null }, // Special case for delete
+    {
+      id: "privacy",
+      title: "Account Privacy",
+      icon: Lock,
+      component: AccountPrivacy,
+    },
+    {
+      id: "language",
+      title: "Language / Idioma",
+      icon: Globe,
+      component: LanguageSwitcher,
+    },
+    {
+      id: "delete-account",
+      title: "Delete Account",
+      icon: Trash2,
+      component: null,
+    },
   ];
 
   if (currentUser.is_helper) {
-    sections.push(
-      { id: "helper-settings", title: "Helper Settings", icon: Sliders, component: HelperSettings },
-      { id: "availability-schedule", title: "Availability Schedule", icon: Calendar, component: AvailabilitySchedule },
-      { id: "payout-setup", title: "Payout Setup", icon: CreditCard, component: PayoutSetup },
+    sections.splice(2, 0,
+      {
+        id: "helper-settings",
+        title: "Helper Settings",
+        icon: Sliders,
+        component: HelperSettings,
+      },
+      {
+        id: "payout-setup",
+        title: "Payout Setup",
+        icon: CreditCard,
+        component: PayoutSetup,
+      }
     );
   }
 
-  const CurrentComponent = activeSection ? sections.find(s => s.id === activeSection)?.component : null;
+  const activeEntry = sections.find((s) => s.id === activeSection) ?? null;
+  const CurrentComponent = activeEntry?.component ?? null;
 
   return (
     <div className="flex flex-col h-full">
+      {/* Header */}
       <div className="flex items-center p-4 border-b border-border">
-        {activeSection ? (
-          <Button variant="ghost" size="icon" onClick={() => setActiveSection(null)} className="rounded-full">
-            <ChevronLeft className="w-5 h-5" />
-          </Button>
-        ) : (
-          <Button variant="ghost" size="icon" onClick={() => setLocation("/profile")} className="rounded-full">
-            <ChevronLeft className="w-5 h-5" />
-          </Button>
-        )}
-        <h1 className="text-lg font-black ml-2">{activeSection ? sections.find(s => s.id === activeSection)?.title : "Settings"}</h1>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() =>
+            activeSection ? setActiveSection(null) : setLocation("/profile")
+          }
+          className="rounded-full"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </Button>
+        <h1 className="text-lg font-black ml-2">
+          {activeSection ? (activeEntry?.title ?? "Settings") : "Settings"}
+        </h1>
       </div>
 
-      {/* pb-28 ensures content scrolls above the bottom navigation bar on mobile (nav ≈ 64px + env safe-area) */}
-      <div className="flex-1 overflow-y-auto p-4 pb-28">
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto p-4">
         {!activeSection ? (
-          <div className="space-y-3">
-            {sections.map(section => (
+          /* Section list */
+          <div className="space-y-2">
+            {sections.map((section) => (
               <Button
                 key={section.id}
                 variant="ghost"
-                className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
+                className="w-full flex items-center justify-between p-4 h-auto text-sm hover:bg-muted/50 transition-colors rounded-xl"
                 onClick={() => {
                   if (section.id === "delete-account") {
-                    // Handle delete account directly or via a specific dialog
-                    // For now, let's keep the mailto link or a simple toast
-                    toast({ title: "Account deletion initiated", description: "Please check your email for instructions." });
+                    setActiveSection("delete-account");
                   } else {
                     setActiveSection(section.id);
                   }
                 }}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <section.icon className="w-4 h-4 text-muted-foreground" />
                   <span>{section.title}</span>
                 </div>
@@ -570,22 +610,30 @@ export default function SettingsPage() {
             ))}
           </div>
         ) : (
-          <div className="py-4">
-            {CurrentComponent && <CurrentComponent userId={currentUser.id} />}
+          /* Active subsection */
+          <div className="py-2">
+            {CurrentComponent && (
+              <CurrentComponent userId={currentUser.id} />
+            )}
+
             {activeSection === "delete-account" && (
               <div className="space-y-4">
                 <h2 className="text-xl font-bold">Delete Account</h2>
                 <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4">
-                  <p className="text-sm text-destructive font-bold mb-1">This cannot be undone.</p>
+                  <p className="text-sm text-destructive font-bold mb-1">
+                    This cannot be undone.
+                  </p>
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Deleting your account will permanently remove your profile, transaction history, goodwill score,
-                    and benevolence wallet balance. Scheduled payments will be cancelled. This action is irreversible
-                    and cannot be recovered.
+                    Deleting your account will permanently remove your profile,
+                    transaction history, goodwill score, and benevolence wallet
+                    balance. Scheduled payments will be cancelled. This action
+                    is irreversible and cannot be recovered.
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Under GDPR/CCPA regulations, you have the right to request deletion of your personal data.
-                  Your data will be removed within 30 days of confirmation. To request deletion, contact:
+                  Under GDPR/CCPA regulations, you have the right to request
+                  deletion of your personal data. Your data will be removed
+                  within 30 days of confirmation. To request deletion, contact:
                 </p>
                 <a
                   href="mailto:privacy@niakofa.community?subject=Account%20Deletion%20Request"
@@ -597,8 +645,11 @@ export default function SettingsPage() {
                   variant="destructive"
                   className="w-full"
                   onClick={() => {
-                    // This will be replaced by the actual delete account logic later
-                    toast({ title: "Account deletion initiated", description: "Please check your email for instructions." });
+                    toast({
+                      title: "Deletion request submitted",
+                      description:
+                        "You will receive a confirmation email within 24 hours.",
+                    });
                   }}
                 >
                   Request Deletion

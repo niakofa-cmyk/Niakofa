@@ -81,11 +81,7 @@ export function TurnArrowHUD({ step, distanceToTurn }: TurnArrowHUDProps) {
           transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           className="absolute bottom-[220px] left-4 z-30 pointer-events-none"
         >
-          <div
-            role="status"
-            aria-live="polite"
-            className="flex items-center gap-3 bg-card/90 backdrop-blur-md border border-border rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.55)] px-4 py-3 min-w-[140px] max-w-[200px]"
-          >
+          <div className="flex items-center gap-3 bg-card/90 backdrop-blur-md border border-border rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.55)] px-4 py-3 min-w-[140px] max-w-[200px]">
             <div className={`shrink-0 ${color}`}>
               <Icon className="w-8 h-8 stroke-[2.5]" />
             </div>

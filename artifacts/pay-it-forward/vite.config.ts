@@ -51,18 +51,12 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
-    // Never emit source maps in production builds — they expose original source
-    // code to anyone who opens DevTools on a production deployment.
-    sourcemap: false,
   },
   server: {
     port,
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
-    hmr: process.env.REPL_ID
-      ? { protocol: "wss", host: process.env.REPLIT_DEV_DOMAIN, clientPort: 443 }
-      : true,
     fs: {
       strict: true,
       allow: [path.resolve(import.meta.dirname, "..", "..")],

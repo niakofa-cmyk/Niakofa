@@ -84,7 +84,6 @@ export function GratitudeModal({ prompt, onClose }: GratitudeModalProps) {
           <div className="relative bg-gradient-to-br from-primary/20 via-primary/5 to-background p-6 pb-4">
             <button
               onClick={onClose}
-              aria-label="Close"
               className="absolute top-4 right-4 w-8 h-8 rounded-full bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
             >
               <X className="w-4 h-4" />

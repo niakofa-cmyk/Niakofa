@@ -7,7 +7,7 @@
  */
 
 /**
- * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act
+ * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester
  */
 export type TransactionType = typeof TransactionType[keyof typeof TransactionType];
 

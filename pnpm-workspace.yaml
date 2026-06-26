@@ -34,6 +34,7 @@ minimumReleaseAgeExclude:
   - '@replit/*'
   - stripe-replit-sync
   - orval
+  - orval
 
 packages:
   - artifacts/*
@@ -69,10 +70,13 @@ catalog:
 
 autoInstallPeers: false
 
-dangerouslyAllowAllBuilds: true
+onlyBuiltDependencies:
+  - '@swc/core'
+  - esbuild
+  - msw
+  - unrs-resolver
 
 overrides:
-  "js-yaml": "^4.2.0"
   # pin ioredis to a single version to avoid BullMQ type conflicts
   "ioredis": "^5.6.0"
   # replit uses linux-x64 only, we can exclude all other platforms
@@ -159,3 +163,6 @@ overrides:
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
 
+allowBuilds:
+  esbuild: true
+  msgpackr-extract: true

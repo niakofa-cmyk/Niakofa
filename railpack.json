@@ -1,34 +1,20 @@
 {
   "$schema": "https://schema.railpack.com",
   "cache": [
-    {
-      "id": "pnpm-store",
-      "paths": ["/root/.local/share/pnpm/store"],
-      "key": "pnpm-store-v2"
-    }
+    { "id": "pnpm-store", "paths": ["/root/.local/share/pnpm/store"] }
   ],
   "steps": {
-    "install": {
-      "commands": [
-        "NODE_ENV=development pnpm install --frozen-lockfile"
-      ],
-      "cache": [
-        {
-          "id": "pnpm-store",
-          "paths": ["/root/.local/share/pnpm/store"],
-          "key": "pnpm-store-v2"
-        }
-      ]
-    },
     "build": {
-      "dependsOn": ["install"],
       "commands": [
+        "pnpm install --frozen-lockfile",
+        "pnpm run typecheck:libs",
+        "pnpm --filter @workspace/api-spec run codegen",
         "pnpm --filter @workspace/api-server run build",
         "NODE_ENV=production BASE_PATH=/ pnpm --filter @workspace/pay-it-forward run build"
       ]
     }
   },
   "deploy": {
-    "startCommand": "pnpm --filter @workspace/db run migrate && node --enable-source-maps artifacts/api-server/dist/index.mjs"
+    "startCommand": "node --enable-source-maps artifacts/api-server/dist/index.mjs"
   }
 }

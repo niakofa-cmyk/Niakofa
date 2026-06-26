@@ -3,8 +3,8 @@ import { requireAuth } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import Stripe from "stripe";
 import { db, stripeAccountsTable, paymentTransactionsTable, usersTable, requestsTable, transactionsTable } from "@workspace/db";
-import { eq, sql, and } from "drizzle-orm";
-import { broadcast, sendToUser } from "../lib/ws-hub";
+import { eq, sql } from "drizzle-orm";
+import { broadcast } from "../lib/ws-hub";
 import { sendPushToUser } from "./push";
 import { logger } from "../lib/logger";
 import { paymentLimiter } from "../middlewares/rate-limit";
@@ -123,33 +123,28 @@ router.post("/stripe/webhook", async (req, res) => {
             if (reqRow?.title) requestTitle = reqRow.title;
           } catch { /* non-fatal — title is cosmetic */ }
 
-          // Pledge confirmation is private to the parties on this request.
-          const pledgePaidPayload = {
-            request_id: txRow.request_id,
-            request_title: requestTitle,
-            helper_id: txRow.helper_id,
-            requester_id: txRow.requester_id ?? null,
-            amount,
-            via: "stripe",
-          };
-          sendToUser(txRow.helper_id, { type: "pledge_paid", payload: pledgePaidPayload });
-          if (txRow.requester_id) sendToUser(txRow.requester_id, { type: "pledge_paid", payload: pledgePaidPayload });
+          broadcast({
+            type: "pledge_paid",
+            payload: {
+              request_id: txRow.request_id,
+              request_title: requestTitle,
+              helper_id: txRow.helper_id,
+              requester_id: txRow.requester_id ?? null,
+              amount,
+              via: "stripe",
+            },
+          });
 
           sendPushToUser(txRow.helper_id, {
             title: "💙 Niakofa Received",
             body: `$${amount.toFixed(2)} was paid forward for: "${requestTitle}". Check your Goodwill Fund.`,
             requestId: txRow.request_id,
-          }, { notifKey: "notif_wallet_updates" }).catch(() => {});
+          }).catch(() => {});
         } else {
-          // payment_completed is private to the payer — scope to requester only.
-          const payerIdRaw = pi.metadata?.requesterId;
-          const payerId = payerIdRaw ? parseInt(payerIdRaw, 10) : NaN;
-          if (Number.isFinite(payerId)) {
-            sendToUser(payerId, {
-              type: "payment_completed",
-              payload: { paymentIntentId: pi.id, amount: pi.amount / 100 },
-            });
-          }
+          broadcast({
+            type: "payment_completed",
+            payload: { paymentIntentId: pi.id, amount: pi.amount / 100 },
+          });
         }
       } catch (err) {
         logger.error(
@@ -182,47 +177,14 @@ router.post("/stripe/webhook", async (req, res) => {
       const transfer = event.data.object as Stripe.Transfer;
       try {
         if (transfer.destination) {
-          // Match the originating payment_transactions row by the request+helper
-          // ids carried in the payout route's transfer metadata, constrained to a
-          // not-yet-completed row, so the webhook records the transfer even if it
-          // arrives before the payout route's own update — without ever touching an
-          // already-completed or unrelated row. Falls back to the transfer id for
-          // transfers created outside the payout route (no metadata).
-          const reqIdRaw = transfer.metadata?.requestId;
-          const helperIdRaw = transfer.metadata?.helperId;
-          const reqId = reqIdRaw ? parseInt(reqIdRaw, 10) : NaN;
-          const helperId = helperIdRaw ? parseInt(helperIdRaw, 10) : NaN;
-
-          let matchClause;
-          if (Number.isFinite(reqId)) {
-            const parts = [
-              eq(paymentTransactionsTable.request_id, reqId),
-              sql`${paymentTransactionsTable.state} != 'completed'`,
-            ];
-            if (Number.isFinite(helperId)) {
-              parts.push(eq(paymentTransactionsTable.helper_id, helperId));
-            }
-            matchClause = and(...parts);
-          } else {
-            matchClause = eq(paymentTransactionsTable.stripe_transfer_id, transfer.id);
-          }
-
-          const updatedRows = await db
+          await db
             .update(paymentTransactionsTable)
             .set({
               stripe_transfer_id: transfer.id,
               state: "completed",
               updated_at: new Date(),
             })
-            .where(matchClause)
-            .returning({ id: paymentTransactionsTable.id });
-
-          if (updatedRows.length > 1) {
-            logger.warn(
-              { eventId: event.id, transferId: transfer.id, requestId: reqId, matched: updatedRows.length },
-              "Stripe webhook: transfer.created matched multiple payment_transactions rows — ambiguous match",
-            );
-          }
+            .where(eq(paymentTransactionsTable.stripe_transfer_id, transfer.id));
         }
       } catch (err) {
         logger.error(
@@ -255,8 +217,7 @@ router.post("/stripe/webhook", async (req, res) => {
             .where(eq(stripeAccountsTable.stripe_account_id, account.id));
 
           if (account.payouts_enabled && !existing.payouts_enabled) {
-            // payouts_enabled is personal account news — only notify the helper it affects.
-            sendToUser(existing.user_id, {
+            broadcast({
               type: "payouts_enabled",
               payload: { userId: existing.user_id },
             });
@@ -288,13 +249,7 @@ router.post("/stripe/webhook", async (req, res) => {
 });
 
 // ── PAYMENT INTENT (Phase 1 — immediate pay) ────────────────────────────────
-// HIGH-004: requireOwnership("requesterId") was checking req.body.requesterId,
-// a field that doesn't exist on this route (the body has requestId/helperId,
-// and the actual requester is always req.authenticatedUserId, set below) —
-// so targetId was always undefined and EVERY call 403'd. Ownership here is
-// inherent (the payer is whoever is authenticated), so the extra middleware
-// is removed rather than fixed to check a field that was never meant to exist.
-router.post("/stripe/payment-intent", requireAuth, paymentLimiter, async (req, res) => {
+router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId"), paymentLimiter, async (req, res) => {
   if (!stripeRequired(res)) return;
 
   const { requestId, amount, helperId, paymentType } = req.body as {
@@ -307,22 +262,10 @@ router.post("/stripe/payment-intent", requireAuth, paymentLimiter, async (req, r
   if (!requestId || !amount || amount <= 0) {
     return res.status(400).json({ error: "requestId and amount (> 0) required" });
   }
-  const MAX_PAYMENT_AMOUNT = 10000; // $10,000 sanity cap
-  if (amount > MAX_PAYMENT_AMOUNT) {
-    return res.status(400).json({ error: `amount exceeds maximum allowed ($${MAX_PAYMENT_AMOUNT})` });
-  }
 
-  // Check if helper has a Connect account for direct transfer — but first
-  // verify the client-supplied helperId actually matches this request's
-  // real assigned helper, server-side. Without this, a requester could
-  // redirect the transfer's destination to an arbitrary connected account.
+  // Check if helper has a Connect account for direct transfer
   let transferData: { destination: string } | undefined;
   if (helperId) {
-    const [req_] = await db.select({ helper_id: requestsTable.helper_id })
-      .from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
-    if (!req_ || req_.helper_id !== helperId) {
-      return res.status(400).json({ error: "helperId does not match this request's assigned helper" });
-    }
     const [acct] = await db
       .select()
       .from(stripeAccountsTable)
@@ -333,24 +276,18 @@ router.post("/stripe/payment-intent", requireAuth, paymentLimiter, async (req, r
     }
   }
 
-  // Idempotency key derived from requestId + caller — a network retry
-  // (e.g. mobile connection drop during checkout) resending this exact
-  // request returns the SAME PaymentIntent instead of creating a second
-  // one for the same transaction.
-  const authenticatedUserId = req.authenticatedUserId!;
-  const idempotencyKey = `pi-${requestId}-${authenticatedUserId}-${paymentType ?? "immediate"}`;
   const pi = await stripe!.paymentIntents.create({
     amount: Math.round(amount * 100), // convert to cents
     currency: "usd",
     metadata: {
       requestId: requestId.toString(),
       helperId: helperId?.toString() ?? "",
-      requesterId: authenticatedUserId.toString(),
+      requesterId: (req as any).authenticatedUserId.toString(),
       paymentType: paymentType ?? "immediate",
     },
     automatic_payment_methods: { enabled: true },
     ...(transferData ? { transfer_data: transferData } : {}),
-  }, { idempotencyKey });
+  });
 
   // Record in payment_transactions — starts as "authorized"
   const [tx] = await db
@@ -358,7 +295,7 @@ router.post("/stripe/payment-intent", requireAuth, paymentLimiter, async (req, r
     .values({
       request_id: requestId,
       helper_id: helperId ?? null,
-      requester_id: authenticatedUserId,
+      requester_id: (req as any).authenticatedUserId,
       amount,
       state: "authorized",
       payment_type: paymentType ?? "immediate",
@@ -436,7 +373,7 @@ router.post("/stripe/connect/onboard", requireAuth, requireOwnership("userId"), 
 
 // ── CONNECT ACCOUNT STATUS ──────────────────────────────────────────────────
 router.get("/stripe/connect/status/:userId", requireAuth, requireOwnership("userId"), async (req, res) => {
-  const userId = parseInt(req.params.userId as string);
+  const userId = parseInt(req.params.userId);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
   const [acct] = await db
@@ -495,7 +432,7 @@ router.get("/stripe/connect/refresh", (_req, res) => {
 
 // ── PAYMENT TRANSACTIONS (for wallet display) ───────────────────────────────
 router.get("/stripe/payment-transactions/:userId", requireAuth, requireOwnership("userId"), async (req, res) => {
-  const userId = parseInt(req.params.userId as string);
+  const userId = parseInt(req.params.userId);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
   const txs = await db
@@ -519,39 +456,6 @@ router.post("/stripe/payout", requireAuth, requireAdmin(), paymentLimiter, async
   };
 
   if (!helperId || !amount) return res.status(400).json({ error: "helperId and amount required" });
-  const MAX_PAYOUT_AMOUNT = 25000; // sanity cap for manual, requestId-less payouts
-
-  // If a requestId is given, the payment_transactions row for that request
-  // is the authoritative source of truth for what's actually owed — the
-  // client/admin-supplied amount is validated against it (and overridden if
-  // it disagrees) rather than trusted outright. A free-form payout with no
-  // requestId (e.g. a manual goodwill correction) has no source-of-truth row
-  // to recompute against, so it falls back to the sanity-capped admin amount.
-  let payoutAmount = amount;
-  let paymentTransaction: typeof paymentTransactionsTable.$inferSelect | undefined;
-
-  if (requestId) {
-    const [pt] = await db.select().from(paymentTransactionsTable)
-      .where(eq(paymentTransactionsTable.request_id, requestId)).limit(1);
-    if (!pt) return res.status(404).json({ error: "No payment transaction found for this request" });
-    if (pt.state === "completed") {
-      return res.status(409).json({ error: "This request has already been paid out" });
-    }
-    paymentTransaction = pt;
-    payoutAmount = pt.amount;
-    if (Math.abs(amount - pt.amount) > 0.01) {
-      logger.warn(
-        { requestId, clientAmount: amount, authoritativeAmount: pt.amount },
-        "stripe/payout: client-supplied amount did not match source of truth — using authoritative amount"
-      );
-    }
-  } else if (payoutAmount <= 0 || payoutAmount > MAX_PAYOUT_AMOUNT) {
-    return res.status(400).json({ error: `amount must be greater than 0 and no more than $${MAX_PAYOUT_AMOUNT}` });
-  }
-
-  if (payoutAmount <= 0) {
-    return res.status(400).json({ error: "Computed payout amount must be greater than 0" });
-  }
 
   const [acct] = await db
     .select()
@@ -568,24 +472,19 @@ router.post("/stripe/payout", requireAuth, requireAdmin(), paymentLimiter, async
 
   // Create a transfer to the helper's connected account
   const transfer = await stripe!.transfers.create({
-    amount: Math.round(payoutAmount * 100),
+    amount: Math.round(amount * 100),
     currency: "usd",
     destination: acct.stripe_account_id,
     description: description ?? `Niakofa — Request #${requestId}`,
     metadata: { helperId: helperId.toString(), requestId: requestId?.toString() ?? "" },
-  }, requestId ? { idempotencyKey: `payout-req-${requestId}` } : undefined);
+  });
 
-  // Update payment transaction state — guarded by state != 'completed' in
-  // the WHERE clause itself (not just the earlier read-check) to close the
-  // same TOCTOU race already fixed for request completion in §3.1.
-  if (requestId && paymentTransaction) {
+  // Update payment transaction state
+  if (requestId) {
     await db
       .update(paymentTransactionsTable)
       .set({ stripe_transfer_id: transfer.id, state: "completed", updated_at: new Date() })
-      .where(and(
-        eq(paymentTransactionsTable.request_id, requestId),
-        sql`${paymentTransactionsTable.state} != 'completed'`,
-      ));
+      .where(eq(paymentTransactionsTable.request_id, requestId));
   }
 
   return res.json({

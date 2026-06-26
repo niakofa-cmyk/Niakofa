@@ -2,4 +2,4 @@
 builder = "railpack"
 
 [deploy]
-startCommand = "pnpm --filter @workspace/db run migrate && node --enable-source-maps artifacts/api-server/dist/index.mjs"
+startCommand = "node --enable-source-maps artifacts/api-server/dist/index.mjs"

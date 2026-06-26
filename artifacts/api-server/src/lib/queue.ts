@@ -26,8 +26,6 @@ export function getRedisConnection(): IORedis | null {
     maxRetriesPerRequest: null,   // required by BullMQ
     enableReadyCheck: false,
     lazyConnect: false,
-    keepAlive: 10_000,            // TCP keepalive — prevents idle connections being silently dropped by the proxy, which surfaces as ECONNRESET
-    retryStrategy: (times: number) => Math.min(times * 200, 5_000), // bounded backoff instead of default unbounded growth
   });
 
   _connection.on("connect", () => logger.info("redis: connected"));
@@ -49,16 +47,11 @@ export async function closeRedis(): Promise<void> {
 }
 
 // ── Queue names ───────────────────────────────────────────────────────────────
-// BullMQ rejects ":" in queue names outright — use "-" as the namespace
-// separator instead. (This bug was silent the entire time Redis wasn't
-// configured, since createQueue() short-circuits before constructing a
-// real Queue when no connection exists — it only surfaced once Redis was
-// actually connected.)
 export const QUEUE = {
-  PAYOUTS:               "niakofa-payouts",
-  PLEDGE_RECONCILIATION: "niakofa-pledge-reconciliation",
-  REQUEST_CLEANUP:       "niakofa-request-cleanup",
-  NOTIFICATIONS:         "niakofa-notifications",
+  PAYOUTS:               "niakofa:payouts",
+  PLEDGE_RECONCILIATION: "niakofa:pledge-reconciliation",
+  REQUEST_CLEANUP:       "niakofa:request-cleanup",
+  NOTIFICATIONS:         "niakofa:notifications",
 } as const;
 
 // ── Default job options ───────────────────────────────────────────────────────
@@ -108,7 +101,7 @@ export async function enqueuePayoutRetry(data: PayoutJobData): Promise<boolean> 
     return false;
   }
   await payoutQueue.add("retry-payout", data, {
-    jobId: `payout-${data.request_id}`, // deterministic — enables real BullMQ deduplication
+    jobId: `payout-${data.request_id}-${Date.now()}`,
   });
   logger.info({ request_id: data.request_id }, "payout retry enqueued");
   return true;

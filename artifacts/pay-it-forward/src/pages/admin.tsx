@@ -1,14 +1,21 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
   Shield, AlertCircle, CheckCircle2, Clock, X, ChevronLeft,
-  Eye, Flag, User as UserIcon, RefreshCw, Filter, ExternalLink,
-  Users, Search, Ban, AlertTriangle, Star
+  Eye, Flag, User as UserIcon, RefreshCw, Filter,
+  Users, Search, Ban, AlertTriangle, Star, BarChart3,
+  TrendingUp, Heart, Activity
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, AreaChart, Area, CartesianGrid, Legend,
+} from "recharts";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Report {
   id: number;
@@ -28,29 +35,161 @@ interface Report {
   reported_user_name?: string | null;
 }
 
+interface AdminUser {
+  id: number;
+  name: string;
+  email: string;
+  is_helper: boolean;
+  trust_score: number | null;
+  help_count: number;
+  created_at: string;
+}
+
+interface AnalyticsData {
+  overview: {
+    total_open: number;
+    total_completed: number;
+    total_helpers_online: number;
+    recent_completions_24h: number;
+    total_users: number;
+    new_users_week: number;
+  };
+  requests_by_category: { category: string; count: number }[];
+  daily_request_volume: { day: string; count: number }[];
+  pledge_pool: { total_pledged: number; total_paid: number; pending: number };
+  reports_by_status: { status: string; count: number }[];
+  reports_by_type: { type: string; count: number }[];
+  trust_score_distribution: { bucket: string; count: number }[];
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  pending: { label: "Pending", color: "bg-yellow-500/15 text-yellow-500 border-yellow-500/30" },
-  under_review: { label: "Under Review", color: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
-  resolved_dismissed: { label: "Dismissed", color: "bg-muted text-muted-foreground border-border" },
-  resolved_warned: { label: "Warned", color: "bg-orange-500/15 text-orange-400 border-orange-500/30" },
-  resolved_banned: { label: "Banned", color: "bg-destructive/15 text-destructive border-destructive/30" },
+  pending:             { label: "Pending",      color: "bg-yellow-500/15 text-yellow-500 border-yellow-500/30" },
+  under_review:        { label: "Under Review", color: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
+  resolved_dismissed:  { label: "Dismissed",    color: "bg-muted text-muted-foreground border-border" },
+  resolved_warned:     { label: "Warned",       color: "bg-orange-500/15 text-orange-400 border-orange-500/30" },
+  resolved_banned:     { label: "Banned",       color: "bg-destructive/15 text-destructive border-destructive/30" },
 };
 
 const TYPE_LABELS: Record<string, string> = {
   suspicious_request: "Suspicious Request",
-  suspicious_helper: "Suspicious Helper",
-  fraud: "Fraud",
-  harassment: "Harassment",
-  fake_profile: "Fake Profile",
+  suspicious_helper:  "Suspicious Helper",
+  fraud:              "Fraud",
+  harassment:         "Harassment",
+  fake_profile:       "Fake Profile",
   dangerous_behavior: "Dangerous Behavior",
-  spam: "Spam",
-  other: "Other",
+  spam:               "Spam",
+  other:              "Other",
 };
+
+const CHART_COLORS = ["#06b6d4", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#3b82f6", "#84cc16"];
+
+const STATUS_FILTERS = ["all", "pending", "under_review", "resolved_dismissed", "resolved_warned", "resolved_banned"];
+
+const SESSION_KEY = "admin_token";
+const SESSION_USER_KEY = "admin_user_id";
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
+
+function getAdminToken(): string | null {
+  return sessionStorage.getItem(SESSION_KEY);
+}
+
+function getAdminUserId(): number | null {
+  const v = sessionStorage.getItem(SESSION_USER_KEY);
+  return v ? parseInt(v) : null;
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getAdminToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
+}
+
+// ── Login Screen ──────────────────────────────────────────────────────────────
+
+function AdminLogin({ onLogin }: { onLogin: () => void }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
+  const handleLogin = async () => {
+    if (!email || !password) { setError("Email and password required"); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${base}/api/users/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      });
+      const data = await res.json() as { user?: { id: number; is_admin?: boolean }; token?: string; error?: string };
+      if (!res.ok) { setError(data.error ?? "Login failed"); return; }
+      if (!data.user?.is_admin) { setError("Access denied — admin account required"); return; }
+      if (!data.token) { setError("Login error — no token returned"); return; }
+      sessionStorage.setItem(SESSION_KEY, data.token);
+      sessionStorage.setItem(SESSION_USER_KEY, String(data.user.id));
+      onLogin();
+    } catch {
+      setError("Network error — check your connection");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-background flex flex-col items-center justify-center p-8 gap-6">
+      <div className="w-16 h-16 rounded-2xl bg-destructive/10 border border-destructive/30 flex items-center justify-center">
+        <Shield className="w-8 h-8 text-destructive" />
+      </div>
+      <div className="text-center">
+        <h1 className="text-2xl font-black">Admin Access</h1>
+        <p className="text-sm text-muted-foreground mt-1">Sign in with your admin account</p>
+      </div>
+      <div className="w-full max-w-xs space-y-3">
+        <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && handleLogin()}
+          className="w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          autoFocus
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && handleLogin()}
+          className="w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+        {error && (
+          <div className="flex items-center gap-2 text-destructive text-sm">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+        <Button
+          onClick={handleLogin}
+          disabled={loading}
+          className="w-full h-11 font-black"
+        >
+          {loading ? <span className="flex items-center gap-2"><RefreshCw className="w-4 h-4 animate-spin" />Signing in…</span> : "Enter Admin"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ── Report Detail Sheet ───────────────────────────────────────────────────────
 
 function ReportDetailSheet({ report, onClose, onReviewed }: {
   report: Report;
@@ -60,25 +199,28 @@ function ReportDetailSheet({ report, onClose, onReviewed }: {
   const [status, setStatus] = useState<string>(report.status === "pending" ? "under_review" : report.status);
   const [notes, setNotes] = useState(report.admin_notes ?? "");
   const [saving, setSaving] = useState(false);
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
   const handleReview = async () => {
     const actionableStatuses = ["under_review", "resolved_dismissed", "resolved_warned", "resolved_banned"];
     if (!actionableStatuses.includes(status)) return;
     setSaving(true);
     try {
-      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
       const res = await fetch(`${base}/api/reports/${report.id}/review`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, admin_notes: notes || null, reviewed_by: 1 }),
+        headers: authHeaders(),
+        body: JSON.stringify({ status, admin_notes: notes || null }),
       });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed");
+      }
       const updated = await res.json() as Report;
       onReviewed(updated);
       toast({ title: "Report updated", description: `Status set to: ${STATUS_LABELS[status]?.label ?? status}` });
       onClose();
-    } catch {
-      toast({ title: "Failed to update report", variant: "destructive" });
+    } catch (e: unknown) {
+      toast({ title: (e as Error).message ?? "Failed to update report", variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -87,16 +229,12 @@ function ReportDetailSheet({ report, onClose, onReviewed }: {
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         className="fixed inset-0 bg-black/70 z-50 backdrop-blur-sm"
         onClick={onClose}
       />
       <motion.div
-        initial={{ y: "100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "100%" }}
+        initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
         transition={{ type: "spring", damping: 26, stiffness: 220 }}
         className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl max-h-[92dvh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
@@ -112,7 +250,6 @@ function ReportDetailSheet({ report, onClose, onReviewed }: {
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Meta */}
           <div className="grid grid-cols-2 gap-2">
             <div className="bg-background rounded-xl p-3 border border-border">
               <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Type</div>
@@ -143,13 +280,11 @@ function ReportDetailSheet({ report, onClose, onReviewed }: {
             )}
           </div>
 
-          {/* Description */}
           <div className="bg-background rounded-xl p-4 border border-border">
             <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">Description</div>
             <p className="text-sm leading-relaxed">{report.description}</p>
           </div>
 
-          {/* Action */}
           <div className="space-y-3">
             <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Admin Action</div>
             <div className="grid grid-cols-2 gap-2">
@@ -167,7 +302,6 @@ function ReportDetailSheet({ report, onClose, onReviewed }: {
                 </button>
               ))}
             </div>
-
             <textarea
               placeholder="Admin notes (optional)…"
               value={notes}
@@ -175,11 +309,8 @@ function ReportDetailSheet({ report, onClose, onReviewed }: {
               rows={3}
               className="w-full text-sm bg-background border border-border rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground"
             />
-
             <Button className="w-full h-11 font-black" onClick={handleReview} disabled={saving}>
-              {saving ? (
-                <span className="flex items-center gap-2"><RefreshCw className="w-4 h-4 animate-spin" />Saving…</span>
-              ) : "Submit Review"}
+              {saving ? <span className="flex items-center gap-2"><RefreshCw className="w-4 h-4 animate-spin" />Saving…</span> : "Submit Review"}
             </Button>
           </div>
         </div>
@@ -188,28 +319,187 @@ function ReportDetailSheet({ report, onClose, onReviewed }: {
   );
 }
 
-const STATUS_FILTERS = ["all", "pending", "under_review", "resolved_dismissed", "resolved_warned", "resolved_banned"];
+// ── Reports Tab ───────────────────────────────────────────────────────────────
 
+function ReportsTab() {
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
-interface AdminUser {
-  id: number;
-  name: string;
-  email: string;
-  is_helper: boolean;
-  trust_score: number | null;
-  help_count: number;
-  created_at: string;
+  const fetchReports = useCallback(async (status?: string) => {
+    setLoading(true);
+    try {
+      const url = status && status !== "all"
+        ? `${base}/api/reports?status=${status}`
+        : `${base}/api/reports`;
+      const res = await fetch(url, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json() as Report[];
+      setReports(data);
+    } catch {
+      toast({ title: "Could not load reports", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [base]);
+
+  useEffect(() => { fetchReports(statusFilter); }, [statusFilter]);
+
+  const openDetail = async (report: Report) => {
+    setDetailLoading(true);
+    try {
+      const res = await fetch(`${base}/api/reports/${report.id}`, { headers: authHeaders() });
+      setSelectedReport(res.ok ? await res.json() as Report : report);
+    } catch {
+      setSelectedReport(report);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const handleReviewed = (updated: Report) => {
+    setReports(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r));
+  };
+
+  const pendingCount = reports.filter(r => r.status === "pending").length;
+  const filteredReports = statusFilter === "all" ? reports : reports.filter(r => r.status === statusFilter);
+
+  return (
+    <div className="space-y-3">
+      {/* Header stats */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">{reports.length} total</span>
+        {pendingCount > 0 && (
+          <span className="text-[10px] font-black bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 px-2 py-0.5 rounded-full">
+            {pendingCount} pending
+          </span>
+        )}
+        <button
+          onClick={() => fetchReports(statusFilter)}
+          disabled={loading}
+          className="ml-auto p-1.5 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+
+      {/* Filter chips */}
+      <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1">
+        {STATUS_FILTERS.map(s => {
+          const meta = STATUS_LABELS[s];
+          const isActive = statusFilter === s;
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`shrink-0 text-[11px] font-bold px-3 py-1.5 rounded-full border transition-all ${
+                isActive
+                  ? s === "all" ? "bg-primary text-primary-foreground border-primary" : (meta?.color ?? "bg-primary text-primary-foreground border-primary")
+                  : "bg-background border-border text-muted-foreground hover:border-primary/40"
+              }`}
+            >
+              {s === "all" ? "All" : meta?.label ?? s}
+            </button>
+          );
+        })}
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
+          <RefreshCw className="w-5 h-5 animate-spin" />
+          <span className="text-sm">Loading reports…</span>
+        </div>
+      )}
+
+      {!loading && filteredReports.length === 0 && (
+        <div className="text-center py-16">
+          <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-green-400/40" />
+          <div className="font-bold text-sm text-muted-foreground">
+            {statusFilter === "all" ? "No reports yet" : `No ${STATUS_LABELS[statusFilter]?.label?.toLowerCase() ?? statusFilter} reports`}
+          </div>
+          <div className="text-xs text-muted-foreground/60 mt-1">The queue is clear</div>
+        </div>
+      )}
+
+      {!loading && filteredReports.map(report => {
+        const statusMeta = STATUS_LABELS[report.status] ?? { label: report.status, color: "bg-muted text-muted-foreground border-border" };
+        return (
+          <motion.button
+            key={report.id}
+            layout
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            onClick={() => openDetail(report)}
+            disabled={detailLoading}
+            className="w-full text-left bg-card border border-border rounded-2xl p-4 hover:border-primary/40 transition-all"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${statusMeta.color}`}>
+                    {statusMeta.label}
+                  </span>
+                  <span className="text-[10px] font-semibold bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                    {TYPE_LABELS[report.type] ?? report.type}
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">{report.description}</p>
+                <div className="flex items-center gap-3 mt-2 flex-wrap">
+                  {report.reported_user_id && (
+                    <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <UserIcon className="w-3 h-3" /> User #{report.reported_user_id}
+                    </span>
+                  )}
+                  {report.reported_request_id && (
+                    <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <Flag className="w-3 h-3" /> Request #{report.reported_request_id}
+                    </span>
+                  )}
+                  <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <Clock className="w-3 h-3" /> {fmtDate(report.created_at)}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {report.status === "pending" && <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />}
+                <Eye className="w-4 h-4 text-muted-foreground" />
+              </div>
+            </div>
+            {report.admin_notes && (
+              <div className="mt-3 pt-3 border-t border-border">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Admin Notes</div>
+                <p className="text-xs text-muted-foreground line-clamp-2">{report.admin_notes}</p>
+              </div>
+            )}
+          </motion.button>
+        );
+      })}
+
+      {selectedReport && (
+        <ReportDetailSheet
+          report={selectedReport}
+          onClose={() => setSelectedReport(null)}
+          onReviewed={handleReviewed}
+        />
+      )}
+    </div>
+  );
 }
+
+// ── Users Tab ─────────────────────────────────────────────────────────────────
 
 function UsersTab() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [actionUser, setActionUser] = useState<AdminUser | null>(null);
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
   useEffect(() => {
-    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-    fetch(`${base}/api/users?limit=100`)
+    fetch(`${base}/api/users`, { headers: authHeaders() })
       .then(r => r.json())
       .then((data) => { if (Array.isArray(data)) setUsers(data); setLoading(false); })
       .catch(() => setLoading(false));
@@ -221,23 +511,29 @@ function UsersTab() {
   );
 
   const handleAction = async (userId: number, action: "warn" | "ban") => {
-    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
     try {
-      await fetch(`${base}/api/users/${userId}/moderation`, {
+      const res = await fetch(`${base}/api/users/${userId}/moderation`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ action }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Action failed");
+      }
       toast({ title: action === "ban" ? "User banned" : "Warning issued" });
       setActionUser(null);
-    } catch {
-      toast({ title: "Action failed", variant: "destructive" });
+      setUsers(prev => prev.map(u => {
+        if (u.id !== userId) return u;
+        return { ...u, trust_score: action === "ban" ? -1 : Math.max(0, (u.trust_score ?? 5) - 10) };
+      }));
+    } catch (e: unknown) {
+      toast({ title: (e as Error).message ?? "Action failed", variant: "destructive" });
     }
   };
 
   return (
     <div className="space-y-3">
-      {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input
@@ -276,7 +572,7 @@ function UsersTab() {
                   <span className="text-[10px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full font-bold">Helper</span>
                 )}
                 <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                  <Star className="w-3 h-3" />{(user.trust_score ?? 0).toFixed(0)}%
+                  <Star className="w-3 h-3" />{(user.trust_score ?? 0).toFixed(1)}
                 </span>
                 <span className="text-[10px] text-muted-foreground">{user.help_count} helps</span>
               </div>
@@ -291,7 +587,6 @@ function UsersTab() {
         </motion.div>
       ))}
 
-      {/* Action sheet */}
       <AnimatePresence>
         {actionUser && (
           <>
@@ -350,90 +645,257 @@ function UsersTab() {
   );
 }
 
-export default function AdminScreen() {
-  const [authed, setAuthed] = useState(false);
-  const [adminInput, setAdminInput] = useState("");
-  const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET ?? "niakofa-admin-2026";
-  const [, setLocation] = useLocation();
-  const [reports, setReports] = useState<Report[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+// ── Analytics Tab ─────────────────────────────────────────────────────────────
 
+function StatCard({ label, value, sub, icon: Icon, color = "text-primary" }: {
+  label: string; value: string | number; sub?: string; icon: React.ElementType; color?: string;
+}) {
+  return (
+    <div className="bg-card border border-border rounded-2xl p-4">
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className={`p-2 rounded-xl bg-muted ${color}`}>
+          <Icon className="w-4 h-4" />
+        </div>
+      </div>
+      <div className="text-2xl font-black">{value}</div>
+      <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
+      {sub && <div className="text-[10px] text-primary mt-1">{sub}</div>}
+    </div>
+  );
+}
+
+const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number; name: string }[]; label?: string }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-card border border-border rounded-xl px-3 py-2 text-xs shadow-lg">
+      {label && <div className="font-bold mb-1 text-foreground">{label}</div>}
+      {payload.map((p, i) => (
+        <div key={i} className="text-muted-foreground">{p.name ?? "Count"}: <span className="font-bold text-foreground">{p.value}</span></div>
+      ))}
+    </div>
+  );
+};
+
+function AnalyticsTab() {
+  const [data, setData] = useState<AnalyticsData | null>(null);
+  const [loading, setLoading] = useState(true);
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
-  const fetchReports = async (status?: string) => {
+  const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     try {
-      const url = status && status !== "all"
-        ? `${base}/api/reports?status=${status}`
-        : `${base}/api/reports`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed");
-      const data = await res.json() as Report[];
-      setReports(data);
+      const res = await fetch(`${base}/api/admin/analytics`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed to load analytics");
+      setData(await res.json() as AnalyticsData);
     } catch {
-      toast({ title: "Could not load reports", variant: "destructive" });
+      toast({ title: "Could not load analytics", variant: "destructive" });
     } finally {
       setLoading(false);
     }
-  };
+  }, [base]);
 
-  useEffect(() => { if (authed) fetchReports(statusFilter); }, [statusFilter, authed]);
+  useEffect(() => { fetchAnalytics(); }, []);
 
-  if (!authed) {
+  if (loading) {
     return (
-      <div className="fixed inset-0 bg-background flex flex-col items-center justify-center p-8 gap-6">
-        <Shield className="w-12 h-12 text-primary" />
-        <div className="text-center">
-          <h1 className="text-2xl font-black">Admin Access</h1>
-          <p className="text-sm text-muted-foreground mt-1">Enter the admin secret to continue</p>
-        </div>
-        <div className="w-full max-w-xs space-y-3">
-          <input
-            type="password"
-            placeholder="Admin secret"
-            value={adminInput}
-            onChange={e => setAdminInput(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && adminInput === ADMIN_SECRET) setAuthed(true); }}
-            className="w-full px-4 py-3 rounded-xl border border-border bg-card text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            autoFocus
-          />
-          <button
-            onClick={() => { if (adminInput === ADMIN_SECRET) setAuthed(true); else alert("Incorrect secret"); }}
-            className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-black text-sm"
-          >
-            Enter Admin
-          </button>
-        </div>
+      <div className="flex items-center justify-center py-20 gap-2 text-muted-foreground">
+        <RefreshCw className="w-5 h-5 animate-spin" />
+        <span className="text-sm">Loading analytics…</span>
       </div>
     );
   }
 
-  const openDetail = async (report: Report) => {
-    setDetailLoading(true);
-    try {
-      const res = await fetch(`${base}/api/reports/${report.id}`);
-      if (res.ok) {
-        const detail = await res.json() as Report;
-        setSelectedReport(detail);
-      } else {
-        setSelectedReport(report);
-      }
-    } catch {
-      setSelectedReport(report);
-    } finally {
-      setDetailLoading(false);
-    }
+  if (!data) return null;
+
+  const { overview, requests_by_category, daily_request_volume, pledge_pool, reports_by_type, trust_score_distribution } = data;
+
+  const categoryData = requests_by_category.map(d => ({
+    name: d.category.charAt(0).toUpperCase() + d.category.slice(1),
+    count: d.count,
+  }));
+
+  const reportTypeData = reports_by_type.map(d => ({
+    name: TYPE_LABELS[d.type] ?? d.type,
+    value: d.count,
+  }));
+
+  const trustData = [...trust_score_distribution].sort((a, b) => a.bucket.localeCompare(b.bucket));
+
+  const pledgePct = pledge_pool.total_pledged > 0
+    ? Math.round((pledge_pool.total_paid / pledge_pool.total_pledged) * 100)
+    : 0;
+
+  return (
+    <div className="space-y-6">
+      {/* Refresh */}
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Platform Health</div>
+        <button onClick={fetchAnalytics} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+          <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+        </button>
+      </div>
+
+      {/* Overview stat cards */}
+      <div className="grid grid-cols-2 gap-3">
+        <StatCard label="Open Requests" value={overview.total_open} icon={Activity} color="text-yellow-500" />
+        <StatCard label="Completed" value={overview.total_completed} icon={CheckCircle2} color="text-green-500" />
+        <StatCard label="Online Helpers" value={overview.total_helpers_online} icon={Users} color="text-primary" />
+        <StatCard label="Completions (24h)" value={overview.recent_completions_24h} icon={TrendingUp} color="text-purple-400" />
+        <StatCard label="Total Users" value={overview.total_users} sub={`+${overview.new_users_week} this week`} icon={UserIcon} color="text-blue-400" />
+        <StatCard
+          label="Pledge Pool"
+          value={`$${(pledge_pool.total_paid / 100).toFixed(0)}`}
+          sub={`${pledgePct}% paid · $${(pledge_pool.pending / 100).toFixed(0)} pending`}
+          icon={Heart}
+          color="text-pink-400"
+        />
+      </div>
+
+      {/* Daily request volume */}
+      {daily_request_volume.length > 0 && (
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground mb-4">Request Volume — Last 7 Days</div>
+          <ResponsiveContainer width="100%" height={140}>
+            <AreaChart data={daily_request_volume} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+              <defs>
+                <linearGradient id="volGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+              <XAxis dataKey="day" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} />
+              <Area type="monotone" dataKey="count" name="Requests" stroke="#06b6d4" strokeWidth={2} fill="url(#volGrad)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Requests by category */}
+      {categoryData.length > 0 && (
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground mb-4">Requests by Category</div>
+          <ResponsiveContainer width="100%" height={160}>
+            <BarChart data={categoryData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="count" name="Requests" radius={[6, 6, 0, 0]}>
+                {categoryData.map((_, i) => (
+                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Trust score distribution */}
+      {trustData.length > 0 && (
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground mb-4">Trust Score Distribution</div>
+          <ResponsiveContainer width="100%" height={140}>
+            <BarChart data={trustData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+              <XAxis dataKey="bucket" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="count" name="Users" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Report type breakdown */}
+      {reportTypeData.length > 0 && (
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground mb-4">Reports by Type</div>
+          <div className="flex items-center gap-4">
+            <ResponsiveContainer width="50%" height={140}>
+              <PieChart>
+                <Pie
+                  data={reportTypeData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={36}
+                  outerRadius={60}
+                  paddingAngle={3}
+                >
+                  {reportTypeData.map((_, i) => (
+                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="flex-1 space-y-1.5">
+              {reportTypeData.map((d, i) => (
+                <div key={d.name} className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                    <span className="text-[10px] text-muted-foreground truncate">{d.name}</span>
+                  </div>
+                  <span className="text-[10px] font-black text-foreground">{d.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pledge pool health bar */}
+      <div className="bg-card border border-border rounded-2xl p-4">
+        <div className="text-xs font-black uppercase tracking-wider text-muted-foreground mb-3">Pledge Pool Health</div>
+        <div className="space-y-2">
+          <div className="flex justify-between text-xs">
+            <span className="text-muted-foreground">Paid</span>
+            <span className="font-bold">${(pledge_pool.total_paid / 100).toFixed(2)} / ${(pledge_pool.total_pledged / 100).toFixed(2)}</span>
+          </div>
+          <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-primary to-green-500 rounded-full transition-all"
+              style={{ width: `${pledgePct}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-[10px] text-muted-foreground">
+            <span>{pledgePct}% fulfilled</span>
+            <span>${(pledge_pool.pending / 100).toFixed(2)} outstanding</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Admin Screen ─────────────────────────────────────────────────────────
+
+type TabId = "reports" | "users" | "analytics";
+
+const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
+  { id: "reports", label: "Reports", icon: Flag },
+  { id: "users",   label: "Users",   icon: Users },
+  { id: "analytics", label: "Analytics", icon: BarChart3 },
+];
+
+export default function AdminScreen() {
+  const [authed, setAuthed] = useState(!!getAdminToken());
+  const [activeTab, setActiveTab] = useState<TabId>("reports");
+  const [, setLocation] = useLocation();
+
+  const handleLogout = () => {
+    sessionStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(SESSION_USER_KEY);
+    setAuthed(false);
   };
 
-  const handleReviewed = (updated: Report) => {
-    setReports(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r));
-  };
-
-  const pendingCount = reports.filter(r => r.status === "pending").length;
-  const filteredReports = statusFilter === "all" ? reports : reports.filter(r => r.status === statusFilter);
+  if (!authed) {
+    return <AdminLogin onLogin={() => setAuthed(true)} />;
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col pb-24">
@@ -445,135 +907,51 @@ export default function AdminScreen() {
           </button>
           <div className="flex-1">
             <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2">
-              <Shield className="w-5 h-5 text-destructive" /> Admin Review
+              <Shield className="w-5 h-5 text-destructive" /> Admin
             </h1>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-xs text-muted-foreground">{reports.length} total</span>
-              {pendingCount > 0 && (
-                <span className="text-[10px] font-black bg-yellow-500/20 text-yellow-500 border border-yellow-500/30 px-2 py-0.5 rounded-full">
-                  {pendingCount} pending
-                </span>
-              )}
-            </div>
           </div>
           <button
-            onClick={() => fetchReports(statusFilter)}
-            disabled={loading}
-            className="p-2 rounded-xl hover:bg-muted transition-colors disabled:opacity-50"
+            onClick={handleLogout}
+            className="text-[10px] font-black text-muted-foreground hover:text-destructive transition-colors px-2 py-1 rounded-lg hover:bg-destructive/10"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            Sign out
           </button>
         </div>
 
-        {/* Filter chips */}
-        <div className="flex gap-2 mt-3 overflow-x-auto scrollbar-none pb-1">
-          {STATUS_FILTERS.map(s => {
-            const meta = STATUS_LABELS[s];
-            const isActive = statusFilter === s;
-            return (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                className={`shrink-0 text-[11px] font-bold px-3 py-1.5 rounded-full border transition-all ${
-                  isActive
-                    ? s === "all"
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : meta?.color ?? "bg-primary text-primary-foreground border-primary"
-                    : "bg-background border-border text-muted-foreground hover:border-primary/40"
-                }`}
-              >
-                {s === "all" ? "All" : meta?.label ?? s}
-              </button>
-            );
-          })}
+        {/* Tab bar */}
+        <div className="flex gap-1 mt-3 bg-muted rounded-xl p-1">
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-black transition-all ${
+                activeTab === tab.id
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <tab.icon className="w-3.5 h-3.5" />
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="flex-1 max-w-lg mx-auto w-full p-4 space-y-3">
-        {loading && (
-          <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
-            <RefreshCw className="w-5 h-5 animate-spin" />
-            <span className="text-sm">Loading reports…</span>
-          </div>
-        )}
-
-        {!loading && filteredReports.length === 0 && (
-          <div className="text-center py-16">
-            <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-green-400/40" />
-            <div className="font-bold text-sm text-muted-foreground">
-              {statusFilter === "all" ? "No reports yet" : `No ${STATUS_LABELS[statusFilter]?.label?.toLowerCase() ?? statusFilter} reports`}
-            </div>
-            <div className="text-xs text-muted-foreground/60 mt-1">The queue is clear</div>
-          </div>
-        )}
-
-        {!loading && filteredReports.map(report => {
-          const statusMeta = STATUS_LABELS[report.status] ?? { label: report.status, color: "bg-muted text-muted-foreground border-border" };
-          return (
-            <motion.button
-              key={report.id}
-              layout
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              onClick={() => openDetail(report)}
-              disabled={detailLoading}
-              className="w-full text-left bg-card border border-border rounded-2xl p-4 hover:border-primary/40 transition-all"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${statusMeta.color}`}>
-                      {statusMeta.label}
-                    </span>
-                    <span className="text-[10px] font-semibold bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
-                      {TYPE_LABELS[report.type] ?? report.type}
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
-                    {report.description}
-                  </p>
-                  <div className="flex items-center gap-3 mt-2 flex-wrap">
-                    {report.reported_user_id && (
-                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                        <UserIcon className="w-3 h-3" /> User #{report.reported_user_id}
-                      </span>
-                    )}
-                    {report.reported_request_id && (
-                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                        <Flag className="w-3 h-3" /> Request #{report.reported_request_id}
-                      </span>
-                    )}
-                    <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                      <Clock className="w-3 h-3" /> {fmtDate(report.created_at)}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {report.status === "pending" && (
-                    <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-                  )}
-                  <Eye className="w-4 h-4 text-muted-foreground" />
-                </div>
-              </div>
-
-              {report.admin_notes && (
-                <div className="mt-3 pt-3 border-t border-border">
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Admin Notes</div>
-                  <p className="text-xs text-muted-foreground line-clamp-2">{report.admin_notes}</p>
-                </div>
-              )}
-            </motion.button>
-          );
-        })}
+      <div className="flex-1 max-w-lg mx-auto w-full p-4">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.15 }}
+          >
+            {activeTab === "reports"   && <ReportsTab />}
+            {activeTab === "users"     && <UsersTab />}
+            {activeTab === "analytics" && <AnalyticsTab />}
+          </motion.div>
+        </AnimatePresence>
       </div>
-
-      {selectedReport && (
-        <ReportDetailSheet
-          report={selectedReport}
-          onClose={() => setSelectedReport(null)}
-          onReviewed={handleReviewed}
-        />
-      )}
     </div>
   );
 }

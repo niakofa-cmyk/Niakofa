@@ -21,6 +21,7 @@ import type {
 
 import type {
   AdminReviewInput,
+  AuthResponse,
   CivicResourcesResponse,
   ClaimInput,
   CompleteInput,
@@ -40,12 +41,15 @@ import type {
   HelperModeUpdate,
   LocationUpdate,
   PledgePayment,
+  RateInput,
+  Rating,
   Report,
   ReportDetail,
   RequestStats,
   RouteData,
   ScheduledPayment,
   ScheduledPaymentInput,
+  SetInitialPasswordInput,
   Transaction,
   User,
   UserRegistration,
@@ -1721,7 +1725,7 @@ export const getGetRouteUrl = (params: GetRouteParams,) => {
 }
 
 /**
- * @summary Get driving route between two coordinates
+ * @summary Get route between two coordinates
  */
 export const getRoute = async (params: GetRouteParams, options?: RequestInit): Promise<RouteData> => {
 
@@ -1768,7 +1772,7 @@ export type GetRouteQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get driving route between two coordinates
+ * @summary Get route between two coordinates
  */
 
 export function useGetRoute<TData = Awaited<ReturnType<typeof getRoute>>, TError = ErrorType<unknown>>(
@@ -2251,4 +2255,215 @@ export function useGetUserReports<TData = Awaited<ReturnType<typeof getUserRepor
 
 
 
+
+export const getCancelRequestUrl = (id: number,) => {
+
+
+
+
+  return `/api/requests/${id}/cancel`
+}
+
+/**
+ * @summary Cancel a request — helper unclaims (re-opens to pool) or requester withdraws (marks cancelled)
+ */
+export const cancelRequest = async (id: number, options?: RequestInit): Promise<HelpRequest> => {
+
+  return customFetch<HelpRequest>(getCancelRequestUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCancelRequestMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelRequest>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelRequest>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['cancelRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelRequest>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  cancelRequest(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelRequestMutationResult = NonNullable<Awaited<ReturnType<typeof cancelRequest>>>
+
+    export type CancelRequestMutationError = ErrorType<void>
+
+    /**
+ * @summary Cancel a request — helper unclaims (re-opens to pool) or requester withdraws (marks cancelled)
+ */
+export const useCancelRequest = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelRequest>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelRequest>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getCancelRequestMutationOptions(options));
+    }
+
+export const getRateRequestUrl = (id: number,) => {
+
+
+
+
+  return `/api/requests/${id}/rate`
+}
+
+/**
+ * @summary Rate the other participant after a completed request (1–5 stars + optional review)
+ */
+export const rateRequest = async (id: number,
+    rateInput: RateInput, options?: RequestInit): Promise<Rating> => {
+
+  return customFetch<Rating>(getRateRequestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(rateInput)
+  }
+);}
+
+
+
+
+export const getRateRequestMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rateRequest>>, TError,{id: number;data: BodyType<RateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rateRequest>>, TError,{id: number;data: BodyType<RateInput>}, TContext> => {
+
+const mutationKey = ['rateRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rateRequest>>, {id: number;data: BodyType<RateInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  rateRequest(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RateRequestMutationResult = NonNullable<Awaited<ReturnType<typeof rateRequest>>>
+    export type RateRequestMutationBody = BodyType<RateInput>
+    export type RateRequestMutationError = ErrorType<void>
+
+    /**
+ * @summary Rate the other participant after a completed request (1–5 stars + optional review)
+ */
+export const useRateRequest = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rateRequest>>, TError,{id: number;data: BodyType<RateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof rateRequest>>,
+        TError,
+        {id: number;data: BodyType<RateInput>},
+        TContext
+      > => {
+      return useMutation(getRateRequestMutationOptions(options));
+    }
+
+export const getSetInitialPasswordUrl = () => {
+
+
+
+
+  return `/api/users/set-initial-password`
+}
+
+/**
+ * @summary One-time password setup for legacy accounts that pre-date passwords (unauthenticated, rate-limited)
+ */
+export const setInitialPassword = async (setInitialPasswordInput: SetInitialPasswordInput, options?: RequestInit): Promise<AuthResponse> => {
+
+  return customFetch<AuthResponse>(getSetInitialPasswordUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(setInitialPasswordInput)
+  }
+);}
+
+
+
+
+export const getSetInitialPasswordMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setInitialPassword>>, TError,{data: BodyType<SetInitialPasswordInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setInitialPassword>>, TError,{data: BodyType<SetInitialPasswordInput>}, TContext> => {
+
+const mutationKey = ['setInitialPassword'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setInitialPassword>>, {data: BodyType<SetInitialPasswordInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setInitialPassword(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetInitialPasswordMutationResult = NonNullable<Awaited<ReturnType<typeof setInitialPassword>>>
+    export type SetInitialPasswordMutationBody = BodyType<SetInitialPasswordInput>
+    export type SetInitialPasswordMutationError = ErrorType<void>
+
+    /**
+ * @summary One-time password setup for legacy accounts that pre-date passwords (unauthenticated, rate-limited)
+ */
+export const useSetInitialPassword = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setInitialPassword>>, TError,{data: BodyType<SetInitialPasswordInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setInitialPassword>>,
+        TError,
+        {data: BodyType<SetInitialPasswordInput>},
+        TContext
+      > => {
+      return useMutation(getSetInitialPasswordMutationOptions(options));
+    }
 

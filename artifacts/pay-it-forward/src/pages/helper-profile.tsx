@@ -1,37 +1,21 @@
 import { useState, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { authHeaders } from "@/lib/auth";
-import {
-  ChevronLeft, Star, Heart, MapPin, Shield, CheckCircle2, Clock,
-  Gift, MessageCircle, Globe, Car, Wrench, FileText, ExternalLink,
-} from "lucide-react";
+import { ChevronLeft, Star, Heart, MapPin, Shield, CheckCircle2, Clock, Gift, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TrustTierBadge } from "@/components/TrustTierBadge";
 import { useAppContext } from "@/lib/AppContext";
+import { authHeaders } from "@/lib/auth";
 import { toast } from "@/hooks/use-toast";
 import type { User } from "@workspace/api-client-react";
-import { useTranslation } from "react-i18next";
 
-const SKILL_ICONS: Record<string, string> = {
-  plumbing: "🔧", electrical: "⚡", carpentry: "🪚", painting: "🖌️",
-  yard_work: "🌿", heavy_lifting: "💪", drives_truck: "🚛", cdl_driver: "🚚",
-  grocery_shopping: "🛒", cooking: "🍳", childcare: "👶", elder_care: "🧓",
-  medical_support: "💊", tech_support: "💻", tutoring: "📚", translation: "🌍",
-  pet_care: "🐾", food_delivery: "🍔", event_setup: "🎪", emergency_first_aid: "🚑", food_handler: "🍽️",
-  // legacy specialties
+const SPECIALTY_ICONS: Record<string, string> = {
   Groceries: "🛒", Transportation: "🚗", "Tech Help": "💻",
   "Home Repair": "🔧", Medical: "💊", Errands: "📦",
   Emergency: "🚨", Childcare: "👶",
 };
 
-const VEHICLE_LABELS: Record<string, string> = {
-  car: "🚗 Has a car", truck: "🛻 Drives a truck", van: "🚐 Has a van/SUV",
-  motorcycle: "🏍️ Motorcycle", bicycle: "🚲 Bicycle/E-bike", none: "🚶 No vehicle",
-};
-
 export default function HelperProfileScreen() {
-  const { t } = useTranslation();
   const [, params] = useRoute("/helper/:id");
   const [, setLocation] = useLocation();
   const { currentUser } = useAppContext();
@@ -44,7 +28,7 @@ export default function HelperProfileScreen() {
   useEffect(() => {
     if (!helperId) return;
     setLoading(true);
-    fetch(`/api/users/${helperId}`, { headers: authHeaders() })
+    fetch(`/api/users/${helperId}/public`, { headers: authHeaders() })
       .then(r => r.json())
       .then((u: User) => {
         setHelper(u);
@@ -52,14 +36,17 @@ export default function HelperProfileScreen() {
       })
       .catch(() => setLoading(false));
 
+    // Load recent completed requests by this helper
     fetch(`/api/requests?helper_id=${helperId}&status=completed&limit=5`, { headers: authHeaders() })
       .then(r => r.json())
-      .then((data) => { if (Array.isArray(data)) setRecentHelps(data.slice(0, 5)); })
+      .then((data) => {
+        if (Array.isArray(data)) setRecentHelps(data.slice(0, 5));
+      })
       .catch(() => {});
   }, [helperId]);
 
   const handleReport = () => {
-    toast({ title: t("helper_profile.report_submitted"), description: t("helper_profile.our_moderation_team_will_review_this") });
+    toast({ title: "Report submitted", description: "Our moderation team will review this profile." });
   };
 
   if (loading) {
@@ -73,19 +60,13 @@ export default function HelperProfileScreen() {
   if (!helper) {
     return (
       <div className="min-h-[100dvh] bg-background flex flex-col items-center justify-center gap-3 px-6">
-        <p className="font-bold">{t("helper_profile.helper_not_found")}</p>
-        <Button variant="outline" onClick={() => setLocation("/")}>{t("helper_profile.back")}</Button>
+        <p className="font-bold">Helper not found</p>
+        <Button variant="outline" onClick={() => setLocation("/")}>Back</Button>
       </div>
     );
   }
 
-  const skills: string[] = helper.helper_skills ?? helper.specialties ?? [];
-  const languages: string[] = helper.helper_languages ?? [];
-  const qualifications: string[] = helper.helper_qualifications ?? [];
-  const bio: string | null = helper.helper_bio ?? null;
-  const vehicle: string | null = helper.helper_vehicle ?? null;
-  const socialLinks: string | null = helper.helper_social_links ?? null;
-
+  const specialties: string[] = (helper as any).specialties ?? [];
   const tier = helper.trust_score != null && helper.help_count != null
     ? { trust: helper.trust_score, helps: helper.help_count }
     : null;
@@ -93,13 +74,13 @@ export default function HelperProfileScreen() {
   return (
     <div className="min-h-[100dvh] bg-background">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-md border-b border-border px-4 py-3 flex items-center gap-3 pt-safe">
-        <Button variant="ghost" size="icon" onClick={() => window.history.back()} className="rounded-full shrink-0" aria-label={t("helper_profile.go_back")}>
+      <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-md border-b border-border px-4 py-3 flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => setLocation(-1 as any)} className="rounded-full shrink-0">
           <ChevronLeft className="w-5 h-5" />
         </Button>
         <span className="font-black text-base truncate">{helper.name}</span>
         <button onClick={handleReport} className="ml-auto text-xs text-muted-foreground active:text-destructive transition-colors px-2 py-1">
-          {t("helper_profile.report")}
+          Report
         </button>
       </div>
 
@@ -121,33 +102,16 @@ export default function HelperProfileScreen() {
           </div>
           <div>
             <h1 className="text-2xl font-black">{helper.name}</h1>
-          <div className="flex flex-wrap gap-2 justify-center mt-2">
-            <TrustTierBadge
-              trustScore={(helper as any).trust_score ?? 0}
-              helpCount={(helper as any).help_count ?? 0}
-              size="sm"
-            />
-            {(helper as any).identity_verified && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-black text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded-full">
-                ✓ ID Verified
-              </span>
-            )}
-          </div>
-            {helper.neighborhood && (
+            {(helper.neighborhood) && (
               <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground mt-1">
                 <MapPin className="w-3.5 h-3.5" />
-                {helper.neighborhood}
-              </div>
-            )}
-            {/* Approved helper badge */}
-            {helper.helper_status === "approved" && (
-              <div className="inline-flex items-center gap-1.5 mt-2 bg-primary/10 border border-primary/30 rounded-full px-3 py-1">
-                <CheckCircle2 className="w-3 h-3 text-primary" />
-                <span className="text-[11px] font-black text-primary uppercase tracking-wider">{t("helper_profile.verified_helper")}</span>
+                {[helper.neighborhood].filter(Boolean).join(", ")}
               </div>
             )}
           </div>
-          {tier && <TrustTierBadge trustScore={tier.trust} helpCount={tier.helps} size="md" />}
+          {tier && (
+            <TrustTierBadge trustScore={tier.trust} helpCount={tier.helps} size="md" />
+          )}
         </motion.div>
 
         {/* Stats row */}
@@ -165,89 +129,14 @@ export default function HelperProfileScreen() {
           ))}
         </div>
 
-        {/* Bio */}
-        {bio && (
-          <div className="bg-card border border-border rounded-2xl p-4">
-            <div className="flex items-center gap-1.5 mb-2">
-              <FileText className="w-3.5 h-3.5 text-primary" />
-              <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">{t("helper_profile.about")}</span>
-            </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">{bio}</p>
-          </div>
-        )}
-
-        {/* Skills */}
-        {skills.length > 0 && (
-          <div className="bg-card border border-border rounded-2xl p-4">
-            <div className="flex items-center gap-1.5 mb-3">
-              <Wrench className="w-3.5 h-3.5 text-primary" />
-              <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">{t("helper_profile.skills_specialties")}</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {skills.map(s => (
-                <span key={s} className="flex items-center gap-1.5 text-xs bg-primary/10 border border-primary/30 text-primary px-3 py-1.5 rounded-full font-bold">
-                  {SKILL_ICONS[s] ?? "✦"} {s.replace(/_/g, " ")}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Languages */}
-        {languages.length > 0 && (
-          <div className="bg-card border border-border rounded-2xl p-4">
-            <div className="flex items-center gap-1.5 mb-3">
-              <Globe className="w-3.5 h-3.5 text-primary" />
-              <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">{t("helper_profile.languages")}</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {languages.map(l => (
-                <span key={l} className="text-xs bg-muted border border-border text-foreground px-3 py-1.5 rounded-full font-bold">
-                  🌐 {l}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Vehicle */}
-        {vehicle && VEHICLE_LABELS[vehicle] && (
-          <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
-            <Car className="w-4 h-4 text-primary shrink-0" />
-            <div>
-              <div className="text-xs font-black uppercase tracking-wider text-muted-foreground mb-0.5">{t("helper_profile.transportation")}</div>
-              <div className="text-sm font-bold">{VEHICLE_LABELS[vehicle]}</div>
-            </div>
-          </div>
-        )}
-
-        {/* Qualifications */}
-        {qualifications.length > 0 && (
-          <div className="bg-card border border-border rounded-2xl p-4">
-            <div className="flex items-center gap-1.5 mb-3">
-              <Shield className="w-3.5 h-3.5 text-primary" />
-              <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">{t("helper_profile.certifications")}</span>
-            </div>
-            <div className="space-y-1.5">
-              {qualifications.map(q => (
-                <div key={q} className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-green-400 shrink-0" />
-                  {q}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Verified badges */}
         <div className="bg-card border border-border rounded-2xl p-4">
-          <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">{t("helper_profile.verification")}</div>
+          <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">Verification</div>
           <div className="flex flex-wrap gap-2">
             {[
               { label: "Email verified", done: true },
-              { label: "Phone verified", done: !!helper.phone_masked },
+              { label: "Phone verified", done: !!(helper as any).phone_masked },
               { label: "Background check", done: (helper.help_count ?? 0) >= 15 },
-              { label: "Admin approved", done: helper.helper_status === "approved" },
               { label: "Community member", done: true },
             ].map(({ label, done }) => (
               <div key={label} className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${
@@ -260,13 +149,16 @@ export default function HelperProfileScreen() {
           </div>
         </div>
 
-        {/* Social links */}
-        {socialLinks && (
-          <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
-            <ExternalLink className="w-4 h-4 text-primary shrink-0" />
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-black uppercase tracking-wider text-muted-foreground mb-0.5">{t("helper_profile.social")}</div>
-              <p className="text-sm text-muted-foreground truncate">{socialLinks}</p>
+        {/* Specialties */}
+        {specialties.length > 0 && (
+          <div className="bg-card border border-border rounded-2xl p-4">
+            <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">Specialties</div>
+            <div className="flex flex-wrap gap-2">
+              {specialties.map(s => (
+                <span key={s} className="flex items-center gap-1.5 text-xs bg-primary/10 border border-primary/30 text-primary px-3 py-1.5 rounded-full font-bold">
+                  {SPECIALTY_ICONS[s] ?? "✦"} {s}
+                </span>
+              ))}
             </div>
           </div>
         )}
@@ -274,7 +166,7 @@ export default function HelperProfileScreen() {
         {/* Recent activity */}
         {recentHelps.length > 0 && (
           <div className="bg-card border border-border rounded-2xl p-4">
-            <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">{t("helper_profile.recent_helps")}</div>
+            <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">Recent Helps</div>
             <div className="space-y-2.5">
               {recentHelps.map((r, i) => (
                 <div key={i} className="flex items-center gap-3">
@@ -296,16 +188,16 @@ export default function HelperProfileScreen() {
           <div className="flex items-start gap-3">
             <Shield className="w-4 h-4 text-primary mt-0.5 shrink-0" />
             <p className="text-xs text-muted-foreground leading-relaxed">
-              {t("helper_profile.trust_scores_are_calculated_from_community")}
+              Trust scores are calculated from community ratings, completion rate, and response time. Scores above 90% qualify for emergency requests.
             </p>
           </div>
         </div>
 
-        {/* CTA */}
+        {/* CTA — only show if viewing another user's profile */}
         {currentUser && currentUser.id !== helperId && (
           <Button className="w-full h-12 font-black gap-2" onClick={() => setLocation("/request/new")}>
             <MessageCircle className="w-4 h-4" />
-            {t("helper_profile.request_help_from")} {helper.name.split(" ")[0]}
+            Request Help from {helper.name.split(" ")[0]}
           </Button>
         )}
       </div>

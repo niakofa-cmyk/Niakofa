@@ -1,15 +1,11 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { ChevronLeft, MapPin, Clock, DollarSign, Heart, Gift, AlertTriangle, Share2, Users, CheckCircle2, Navigation2 } from "lucide-react";
-import { TrustTierBadge } from "@/components/TrustTierBadge";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { useGetRequest, getGetRequestQueryKey } from "@workspace/api-client-react";
 import { useAppContext } from "@/lib/AppContext";
 import { toast } from "@/hooks/use-toast";
-import { useTranslation } from "react-i18next";
-import { AnimatePresence } from "framer-motion";
-import { RatingModal } from "@/components/RatingModal";
 
 const URGENCY_CONFIG = {
   emergency: { label: "Emergency", color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/30", icon: AlertTriangle },
@@ -31,12 +27,10 @@ function fmtDate(iso: string) {
 }
 
 export default function RequestDetailScreen() {
-  const { t } = useTranslation();
   const [, params] = useRoute("/request/:id/view");
   const [, setLocation] = useLocation();
   const { currentUser, helperModeActive } = useAppContext();
   const requestId = parseInt(params?.id || "0", 10);
-  const [showRating, setShowRating] = useState(false);
 
   const { data: request, isLoading } = useGetRequest(requestId, {
     query: { enabled: !!requestId, queryKey: getGetRequestQueryKey(requestId), refetchInterval: 15000 }
@@ -48,7 +42,7 @@ export default function RequestDetailScreen() {
       await navigator.share({ title: request?.title ?? "Help Request", url }).catch(() => {});
     } else {
       await navigator.clipboard.writeText(url).catch(() => {});
-      toast({ title: t("request_detail.link_copied") });
+      toast({ title: "Link copied!" });
     }
   };
 
@@ -69,8 +63,8 @@ export default function RequestDetailScreen() {
     return (
       <div className="min-h-[100dvh] bg-background flex flex-col items-center justify-center gap-3 px-6">
         <MapPin className="w-12 h-12 text-muted-foreground" />
-        <p className="font-bold">{t("request_detail.request_not_found")}</p>
-        <Button variant="outline" onClick={() => setLocation("/")}>{t("request_detail.back_to_map")}</Button>
+        <p className="font-bold">Request not found</p>
+        <Button variant="outline" onClick={() => setLocation("/")}>Back to map</Button>
       </div>
     );
   }
@@ -86,11 +80,11 @@ export default function RequestDetailScreen() {
     <div className="min-h-[100dvh] bg-background">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-md border-b border-border px-4 py-3 flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full shrink-0" aria-label={t("request_detail.back_to_map_2")}>
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full shrink-0">
           <ChevronLeft className="w-5 h-5" />
         </Button>
-        <span className="font-black text-base truncate flex-1">{t("request_detail.request_detail")}</span>
-        <button onClick={handleShare} className="p-2 rounded-full active:bg-muted transition-colors" aria-label={t("request_detail.share_request")}>
+        <span className="font-black text-base truncate flex-1">Request Detail</span>
+        <button onClick={handleShare} className="p-2 rounded-full active:bg-muted transition-colors">
           <Share2 className="w-4 h-4 text-muted-foreground" />
         </button>
       </div>
@@ -100,7 +94,7 @@ export default function RequestDetailScreen() {
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full w-fit border ${urgency.bg} ${urgency.border} mb-3`}>
             <UrgencyIcon className={`w-3.5 h-3.5 ${urgency.color}`} />
-            <span className={`text-xs font-black uppercase tracking-wider ${urgency.color}`}>{urgency.label} {t("request_detail.priority")}</span>
+            <span className={`text-xs font-black uppercase tracking-wider ${urgency.color}`}>{urgency.label} Priority</span>
           </div>
           <h1 className="text-2xl font-black leading-tight">{request.title}</h1>
           {request.description && (
@@ -117,18 +111,18 @@ export default function RequestDetailScreen() {
           </div>
           <div>
             <div className={`font-black text-sm ${status.color}`}>{status.label}</div>
-            <div className="text-xs text-muted-foreground">{t("request_detail.posted")} {fmtDate(request.created_at)}</div>
+            <div className="text-xs text-muted-foreground">Posted {fmtDate(request.created_at)}</div>
           </div>
         </div>
 
         {/* Details grid */}
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-card border border-border rounded-2xl p-3">
-            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">{t("request_detail.category")}</div>
+            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Category</div>
             <div className="font-black text-sm capitalize">{request.category.replace("_", " ")}</div>
           </div>
           <div className="bg-card border border-border rounded-2xl p-3">
-            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">{t("request_detail.payment")}</div>
+            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Payment</div>
             <div className="flex items-center gap-1.5">
               {request.payment_type === "immediate" && <DollarSign className="w-3.5 h-3.5 text-green-400" />}
               {request.payment_type === "pay_it_forward" && <Heart className="w-3.5 h-3.5 text-primary" />}
@@ -143,7 +137,7 @@ export default function RequestDetailScreen() {
           </div>
           {request.neighborhood && (
             <div className="bg-card border border-border rounded-2xl p-3 col-span-2">
-              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">{t("request_detail.location")}</div>
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Location</div>
               <div className="flex items-center gap-1.5 font-black text-sm">
                 <MapPin className="w-3.5 h-3.5 text-primary" />
                 {request.neighborhood}
@@ -152,19 +146,12 @@ export default function RequestDetailScreen() {
           )}
           {request.helper_name && (
             <div className="bg-card border border-border rounded-2xl p-3 col-span-2">
-              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">{t("request_detail.helper")}</div>
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Helper</div>
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-full bg-green-500/20 border border-green-400/40 flex items-center justify-center text-xs font-black text-green-400">
                   {request.helper_name[0]}
                 </div>
                 <span className="font-black text-sm">{request.helper_name}</span>
-                {(request as any).helper_trust_score !== undefined && (
-                  <TrustTierBadge
-                    trustScore={(request as any).helper_trust_score ?? 0}
-                    helpCount={(request as any).helper_help_count ?? 0}
-                    size="xs"
-                  />
-                )}
               </div>
             </div>
           )}
@@ -180,7 +167,7 @@ export default function RequestDetailScreen() {
               }
             </div>
             <div>
-              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{t("request_detail.posted_by")}</div>
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Posted by</div>
               <div className="font-black text-sm">{request.requester_name}</div>
             </div>
           </div>
@@ -191,45 +178,26 @@ export default function RequestDetailScreen() {
           {isOpen && helperModeActive && !isRequester && (
             <Button className="w-full h-12 font-black gap-2" onClick={handleClaim}>
               <Navigation2 className="w-4 h-4" />
-              {t("request_detail.accept_this_request")}
+              Accept This Request
             </Button>
           )}
           {isRequester && isOpen && (
             <Button variant="outline" className="w-full h-12 font-black" onClick={() => setLocation(`/request/${requestId}/track`)}>
-              {t("request_detail.track_your_request")}
+              Track Your Request
             </Button>
           )}
           {isHelper && (request.status === "en_route" || request.status === "claimed") && (
             <Button className="w-full h-12 font-black" onClick={() => setLocation(`/request/${requestId}`)}>
-              {t("request_detail.continue_navigation")}
+              Continue Navigation
             </Button>
           )}
           {!currentUser && isOpen && (
             <Button className="w-full h-12 font-black" onClick={() => setLocation("/login")}>
-              {t("request_detail.sign_in_to_help")}
-            </Button>
-          )}
-          {isRequester && request.status === "completed" && !showRating && (
-            <Button
-              className="w-full h-12 font-black gap-2 bg-yellow-500 hover:bg-yellow-400 text-black"
-              onClick={() => setShowRating(true)}
-            >
-              ★ Rate Your Helper
+              Sign In to Help
             </Button>
           )}
         </div>
       </div>
-
-      <AnimatePresence>
-        {showRating && (
-          <RatingModal
-            requestId={requestId}
-            role="requester"
-            helperName={request.helper_name ?? null}
-            onClose={() => setShowRating(false)}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 }

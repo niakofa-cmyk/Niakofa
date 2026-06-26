@@ -1,12 +1,11 @@
 import { Router } from "express";
 import { db, reportsTable, usersTable } from "@workspace/db";
-import { eq, and, desc, sql, or } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
-import { broadcast, broadcastToAdmins } from "../lib/ws-hub";
+import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
-import { adminLimiter } from "../middlewares/rate-limit";
 
 const router = Router();
 
@@ -92,9 +91,8 @@ router.post("/reports", requireAuth, async (req, res) => {
     "trust-safety: new report filed"
   );
 
-  // Broadcast to admin clients only — reports contain sensitive details
-  // about other users and should never reach a regular connected client.
-  broadcastToAdmins({
+  // Broadcast to admin clients so the queue updates in real-time
+  broadcast({
     type: "new_report",
     payload: { id: report.id, type, status: "pending", created_at: report.created_at },
   });
@@ -103,7 +101,7 @@ router.post("/reports", requireAuth, async (req, res) => {
 });
 
 // ── GET /reports — admin: list all reports with optional status filter ─────
-router.get("/reports", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+router.get("/reports", requireAuth, requireAdmin(), async (req, res) => {
   const status = req.query.status as string | undefined;
   const validStatuses = ["pending", "under_review", "resolved_dismissed", "resolved_warned", "resolved_banned"];
   const validStatus = status && validStatuses.includes(status) ? status : undefined;
@@ -112,26 +110,14 @@ router.get("/reports", requireAuth, requireAdmin(), adminLimiter, async (req, re
     .select()
     .from(reportsTable)
     .where(validStatus ? eq(reportsTable.status, validStatus as "pending" | "under_review" | "resolved_dismissed" | "resolved_warned" | "resolved_banned") : undefined)
-    .orderBy(
-      // Highest-severity report types surface first regardless of age, so an
-      // SOS or dangerous-behavior report can never get buried under a stack
-      // of newer low-priority reports (e.g. spam) in the admin queue.
-      sql`CASE ${reportsTable.type}
-            WHEN 'sos' THEN 0
-            WHEN 'dangerous_behavior' THEN 1
-            WHEN 'harassment' THEN 2
-            WHEN 'fraud' THEN 2
-            ELSE 3
-          END`,
-      desc(reportsTable.created_at)
-    )
+    .orderBy(desc(reportsTable.created_at))
     .limit(200);
 
   return res.json(rows);
 });
 
 // ── GET /reports/:id — admin: get a single report ─────────────────────────
-router.get("/reports/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+router.get("/reports/:id", requireAuth, requireAdmin(), async (req, res) => {
   const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
@@ -143,12 +129,12 @@ router.get("/reports/:id", requireAuth, requireAdmin(), adminLimiter, async (req
 
   if (!report) return res.status(404).json({ error: "Report not found" });
 
-  // Enrich with reporter name for admin UI — reporter_id can be null if
-  // that account was since deleted (FK onDelete: "set null").
-  const reporter = report.reporter_id
-    ? (await db.select({ name: usersTable.name, email: usersTable.email })
-        .from(usersTable).where(eq(usersTable.id, report.reporter_id)).limit(1))[0]
-    : undefined;
+  // Enrich with reporter name for admin UI
+  const [reporter] = await db
+    .select({ name: usersTable.name, email: usersTable.email })
+    .from(usersTable)
+    .where(eq(usersTable.id, report.reporter_id))
+    .limit(1);
 
   let reportedUserName: string | null = null;
   if (report.reported_user_id) {
@@ -169,7 +155,7 @@ router.get("/reports/:id", requireAuth, requireAdmin(), adminLimiter, async (req
 });
 
 // ── PATCH /reports/:id/review — admin: update report status + notes ───────
-router.patch("/reports/:id/review", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+router.patch("/reports/:id/review", requireAuth, requireAdmin(), async (req, res) => {
   const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
@@ -196,29 +182,12 @@ router.patch("/reports/:id/review", requireAuth, requireAdmin(), adminLimiter, a
 
   if (!updated) return res.status(404).json({ error: "Report not found" });
 
-  // resolved_banned must actually ban the reported user, not just label the
-  // report — previously this only updated report metadata, leaving the
-  // user fully active despite the report reading "banned".
-  if (status === "resolved_banned" && updated.reported_user_id) {
-    await db.update(usersTable)
-      .set({
-        trust_score: -1,
-        helper_mode_active: false,
-        token_version: sql`${usersTable.token_version} + 1`,
-      })
-      .where(eq(usersTable.id, updated.reported_user_id));
-    logger.warn(
-      { report_id: id, banned_user_id: updated.reported_user_id },
-      "trust-safety: user banned via report resolution"
-    );
-  }
-
   logger.info(
     { report_id: id, status, reviewed_by },
     "trust-safety: report reviewed"
   );
 
-  broadcastToAdmins({
+  broadcast({
     type: "report_reviewed",
     payload: { id, status, reviewed_by },
   });
@@ -227,18 +196,14 @@ router.patch("/reports/:id/review", requireAuth, requireAdmin(), adminLimiter, a
 });
 
 // ── GET /users/:id/reports — admin: get all reports filed by or against a user
-router.get("/users/:id/reports", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+router.get("/users/:id/reports", requireAuth, requireAdmin(), async (req, res) => {
   const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
 
-  // BUG-M06: return reports the user filed AND reports filed against them
   const filed = await db
     .select()
     .from(reportsTable)
-    .where(or(
-      eq(reportsTable.reporter_id, userId),
-      eq(reportsTable.reported_user_id, userId)
-    ))
+    .where(eq(reportsTable.reporter_id, userId))
     .orderBy(desc(reportsTable.created_at))
     .limit(50);
 

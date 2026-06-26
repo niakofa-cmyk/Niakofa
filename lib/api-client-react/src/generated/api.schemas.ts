@@ -26,29 +26,6 @@ export interface User {
   help_count: number;
   /** @nullable */
   neighborhood?: string | null;
-  /** @nullable */
-  city?: string | null;
-  /** @nullable */
-  helper_status?: string | null;
-  /** @nullable */
-  helper_skills?: string[] | null;
-  /** @nullable */
-  helper_languages?: string[] | null;
-  /** @nullable */
-  helper_qualifications?: string[] | null;
-  /** @nullable */
-  helper_bio?: string | null;
-  /** @nullable */
-  helper_vehicle?: string | null;
-  /** @nullable */
-  helper_social_links?: string | null;
-  /** @nullable */
-  specialties?: string[] | null;
-  /** @nullable */
-  phone_masked?: string | null;
-  identity_verified?: boolean;
-  /** @nullable */
-  background_check_status?: string | null;
   /** Accumulated helper earnings and contributions */
   benevolence_wallet: number;
   /** Community reputation score */
@@ -60,15 +37,7 @@ export interface UserUpdate {
   name?: string;
   avatar_url?: string;
   neighborhood?: string;
-  /** @maxLength 100 */
-  city?: string;
   is_helper?: boolean;
-  /** @maxItems 20 */
-  specialties?: string[];
-  /** @maxLength 20 */
-  phone_masked?: string;
-  /** @maxItems 10 */
-  quick_replies?: string[];
 }
 
 export interface UserRegistration {
@@ -109,12 +78,6 @@ export const HelpRequestCategory = {
   medical: 'medical',
   emergency: 'emergency',
   other: 'other',
-  delivery_run: 'delivery_run',
-  stock_shelves: 'stock_shelves',
-  event_setup: 'event_setup',
-  tech_support: 'tech_support',
-  local_farm: 'local_farm',
-  food_pantry: 'food_pantry',
 } as const;
 
 export type HelpRequestUrgency = typeof HelpRequestUrgency[keyof typeof HelpRequestUrgency];
@@ -138,7 +101,6 @@ export const HelpRequestStatus = {
   completed: 'completed',
   pay_it_forward_pending: 'pay_it_forward_pending',
   cancelled: 'cancelled',
-  expired: 'expired',
 } as const;
 
 /**
@@ -196,7 +158,6 @@ export interface HelpRequest {
   completed_at?: string | null;
   /** @nullable */
   cancelled_at?: string | null;
-  outside_usual_area?: boolean;
 }
 
 export type HelpRequestInputCategory = typeof HelpRequestInputCategory[keyof typeof HelpRequestInputCategory];
@@ -210,12 +171,6 @@ export const HelpRequestInputCategory = {
   medical: 'medical',
   emergency: 'emergency',
   other: 'other',
-  delivery_run: 'delivery_run',
-  stock_shelves: 'stock_shelves',
-  event_setup: 'event_setup',
-  tech_support: 'tech_support',
-  local_farm: 'local_farm',
-  food_pantry: 'food_pantry',
 } as const;
 
 export type HelpRequestInputUrgency = typeof HelpRequestInputUrgency[keyof typeof HelpRequestInputUrgency];
@@ -238,7 +193,12 @@ export const HelpRequestInputPaymentType = {
 } as const;
 
 export interface HelpRequestInput {
+  /**
+     * @minLength 3
+     * @maxLength 200
+     */
   title: string;
+  /** @maxLength 2000 */
   description?: string;
   category: HelpRequestInputCategory;
   urgency?: HelpRequestInputUrgency;
@@ -246,6 +206,7 @@ export interface HelpRequestInput {
   requester_id: number;
   lat: number;
   lng: number;
+  /** @maxLength 100 */
   neighborhood?: string;
   pay_it_forward_amount?: number;
   pledge_amount?: number;
@@ -262,7 +223,6 @@ export const HelpRequestUpdateStatus = {
   completed: 'completed',
   pay_it_forward_pending: 'pay_it_forward_pending',
   cancelled: 'cancelled',
-  expired: 'expired',
 } as const;
 
 export type HelpRequestUpdateUrgency = typeof HelpRequestUpdateUrgency[keyof typeof HelpRequestUpdateUrgency];
@@ -388,7 +348,7 @@ export interface RouteData {
 }
 
 /**
- * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act
+ * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester
  */
 export type TransactionType = typeof TransactionType[keyof typeof TransactionType];
 
@@ -406,7 +366,7 @@ export interface Transaction {
   user_id: number;
   /** @nullable */
   request_id?: number | null;
-  /** earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act */
+  /** earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester */
   type: TransactionType;
   amount: number;
   /** @nullable */
@@ -425,7 +385,6 @@ export const CreateReportInputType = {
   fake_profile: 'fake_profile',
   dangerous_behavior: 'dangerous_behavior',
   spam: 'spam',
-  sos: 'sos',
   other: 'other',
 } as const;
 
@@ -471,7 +430,6 @@ export const ReportType = {
   fake_profile: 'fake_profile',
   dangerous_behavior: 'dangerous_behavior',
   spam: 'spam',
-  sos: 'sos',
   other: 'other',
 } as const;
 
@@ -539,6 +497,52 @@ export interface CivicResource {
   category?: string | null;
 }
 
+export type RatingRole = typeof RatingRole[keyof typeof RatingRole];
+
+
+export const RatingRole = {
+  requester: 'requester',
+  helper: 'helper',
+} as const;
+
+export interface Rating {
+  id: number;
+  request_id: number;
+  rater_id: number;
+  ratee_id: number;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  stars: number;
+  /** @nullable */
+  review?: string | null;
+  role: RatingRole;
+  created_at: string;
+}
+
+export interface RateInput {
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  stars: number;
+  /** @maxLength 500 */
+  review?: string;
+}
+
+export interface SetInitialPasswordInput {
+  user_id: number;
+  email: string;
+  /** @minLength 8 */
+  new_password: string;
+}
+
+export interface AuthResponse {
+  user: User;
+  token: string;
+}
+
 /**
  * How specifically the resources were matched
  */
@@ -584,7 +588,6 @@ export const GetRequestsStatus = {
   completed: 'completed',
   pay_it_forward_pending: 'pay_it_forward_pending',
   cancelled: 'cancelled',
-  expired: 'expired',
 } as const;
 
 export type GetNearbyRequestsParams = {
@@ -604,7 +607,17 @@ start_lat: number;
 start_lng: number;
 end_lat: number;
 end_lng: number;
+profile?: GetRouteProfile;
 };
+
+export type GetRouteProfile = typeof GetRouteProfile[keyof typeof GetRouteProfile];
+
+
+export const GetRouteProfile = {
+  driving: 'driving',
+  walking: 'walking',
+  cycling: 'cycling',
+} as const;
 
 export type GetCivicResourcesParams = {
 lat: number;

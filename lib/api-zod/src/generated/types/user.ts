@@ -23,29 +23,6 @@ export interface User {
   help_count: number;
   /** @nullable */
   neighborhood?: string | null;
-  /** @nullable */
-  city?: string | null;
-  /** @nullable */
-  helper_status?: string | null;
-  /** @nullable */
-  helper_skills?: string[] | null;
-  /** @nullable */
-  helper_languages?: string[] | null;
-  /** @nullable */
-  helper_qualifications?: string[] | null;
-  /** @nullable */
-  helper_bio?: string | null;
-  /** @nullable */
-  helper_vehicle?: string | null;
-  /** @nullable */
-  helper_social_links?: string | null;
-  /** @nullable */
-  specialties?: string[] | null;
-  /** @nullable */
-  phone_masked?: string | null;
-  identity_verified?: boolean;
-  /** @nullable */
-  background_check_status?: string | null;
   /** Accumulated helper earnings and contributions */
   benevolence_wallet: number;
   /** Community reputation score */

@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { Heart, MapPin, Bell, Shield, Sparkles, ChevronRight, Check, Loader2 } from "lucide-react";
+import { Heart, MapPin, Bell, Shield, ChevronRight, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { subscribeToPush } from "@/lib/push";
-import { useTranslation } from "react-i18next";
 
 interface Step {
   id: string;
@@ -42,14 +41,6 @@ const STEPS: Step[] = [
     action: "Enable Notifications",
   },
   {
-    id: "nia",
-    icon: Sparkles,
-    title: "Meet Nia",
-    description: "Nia is your personal Niakofa community assistant. Ask her anything — how to request help, how to become a helper, or anything about the community.",
-    color: "text-primary",
-    action: "Say Hi to Nia",
-  },
-  {
     id: "trust",
     icon: Shield,
     title: "Community Trust",
@@ -60,13 +51,13 @@ const STEPS: Step[] = [
 ];
 
 export default function OnboardingScreen() {
-  const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  const { currentUser, openNia } = useAppContext();
+  const { currentUser } = useAppContext();
   const [step, setStep] = useState(0);
   const [locationGranted, setLocationGranted] = useState(false);
   const [notifGranted, setNotifGranted] = useState(false);
   const [loading, setLoading] = useState(false);
+
   const current = STEPS[step];
 
   const handleAction = async () => {
@@ -80,12 +71,6 @@ export default function OnboardingScreen() {
           { timeout: 5000 }
         );
       }
-    }
-
-    if (current.id === "nia") {
-      setLoading(false);
-      openNia();
-      return;
     }
 
     if (current.id === "notifications" && currentUser) {
@@ -129,7 +114,7 @@ export default function OnboardingScreen() {
       {/* Skip */}
       <div className="flex justify-end px-4">
         <button onClick={skip} className="text-xs text-muted-foreground px-3 py-2 active:text-foreground transition-colors">
-          {t("onboarding.skip")}
+          Skip
         </button>
       </div>
 
@@ -158,7 +143,7 @@ export default function OnboardingScreen() {
                 animate={{ scale: 1 }}
                 className="flex items-center gap-2 mt-4 text-green-400 text-sm font-bold"
               >
-                <Check className="w-4 h-4" /> {t("onboarding.location_enabled")}
+                <Check className="w-4 h-4" /> Location enabled
               </motion.div>
             )}
             {current.id === "notifications" && notifGranted && (
@@ -167,7 +152,7 @@ export default function OnboardingScreen() {
                 animate={{ scale: 1 }}
                 className="flex items-center gap-2 mt-4 text-green-400 text-sm font-bold"
               >
-                <Check className="w-4 h-4" /> {t("onboarding.notifications_enabled")}
+                <Check className="w-4 h-4" /> Notifications enabled
               </motion.div>
             )}
           </motion.div>
@@ -195,7 +180,7 @@ export default function OnboardingScreen() {
             onClick={() => setStep(s => s + 1)}
             className="w-full text-sm text-muted-foreground py-2 active:text-foreground transition-colors"
           >
-            {t("onboarding.not_now")}
+            Not now
           </button>
         )}
       </div>

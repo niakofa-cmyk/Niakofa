@@ -54,9 +54,7 @@ A map-first, pay-it-forward community mutual aid platform for Tarrant County, TX
 
 ## User preferences
 
-- **Mobile-first, always.** Every feature, every UI component, every interaction must be verified for mobile usability before delivery. Touch targets ≥ 44px. Input font-size ≥ 16px (prevents iOS Safari zoom). Use `active:` states instead of `hover:` for touch interactions. Add `env(safe-area-inset-bottom)` padding to all fixed bottom bars. Test all modals as bottom sheets on small screens.
-- **Nia is the first face of Niakofa.** She is visible on the login screen and every screen, even before authentication. Never hide Nia unless on the multi-step onboarding flow.
-- **Admin page must work on mobile.** All admin features — report review, user management, session timer — must be fully usable on a phone screen.
+_Populate as you build — explicit user instructions worth remembering across sessions._
 
 ## Gotchas
 

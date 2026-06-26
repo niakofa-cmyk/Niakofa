@@ -10,17 +10,10 @@
 import { Worker, type Job } from "bullmq";
 import Stripe from "stripe";
 import { db, paymentTransactionsTable, transactionsTable } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getRedisConnection, QUEUE, type PayoutJobData } from "../lib/queue";
-import { broadcast, sendToUser } from "../lib/ws-hub";
+import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
-
-// BUG-019: Instantiate the Stripe client once at module load time (singleton).
-// Previously `new Stripe(stripeKey)` was called on every job execution —
-// with concurrency: 2 this creates multiple clients per cycle and has no
-// connection pooling. The Stripe Node library recommends a single instance.
-const _stripeKey = process.env["STRIPE_SECRET_KEY"];
-const stripe: Stripe | null = _stripeKey ? new Stripe(_stripeKey) : null;
 
 async function processPayout(job: Job<PayoutJobData>): Promise<void> {
   const {
@@ -29,7 +22,10 @@ async function processPayout(job: Job<PayoutJobData>): Promise<void> {
     request_title,
   } = job.data;
 
-  if (!stripe) throw new Error("STRIPE_SECRET_KEY not configured");
+  const stripeKey = process.env["STRIPE_SECRET_KEY"];
+  if (!stripeKey) throw new Error("STRIPE_SECRET_KEY not configured");
+
+  const stripe = new Stripe(stripeKey);
   const payoutCents = amount_cents - platform_fee_cents;
 
   logger.info(
@@ -51,8 +47,7 @@ async function processPayout(job: Job<PayoutJobData>): Promise<void> {
     },
   });
 
-  // BUG-M08: Use onConflictDoUpdate so a retry that finds an existing "pending"
-  // or "failed" row correctly marks it as completed rather than silently skipping.
+  // Record in payment ledger
   await db.insert(paymentTransactionsTable).values({
     request_id,
     helper_id,
@@ -61,27 +56,19 @@ async function processPayout(job: Job<PayoutJobData>): Promise<void> {
     state: "completed",
     payment_type: "immediate",
     stripe_transfer_id: transfer.id,
-    notes: `Retry payout (attempt ${job.attemptsMade + 1}). Platform fee: ${(platform_fee_cents / 100).toFixed(2)}`,
-  }).onConflictDoUpdate({
-    target: [paymentTransactionsTable.request_id, paymentTransactionsTable.helper_id],
-    set: {
-      state: "completed",
-      stripe_transfer_id: transfer.id,
-      notes: sql`EXCLUDED.notes`,
-    },
+    notes: `Retry payout (attempt ${job.attemptsMade + 1}). Platform fee: $${(platform_fee_cents / 100).toFixed(2)}`,
   });
 
-  // NOTE: deliberately NOT inserting another transactionsTable row here —
-  // the original completion handler in requests.ts already recorded an
-  // "earned" row for this request_id/user_id at completion time, regardless
-  // of whether the Stripe transfer succeeded immediately or needed this
-  // retry. Inserting a second row here (previously type: "payout_sent")
-  // double-counted the same job in the helper's displayed earnings history.
-  // The paymentTransactionsTable insert above is the correct, single
-  // source of truth for the actual payment/transfer state.
+  // Record in helper's earnings history
+  await db.insert(transactionsTable).values({
+    user_id: helper_id,
+    request_id,
+    type: "payout_sent",
+    amount: payoutCents / 100,
+    description: `[Retry] ${request_title}`,
+  });
 
-  // Retry payout confirmation is private — only the helper needs to know.
-  sendToUser(helper_id, {
+  broadcast({
     type: "payout_sent",
     payload: {
       request_id,

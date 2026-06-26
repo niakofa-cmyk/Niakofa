@@ -17,5 +17,4 @@ export const HelpRequestUpdateStatus = {
   completed: 'completed',
   pay_it_forward_pending: 'pay_it_forward_pending',
   cancelled: 'cancelled',
-  expired: 'expired',
 } as const;

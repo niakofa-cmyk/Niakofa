@@ -1,11 +1,10 @@
 import { pgTable, serial, integer, text, boolean, timestamp } from "drizzle-orm/pg-core";
-import { usersTable } from "./users";
 
 // Stripe Connect Express accounts for helpers to receive payouts.
 // One row per helper (unique on user_id).
 export const stripeAccountsTable = pgTable("stripe_accounts", {
   id: serial("id").primaryKey(),
-  user_id: integer("user_id").notNull().unique().references(() => usersTable.id, { onDelete: "cascade" }),
+  user_id: integer("user_id").notNull().unique(),
   stripe_account_id: text("stripe_account_id").notNull().unique(),
 
   // Express | Standard

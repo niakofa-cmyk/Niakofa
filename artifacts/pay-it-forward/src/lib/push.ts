@@ -1,5 +1,6 @@
-import { authHeaders } from "./auth";
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+
+import { authHeaders } from "@/lib/auth";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -62,10 +63,24 @@ async function sendSubscriptionToServer(userId: number, sub: PushSubscription): 
   });
 }
 
-export async function unsubscribeFromPush(): Promise<void> {
+export async function unsubscribeFromPush(userId: number): Promise<void> {
   if (!("serviceWorker" in navigator)) return;
   const reg = await navigator.serviceWorker.getRegistration();
   if (!reg) return;
   const sub = await reg.pushManager.getSubscription();
+  const endpoint = sub?.endpoint;
   if (sub) await sub.unsubscribe();
+
+  // Tell the server too — otherwise the subscription row is orphaned and
+  // the backend keeps attempting (and failing) to push to a dead endpoint.
+  try {
+    const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+    await fetch(`${base}/api/push/unsubscribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ userId, endpoint }),
+    });
+  } catch {
+    // best-effort — local unsubscribe already succeeded
+  }
 }

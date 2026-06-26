@@ -10,13 +10,5 @@ export interface UserUpdate {
   name?: string;
   avatar_url?: string;
   neighborhood?: string;
-  /** @maxLength 100 */
-  city?: string;
   is_helper?: boolean;
-  /** @maxItems 20 */
-  specialties?: string[];
-  /** @maxLength 20 */
-  phone_masked?: string;
-  /** @maxItems 10 */
-  quick_replies?: string[];
 }

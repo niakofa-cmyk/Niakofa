@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Shield, CheckCircle2, Clock, X, ChevronRight, Camera, FileText, Loader2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
-import { toast } from "@/hooks/use-toast";
 import { authHeaders } from "@/lib/auth";
+import { toast } from "@/hooks/use-toast";
 
 interface VerificationStatus {
   identity_verified: boolean;
@@ -54,18 +54,13 @@ export function IdentityVerificationCard() {
   const savePanicContacts = async () => {
     if (!currentUser?.id) return;
     const filled = contacts.filter(c => c.trim());
-    try {
-      const res = await fetch(`/api/verification/panic-contacts/${currentUser.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ contacts: filled }),
-      });
-      if (!res.ok) throw new Error("Failed to save");
-      toast({ title: `${filled.length} emergency contact${filled.length !== 1 ? "s" : ""} saved` });
-      setShowPanicContacts(false);
-    } catch {
-      toast({ title: "Failed to save emergency contacts", description: "Please try again.", variant: "destructive" });
-    }
+    await fetch(`/api/verification/panic-contacts/${currentUser.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ contacts: filled }),
+    });
+    toast({ title: `${filled.length} emergency contact${filled.length !== 1 ? "s" : ""} saved` });
+    setShowPanicContacts(false);
   };
 
   const isVerified = status?.identity_verified;

@@ -1,4 +1,3 @@
-import { getToken } from "@/lib/auth";
 /**
  * Niakofa WebSocket Client — shared singleton
  *
@@ -17,7 +16,6 @@ export type WsEventType =
   | "new_request"
   | "request_updated"
   | "helper_location"
-  | "requester_location"
   | "helper_online"
   | "helper_offline"
   | "pledge_paid"
@@ -36,12 +34,7 @@ export type WsEventType =
   | "presence_update"
   | "connected"
   | "pong"
-  | "ping"
-  | "helper_application_approved"
-  | "helper_application_denied"
-  | "account_approved"
-  | "account_denied"
-  | "crisis_update";
+  | "ping";
 
 export interface WsEvent {
   type: WsEventType;
@@ -92,7 +85,7 @@ function connect(): void {
 
     // Re-register the user after reconnect
     if (registeredUserId !== null) {
-      send({ type: "register", payload: { userId: registeredUserId, authToken: getToken() ?? undefined } });
+      send({ type: "register", payload: { userId: registeredUserId } });
     }
 
     // Keepalive ping every 25s
@@ -136,24 +129,9 @@ export function wsStart(): void {
  * Register the current user with the WS hub so the server can use sendToUser.
  * Must be called after wsStart(), re-called whenever the logged-in user changes.
  */
-function isTokenExpired(token: string | null): boolean {
-  if (!token) return true;
-  const parts = token.split(".");
-  if (parts.length !== 4) return true;
-  const expiresAt = Number(parts[1]);
-  return !Number.isFinite(expiresAt) || Date.now() >= expiresAt;
-}
-
 export function wsRegister(userId: number): void {
   registeredUserId = userId;
-  const token = getToken();
-  if (isTokenExpired(token)) {
-    // LOW-006: sending a known-expired token just gets silently rejected
-    // server-side and the socket never registers. The normal app-level
-    // 401 handling will get the user a fresh token.
-    return;
-  }
-  send({ type: "register", payload: { userId, authToken: token ?? undefined } });
+  send({ type: "register", payload: { userId } });
 }
 
 /** Clear registration (e.g. on logout). */

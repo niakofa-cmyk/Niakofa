@@ -5,9 +5,10 @@ import type { MapRef } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type mapboxgl from "mapbox-gl";
 import { useAppContext } from "@/lib/AppContext";
+import { authHeaders } from "@/lib/auth";
 import { useGetRequest, useGetRoute, useCompleteRequest, useMarkEnRoute, useMarkArrived, getGetRequestQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share2, CheckCircle2, Car, PersonStanding, Bike, Volume2, VolumeX } from "lucide-react";
+import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share2, CheckCircle2, Car, PersonStanding, Bike } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { NavigationOverlay } from "@/components/NavigationOverlay";
@@ -22,7 +23,6 @@ import { useDeviceHeading } from "@/hooks/useDeviceHeading";
 import { useMapOrientation } from "@/hooks/useMapOrientation";
 import { useTerrain } from "@/hooks/useTerrain";
 import { motion, AnimatePresence } from "framer-motion";
-import { useTranslation } from "react-i18next";
 
 const ARRIVAL_THRESHOLD_METERS = 80;
 const OFF_ROUTE_THRESHOLD_METERS = 150;
@@ -96,10 +96,9 @@ function computeCurrentStep(
 }
 
 export default function ActiveRequestScreen() {
-  const { t } = useTranslation();
   const [, params] = useRoute("/request/:id");
   const [, setLocation] = useLocation();
-  const { currentUser, myLocation, setActiveRequestId } = useAppContext();
+  const { currentUser, myLocation } = useAppContext();
   const queryClient = useQueryClient();
   const requestId = parseInt(params?.id || "0", 10);
 
@@ -116,8 +115,6 @@ export default function ActiveRequestScreen() {
   const [tipShown, setTipShown] = useState(false);
   const [showRating, setShowRating] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
-  const [requesterLiveLocation, setRequesterLiveLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   const enRouteRef = useRef(false);
   const offRouteCooldownRef = useRef(false);
@@ -136,21 +133,9 @@ export default function ActiveRequestScreen() {
   const { mode, setMode, applyHeading } = useMapOrientation(rawMapRef);
   useTerrain(rawMapRef);
 
-  // Prefer GPS course-over-ground while actively moving — far steadier
-  // than the magnetometer. Falls back to device compass when stationary.
-  const MOVING_SPEED_THRESHOLD_MPS = 0.5;
-  const gpsHeading =
-    myLocation?.speed != null &&
-    myLocation.speed > MOVING_SPEED_THRESHOLD_MPS &&
-    myLocation?.heading != null &&
-    !isNaN(myLocation.heading)
-      ? myLocation.heading
-      : null;
-  const effectiveHeading = gpsHeading ?? deviceHeading;
-
   useEffect(() => {
-    if (effectiveHeading != null) applyHeading(effectiveHeading);
-  }, [effectiveHeading, applyHeading]);
+    if (deviceHeading != null) applyHeading(deviceHeading);
+  }, [deviceHeading, applyHeading]);
 
   // ── Data ───────────────────────────────────────────────────────────────
 
@@ -163,24 +148,6 @@ export default function ActiveRequestScreen() {
   // still be undefined here on first render, before data loads.
   const isArrived = request?.status === "arrived" || autoArrived;
   const isCompleted = request?.status === "completed";
-
-  // Keep AppContext's activeRequestId in sync with this screen so Nia (and
-  // anything else reading app-wide state) knows the helper currently has
-  // this request open. Cleared on unmount and once the request reaches a
-  // terminal status, so it never goes stale.
-  const TERMINAL_STATUSES = ["completed", "cancelled", "expired"];
-  useEffect(() => {
-    if (!request) return;
-    if (TERMINAL_STATUSES.includes(request.status)) {
-      setActiveRequestId(null);
-      return;
-    }
-    setActiveRequestId(requestId);
-  }, [request?.status, requestId, setActiveRequestId]);
-
-  useEffect(() => {
-    return () => setActiveRequestId(null);
-  }, [setActiveRequestId]);
 
   const routeParams = {
     start_lat: myLocation?.lat || 0,
@@ -215,8 +182,8 @@ export default function ActiveRequestScreen() {
     if (elapsedSeconds >= SAFETY_TIMER_SECONDS) {
       setSafetyAlertShown(true);
       toast({
-        title: t("request_active.still_on_your_way"),
-        description: t("request_active.youve_been_en_route_for_20"),
+        title: "⏱️ Still on your way?",
+        description: "You've been en route for 20 minutes. Everything okay? Complete the request or use SOS if needed.",
       });
     }
   }, [elapsedSeconds, autoArrived, safetyAlertShown]);
@@ -250,7 +217,7 @@ export default function ActiveRequestScreen() {
         { id: requestId, data: { helper_id: currentUser.id } },
         {
           onSuccess: () => {
-            toast({ title: t("request_active.youve_arrived"), description: t("request_active.complete_the_request_when_youre_done") });
+            toast({ title: "📍 You've arrived!", description: "Complete the request when you're done helping." });
             queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
           }
         }
@@ -270,8 +237,8 @@ export default function ActiveRequestScreen() {
       setIsOffRoute(true);
       offRouteCooldownRef.current = true;
       toast({
-        title: t("request_active.off_route_recalculating"),
-        description: t("request_active.youve_deviated_from_the_route_fetching"),
+        title: "🔄 Off route — recalculating…",
+        description: "You've deviated from the route. Fetching updated directions.",
         variant: "destructive",
       });
       queryClient.invalidateQueries({ queryKey: getGetRouteQueryKey(routeParams) });
@@ -295,16 +262,16 @@ export default function ActiveRequestScreen() {
     setCurrentStepIndex(newStep);
   }, [myLocation, routeData, request]);
 
-  // Turn-by-turn voice guidance via Web Speech API — respects voiceEnabled toggle
+  // Turn-by-turn voice guidance via Web Speech API
   const speakInstruction = useCallback((text: string) => {
-    if (!voiceEnabled || !("speechSynthesis" in window) || !text) return;
+    if (!("speechSynthesis" in window) || !text) return;
     window.speechSynthesis.cancel();
     const utt = new SpeechSynthesisUtterance(text);
     utt.rate = 1.0;
     utt.pitch = 1.0;
     utt.volume = 1.0;
     window.speechSynthesis.speak(utt);
-  }, [voiceEnabled]);
+  }, []);
 
   useEffect(() => {
     if (isArrived || !routeData?.steps) return;
@@ -325,15 +292,11 @@ export default function ActiveRequestScreen() {
     if (isOffRoute) speakInstruction("Off route. Recalculating.");
   }, [isOffRoute, speakInstruction]);
 
-  // Auto-zoom to route — fires ONCE on initial route load to preview the
-  // full trip, then hands off entirely to follow-mode above. Re-fitting on
-  // every refetch fought with continuous user-following, causing jumps.
-  const hasFitInitialRouteRef = useRef(false);
+  // Auto-zoom to route
   useEffect(() => {
-    if (!routeData?.geometry || !mapRef.current || hasFitInitialRouteRef.current) return;
+    if (!routeData?.geometry || !mapRef.current) return;
     const coords = (routeData.geometry as { coordinates: number[][] }).coordinates;
     if (coords.length < 2) return;
-    hasFitInitialRouteRef.current = true;
     const lngs = coords.map(c => c[0]);
     const lats = coords.map(c => c[1]);
     const bounds: [[number, number], [number, number]] = [
@@ -343,26 +306,34 @@ export default function ActiveRequestScreen() {
     mapRef.current.fitBounds(bounds, { padding: 80, duration: 1200, pitch: 55, maxZoom: 17 });
   }, [routeData?.geometry]);
 
-  // Follow user — instant setCenter (no animation queue) since GPS
-  // lat/lng is already EMA-smoothed upstream in AppContext. Zoom is only
-  // set once on entry, not re-applied every tick, so it doesn't fight the
-  // route-preview fitBounds below.
-  const hasSetInitialZoomRef = useRef(false);
+  // GPS heading fallback (only fires when device compass is unavailable)
+  useEffect(() => {
+    if (deviceHeading != null) return;
+    if (!myLocation?.heading || !mapRef.current || isArrived) return;
+    if (mode !== "heading-up") return;
+    mapRef.current.easeTo({
+      bearing: myLocation.heading,
+      duration: 800,
+      easing: (t: number) => t,
+    });
+  }, [myLocation?.heading, isArrived, deviceHeading, mode]);
+
+  // Re-center on user
   useEffect(() => {
     if (!myLocation || !mapRef.current || isArrived || autoArrived) return;
-    mapRef.current.setCenter([myLocation.lng, myLocation.lat]);
-    if (!hasSetInitialZoomRef.current) {
-      hasSetInitialZoomRef.current = true;
-      mapRef.current.setZoom(16);
-    }
-  }, [myLocation?.lat, myLocation?.lng, isArrived, autoArrived]);
+    mapRef.current.easeTo({
+      center: [myLocation.lng, myLocation.lat],
+      duration: 600,
+      zoom: 16,
+    });
+  }, [myLocation?.lat, myLocation?.lng]);
 
   // Passive safety check-in
   useEffect(() => {
     if (!currentUser || isArrived || isCompleted) return;
     const id = setInterval(async () => {
       try {
-        await fetch(`/api/verification/safety-checkin/${currentUser.id}`, { method: "POST" });
+        await fetch(`/api/verification/safety-checkin/${currentUser.id}`, { method: "POST", headers: authHeaders() });
       } catch {}
     }, 5 * 60 * 1000);
     return () => clearInterval(id);
@@ -376,15 +347,6 @@ export default function ActiveRequestScreen() {
         queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
       }
     }
-    // Requester's live position — opt-in, relayed only to the assigned
-    // helper by the backend. Separate from request.lat/lng, since the
-    // requester may not be at the help location itself.
-    if (event.type === "requester_location") {
-      const payload = event.payload as { request_id: number; lat: number; lng: number };
-      if (payload.request_id === requestId) {
-        setRequesterLiveLocation({ lat: payload.lat, lng: payload.lng });
-      }
-    }
   }, [requestId, queryClient]));
 
   const handleComplete = () => {
@@ -396,13 +358,13 @@ export default function ActiveRequestScreen() {
           const earned = request.payment_type === "immediate" && request.pay_it_forward_amount
             ? `+$${request.pay_it_forward_amount.toFixed(2)} added to your wallet`
             : request.payment_type === "goodwill" ? "+1 goodwill point earned" : "Thank you for helping!";
-          toast({ title: t("request_active.request_completed"), description: earned });
+          toast({ title: "🎉 Request Completed!", description: earned });
           queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
           queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
           // Show rating modal before navigating away
           setTimeout(() => setShowRating(true), 900);
         },
-        onError: () => toast({ title: t("request_active.failed_to_complete"), variant: "destructive" })
+        onError: () => toast({ title: "Failed to complete", variant: "destructive" })
       }
     );
   };
@@ -451,7 +413,7 @@ export default function ActiveRequestScreen() {
       }).catch(() => {});
     } else {
       await navigator.clipboard.writeText(shareUrl).catch(() => {});
-      toast({ title: t("request_active.trip_link_copied"), description: t("request_active.share_this_link_so_others_can") });
+      toast({ title: "Trip link copied!", description: "Share this link so others can track your progress." });
     }
     setShareVisible(false);
   };
@@ -466,14 +428,14 @@ export default function ActiveRequestScreen() {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center text-primary">
         <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
-        <p>{t("request_active.loading_route")}</p>
+        <p>Loading route...</p>
       </div>
     );
   }
 
   if (!request) return (
     <div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">
-      {t("request_active.request_not_found")}
+      Request not found
     </div>
   );
 
@@ -489,7 +451,7 @@ export default function ActiveRequestScreen() {
     <div className="relative w-full h-[100dvh] overflow-hidden bg-background">
       {/* Back button */}
       <div className="absolute top-4 left-4 z-30">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full bg-card/80 backdrop-blur-sm border border-border" aria-label={t("request_active.back_to_map")}>
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full bg-card/80 backdrop-blur-sm border border-border">
           <ChevronLeft className="w-6 h-6" />
         </Button>
       </div>
@@ -522,7 +484,7 @@ export default function ActiveRequestScreen() {
         {isOffRoute && (
           <div className="flex items-center gap-1.5 bg-orange-500/20 backdrop-blur-md border border-orange-500/40 px-3 py-1.5 rounded-full shadow-lg animate-pulse">
             <AlertTriangle className="w-3 h-3 text-orange-400" />
-            <span className="text-[10px] font-black text-orange-400">{t("request_active.rerouting")}</span>
+            <span className="text-[10px] font-black text-orange-400">Rerouting</span>
           </div>
         )}
 
@@ -535,44 +497,17 @@ export default function ActiveRequestScreen() {
         {request.payment_type === "goodwill" && (
           <div className="flex items-center gap-1.5 bg-purple-500/20 backdrop-blur-md border border-purple-500/40 px-3 py-1.5 rounded-full shadow-lg">
             <Star className="w-3 h-3 text-purple-400" />
-            <span className="text-xs font-black text-purple-400">{t("request_active.goodwill")}</span>
+            <span className="text-xs font-black text-purple-400">Goodwill</span>
           </div>
         )}
 
         <button
           onClick={handleShare}
           className="flex items-center gap-1.5 bg-card/90 backdrop-blur-md border border-border px-3 py-1.5 rounded-full shadow-lg hover:border-primary/50 transition-colors"
-          title={t("request_active.share_trip")}
-          aria-label={t("request_active.share_trip_link")}
+          title="Share trip"
         >
           <Share2 className="w-3 h-3 text-muted-foreground" />
-          <span className="text-[10px] font-black text-muted-foreground">{t("request_active.share")}</span>
-        </button>
-
-        {/* Voice guidance mute/unmute toggle */}
-        <button
-          onClick={() => {
-            const next = !voiceEnabled;
-            setVoiceEnabled(next);
-            if (!next && "speechSynthesis" in window) window.speechSynthesis.cancel();
-            toast({ title: next ? "🔊 Voice guidance on" : "🔇 Voice guidance off" });
-          }}
-          className={`flex items-center gap-1.5 backdrop-blur-md border px-3 py-1.5 rounded-full shadow-lg transition-colors ${
-            voiceEnabled
-              ? "bg-primary/20 border-primary/40 hover:border-primary"
-              : "bg-card/90 border-border hover:border-primary/40"
-          }`}
-          title={voiceEnabled ? "Mute voice guidance" : "Enable voice guidance"}
-          aria-label={voiceEnabled ? "Mute voice guidance" : "Enable voice guidance"}
-          aria-pressed={voiceEnabled}
-        >
-          {voiceEnabled
-            ? <Volume2 className="w-3 h-3 text-primary" />
-            : <VolumeX className="w-3 h-3 text-muted-foreground" />
-          }
-          <span className={`text-[10px] font-black ${voiceEnabled ? "text-primary" : "text-muted-foreground"}`}>
-            {voiceEnabled ? "Voice" : "Muted"}
-          </span>
+          <span className="text-[10px] font-black text-muted-foreground">Share</span>
         </button>
       </motion.div>
 
@@ -688,18 +623,6 @@ export default function ActiveRequestScreen() {
             />
           </Source>
         )}
-      {/* Requester's live position — only present if they opted in via
-          Settings; distinct styling from the helper's own "myLocation"
-          marker and from the fixed help-location pin. */}
-      {requesterLiveLocation && (
-        <Marker longitude={requesterLiveLocation.lng} latitude={requesterLiveLocation.lat} anchor="center">
-          <div className="relative flex items-center justify-center w-8 h-8">
-            <div className="absolute w-8 h-8 bg-amber-400 rounded-full opacity-25 animate-ping" style={{ animationDuration: "2.5s" }} />
-            <div className="w-3.5 h-3.5 bg-amber-400 rounded-full shadow-[0_0_10px_rgba(251,191,36,0.9)] border-2 border-background" />
-          </div>
-        </Marker>
-      )}
-
       </Map>
 
       {/* Bottom action card */}
@@ -707,7 +630,7 @@ export default function ActiveRequestScreen() {
         <div className="flex items-center gap-4 mb-4">
           <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 border-border shrink-0">
             {request.requester_avatar ? (
-              <img src={request.requester_avatar} alt={t("request_active.requester")} className="w-full h-full object-cover" />
+              <img src={request.requester_avatar} alt="Requester" className="w-full h-full object-cover" />
             ) : (
               <span className="text-lg font-bold">{request.requester_name?.[0] || "U"}</span>
             )}
@@ -717,7 +640,7 @@ export default function ActiveRequestScreen() {
             <p className="text-muted-foreground text-sm">{request.requester_name}</p>
           </div>
           <div className="text-right shrink-0">
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-0.5">{t("request_active.status")}</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-0.5">Status</div>
             <div className={`text-xs font-black uppercase ${isArrived ? "text-green-500" : isOffRoute ? "text-orange-400" : "text-primary"}`}>
               {isArrived ? "Arrived" : isOffRoute ? "Rerouting" : request.status.replace("_", " ")}
             </div>
@@ -737,7 +660,7 @@ export default function ActiveRequestScreen() {
               ))}
             </div>
             <div className="text-[10px] text-muted-foreground mt-1 flex justify-between">
-              <span>{t("request_active.step")} {currentStepIndex + 1} {t("request_active.of")} {routeData.steps.length}</span>
+              <span>Step {currentStepIndex + 1} of {routeData.steps.length}</span>
               <span>{routeData.distance_text}</span>
             </div>
           </div>
@@ -785,17 +708,17 @@ export default function ActiveRequestScreen() {
 
         {request.payment_type === "immediate" && earnAmount && (
           <p className="text-center text-xs text-green-400 font-bold mt-2">
-            💰 +${earnAmount.toFixed(2)} {t("request_active.will_be_added_to_your_wallet")}
+            💰 +${earnAmount.toFixed(2)} will be added to your wallet on completion
           </p>
         )}
         {request.payment_type === "pay_it_forward" && (
           <p className="text-center text-xs text-muted-foreground mt-2">
-            {t("request_active.pay_it_forward_your_help_sustains")}
+            💙 Pay It Forward — your help sustains the community
           </p>
         )}
         {request.payment_type === "goodwill" && (
           <p className="text-center text-xs text-purple-400 mt-2">
-            {t("request_active.goodwill_mission_1_community_goodwill_point")}
+            ✨ Goodwill mission — +1 community goodwill point
           </p>
         )}
 
@@ -810,7 +733,7 @@ export default function ActiveRequestScreen() {
             {cancelLoading ? (
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                {t("request_active.cancelling")}
+                Cancelling…
               </span>
             ) : (
               request.helper_id === currentUser.id

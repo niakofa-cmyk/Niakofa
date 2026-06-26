@@ -82,23 +82,6 @@ export function InAppChat({ requestId, helperName, requesterName }: InAppChatPro
     setSending(true);
     const optimisticContent = input.trim();
     setInput("");
-
-    // BUG-011: Add an optimistic message immediately so the UI feels instant.
-    // The real message arrives via WebSocket ("chat_message" event). The
-    // duplicate-guard in the WS handler (`prev.find(m => m.id === msg.id)`)
-    // dedupes when the server echo arrives. On failure, the optimistic message
-    // is removed and the input is restored.
-    const optimisticId = -(Date.now()); // negative id — never collides with server ids
-    const optimisticMsg: ChatMessage = {
-      id: optimisticId,
-      request_id: requestId,
-      sender_id: currentUser.id,
-      content: optimisticContent,
-      sent_at: new Date().toISOString(),
-      read_at: null,
-    };
-    setMessages((prev) => [...prev, optimisticMsg]);
-
     try {
       const res = await fetch(`/api/requests/${requestId}/chat`, {
         method: "POST",
@@ -108,14 +91,10 @@ export function InAppChat({ requestId, helperName, requesterName }: InAppChatPro
         body: JSON.stringify({ content: optimisticContent }),
       });
       if (!res.ok) {
-        // Remove optimistic message and restore input on failure
-        setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+        // Restore input on failure
         setInput(optimisticContent);
       }
-      // On success, the WS echo will replace the optimistic message via the
-      // duplicate-guard in the useWebSocket handler.
     } catch {
-      setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
       setInput(optimisticContent);
     } finally {
       setSending(false);
@@ -191,7 +170,6 @@ export function InAppChat({ requestId, helperName, requesterName }: InAppChatPro
         />
         <Button
           size="icon"
-          aria-label="Send message"
           className="rounded-full w-9 h-9 shrink-0"
           onClick={send}
           disabled={!input.trim() || sending}

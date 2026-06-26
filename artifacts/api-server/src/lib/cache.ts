@@ -71,28 +71,3 @@ export async function cacheDel(key: string): Promise<void> {
   }
   memoryCache.delete(key);
 }
-
-/**
- * Delete every cache entry whose key starts with the given prefix — for
- * cases like "civic:loc:*" where individual exact keys can't be known in
- * advance (they're generated per rounded lat/lng on demand). Uses Redis
- * SCAN (non-blocking, safe for production) when available, otherwise
- * iterates the in-memory fallback map directly.
- */
-export async function cacheDelPrefix(prefix: string): Promise<void> {
-  const redis = getRedisConnection();
-  if (redis) {
-    try {
-      let cursor = "0";
-      do {
-        const [nextCursor, keys] = await redis.scan(cursor, "MATCH", `${prefix}*`, "COUNT", 100);
-        cursor = nextCursor;
-        if (keys.length > 0) await redis.del(...keys);
-      } while (cursor !== "0");
-    } catch {}
-    return;
-  }
-  for (const key of memoryCache.keys()) {
-    if (key.startsWith(prefix)) memoryCache.delete(key);
-  }
-}

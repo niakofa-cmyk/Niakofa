@@ -5,24 +5,8 @@
  * shares ONE connection instead of opening a new socket per call-site.
  *
  * Overloads:
- *   useWebSocket(handler)                 — receive ALL event types (escape hatch)
- *   useWebSocket(eventType, handler)      — receive ONE specific event type (PREFERRED)
- *
- * BUG-028: The one-argument (catch-all) form requires the handler to manually
- * type-check `event.type` at runtime. This creates risk if a server event type
- * is renamed — TypeScript won't catch the mismatch. Prefer the two-argument
- * typed form for all new call-sites. The one-argument form is retained as an
- * internal escape hatch for components that legitimately need to handle multiple
- * distinct event types in one callback (e.g. map.tsx's multi-event handler).
- *
- * @example Preferred:
- *   useWebSocket("request_updated", (event) => { ... });
- *
- * @example Escape hatch (document why you need it):
- *   useWebSocket((event) => {
- *     if (event.type === "helper_online") { ... }
- *     if (event.type === "helper_offline") { ... }
- *   });
+ *   useWebSocket(handler)                 — receive ALL event types
+ *   useWebSocket(eventType, handler)      — receive ONE specific event type
  */
 import { useEffect, useRef } from "react";
 import { wsStart, wsSubscribe } from "./wsClient";

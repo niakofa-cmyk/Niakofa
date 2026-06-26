@@ -1,9 +1,8 @@
 import { pgTable, serial, integer, boolean, real, text, timestamp } from "drizzle-orm/pg-core";
-import { usersTable } from "./users";
 
 export const userSettingsTable = pgTable("user_settings", {
   id: serial("id").primaryKey(),
-  user_id: integer("user_id").notNull().unique().references(() => usersTable.id, { onDelete: "cascade" }),
+  user_id: integer("user_id").notNull().unique(),
 
   // Notification preferences
   notif_nearby_requests: boolean("notif_nearby_requests").notNull().default(true),
@@ -23,12 +22,6 @@ export const userSettingsTable = pgTable("user_settings", {
   service_radius_miles: real("service_radius_miles").notNull().default(10),
   max_travel_miles: real("max_travel_miles").default(15),
   specialties: text("specialties"),
-
-  // Nia voice / UI language preference — CulturalLanguage value from
-  // artifacts/pay-it-forward/src/lib/culturalGreetings.ts (en, sw, zu, tw,
-  // yo, ha, am, so, pcm, lg). Plain text rather than a DB enum so the app
-  // can add languages without a migration on this column.
-  preferred_language: text("preferred_language").notNull().default("en"),
 
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 });

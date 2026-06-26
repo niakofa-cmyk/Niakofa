@@ -1,5 +1,4 @@
 import { pgTable, serial, integer, text, timestamp, unique, check } from "drizzle-orm/pg-core";
-import { usersTable } from "./users";
 import { sql } from "drizzle-orm";
 
 export const ratingsTable = pgTable(
@@ -7,8 +6,8 @@ export const ratingsTable = pgTable(
   {
     id: serial("id").primaryKey(),
     request_id: integer("request_id").notNull(),
-    rater_id: integer("rater_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
-    ratee_id: integer("ratee_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+    rater_id: integer("rater_id").notNull(),
+    ratee_id: integer("ratee_id").notNull(),
     stars: integer("stars").notNull(),
     review: text("review"),
     role: text("role").notNull(),

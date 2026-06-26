@@ -47,7 +47,6 @@ export function DispatchIntelligenceCard({
           </div>
           <button
             onClick={onDismiss}
-            aria-label="Dismiss"
             className="text-muted-foreground hover:text-foreground transition-colors"
           >
             <X className="w-3.5 h-3.5" />

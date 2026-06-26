@@ -1,27 +1,11 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import { useLocation } from "wouter";
-import type { User as GeneratedUser } from "@workspace/api-client-react";
-
-/**
- * Extends the generated User type with fields that exist in the database
- * and API responses but aren't part of the OpenAPI spec yet (same pattern
- * as how `password` is handled — kept out of codegen to avoid spec churn).
- */
-export type User = GeneratedUser & {
-  city?: string | null;
-  preferred_language?: string | null;
-  approval_status?: "pending" | "approved" | "denied";
-  account_type?: "individual" | "business" | "sponsor";
-  organization_name?: string | null;
-  organization_description?: string | null;
-  is_suspended?: boolean;
-  suspended_reason?: string | null;
-};
+import type { User } from "@workspace/api-client-react";
 import { useUpdateUserLocation, useUpdateHelperMode } from "@workspace/api-client-react";
 import { useWebSocket } from "./useWebSocket";
 import { wsStart, wsRegister, wsUnregister } from "./wsClient";
 import { GratitudeModal } from "../components/GratitudeModal";
-import { clearToken, authHeaders } from "./auth";
+import { clearToken } from "./auth";
 
 interface Location {
   lat: number;
@@ -42,18 +26,6 @@ interface AppContextType {
   myLocation: Location | null;
   activeRequestId: number | null;
   setActiveRequestId: (id: number | null) => void;
-  openNia: (initialMessage?: string) => void;
-  niaOpen: boolean;
-  setNiaOpen: (open: boolean) => void;
-  niaInitialMessage: string | undefined;
-  niaEnabled: boolean;
-  // Phase 4: trust-aware explanations. Set by helper-dashboard.tsx when a
-  // helper views/expands a request card's match_reasons, so that if they
-  // then ask Nia "why was I matched with this?" she has the real,
-  // human-readable reasons from lib/matching.ts to answer with — never
-  // invented ones. Cleared when not relevant (e.g. helper navigates away).
-  lastViewedMatchReasons: string[] | null;
-  setLastViewedMatchReasons: (reasons: string[] | null) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -107,7 +79,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
 
   const [helperModeActive, setHelperModeActiveState] = useState(false);
-  const [lastViewedMatchReasons, setLastViewedMatchReasons] = useState<string[] | null>(null);
   // Use last-known location from localStorage; fall back to null (not a hardcoded city)
   const [myLocation, setMyLocation] = useState<Location | null>(loadLastLocation);
   const [gratitudePrompt, setGratitudePrompt] = useState<{
@@ -120,16 +91,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     authorAvatar?: string;
   } | null>(null);
   const [activeRequestId, setActiveRequestId] = useState<number | null>(null);
-  const [niaOpen, setNiaOpen] = useState(false);
-  const [niaEnabled, setNiaEnabled] = useState(true);
-  const [niaInitialMessage, setNiaInitialMessage] = useState<string | undefined>(undefined);
 
   // ── All useRef calls ─────────────────────────────────────────────────────
   const locationRef = useRef<Location | null>(loadLastLocation());
   const prevBroadcastRef = useRef<Location | null>(null);
   const prevLocationRef = useRef<Location | null>(null);
   const smoothedRef = useRef<{ lat: number; lng: number } | null>(null);
-  const smoothedSpeedRef = useRef<number | null>(null);
 
   // ── Custom hooks ─────────────────────────────────────────────────────────
   const updateLocation = useUpdateUserLocation();
@@ -147,16 +114,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Centralized logout — clears all auth state ───────────────────────────
   const logout = () => {
-    // Revoke server-side tokens (logout-everywhere) on a best-effort basis —
-    // local logout proceeds regardless of whether this network call
-    // succeeds, since the person wants to log out either way.
-    if (currentUser) {
-      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-      fetch(`${base}/api/users/${currentUser.id}/logout`, {
-        method: "POST",
-        headers: authHeaders(),
-      }).catch(() => {});
-    }
     clearToken();
     localStorage.removeItem("niakofa_user");
     setCurrentUserState(null);
@@ -181,72 +138,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const openNia = (initialMessage?: string) => {
-    setNiaInitialMessage(initialMessage);
-    setNiaOpen(true);
-  };
-
   // ── useWebSocket subscriptions ────────────────────────────────────────────
-
-  // Listen for helper application approval/denial — update the current user in real-time
-  useWebSocket("helper_application_approved", (event) => {
-    const p = event.payload as { user_id: number; decision: string };
-    if (currentUser && currentUser.id === p.user_id) {
-      const updated = { ...currentUser, helper_status: "approved" as const, is_helper: true };
-      setCurrentUser(updated);
-      import("sonner").then(({ toast }) => {
-        toast.success("🎉 You're approved as a helper!", {
-          description: "Enable Helper Mode in your profile to start accepting requests.",
-          duration: 8000,
-        });
-      }).catch(() => {});
-    }
-  });
-
-  useWebSocket("helper_application_denied", (event) => {
-    const p = event.payload as { user_id: number; decision: string };
-    if (currentUser && currentUser.id === p.user_id) {
-      const updated = { ...currentUser, helper_status: "denied" as const, is_helper: false };
-      setCurrentUser(updated);
-      import("sonner").then(({ toast }) => {
-        toast.error("Helper application update", {
-          description: "Your application was not approved. Check your email for details.",
-          duration: 8000,
-        });
-      }).catch(() => {});
-    }
-  });
-
-  // BUG-002: Handle account-level approval/denial events (distinct from helper application events).
-  // Server emits these when an admin reviews an account's approval_status.
-  useWebSocket("account_approved", (event) => {
-    const p = event.payload as { user_id: number };
-    if (currentUser && currentUser.id === p.user_id) {
-      const updated = { ...currentUser, approval_status: "approved" as const };
-      setCurrentUser(updated);
-      import("sonner").then(({ toast }) => {
-        toast.success("Account approved!", {
-          description: "Your account has been approved. Welcome to Niakofa!",
-          duration: 8000,
-        });
-      }).catch(() => {});
-    }
-  });
-
-  useWebSocket("account_denied", (event) => {
-    const p = event.payload as { user_id: number };
-    if (currentUser && currentUser.id === p.user_id) {
-      const updated = { ...currentUser, approval_status: "denied" as const };
-      setCurrentUser(updated);
-      import("sonner").then(({ toast }) => {
-        toast.error("Account not approved", {
-          description: "Your account was not approved. Check your email for details or contact support.",
-          duration: 10000,
-        });
-      }).catch(() => {});
-    }
-  });
-
   // Show gratitude prompt when the current user's request is completed
   useWebSocket("new_gratitude_prompt", (event) => {
     const p = event.payload as {
@@ -319,21 +211,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           : { lat: raw.lat, lng: raw.lng };
         smoothedRef.current = smoothed;
 
-        // Speed is notoriously noisy on raw GPS readings — a genuinely
-        // stationary device can report brief spikes well above the 0.5 m/s
-        // stationary threshold used below. Smooth it with the same EMA
-        // approach as lat/lng so the threshold check reflects sustained
-        // movement, not single-sample jitter.
-        const smoothedSpeed = raw.speed != null
-          ? (smoothedSpeedRef.current != null ? emaSmooth(smoothedSpeedRef.current, raw.speed, alpha) : raw.speed)
-          : null;
-        smoothedSpeedRef.current = smoothedSpeed;
-
         const newLoc: Location = {
           lat: smoothed.lat,
           lng: smoothed.lng,
           heading,
-          speed: smoothedSpeed,
+          speed: raw.speed,
           accuracy: raw.accuracy,
         };
 
@@ -400,14 +282,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const movedEnough = !prev || distanceMeters(prev, loc) >= MOVEMENT_THRESHOLD_M;
       if (!movedEnough) return;
 
-      // BUG-M09: Stationary suppression must NOT apply when there is an active
-      // request. During an active request the server and requester rely on
-      // continuous location updates — suppressing them when the helper arrives
-      // (and is intentionally stationary) would drop all location updates at
-      // the most critical moment. Suppress only during idle helper mode waits.
-      if (loc.speed != null && loc.speed < 0.5 && !activeRequestId) return;
-      // BUG-45: Respect privacy_live_location setting — do not broadcast when disabled.
-      if ((currentUser as any).privacy_live_location === false) return;
+      // Speed-based stationary suppression: skip broadcast when helper is
+      // stationary (speed < 0.5 m/s ≈ 1mph) and NOT in an active request.
+      // This reduces battery drain during idle waits.
+      if (!activeRequestId && loc.speed != null && loc.speed < 0.5) return;
 
       prevBroadcastRef.current = loc;
       updateLocation.mutate(
@@ -428,19 +306,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id, helperModeActive, activeRequestId]);
 
-  // Poll /admin/nia-status every 30s so the frontend reflects killswitch changes.
-  useEffect(() => {
-    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-    const check = () =>
-      fetch(`${base}/api/admin/nia-status`)
-        .then(r => r.ok ? r.json() : null)
-        .then((d: { enabled: boolean } | null) => { if (d != null) setNiaEnabled(d.enabled); })
-        .catch(() => {});
-    check();
-    const id = setInterval(check, 30_000);
-    return () => clearInterval(id);
-  }, []);
-
   // Start the shared WS singleton and register/unregister as the user changes.
   // This effect is LAST so it never disturbs the hook order above.
   useEffect(() => {
@@ -452,32 +317,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [currentUser?.id]);
 
-  // Suspended screen — shown globally when account is suspended
-  if (currentUser?.is_suspended) {
-    return (
-      <div className="fixed inset-0 bg-background flex flex-col items-center justify-center p-8 gap-6 text-center">
-        <div className="w-20 h-20 rounded-full bg-destructive/10 border-2 border-destructive/30 flex items-center justify-center">
-          <span className="text-4xl">🚫</span>
-        </div>
-        <div>
-          <h1 className="text-2xl font-black text-destructive">Account Suspended</h1>
-          <p className="text-sm text-muted-foreground mt-2 leading-relaxed max-w-xs mx-auto">
-            {currentUser.suspended_reason ?? "Your account has been suspended. Please contact support for details."}
-          </p>
-        </div>
-        <button
-          onClick={logout}
-          className="px-6 py-3 rounded-2xl border border-border text-sm font-black text-muted-foreground hover:text-foreground transition-colors"
-        >
-          Sign Out
-        </button>
-        <p className="text-xs text-muted-foreground">
-          Need help? Email <span className="text-primary">support@niakofa.com</span>
-        </p>
-      </div>
-    );
-  }
-
   return (
     <AppContext.Provider value={{
       currentUser,
@@ -488,13 +327,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       myLocation,
       activeRequestId,
       setActiveRequestId,
-      openNia,
-      niaOpen,
-      setNiaOpen,
-      niaInitialMessage,
-      niaEnabled,
-      lastViewedMatchReasons,
-      setLastViewedMatchReasons,
     }}>
       {children}
       <GratitudeModal

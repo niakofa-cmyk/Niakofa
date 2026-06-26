@@ -8,14 +8,13 @@
  *
  * DB interactions are mocked so no real Postgres connection is needed.
  */
-import { jest } from "@jest/globals";
 import request from "supertest";
 import express, { Express } from "express";
 import { signTokenById } from "../middlewares/auth.js";
 
 // ── Minimal DB mock ───────────────────────────────────────────────────────────
 // We mock @workspace/db so no real DB connection is needed in unit tests.
-jest.unstable_mockModule("@workspace/db", () => {
+jest.mock("@workspace/db", () => {
   const OPEN_REQUEST = {
     id: 1,
     title: "Test Request",
@@ -80,45 +79,36 @@ jest.unstable_mockModule("@workspace/db", () => {
     transactionsTable: { id: "id" },
     stripeAccountsTable: { id: "id", user_id: "user_id", payouts_enabled: "payouts_enabled", stripe_account_id: "stripe_account_id" },
     paymentTransactionsTable: { id: "id" },
-    ratingsTable: { id: "id" },
   };
 });
 
-jest.unstable_mockModule("drizzle-orm", () => ({
+jest.mock("drizzle-orm", () => ({
   eq: jest.fn(),
   and: jest.fn(),
-  or: jest.fn(),
   sql: jest.fn(),
   inArray: jest.fn(),
-  lte: jest.fn(),
-  desc: jest.fn(),
 }));
 
-jest.unstable_mockModule("../lib/ws-hub.js", () => ({
+jest.mock("../lib/ws-hub.js", () => ({
   broadcast: jest.fn(),
   broadcastRequestEvent: jest.fn(),
 }));
 
-jest.unstable_mockModule("../lib/queue.js", () => ({
+jest.mock("../lib/queue.js", () => ({
   enqueuePayoutRetry: jest.fn().mockResolvedValue(undefined),
-  getRedisConnection: jest.fn(() => null),
 }));
 
-jest.unstable_mockModule("../routes/push.js", () => ({
+jest.mock("./push.js", () => ({
   sendPushToNearbyHelpers: jest.fn().mockResolvedValue(undefined),
   sendPushToAllHelpers: jest.fn().mockResolvedValue(undefined),
-  sendPushToUser: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.unstable_mockModule("../routes/leaderboard.js", () => ({
+jest.mock("./leaderboard.js", () => ({
   broadcastLeaderboardUpdate: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.unstable_mockModule("../lib/mailer.js", () => ({
+jest.mock("../lib/mailer.js", () => ({
   sendReceipt: jest.fn().mockResolvedValue(undefined),
-  sendAlertEmail: jest.fn().mockResolvedValue(undefined),
-  sendHelperApplicationDecision: jest.fn().mockResolvedValue(undefined),
-  sendTipNotification: jest.fn().mockResolvedValue(undefined),
 }));
 
 // ── App setup ─────────────────────────────────────────────────────────────────
@@ -127,28 +117,13 @@ let app: Express;
 beforeAll(async () => {
   app = express();
   app.use(express.json());
-  // Test-only auth shim: extracts userId directly from the Bearer token's
-  // format (userId.expiresAt.tokenVersion.sig) instead of running the real
-  // parseAuth, which does a DB token_version lookup. These tests exercise
-  // route-level ownership/authorization branching, not token revocation, so
-  // skipping that DB call keeps each test's queued mockResolvedValueOnce
-  // sequence aligned with the route handler's own queries.
-  app.use((req, _res, next) => {
-    const authHeader = req.headers["authorization"];
-    if (authHeader?.startsWith("Bearer ")) {
-      const userIdRaw = authHeader.slice(7).split(".")[0];
-      const userId = parseInt(userIdRaw, 10);
-      if (!isNaN(userId) && userId > 0) req.authenticatedUserId = userId;
-    }
-    next();
-  });
   const { default: requestsRouter } = await import("../routes/requests.js");
   app.use("/api", requestsRouter);
 });
 
 // ── Helper: create a valid auth token for a user ──────────────────────────────
 function bearerToken(userId: number): string {
-  return `Bearer ${signTokenById(userId, 0)}`;
+  return `Bearer ${signTokenById(userId)}`;
 }
 
 // ── Reset mocks between tests to avoid state bleed ───────────────────────────
@@ -346,8 +321,6 @@ describe("POST /api/requests/:id/tip", () => {
       .post("/api/requests/3/tip")
       .set("Authorization", bearerToken(10))
       .send({ tip_amount: 5 });
-    expect(res.status).toBe(201);
-    expect(res.body.ok).toBe(true);
-    expect(res.body.tip_amount).toBe(5);
+    expect(res.status).toBe(200);
   });
 });

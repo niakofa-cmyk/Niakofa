@@ -9,12 +9,11 @@ import { db, requestsTable, usersTable, reportsTable } from "@workspace/db";
 import { eq, sql, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
-import { adminLimiter } from "../middlewares/rate-limit";
 
 const router = Router();
 
 // GET /admin/analytics — comprehensive platform health snapshot
-router.get("/admin/analytics", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+router.get("/admin/analytics", requireAuth, requireAdmin(), async (_req, res) => {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   const [
@@ -29,8 +28,6 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), adminLimiter, async 
     dailyRequests,
     trustScoreBuckets,
     newUsersWeek,
-    voiceStats,
-    languageDist,
   ] = await Promise.all([
     // 1. Requests by status
     db
@@ -113,11 +110,11 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), adminLimiter, async 
       .select({
         bucket: sql<string>`CASE
           WHEN ${usersTable.trust_score} IS NULL THEN 'Unknown'
-          WHEN ${usersTable.trust_score} < 20 THEN '0-20'
-          WHEN ${usersTable.trust_score} < 40 THEN '20-40'
-          WHEN ${usersTable.trust_score} < 60 THEN '40-60'
-          WHEN ${usersTable.trust_score} < 80 THEN '60-80'
-          ELSE '80-100'
+          WHEN ${usersTable.trust_score} < 2 THEN '0-2'
+          WHEN ${usersTable.trust_score} < 4 THEN '2-4'
+          WHEN ${usersTable.trust_score} < 6 THEN '4-6'
+          WHEN ${usersTable.trust_score} < 8 THEN '6-8'
+          ELSE '8-10'
         END`,
         count: sql<number>`COUNT(*)::int`,
       })
@@ -125,11 +122,11 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), adminLimiter, async 
       .groupBy(
         sql`CASE
           WHEN ${usersTable.trust_score} IS NULL THEN 'Unknown'
-          WHEN ${usersTable.trust_score} < 20 THEN '0-20'
-          WHEN ${usersTable.trust_score} < 40 THEN '20-40'
-          WHEN ${usersTable.trust_score} < 60 THEN '40-60'
-          WHEN ${usersTable.trust_score} < 80 THEN '60-80'
-          ELSE '80-100'
+          WHEN ${usersTable.trust_score} < 2 THEN '0-2'
+          WHEN ${usersTable.trust_score} < 4 THEN '2-4'
+          WHEN ${usersTable.trust_score} < 6 THEN '4-6'
+          WHEN ${usersTable.trust_score} < 8 THEN '6-8'
+          ELSE '8-10'
         END`
       ),
 
@@ -138,35 +135,10 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), adminLimiter, async 
       .select({ count: sql<number>`COUNT(*)::int` })
       .from(usersTable)
       .where(gte(usersTable.created_at, sevenDaysAgo)),
-
-    // 12. Voice activation rate (last 7 days)
-    db
-      .select({
-        total: sql<number>`COUNT(*)::int`,
-        voice: sql<number>`COUNT(*) FILTER (WHERE ${requestsTable.voice_activated} = true)::int`,
-      })
-      .from(requestsTable)
-      .where(gte(requestsTable.created_at, sevenDaysAgo)),
-
-    // 13. Language distribution (last 7 days, voice-activated only)
-    db
-      .select({
-        language: sql<string>`COALESCE(${requestsTable.voice_language}, 'en')`,
-        count: sql<number>`COUNT(*)::int`,
-      })
-      .from(requestsTable)
-      .where(
-        and(
-          gte(requestsTable.created_at, sevenDaysAgo),
-          eq(requestsTable.voice_activated, true)
-        )
-      )
-      .groupBy(sql`COALESCE(${requestsTable.voice_language}, 'en')`)
-      .orderBy(sql`COUNT(*) DESC`),
   ]);
 
-  const openCount = statusCounts.find((s: { status: string; count: number }) => s.status === "open")?.count ?? 0;
-  const completedCount = statusCounts.find((s: { status: string; count: number }) => s.status === "completed")?.count ?? 0;
+  const openCount = statusCounts.find(s => s.status === "open")?.count ?? 0;
+  const completedCount = statusCounts.find(s => s.status === "completed")?.count ?? 0;
 
   return res.json({
     overview: {
@@ -187,186 +159,7 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), adminLimiter, async 
     reports_by_status: reportStatusCounts,
     reports_by_type: reportTypeCounts,
     trust_score_distribution: trustScoreBuckets,
-    voice_activation: {
-      total_requests_7d: voiceStats[0]?.total ?? 0,
-      voice_activated_7d: voiceStats[0]?.voice ?? 0,
-      rate_pct: voiceStats[0]?.total
-        ? Math.round(((voiceStats[0]?.voice ?? 0) / voiceStats[0].total) * 100)
-        : 0,
-    },
-    language_distribution: languageDist,
   });
 });
-
-// GET /admin/accounts — list all accounts for admin review
-router.get("/admin/accounts", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
-  const { approval_status, account_type } = req.query as {
-    approval_status?: string;
-    account_type?: string;
-  };
-
-  const conditions = [];
-  if (approval_status) conditions.push(eq(usersTable.approval_status, approval_status));
-  if (account_type) conditions.push(eq(usersTable.account_type, account_type));
-
-  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "200"), 10) || 200, 1), 500);
-  const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
-
-  const users = await db
-    .select({
-      id: usersTable.id,
-      name: usersTable.name,
-      email: usersTable.email,
-      account_type: usersTable.account_type,
-      approval_status: usersTable.approval_status,
-      is_helper: usersTable.is_helper,
-      helper_status: usersTable.helper_status,
-      is_admin: usersTable.is_admin,
-      is_suspended: usersTable.is_suspended,
-      suspended_at: usersTable.suspended_at,
-      suspended_reason: usersTable.suspended_reason,
-      organization_name: usersTable.organization_name,
-      created_at: usersTable.created_at,
-    })
-    .from(usersTable)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(usersTable.created_at)
-    .limit(limit)
-    .offset(offset);
-
-  return res.json(users);
-});
-
-// GET /admin/helper-applications — list users who have applied to be helpers
-router.get("/admin/helper-applications", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
-  const { status } = req.query as { status?: string };
-
-  const conditions = [sql`${usersTable.helper_status} IS NOT NULL`];
-  if (status) conditions.push(eq(usersTable.helper_status, status));
-
-  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "200"), 10) || 200, 1), 500);
-  const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
-
-  const applicants = await db
-    .select({
-      id: usersTable.id,
-      name: usersTable.name,
-      email: usersTable.email,
-      helper_status: usersTable.helper_status,
-      helper_skills: usersTable.helper_skills,
-      helper_bio: usersTable.helper_bio,
-      helper_languages: usersTable.helper_languages,
-      helper_qualifications: usersTable.helper_qualifications,
-      helper_vehicle: usersTable.helper_vehicle,
-      identity_verified: usersTable.identity_verified,
-      background_check_status: usersTable.background_check_status,
-      created_at: usersTable.created_at,
-    })
-    .from(usersTable)
-    .where(and(...conditions))
-    .orderBy(usersTable.created_at)
-    .limit(limit)
-    .offset(offset);
-
-  return res.json(applicants);
-});
-
-// POST /admin/verify-secret — verify admin secret server-side
-// No Bearer token required — this is the auth step itself.
-// Accepts secret via body or x-admin-secret header.
-router.post("/admin/verify-secret", async (req, res) => {
-  const secret = (req.body as { secret?: string }).secret
-    ?? req.headers["x-admin-secret"] as string | undefined;
-  const expected = process.env.ADMIN_SECRET;
-  if (!expected) return res.status(500).json({ error: "ADMIN_SECRET not configured" });
-  if (!secret || secret !== expected) return res.status(403).json({ error: "Incorrect secret" });
-  return res.json({ ok: true });
-});
-
-
-// POST /admin/users/:id/suspend — hard-suspend an account
-router.post("/admin/users/:id/suspend", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
-  const userId = parseInt(String(req.params.id));
-  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
-  const { reason } = req.body as { reason?: string };
-
-  const [user] = await db
-    .update(usersTable)
-    .set({
-      is_suspended: true,
-      suspended_at: new Date(),
-      suspended_reason: reason ?? "Suspended by admin",
-      helper_mode_active: false,
-    })
-    .where(eq(usersTable.id, userId))
-    .returning({ id: usersTable.id, name: usersTable.name, is_suspended: usersTable.is_suspended });
-
-  if (!user) return res.status(404).json({ error: "User not found" });
-  return res.json({ ok: true, user });
-});
-
-// POST /admin/users/:id/unsuspend — lift a suspension
-router.post("/admin/users/:id/unsuspend", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
-  const userId = parseInt(String(req.params.id));
-  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
-
-  const [user] = await db
-    .update(usersTable)
-    .set({
-      is_suspended: false,
-      suspended_at: null,
-      suspended_reason: null,
-    })
-    .where(eq(usersTable.id, userId))
-    .returning({ id: usersTable.id, name: usersTable.name, is_suspended: usersTable.is_suspended });
-
-  if (!user) return res.status(404).json({ error: "User not found" });
-  return res.json({ ok: true, user });
-});
-
-// GET /admin/suspended — list all suspended accounts
-router.get("/admin/suspended", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
-  const suspended = await db
-    .select({
-      id: usersTable.id,
-      name: usersTable.name,
-      email: usersTable.email,
-      suspended_at: usersTable.suspended_at,
-      suspended_reason: usersTable.suspended_reason,
-      is_helper: usersTable.is_helper,
-      trust_score: usersTable.trust_score,
-    })
-    .from(usersTable)
-    .where(eq(usersTable.is_suspended, true))
-    .orderBy(usersTable.suspended_at);
-  return res.json(suspended);
-});
-
-// ── Nia AI toggle ─────────────────────────────────────────────────────────────
-// In-memory flag — defaults to enabled. Persists for the lifetime of the
-// api-server process. A Railway redeploy resets it to ON, which is the safe
-// default. If you need persistence across deploys, set NIA_ENABLED=false in
-// Railway env vars and the flag will boot to off.
-let niaEnabled: boolean = process.env.NIA_ENABLED !== "false";
-
-// GET /admin/nia-status — public, no auth. Frontend polls this to know
-// whether to show the NiaFab and drawer. Returns { enabled: boolean }.
-router.get("/admin/nia-status", (_req, res) => {
-  return res.json({ enabled: niaEnabled });
-});
-
-// POST /admin/nia-toggle — admin only. Body: { enabled: boolean }
-router.post("/admin/nia-toggle", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
-  const { enabled } = req.body as { enabled?: boolean };
-  if (typeof enabled !== "boolean") {
-    return res.status(400).json({ error: "enabled (boolean) is required" });
-  }
-  niaEnabled = enabled;
-  logger.info({ niaEnabled }, "admin: Nia AI toggled");
-  return res.json({ ok: true, enabled: niaEnabled });
-});
-
-// Export the flag so nia-proxy can read it from the same process
-export { niaEnabled };
 
 export default router;

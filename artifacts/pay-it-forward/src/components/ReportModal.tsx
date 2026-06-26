@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { useAppContext } from "@/lib/AppContext";
-import { authHeaders } from "@/lib/auth";
 
 type ReportType =
   | "suspicious_request"
@@ -70,7 +69,7 @@ export function ReportModal({ reportedUserId, reportedRequestId, reportedName, o
 
       const res = await fetch("/api/reports", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
@@ -120,7 +119,7 @@ export function ReportModal({ reportedUserId, reportedRequestId, reportedName, o
               <Flag className="w-4 h-4 text-orange-400" />
               {step === "done" ? "Report Submitted" : "Report a Concern"}
             </div>
-            <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground transition-colors">
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
               <X className="w-5 h-5" />
             </button>
           </div>

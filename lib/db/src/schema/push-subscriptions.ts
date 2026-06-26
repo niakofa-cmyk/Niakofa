@@ -1,5 +1,4 @@
 import { pgTable, serial, integer, text, jsonb, timestamp } from "drizzle-orm/pg-core";
-import { usersTable } from "./users";
 
 /**
  * Persisted web-push subscriptions.
@@ -10,7 +9,7 @@ import { usersTable } from "./users";
  */
 export const pushSubscriptionsTable = pgTable("push_subscriptions", {
   id: serial("id").primaryKey(),
-  user_id: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  user_id: integer("user_id").notNull(),
   endpoint: text("endpoint").notNull().unique(),
   // Full subscription object stored as JSON: { endpoint, keys: { p256dh, auth } }
   subscription: jsonb("subscription").notNull(),

@@ -30,16 +30,12 @@ export function startNotificationWorker(): Worker<NotificationJobData> | null {
     return null;
   }
 
-  // Retry config (attempts: 3, backoff: fixed 30s) lives on notificationQueue
-  // in lib/queue.ts — Worker does NOT support defaultJobOptions (BullMQ silently
-  // ignores that key on Worker; only Queue honours it). concurrency controls how
-  // many push deliveries run in parallel.
   const worker = new Worker<NotificationJobData>(
     QUEUE.NOTIFICATIONS,
     processNotification,
     {
       connection: conn,
-      concurrency: 5,
+      concurrency: 5, // push delivery is fast, allow parallelism
     }
   );
 
@@ -47,7 +43,7 @@ export function startNotificationWorker(): Worker<NotificationJobData> | null {
     logger.info({ jobId: job.id, user_id: job.data.user_id }, "notification-worker: delivered")
   );
   worker.on("failed", (job, err) =>
-    logger.error({ jobId: job?.id, attempt: job?.attemptsMade, err }, "notification-worker: delivery failed — will retry if attempts remain")
+    logger.error({ jobId: job?.id, err }, "notification-worker: delivery failed")
   );
 
   logger.info("notification-worker: started (concurrency 5)");

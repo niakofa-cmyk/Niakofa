@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { usePushNotifications } from "@/lib/usePushNotifications";
-import { authHeaders, clearToken } from "@/lib/auth";
 import {
   User as UserIcon, Shield, MapPin, Settings, Wallet, Heart, Star,
   DollarSign, Gift, Clock, ChevronRight, AlertCircle, CheckCircle2,
@@ -12,6 +11,7 @@ import {
 import { ReportModal } from "@/components/ReportModal";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
+import { authHeaders } from "@/lib/auth";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import {
@@ -23,7 +23,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { TrustTierBadge, getTrustTier } from "@/components/TrustTierBadge";
 import { IdentityVerificationCard } from "@/components/IdentityVerificationCard";
 import { useQueryClient } from "@tanstack/react-query";
-import { useTranslation } from "react-i18next";
 
 type ProfileTab = "overview" | "history" | "settings";
 
@@ -69,7 +68,7 @@ function ModalShell({ title, icon: Icon, onClose, children }: {
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
         transition={{ type: "spring", damping: 26, stiffness: 220 }}
-        className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl max-h-[96dvh] overflow-y-auto pb-safe"
+        className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl max-h-[85dvh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-5 pb-3 border-b border-border">
@@ -88,25 +87,27 @@ function ModalShell({ title, icon: Icon, onClose, children }: {
 }
 
 function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId: number }) {
-  const { t } = useTranslation();
   const [confirmed, setConfirmed] = useState(false);
   return (
-    <ModalShell title={t("profile.delete_account")} icon={Trash2} onClose={onClose}>
+    <ModalShell title="Delete Account" icon={Trash2} onClose={onClose}>
       <div className="space-y-4">
         <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4">
-          <p className="text-sm text-destructive font-bold mb-1">{t("profile.this_cannot_be_undone")}</p>
+          <p className="text-sm text-destructive font-bold mb-1">This cannot be undone.</p>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            {t("profile.deleting_your_account_will_permanently_remove")}
+            Deleting your account will permanently remove your profile, transaction history, goodwill score,
+            and benevolence wallet balance. Scheduled payments will be cancelled. This action is irreversible
+            and cannot be recovered.
           </p>
         </div>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          {t("profile.under_gdprccpa_regulations_you_have_the")}
+          Under GDPR/CCPA regulations, you have the right to request deletion of your personal data.
+          Your data will be removed within 30 days of confirmation. To request deletion, contact:
         </p>
         <a
           href="mailto:privacy@niakofa.community?subject=Account%20Deletion%20Request"
           className="block bg-card border border-border rounded-xl p-3 text-sm text-primary hover:border-primary/50 transition-colors"
         >
-          {t("profile.privacyniakofacommunity")}
+          privacy@niakofa.community
         </a>
         <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-xl">
           <input
@@ -117,11 +118,11 @@ function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId:
             className="accent-destructive w-4 h-4"
           />
           <label htmlFor="confirm-delete" className="text-xs text-muted-foreground">
-            {t("profile.i_understand_this_action_is_permanent")}
+            I understand this action is permanent and cannot be undone
           </label>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Button variant="outline" onClick={onClose}>{t("profile.cancel")}</Button>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
             variant="destructive"
             disabled={!confirmed}
@@ -139,7 +140,7 @@ function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId:
                   return;
                 }
                 toast({ title: "Account deleted successfully", description: "You will be logged out." });
-                clearToken(); // shared helper, not a hardcoded string literal
+                localStorage.removeItem("niakofa_token");
                 localStorage.removeItem("niakofa_user");
                 localStorage.removeItem("niakofa_last_location");
                 window.location.href = "/";
@@ -149,7 +150,7 @@ function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId:
               onClose();
             }}
           >
-            {t("profile.request_deletion")}
+            Request Deletion
           </Button>
         </div>
       </div>
@@ -176,7 +177,6 @@ async function saveSettings(userId: number, updates: Record<string, boolean | nu
 }
 
 function PushEnableButton({ userId }: { userId: number }) {
-  const { t } = useTranslation();
   const { permission, isSubscribed, isLoading, requestPermissionAndSubscribe, unsubscribe } =
     usePushNotifications(userId);
 
@@ -187,13 +187,13 @@ function PushEnableButton({ userId }: { userId: number }) {
       <div className="flex items-center justify-between p-3 bg-green-500/10 rounded-xl border border-green-500/30">
         <div className="flex items-center gap-2">
           <Bell className="w-4 h-4 text-green-400" />
-          <span className="text-sm font-semibold text-green-400">{t("profile.push_notifications_active")}</span>
+          <span className="text-sm font-semibold text-green-400">Push Notifications Active</span>
         </div>
         <button
           onClick={unsubscribe}
           className="text-xs text-muted-foreground hover:text-destructive transition-colors"
         >
-          {t("profile.disable")}
+          Disable
         </button>
       </div>
     );
@@ -219,9 +219,9 @@ function PushEnableButton({ userId }: { userId: number }) {
         )}
       </div>
       <div>
-        <div className="text-sm font-bold">{t("profile.enable_push_notifications")}</div>
+        <div className="text-sm font-bold">Enable Push Notifications</div>
         <div className="text-[10px] text-muted-foreground">
-          {t("profile.get_alerted_for_nearby_requests_pledges")}
+          Get alerted for nearby requests, pledges &amp; arrivals
         </div>
       </div>
     </button>
@@ -229,7 +229,6 @@ function PushEnableButton({ userId }: { userId: number }) {
 }
 
 function NotificationPrefsDialog({ onClose, userId }: { onClose: () => void; userId: number }) {
-  const { t } = useTranslation();
   const [prefs, setPrefs] = useState({
     notif_nearby_requests: true,
     notif_emergency: true,
@@ -279,7 +278,7 @@ function NotificationPrefsDialog({ onClose, userId }: { onClose: () => void; use
   };
 
   return (
-    <ModalShell title={t("profile.notification_preferences")} icon={Bell} onClose={onClose}>
+    <ModalShell title="Notification Preferences" icon={Bell} onClose={onClose}>
       {loading ? (
         <div className="flex items-center justify-center py-8">
           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -289,7 +288,7 @@ function NotificationPrefsDialog({ onClose, userId }: { onClose: () => void; use
           {/* Push notification enable — must grant permission for any toggles below to reach the device */}
           <PushEnableButton userId={userId} />
           <div className="pt-1 border-t border-border/60">
-            <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wider font-bold">{t("profile.inapp_notification_types")}</p>
+            <p className="text-[10px] text-muted-foreground mb-2 uppercase tracking-wider font-bold">In-App Notification Types</p>
             {(Object.keys(prefs) as (keyof typeof prefs)[]).map(key => (
               <div key={key} className="flex items-center justify-between p-3 bg-background rounded-xl border border-border mb-2">
                 <span className="text-sm">{labels[key]}</span>
@@ -307,7 +306,6 @@ function NotificationPrefsDialog({ onClose, userId }: { onClose: () => void; use
 }
 
 function AccountPrivacyDialog({ onClose, userId }: { onClose: () => void; userId: number }) {
-  const { t } = useTranslation();
   const [prefs, setPrefs] = useState({
     privacy_profile_visible: true,
     privacy_live_location: false,
@@ -351,7 +349,7 @@ function AccountPrivacyDialog({ onClose, userId }: { onClose: () => void; userId
   };
 
   return (
-    <ModalShell title={t("profile.account_privacy")} icon={Lock} onClose={onClose}>
+    <ModalShell title="Account Privacy" icon={Lock} onClose={onClose}>
       {loading ? (
         <div className="flex items-center justify-center py-8">
           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -377,23 +375,22 @@ function AccountPrivacyDialog({ onClose, userId }: { onClose: () => void; userId
 }
 
 function SafetyDialog({ item, onClose, setShowReportModal }: { item: string; onClose: () => void; setShowReportModal: (v: boolean) => void }) {
-  const { t } = useTranslation();
   const content: Record<string, { icon: React.ComponentType<{className?: string}>; body: React.ReactNode }> = {
     "Report unsafe behavior": {
       icon: AlertCircle,
       body: (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground leading-relaxed">
-            {t("profile.if_you_felt_unsafe_during_a")}
+            If you felt unsafe during a help exchange, we take that seriously. Our safety team reviews every report within 24 hours.
           </p>
           <button
             onClick={() => { onClose(); setTimeout(() => setShowReportModal(true), 150); }}
             className="w-full flex items-center justify-center gap-2 bg-destructive/10 border border-destructive/30 hover:border-destructive/60 text-destructive font-bold text-sm text-center py-3 rounded-xl transition-colors"
           >
             <Flag className="w-4 h-4" />
-            {t("profile.file_a_report")}
+            File a Report
           </button>
-          <p className="text-[11px] text-muted-foreground text-center">{t("profile.or_use_the_sos_button_on")}</p>
+          <p className="text-[11px] text-muted-foreground text-center">Or use the SOS button on the map screen for immediate assistance</p>
         </div>
       ),
     },
@@ -402,12 +399,12 @@ function SafetyDialog({ item, onClose, setShowReportModal }: { item: string; onC
       body: (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground leading-relaxed">
-            {t("profile.emergency_contacts_are_trusted_people_who")}
+            Emergency contacts are trusted people who can be notified if you activate an SOS alert. This feature is being built — available soon.
           </p>
           <div className="bg-muted/50 border border-border rounded-xl p-4 text-center">
             <div className="text-2xl mb-2">🔒</div>
-            <div className="font-bold text-sm">{t("profile.coming_soon")}</div>
-            <div className="text-xs text-muted-foreground mt-1">{t("profile.emergency_contact_management_will_be_available")}</div>
+            <div className="font-bold text-sm">Coming Soon</div>
+            <div className="text-xs text-muted-foreground mt-1">Emergency contact management will be available in the next update</div>
           </div>
         </div>
       ),
@@ -438,7 +435,7 @@ function SafetyDialog({ item, onClose, setShowReportModal }: { item: string; onC
       icon: Eye,
       body: (
         <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
-          <p>{t("profile.niakofa_collects_only_whats_necessary_to")}</p>
+          <p>Niakofa collects only what's necessary to connect neighbors safely.</p>
           <div className="space-y-2">
             {[
               ["Location data", "Used only when helper mode is active or a request is open. Never sold."],
@@ -456,7 +453,7 @@ function SafetyDialog({ item, onClose, setShowReportModal }: { item: string; onC
             href="mailto:privacy@niakofa.community"
             className="block text-primary text-xs text-center hover:underline"
           >
-            {t("profile.privacyniakofacommunity_2")}
+            privacy@niakofa.community
           </a>
         </div>
       ),
@@ -508,7 +505,6 @@ const SPECIALTY_OPTIONS = [
 ];
 
 function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId: number }) {
-  const { t } = useTranslation();
   const [radius, setRadius] = useState(5);
   const [specialties, setSpecialties] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -538,7 +534,7 @@ function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId
   };
 
   return (
-    <ModalShell title={t("profile.helper_settings")} icon={Sliders} onClose={onClose}>
+    <ModalShell title="Helper Settings" icon={Sliders} onClose={onClose}>
       {loading ? (
         <div className="flex justify-center py-8">
           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -547,8 +543,8 @@ function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId
         <div className="space-y-5">
           <div>
             <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-bold">{t("profile.service_radius")}</span>
-              <span className="text-primary font-black text-sm">{radius} {t("profile.mile")}{radius !== 1 ? "s" : ""}</span>
+              <span className="text-sm font-bold">Service Radius</span>
+              <span className="text-primary font-black text-sm">{radius} mile{radius !== 1 ? "s" : ""}</span>
             </div>
             <input
               type="range" min={1} max={25} step={1} value={radius}
@@ -556,14 +552,14 @@ function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId
               className="w-full accent-primary h-2"
             />
             <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-              <span>{t("profile.1_mile")}</span><span>{t("profile.25_miles")}</span>
+              <span>1 mile</span><span>25 miles</span>
             </div>
             <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
-              {t("profile.youll_receive_requests_from_within_this")}
+              You'll receive requests from within this radius of your current location.
             </p>
           </div>
           <div>
-            <div className="text-sm font-bold mb-2">{t("profile.specialties")}</div>
+            <div className="text-sm font-bold mb-2">Specialties</div>
             <div className="flex flex-wrap gap-2">
               {SPECIALTY_OPTIONS.map(opt => (
                 <button
@@ -578,7 +574,7 @@ function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId
               ))}
             </div>
             <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
-              {t("profile.requesters_can_filter_helpers_by_specialty")}
+              Requesters can filter helpers by specialty. Select all that apply.
             </p>
           </div>
           <Button className="w-full" onClick={handleSave} disabled={saving}>
@@ -591,7 +587,6 @@ function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId
 }
 
 function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void; userId: number; isHelper: boolean }) {
-  const { t } = useTranslation();
   const [status, setStatus] = useState<{
     connected: boolean; chargesEnabled?: boolean; payoutsEnabled?: boolean; detailsSubmitted?: boolean;
   } | null>(null);
@@ -600,7 +595,7 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
 
   useEffect(() => {
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-    fetch(`${base}/api/stripe/connect/status/${userId}`)
+    fetch(`${base}/api/stripe/connect/status/${userId}`, { headers: authHeaders() })
       .then(r => r.json()).then(setStatus).finally(() => setLoading(false));
   }, [userId]);
 
@@ -609,23 +604,23 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
     try {
       const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
       const res = await fetch(`${base}/api/stripe/connect/onboard`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ userId }),
       });
       if (!res.ok) {
         const err = await res.json() as { setup?: string };
-        toast({ title: err.setup ?? "Payout setup not available yet", variant: "destructive" });
+        toast({ title: err.setup ?? "Stripe not configured by admin", variant: "destructive" });
         return;
       }
       const data = await res.json() as { url: string };
       window.open(data.url, "_blank", "noopener noreferrer");
     } catch {
-      toast({ title: "Could not start payout setup — please try again", variant: "destructive" });
+      toast({ title: "Could not start Stripe setup — please try again", variant: "destructive" });
     } finally { setOnboarding(false); }
   };
 
   return (
-    <ModalShell title={t("profile.payout_setup")} icon={CreditCard} onClose={onClose}>
+    <ModalShell title="Payout Setup" icon={CreditCard} onClose={onClose}>
       {loading ? (
         <div className="flex justify-center py-8">
           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -633,22 +628,22 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
       ) : !isHelper ? (
         <div className="bg-muted/50 border border-border rounded-xl p-4 text-center">
           <div className="text-2xl mb-2">💡</div>
-          <div className="font-bold text-sm">{t("profile.enable_helper_mode_first")}</div>
-          <div className="text-xs text-muted-foreground mt-1">{t("profile.toggle_helper_mode_on_to_start")}</div>
+          <div className="font-bold text-sm">Enable Helper Mode First</div>
+          <div className="text-xs text-muted-foreground mt-1">Toggle Helper Mode on to start receiving jobs and set up payouts.</div>
         </div>
       ) : status?.payoutsEnabled ? (
         <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 flex items-center gap-3">
           <span className="text-2xl">✅</span>
           <div>
-            <div className="font-black text-green-400">{t("profile.payouts_active")}</div>
-            <div className="text-xs text-muted-foreground mt-0.5">{t("profile.earnings_transfer_directly_to_your_bank")}</div>
+            <div className="font-black text-green-400">Payouts Active</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Earnings transfer directly to your bank account via Stripe.</div>
           </div>
         </div>
       ) : status?.connected ? (
         <div className="space-y-3">
           <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
-            <div className="font-black text-yellow-400 mb-1">{t("profile.almost_there")}</div>
-            <div className="text-xs text-muted-foreground mb-2">{t("profile.your_stripe_account_needs_more_information")}</div>
+            <div className="font-black text-yellow-400 mb-1">Almost there</div>
+            <div className="text-xs text-muted-foreground mb-2">Your Stripe account needs more information before payouts can be enabled.</div>
             {[
               { label: "Account connected", done: true },
               { label: "Details submitted", done: status.detailsSubmitted },
@@ -661,19 +656,19 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
             ))}
           </div>
           <Button className="w-full" onClick={handleSetupPayouts} disabled={onboarding}>
-            {onboarding ? "Setting up your payout account…" : "Complete Payout Setup"}
+            {onboarding ? "Opening Stripe…" : "Complete Setup on Stripe"}
           </Button>
         </div>
       ) : (
         <div className="space-y-4">
           <div className="bg-primary/10 border border-primary/30 rounded-xl p-4">
-            <div className="font-black text-primary mb-1">{t("profile.set_up_real_payments")}</div>
+            <div className="font-black text-primary mb-1">Set Up Real Payments</div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              {t("profile.connect_your_bank_account_via_stripe")}
+              Connect your bank account via Stripe to receive real payments from immediate-pay jobs and Niakofa contributions.
             </p>
           </div>
           <div className="space-y-2">
-            {["Takes ~5 minutes to complete", "Bank-level security — your data is encrypted",
+            {["Takes ~5 minutes to complete", "Powered by Stripe — bank-level security",
               "Payouts directly to your bank account", "No upfront fees from Niakofa"].map(item => (
               <div key={item} className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="text-primary">✓</span><span>{item}</span>
@@ -682,11 +677,11 @@ function PayoutSetupDialog({ onClose, userId, isHelper }: { onClose: () => void;
           </div>
           <Button className="w-full h-12 font-black" onClick={handleSetupPayouts} disabled={onboarding}>
             {onboarding
-              ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{t("profile.opening_stripe")}</span>
-              : "Set Up Direct Payouts"
+              ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Opening Stripe…</span>
+              : "Set Up Payouts via Stripe"
             }
           </Button>
-          <p className="text-[10px] text-muted-foreground text-center">{t("profile.requires_stripesecretkey_to_be_configured_by")}</p>
+          <p className="text-[10px] text-muted-foreground text-center">Requires STRIPE_SECRET_KEY to be configured by the app administrator.</p>
         </div>
       )}
     </ModalShell>
@@ -720,27 +715,16 @@ function useCivicResources(lat: number | null | undefined, lng: number | null | 
   const [data, setData] = useState<CivicResourcesResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const rLat = lat != null ? Math.round(lat * 1000) / 1000 : lat;
-  const rLng = lng != null ? Math.round(lng * 1000) / 1000 : lng;
-
   useEffect(() => {
-    if (rLat == null || rLng == null) return;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-    let current = true;
+    if (lat == null || lng == null) return;
     setLoading(true);
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-    fetch(`${base}/api/civic/resources?lat=${rLat}&lng=${rLng}`, { signal: controller.signal })
+    fetch(`${base}/api/civic/resources?lat=${lat}&lng=${lng}`)
       .then(r => r.ok ? r.json() as Promise<CivicResourcesResponse> : Promise.reject())
-      .then(json => { if (current) setData(json); })
-      .catch(() => { if (current) setData(null); })
-      .finally(() => { if (current) setLoading(false); });
-    return () => {
-      current = false;
-      clearTimeout(timeoutId);
-      controller.abort();
-    };
-  }, [rLat, rLng]);
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [lat, lng]);
 
   return { data, loading };
 }
@@ -772,7 +756,6 @@ function RecentHelpersSection({
   transactions: Transaction[];
   onNavigate: (path: string) => void;
 }) {
-  const { t } = useTranslation();
   const [helpers, setHelpers] = useState<CompletedRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const { currentUser } = useAppContext();
@@ -806,22 +789,22 @@ function RecentHelpersSection({
   return (
     <div className="bg-card border border-border rounded-2xl p-4">
       <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
-        <Users className="w-3.5 h-3.5" /> {t("profile.helpers_whove_helped_you")}
+        <Users className="w-3.5 h-3.5" /> Helpers Who've Helped You
       </h3>
 
       {loading && (
         <div className="flex items-center justify-center py-4 gap-2 text-muted-foreground">
           <Loader2 className="w-4 h-4 animate-spin" />
-          <span className="text-xs">{t("profile.loading")}</span>
+          <span className="text-xs">Loading…</span>
         </div>
       )}
 
       {!loading && helpers.length === 0 && (
         <div className="bg-muted/40 border border-border/60 rounded-xl p-4 text-center">
           <div className="text-2xl mb-2">💙</div>
-          <div className="font-bold text-sm">{t("profile.no_completed_requests_yet")}</div>
+          <div className="font-bold text-sm">No completed requests yet</div>
           <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
-            {t("profile.helpers_who_complete_your_requests_will")}
+            Helpers who complete your requests will appear here.
           </div>
         </div>
       )}
@@ -856,7 +839,7 @@ function RecentHelpersSection({
           ))}
           {helpReceived > 0 && (
             <div className="text-[10px] text-muted-foreground text-center pt-1">
-              {t("profile.youve_received_help")} {helpReceived} {t("profile.time")}{helpReceived !== 1 ? "s" : ""} {t("profile.through_niakofa")}
+              You've received help {helpReceived} time{helpReceived !== 1 ? "s" : ""} through Niakofa
             </div>
           )}
         </div>
@@ -868,7 +851,6 @@ function RecentHelpersSection({
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
-  const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { currentUser, helperModeActive, setHelperModeActive, myLocation, logout } = useAppContext();
   const [tab, setTab] = useState<ProfileTab>("overview");
@@ -888,7 +870,7 @@ export default function ProfileScreen() {
       const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
       const res = await fetch(`${base}/api/verification/identity/start`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ user_id: userId }),
       });
       const data = await res.json();
@@ -929,7 +911,7 @@ export default function ProfileScreen() {
         const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
         const res = await fetch(`${base}/api/users/${currentUser.id}/avatar`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify({ dataUrl }),
         });
         if (res.ok) {
@@ -960,7 +942,7 @@ export default function ProfileScreen() {
       {/* Header */}
       <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-xl border-b border-border p-4 pt-safe">
         <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2">
-          <UserIcon className="w-5 h-5 text-primary" /> {t("profile.profile")}
+          <UserIcon className="w-5 h-5 text-primary" /> Profile
         </h1>
         <div className="flex gap-1 mt-3">
           {(["overview", "history", "settings"] as ProfileTab[]).map(t => (
@@ -984,7 +966,7 @@ export default function ProfileScreen() {
           <>
             <div className="flex items-center gap-4 pt-2">
               <div className="relative">
-                <button onClick={handleAvatarClick} className="relative group" title={t("profile.change_profile_photo")}>
+                <button onClick={handleAvatarClick} className="relative group" title="Change profile photo">
                   <div className="w-20 h-20 rounded-full border-4 border-card bg-muted flex items-center justify-center shadow-xl overflow-hidden">
                     {avatarPreview || currentUser.avatar_url
                       ? <img src={avatarPreview ?? currentUser.avatar_url!} alt={currentUser.name} className="w-full h-full object-cover" />
@@ -1014,7 +996,7 @@ export default function ProfileScreen() {
               <div>
                 <h2 className="text-xl font-black">{currentUser.name}</h2>
                 <p className="text-muted-foreground flex items-center gap-1 text-sm">
-                  <MapPin className="w-3.5 h-3.5" /> {currentUser.neighborhood || "Your Community"}
+                  <MapPin className="w-3.5 h-3.5" /> {currentUser.neighborhood || "Fort Worth Community"}
                 </p>
                 <div className="flex items-center flex-wrap gap-1.5 mt-1">
                   <TrustTierBadge
@@ -1031,17 +1013,17 @@ export default function ProfileScreen() {
               <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
                 <Shield className="w-4 h-4 text-blue-400 mb-1.5" />
                 <div className="text-xl font-black">{currentUser.trust_score?.toFixed(0) ?? 0}%</div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{t("profile.trust")}</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Trust</div>
               </div>
               <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
                 <Heart className="w-4 h-4 text-primary mb-1.5" />
                 <div className="text-xl font-black">{currentUser.help_count ?? 0}</div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{t("profile.helped")}</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Helped</div>
               </div>
               <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center">
                 <Star className="w-4 h-4 text-yellow-400 mb-1.5" />
                 <div className="text-xl font-black">{goodwill}</div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{t("profile.goodwill")}</div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Goodwill</div>
               </div>
             </div>
 
@@ -1064,7 +1046,7 @@ export default function ProfileScreen() {
               return (
                 <div className="bg-card border border-border rounded-2xl p-4">
                   <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
-                    <Star className="w-3.5 h-3.5 text-yellow-400" /> {t("profile.achievements")}
+                    <Star className="w-3.5 h-3.5 text-yellow-400" /> Achievements
                   </h3>
                   <div className="flex flex-wrap gap-2">
                     {earned.map(b => (
@@ -1079,7 +1061,7 @@ export default function ProfileScreen() {
                     ))}
                   </div>
                   {earned.length < 4 && (
-                    <p className="text-[10px] text-muted-foreground mt-3">{t("profile.keep_helping_to_unlock_more_achievements")}</p>
+                    <p className="text-[10px] text-muted-foreground mt-3">Keep helping to unlock more achievements</p>
                   )}
                 </div>
               );
@@ -1093,12 +1075,12 @@ export default function ProfileScreen() {
               <div className="flex items-center gap-3">
                 <Wallet className="w-5 h-5 text-primary" />
                 <div className="text-left">
-                  <div className="font-black">{t("profile.benevolence_wallet")}</div>
+                  <div className="font-black">Benevolence Wallet</div>
                   <div className="text-2xl font-black text-primary">${wallet.toFixed(2)}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2 text-muted-foreground">
-                <span className="text-sm">{t("profile.view")}</span>
+                <span className="text-sm">View</span>
                 <ChevronRight className="w-4 h-4" />
               </div>
             </button>
@@ -1107,7 +1089,7 @@ export default function ProfileScreen() {
             {currentUser.is_helper && (
               <div className="bg-card border border-border rounded-2xl p-4">
                 <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
-                  <Activity className="w-3.5 h-3.5 text-primary" /> {t("profile.helper_performance")}
+                  <Activity className="w-3.5 h-3.5 text-primary" /> Helper Performance
                 </h3>
 
                 {/* Anchor Helper badge — 50+ helps, 97%+ trust score */}
@@ -1115,8 +1097,8 @@ export default function ProfileScreen() {
                   <div className="mb-3 flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
                     <span className="text-lg">⚓</span>
                     <div className="flex-1">
-                      <div className="text-xs font-black text-amber-400">{t("profile.anchor_helper")}</div>
-                      <div className="text-[10px] text-muted-foreground">{t("profile.elite_community_pillar_mentor_status")}</div>
+                      <div className="text-xs font-black text-amber-400">Anchor Helper</div>
+                      <div className="text-[10px] text-muted-foreground">Elite community pillar · Mentor status</div>
                     </div>
                     <Award className="w-3.5 h-3.5 text-amber-400" />
                   </div>
@@ -1124,19 +1106,19 @@ export default function ProfileScreen() {
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="bg-muted/40 rounded-xl p-3 text-center">
                     <div className="text-xl font-black">{currentUser.help_count ?? 0}</div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{t("profile.completed")}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Completed</div>
                   </div>
                   <div className="bg-muted/40 rounded-xl p-3 text-center">
                     <div className="text-xl font-black text-primary">{(currentUser.trust_score ?? 0).toFixed(0)}%</div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{t("profile.trust_score")}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Trust Score</div>
                   </div>
                   <div className="bg-muted/40 rounded-xl p-3 text-center">
                     <div className="text-xl font-black text-yellow-400">{currentUser.goodwill_score ?? 0}</div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{t("profile.goodwill_pts")}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Goodwill Pts</div>
                   </div>
                   <div className="bg-muted/40 rounded-xl p-3 text-center">
                     <div className="text-xl font-black text-green-400">${(currentUser.benevolence_wallet ?? 0).toFixed(0)}</div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{t("profile.earned")}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Earned</div>
                   </div>
                 </div>
                 {/* Trust tier progress */}
@@ -1145,13 +1127,13 @@ export default function ProfileScreen() {
                   const milestones = [5, 25, 100, 250];
                   const next = milestones.find(m => m > hc);
                   const prev = milestones.filter(m => m <= hc).at(-1) ?? 0;
-                  if (!next) return <p className="text-[10px] text-primary font-bold mt-3 text-center">{t("profile.max_tier_achieved")}</p>;
+                  if (!next) return <p className="text-[10px] text-primary font-bold mt-3 text-center">🌟 Max tier achieved!</p>;
                   const pct = Math.round(((hc - prev) / (next - prev)) * 100);
                   return (
                     <div className="mt-3">
                       <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
-                        <span>{hc} {t("profile.helps_completed")}</span>
-                        <span>{next - hc} {t("profile.more_to_next_milestone")}</span>
+                        <span>{hc} helps completed</span>
+                        <span>{next - hc} more to next milestone</span>
                       </div>
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                         <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
@@ -1162,70 +1144,28 @@ export default function ProfileScreen() {
               </div>
             )}
 
-            {/* Helper Mode — only available to approved helpers */}
-            {(() => {
-              const helperStatus = currentUser.helper_status;
-              if (helperStatus === "approved") {
-                return (
-                  <div className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between">
-                    <div>
-                      <div className="font-bold flex items-center gap-2">
-                        {t("profile.helper_mode")}
-                        {helperModeActive && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
-                      </div>
-                      <p className="text-sm text-muted-foreground">{t("profile.receive_nearby_help_requests")}</p>
-                    </div>
-                    <Switch
-                      checked={helperModeActive}
-                      onCheckedChange={setHelperModeActive}
-                      className="data-[state=checked]:bg-green-500 scale-125"
-                    />
-                  </div>
-                );
-              }
-              if (helperStatus === "pending") {
-                return (
-                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 flex items-start gap-3">
-                    <Clock className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-bold text-yellow-300 text-sm">{t("profile.helper_application_pending")}</div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{t("profile.your_application_is_under_admin_review")}</p>
-                    </div>
-                  </div>
-                );
-              }
-              if (helperStatus === "denied") {
-                return (
-                  <div className="bg-destructive/10 border border-destructive/30 rounded-2xl p-4 flex items-start gap-3">
-                    <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-bold text-destructive text-sm">{t("profile.helper_application_not_approved")}</div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{t("profile.contact_helpniakofacommunity_if_you_have_questions")}</p>
-                    </div>
-                  </div>
-                );
-              }
-              return (
-                <button
-                  type="button"
-                  onClick={() => setLocation("/helper-onboarding")}
-                  className="w-full bg-card border border-border rounded-2xl p-4 flex items-center justify-between text-left hover:border-primary/50 transition-colors"
-                >
-                  <div>
-                    <div className="font-bold text-sm">Become a Helper</div>
-                    <p className="text-xs text-muted-foreground mt-0.5">Share your skills and get matched to nearby requests</p>
-                  </div>
-                  <span className="text-primary text-lg">→</span>
-                </button>
-              );
-            })()}
+            {/* Helper Mode */}
+            <div className="bg-card border border-border rounded-2xl p-4 flex items-center justify-between">
+              <div>
+                <div className="font-bold flex items-center gap-2">
+                  Helper Mode
+                  {helperModeActive && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
+                </div>
+                <p className="text-sm text-muted-foreground">Receive nearby help requests</p>
+              </div>
+              <Switch
+                checked={helperModeActive}
+                onCheckedChange={setHelperModeActive}
+                className="data-[state=checked]:bg-green-500 scale-125"
+              />
+            </div>
 
             {/* Recent Helpers — derived from transaction history */}
             <RecentHelpersSection transactions={transactions} onNavigate={setLocation} />
 
             <div className="bg-card/50 border border-border/50 rounded-2xl p-4">
               <p className="text-xs text-muted-foreground leading-relaxed text-center">
-                {t("profile.this_isnt_charity_its_neighbors_helping")}
+                This isn't charity — it's neighbors helping neighbors. Help when you can. Ask when you need. Pay forward when you're able.
               </p>
             </div>
           </>
@@ -1235,21 +1175,21 @@ export default function ProfileScreen() {
         {tab === "history" && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-xs text-muted-foreground font-bold uppercase tracking-widest">
-              <Clock className="w-3.5 h-3.5" /> {t("profile.your_timeline")}
+              <Clock className="w-3.5 h-3.5" /> Your Timeline
             </div>
 
             {txLoading && (
               <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
                 <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                <span className="text-sm">{t("profile.loading_history")}</span>
+                <span className="text-sm">Loading history…</span>
               </div>
             )}
 
             {!txLoading && transactions.length === 0 && (
               <div className="text-center py-12 text-muted-foreground">
                 <Heart className="w-8 h-8 mx-auto mb-3 text-primary/30" />
-                <div className="font-bold text-sm">{t("profile.no_activity_yet")}</div>
-                <div className="text-xs mt-1">{t("profile.complete_a_job_or_make_a")}</div>
+                <div className="font-bold text-sm">No activity yet</div>
+                <div className="text-xs mt-1">Complete a job or make a pledge to see it here</div>
               </div>
             )}
 
@@ -1277,9 +1217,9 @@ export default function ProfileScreen() {
                     <div className="flex items-center gap-2 mt-1">
                       <span className={`text-[10px] font-bold flex items-center gap-0.5 ${color}`}>
                         {tx.type === "goodwill"
-                          ? <><Gift className="w-2.5 h-2.5" /> {t("profile.goodwill_2")}</>
+                          ? <><Gift className="w-2.5 h-2.5" /> Goodwill</>
                           : tx.type === "pledge_received"
-                          ? <><Heart className="w-2.5 h-2.5" /> {t("profile.niakofa")}</>
+                          ? <><Heart className="w-2.5 h-2.5" /> Niakofa</>
                           : <><DollarSign className="w-2.5 h-2.5" />{tx.amount > 0 ? `+$${tx.amount.toFixed(2)}` : `-$${Math.abs(tx.amount).toFixed(2)}`}</>
                         }
                       </span>
@@ -1299,16 +1239,16 @@ export default function ProfileScreen() {
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-border">
                 <div className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-green-400" /> {t("profile.identity_verification")}
+                  <CheckCircle2 className="w-4 h-4 text-green-400" /> Identity Verification
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">{t("profile.verified_profiles_build_trust_with_the")}</p>
+                <p className="text-xs text-muted-foreground mt-1">Verified profiles build trust with the community</p>
               </div>
               <div className="p-4 space-y-3">
                 {[
                   { label: "Phone number", done: true, desc: "Verified" },
                   { label: "Email address", done: true, desc: "Verified" },
-                  { label: "Government ID", done: currentUser.identity_verified, desc: currentUser.identity_verified ? "Verified" : "Required for emergency helper status" },
-                  { label: "Background check", done: currentUser.background_check_status === "completed", desc: currentUser.background_check_status === "completed" ? "Completed" : "Required for Trusted Helper badge" },
+                  { label: "Government ID", done: (currentUser as any).identity_verified, desc: (currentUser as any).identity_verified ? "Verified" : "Required for emergency helper status" },
+                  { label: "Background check", done: (currentUser as any).background_check_status === "completed", desc: (currentUser as any).background_check_status === "completed" ? "Completed" : "Required for Trusted Helper badge" },
                 ].map(item => (
                   <div key={item.label} className="flex items-center justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -1338,7 +1278,7 @@ export default function ProfileScreen() {
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-border">
                 <div className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
-                  <Building2 className="w-4 h-4 text-primary" /> {t("profile.county_civic_connection")}
+                  <Building2 className="w-4 h-4 text-primary" /> County / Civic Connection
                 </div>
                 {civicData && !civicLoading ? (
                   <div className="flex items-center gap-1.5 mt-1">
@@ -1361,19 +1301,19 @@ export default function ProfileScreen() {
                 {civicLoading && (
                   <div className="flex items-center justify-center py-6 gap-2 text-muted-foreground">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span className="text-sm">{t("profile.finding_resources_near_you")}</span>
+                    <span className="text-sm">Finding resources near you…</span>
                   </div>
                 )}
                 {!civicLoading && (!civicData || civicData.resources.length === 0) && (
                   <div className="text-center py-4">
                     <BookOpen className="w-6 h-6 mx-auto mb-2 text-muted-foreground/40" />
-                    <p className="text-sm text-muted-foreground font-semibold">{t("profile.no_local_resources_yet")}</p>
+                    <p className="text-sm text-muted-foreground font-semibold">No local resources yet</p>
                     <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
-                      {t("profile.we_dont_have_resources_for_your")}{" "}
+                      We don't have resources for your area yet. Email{" "}
                       <a href="mailto:resources@niakofa.community" className="text-primary hover:underline">
-                        {t("profile.resourcesniakofacommunity")}
+                        resources@niakofa.community
                       </a>{" "}
-                      {t("profile.to_add_your_county")}
+                      to add your county.
                     </p>
                   </div>
                 )}
@@ -1381,7 +1321,7 @@ export default function ProfileScreen() {
                   <>
                     {civicData.match_level === "fallback" && (
                       <p className="text-[10px] text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2 mb-2">
-                        {t("profile.showing_general_resources_enable_location_for")}
+                        Showing general resources — enable location for local results
                       </p>
                     )}
                     {civicData.resources.map(org => (
@@ -1414,7 +1354,7 @@ export default function ProfileScreen() {
                       </a>
                     ))}
                     <p className="text-[10px] text-muted-foreground pt-1">
-                      {t("profile.resources_matched_to_your_detected_location")}
+                      Resources matched to your detected location. Links open in your browser.
                     </p>
                   </>
                 )}
@@ -1425,7 +1365,7 @@ export default function ProfileScreen() {
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-border">
                 <div className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-yellow-400" /> {t("profile.support_safety")}
+                  <AlertCircle className="w-4 h-4 text-yellow-400" /> Support & Safety
                 </div>
               </div>
               <div className="divide-y divide-border">
@@ -1452,7 +1392,7 @@ export default function ProfileScreen() {
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-border">
                 <div className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
-                  <Settings className="w-4 h-4 text-muted-foreground" /> {t("profile.account")}
+                  <Settings className="w-4 h-4 text-muted-foreground" /> Account
                 </div>
               </div>
               <div className="divide-y divide-border">
@@ -1462,7 +1402,7 @@ export default function ProfileScreen() {
                 >
                   <div className="flex items-center gap-2">
                     <Bell className="w-4 h-4 text-muted-foreground" />
-                    <span>{t("profile.notification_preferences_2")}</span>
+                    <span>Notification preferences</span>
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
@@ -1472,7 +1412,7 @@ export default function ProfileScreen() {
                 >
                   <div className="flex items-center gap-2">
                     <Lock className="w-4 h-4 text-muted-foreground" />
-                    <span>{t("profile.account_privacy_2")}</span>
+                    <span>Account privacy</span>
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
@@ -1482,7 +1422,7 @@ export default function ProfileScreen() {
                 >
                   <div className="flex items-center gap-2">
                     <Trash2 className="w-4 h-4" />
-                    <span>{t("profile.delete_account_2")}</span>
+                    <span>Delete account</span>
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
@@ -1493,9 +1433,9 @@ export default function ProfileScreen() {
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-border">
                 <div className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-destructive" /> {t("profile.admin")}
+                  <Shield className="w-4 h-4 text-destructive" /> Admin
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">{t("profile.trust_amp_safety_review_queue")}</p>
+                <p className="text-xs text-muted-foreground mt-1">Trust &amp; safety review queue</p>
               </div>
               <div className="divide-y divide-border">
                 <button
@@ -1504,7 +1444,7 @@ export default function ProfileScreen() {
                 >
                   <div className="flex items-center gap-2">
                     <Flag className="w-4 h-4 text-muted-foreground" />
-                    <span>{t("profile.reports_amp_disputes_queue")}</span>
+                    <span>Reports &amp; disputes queue</span>
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
@@ -1521,7 +1461,7 @@ export default function ProfileScreen() {
                 className="w-full flex items-center gap-3 p-4 text-sm text-destructive hover:bg-destructive/5 transition-colors"
               >
                 <Lock className="w-4 h-4" />
-                <span className="font-semibold">{t("profile.sign_out")}</span>
+                <span className="font-semibold">Sign Out</span>
               </button>
             </div>
 
@@ -1530,9 +1470,9 @@ export default function ProfileScreen() {
               <div className="bg-card border border-border rounded-2xl overflow-hidden">
                 <div className="p-4 border-b border-border">
                   <div className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-primary" /> {t("profile.helper_profile")}
+                    <Activity className="w-4 h-4 text-primary" /> Helper Profile
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">{t("profile.service_radius_specialties_and_payout_setup")}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Service radius, specialties, and payout setup</p>
                 </div>
                 <div className="divide-y divide-border">
                   <button
@@ -1541,7 +1481,7 @@ export default function ProfileScreen() {
                   >
                     <div className="flex items-center gap-2">
                       <Sliders className="w-4 h-4 text-muted-foreground" />
-                      <span>{t("profile.service_radius_amp_specialties")}</span>
+                      <span>Service radius &amp; specialties</span>
                     </div>
                     <ChevronRight className="w-4 h-4 text-muted-foreground" />
                   </button>
@@ -1551,7 +1491,7 @@ export default function ProfileScreen() {
                   >
                     <div className="flex items-center gap-2">
                       <CreditCard className="w-4 h-4 text-muted-foreground" />
-                      <span>{t("profile.payout_setup_stripe_connect")}</span>
+                      <span>Payout setup (Stripe Connect)</span>
                     </div>
                     <ChevronRight className="w-4 h-4 text-muted-foreground" />
                   </button>

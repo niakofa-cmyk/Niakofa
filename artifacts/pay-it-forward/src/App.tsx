@@ -1,6 +1,5 @@
-import React, { lazy, Suspense, useState } from "react";
 import "./i18n";
-
+import { lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter, useRoute } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -9,11 +8,6 @@ import { AppProvider, useAppContext } from "@/lib/AppContext";
 import { BottomNav } from "@/components/BottomNav";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Spinner } from "@/components/ui/spinner";
-import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
-import { NotificationsDrawer, LiveNotification } from "@/components/NotificationsDrawer";
-import { OfflineBanner } from "@/components/OfflineBanner";
-import { usePushNotifications } from "@/lib/usePushNotifications";
-import { useWebSocket } from "@/lib/useWebSocket";
 
 const MapScreen = lazy(() => import("@/pages/map"));
 const NewRequestScreen = lazy(() => import("@/pages/request-new"));
@@ -26,14 +20,11 @@ const AdminScreen = lazy(() => import("@/pages/admin"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 const RequesterTrackingScreen = lazy(() => import("@/pages/request-track"));
 const LoginScreen = lazy(() => import("@/pages/login"));
-const PendingApprovalScreen = lazy(() => import("@/pages/pending-approval"));
 const HelperProfileScreen = lazy(() => import("@/pages/helper-profile"));
 const RequestDetailScreen = lazy(() => import("@/pages/request-detail"));
 const OnboardingScreen = lazy(() => import("@/pages/onboarding"));
 const StripeConnectedScreen = lazy(() => import("@/pages/stripe-connected"));
 const HelperDashboardScreen = lazy(() => import("@/pages/helper-dashboard"));
-const HelperOnboardingScreen = lazy(() => import("@/pages/helper-onboarding"));
-const RecurringScreen = lazy(() => import("@/pages/recurring"));
 
 function PageLoader() {
   return (
@@ -56,23 +47,16 @@ function AppShell() {
   const [isOnboarding] = useRoute("/onboarding");
   const [isStripeConnected] = useRoute("/wallet/connected");
 
+  // Admin page has its own auth — don't redirect it to login
   if (isAdmin) return <AdminScreen />;
 
+  // Show login/register screen if no authenticated user is stored
   if (!currentUser) {
     return <LoginScreen />;
   }
 
-  if (currentUser.approval_status === "pending" || currentUser.approval_status === "denied") {
-    return (
-      <Suspense fallback={<PageLoader />}>
-        <PendingApprovalScreen />
-      </Suspense>
-    );
-  }
-
   return (
     <>
-      <OfflineBanner />
       <Suspense fallback={<PageLoader />}>
         <Switch>
           <Route path="/login" component={LoginScreen} />
@@ -88,87 +72,12 @@ function AppShell() {
           <Route path="/request/:id" component={ActiveRequestScreen} />
           <Route path="/wallet" component={WalletScreen} />
           <Route path="/profile" component={ProfileScreen} />
-          <Route path="/recurring" component={RecurringScreen} />
           <Route path="/settings" component={SettingsPage} />
           <Route path="/admin" component={AdminScreen} />
           <Route component={NotFound} />
         </Switch>
       </Suspense>
       {!isActiveRequest && !isTrackingRequest && !isAdmin && !isLogin && !isOnboarding && !isStripeConnected && <BottomNav />}
-    </>
-  );
-}
-
-function NiaWrapper() {
-  const { currentUser, myLocation, helperModeActive, activeRequestId, niaOpen, setNiaOpen, niaInitialMessage, lastViewedMatchReasons } = useAppContext();
-  const [notifications, setNotifications] = React.useState<LiveNotification[]>([]);
-  const [notifOpen, setNotifOpen] = React.useState(false);
-  const { requestPermissionAndSubscribe } = usePushNotifications(currentUser?.id ?? null);
-
-  useWebSocket((event: any) => {
-    const id = `${event.type}-${Date.now()}`;
-    const time = new Date();
-    let notif: LiveNotification | null = null;
-    if (event.type === "new_request") {
-      notif = { id, type: "new_request", time, title: "New request nearby", body: event.title ?? "Someone needs help" };
-    } else if (event.type === "request_updated" && event.status === "completed") {
-      notif = { id, type: "completed", time, title: "Help completed!", body: `Request #${event.id} marked complete` };
-    } else if (event.type === "request_updated" && event.status === "claimed") {
-      notif = { id, type: "helper_accepted", time, title: "Helper on the way", body: `${event.helper_name ?? "A helper"} accepted` };
-    } else if (event.type === "pledge_paid") {
-      const pp = event.payload as { user_id?: number; amount?: number; request_title?: string };
-      if (currentUser && pp.user_id === currentUser.id) {
-        notif = { id, type: "pledge", time, title: "Pledge received!", body: `$${pp.amount?.toFixed(2) ?? "?"} pay-it-forward paid` };
-      }
-    } else if (event.type === "pledge_scheduled") {
-      const ps = event.payload as { user_id?: number; amount?: number; scheduled_date?: string };
-      if (currentUser && ps.user_id === currentUser.id) {
-        notif = { id, type: "pledge_scheduled", time, title: "Recurring pledge set up", body: "Community thanks you" };
-      }
-    }
-    if (notif) {
-      setNotifications(prev => [notif!, ...prev].slice(0, 50));
-      if (document.hidden && Notification.permission === "granted") {
-        new Notification(notif.title, { body: notif.body, icon: "/icon-192.png" });
-      }
-    }
-  });
-
-  React.useEffect(() => {
-    if (!currentUser?.id) return;
-    const key = `push_prompted_${currentUser.id}`;
-    if (localStorage.getItem(key)) return;
-    const t = setTimeout(() => {
-      requestPermissionAndSubscribe().then(ok => { if (ok) localStorage.setItem(key, "1"); });
-    }, 8000);
-    return () => clearTimeout(t);
-  }, [currentUser?.id]);
-
-  const [isOnboarding] = useRoute("/onboarding");
-
-  // Hide floating NiaFab on login (login has its own orb) and onboarding
-  const hideNia = isOnboarding || !currentUser;
-
-  return (
-    <>
-      <NotificationsDrawer
-        open={notifOpen}
-        onClose={() => setNotifOpen(false)}
-        notifications={notifications}
-      />
-      <NiaFab onClick={() => setNiaOpen(true)} hidden={hideNia} />
-      <NiaDrawer
-        open={niaOpen}
-        onClose={() => setNiaOpen(false)}
-        userId={currentUser?.id ?? null}
-        userName={currentUser?.name ?? null}
-        userLocation={myLocation ? { lat: myLocation.lat, lon: myLocation.lng } : null}
-        helperModeActive={helperModeActive}
-        activeRequestId={activeRequestId}
-        accountType={currentUser?.account_type ?? null}
-        initialMessage={niaInitialMessage}
-        matchReasons={lastViewedMatchReasons}
-      />
     </>
   );
 }
@@ -183,8 +92,6 @@ function App() {
               <AppShell />
             </WouterRouter>
             <Toaster />
-            {/* Nia is always available — before login, on every screen */}
-            <NiaWrapper />
           </AppProvider>
         </TooltipProvider>
       </QueryClientProvider>

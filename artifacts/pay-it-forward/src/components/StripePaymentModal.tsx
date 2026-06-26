@@ -93,7 +93,7 @@ function PaymentForm({ amount, description, onSuccess, onSkip }: PaymentFormProp
           onClick={onSkip}
           disabled={isLoading}
         >
-          Pay Later
+          Skip for Now
         </Button>
         <Button
           type="submit"
@@ -116,7 +116,7 @@ function PaymentForm({ amount, description, onSuccess, onSkip }: PaymentFormProp
 
       <p className="text-[10px] text-muted-foreground text-center flex items-center justify-center gap-1">
         <Lock className="w-3 h-3" />
-        Your payment is encrypted and secure — card details never touch our servers
+        Secured by Stripe — card details never touch our servers
       </p>
     </form>
   );
@@ -156,19 +156,18 @@ export function StripePaymentModal({
           animate={{ y: 0 }}
           exit={{ y: "100%" }}
           transition={{ type: "spring", damping: 26, stiffness: 220 }}
-          className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl p-6 pb-safe max-h-[96dvh] overflow-y-auto"
+          className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl p-6 pb-safe max-h-[92dvh] overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-green-400" />
-              <h3 className="font-black text-lg">Confirm Your Contribution</h3>
+              <h3 className="font-black text-lg">Confirm Payment</h3>
             </div>
             <Button
               variant="ghost"
               size="icon"
               onClick={onClose}
-              aria-label="Close"
               className="rounded-full"
             >
               <X className="w-5 h-5" />

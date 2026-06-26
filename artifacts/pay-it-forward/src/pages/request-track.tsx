@@ -12,7 +12,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { toast } from "@/hooks/use-toast";
 import { InAppChat } from "@/components/InAppChat";
-import { useTranslation } from "react-i18next";
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -42,20 +41,14 @@ const STATUS_STEPS = [
 const STATUS_ORDER = ["open", "claimed", "en_route", "arrived", "completed"];
 
 export default function RequesterTrackingScreen() {
-  const { t } = useTranslation();
   const [, params] = useRoute("/request/:id/track");
   const [, setLocation] = useLocation();
-  const { currentUser, setActiveRequestId } = useAppContext();
+  const { currentUser } = useAppContext();
   const queryClient = useQueryClient();
   const requestId = parseInt(params?.id || "0", 10);
   const mapRef = useRef<MapRef>(null);
 
   const [helperLocation, setHelperLocation] = useState<{ lat: number; lng: number; heading?: number } | null>(null);
-  const [showCompletionModal, setShowCompletionModal] = useState(false);
-  const [rating, setRating] = useState(0);
-  const [tipAmount, setTipAmount] = useState<number | null>(null);
-  const [submittingCompletion, setSubmittingCompletion] = useState(false);
-  const completionShownRef = useRef(false);
   const [etaCountdown, setEtaCountdown] = useState(0);
   const [showChat, setShowChat] = useState(false);
   const [mapError, setMapError] = useState(false);
@@ -94,33 +87,6 @@ export default function RequesterTrackingScreen() {
     return () => clearInterval(id);
   }, [etaCountdown > 0]);
 
-  // B) Poll helper location every 8s when en_route (WS fallback)
-  useEffect(() => {
-    if (request?.status !== "en_route" || !request?.helper_id) return;
-    const fetchHelperLoc = async () => {
-      try {
-        const token = localStorage.getItem("token");
-        const r = await fetch(`/api/users/${request.helper_id}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!r.ok) return;
-        const u = await r.json();
-        if (u.lat && u.lng) setHelperLocation({ lat: u.lat, lng: u.lng, heading: u.heading ?? undefined });
-      } catch {}
-    };
-    fetchHelperLoc();
-    const id = setInterval(fetchHelperLoc, 8000);
-    return () => clearInterval(id);
-  }, [request?.status, request?.helper_id]);
-
-  // A) Show completion modal when status flips to completed
-  useEffect(() => {
-    if (request?.status === "completed" && !completionShownRef.current) {
-      completionShownRef.current = true;
-      setTimeout(() => setShowCompletionModal(true), 600);
-    }
-  }, [request?.status]);
-
   // Auto-zoom to show both helper and requester
   useEffect(() => {
     if (!mapRef.current || !helperLocation || !request) return;
@@ -153,30 +119,8 @@ export default function RequesterTrackingScreen() {
       await navigator.share({ title: "Track my helper", url }).catch(() => {});
     } else {
       await navigator.clipboard.writeText(url).catch(() => {});
-      toast({ title: t("request_track.link_copied") });
+      toast({ title: "Link copied!" });
     }
-  };
-
-
-  const handleSubmitCompletion = async () => {
-    setSubmittingCompletion(true);
-    try {
-      const token = localStorage.getItem("token");
-      if (rating > 0 && request?.helper_id) {
-        await fetch(`/api/requests/${requestId}/rate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ rating, helper_id: request.helper_id }),
-        });
-      }
-      if (tipAmount && tipAmount > 0) {
-        setShowCompletionModal(false);
-        setLocation("/wallet");
-        return;
-      }
-    } catch {}
-    setShowCompletionModal(false);
-    setLocation("/");
   };
 
   if (isLoading) {
@@ -193,24 +137,11 @@ export default function RequesterTrackingScreen() {
         <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-2">
           <MapPin className="w-8 h-8 text-muted-foreground" />
         </div>
-        <p className="font-bold text-lg">{t("request_track.request_not_found")}</p>
-        <Button variant="outline" onClick={() => setLocation("/")}>{t("request_track.back_to_map")}</Button>
+        <p className="font-bold text-lg">Request not found</p>
+        <Button variant="outline" onClick={() => setLocation("/")}>Back to map</Button>
       </div>
     );
   }
-
-  useEffect(() => {
-    const TERMINAL_STATUSES = ["completed", "cancelled", "expired"];
-    if (TERMINAL_STATUSES.includes(request.status)) {
-      setActiveRequestId(null);
-      return;
-    }
-    setActiveRequestId(requestId);
-  }, [request.status, requestId, setActiveRequestId]);
-
-  useEffect(() => {
-    return () => setActiveRequestId(null);
-  }, [setActiveRequestId]);
 
   const currentStatusIdx = STATUS_ORDER.indexOf(request.status);
   const isCompleted = request.status === "completed";
@@ -230,7 +161,6 @@ export default function RequesterTrackingScreen() {
           variant="ghost" size="icon"
           onClick={() => setLocation("/")}
           className="rounded-full bg-card/80 backdrop-blur-sm border border-border"
-          aria-label={t("request_track.back_to_map_2")}
         >
           <ChevronLeft className="w-6 h-6" />
         </Button>
@@ -243,9 +173,7 @@ export default function RequesterTrackingScreen() {
               animate={{ opacity: 1, scale: 1 }}
               className="flex items-center gap-1.5 bg-primary/20 backdrop-blur-md border border-primary/40 px-3 py-1.5 rounded-full shadow-lg"
             >
-              <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }}>
-                <Navigation2 className="w-3 h-3 text-primary" />
-              </motion.div>
+              <Navigation2 className="w-3 h-3 text-primary" />
               <span className="text-xs font-black text-primary">{etaMin} min away</span>
             </motion.div>
           )}
@@ -258,7 +186,7 @@ export default function RequesterTrackingScreen() {
               className="flex items-center gap-1.5 bg-green-500/20 backdrop-blur-md border border-green-500/40 px-3 py-1.5 rounded-full shadow-lg"
             >
               <CheckCircle2 className="w-3 h-3 text-green-400" />
-              <span className="text-xs font-black text-green-400">{t("request_track.helper_arrived")}</span>
+              <span className="text-xs font-black text-green-400">Helper arrived!</span>
             </motion.div>
           )}
 
@@ -293,7 +221,7 @@ export default function RequesterTrackingScreen() {
               <div className="absolute w-10 h-10 bg-primary rounded-full opacity-15 animate-ping" style={{ animationDuration: "2.5s" }} />
               <div className="w-4 h-4 bg-primary rounded-full shadow-[0_0_12px_rgba(0,212,255,0.9)] border-2 border-background" />
               <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                <span className="text-[10px] font-bold text-primary bg-card/90 px-1.5 py-0.5 rounded-full border border-primary/30">{t("request_track.you")}</span>
+                <span className="text-[10px] font-bold text-primary bg-card/90 px-1.5 py-0.5 rounded-full border border-primary/30">You</span>
               </div>
             </div>
           </Marker>
@@ -349,8 +277,8 @@ export default function RequesterTrackingScreen() {
         <div className="absolute inset-0 bg-background flex items-center justify-center">
           <div className="text-center px-6">
             <MapPin className="w-12 h-12 text-primary mx-auto mb-3" />
-            <p className="font-bold">{t("request_track.map_needs_webgl")}</p>
-            <p className="text-sm text-muted-foreground mt-1">{t("request_track.open_in_chrome_or_firefox_for")}</p>
+            <p className="font-bold">Map needs WebGL</p>
+            <p className="text-sm text-muted-foreground mt-1">Open in Chrome or Firefox for live tracking</p>
           </div>
         </div>
       )}
@@ -358,32 +286,11 @@ export default function RequesterTrackingScreen() {
       {/* No helper yet — waiting state */}
       {!hasHelper && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-card/95 backdrop-blur-md border border-border rounded-2xl px-6 py-5 text-center shadow-2xl max-w-[260px]"
-          >
-            <div className="flex justify-center gap-1.5 mb-3">
-              {[0, 1, 2].map(i => (
-                <motion.div
-                  key={i}
-                  animate={{ y: [0, -6, 0] }}
-                  transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.15 }}
-                  className="w-2 h-2 rounded-full bg-primary"
-                />
-              ))}
-            </div>
-            <p className="font-black text-sm">Finding a helper nearby…</p>
-            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-              You'll be notified the moment someone accepts. Usually under 15 minutes.
-            </p>
-            {(request as any).urgency === "emergency" && (
-              <div className="mt-3 flex items-center gap-1.5 text-red-400 text-xs font-bold bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                Emergency — helpers are being prioritized
-              </div>
-            )}
-          </motion.div>
+          <div className="bg-card/90 backdrop-blur-md border border-border rounded-2xl px-6 py-4 text-center shadow-2xl">
+            <div className="w-2 h-2 rounded-full bg-primary animate-pulse mx-auto mb-2" />
+            <p className="font-bold text-sm">Finding a helper nearby…</p>
+            <p className="text-xs text-muted-foreground mt-1">You'll be notified when someone accepts</p>
+          </div>
         </div>
       )}
 
@@ -393,38 +300,26 @@ export default function RequesterTrackingScreen() {
       >
         {/* Status progress bar */}
         <div className="px-5 pt-4 pb-3 border-b border-border">
-          <div className="relative flex items-start justify-between">
-            {/* Connector track behind dots */}
-            <div className="absolute top-3 left-3 right-3 h-0.5 bg-border" />
-            <div
-              className="absolute top-3 left-3 h-0.5 bg-primary transition-all duration-700"
-              style={{ width: currentStatusIdx === 0 ? "0%" : `${(currentStatusIdx / (STATUS_STEPS.length - 1)) * 100}%` }}
-            />
+          <div className="flex items-center justify-between">
             {STATUS_STEPS.map((step, i) => {
               const done = i <= currentStatusIdx;
               const active = i === currentStatusIdx;
               return (
-                <div key={step.key} className="relative flex flex-col items-center gap-1.5 z-10" style={{ width: `${100 / STATUS_STEPS.length}%` }}>
-                  <motion.div
-                    animate={active ? { boxShadow: ["0 0 0px rgba(0,212,255,0)", "0 0 12px rgba(0,212,255,0.7)", "0 0 0px rgba(0,212,255,0)"] } : {}}
-                    transition={{ duration: 1.8, repeat: Infinity }}
-                    className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${
-                      done ? "bg-primary border-primary" : "bg-card border-border"
-                    }`}
-                  >
+                <div key={step.key} className="flex flex-col items-center gap-1 flex-1">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all ${
+                    done
+                      ? "bg-primary border-primary"
+                      : "bg-muted border-border"
+                  } ${active ? "shadow-[0_0_10px_rgba(0,212,255,0.5)]" : ""}`}>
                     <step.icon className={`w-3 h-3 ${done ? "text-primary-foreground" : "text-muted-foreground"}`} />
-                  </motion.div>
-                  <span className={`text-[9px] font-bold text-center leading-tight ${done ? "text-primary" : "text-muted-foreground"}`}>
+                  </div>
+                  <span className={`text-[10px] font-bold text-center leading-tight ${done ? "text-primary" : "text-muted-foreground"}`}>
                     {step.label}
                   </span>
-                  {active && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -2 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap"
-                    >
-                      <span className="text-[9px] font-black text-primary bg-primary/10 border border-primary/30 px-1.5 py-0.5 rounded-full">Now</span>
-                    </motion.div>
+                  {i < STATUS_STEPS.length - 1 && (
+                    <div className={`absolute h-0.5 transition-all ${done ? "bg-primary" : "bg-border"}`}
+                      style={{ width: "calc(20% - 24px)", left: `calc(${i * 20 + 10}% + 12px)`, top: "22px" }}
+                    />
                   )}
                 </div>
               );
@@ -435,46 +330,25 @@ export default function RequesterTrackingScreen() {
         <div className="px-5 py-4 space-y-3">
           {/* Helper info */}
           {hasHelper && (
-            <div className="flex items-center gap-3 bg-muted/30 rounded-xl p-3 border border-border">
-              <div className="relative shrink-0">
-                <div className="w-12 h-12 rounded-full bg-green-500/20 border-2 border-green-400/50 flex items-center justify-center">
-                  <span className="text-base font-black text-green-400">
-                    {request.helper_name?.[0] ?? "H"}
-                  </span>
-                </div>
-                {/* Live pulse dot */}
-                {request.status === "en_route" && (
-                  <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-400 border-2 border-background">
-                    <span className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-75" />
-                  </span>
-                )}
-                {request.status === "arrived" && (
-                  <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-primary border-2 border-background" />
-                )}
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-full bg-green-500/20 border-2 border-green-400/50 flex items-center justify-center shrink-0">
+                <span className="text-base font-black text-green-400">
+                  {request.helper_name?.[0] ?? "H"}
+                </span>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-black text-sm">{request.helper_name ?? "Helper"}</span>
-                  {(request as any).helper_trust_score != null && (
-                    <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/30 px-1.5 py-0.5 rounded-full">
-                      ★ {(request as any).helper_trust_score}
-                    </span>
-                  )}
-                </div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  {request.status === "en_route"
-                    ? etaMin ? `~${etaMin} min away` : "On their way to you"
-                    : request.status === "arrived"
-                    ? "🏠 Has arrived at your location"
-                    : request.status === "completed"
-                    ? "✅ Help completed — thank you!"
-                    : "Accepted your request"}
+                <div className="font-black text-sm">{request.helper_name ?? "Helper"}</div>
+                <div className="text-xs text-muted-foreground">
+                  {request.status === "en_route" ? "On their way to you" :
+                   request.status === "arrived" ? "Has arrived" :
+                   request.status === "completed" ? "Completed your request" :
+                   "Accepted your request"}
                 </div>
               </div>
               {distToHelper && !isArrived && (
-                <div className="text-right shrink-0 bg-primary/10 border border-primary/20 rounded-lg px-2.5 py-1.5">
-                  <div className="text-sm font-black text-primary">{distToHelper}mi</div>
-                  <div className="text-[9px] text-muted-foreground">away</div>
+                <div className="text-right shrink-0">
+                  <div className="text-xs font-black text-primary">{distToHelper} mi</div>
+                  <div className="text-[10px] text-muted-foreground">away</div>
                 </div>
               )}
             </div>
@@ -482,7 +356,7 @@ export default function RequesterTrackingScreen() {
 
           {/* Request title */}
           <div className="bg-muted/50 rounded-xl px-3 py-2.5">
-            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">{t("request_track.your_request")}</div>
+            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-0.5">Your Request</div>
             <div className="font-bold text-sm truncate">{request.title}</div>
           </div>
 
@@ -495,7 +369,7 @@ export default function RequesterTrackingScreen() {
                 onClick={() => setShowChat(p => !p)}
               >
                 <MessageCircle className="w-4 h-4" />
-                {t("request_track.chat")}
+                Chat
               </Button>
             )}
             {isCompleted && (
@@ -503,7 +377,7 @@ export default function RequesterTrackingScreen() {
                 className="flex-1 h-11 font-black"
                 onClick={() => setLocation("/wallet")}
               >
-                {t("request_track.pay_it_forward")}
+                💙 Pay It Forward
               </Button>
             )}
             {!hasHelper && (
@@ -512,7 +386,7 @@ export default function RequesterTrackingScreen() {
                 className="flex-1 h-11 text-sm"
                 onClick={() => setLocation("/")}
               >
-                {t("request_track.back_to_map_3")}
+                Back to Map
               </Button>
             )}
           </div>
@@ -537,92 +411,6 @@ export default function RequesterTrackingScreen() {
           </AnimatePresence>
         </div>
       </div>
-
-      {/* A) Completion modal */}
-      <AnimatePresence>
-        {showCompletionModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 bg-background/80 backdrop-blur-md flex items-end justify-center pb-safe"
-          >
-            <motion.div
-              initial={{ y: 80, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 80, opacity: 0 }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="w-full max-w-md bg-card border border-border rounded-t-3xl px-6 pt-6 pb-8 shadow-2xl"
-            >
-              {/* Celebration header */}
-              <div className="flex flex-col items-center mb-6">
-                <motion.div
-                  animate={{ scale: [0.8, 1.15, 1], rotate: [0, -8, 8, 0] }}
-                  transition={{ duration: 0.7 }}
-                  className="text-5xl mb-3"
-                >
-                  🎉
-                </motion.div>
-                <h2 className="text-xl font-black text-center">Help completed!</h2>
-                <p className="text-sm text-muted-foreground text-center mt-1">
-                  {request?.helper_name ?? "Your helper"} came through for you.
-                </p>
-              </div>
-
-              {/* Star rating */}
-              <div className="mb-5">
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest text-center mb-3">Rate your helper</p>
-                <div className="flex justify-center gap-3">
-                  {[1,2,3,4,5].map(star => (
-                    <motion.button
-                      key={star}
-                      whileTap={{ scale: 0.85 }}
-                      onClick={() => setRating(star)}
-                      className={`text-3xl transition-all ${star <= rating ? "opacity-100" : "opacity-30"}`}
-                    >
-                      ★
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Tip quick-select */}
-              <div className="mb-6">
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest text-center mb-3">Add a tip (optional)</p>
-                <div className="grid grid-cols-4 gap-2">
-                  {[null, 2, 5, 10].map(amt => (
-                    <button
-                      key={amt ?? "skip"}
-                      onClick={() => setTipAmount(amt)}
-                      className={`rounded-xl py-2.5 text-sm font-black border transition-all ${
-                        tipAmount === amt
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "bg-muted/50 text-foreground border-border"
-                      }`}
-                    >
-                      {amt === null ? "Skip" : `$${amt}`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Submit */}
-              <button
-                onClick={handleSubmitCompletion}
-                disabled={submittingCompletion}
-                className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-black text-sm disabled:opacity-50 transition-all active:scale-95"
-              >
-                {submittingCompletion ? "Submitting…" : tipAmount && tipAmount > 0 ? `Pay $${tipAmount} tip →` : rating > 0 ? "Submit rating" : "Done"}
-              </button>
-
-              {/* Pay it forward nudge */}
-              <p className="text-[11px] text-muted-foreground text-center mt-3 leading-relaxed">
-                Pay it forward — help someone else when you can 💙
-              </p>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

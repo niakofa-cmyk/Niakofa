@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { authHeaders } from "@/lib/auth";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,28 +17,24 @@ import { useQueryClient } from "@tanstack/react-query";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
 import "mapbox-gl/dist/mapbox-gl.css";
 import MapboxMap, { Marker } from "react-map-gl/mapbox";
-import { useTranslation } from "react-i18next";
 
 type PaymentType = "immediate" | "pay_it_forward" | "goodwill";
 
 const CATEGORIES = [
   // Community
-  { value: "groceries",      label: "🛒 Groceries",         group: "Community" },
-  { value: "transportation", label: "🚗 Transportation",     group: "Community" },
-  { value: "errands",        label: "📦 Errands",            group: "Community" },
-  { value: "home_repair",    label: "🔧 Home Repair",        group: "Community" },
-  { value: "medical",        label: "💊 Medical",            group: "Community" },
-  { value: "emergency",      label: "🚨 Emergency",          group: "Community" },
-  // Food & Farm
-  { value: "local_farm",     label: "🌱 Farm / CSA Pickup",  group: "Food & Farm" },
-  { value: "food_pantry",    label: "🍱 Food Pantry Run",    group: "Food & Farm" },
+  { value: "groceries",      label: "🛒 Groceries",       group: "Community" },
+  { value: "transportation", label: "🚗 Transportation",   group: "Community" },
+  { value: "errands",        label: "📦 Errands",          group: "Community" },
+  { value: "home_repair",    label: "🔧 Home Repair",      group: "Community" },
+  { value: "medical",        label: "💊 Medical",          group: "Community" },
+  { value: "emergency",      label: "🚨 Emergency",        group: "Community" },
   // Business
-  { value: "stock_shelves",  label: "📦 Stock Shelves",      group: "Business" },
-  { value: "event_setup",    label: "🎪 Event Setup",        group: "Business" },
-  { value: "delivery_run",   label: "🚚 Delivery Run",       group: "Business" },
-  { value: "tech_support",   label: "💻 Tech Support",       group: "Business" },
+  { value: "stock_shelves",  label: "📦 Stock Shelves",    group: "Business" },
+  { value: "event_setup",    label: "🎪 Event Setup",      group: "Business" },
+  { value: "delivery",       label: "🚚 Delivery Run",     group: "Business" },
+  { value: "tech_support",   label: "💻 Tech Support",     group: "Business" },
   // Catch-all
-  { value: "other",          label: "📋 Other",              group: "Community" },
+  { value: "other",          label: "📋 Other",            group: "Community" },
 ] as const;
 
 type CategoryValue = typeof CATEGORIES[number]["value"];
@@ -47,9 +44,8 @@ const formSchema = z.object({
   description: z.string().optional(),
   category: z.enum([
     "groceries", "transportation", "errands", "home_repair", "medical", "emergency",
-    "local_farm", "food_pantry",
-    "stock_shelves", "event_setup", "delivery_run", "tech_support", "other",
-  ]),
+    "stock_shelves", "event_setup", "delivery", "tech_support", "other",
+  ] as [string, ...string[]]),
   urgency: z.enum(["low", "medium", "high", "emergency"]),
   pay_it_forward_amount: z.number().optional(),
   pledge_amount: z.number().optional(),
@@ -80,7 +76,6 @@ const PAYMENT_OPTIONS: { type: PaymentType; label: string; desc: string; color: 
 ];
 
 const COMMUNITY_CATS = CATEGORIES.filter(c => c.group === "Community");
-const FARM_CATS = CATEGORIES.filter(c => c.group === "Food & Farm");
 const BUSINESS_CATS = CATEGORIES.filter(c => c.group === "Business");
 
 const DRAFT_KEY = "niakofa_request_draft";
@@ -104,7 +99,6 @@ function checkWebGL(): boolean {
 }
 
 export default function NewRequestScreen() {
-  const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { currentUser, myLocation } = useAppContext();
   const queryClient = useQueryClient();
@@ -140,10 +134,10 @@ export default function NewRequestScreen() {
         form.reset({
           title:       String(vals.title ?? ""),
           description: String(vals.description ?? ""),
-          category:    (vals.category as typeof formSchema.shape.category._def.values[number]) ?? "other",
+          category:    String(vals.category ?? "other"),
           urgency:     (vals.urgency as "low" | "medium" | "high" | "emergency") ?? "medium",
         });
-        toast({ title: t("request_new.draft_restored"), description: t("request_new.your_previous_unfinished_request_has_been") });
+        toast({ title: "✏️ Draft restored", description: "Your previous unfinished request has been loaded." });
       }
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -176,7 +170,7 @@ export default function NewRequestScreen() {
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     if (!currentUser || !pinLocation) {
-      toast({ title: t("request_new.error"), description: t("request_new.please_confirm_your_pickup_location_on"), variant: "destructive" });
+      toast({ title: "Error", description: "Please confirm your pickup location on the map", variant: "destructive" });
       return;
     }
 
@@ -201,8 +195,9 @@ export default function NewRequestScreen() {
       data: {
         title: values.title,
         description: fullDescription || undefined,
-        category: values.category,
-        urgency: values.urgency,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        category: values.category as any,
+        urgency: values.urgency as any,
         payment_type: paymentType,
         requester_id: currentUser.id,
         lat: pinLocation.lat,
@@ -213,7 +208,7 @@ export default function NewRequestScreen() {
     }, {
       onSuccess: async (request) => {
         localStorage.removeItem(DRAFT_KEY);
-        toast({ title: t("request_new.request_posted"), description: t("request_new.nearby_helpers_have_been_notified_in") });
+        toast({ title: "📍 Request posted!", description: "Nearby helpers have been notified in real time." });
 
         // ── Pay Now: create PaymentIntent and show Stripe checkout ──────────
         const amount = values.pay_it_forward_amount;
@@ -221,11 +216,9 @@ export default function NewRequestScreen() {
           setCreatingPaymentIntent(true);
           try {
             const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-            // BUG-44: include Authorization header for authenticated endpoint
-            const token = localStorage.getItem("niakofa_token");
             const res = await fetch(`${base}/api/stripe/payment-intent`, {
               method: "POST",
-              headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+              headers: { "Content-Type": "application/json", ...authHeaders() },
               body: JSON.stringify({
                 requestId: request.id,
                 amount,
@@ -241,15 +234,15 @@ export default function NewRequestScreen() {
               const err = await res.json() as { error?: string; setup?: string };
               if (res.status === 503) {
                 toast({
-                  title: t("request_new.stripe_not_configured"),
+                  title: "Stripe not configured",
                   description: err.setup ?? "Ask the admin to add the Stripe API key to enable real payments.",
                 });
               } else {
-                toast({ title: t("request_new.could_not_create_payment"), description: err.error ?? "Please try again.", variant: "destructive" });
+                toast({ title: "Could not create payment", description: err.error ?? "Please try again.", variant: "destructive" });
               }
             }
           } catch {
-            toast({ title: t("request_new.network_error_payment_skipped"), variant: "destructive" });
+            toast({ title: "Network error — payment skipped", variant: "destructive" });
           } finally {
             setCreatingPaymentIntent(false);
           }
@@ -258,7 +251,7 @@ export default function NewRequestScreen() {
         finishAndNavigate();
       },
       onError: (err) => {
-        toast({ title: t("request_new.failed_to_post_request"), description: String(err), variant: "destructive" });
+        toast({ title: "Failed to post request", description: String(err), variant: "destructive" });
       }
     });
   };
@@ -266,12 +259,12 @@ export default function NewRequestScreen() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <div className="sticky top-0 z-10 bg-card border-b border-border p-4 pt-safe flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full" aria-label={t("request_new.back_to_map")}>
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full">
           <ChevronLeft className="w-6 h-6" />
         </Button>
         <div>
-          <h1 className="text-xl font-bold uppercase tracking-widest">{t("request_new.new_request")}</h1>
-          <p className="text-xs text-muted-foreground">{t("request_new.helpers_are_notified_in_real_time")}</p>
+          <h1 className="text-xl font-bold uppercase tracking-widest">New Request</h1>
+          <p className="text-xs text-muted-foreground">Helpers are notified in real time</p>
         </div>
       </div>
 
@@ -281,8 +274,8 @@ export default function NewRequestScreen() {
             <div className="bg-destructive/10 border border-destructive/40 rounded-xl p-3 flex items-center gap-3 text-destructive">
               <AlertTriangle className="w-5 h-5 shrink-0 animate-pulse" />
               <div>
-                <div className="font-bold text-sm">{t("request_new.emergency_request")}</div>
-                <div className="text-xs opacity-80">{t("request_new.this_will_be_dispatched_to_helpers")}</div>
+                <div className="font-bold text-sm">Emergency Request</div>
+                <div className="text-xs opacity-80">This will be dispatched to helpers with highest priority</div>
               </div>
             </div>
           )}
@@ -294,9 +287,9 @@ export default function NewRequestScreen() {
                 name="title"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">{t("request_new.what_do_you_need")}</FormLabel>
+                    <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">What do you need?</FormLabel>
                     <FormControl>
-                      <Input placeholder={t("request_new.eg_ride_to_pharmacy_grocery_pickup")} className="bg-card border-border text-base py-5" {...field} />
+                      <Input placeholder="e.g. Ride to pharmacy, grocery pickup..." className="bg-card border-border text-base py-5" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -309,19 +302,19 @@ export default function NewRequestScreen() {
                   name="category"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">{t("request_new.category")}</FormLabel>
+                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Category</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                           <SelectTrigger className="bg-card border-border h-11">
-                            <SelectValue placeholder={t("request_new.select")} />
+                            <SelectValue placeholder="Select..." />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-muted-foreground">{t("request_new.community")}</div>
+                          <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-muted-foreground">Community</div>
                           {COMMUNITY_CATS.map(c => (
                             <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                           ))}
-                          <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-muted-foreground border-t border-border mt-1 pt-2">{t("request_new.business")}</div>
+                          <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-muted-foreground border-t border-border mt-1 pt-2">Business</div>
                           {BUSINESS_CATS.map(c => (
                             <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                           ))}
@@ -337,18 +330,18 @@ export default function NewRequestScreen() {
                   name="urgency"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">{t("request_new.urgency")}</FormLabel>
+                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Urgency</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                           <SelectTrigger className={`bg-card border-border h-11 ${field.value === 'emergency' ? 'text-destructive font-bold' : ''}`}>
-                            <SelectValue placeholder={t("request_new.select_2")} />
+                            <SelectValue placeholder="Select..." />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="low">{t("request_new.low")}</SelectItem>
-                          <SelectItem value="medium">{t("request_new.medium")}</SelectItem>
-                          <SelectItem value="high" className="text-orange-500">{t("request_new.high")}</SelectItem>
-                          <SelectItem value="emergency" className="text-destructive font-bold">{t("request_new.emergency")}</SelectItem>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high" className="text-orange-500">High</SelectItem>
+                          <SelectItem value="emergency" className="text-destructive font-bold">🚨 Emergency</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -362,10 +355,10 @@ export default function NewRequestScreen() {
                 name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">{t("request_new.details_optional")}</FormLabel>
+                    <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Details (optional)</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder={t("request_new.specific_instructions_building_code_special_considerations")}
+                        placeholder="Specific instructions, building code, special considerations..."
                         className="bg-card border-border min-h-[90px] resize-none"
                         {...field}
                       />
@@ -378,7 +371,7 @@ export default function NewRequestScreen() {
               {/* Item Checklist — §3.1.4 Request specificity */}
               {checklistItems.length > 0 || true ? (
                 <div>
-                  <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">{t("request_new.item_checklist_optional")}</div>
+                  <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">Item Checklist (optional)</div>
                   <div className="space-y-2">
                     {checklistItems.map((item, i) => (
                       <div key={i} className="flex items-center gap-2">
@@ -404,7 +397,7 @@ export default function NewRequestScreen() {
                         onClick={() => setChecklistItems(prev => [...prev, ""])}
                         className="flex items-center gap-1.5 text-xs text-primary/70 hover:text-primary transition-colors py-1"
                       >
-                        <Plus className="w-3.5 h-3.5" /> {t("request_new.add_item")}
+                        <Plus className="w-3.5 h-3.5" /> Add item
                       </button>
                     )}
                   </div>
@@ -413,7 +406,7 @@ export default function NewRequestScreen() {
 
               {/* Accessibility Needs — §4.5 */}
               <div>
-                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">{t("request_new.accessibility_needs")}</div>
+                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">Accessibility Needs</div>
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { id: "wheelchair", label: "♿ Wheelchair access" },
@@ -447,8 +440,8 @@ export default function NewRequestScreen() {
               <div>
                 <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5" />
-                  {t("request_new.pickup_location")}
-                  <span className="ml-1 text-[10px] text-muted-foreground/60 normal-case font-normal tracking-normal">{t("request_new.tap_or_drag_pin_to_adjust")}</span>
+                  Pickup Location
+                  <span className="ml-1 text-[10px] text-muted-foreground/60 normal-case font-normal tracking-normal">Tap or drag pin to adjust</span>
                 </div>
                 <div className="relative rounded-xl overflow-hidden border border-border bg-card" style={{ height: 180 }}>
                   {webGLSupported && pinLocation ? (
@@ -492,7 +485,7 @@ export default function NewRequestScreen() {
                       onClick={() => setPinLocation({ lat: myLocation.lat, lng: myLocation.lng })}
                       className="text-[10px] text-primary underline"
                     >
-                      {t("request_new.reset_to_my_gps")}
+                      Reset to my GPS
                     </button>
                   )}
                 </div>
@@ -500,7 +493,7 @@ export default function NewRequestScreen() {
 
               {/* Three-Tier Payment Selector */}
               <div>
-                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-3 font-medium">{t("request_new.assistance_type")}</div>
+                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-3 font-medium">Assistance Type</div>
                 <div className="grid grid-cols-3 gap-2">
                   {PAYMENT_OPTIONS.map(opt => (
                     <button
@@ -530,20 +523,20 @@ export default function NewRequestScreen() {
                   name="pay_it_forward_amount"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">{t("request_new.amount_to_pay")}</FormLabel>
+                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Amount to Pay ($)</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
-                          placeholder={t("request_new.eg_1500")}
+                          placeholder="e.g. 15.00"
                           className="bg-card border-border"
                           {...field}
                           onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
                         />
                       </FormControl>
                       {isStripeConfigured() ? (
-                        <p className="text-xs text-green-400 mt-1">{t("request_new.youll_confirm_payment_via_stripe_after")}</p>
+                        <p className="text-xs text-green-400 mt-1">You'll confirm payment via Stripe after posting.</p>
                       ) : (
-                        <p className="text-xs text-muted-foreground mt-1">{t("request_new.stripe_must_be_configured_to_enable")}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Stripe must be configured to enable real card payments.</p>
                       )}
                       <FormMessage />
                     </FormItem>
@@ -557,17 +550,17 @@ export default function NewRequestScreen() {
                   name="pledge_amount"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">{t("request_new.pledge_amount_optional")}</FormLabel>
+                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Pledge Amount (optional)</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
-                          placeholder={t("request_new.any_amount_when_youre_able")}
+                          placeholder="Any amount, when you're able"
                           className="bg-card border-border"
                           {...field}
                           onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
                         />
                       </FormControl>
-                      <p className="text-xs text-muted-foreground mt-1">{t("request_new.no_pressure_any_contribution_helps_sustain")}</p>
+                      <p className="text-xs text-muted-foreground mt-1">No pressure — any contribution helps sustain the community</p>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -583,7 +576,7 @@ export default function NewRequestScreen() {
               </Button>
 
               {!pinLocation && (
-                <p className="text-xs text-yellow-500 text-center">{t("request_new.waiting_for_gps_to_set_your")}</p>
+                <p className="text-xs text-yellow-500 text-center">Waiting for GPS to set your location...</p>
               )}
             </form>
           </Form>
@@ -598,12 +591,12 @@ export default function NewRequestScreen() {
           description={`Pay your helper for: "${pendingPayment.requestTitle}". Your helper receives the funds when the request is completed.`}
           onSuccess={() => {
             setPendingPayment(null);
-            toast({ title: t("request_new.payment_confirmed"), description: t("request_new.your_helper_will_be_paid_automatically") });
+            toast({ title: "Payment confirmed!", description: "Your helper will be paid automatically upon completion." });
             finishAndNavigate();
           }}
           onSkip={() => {
             setPendingPayment(null);
-            toast({ title: t("request_new.payment_skipped"), description: t("request_new.you_can_pay_from_your_wallet") });
+            toast({ title: "Payment skipped", description: "You can pay from your wallet later." });
             finishAndNavigate();
           }}
           onClose={() => {

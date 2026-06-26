@@ -26,7 +26,6 @@ export function TipModal({ requestId, helperName, onClose }: TipModalProps) {
     if (!amount || !currentUser || submitting) return;
     setSubmitting(true);
     try {
-      // BUG-44: include Authorization header so the server can verify the requester
       const res = await fetch(`/api/requests/${requestId}/tip`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -63,13 +62,13 @@ export function TipModal({ requestId, helperName, onClose }: TipModalProps) {
               <Heart className="w-5 h-5 text-green-400" />
               <h3 className="font-black text-lg">Leave a Tip</h3>
             </div>
-            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close" className="rounded-full">
+            <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full">
               <X className="w-5 h-5" />
             </Button>
           </div>
 
           <p className="text-sm text-muted-foreground mb-5">
-            Show <strong className="text-foreground">{helperName}</strong> some extra love — a token of thanks for their time.
+            Show <strong className="text-foreground">{helperName}</strong> some extra love. 100% goes to them.
           </p>
 
           <div className="grid grid-cols-5 gap-2 mb-4 min-w-0">
