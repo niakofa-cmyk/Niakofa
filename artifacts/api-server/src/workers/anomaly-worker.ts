@@ -104,18 +104,20 @@ async function detectAnomalies() {
         "anomaly: requester repeatedly cancelled claimed requests — applying trust penalty"
       );
 
-      // Auto-action: apply trust score penalty (-20 pts, floor 0) so repeat
-      // bad-faith requesters surface in admin dashboards and lose priority.
-      // TODO: add is_suspended column for hard blocks (tracked as Phase 13 schema).
+      // Auto-action: suspend requester account (Phase 13 hard block)
       let cancelActionTaken = "none";
       try {
-        await db.execute(
-          sql`UPDATE users SET trust_score = GREATEST(0, COALESCE(trust_score, 50) - 20) WHERE id = ${row.requester_id}`
-        );
-        cancelActionTaken = "trust_score_penalized_-20";
-        logger.warn({ user_id: row.requester_id }, "anomaly: applied -20 trust penalty for repeat cancels");
+        await db.update(usersTable)
+          .set({
+            is_suspended: true,
+            suspended_at: new Date(),
+            suspended_reason: `Anomaly: ${row.cancel_count} cancellations after helper assigned in ${WINDOW_HOURS}h — auto-suspended`,
+          })
+          .where(eq(usersTable.id, row.requester_id));
+        cancelActionTaken = "suspended";
+        logger.warn({ user_id: row.requester_id }, "anomaly: account suspended for repeat bad-faith cancels");
       } catch (err) {
-        logger.error({ err, user_id: row.requester_id }, "anomaly: failed to apply trust penalty");
+        logger.error({ err, user_id: row.requester_id }, "anomaly: failed to suspend requester");
       }
 
       broadcastToAdmins({
@@ -217,16 +219,21 @@ async function detectAnomalies() {
         "anomaly: helper received multiple 1-star ratings in 24h — disabling helper mode"
       );
 
-      // Auto-action: disable helper mode so they can't claim new requests pending review
+      // Auto-action: suspend account + disable helper mode (Phase 13)
       let actionTaken = "none";
       try {
         await db.update(usersTable)
-          .set({ helper_mode_active: false })
+          .set({
+            is_suspended: true,
+            suspended_at: new Date(),
+            suspended_reason: `Anomaly: ${row.count} one-star ratings in ${WINDOW_HOURS}h — auto-suspended pending admin review`,
+            helper_mode_active: false,
+          })
           .where(eq(usersTable.id, row.ratee_id));
-        actionTaken = "helper_mode_disabled";
-        logger.warn({ user_id: row.ratee_id }, "anomaly: disabled helper_mode_active due to rating velocity spike");
+        actionTaken = "suspended_and_helper_mode_disabled";
+        logger.warn({ user_id: row.ratee_id }, "anomaly: account suspended due to rating velocity spike");
       } catch (err) {
-        logger.error({ err, user_id: row.ratee_id }, "anomaly: failed to disable helper mode on rating spike");
+        logger.error({ err, user_id: row.ratee_id }, "anomaly: failed to suspend account on rating spike");
       }
 
       broadcastToAdmins({

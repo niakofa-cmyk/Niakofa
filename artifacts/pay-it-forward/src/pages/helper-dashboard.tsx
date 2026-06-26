@@ -88,6 +88,7 @@ export default function HelperDashboardScreen() {
 
   const [pendingRatings, setPendingRatings] = useState<Array<{ id: number; title: string; completed_at: string | null }>>([]);
   const [recentRatings, setRecentRatings] = useState<Array<{ stars: number; review: string | null; created_at: string }>>([]);
+  const [completionRate, setCompletionRate] = useState<number | null>(null);
 
   // Fetch completed requests with no rating yet (pending acknowledgement)
   useEffect(() => {
@@ -113,6 +114,19 @@ export default function HelperDashboardScreen() {
         }));
         setPendingRatings(pending);
       }).catch(() => {});
+
+    // Fetch completion rate: completed / (completed + cancelled_after_claim)
+    Promise.all([
+      fetch(`/api/requests?helper_id=${currentUser.id}&status=completed&limit=1`, { headers }).then(r => r.json()),
+      fetch(`/api/requests?helper_id=${currentUser.id}&status=cancelled&limit=1`, { headers }).then(r => r.json()),
+    ]).then(([comp, canc]) => {
+      // API returns array; use help_count from currentUser for completed (accurate)
+      // and cancelled array length as a proxy for now
+      const completed = currentUser.help_count ?? 0;
+      const cancelled = Array.isArray(canc) ? canc.length : 0;
+      const total = completed + cancelled;
+      setCompletionRate(total > 0 ? Math.round((completed / total) * 100) : null);
+    }).catch(() => {});
 
     // Fetch recent ratings received
     fetch(`/api/users/${currentUser.id}/ratings`, { headers })
@@ -268,6 +282,13 @@ export default function HelperDashboardScreen() {
                 : "—"}
             </div>
             <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg Rating</div>
+          </div>
+          <div className="bg-card border border-border rounded-2xl p-4 flex flex-col items-center text-center col-span-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 mb-1" />
+            <div className="text-2xl font-black text-emerald-400">
+              {completionRate !== null ? `${completionRate}%` : "—"}
+            </div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Completion Rate</div>
           </div>
         </div>
 

@@ -64,6 +64,12 @@ export const usersTable = pgTable("users", {
   // The registration route explicitly sets "pending"; the only way to get "approved"
   // is through the admin review endpoint.
   approval_status: text("approval_status").notNull().default("pending"), // pending | approved | denied
+  // Phase 13: hard account suspension set by anomaly worker or admin.
+  // Distinct from approval_status — a previously-approved account can be
+  // suspended mid-life without losing its approval history.
+  is_suspended: boolean("is_suspended").notNull().default(false),
+  suspended_at: timestamp("suspended_at"),
+  suspended_reason: text("suspended_reason"),
   // Audit trail for account-application reviews — previously unrecorded,
   // unlike the helper-application review flow which already logs this.
   approval_reviewed_by: integer("approval_reviewed_by"),
