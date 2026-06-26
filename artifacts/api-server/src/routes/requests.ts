@@ -386,6 +386,43 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = ClaimRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
+
+  // Local-first dispatch: a helper's service_radius_miles is their normal
+  // working area; max_travel_miles is the absolute outer limit they're
+  // willing to travel. A request beyond max_travel_miles is hard-blocked
+  // here (server-enforced, not just a client-side hint) unless it's a true
+  // emergency — urgency overriding personal travel preference matches the
+  // existing philosophy in lib/matching.ts (urgency is the dominant signal)
+  // and the emergency-broadcasts-to-everyone fallback already in push.ts.
+  const [target] = await db.select({ lat: requestsTable.lat, lng: requestsTable.lng, urgency: requestsTable.urgency, status: requestsTable.status })
+    .from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
+  if (!target) return res.status(404).json({ error: "Request not found" });
+
+  let distanceFromHelper: number | null = null;
+  let outsideUsualArea = false;
+  if (target.urgency !== "emergency") {
+    const [helperLoc] = await db.select({ lat: usersTable.lat, lng: usersTable.lng })
+      .from(usersTable).where(eq(usersTable.id, helperId)).limit(1);
+    const [helperSettings] = await db.select({
+      service_radius_miles: userSettingsTable.service_radius_miles,
+      max_travel_miles: userSettingsTable.max_travel_miles,
+    }).from(userSettingsTable).where(eq(userSettingsTable.user_id, helperId)).limit(1);
+
+    if (helperLoc?.lat != null && helperLoc?.lng != null && target.lat != null && target.lng != null) {
+      distanceFromHelper = distanceMiles(helperLoc.lat, helperLoc.lng, target.lat, target.lng);
+      const maxTravel = helperSettings?.max_travel_miles ?? 15;
+      const serviceRadius = helperSettings?.service_radius_miles ?? 10;
+      if (distanceFromHelper > maxTravel) {
+        return res.status(400).json({
+          error: `This request is ${distanceFromHelper.toFixed(1)} miles away, beyond your max travel distance of ${maxTravel} miles. You can raise this limit in Settings → Helper Settings.`,
+          distance_miles: distanceFromHelper,
+          max_travel_miles: maxTravel,
+        });
+      }
+      outsideUsualArea = distanceFromHelper > serviceRadius;
+    }
+  }
+
   const [request] = await db.update(requestsTable)
     .set({ status: "claimed", helper_id: helperId, claimed_at: new Date() })
     .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.status, "open")))
@@ -415,7 +452,7 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
     }).catch(() => {});
 
   const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, helperId)).limit(1);
-  const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: helper?.name ?? null, distance_miles: null, estimated_duration_min: null };
+  const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: helper?.name ?? null, distance_miles: distanceFromHelper, estimated_duration_min: distanceFromHelper != null ? Math.round(distanceFromHelper * 3) : null, outside_usual_area: outsideUsualArea };
   broadcastRequestEvent("REQUEST_ACCEPTED", "request_updated", enriched);
   return res.json(enriched);
 });

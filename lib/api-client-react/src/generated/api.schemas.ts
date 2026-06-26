@@ -196,6 +196,7 @@ export interface HelpRequest {
   completed_at?: string | null;
   /** @nullable */
   cancelled_at?: string | null;
+  outside_usual_area?: boolean;
 }
 
 export type HelpRequestInputCategory = typeof HelpRequestInputCategory[keyof typeof HelpRequestInputCategory];

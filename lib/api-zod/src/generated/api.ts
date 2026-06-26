@@ -236,7 +236,8 @@ export const MakePledgePaymentResponse = zod.object({
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
   "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "cancelled_at": zod.string().nullish(),
+  "outside_usual_area": zod.boolean().optional()
 })
 
 
@@ -319,7 +320,8 @@ export const GetRequestsResponseItem = zod.object({
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
   "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "cancelled_at": zod.string().nullish(),
+  "outside_usual_area": zod.boolean().optional()
 })
 export const GetRequestsResponse = zod.array(GetRequestsResponseItem)
 
@@ -369,7 +371,8 @@ export const CreateRequestResponse = zod.object({
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
   "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "cancelled_at": zod.string().nullish(),
+  "outside_usual_area": zod.boolean().optional()
 })
 
 
@@ -412,7 +415,8 @@ export const GetNearbyRequestsResponseItem = zod.object({
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
   "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "cancelled_at": zod.string().nullish(),
+  "outside_usual_area": zod.boolean().optional()
 })
 export const GetNearbyRequestsResponse = zod.array(GetNearbyRequestsResponseItem)
 
@@ -468,7 +472,8 @@ export const GetRequestResponse = zod.object({
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
   "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "cancelled_at": zod.string().nullish(),
+  "outside_usual_area": zod.boolean().optional()
 })
 
 
@@ -513,7 +518,8 @@ export const UpdateRequestResponse = zod.object({
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
   "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "cancelled_at": zod.string().nullish(),
+  "outside_usual_area": zod.boolean().optional()
 })
 
 
@@ -556,7 +562,8 @@ export const ClaimRequestResponse = zod.object({
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
   "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "cancelled_at": zod.string().nullish(),
+  "outside_usual_area": zod.boolean().optional()
 })
 
 
@@ -599,7 +606,8 @@ export const MarkEnRouteResponse = zod.object({
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
   "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "cancelled_at": zod.string().nullish(),
+  "outside_usual_area": zod.boolean().optional()
 })
 
 
@@ -642,7 +650,8 @@ export const MarkArrivedResponse = zod.object({
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
   "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "cancelled_at": zod.string().nullish(),
+  "outside_usual_area": zod.boolean().optional()
 })
 
 
@@ -686,7 +695,8 @@ export const CompleteRequestResponse = zod.object({
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
   "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "cancelled_at": zod.string().nullish(),
+  "outside_usual_area": zod.boolean().optional()
 })
 
 
@@ -790,7 +800,8 @@ export const GetUserOutstandingPledgesResponseItem = zod.object({
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
   "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "cancelled_at": zod.string().nullish(),
+  "outside_usual_area": zod.boolean().optional()
 })
 export const GetUserOutstandingPledgesResponse = zod.array(GetUserOutstandingPledgesResponseItem)
 

@@ -908,6 +908,9 @@ components:
           type: ["string", "null"]
         cancelled_at:
           type: ["string", "null"]
+        outside_usual_area:
+          type: boolean
+          description: Only present on the claim response. True when the claiming helper's distance to this request exceeds their saved service_radius_miles (but is still within max_travel_miles).
 
     HelpRequestInput:
       type: object

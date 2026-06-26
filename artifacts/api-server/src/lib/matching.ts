@@ -115,6 +115,16 @@ export interface DispatchSignals {
    * Zero-history helpers get no bonus or penalty (they deserve a fair chance).
    */
   reliabilityRatio?: number;
+
+  /**
+   * Helper's saved service_radius_miles (their normal working area, from
+   * Settings → Helper Settings). When provided alongside distanceMiles,
+   * requests within this radius get a "local-first" bonus — the same
+   * principle as the client-side Best Match card — so a helper is routed
+   * to nearby work before being offered a long trip. A soft bias, not a
+   * hard filter: urgency (the dominant signal) can still outweigh it.
+   */
+  serviceRadiusMiles?: number;
 }
 
 export function computeMatchScore(
@@ -196,6 +206,17 @@ export function computeMatchScore(
       if (signals.reliabilityRatio >= 0.9) reasons.push("highly dependable");
       else if (signals.reliabilityRatio >= 0.75) reasons.push("dependable helper");
     }
+  }
+
+  // ── Local-first bonus (+12) ───────────────────────────────────────────────
+  // Mirrors the client-side Best Match card: a non-emergency request inside
+  // the helper's own declared service radius is prioritized over one
+  // outside it, so the community's nearest available helper is favored
+  // before anyone is routed on a long trip. Emergencies are exempt — urgency
+  // stays the dominant signal throughout this module.
+  if (signals.serviceRadiusMiles !== undefined && urgency !== "emergency" && distanceMiles <= signals.serviceRadiusMiles) {
+    score += 12;
+    reasons.push("in your usual service area");
   }
 
   return { score, reasons, is_available_now };

@@ -133,6 +133,18 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, async (req, res) => 
     if (w.helper_id) workloadByHelper[w.helper_id] = w.active_count;
   }
 
+  // Local-first dispatch: fetch each candidate's saved service_radius_miles
+  // so computeMatchScore can favor helpers for whom this request falls
+  // inside their normal working area.
+  const settingsRows = helperIds.length > 0
+    ? await db.select({ user_id: userSettingsTable.user_id, service_radius_miles: userSettingsTable.service_radius_miles })
+        .from(userSettingsTable).where(inArray(userSettingsTable.user_id, helperIds))
+    : [];
+  const serviceRadiusByHelper: Record<number, number> = {};
+  for (const s of settingsRows) {
+    serviceRadiusByHelper[s.user_id] = s.service_radius_miles;
+  }
+
   const now = new Date();
   const scored = helpers
     .filter((h: typeof helpers[number]) => h.lat && h.lng)
@@ -160,6 +172,7 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, async (req, res) => 
           trustScore,
           activeWorkload: workloadByHelper[h.id] ?? 0,
           reliabilityRatio,
+          serviceRadiusMiles: serviceRadiusByHelper[h.id] ?? 10,
         }
       );
       return { ...h, dist, score };

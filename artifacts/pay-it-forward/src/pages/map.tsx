@@ -22,6 +22,10 @@ import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { wsIsConnected } from "@/lib/wsClient";
 import { useTerrain } from "@/hooks/useTerrain";
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 
 
 function checkWebGL(): boolean {
@@ -81,7 +85,8 @@ const CATEGORY_WEIGHT: Record<string, number> = {
 
 function pickBestMatch(
   requests: HelpRequest[],
-  helperSpecialties?: string[] | null
+  helperSpecialties?: string[] | null,
+  serviceRadiusMiles: number = 10
 ): HelpRequest | null {
   if (requests.length === 0) return null;
   const urgencyScore: Record<string, number> = { emergency: 100, high: 50, medium: 20, low: 5 };
@@ -113,8 +118,16 @@ function pickBestMatch(
       }
     }
 
-    const scoreA = uA + ageBoostA + catA + skillA;
-    const scoreB = uB + ageBoostB + catB + skillB;
+    // Local-first bonus (+12) — non-emergency requests within the helper's
+    // own service radius are prioritized over ones outside it, so a helper
+    // gets routed to nearby work before being offered a long trip. This is
+    // a scoring bias, not a hard filter: a distant emergency still wins on
+    // urgency alone (100 base vs. a local low-priority request's 5+12=17).
+    const localA = (a.urgency !== "emergency" && (a.distance_miles ?? 99) <= serviceRadiusMiles) ? 12 : 0;
+    const localB = (b.urgency !== "emergency" && (b.distance_miles ?? 99) <= serviceRadiusMiles) ? 12 : 0;
+
+    const scoreA = uA + ageBoostA + catA + skillA + localA;
+    const scoreB = uB + ageBoostB + catB + skillB + localB;
     if (scoreA !== scoreB) return scoreB - scoreA;
 
     // Distance tie-break
@@ -150,6 +163,40 @@ export default function MapScreen() {
   const prevHelperMode = useRef(false);
   const [crisis, setCrisis] = useState<CrisisState | null>(null);
   const [crisisDismissed, setCrisisDismissed] = useState(false);
+  // Local-first dispatch: service_radius_miles is the helper's normal working
+  // area (drives map radius + visual styling); max_travel_miles is the
+  // absolute outer limit (drives map radius when in helper mode, and is
+  // enforced server-side at claim time). Non-helper-mode browsing (a
+  // requester just looking at the community map) is intentionally
+  // unaffected by either — those are helper-specific operational settings,
+  // not something that should narrow what a requester can see.
+  const [helperRadiusSettings, setHelperRadiusSettings] = useState<{ service_radius_miles: number; max_travel_miles: number } | null>(null);
+  const [farClaimConfirm, setFarClaimConfirm] = useState<HelpRequest | null>(null);
+
+  useEffect(() => {
+    if (!currentUser?.id) { setHelperRadiusSettings(null); return; }
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    const token = localStorage.getItem("niakofa_token") ?? "";
+    fetch(`${base}/api/users/${currentUser.id}/settings`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(r => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) {
+          setHelperRadiusSettings({
+            service_radius_miles: data.service_radius_miles ?? 10,
+            max_travel_miles: data.max_travel_miles ?? 15,
+          });
+        }
+      })
+      .catch(() => {});
+  }, [currentUser?.id]);
+
+  const NON_HELPER_MAP_RADIUS = 10;
+  const serviceRadiusMiles = helperRadiusSettings?.service_radius_miles ?? 10;
+  const maxTravelMiles = helperRadiusSettings?.max_travel_miles ?? 15;
+  // Only widen/narrow the map's request radius when actually in helper mode —
+  // a requester browsing the community map gets the flat default regardless
+  // of what their (possibly never-touched) helper settings say.
+  const mapRadiusMiles = helperModeActive ? maxTravelMiles : NON_HELPER_MAP_RADIUS;
 
   useEffect(() => {
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -188,8 +235,8 @@ export default function MapScreen() {
   }, []);
 
   const { data: requests = [] } = useGetNearbyRequests(
-    { lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: 10 },
-    { query: { enabled: !!myLocation, queryKey: getGetNearbyRequestsQueryKey({ lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: 10 }) } }
+    { lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: mapRadiusMiles },
+    { query: { enabled: !!myLocation, queryKey: getGetNearbyRequestsQueryKey({ lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: mapRadiusMiles }) } }
   );
   const { data: helpers = [] } = useGetOnlineHelpers(
     { lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: 10 },
@@ -331,19 +378,45 @@ export default function MapScreen() {
       mapRef.current.flyTo({ center: [myLocation.lng, myLocation.lat], zoom: 14, duration: 800 });
     }
   }, [myLocation]);
-  const handleClaim = useCallback((request: HelpRequest) => {
+  const submitClaim = useCallback((request: HelpRequest) => {
     if (!currentUser) return;
     claimMutation.mutate(
       { id: request.id, data: { helper_id: currentUser.id } },
       {
-        onSuccess: () => {
+        onSuccess: (claimed) => {
           queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
+          if ((claimed as HelpRequest)?.outside_usual_area) {
+            toast({ title: "Thanks for going the extra mile 💙", description: "This one's outside your usual area." });
+          }
           setLocation(`/request/${request.id}`);
         },
-        onError: () => toast({ title: "Failed to claim request", variant: "destructive" }),
+        onError: (err) => {
+          const raw = (err as { message?: string })?.message;
+          const friendly = raw?.replace(/^HTTP \d+ [^:]+:\s*/, "");
+          toast({
+            title: "Couldn't claim this request",
+            description: friendly || "It may have just been claimed by someone else.",
+            variant: "destructive",
+          });
+        },
       }
     );
   }, [currentUser, claimMutation, queryClient, setLocation]);
+
+  const handleClaim = useCallback((request: HelpRequest) => {
+    if (!currentUser) return;
+    // Local-first dispatch: nudge toward confirming before traveling outside
+    // the usual service area, rather than silently claiming. True emergencies
+    // skip this — urgency overrides personal radius preference everywhere
+    // else in this codebase too (see lib/matching.ts), and the server itself
+    // never blocks emergency claims regardless of distance.
+    const isFar = helperModeActive && request.urgency !== "emergency" && (request.distance_miles ?? 0) > serviceRadiusMiles;
+    if (isFar) {
+      setFarClaimConfirm(request);
+      return;
+    }
+    submitClaim(request);
+  }, [currentUser, helperModeActive, serviceRadiusMiles, submitClaim]);
 
   const safeRequests = Array.isArray(liveRequests) ? liveRequests : [];
   const safeHelpers = Array.isArray(liveHelpers) ? liveHelpers : [];
@@ -427,7 +500,7 @@ export default function MapScreen() {
   // Dispatch Intelligence — Best Match card
   const helperSkills = (currentUser as unknown as { helper_skills?: string[] | null; specialties?: string[] | null })?.helper_skills
     ?? (currentUser as unknown as { specialties?: string[] | null })?.specialties;
-  const bestMatch = helperModeActive ? pickBestMatch(openRequests, helperSkills) : null;
+  const bestMatch = helperModeActive ? pickBestMatch(openRequests, helperSkills, serviceRadiusMiles) : null;
   const showBestMatch = bestMatch && bestMatch.id !== bestMatchDismissed;
 
   const showCrisisBanner = crisis?.active && !crisisDismissed;
@@ -617,7 +690,7 @@ export default function MapScreen() {
           .filter(r => typeof r.lat === "number" && typeof r.lng === "number" && isFinite(r.lat) && isFinite(r.lng))
           .map(r => (
             <Marker key={r.id} longitude={r.lng} latitude={r.lat} anchor="bottom">
-              <RequestMarker request={r} skillMatch={isSkillMatch(r)} />
+              <RequestMarker request={r} skillMatch={isSkillMatch(r)} outsideServiceArea={helperModeActive && (r.distance_miles ?? 0) > serviceRadiusMiles} />
             </Marker>
           ))}
 
@@ -999,6 +1072,30 @@ export default function MapScreen() {
           </div>
         </div>
       )}
+
+      <AlertDialog open={!!farClaimConfirm} onOpenChange={(open) => { if (!open) setFarClaimConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>This one's outside your usual area</AlertDialogTitle>
+            <AlertDialogDescription>
+              {farClaimConfirm
+                ? `"${farClaimConfirm.title}" is about ${(farClaimConfirm.distance_miles ?? 0).toFixed(1)} miles away — beyond your ${serviceRadiusMiles}-mile service radius. You can still help; just confirming since it's a longer trip than usual.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setFarClaimConfirm(null)}>Never mind</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (farClaimConfirm) submitClaim(farClaimConfirm);
+                setFarClaimConfirm(null);
+              }}
+            >
+              I'll help anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

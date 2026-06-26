@@ -66,6 +66,37 @@ Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
   visible, tunable scoring function, not a model — every score returns
   human-readable `reasons` so the ranking is explainable in the UI.
 
+- **Local-First Dispatch** (added 2026-06-26). Two helper settings exist
+  for a reason, not as duplicates of each other:
+  - `service_radius_miles` (default 10) — the helper's *normal* working
+    area. Drives: push-notification targeting (`push.ts`), the map's
+    request-fetch radius when NOT in helper mode is unaffected by this —
+    it only applies while `helperModeActive`, the local-first scoring
+    bonus (+12, both client `pickBestMatch` in `map.tsx` and server
+    `computeMatchScore` in `lib/matching.ts`), and the dashed-ring "outside
+    your usual area" marker styling (`RequestMarker.tsx`).
+  - `max_travel_miles` (default 15) — the absolute outer limit. Drives:
+    the map's request-fetch radius while in helper mode (so a helper can
+    *see* everything they'd ever consider), and is a hard server-side
+    block at claim time (`POST /requests/:id/claim` in `requests.ts`) —
+    claiming a request farther than this returns 400.
+  - **Both are soft/overridable for emergencies, never for anything else.**
+    A true emergency (`urgency === "emergency"`) bypasses the local-first
+    bonus, the outside-area styling, the confirm dialog, and the hard
+    max_travel_miles block entirely — consistent with "urgency is the
+    dominant signal" already documented above for the matching engine, and
+    with push.ts's existing emergency-broadcasts-to-everyone fallback.
+    Don't add a distance check that fires on emergency requests; that would
+    contradict the rest of this codebase's design intent, not extend it.
+  - Non-helper-mode browsing (a requester just looking at the community
+    map) is **not** affected by either setting — they're helper-specific
+    operational preferences, narrowing what a requester can see would be
+    wrong.
+  - Claiming a request between `service_radius_miles` and `max_travel_miles`
+    shows a client-side confirm dialog ("This one's outside your usual
+    area") before submitting — the helper can still say yes. Below
+    `service_radius_miles`, no friction at all.
+
 ## Known gaps (real, not yet built)
 
 - Nia's memory (`nia_memories.memory`) is a single freeform text column, not
@@ -177,6 +208,27 @@ time. Listed so the same mistakes aren't repeated.
    every crisis-flagged row would already be gone before its own follow-up
    window opened. Fixed by exempting `is_crisis = TRUE` rows from purge until
    96h.
+
+9. **Settings that saved correctly but were never consulted by anything —
+   found repeatedly across one session (2026-06-26), same bug pattern each
+   time.** In order found: (a) `local_farm`/`food_pantry` request
+   categories existed in the frontend picker and i18n but not in the DB
+   `pgEnum`, the OpenAPI spec, or any generated zod schema — submitting one
+   failed at the DB layer; (b) the six `notif_*` toggles on the Settings
+   screen persisted to `user_settings` but no send path
+   (`sendPushToNearbyHelpers`, `sendPushToUser`, the helper-accepted email)
+   ever checked them before sending; (c) `preferred_language` had no
+   column on `user_settings` at all — the save was a silent no-op — and
+   even with one, `NiaDrawer.tsx` only ever read browser-locale detection,
+   never the saved value; (d) `service_radius_miles` was saved but
+   `sendPushToNearbyHelpers` used a flat system radius for every helper
+   regardless; (e) `max_travel_miles` had zero consumers anywhere. Fixed
+   in commits `bc098f4e` through (this session) — see "Local-First
+   Dispatch" above for (d)/(e)'s eventual design. **Lesson: when a Settings
+   screen has a toggle or numeric field, grep for every place that field
+   is read, not just where it's written — `grep -rn "field_name"
+   artifacts/` taking a few seconds repeatedly would have caught all five
+   of these immediately instead of needing five separate audit passes.**
 
 ## Practical lessons for future sessions
 

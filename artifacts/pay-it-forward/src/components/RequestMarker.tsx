@@ -5,9 +5,10 @@ import { useState } from "react";
 interface RequestMarkerProps {
   request: HelpRequest;
   skillMatch?: boolean;
+  outsideServiceArea?: boolean;
 }
 
-export function RequestMarker({ request, skillMatch = false }: RequestMarkerProps) {
+export function RequestMarker({ request, skillMatch = false, outsideServiceArea = false }: RequestMarkerProps) {
   const [tapped, setTapped] = useState(false);
 
   const getColors = () => {
@@ -40,11 +41,17 @@ export function RequestMarker({ request, skillMatch = false }: RequestMarkerProp
 
   return (
     <div
-      className="relative cursor-pointer"
+      className={`relative cursor-pointer ${outsideServiceArea && !isEmergency ? "opacity-60" : ""}`}
       onClick={() => setTapped(p => !p)}
       onMouseEnter={() => setTapped(true)}
       onMouseLeave={() => setTapped(false)}
     >
+      {/* Outside-usual-area ring — a softer visual cue than the skill-match glow,
+          signaling "you'd be traveling beyond your normal radius for this one" */}
+      {outsideServiceArea && !isEmergency && !skillMatch && (
+        <div className="absolute -inset-1.5 rounded-full border-2 border-dashed border-muted-foreground/50" />
+      )}
+
       {/* Skill-match outer glow ring */}
       {skillMatch && !isEmergency && (
         <div className="absolute -inset-2 rounded-full border-2 border-emerald-400/60 animate-pulse" />
@@ -105,6 +112,11 @@ export function RequestMarker({ request, skillMatch = false }: RequestMarkerProp
               <div className="flex items-center gap-1 mt-1 text-emerald-400">
                 <Zap className="w-2.5 h-2.5" />
                 <span className="text-[10px] font-black uppercase tracking-wide">Matches your skills</span>
+              </div>
+            )}
+            {outsideServiceArea && !isEmergency && (
+              <div className="text-[10px] text-muted-foreground/80 mt-1">
+                Outside your usual area
               </div>
             )}
           </div>
