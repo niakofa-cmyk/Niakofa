@@ -371,26 +371,53 @@ function NeighborhoodCirclesTab() {
         );
       })}
 
-      <div className="bg-card/50 border border-dashed border-border rounded-2xl p-4 text-center">
-        <Globe className="w-6 h-6 text-primary/40 mx-auto mb-2" />
-        <div className="text-sm font-bold text-muted-foreground">{t("community.circle_chat_amp_leaderboards_coming_soon")}</div>
-        <div className="text-xs text-muted-foreground/60 mt-1">{t("community.your_neighborhood_your_impact_your_leaderboard")}</div>
+      <div className="bg-card/50 border border-primary/20 rounded-2xl p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-lg">🌱</span>
+          <div className="font-black text-sm">Start a neighborhood request</div>
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+          Post a community request — farm pickup coordination, neighborhood garden, group grocery run — and neighbors in your circle can join or help.
+        </p>
+        <div className="flex gap-2 flex-wrap">
+          <a href="/request/new" className="text-xs font-bold text-primary bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-full">
+            Post a request →
+          </a>
+          <a href="/community" className="text-xs font-bold text-muted-foreground bg-muted border border-border px-3 py-1.5 rounded-full">
+            View Resources
+          </a>
+        </div>
       </div>
     </div>
   );
 }
 
 const SKILLS_DIRECTORY = [
-  { id: "bilingual",            label: "Bilingual",    emoji: "🌐", desc: "Spanish, Vietnamese, or other language support", cats: ["groceries","errands","medical"] },
-  { id: "truck_owner",          label: "Truck Owner",  emoji: "🚛", desc: "Move furniture, haul supplies, or transport large items", cats: ["transportation","errands","stock_shelves"] },
-  { id: "medical_background",   label: "Medical",      emoji: "🏥", desc: "Healthcare worker, EMT, nurse, or caregiver experience", cats: ["medical","emergency"] },
-  { id: "licensed_electrician", label: "Electrician",  emoji: "⚡", desc: "Safe assistance with electrical needs and home repairs", cats: ["home_repair"] },
-  { id: "licensed_plumber",     label: "Plumber",      emoji: "🔧", desc: "Pipe repairs, leak fixes, and plumbing emergencies", cats: ["home_repair"] },
-  { id: "carpenter",            label: "Carpenter",    emoji: "🪚", desc: "Woodworking, furniture assembly, and construction", cats: ["home_repair","event_setup"] },
-  { id: "tech_support",         label: "Tech Support", emoji: "💻", desc: "Computer setup, smartphone help, device troubleshooting", cats: ["tech_support"] },
-  { id: "cdl_driver",           label: "CDL Driver",   emoji: "🚚", desc: "Commercial driver's license — large vehicle expertise", cats: ["transportation","delivery_run"] },
-  { id: "food_handler",         label: "Food Handler", emoji: "🍽️", desc: "Safe food preparation and handling certified", cats: ["errands","event_setup"] },
-  { id: "childcare",            label: "Childcare",    emoji: "👶", desc: "Experienced in caring for children", cats: ["other"] },
+  // Trades
+  { id: "licensed_electrician", label: "Electrician",   emoji: "⚡", desc: "Safe assistance with electrical needs and home repairs", cats: ["home_repair"] },
+  { id: "licensed_plumber",     label: "Plumber",       emoji: "🔧", desc: "Pipe repairs, leak fixes, and plumbing emergencies", cats: ["home_repair"] },
+  { id: "carpenter",            label: "Carpenter",     emoji: "🪚", desc: "Woodworking, furniture assembly, and construction", cats: ["home_repair","event_setup"] },
+  { id: "painting",             label: "Painting",      emoji: "🎨", desc: "Interior and exterior painting", cats: ["home_repair"] },
+  { id: "yard_work",            label: "Yard Work",     emoji: "🌿", desc: "Lawn care, gardening, outdoor maintenance", cats: ["home_repair","local_farm"] },
+  { id: "heavy_lifting",        label: "Heavy Lifting", emoji: "💪", desc: "Moving, hauling, loading — physically strong helpers", cats: ["home_repair","delivery_run","event_setup"] },
+  // Transport
+  { id: "truck_owner",          label: "Truck Owner",   emoji: "🚛", desc: "Move furniture, haul supplies, or transport large items", cats: ["transportation","errands","stock_shelves"] },
+  { id: "cdl_driver",           label: "CDL Driver",    emoji: "🚚", desc: "Commercial driver's license — large vehicle expertise", cats: ["transportation","delivery_run"] },
+  { id: "food_delivery",        label: "Food Delivery", emoji: "🛵", desc: "Bring groceries, meals, or farm box pickups", cats: ["groceries","delivery_run","local_farm"] },
+  // Care & Support
+  { id: "childcare",            label: "Childcare",     emoji: "👶", desc: "Experienced in caring for children", cats: ["other"] },
+  { id: "elder_care",           label: "Elder Care",    emoji: "🧓", desc: "Companionship, errands, and support for seniors", cats: ["medical","other"] },
+  { id: "medical_background",   label: "Medical",       emoji: "🏥", desc: "Healthcare worker, EMT, nurse, or caregiver experience", cats: ["medical","emergency"] },
+  { id: "pet_care",             label: "Pet Care",      emoji: "🐾", desc: "Dog walking, pet sitting, animal care", cats: ["other"] },
+  // Food & Farm
+  { id: "grocery_shopping",     label: "Grocery Shopping", emoji: "🛒", desc: "Experienced shopper who knows how to get the most for a budget", cats: ["groceries"] },
+  { id: "cooking",              label: "Cooking",       emoji: "🍳", desc: "Meal prep, cooking for families, food handling certified", cats: ["other","event_setup"] },
+  { id: "food_handler",         label: "Food Handler",  emoji: "🍽️", desc: "Safe food preparation and handling certified", cats: ["errands","event_setup","local_farm"] },
+  // Community & Language
+  { id: "bilingual",            label: "Bilingual",     emoji: "🌐", desc: "Spanish, Swahili, Somali, or other language support", cats: ["groceries","errands","medical"] },
+  { id: "translation",          label: "Translation",   emoji: "🌍", desc: "Interpretation and document translation services", cats: ["other","medical","errands"] },
+  { id: "tutoring",             label: "Tutoring",      emoji: "📚", desc: "Academic help for kids and adults", cats: ["other"] },
+  { id: "tech_support",         label: "Tech Support",  emoji: "💻", desc: "Computer setup, smartphone help, device troubleshooting", cats: ["tech_support"] },
 ];
 
 const CAT_LABELS: Record<string, string> = {
@@ -398,6 +425,7 @@ const CAT_LABELS: Record<string, string> = {
   home_repair: "Home Repair", medical: "Medical", emergency: "Emergency",
   stock_shelves: "Stocking", event_setup: "Events", delivery_run: "Delivery",
   tech_support: "Tech", other: "General",
+  local_farm: "Farm Pickup", food_pantry: "Food Pantry",
 };
 
 function SkillsMarketplaceTab() {

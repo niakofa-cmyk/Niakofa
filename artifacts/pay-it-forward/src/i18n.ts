@@ -36,6 +36,12 @@ const en = {
     home_repair: "Home Repair",
     medical: "Medical",
     emergency: "Emergency",
+    local_farm: "Farm / CSA Pickup",
+    food_pantry: "Food Pantry Run",
+    stock_shelves: "Stock Shelves",
+    event_setup: "Event Setup",
+    delivery_run: "Delivery Run",
+    tech_support: "Tech Support",
     other: "Other",
   },
   urgency: {

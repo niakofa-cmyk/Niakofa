@@ -22,19 +22,22 @@ type PaymentType = "immediate" | "pay_it_forward" | "goodwill";
 
 const CATEGORIES = [
   // Community
-  { value: "groceries",      label: "🛒 Groceries",       group: "Community" },
-  { value: "transportation", label: "🚗 Transportation",   group: "Community" },
-  { value: "errands",        label: "📦 Errands",          group: "Community" },
-  { value: "home_repair",    label: "🔧 Home Repair",      group: "Community" },
-  { value: "medical",        label: "💊 Medical",          group: "Community" },
-  { value: "emergency",      label: "🚨 Emergency",        group: "Community" },
+  { value: "groceries",      label: "🛒 Groceries",         group: "Community" },
+  { value: "transportation", label: "🚗 Transportation",     group: "Community" },
+  { value: "errands",        label: "📦 Errands",            group: "Community" },
+  { value: "home_repair",    label: "🔧 Home Repair",        group: "Community" },
+  { value: "medical",        label: "💊 Medical",            group: "Community" },
+  { value: "emergency",      label: "🚨 Emergency",          group: "Community" },
+  // Food & Farm
+  { value: "local_farm",     label: "🌱 Farm / CSA Pickup",  group: "Food & Farm" },
+  { value: "food_pantry",    label: "🍱 Food Pantry Run",    group: "Food & Farm" },
   // Business
-  { value: "stock_shelves",  label: "📦 Stock Shelves",    group: "Business" },
-  { value: "event_setup",    label: "🎪 Event Setup",      group: "Business" },
-  { value: "delivery_run",   label: "🚚 Delivery Run",     group: "Business" },
-  { value: "tech_support",   label: "💻 Tech Support",     group: "Business" },
+  { value: "stock_shelves",  label: "📦 Stock Shelves",      group: "Business" },
+  { value: "event_setup",    label: "🎪 Event Setup",        group: "Business" },
+  { value: "delivery_run",   label: "🚚 Delivery Run",       group: "Business" },
+  { value: "tech_support",   label: "💻 Tech Support",       group: "Business" },
   // Catch-all
-  { value: "other",          label: "📋 Other",            group: "Community" },
+  { value: "other",          label: "📋 Other",              group: "Community" },
 ] as const;
 
 type CategoryValue = typeof CATEGORIES[number]["value"];
@@ -44,6 +47,7 @@ const formSchema = z.object({
   description: z.string().optional(),
   category: z.enum([
     "groceries", "transportation", "errands", "home_repair", "medical", "emergency",
+    "local_farm", "food_pantry",
     "stock_shelves", "event_setup", "delivery_run", "tech_support", "other",
   ]),
   urgency: z.enum(["low", "medium", "high", "emergency"]),
@@ -76,6 +80,7 @@ const PAYMENT_OPTIONS: { type: PaymentType; label: string; desc: string; color: 
 ];
 
 const COMMUNITY_CATS = CATEGORIES.filter(c => c.group === "Community");
+const FARM_CATS = CATEGORIES.filter(c => c.group === "Food & Farm");
 const BUSINESS_CATS = CATEGORIES.filter(c => c.group === "Business");
 
 const DRAFT_KEY = "niakofa_request_draft";

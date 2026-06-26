@@ -38,14 +38,17 @@ interface RecurringRequest {
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const CATEGORIES = [
-  { value: "groceries", label: "🛒 Groceries" },
-  { value: "ride",      label: "🚗 Ride" },
-  { value: "errand",    label: "📦 Errand" },
-  { value: "tech",      label: "💻 Tech Help" },
-  { value: "meal",      label: "🍽️ Meal" },
-  { value: "moving",    label: "📦 Moving" },
-  { value: "childcare", label: "👶 Childcare" },
-  { value: "other",     label: "💙 Other" },
+  { value: "groceries",      label: "🛒 Groceries" },
+  { value: "transportation", label: "🚗 Transportation" },
+  { value: "errands",        label: "📦 Errands" },
+  { value: "medical",        label: "💊 Medical" },
+  { value: "local_farm",     label: "🌱 Farm / CSA Pickup" },
+  { value: "food_pantry",    label: "🍱 Food Pantry Run" },
+  { value: "tech_support",   label: "💻 Tech Help" },
+  { value: "delivery_run",   label: "🚚 Delivery" },
+  { value: "childcare",      label: "👶 Childcare" },
+  { value: "home_repair",    label: "🔧 Home Repair" },
+  { value: "other",          label: "💙 Other" },
 ];
 const PAYMENT_TYPES = [
   { value: "goodwill",       label: "💙 Goodwill" },
