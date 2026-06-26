@@ -1,4 +1,5 @@
-import { pgTable, text, timestamp, sql } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 /**
  * system_settings — key/value store for global app configuration.
