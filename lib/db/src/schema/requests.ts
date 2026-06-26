@@ -16,6 +16,7 @@ export const requestUrgencyEnum = pgEnum("help_request_urgency", [
 export const requestCategoryEnum = pgEnum("help_request_category", [
   "groceries", "transportation", "errands", "home_repair", "medical", "emergency",
   "other", "stock_shelves", "event_setup", "delivery_run", "tech_support",
+  "local_farm", "food_pantry",
 ]);
 export const requestPaymentTypeEnum = pgEnum("help_request_payment_type", [
   "immediate", "pay_it_forward", "goodwill",

@@ -20,7 +20,7 @@ const createRecurringSchema = z.object({
   title: z.string().min(3).max(120),
   description: z.string().max(500).optional(),
   // BUG-H09: must match requestCategoryEnum exactly (DB pgEnum)
-  category: z.enum(["groceries", "transportation", "errands", "home_repair", "medical", "emergency", "other", "stock_shelves", "event_setup", "delivery_run", "tech_support"]).default("other"),
+  category: z.enum(["groceries", "transportation", "errands", "home_repair", "medical", "emergency", "other", "stock_shelves", "event_setup", "delivery_run", "tech_support", "local_farm", "food_pantry"]).default("other"),
   payment_type: z.enum(["immediate", "pay_it_forward", "goodwill"]).default("goodwill"),
   pay_it_forward_amount: z.number().min(1).max(500).optional(),
   lat: z.number().min(-90).max(90),
@@ -414,7 +414,7 @@ export async function processRecurringRequests(): Promise<void> {
       const [newReq] = await db.insert(requestsTable).values({
         title: sub.title,
         description: sub.description ?? undefined,
-        category: sub.category as "groceries" | "transportation" | "errands" | "home_repair" | "medical" | "emergency" | "other" | "stock_shelves" | "event_setup" | "delivery_run" | "tech_support",
+        category: sub.category as "groceries" | "transportation" | "errands" | "home_repair" | "medical" | "emergency" | "other" | "stock_shelves" | "event_setup" | "delivery_run" | "tech_support" | "local_farm" | "food_pantry",
         urgency: "medium",
         status: "open",
         payment_type: sub.payment_type as "immediate" | "pay_it_forward" | "goodwill",

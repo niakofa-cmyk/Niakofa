@@ -55,7 +55,7 @@ const SKILL_CATEGORY_MAP: Record<string, string[]> = {
   electrical:           ["home_repair"],
   carpentry:            ["home_repair", "event_setup"],
   painting:             ["home_repair"],
-  yard_work:            ["home_repair", "other"],
+  yard_work:            ["home_repair", "other", "local_farm"],
   heavy_lifting:        ["home_repair", "delivery_run", "event_setup"],
   drives_truck:         ["transportation", "delivery_run", "stock_shelves", "errands"],
   cdl_driver:           ["transportation", "delivery_run"],
@@ -67,7 +67,8 @@ const SKILL_CATEGORY_MAP: Record<string, string[]> = {
   tutoring:             ["other"],
   translation:          ["other", "medical", "errands"],
   pet_care:             ["other"],
-  food_delivery:        ["delivery_run", "groceries"],
+  food_delivery:        ["groceries", "delivery_run", "local_farm"],
+  food_handler:         ["errands", "event_setup", "local_farm", "food_pantry"],
   event_setup:          ["event_setup"],
   emergency_first_aid:  ["emergency", "medical"],
 };
@@ -75,7 +76,7 @@ const SKILL_CATEGORY_MAP: Record<string, string[]> = {
 const CATEGORY_WEIGHT: Record<string, number> = {
   emergency: 30, medical: 20, home_repair: 5, groceries: 3,
   transportation: 3, errands: 2, stock_shelves: 2, event_setup: 2,
-  delivery_run: 2, tech_support: 2, other: 0,
+  delivery_run: 2, tech_support: 2, food_pantry: 3, local_farm: 2, other: 0,
 };
 
 function pickBestMatch(

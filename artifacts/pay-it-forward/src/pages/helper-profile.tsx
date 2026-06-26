@@ -18,7 +18,7 @@ const SKILL_ICONS: Record<string, string> = {
   yard_work: "🌿", heavy_lifting: "💪", drives_truck: "🚛", cdl_driver: "🚚",
   grocery_shopping: "🛒", cooking: "🍳", childcare: "👶", elder_care: "🧓",
   medical_support: "💊", tech_support: "💻", tutoring: "📚", translation: "🌍",
-  pet_care: "🐾", food_delivery: "🍔", event_setup: "🎪", emergency_first_aid: "🚑",
+  pet_care: "🐾", food_delivery: "🍔", event_setup: "🎪", emergency_first_aid: "🚑", food_handler: "🍽️",
   // legacy specialties
   Groceries: "🛒", Transportation: "🚗", "Tech Help": "💻",
   "Home Repair": "🔧", Medical: "💊", Errands: "📦",

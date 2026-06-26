@@ -113,6 +113,8 @@ export const HelpRequestCategory = {
   stock_shelves: 'stock_shelves',
   event_setup: 'event_setup',
   tech_support: 'tech_support',
+  local_farm: 'local_farm',
+  food_pantry: 'food_pantry',
 } as const;
 
 export type HelpRequestUrgency = typeof HelpRequestUrgency[keyof typeof HelpRequestUrgency];
@@ -211,6 +213,8 @@ export const HelpRequestInputCategory = {
   stock_shelves: 'stock_shelves',
   event_setup: 'event_setup',
   tech_support: 'tech_support',
+  local_farm: 'local_farm',
+  food_pantry: 'food_pantry',
 } as const;
 
 export type HelpRequestInputUrgency = typeof HelpRequestInputUrgency[keyof typeof HelpRequestInputUrgency];

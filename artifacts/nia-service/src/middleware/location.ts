@@ -87,6 +87,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   event_setup: "event setup",
   delivery_run: "a delivery",
   tech_support: "tech support",
+  local_farm: "a farm or CSA pickup",
+  food_pantry: "a food pantry run",
 };
 
 const STATUS_LABELS: Record<string, string> = {

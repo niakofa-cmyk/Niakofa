@@ -16,7 +16,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   groceries: "🛒 Groceries", transportation: "🚗 Transportation", errands: "📦 Errands",
   home_repair: "🔧 Home Repair", medical: "💊 Medical", emergency: "🚨 Emergency",
   stock_shelves: "📦 Stock", event_setup: "🎪 Event", delivery_run: "🚚 Delivery",
-  tech_support: "💻 Tech", other: "💙 Other",
+  tech_support: "💻 Tech", other: "💙 Other", local_farm: "🌱 Farm Pickup", food_pantry: "🍱 Food Pantry",
 };
 
 const URGENCY_COLORS: Record<string, string> = {
@@ -27,16 +27,31 @@ const URGENCY_COLORS: Record<string, string> = {
 };
 
 const ALL_SKILLS = [
-  { id: "bilingual",            label: "Bilingual",     emoji: "🌐" },
-  { id: "truck_owner",          label: "Truck Owner",   emoji: "🚛" },
-  { id: "medical_background",   label: "Medical",       emoji: "🏥" },
-  { id: "licensed_electrician", label: "Electrician",   emoji: "⚡" },
-  { id: "licensed_plumber",     label: "Plumber",       emoji: "🔧" },
-  { id: "carpenter",            label: "Carpenter",     emoji: "🪚" },
-  { id: "tech_support",         label: "Tech Support",  emoji: "💻" },
-  { id: "cdl_driver",           label: "CDL Driver",    emoji: "🚛" },
-  { id: "food_handler",         label: "Food Handler",  emoji: "🍽️" },
-  { id: "childcare",            label: "Childcare",     emoji: "👶" },
+  { id: "bilingual",            label: "Bilingual",       emoji: "🌐" },
+  { id: "translation",          label: "Translation",     emoji: "🌍" },
+  { id: "truck_owner",          label: "Truck Owner",     emoji: "🚛" },
+  { id: "drives_truck",         label: "Drives Truck",    emoji: "🚛" },
+  { id: "cdl_driver",           label: "CDL Driver",      emoji: "🚚" },
+  { id: "food_delivery",        label: "Food Delivery",   emoji: "🛵" },
+  { id: "medical_background",   label: "Medical",         emoji: "🏥" },
+  { id: "medical_support",      label: "Medical Support", emoji: "💊" },
+  { id: "elder_care",           label: "Elder Care",      emoji: "🧓" },
+  { id: "pet_care",             label: "Pet Care",        emoji: "🐾" },
+  { id: "childcare",            label: "Childcare",       emoji: "👶" },
+  { id: "licensed_electrician", label: "Electrician",     emoji: "⚡" },
+  { id: "electrical",           label: "Electrical",      emoji: "⚡" },
+  { id: "licensed_plumber",     label: "Plumber",         emoji: "🔧" },
+  { id: "plumbing",             label: "Plumbing",        emoji: "🔧" },
+  { id: "carpenter",            label: "Carpenter",       emoji: "🪚" },
+  { id: "carpentry",            label: "Carpentry",       emoji: "🪚" },
+  { id: "painting",             label: "Painting",        emoji: "🎨" },
+  { id: "yard_work",            label: "Yard Work",       emoji: "🌿" },
+  { id: "heavy_lifting",        label: "Heavy Lifting",   emoji: "💪" },
+  { id: "tech_support",         label: "Tech Support",    emoji: "💻" },
+  { id: "grocery_shopping",     label: "Grocery Shopping",emoji: "🛒" },
+  { id: "cooking",               label: "Cooking",        emoji: "🍳" },
+  { id: "food_handler",         label: "Food Handler",    emoji: "🍽️" },
+  { id: "tutoring",              label: "Tutoring",       emoji: "📚" },
 ];
 
 type FilterKey = "all" | "emergency" | "near";
