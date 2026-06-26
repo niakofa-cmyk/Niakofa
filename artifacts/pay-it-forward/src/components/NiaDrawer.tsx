@@ -850,9 +850,10 @@ export function NiaFab({ onClick }: { onClick: () => void }) {
 interface NiaLoginOrbProps {
   killswitch?: boolean;
   onLoginPrompt?: () => void;
+  size?: number;
 }
 
-export function NiaLoginOrb({ killswitch = true, onLoginPrompt }: NiaLoginOrbProps) {
+export function NiaLoginOrb({ killswitch = true, onLoginPrompt, size = 44 }: NiaLoginOrbProps) {
   const [detached, setDetached] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [showTooltip, setShowTooltip] = useState(false);
@@ -860,7 +861,7 @@ export function NiaLoginOrb({ killswitch = true, onLoginPrompt }: NiaLoginOrbPro
   const orbRef = useRef<HTMLDivElement>(null);
   const didDragRef = useRef(false);
   const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const SIZE = 44;
+  const SIZE = size;
 
   const handlePointerDown = (e: React.PointerEvent) => {
     e.currentTarget.setPointerCapture(e.pointerId);

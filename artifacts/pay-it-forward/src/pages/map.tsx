@@ -13,7 +13,7 @@ import {
 import type { HelpRequest, HelperLocation } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { TopBar } from "@/components/TopBar";
-import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
+import { NiaDrawer } from "@/components/NiaDrawer";
 import { BottomSheet } from "@/components/BottomSheet";
 import { RequestMarker } from "@/components/RequestMarker";
 import { HelperMarker } from "@/components/HelperMarker";
@@ -1056,11 +1056,6 @@ export default function MapScreen() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {/* Nia FAB — only when killswitch is on */}
-      {niaEnabled && (
-        <NiaFab onClick={() => openNia()} />
-      )}
-
       {/* Nia Drawer */}
       <NiaDrawer
         open={niaOpen}
