@@ -92,6 +92,16 @@ router.post(
         typeof body.liveContext === "object" && body.liveContext !== null
           ? body.liveContext
           : null,
+      // Phase 7a: voice wake word context — language and activation flag
+      voiceActivated: body.voiceActivated === true,
+      wakeWordLanguage:
+        typeof body.wakeWordLanguage === "string" ? body.wakeWordLanguage : undefined,
+      // Phase 7c: food intent signal — detected client-side, forwarded so
+      // nia-service can inject the precision food directive into the system prompt
+      foodSignal:
+        typeof body.foodSignal === "string" ? body.foodSignal : undefined,
+      foodSignalCount:
+        typeof body.foodSignalCount === "number" ? body.foodSignalCount : undefined,
     });
 
     try {
