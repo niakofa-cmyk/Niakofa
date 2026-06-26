@@ -1,1 +1,0 @@
-pbpaste > artifacts/pay-it-forward/src/pages/login.tsx
