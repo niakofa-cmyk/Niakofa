@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, helperAvailabilityTable } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import {
   GetUserParams,
   UpdateUserParams,
@@ -17,7 +17,7 @@ import {
   CreateScheduledPaymentBody,
   GetScheduledPaymentsParams,
 } from "@workspace/api-zod";
-import { broadcast } from "../lib/ws-hub";
+import { broadcast, sendToUser } from "../lib/ws-hub";
 import { authLimiter, gpsLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
@@ -134,10 +134,42 @@ router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter,
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
   if (user.helper_mode_active) {
-    broadcast({
-      type: "helper_location",
-      payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng, heading: user.heading },
-    });
+    // Privacy enforcement: only send live location to users who have consented
+    // (privacy_live_location = true) AND are actively tracking this helper.
+    // The old broadcast() here sent coordinates to every connected WebSocket
+    // client regardless of privacy setting. helpers.ts only filtered the
+    // initial GET /helpers/online fetch — not live GPS updates.
+    const [helperSettings] = await db
+      .select({ privacy_live_location: userSettingsTable.privacy_live_location })
+      .from(userSettingsTable)
+      .where(eq(userSettingsTable.user_id, user.id))
+      .limit(1);
+
+    if (helperSettings?.privacy_live_location) {
+      const activeRequests = await db
+        .select({ requester_id: requestsTable.requester_id })
+        .from(requestsTable)
+        .where(
+          and(
+            eq(requestsTable.helper_id, user.id),
+            inArray(requestsTable.status, ["open", "en_route", "arrived"])
+          )
+        );
+
+      const locationEvent = {
+        type: "helper_location" as const,
+        payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng, heading: user.heading },
+      };
+
+      const requesterIds = activeRequests
+        .map(r => r.requester_id)
+        .filter((id): id is number => id !== null);
+
+      for (const requesterId of requesterIds) {
+        sendToUser(requesterId, locationEvent);
+      }
+      sendToUser(user.id, locationEvent);
+    }
   }
   // BUG-C03: strip password_hash before returning
   const { password_hash: _phLoc, ...safeLocUser } = user;
