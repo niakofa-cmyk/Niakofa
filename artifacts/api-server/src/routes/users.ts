@@ -468,6 +468,9 @@ router.get("/users", requireAuth, requireAdmin(), adminLimiter, async (_req, res
     is_helper: usersTable.is_helper,
     trust_score: usersTable.trust_score,
     help_count: usersTable.help_count,
+    is_suspended: usersTable.is_suspended,
+    suspended_at: usersTable.suspended_at,
+    suspended_reason: usersTable.suspended_reason,
     created_at: usersTable.created_at,
   }).from(usersTable).limit(200);
   return res.json(users);
