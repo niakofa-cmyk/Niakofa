@@ -99,7 +99,7 @@ async function runCleanup(_job: Job): Promise<void> {
     );
   if (missingTimestamp.length > 0) {
     logger.error(
-      { count: missingTimestamp.length, ids: missingTimestamp.map(r => r.id) },
+      { count: missingTimestamp.length, ids: missingTimestamp.map((r: Record<string, unknown>) => r.id) },
       "cleanup-worker: data integrity — claimed requests with NULL claimed_at"
     );
   }
