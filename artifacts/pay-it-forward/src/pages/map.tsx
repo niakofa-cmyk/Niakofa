@@ -833,30 +833,6 @@ export default function MapScreen() {
           </div>
         )}
 
-                {/* Request density heatmap — Phase 10E */}
-        {showDensity && requestDensityGeoJSON.features.length > 0 && (
-          <Source id="request-density" type="geojson" data={requestDensityGeoJSON}>
-            <Layer
-              id="request-density-layer"
-              type="heatmap"
-              paint={{
-                "heatmap-weight": ["interpolate", ["linear"], ["get", "weight"], 0, 0, 1, 1],
-                "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 1, 15, 3],
-                "heatmap-color": [
-                  "interpolate", ["linear"], ["heatmap-density"],
-                  0,   "rgba(0,0,0,0)",
-                  0.2, "rgba(255,60,0,0.25)",
-                  0.5, "rgba(255,100,0,0.55)",
-                  0.8, "rgba(255,180,0,0.8)",
-                  1.0, "rgba(255,255,100,1)"
-                ],
-                "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 18, 15, 40],
-                "heatmap-opacity": 0.68,
-              }}
-            />
-          </Source>
-        )}
-
         {/* Request clusters — shown when zoom < 13, individual markers at zoom >= 13 */}
         <Source
           id="request-clusters"
@@ -997,23 +973,6 @@ export default function MapScreen() {
       )}
 
       {/* Request density toggle button — Phase 10E */}
-      {webGLSupported && !mapError && (
-        <button
-          onClick={() => setShowDensity(v => !v)}
-          title={showDensity ? "Hide request density" : "Show request density heatmap"}
-          aria-label={showDensity ? "Hide request density" : "Show request density heatmap"}
-          aria-pressed={showDensity}
-          className={`absolute bottom-40 right-4 z-10 w-11 h-11 rounded-xl border flex items-center justify-center shadow-lg transition-all ${
-            showDensity
-              ? "bg-primary text-primary-foreground border-primary"
-              : "bg-card/90 backdrop-blur-sm border-border text-muted-foreground hover:border-primary/50"
-          }`}
-        >
-          <Activity className="w-4 h-4" />
-        </button>
-      )}
-
-            {/* Request density toggle button — Phase 10E */}
       {webGLSupported && !mapError && (
         <button
           onClick={() => setShowDensity(v => !v)}

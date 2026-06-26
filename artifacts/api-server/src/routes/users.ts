@@ -148,6 +148,22 @@ router.patch("/users/:id/helper-mode", requireAuth, requireOwnership(), async (r
   const pParsed = UpdateHelperModeParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = UpdateHelperModeBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
+
+  // The Settings/Profile screens already hide the "Go Online" toggle from
+  // anyone who isn't an approved helper, but that's a client-side
+  // convenience, not enforcement — without this check, a direct API call
+  // could flip helper_mode_active on for an unapproved account, and every
+  // other system (push targeting, the map's online-helpers query,
+  // auto-assign) trusts that flag alone with no second check of
+  // helper_status. This is the actual enforcement boundary.
+  if (bParsed.data.active) {
+    const [existing] = await db.select({ helper_status: usersTable.helper_status })
+      .from(usersTable).where(eq(usersTable.id, pParsed.data.id)).limit(1);
+    if (existing?.helper_status !== "approved") {
+      return res.status(403).json({ error: "Only approved helpers can go online. Apply to become a helper in your profile first." });
+    }
+  }
+
   const [user] = await db.update(usersTable)
     .set({ helper_mode_active: bParsed.data.active })
     .where(eq(usersTable.id, pParsed.data.id))
