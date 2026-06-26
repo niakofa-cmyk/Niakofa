@@ -795,6 +795,9 @@ export function NiaDrawer({
 }
 
 export function NiaFab({ onClick }: { onClick: () => void }) {
+  // NiaFab renders inline — the caller is responsible for positioning.
+  // Do NOT add position:fixed here; that caused the N-button to appear
+  // in the bottom-right corner of every map screen (BUG fixed 2026-06-26).
   return (
     <motion.button
       onClick={onClick}
@@ -802,10 +805,6 @@ export function NiaFab({ onClick }: { onClick: () => void }) {
       whileHover={{ scale: 1.07 }}
       whileTap={{ scale: 0.94 }}
       style={{
-        position: "fixed",
-        bottom: 80,
-        right: 18,
-        zIndex: 9997,
         width: 56,
         height: 56,
         borderRadius: "50%",

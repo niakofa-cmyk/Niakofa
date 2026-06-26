@@ -21,7 +21,7 @@ import { eq, and, isNull, sql } from "drizzle-orm";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
 
-const NIA_SERVICE_URL = process.env.NIA_SERVICE_URL ?? "http://localhost:4001";
+const NIA_SERVICE_URL = process.env.NIA_SERVICE_URL ?? "http://localhost:3001";
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;

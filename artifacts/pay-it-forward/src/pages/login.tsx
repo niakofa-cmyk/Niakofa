@@ -803,16 +803,24 @@ export default function LoginScreen() {
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col">
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-12 pb-8">
+      {/* ── Topbar — Nia orb centered ───────────────────────────────────────── */}
+      <div className="relative flex items-center justify-center px-6 pt-safe pt-4 pb-3 border-b border-border/40">
+        <motion.div
+          initial={{ scale: 0.7, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 220, damping: 22 }}
+        >
+          <NiaLoginOrb killswitch={niaEnabled} size={56} />
+        </motion.div>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-8 pb-8">
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: "spring", stiffness: 200, damping: 20 }}
           className="flex flex-col items-center mb-8"
         >
-          <div className="mb-4 flex items-center justify-center">
-            <NiaLoginOrb killswitch={niaEnabled} size={72} />
-          </div>
           <h1 className="text-3xl font-black tracking-tight text-foreground">Niakofa</h1>
           <p className="text-sm text-muted-foreground mt-1 text-center max-w-xs">
             Help Today. Pay It Forward Tomorrow.
