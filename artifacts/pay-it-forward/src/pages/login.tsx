@@ -803,18 +803,27 @@ export default function LoginScreen() {
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col">
-      {/* ── Topbar — Nia orb centered ───────────────────────────────────────── */}
-      <div className="relative flex items-center justify-center px-6 pt-safe pt-4 pb-3 border-b border-border/40">
+      {/* ── Topbar — Nia orb pinned top-center ── */}
+      <div
+        className="relative flex items-center justify-center w-full"
+        style={{ height: 88, paddingTop: "env(safe-area-inset-top, 0px)" }}
+      >
+        <div style={{
+          position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)",
+          width: 120, height: 120, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(29,158,117,0.18) 0%, transparent 70%)",
+          pointerEvents: "none",
+        }} />
         <motion.div
-          initial={{ scale: 0.7, opacity: 0 }}
+          initial={{ scale: 0.6, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 220, damping: 22 }}
+          transition={{ type: "spring", stiffness: 220, damping: 20 }}
         >
-          <NiaLoginOrb killswitch={niaEnabled} size={56} />
+          <NiaLoginOrb killswitch={niaEnabled} size={70} />
         </motion.div>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-8 pb-8">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-2 pb-8">
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -825,6 +834,15 @@ export default function LoginScreen() {
           <p className="text-sm text-muted-foreground mt-1 text-center max-w-xs">
             Help Today. Pay It Forward Tomorrow.
           </p>
+          <motion.p
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5, duration: 0.6 }}
+            className="text-xs mt-2 font-medium"
+            style={{ color: "#1D9E75" }}
+          >
+            Sawubona — I see you. Tap Nia to chat.
+          </motion.p>
         </motion.div>
 
         {/* Mode toggle */}
