@@ -803,13 +803,87 @@ export default function LoginScreen() {
           transition={{ type: "spring", stiffness: 200, damping: 20 }}
           className="flex flex-col items-center mb-8"
         >
-          {/* Nia orb — topbar center */}
-          <div style={{ position: "relative", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ position: "absolute", inset: -24, borderRadius: "50%", background: "radial-gradient(circle, rgba(29,158,117,0.30) 0%, rgba(29,158,117,0.10) 50%, transparent 72%)", pointerEvents: "none" }} />
-            <button onClick={() => setNiaOpen(true)} aria-label="Open Nia" style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>
-              <NiaOrb size={70} pulse />
-            </button>
-          </div>
+          {/* ── Nia full sparkle orb — login topbar center ── */}
+          <motion.button
+            initial={{ scale: 0.7, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 220, damping: 18 }}
+            onClick={() => setNiaOpen(true)}
+            aria-label="Open Nia — your community assistant"
+            style={{ background: "none", border: "none", padding: 0, cursor: "pointer",
+              position: "relative", width: 70, height: 70, marginBottom: 20, flexShrink: 0 }}
+          >
+            {/* Layer 1: Far outer aura */}
+            <motion.div
+              animate={{ scale: [1, 1.8, 1], opacity: [0.22, 0, 0.22] }}
+              transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
+              style={{ position: "absolute", inset: -18, borderRadius: "50%",
+                background: "radial-gradient(circle, rgba(29,158,117,0.5) 0%, rgba(29,158,117,0.15) 50%, transparent 75%)",
+                pointerEvents: "none" }}
+            />
+            {/* Layer 2: Heartbeat ring */}
+            <motion.div
+              animate={{ scale: [1, 1.45, 1], opacity: [0.55, 0, 0.55] }}
+              transition={{ duration: 2.2, repeat: Infinity, ease: [0.2, 0, 0.8, 1], delay: 0.3 }}
+              style={{ position: "absolute", inset: -5, borderRadius: "50%",
+                border: "1.5px solid rgba(93,202,165,0.7)", pointerEvents: "none" }}
+            />
+            {/* Layer 3: Secondary slower ring */}
+            <motion.div
+              animate={{ scale: [1, 1.25, 1], opacity: [0.4, 0, 0.4] }}
+              transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut", delay: 1.1 }}
+              style={{ position: "absolute", inset: -2, borderRadius: "50%",
+                border: "1px solid rgba(93,202,165,0.45)", pointerEvents: "none" }}
+            />
+            {/* Layer 4: Main orb body */}
+            <motion.div
+              animate={{ scale: [1, 1.05, 1, 1.03, 1], y: [0, 5, 3, 7, 4, 0] }}
+              transition={{
+                scale: { duration: 2.6, repeat: Infinity, ease: [0.4, 0, 0.6, 1], times: [0, 0.25, 0.5, 0.75, 1] },
+                y: { duration: 4.2, repeat: Infinity, ease: "easeInOut" },
+              }}
+              style={{ position: "absolute", inset: 0, borderRadius: "50%",
+                background: "linear-gradient(140deg, #30D9A0 0%, #1D9E75 30%, #0E7A5A 65%, #085041 100%)",
+                border: "2px solid rgba(93,202,165,0.55)",
+                boxShadow: "0 8px 36px rgba(10,61,46,0.65), 0 2px 10px rgba(10,61,46,0.4), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -2px 6px rgba(0,0,0,0.2), 0 0 0 1px rgba(29,158,117,0.2)",
+                overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center",
+                pointerEvents: "none" }}
+            >
+              {/* Inner rotating shimmer */}
+              <motion.div
+                animate={{ rotate: [0, 360] }}
+                transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                style={{ position: "absolute", inset: 0, borderRadius: "50%",
+                  background: "conic-gradient(from 0deg, transparent 0%, rgba(255,255,255,0.18) 20%, transparent 40%, rgba(255,255,255,0.08) 60%, transparent 80%)",
+                  pointerEvents: "none" }}
+              />
+              {/* Glint */}
+              <div style={{ position: "absolute", top: 6, left: 10, width: 18, height: 10,
+                borderRadius: "50%", background: "rgba(255,255,255,0.22)", filter: "blur(3px)", pointerEvents: "none" }} />
+              {/* N lettermark */}
+              <motion.span
+                animate={{ textShadow: ["0 1px 8px rgba(0,0,0,0.35)", "0 1px 16px rgba(0,200,140,0.5)", "0 1px 8px rgba(0,0,0,0.35)"] }}
+                transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
+                style={{ fontSize: 28, fontWeight: 800, color: "#E8FFF6", fontFamily: "var(--font-sans)",
+                  letterSpacing: "-0.01em", userSelect: "none", lineHeight: 1, pointerEvents: "none",
+                  position: "relative", zIndex: 1 }}
+              >N</motion.span>
+            </motion.div>
+            {/* Layer 5: Orbiting sparkle particles */}
+            {[0, 72, 144, 216, 288].map((deg, i) => (
+              <motion.div
+                key={i}
+                animate={{ opacity: [0, 0.9, 0.6, 0], scale: [0, 1.2, 0.8, 0],
+                  x: [0, Math.round(Math.cos((deg * Math.PI) / 180) * 40)],
+                  y: [0, Math.round(Math.sin((deg * Math.PI) / 180) * 40)] }}
+                transition={{ duration: 2.8, repeat: Infinity, delay: i * 0.55, ease: "easeOut", times: [0, 0.4, 0.7, 1] }}
+                style={{ position: "absolute", top: "50%", left: "50%", width: 5, height: 5,
+                  marginTop: -2.5, marginLeft: -2.5, borderRadius: "50%",
+                  background: i % 2 === 0 ? "#5DCAA5" : "#A8F0D8",
+                  boxShadow: "0 0 4px rgba(93,202,165,0.8)", pointerEvents: "none" }}
+              />
+            ))}
+          </motion.button>
           <h1 className="text-3xl font-black tracking-tight text-foreground">Niakofa</h1>
           <p className="text-sm text-muted-foreground mt-1 text-center max-w-xs">
             Help Today. Pay It Forward Tomorrow.
