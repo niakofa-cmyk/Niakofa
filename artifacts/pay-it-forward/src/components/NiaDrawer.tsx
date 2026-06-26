@@ -1,71 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown, Mic, Volume2, Square } from "lucide-react";
+import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown, Mic } from "lucide-react";
 import { authHeaders } from "../lib/auth";
-import { useVoiceWakeWord } from "../hooks/useVoiceWakeWord";
-import { VoiceWakeWordIndicator, VoicePulseIndicator } from "./VoiceWakeWordIndicator";
-import { detectUserLanguage, getProfile, getCareGreeting, CulturalLanguage, getTimeOfDay } from "../lib/culturalGreetings";
-import { detectFoodIntent, buildFoodResourceMessage, recordFoodSignal, markFoodResourcesShown, foodResourcesAlreadyShown, getFoodSignalCount } from "../lib/foodIntent";
-import { useNiaTTS } from "../hooks/useNiaTTS";
 
-
-// All Nia traffic routes through the API server proxy at /api/nia/...
-// No hardcoded external URL — the api-server forwards to the nia-service.
+const NIA_SERVICE_URL = import.meta.env.VITE_NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app";
 const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
-// Phase 7c: time-of-day aware welcome phrases
-function getWelcomePhrases(): string[] {
-  const tod = getTimeOfDay();
-  const phrases: Record<string, string[]> = {
-    morning: [
-      "Habari ya asubuhi — good morning.",
-      "Akwaaba — you are welcome here.",
-      "Wasuze otya nno — how did you sleep?",
-      "Ubuntu — I am because we are.",
-    ],
-    afternoon: [
-      "Sawubona — I see you.",
-      "Akwaaba — you are welcome here.",
-      "Pamoja — together, we rise.",
-      "Ubuntu — I am because we are.",
-    ],
-    evening: [
-      "Sawubona — I see you tonight.",
-      "Akwaaba — you are welcome here.",
-      "Usiku wa amani — peace in the evening.",
-      "Ubuntu — I am because we are.",
-    ],
-    night: [
-      "Sawubona — I see you.",
-      "You are not alone in this.",
-      "Niko hapa — I am here.",
-      "Ubuntu — I am because we are.",
-    ],
-  };
-  return phrases[tod] ?? phrases.afternoon;
-}
-const WELCOME_PHRASES = getWelcomePhrases();
+const WELCOME_PHRASES = [
+  "Sawubona — I see you.",
+  "Akwaaba — you are welcome here.",
+  "Pamoja — together, we rise.",
+];
 
 const QUICK_PROMPTS = [
   { label: "🍽️ Find food near me", text: "Where can I find food assistance near me today?" },
   { label: "🏠 Need shelter", text: "I need emergency shelter. Can you help me find a place tonight?" },
   { label: "💙 I'm struggling", text: "I'm really struggling right now and don't know where to turn." },
-  { label: "📋 Benefits help", text: "Help me find out what benefits I qualify for." },
-  { label: "🤝 Become a helper", text: "I want to become a Niakofa helper. How do I get started and what should I know?" },
+  { label: "📋 Benefits help", text: "Help me find out what benefits I might qualify for." },
+  { label: "🤝 Want to help", text: "I want to help someone in my neighborhood. What requests are open near me?" },
   { label: "🗺️ What's nearby?", text: "What's happening in my community right now?" },
-  { label: "💳 Payment question", text: "I have a question about my wallet or a payment on my account." },
-  { label: "🌍 Need translation", text: "Can you help me communicate with a neighbor in a different language?" },
 ];
-
-
-// ── Parse [SUGGEST: ...] tags from Nia responses ─────────────────────────────
-function parseSuggestions(content: string): { text: string; suggestions: string[] } {
-  const match = content.match(/\[SUGGEST:\s*([^\]]+)\]/);
-  if (!match) return { text: content, suggestions: [] };
-  const suggestions = match[1].split("|").map((s) => s.trim()).filter(Boolean).slice(0, 3);
-  const text = content.replace(/\[SUGGEST:[^\]]+\]/, "").trimEnd();
-  return { text, suggestions };
-}
 
 function getSessionId(): string {
   let id = sessionStorage.getItem("nia_session_id");
@@ -101,15 +55,9 @@ interface NiaDrawerProps {
   helperModeActive?: boolean;
   activeRequestId?: string | number | null;
   accountType?: string | null;
-  // Phase 4: real match_reasons from lib/matching.ts, surfaced by
-  // helper-dashboard.tsx via AppContext when a helper is viewing open
-  // requests. Forwarded to the backend so Nia can explain a match using only
-  // real data, never invented reasons.
-  matchReasons?: string[] | null;
 }
 
 function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: boolean }) {
-
   return (
     <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
       {pulse && (
@@ -157,22 +105,14 @@ function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: boolean }
 function NiaWelcomeSplash({ onDone }: { onDone: () => void }) {
   const [phraseIndex, setPhraseIndex] = useState(0);
 
-  const onDoneRef = useRef(onDone);
-  useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
-
   useEffect(() => {
-    // Detect mobile to use faster timing so the splash feels snappy, not slow
-    const isMobile = window.matchMedia("(pointer: coarse)").matches;
-    const phraseDuration = isMobile ? 700 : 900;
     const timers: ReturnType<typeof setTimeout>[] = [];
     WELCOME_PHRASES.forEach((_, i) => {
-      timers.push(setTimeout(() => setPhraseIndex(i), i * phraseDuration));
+      timers.push(setTimeout(() => setPhraseIndex(i), i * 900));
     });
-    const total = WELCOME_PHRASES.length * phraseDuration + 400;
-    timers.push(setTimeout(() => onDoneRef.current(), total));
-    const safety = setTimeout(() => onDoneRef.current(), 4000);
-    return () => { timers.forEach(clearTimeout); clearTimeout(safety); };
-  }, []); // run once on mount only
+    timers.push(setTimeout(onDone, WELCOME_PHRASES.length * 900 + 400));
+    return () => timers.forEach(clearTimeout);
+  }, [onDone]);
 
   return (
     <motion.div
@@ -227,21 +167,8 @@ function NiaWelcomeSplash({ onDone }: { onDone: () => void }) {
   );
 }
 
-function MessageBubble({
-  msg,
-  isSpeaking,
-  onSpeak,
-  onSuggest,
-}: {
-  msg: Message;
-  isSpeaking?: boolean;
-  onSpeak?: () => void;
-  onSuggest?: (text: string) => void;
-}) {
+function MessageBubble({ msg }: { msg: Message }) {
   const isUser = msg.role === "user";
-  const { text: displayText, suggestions } = isUser || msg.streaming
-    ? { text: msg.content, suggestions: [] }
-    : parseSuggestions(msg.content);
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -269,29 +196,7 @@ function MessageBubble({
         color: isUser ? "#E1F5EE" : "var(--color-text-primary)",
         border: isUser ? "none" : "0.5px solid var(--color-border-tertiary)",
       }}>
-        {displayText}
-        {!isUser && !msg.streaming && msg.content && onSpeak && (
-          <button
-            onClick={onSpeak}
-            aria-label={isSpeaking ? "Stop playback" : "Listen to this message"}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 20,
-              height: 20,
-              marginLeft: 6,
-              verticalAlign: "middle",
-              background: "transparent",
-              border: "none",
-              cursor: "pointer",
-              color: isSpeaking ? "#1D9E75" : "var(--color-text-tertiary)",
-              padding: 0,
-            }}
-          >
-            {isSpeaking ? <Square size={13} /> : <Volume2 size={14} />}
-          </button>
-        )}
+        {msg.content}
         {msg.streaming && (
           <motion.span
             animate={{ opacity: [1, 0, 1] }}
@@ -308,31 +213,6 @@ function MessageBubble({
           />
         )}
       </div>
-      {!isUser && !msg.streaming && suggestions.length > 0 && onSuggest && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6, marginLeft: 34 }}>
-          {suggestions.map((s) => (
-            <button
-              key={s}
-              onClick={() => onSuggest(s)}
-              style={{
-                fontSize: 12,
-                padding: "6px 12px",
-                borderRadius: 20,
-                border: "1px solid rgba(29,158,117,0.4)",
-                background: "rgba(29,158,117,0.08)",
-                color: "#0A6B4E",
-                cursor: "pointer",
-                fontWeight: 600,
-                lineHeight: 1.3,
-                transition: "all 0.15s",
-                WebkitTapHighlightColor: "transparent",
-              }}
-            >
-              {s} →
-            </button>
-          ))}
-        </div>
-      )}
     </motion.div>
   );
 }
@@ -455,10 +335,9 @@ function QuickPrompts({ onSelect }: { onSelect: (text: string) => void }) {
         <button
           key={label}
           onClick={() => onSelect(text)}
-          className="nia-quick-prompt"
           style={{
-            fontSize: 13,
-            padding: "8px 14px",
+            fontSize: 12,
+            padding: "6px 12px",
             borderRadius: 20,
             border: "0.5px solid var(--color-border-secondary)",
             background: "var(--color-background-secondary)",
@@ -466,9 +345,16 @@ function QuickPrompts({ onSelect }: { onSelect: (text: string) => void }) {
             cursor: "pointer",
             lineHeight: 1.3,
             transition: "all 0.15s",
-            WebkitTapHighlightColor: "transparent",
-            touchAction: "manipulation",
-            minHeight: 36,
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.background = "rgba(29,158,117,0.1)";
+            (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(29,158,117,0.4)";
+            (e.currentTarget as HTMLButtonElement).style.color = "#0A6B4E";
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.background = "var(--color-background-secondary)";
+            (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-border-secondary)";
+            (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-secondary)";
           }}
         >
           {label}
@@ -488,59 +374,9 @@ export function NiaDrawer({
   helperModeActive = false,
   activeRequestId = null,
   accountType = null,
-  matchReasons = null,
 }: NiaDrawerProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [voiceActivated, setVoiceActivated] = useState(false);
-  const [lastFoodSignal, setLastFoodSignal] = useState<string | null>(null);
-  const [voiceLanguage, setVoiceLanguage] = useState<CulturalLanguage>("en");
-
-  // Phase 7a: Detect cultural language — browser locale is just the
-  // fallback. If the user has an explicit preference saved (Settings →
-  // Language), that wins; it's a deliberate choice, not a guess.
-  useEffect(() => {
-    setVoiceLanguage(detectUserLanguage());
-    if (!userId) return;
-    fetch(`${API_BASE}/api/users/${userId}/settings`, { headers: authHeaders() })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.preferred_language) {
-          setVoiceLanguage(data.preferred_language as CulturalLanguage);
-        }
-      })
-      .catch(() => {});
-  }, [userId]);
-
-  // Phase 7a: Voice wake word
-  const { listening, listeningState, stopListening, startListening } = useVoiceWakeWord({
-    enabled: true,
-    continuous: true,
-    onWakeWordDetected: (lang, _transcript) => {
-      setVoiceActivated(true);
-      setVoiceLanguage(lang);
-      // Phase 7b: culturally-aware care greeting (time-of-day + "have you eaten?")
-      const care = getCareGreeting(lang, userName);
-      setMessages((prev: Message[]) => [
-        ...prev,
-        { role: "nia", content: care.combined, timestamp: new Date() },
-      ]);
-      niaSay(care.combined, lang);
-    },
-  });
-
-
-  // Phase 7b: Nia speaks back
-  const { speak: niaSay, stop: niaStopSpeaking } = useNiaTTS({ enabled: true });
-  // Phase 7a: Stop voice when drawer closes
-  useEffect(() => {
-    if (!open) {
-      stopListening();
-      niaStopSpeaking();
-      setVoiceActivated(false);
-    }
-  }, [open]);
-
   const [loading, setLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [showSplash, setShowSplash] = useState(false);
@@ -548,16 +384,6 @@ export function NiaDrawer({
   const [locationLabel, setLocationLabel] = useState<string | null>(null);
   const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [liveContext, setLiveContext] = useState<NiaContext | null>(null);
-  // Phase 6: voice I/O. speakingIndex tracks which message bubble (if any) is
-  // currently playing TTS audio, so only one plays at a time and the speaker
-  // button can show a stop icon for the active one. recording tracks mic
-  // capture state for the push-to-talk button.
-  const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
-  const [recording, setRecording] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
-  const audioPlaybackRef = useRef<HTMLAudioElement | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const sessionId = getSessionId();
@@ -584,13 +410,10 @@ export function NiaDrawer({
     );
   }, []);
 
-  // Fetch live community context once we have coordinates — only when authenticated
+  // Fetch live community context once we have coordinates
   useEffect(() => {
     const coords = userCoords ?? userLocation;
     if (!coords || contextFetchedRef.current) return;
-    // Skip context fetch if no auth token — avoids 401 noise on login screen
-    const headers = authHeaders();
-    if (!headers["Authorization"]) return;
     contextFetchedRef.current = true;
 
     const lat = coords.lat;
@@ -598,7 +421,7 @@ export function NiaDrawer({
     if (lat == null || lng == null) return;
 
     fetch(`${API_BASE}/api/nia/context?lat=${lat}&lng=${lng}`, {
-      headers,
+      headers: authHeaders(),
     })
       .then((r) => r.ok ? r.json() : null)
       .then((data: NiaContext | null) => {
@@ -619,9 +442,7 @@ export function NiaDrawer({
       setShowSplash(true);
       isFirstOpen.current = false;
     }
-    fetch(`${API_BASE}/api/nia/history/${sessionId}`, {
-      headers: authHeaders(),
-    })
+    fetch(`${NIA_SERVICE_URL}/history/${sessionId}`)
       .then((r) => r.json())
       .then((rows: { userMessage: string; niaResponse: string }[]) => {
         if (rows.length > 0) {
@@ -671,46 +492,7 @@ export function NiaDrawer({
   const sendMessage = useCallback(async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
-
-    // Phase 7c: food intent detection — runs before the API call so we can
-    // inject a local food resource message instantly if confidence is high,
-    // rather than waiting for the full Nia API round-trip.
-    setMessages((prev) => {
-      const priorNia = [...prev].reverse().find((m) => m.role === "nia");
-      const priorContent = priorNia?.content ?? "";
-      const intent = detectFoodIntent(trimmed, priorContent);
-
-      if (intent.shouldSurfaceResources && !foodResourcesAlreadyShown()) {
-        recordFoodSignal();
-        markFoodResourcesShown();
-        setLastFoodSignal(intent.signal);
-        const resourceMsg = buildFoodResourceMessage({
-          lang: voiceLanguage,
-          userName,
-          signal: intent.signal,
-          isRepeat: getFoodSignalCount() > 1,
-        });
-        // Inject resource message immediately — Nia's API response will follow
-        // as normal and can add more depth. We prepend so it appears right after
-        // the user's message, before the streaming bubble.
-        return [
-          ...prev,
-          { role: "user", content: trimmed, timestamp: new Date() },
-          { role: "nia", content: resourceMsg, timestamp: new Date() },
-        ];
-      }
-
-      if (intent.followUpPrompt && !foodResourcesAlreadyShown()) {
-        return [
-          ...prev,
-          { role: "user", content: trimmed, timestamp: new Date() },
-          { role: "nia", content: intent.followUpPrompt, timestamp: new Date() },
-        ];
-      }
-
-      return [...prev, { role: "user", content: trimmed, timestamp: new Date() }];
-    });
-
+    setMessages((prev) => [...prev, { role: "user", content: trimmed, timestamp: new Date() }]);
     setInput("");
     setLoading(true);
     setMessages((prev) => [...prev, { role: "nia", content: "", streaming: true, timestamp: new Date() }]);
@@ -718,25 +500,18 @@ export function NiaDrawer({
     const coords = userCoords ?? userLocation;
 
     try {
-      const res = await fetch(`${API_BASE}/api/nia/chat`, {
+      const res = await fetch(`${NIA_SERVICE_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           message: trimmed,
-          language: voiceLanguage !== "en" ? voiceLanguage : undefined,
-          voiceActivated,
-          wakeWordLanguage: voiceActivated ? voiceLanguage : undefined,
           sessionId,
           userName: userName ?? null,
           helperModeActive,
-          foodSignal: lastFoodSignal ?? undefined,
-          foodSignalCount: getFoodSignalCount() > 0 ? getFoodSignalCount() : undefined,
           activeRequestId: activeRequestId ?? null,
           accountType: accountType ?? null,
           // Live context — Nia uses this to make grounded, specific statements
-          liveContext: (liveContext || matchReasons?.length)
-            ? { ...(liveContext ?? {}), ...(matchReasons?.length ? { matchReasons } : {}) }
-            : undefined,
+          liveContext: liveContext ?? undefined,
           ...(coords ?? {}),
         }),
       });
@@ -828,116 +603,6 @@ export function NiaDrawer({
       }
     }
   }, [loading, sessionId, userCoords, userId, userName, userLocation, helperModeActive, activeRequestId, accountType, liveContext]);
-
-  // Phase 6: TTS playback for a given message bubble. Stops any
-  // currently-playing audio first (only one plays at a time). Clicking the
-  // speaker on an already-speaking message stops it instead of restarting.
-  const speakMessage = useCallback(async (index: number, text: string) => {
-    if (audioPlaybackRef.current) {
-      audioPlaybackRef.current.pause();
-      audioPlaybackRef.current = null;
-    }
-    if (speakingIndex === index) {
-      setSpeakingIndex(null);
-      return;
-    }
-    setSpeakingIndex(index);
-    try {
-      const res = await fetch(`${API_BASE}/api/nia/voice/speak`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ text }),
-      });
-      if (!res.ok) {
-        setSpeakingIndex(null);
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audioPlaybackRef.current = audio;
-      audio.onended = () => {
-        setSpeakingIndex((cur) => (cur === index ? null : cur));
-        URL.revokeObjectURL(url);
-      };
-      audio.onerror = () => {
-        setSpeakingIndex((cur) => (cur === index ? null : cur));
-        URL.revokeObjectURL(url);
-      };
-      await audio.play();
-    } catch {
-      setSpeakingIndex((cur) => (cur === index ? null : cur));
-    }
-  }, [speakingIndex]);
-
-  // Phase 6: push-to-talk recording. Records a single utterance, sends it to
-  // /api/nia/voice/transcribe, and feeds the transcribed text through the
-  // normal sendMessage flow — voice doesn't bypass any of the existing chat
-  // logic, it just supplies the text a different way.
-  const startRecording = useCallback(async () => {
-    if (recording || loading) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/mp4")
-        ? "audio/mp4"
-        : "";
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      audioChunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
-      recorder.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        audioChunksRef.current = [];
-        if (blob.size === 0) return;
-        setTranscribing(true);
-        try {
-          const res = await fetch(`${API_BASE}/api/nia/voice/transcribe`, {
-            method: "POST",
-            headers: { "Content-Type": blob.type, ...authHeaders() },
-            body: blob,
-          });
-          if (res.ok) {
-            const data = (await res.json()) as { text?: string };
-            if (data.text) {
-              setInput(data.text);
-              sendMessage(data.text);
-            }
-          }
-        } catch {
-          // Silent — user can just type instead if voice transcription fails.
-        } finally {
-          setTranscribing(false);
-        }
-      };
-      mediaRecorderRef.current = recorder;
-      recorder.start();
-      setRecording(true);
-    } catch {
-      // Mic permission denied or unavailable — recording state never flips
-      // to true, so the UI stays in its normal (text-input) state.
-    }
-  }, [recording, loading, sendMessage]);
-
-  const stopRecording = useCallback(() => {
-    mediaRecorderRef.current?.stop();
-    mediaRecorderRef.current = null;
-    setRecording(false);
-  }, []);
-
-  // Stop any playing audio and release the mic if the drawer closes mid-recording.
-  useEffect(() => {
-    if (!open) {
-      audioPlaybackRef.current?.pause();
-      audioPlaybackRef.current = null;
-      setSpeakingIndex(null);
-      if (recording) stopRecording();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
 
   const handleReset = () => {
     sessionStorage.removeItem("nia_session_id");
@@ -1064,20 +729,11 @@ export function NiaDrawer({
                   padding: "12px 12px 4px",
                   display: "flex", flexDirection: "column", gap: 10,
                 }}>
-                  {messages.map((msg, i) => (
-                    <MessageBubble
-                      key={i}
-                      msg={msg}
-                      isSpeaking={speakingIndex === i}
-                      onSpeak={() => speakMessage(i, msg.content)}
-                      onSuggest={(text) => sendMessage(text)}
-                    />
-                  ))}
+                  {messages.map((msg, i) => <MessageBubble key={i} msg={msg} />)}
                   <div ref={bottomRef} />
                 </div>
                 <div style={{
-                  padding: "10px 12px",
-                  paddingBottom: "max(16px, env(safe-area-inset-bottom))",
+                  padding: "10px 12px 16px",
                   borderTop: "0.5px solid var(--color-border-tertiary)",
                   flexShrink: 0,
                   background: "var(--color-background-primary)",
@@ -1095,34 +751,13 @@ export function NiaDrawer({
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(input); } }}
-                      placeholder={recording ? "Listening…" : transcribing ? "Transcribing…" : "Ask Nia anything…"}
-                      disabled={loading || recording || transcribing}
+                      placeholder="Ask Nia anything…"
+                      disabled={loading}
                       style={{
                         flex: 1, background: "transparent", border: "none", outline: "none",
-                        fontSize: 16, color: "var(--color-text-primary)", lineHeight: 1.4,
+                        fontSize: 14, color: "var(--color-text-primary)", lineHeight: 1.4,
                       }}
                     />
-                    <button
-                      onClick={recording ? stopRecording : startRecording}
-                      disabled={loading || transcribing}
-                      aria-label={recording ? "Stop recording" : "Record a voice message"}
-                      style={{
-                        width: 34, height: 34, borderRadius: "50%",
-                        background: recording
-                          ? "linear-gradient(135deg, #E05252 0%, #B23A3A 100%)"
-                          : "var(--color-background-tertiary)",
-                        border: "none",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        cursor: loading || transcribing ? "not-allowed" : "pointer",
-                        flexShrink: 0, transition: "background 0.2s",
-                        opacity: loading || transcribing ? 0.5 : 1,
-                      }}
-                    >
-                      {transcribing
-                        ? <Loader2 size={14} color="var(--color-text-tertiary)" className="animate-spin" />
-                        : <Mic size={14} color={recording ? "#fff" : "var(--color-text-secondary)"} />
-                      }
-                    </button>
                     <button
                       onClick={() => sendMessage(input)}
                       disabled={loading || !input.trim()}
@@ -1139,7 +774,7 @@ export function NiaDrawer({
                     >
                       {loading
                         ? <Loader2 size={15} color="var(--color-text-tertiary)" />
-                        : <Send size={14} color={!input.trim() ? 'var(--color-text-tertiary)' : '#E1F5EE'} />
+                        : <Send size={14} color={!input.trim() ? "var(--color-text-tertiary)" : "#E1F5EE"} />
                       }
                     </button>
                   </div>
@@ -1159,351 +794,49 @@ export function NiaDrawer({
   );
 }
 
-// Nia's living orb — sparkle particle positions (degrees around the circle)
-const NIA_SPARK_ANGLES = [0, 72, 144, 216, 288];
-
-export function NiaFab({ onClick, hidden }: { onClick: () => void; hidden?: boolean }) {
-  const FAB_SIZE = 70;
-  const MARGIN = 14;
-  // v2 key resets any old bottom-right saved position → defaults to top-center
-  const STORAGE_KEY = "nia_fab_pos_v2";
-
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  // Use a ref for drag state so we never close over stale pos
-  const drag = useRef({ active: false, moved: false, px: 0, py: 0, ox: 0, oy: 0 });
-  const divRef = useRef<HTMLDivElement>(null);
-
-  // Clamp a position to the current viewport bounds.
-  // safeAreaBottom is a ref read at call time — no closure dep needed.
-  const clampToViewport = useCallback((p: { x: number; y: number }): { x: number; y: number } => {
-    const maxX = window.innerWidth - FAB_SIZE - MARGIN;
-    // Account for safe-area-inset-bottom (iPhone home indicator, Android gesture bar)
-    // so Nia never lands behind the system UI at the screen bottom.
-    const maxY = window.innerHeight - FAB_SIZE - MARGIN - safeAreaBottom.current;
-    return {
-      x: Math.max(MARGIN, Math.min(p.x, maxX)),
-      y: Math.max(MARGIN, Math.min(p.y, maxY)),
-    };
-  }, []);
-
-  // Mount: restore persisted position, or default to top-center
-  useEffect(() => {
-    const defaultPos = () => ({
-      x: Math.round(window.innerWidth / 2 - FAB_SIZE / 2),
-      // y: 16 keeps Nia at the very top of the viewport — visually above the
-      // TopBar and all page UI, confirming she floats OUTSIDE the app chrome.
-      // Users can drag her anywhere; position is persisted to localStorage.
-      y: 16,
-    });
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const p = JSON.parse(saved) as { x: number; y: number };
-        const maxX = window.innerWidth - FAB_SIZE - MARGIN;
-        const maxY = window.innerHeight - FAB_SIZE - MARGIN;
-        if (typeof p.x === "number" && typeof p.y === "number" &&
-            p.x >= MARGIN && p.x <= maxX && p.y >= MARGIN && p.y <= maxY) {
-          setPos(p);
-          return;
-        }
-      }
-    } catch { /* ignore */ }
-    setPos(defaultPos());
-  }, []);
-
-  // Resize / orientation-change guard: re-clamp persisted position whenever
-  // the viewport dimensions change. Without this, rotating the device mid-session
-  // or resizing the browser window can strand the orb outside the new bounds.
-  // BUG-5 (remaining): "Drag clamp bounds still computed from window at drag-time only;
-  // rotating mid-session can leave the orb outside the new viewport bounds."
-  useEffect(() => {
-    const handleResize = () => {
-      setPos((prev) => {
-        if (!prev) return prev;
-        const clamped = clampToViewport(prev);
-        // Only update state (and trigger a re-render) if bounds actually changed
-        if (clamped.x === prev.x && clamped.y === prev.y) return prev;
-        return clamped;
-      });
-    };
-    window.addEventListener("resize", handleResize, { passive: true });
-    // screen.orientation is more reliable than resize for orientation changes
-    // on iOS PWAs and Android Chrome where resize fires inconsistently.
-    if (typeof screen !== "undefined" && screen.orientation) {
-      screen.orientation.addEventListener("change", handleResize);
-    }
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      if (typeof screen !== "undefined" && screen.orientation) {
-        screen.orientation.removeEventListener("change", handleResize);
-      }
-    };
-  }, [clampToViewport]);
-
-  // Raw pointer handlers on a plain div — most reliable on mobile + desktop
-  const onPD = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const cur = pos ?? { x: 0, y: 0 };
-    // Set drag.active = true BEFORE attempting setPointerCapture so that
-    // even if capture throws (WebKit/mobile WebViews can throw on touch-originated
-    // pointerIds), drag state is still active and onPointerMove will process moves.
-    drag.current = { active: true, moved: false, px: e.clientX, py: e.clientY, ox: cur.x, oy: cur.y };
-    // Visual feedback: switch to grabbing cursor imperatively (no re-render cost)
-    if (divRef.current) divRef.current.style.cursor = "grabbing";
-    try {
-      divRef.current?.setPointerCapture(e.pointerId);
-    } catch {
-      // Capture failed (common on iOS WebKit with touch pointers) — drag still
-      // works via onPointerMove since drag.current.active is already true.
-    }
-  }, [pos]);
-
-  const onPM = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const d = drag.current;
-    if (!d.active) return;
-    const dx = e.clientX - d.px;
-    const dy = e.clientY - d.py;
-    if (!d.moved && Math.sqrt(dx * dx + dy * dy) < 7) return;
-    d.moved = true;
-    const maxX = window.innerWidth - FAB_SIZE - MARGIN;
-    const maxY = window.innerHeight - FAB_SIZE - MARGIN - safeAreaBottom.current;
-    setPos({
-      x: Math.max(MARGIN, Math.min(d.ox + dx, maxX)),
-      y: Math.max(MARGIN, Math.min(d.oy + dy, maxY)),
-    });
-  }, []);
-
-  const onPU = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const d = drag.current;
-    if (!d.active) return;
-    d.active = false;
-    // Reset cursor back to grab regardless of whether this was a tap or a drag
-    if (divRef.current) divRef.current.style.cursor = "grab";
-    if (!d.moved) {
-      onClick();
-    } else {
-      const dx = e.clientX - d.px;
-      const dy = e.clientY - d.py;
-      const maxX = window.innerWidth - FAB_SIZE - MARGIN;
-      const maxY = window.innerHeight - FAB_SIZE - MARGIN - safeAreaBottom.current;
-      const newPos = {
-        x: Math.max(MARGIN, Math.min(d.ox + dx, maxX)),
-        y: Math.max(MARGIN, Math.min(d.oy + dy, maxY)),
-      };
-      setPos(newPos);
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(newPos)); } catch { /* ignore */ }
-    }
-    d.moved = false;
-    try { divRef.current?.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
-  }, [onClick]);
-
-  // System/browser-canceled gestures (e.g. OS swipe, incoming call) must NOT
-  // be treated as a tap — clear drag state without opening Nia or persisting.
-  const onPC = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const d = drag.current;
-    d.active = false;
-    d.moved = false;
-    if (divRef.current) divRef.current.style.cursor = "grab";
-    try { divRef.current?.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
-  }, []);
-
-  // ── Safe-area measurement (added LAST to preserve hook order) ────────────────
-  // Measures env(safe-area-inset-bottom) once on mount via a CSS env() probe so
-  // the clamp functions can account for the iPhone home indicator and Android
-  // gesture bar without requiring a CSS-to-JS polyfill. Stored as a ref so it
-  // never triggers re-renders; read at call time in drag handlers and clampToViewport.
-  const safeAreaBottom = useRef(0);
-  useEffect(() => {
-    const probe = document.createElement("div");
-    probe.style.cssText =
-      "position:fixed;pointer-events:none;visibility:hidden;" +
-      "bottom:env(safe-area-inset-bottom,0px);height:0";
-    document.body.appendChild(probe);
-    safeAreaBottom.current = parseFloat(getComputedStyle(probe).bottom) || 0;
-    document.body.removeChild(probe);
-  }, []);
-
-  if (hidden || !pos) return null;
-
+export function NiaFab({ onClick }: { onClick: () => void }) {
   return (
-    // Plain div — no Framer Motion wrapper so pointer capture is unobstructed
-    <div
-      ref={divRef}
-      role="button"
+    <motion.button
+      onClick={onClick}
       aria-label="Open Nia — your community assistant"
-      onPointerDown={onPD}
-      onPointerMove={onPM}
-      onPointerUp={onPU}
-      onPointerCancel={onPC}
+      whileHover={{ scale: 1.07 }}
+      whileTap={{ scale: 0.94 }}
       style={{
         position: "fixed",
-        left: pos.x,
-        top: pos.y,
-        // Maximum z-index — Nia floats above every app layer
-        zIndex: 2147483647,
-        width: FAB_SIZE,
-        height: FAB_SIZE,
-        touchAction: "none",
-        userSelect: "none",
-        WebkitUserSelect: "none",
-        cursor: "grab",
-        // No transform on outer container — keeps drag hit-area aligned with pointer
+        bottom: 80,
+        right: 18,
+        zIndex: 9997,
+        width: 56,
+        height: 56,
+        borderRadius: "50%",
+        background: "linear-gradient(135deg, #1D9E75 0%, #085041 100%)",
+        border: "none",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        boxShadow: "0 4px 20px rgba(10,61,46,0.35)",
       }}
     >
-      {/* ── Layer 1: Far outer aura ── */}
       <motion.div
-        animate={{ scale: [1, 1.8, 1], opacity: [0.22, 0, 0.22] }}
-        transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
+        animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
+        transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
         style={{
           position: "absolute",
-          inset: -18,
+          inset: -4,
           borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(29,158,117,0.5) 0%, rgba(29,158,117,0.15) 50%, transparent 75%)",
+          border: "1.5px solid rgba(29,158,117,0.6)",
           pointerEvents: "none",
         }}
       />
-
-      {/* ── Layer 2: Heartbeat ring ── */}
-      <motion.div
-        animate={{ scale: [1, 1.45, 1], opacity: [0.55, 0, 0.55] }}
-        transition={{ duration: 2.2, repeat: Infinity, ease: [0.2, 0, 0.8, 1], delay: 0.3 }}
-        style={{
-          position: "absolute",
-          inset: -5,
-          borderRadius: "50%",
-          border: "1.5px solid rgba(93,202,165,0.7)",
-          pointerEvents: "none",
-        }}
-      />
-
-      {/* ── Layer 3: Secondary slower ring ── */}
-      <motion.div
-        animate={{ scale: [1, 1.25, 1], opacity: [0.4, 0, 0.4] }}
-        transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut", delay: 1.1 }}
-        style={{
-          position: "absolute",
-          inset: -2,
-          borderRadius: "50%",
-          border: "1px solid rgba(93,202,165,0.45)",
-          pointerEvents: "none",
-        }}
-      />
-
-      {/* ── Layer 4: Main orb body — floats + heartbeat ── */}
-      <motion.div
-        animate={{
-          scale: [1, 1.05, 1, 1.03, 1],
-          // Bob DOWNWARD so visual never extends above the container's hit boundary.
-          // Positive y = moves down in CSS — entire orb stays within tap area.
-          y: [0, 5, 3, 7, 4, 0],
-        }}
-        transition={{
-          scale: { duration: 2.6, repeat: Infinity, ease: [0.4, 0, 0.6, 1], times: [0, 0.25, 0.5, 0.75, 1] },
-          y: { duration: 4.2, repeat: Infinity, ease: "easeInOut" },
-        }}
-        style={{
-          position: "absolute",
-          inset: 0,
-          borderRadius: "50%",
-          background: "linear-gradient(140deg, #30D9A0 0%, #1D9E75 30%, #0E7A5A 65%, #085041 100%)",
-          border: "2px solid rgba(93,202,165,0.55)",
-          boxShadow: [
-            "0 8px 36px rgba(10,61,46,0.65)",
-            "0 2px 10px rgba(10,61,46,0.4)",
-            "inset 0 1px 0 rgba(255,255,255,0.18)",
-            "inset 0 -2px 6px rgba(0,0,0,0.2)",
-            "0 0 0 1px rgba(29,158,117,0.2)",
-          ].join(", "),
-          overflow: "hidden",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          pointerEvents: "none",
-        }}
-      >
-        {/* ── Inner rotating shimmer ── */}
-        <motion.div
-          animate={{ rotate: [0, 360] }}
-          transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
-          style={{
-            position: "absolute",
-            inset: 0,
-            borderRadius: "50%",
-            background: "conic-gradient(from 0deg, transparent 0%, rgba(255,255,255,0.18) 20%, transparent 40%, rgba(255,255,255,0.08) 60%, transparent 80%)",
-            pointerEvents: "none",
-          }}
-        />
-        {/* ── Glint highlight ── */}
-        <div style={{
-          position: "absolute",
-          top: 6,
-          left: 10,
-          width: 18,
-          height: 10,
-          borderRadius: "50%",
-          background: "rgba(255,255,255,0.22)",
-          filter: "blur(3px)",
-          pointerEvents: "none",
-        }} />
-        {/* ── N lettermark ── */}
-        <motion.span
-          animate={{
-            textShadow: [
-              "0 1px 8px rgba(0,0,0,0.35)",
-              "0 1px 16px rgba(0,200,140,0.5)",
-              "0 1px 8px rgba(0,0,0,0.35)",
-            ],
-          }}
-          transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
-          style={{
-            fontSize: 28,
-            fontWeight: 800,
-            color: "#E8FFF6",
-            fontFamily: "var(--font-sans)",
-            letterSpacing: "-0.01em",
-            userSelect: "none",
-            lineHeight: 1,
-            pointerEvents: "none",
-            position: "relative",
-            zIndex: 1,
-          }}
-        >
-          N
-        </motion.span>
-      </motion.div>
-
-      {/* ── Layer 5: Orbiting sparkle particles ── */}
-      {NIA_SPARK_ANGLES.map((deg, i) => (
-        <motion.div
-          key={i}
-          animate={{
-            opacity: [0, 0.9, 0.6, 0],
-            scale: [0, 1.2, 0.8, 0],
-            x: [0, Math.round(Math.cos((deg * Math.PI) / 180) * 40)],
-            y: [0, Math.round(Math.sin((deg * Math.PI) / 180) * 40)],
-          }}
-          transition={{
-            duration: 2.8,
-            repeat: Infinity,
-            delay: i * 0.55,
-            ease: "easeOut",
-            times: [0, 0.4, 0.7, 1],
-          }}
-          style={{
-            position: "absolute",
-            top: "50%",
-            left: "50%",
-            width: 5,
-            height: 5,
-            marginTop: -2.5,
-            marginLeft: -2.5,
-            borderRadius: "50%",
-            background: i % 2 === 0 ? "#5DCAA5" : "#A8F0D8",
-            boxShadow: "0 0 4px rgba(93,202,165,0.8)",
-            pointerEvents: "none",
-          }}
-        />
-      ))}
-    </div>
+      <span style={{
+        fontSize: 22, fontWeight: 700, color: "#E1F5EE",
+        fontFamily: "var(--font-sans)",
+        letterSpacing: "-0.01em",
+        userSelect: "none", lineHeight: 1,
+      }}>
+        N
+      </span>
+    </motion.button>
   );
 }

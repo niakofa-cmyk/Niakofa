@@ -342,4 +342,31 @@ router.get("/admin/suspended", requireAuth, requireAdmin(), adminLimiter, async 
   return res.json(suspended);
 });
 
+// ── Nia AI toggle ─────────────────────────────────────────────────────────────
+// In-memory flag — defaults to enabled. Persists for the lifetime of the
+// api-server process. A Railway redeploy resets it to ON, which is the safe
+// default. If you need persistence across deploys, set NIA_ENABLED=false in
+// Railway env vars and the flag will boot to off.
+let niaEnabled: boolean = process.env.NIA_ENABLED !== "false";
+
+// GET /admin/nia-status — public, no auth. Frontend polls this to know
+// whether to show the NiaFab and drawer. Returns { enabled: boolean }.
+router.get("/admin/nia-status", (_req, res) => {
+  return res.json({ enabled: niaEnabled });
+});
+
+// POST /admin/nia-toggle — admin only. Body: { enabled: boolean }
+router.post("/admin/nia-toggle", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const { enabled } = req.body as { enabled?: boolean };
+  if (typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "enabled (boolean) is required" });
+  }
+  niaEnabled = enabled;
+  logger.info({ niaEnabled }, "admin: Nia AI toggled");
+  return res.json({ ok: true, enabled: niaEnabled });
+});
+
+// Export the flag so nia-proxy can read it from the same process
+export { niaEnabled };
+
 export default router;
