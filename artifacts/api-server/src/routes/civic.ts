@@ -264,4 +264,75 @@ router.patch("/civic/suggestions/:id/review", requireAuth, requireAdmin(), async
   return res.json(updated);
 });
 
+
+// ── POST /civic/seed-farms — one-time admin seed for local farm resources ────
+// Protected by ADMIN_SECRET header. Delete this endpoint after first run.
+router.post("/civic/seed-farms", async (req, res) => {
+  const adminSecret = process.env.ADMIN_SECRET;
+  if (!adminSecret || req.headers["x-admin-token"] !== adminSecret) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const { db: seedDb, civicResourcesTable: crt } = await import("@workspace/db");
+  const { eq, and } = await import("drizzle-orm");
+
+  const FARMS = [
+    { state: "TX", county: "Tarrant", city: "Fort Worth", org_name: "Cowtown Farmers Market", description: "Year-round Saturday market featuring local Texas farmers. Accepts SNAP/EBT with Double Up Food Bucks — spend $20 in SNAP, get $20 more on Texas-grown produce. Open Saturdays 8am–12pm.", url: "https://www.cowtownfarmersmarket.com", phone: "(817) 336-5000", category: "local_farm" },
+    { state: "TX", county: "Tarrant", city: "Fort Worth", org_name: "Milam's Mushrooms", description: "Local Fort Worth area mushroom farm offering fresh gourmet and medicinal mushrooms for direct purchase. Specialty varieties grown sustainably in Tarrant County.", url: "https://www.milamsmushrooms.com", phone: null, category: "local_farm" },
+    { state: "TX", county: "Tarrant", city: "Fort Worth", org_name: "Texas A&M AgriLife Extension — Tarrant County", description: "Free gardening education, food preservation classes, Master Gardener programs, and urban farming resources for Tarrant County residents.", url: "https://tarrant.agrilife.org", phone: "(817) 884-1945", category: "local_farm" },
+    { state: "TX", county: "Tarrant", city: "Fort Worth", org_name: "Tarrant County Master Gardeners", description: "Volunteer educators providing research-based gardening information to Tarrant County residents. Offers workshops, plant clinics, and community garden support.", url: "https://tarrantmg.org", phone: "(817) 884-1945", category: "local_farm" },
+    { state: "TX", county: "Tarrant", city: "Fort Worth", org_name: "Stop Six Community Garden", description: "Community garden serving the historic Stop Six neighborhood in East Fort Worth. Open to neighborhood residents for fresh produce growing. A cornerstone of food sovereignty in one of Fort Worth's most resilient communities.", url: "https://www.fortworthtexas.gov/departments/parks", phone: "(817) 392-5700", category: "local_farm" },
+    { state: "TX", county: "Tarrant", city: "Haltom City", org_name: "Haltom City Community Garden", description: "Accessible community garden plots near North Fort Worth. Low-cost plot rentals available for families wanting to grow their own food.", url: "https://www.haltomcitytx.com", phone: "(817) 834-6261", category: "local_farm" },
+    { state: "TX", county: "Tarrant", city: "Fort Worth", org_name: "Presbyterian Night Shelter Garden", description: "On-site garden at Presbyterian Night Shelter producing fresh vegetables for shelter residents. Volunteer opportunities available for community members.", url: "https://www.presbyteriannightshelter.org", phone: "(817) 632-5400", category: "local_farm" },
+    { state: "TX", county: "Tarrant", city: "Fort Worth", org_name: "Tarrant County Public Library — Seed Library", description: "Free seed lending program at multiple Tarrant County Public Library branches. Check out vegetable, herb, and flower seeds with your library card and grow food at home.", url: "https://www.tarlibrary.org", phone: "(817) 884-1800", category: "local_farm" },
+    { state: "TX", county: "Parker", city: "Weatherford", org_name: "Clark Gardens Botanical Park", description: "Seasonal pick-your-own and community events at this 35-acre botanical park near Fort Worth. About 40 minutes west. Features local plant sales and sustainable gardening demonstrations.", url: "https://www.clarkgardens.org", phone: "(940) 682-4856", category: "local_farm" },
+    { state: "TX", county: "Dallas", city: "Coppell", org_name: "Coppell Farmers Market", description: "Saturday market featuring verified local Texas producers. Accepts SNAP/EBT. Fresh seasonal produce, eggs, honey, and specialty foods from small farms. About 30 minutes east of Fort Worth.", url: "https://www.coppellfarmersmarket.org", phone: null, category: "local_farm" },
+    { state: "TX", county: "Johnson", city: "Cleburne", org_name: "Johnson County Farmers Alliance", description: "Direct farm connections and seasonal produce from Johnson County farms south of Fort Worth. Connects Mansfield, Everman, Crowley and south Tarrant County residents to local food sources.", url: "https://www.jcfarmersalliance.com", phone: null, category: "local_farm" },
+    { state: "TX", county: "Tarrant", city: "Fort Worth", org_name: "Local Line — Texas Farm Directory", description: "Online platform connecting Fort Worth area families directly to local Texas farms for weekly produce boxes, CSA subscriptions, and direct farm purchases. Search by ZIP code.", url: "https://www.localline.ca/texas", phone: null, category: "local_farm" },
+    { state: "TX", county: "Tarrant", city: "Fort Worth", org_name: "Double Up Food Bucks Texas", description: "SNAP/EBT matching program at participating farmers markets across Fort Worth. Spend up to $20 in SNAP on Texas-grown fruits and vegetables and receive matching dollars.", url: "https://www.doubleupfoodbuckstexas.org", phone: null, category: "local_farm" },
+    { state: "TX", county: "Tarrant", city: "Fort Worth", org_name: "Fort Worth Community Gardens Program", description: "City of Fort Worth Parks & Recreation community garden plot program. Waitlist available for residents wanting to grow their own food across multiple garden sites.", url: "https://www.fortworthtexas.gov/departments/parks/programs/community-garden", phone: "(817) 392-5700", category: "local_farm" },
+  ];
+
+  let inserted = 0;
+  let skipped = 0;
+  const results: string[] = [];
+
+  for (const farm of FARMS) {
+    const existing = await seedDb
+      .select({ id: crt.id })
+      .from(crt)
+      .where(and(eq(crt.org_name, farm.org_name), eq(crt.state, farm.state), eq(crt.county, farm.county)))
+      .limit(1);
+
+    if (existing.length > 0) {
+      skipped++;
+      results.push(`SKIP: ${farm.org_name}`);
+      continue;
+    }
+
+    await seedDb.insert(crt).values({
+      state: farm.state,
+      county: farm.county,
+      city: farm.city ?? null,
+      org_name: farm.org_name,
+      description: farm.description,
+      url: farm.url,
+      phone: farm.phone ?? null,
+      category: farm.category,
+    });
+    inserted++;
+    results.push(`INSERT: ${farm.org_name}`);
+  }
+
+  // Bust the civic resources cache so new entries appear immediately
+  try {
+    const { cacheDel, cacheDelPrefix } = await import("../lib/cache.js");
+    await cacheDel("civic:all");
+    await cacheDelPrefix("civic:loc:");
+  } catch { /* cache may not be running locally */ }
+
+  logger.info({ inserted, skipped }, "civic farm seed complete");
+  return res.json({ ok: true, inserted, skipped, results });
+});
+
 export default router;
