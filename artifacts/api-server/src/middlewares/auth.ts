@@ -92,10 +92,20 @@ export async function parseAuth(req: Request, _res: Response, next: NextFunction
     const { userId, tokenVersion, valid } = verifyToken(token);
     if (valid) {
       try {
-        const [user] = await db.select({ token_version: usersTable.token_version })
-          .from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+        const [user] = await db.select({
+            token_version: usersTable.token_version,
+            is_suspended: usersTable.is_suspended,
+            suspended_reason: usersTable.suspended_reason,
+          }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
         if (user && user.token_version === tokenVersion) {
-          req.authenticatedUserId = userId;
+          if (user.is_suspended) {
+            // Suspended accounts get a 403 at the middleware layer.
+            // We store the flag on req so requireAuth can return the right response.
+            (req as Request & { _suspended?: boolean; _suspendedReason?: string | null })._suspended = true;
+            (req as Request & { _suspended?: boolean; _suspendedReason?: string | null })._suspendedReason = user.suspended_reason;
+          } else {
+            req.authenticatedUserId = userId;
+          }
         }
       } catch (err) {
         logger.error({ err, userId }, "parseAuth: token_version lookup failed");
@@ -105,8 +115,16 @@ export async function parseAuth(req: Request, _res: Response, next: NextFunction
   next();
 }
 
-/** Express middleware — rejects with 401 if no valid Bearer token. */
+/** Express middleware — rejects with 401 if no valid Bearer token, 403 if suspended. */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  const r = req as Request & { _suspended?: boolean; _suspendedReason?: string | null };
+  if (r._suspended) {
+    res.status(403).json({
+      error: "Account suspended",
+      reason: r._suspendedReason ?? "Contact support for details",
+    });
+    return;
+  }
   if (!req.authenticatedUserId) {
     res.status(401).json({ error: "Unauthorized — valid Bearer token required" });
     return;

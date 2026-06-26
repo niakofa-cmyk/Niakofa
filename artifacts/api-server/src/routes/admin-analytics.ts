@@ -222,6 +222,9 @@ router.get("/admin/accounts", requireAuth, requireAdmin(), adminLimiter, async (
       is_helper: usersTable.is_helper,
       helper_status: usersTable.helper_status,
       is_admin: usersTable.is_admin,
+      is_suspended: usersTable.is_suspended,
+      suspended_at: usersTable.suspended_at,
+      suspended_reason: usersTable.suspended_reason,
       organization_name: usersTable.organization_name,
       created_at: usersTable.created_at,
     })
@@ -278,6 +281,65 @@ router.post("/admin/verify-secret", async (req, res) => {
   if (!expected) return res.status(500).json({ error: "ADMIN_SECRET not configured" });
   if (!secret || secret !== expected) return res.status(403).json({ error: "Incorrect secret" });
   return res.json({ ok: true });
+});
+
+
+// POST /admin/users/:id/suspend — hard-suspend an account
+router.post("/admin/users/:id/suspend", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const userId = parseInt(String(req.params.id));
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+  const { reason } = req.body as { reason?: string };
+
+  const [user] = await db
+    .update(usersTable)
+    .set({
+      is_suspended: true,
+      suspended_at: new Date(),
+      suspended_reason: reason ?? "Suspended by admin",
+      helper_mode_active: false,
+    })
+    .where(eq(usersTable.id, userId))
+    .returning({ id: usersTable.id, name: usersTable.name, is_suspended: usersTable.is_suspended });
+
+  if (!user) return res.status(404).json({ error: "User not found" });
+  return res.json({ ok: true, user });
+});
+
+// POST /admin/users/:id/unsuspend — lift a suspension
+router.post("/admin/users/:id/unsuspend", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const userId = parseInt(String(req.params.id));
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+
+  const [user] = await db
+    .update(usersTable)
+    .set({
+      is_suspended: false,
+      suspended_at: null,
+      suspended_reason: null,
+    })
+    .where(eq(usersTable.id, userId))
+    .returning({ id: usersTable.id, name: usersTable.name, is_suspended: usersTable.is_suspended });
+
+  if (!user) return res.status(404).json({ error: "User not found" });
+  return res.json({ ok: true, user });
+});
+
+// GET /admin/suspended — list all suspended accounts
+router.get("/admin/suspended", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const suspended = await db
+    .select({
+      id: usersTable.id,
+      name: usersTable.name,
+      email: usersTable.email,
+      suspended_at: usersTable.suspended_at,
+      suspended_reason: usersTable.suspended_reason,
+      is_helper: usersTable.is_helper,
+      trust_score: usersTable.trust_score,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.is_suspended, true))
+    .orderBy(usersTable.suspended_at);
+  return res.json(suspended);
 });
 
 export default router;
