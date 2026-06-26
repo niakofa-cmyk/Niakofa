@@ -948,9 +948,7 @@ function buildFoodIntentPrefix(
     ? "REPEAT FOOD SIGNAL: This user has signaled food need more than once this session. " +
       "After addressing the immediate need, gently mention Niakofa's recurring request feature " +
       "— a neighbor who brings groceries weekly beats a pantry run every time. " +
-      "Also consider mentioning a local CSA or community garden if appropriate.
-
-"
+      "Also consider mentioning a local CSA or community garden if appropriate."
     : "";
 
   const instruction = signalInstructions[signal];
