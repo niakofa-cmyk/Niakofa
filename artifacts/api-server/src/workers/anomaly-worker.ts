@@ -101,8 +101,23 @@ async function detectAnomalies() {
 
       logger.warn(
         { requester_id: row.requester_id, cancel_count: row.cancel_count, window_hours: WINDOW_HOURS },
-        "anomaly: requester repeatedly cancelled claimed requests — flagged for admin review"
+        "anomaly: requester repeatedly cancelled claimed requests — applying trust penalty"
       );
+
+      // Auto-action: apply trust score penalty (-20 pts, floor 0) so repeat
+      // bad-faith requesters surface in admin dashboards and lose priority.
+      // TODO: add is_suspended column for hard blocks (tracked as Phase 13 schema).
+      let cancelActionTaken = "none";
+      try {
+        await db.execute(
+          sql`UPDATE users SET trust_score = GREATEST(0, COALESCE(trust_score, 50) - 20) WHERE id = ${row.requester_id}`
+        );
+        cancelActionTaken = "trust_score_penalized_-20";
+        logger.warn({ user_id: row.requester_id }, "anomaly: applied -20 trust penalty for repeat cancels");
+      } catch (err) {
+        logger.error({ err, user_id: row.requester_id }, "anomaly: failed to apply trust penalty");
+      }
+
       broadcastToAdmins({
         type: "anomaly_detected",
         payload: {
@@ -110,7 +125,8 @@ async function detectAnomalies() {
           requester_id: row.requester_id,
           cancel_count: row.cancel_count,
           window_hours: WINDOW_HOURS,
-          note: "Requester cancelled after helper was assigned — possible bad-faith behavior",
+          action_taken: cancelActionTaken,
+          note: "Requester cancelled after helper was assigned — trust score penalized, admin review recommended",
         },
       });
     }
@@ -198,8 +214,21 @@ async function detectAnomalies() {
 
       logger.warn(
         { user_id: row.ratee_id, one_star_count: row.count, window_hours: WINDOW_HOURS },
-        "anomaly: helper received multiple 1-star ratings in 24h — flagged for immediate review"
+        "anomaly: helper received multiple 1-star ratings in 24h — disabling helper mode"
       );
+
+      // Auto-action: disable helper mode so they can't claim new requests pending review
+      let actionTaken = "none";
+      try {
+        await db.update(usersTable)
+          .set({ helper_mode_active: false })
+          .where(eq(usersTable.id, row.ratee_id));
+        actionTaken = "helper_mode_disabled";
+        logger.warn({ user_id: row.ratee_id }, "anomaly: disabled helper_mode_active due to rating velocity spike");
+      } catch (err) {
+        logger.error({ err, user_id: row.ratee_id }, "anomaly: failed to disable helper mode on rating spike");
+      }
+
       broadcastToAdmins({
         type: "anomaly_detected",
         payload: {
@@ -207,7 +236,8 @@ async function detectAnomalies() {
           user_id: row.ratee_id,
           one_star_count: row.count,
           window_hours: WINDOW_HOURS,
-          note: "Rapid 1-star rating burst — possible bad-faith experience or service failure",
+          action_taken: actionTaken,
+          note: "Rapid 1-star rating burst — helper mode disabled pending admin review",
           severity: "high",
         },
       });

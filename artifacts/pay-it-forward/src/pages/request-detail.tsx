@@ -8,6 +8,8 @@ import { useGetRequest, getGetRequestQueryKey } from "@workspace/api-client-reac
 import { useAppContext } from "@/lib/AppContext";
 import { toast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
+import { AnimatePresence } from "framer-motion";
+import { RatingModal } from "@/components/RatingModal";
 
 const URGENCY_CONFIG = {
   emergency: { label: "Emergency", color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/30", icon: AlertTriangle },
@@ -34,6 +36,7 @@ export default function RequestDetailScreen() {
   const [, setLocation] = useLocation();
   const { currentUser, helperModeActive } = useAppContext();
   const requestId = parseInt(params?.id || "0", 10);
+  const [showRating, setShowRating] = useState(false);
 
   const { data: request, isLoading } = useGetRequest(requestId, {
     query: { enabled: !!requestId, queryKey: getGetRequestQueryKey(requestId), refetchInterval: 15000 }
@@ -206,8 +209,27 @@ export default function RequestDetailScreen() {
               {t("request_detail.sign_in_to_help")}
             </Button>
           )}
+          {isRequester && request.status === "completed" && !showRating && (
+            <Button
+              className="w-full h-12 font-black gap-2 bg-yellow-500 hover:bg-yellow-400 text-black"
+              onClick={() => setShowRating(true)}
+            >
+              ★ Rate Your Helper
+            </Button>
+          )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {showRating && (
+          <RatingModal
+            requestId={requestId}
+            role="requester"
+            helperName={request.helper_name ?? null}
+            onClose={() => setShowRating(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
