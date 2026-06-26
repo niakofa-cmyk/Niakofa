@@ -123,9 +123,15 @@ function NiaWrapper() {
     } else if (event.type === "request_updated" && event.status === "claimed") {
       notif = { id, type: "helper_accepted", time, title: "Helper on the way", body: `${event.helper_name ?? "A helper"} accepted` };
     } else if (event.type === "pledge_paid") {
-      notif = { id, type: "pledge", time, title: "Pledge received!", body: `$${event.amount ?? "?"} pay-it-forward paid` };
+      const pp = event.payload as { user_id?: number; amount?: number; request_title?: string };
+      if (currentUser && pp.user_id === currentUser.id) {
+        notif = { id, type: "pledge", time, title: "Pledge received!", body: `$${pp.amount?.toFixed(2) ?? "?"} pay-it-forward paid` };
+      }
     } else if (event.type === "pledge_scheduled") {
-      notif = { id, type: "pledge_scheduled", time, title: "Recurring pledge set up", body: "Community thanks you" };
+      const ps = event.payload as { user_id?: number; amount?: number; scheduled_date?: string };
+      if (currentUser && ps.user_id === currentUser.id) {
+        notif = { id, type: "pledge_scheduled", time, title: "Recurring pledge set up", body: "Community thanks you" };
+      }
     }
     if (notif) {
       setNotifications(prev => [notif!, ...prev].slice(0, 50));

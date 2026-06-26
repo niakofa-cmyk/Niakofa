@@ -98,6 +98,9 @@ export function BottomNav() {
         time: new Date(),
       });
     } else if (event.type === "request_updated") {
+      // request_updated is now scoped server-side to requester + helper only.
+      // No additional user_id guard needed here — every socket that receives
+      // this event is a party to the request.
       const req = event.payload as HelpRequest;
       if (req.status === "claimed" && req.helper_name) {
         addNotif({
@@ -117,6 +120,7 @@ export function BottomNav() {
         });
       }
     } else if (event.type === "pledge_paid") {
+      // Server scopes pledge_paid to requester + helper via sendToUser.
       const p = event.payload as { amount: number; request_title: string };
       addNotif({
         id: `pledge-paid-${Date.now()}`,
@@ -126,6 +130,7 @@ export function BottomNav() {
         time: new Date(),
       });
     } else if (event.type === "pledge_scheduled") {
+      // Server scopes pledge_scheduled to the scheduling user via sendToUser.
       const p = event.payload as { amount: number; scheduled_date: string };
       const d = new Date(p.scheduled_date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
       addNotif({
