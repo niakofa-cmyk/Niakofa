@@ -621,11 +621,14 @@ function buildVoiceContextPrefix(voiceActivated: boolean, wakeWordLanguage?: str
 
   const culturalGreetings: Record<string, string> = {
     en: "They greeted you in English — respond warmly and directly.",
-    sw: "They greeted you in Swahili with 'Habari Nia' or 'Sawubona Nia' — they are speaking in their comfort language. Respond with Ubuntu warmth.",
-    ak: "They greeted you in Akan with 'Ei Nia' — they are from a culture that shows care through asking about daily sustenance. Mirror that warmth.",
-    zu: "They greeted you in Zulu with 'Sawubona Nia' — they are calling you as a neighbor. Respond with recognition and presence.",
-    yo: "They greeted you in Yoruba — honor their dignity by using their name and showing you value them.",
-    lg: "They greeted you in Luganda — they are asking 'how did you wake up?' Respond by asking how THEY woke up — mutual care.",
+    sw: "They greeted you in Swahili with 'Habari Nia' or 'Umeshakula Nia' — they are speaking in their comfort language. Respond with Ubuntu warmth. Ask 'Umeshakula?' — have you eaten?",
+    ak: "They greeted you in Akan/Twi with 'Mema wo akye Nia' or 'Agoo Nia' — they are from a culture that shows care through asking about daily sustenance. Mirror that warmth. Ask 'Woadi anpa?' — have you eaten this morning?",
+    zu: "They greeted you in Zulu with 'Sawubona Nia' — they are calling you as a neighbor. Respond with recognition and presence. Sawubona means 'I see you' — see them back.",
+    yo: "They greeted you in Yoruba with 'E kaaro', 'E kaasan', or 'E kaaale Nia' — honor their dignity with the matching time-of-day greeting. Ask 'Ṣe o ti jẹun?' — have you eaten?",
+    lg: "They greeted you in Luganda — they are asking 'how did you wake up?' Respond by asking how THEY woke up — mutual care. 'Wasuze otya nno? Olidde?' — How did you sleep? Have you eaten?",
+    ha: "They greeted you in Hausa with 'Sannu Nia' or 'Ina kwana Nia' — respond with 'Ina kwana?' (How did you sleep?) in the morning, or 'Ina yini?' (How is your day?) in the afternoon. Ask 'Ka ci abinci?' — have you eaten? Hausa speakers value warm, respectful address.",
+    am: "They greeted you in Amharic with 'Selam Nia' or 'Tena yistilign Nia' — respond with 'Selam' and warmth. Ask 'Tewat beltehal?' — have you eaten this morning? Amharic speakers from Ethiopia and Eritrea carry deep cultural pride. Honor it.",
+    so: "They greeted you in Somali with 'Nabad Nia' or 'Assalamu calaykum Nia' — respond with 'Nabad' (peace) and care. Ask 'Ma cuntay?' — have you eaten? Somali community members may be navigating significant displacement — meet them with extra steadiness.",
   };
 
   const greeting =

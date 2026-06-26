@@ -25,7 +25,10 @@ const getNiaUrl = () =>
 
 // ── Sanitize message input ────────────────────────────────────────────────────
 const MAX_MESSAGE_LENGTH = 2000;
-const SESSION_ID_PATTERN = /^[\w-]{6,128}$/;
+// Session IDs from the frontend follow the pattern nia_${Date.now()}_${randomStr}
+// which uses underscores and alphanumerics — \w covers this. Max length 200
+// to match the storage key limit. Min 6 chars to reject empty/trivial values.
+const SESSION_ID_PATTERN = /^[\w-]{6,200}$/;
 
 function sanitizeMessage(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
