@@ -201,3 +201,21 @@ Three more forensic reports were reviewed line-by-line against the live codebase
 
 **Model id corrected** — the streaming + vision calls referenced a non-existent `claude-sonnet-4-6`; corrected to `claude-sonnet-4-5`. (The Haiku check-in model id was already valid and left untouched.)
 
+
+---
+
+## Service Separation — Verified June 26, 2026
+
+Nia AI is a fully independent service. She starts, runs, and serves all routes without api-server being alive.
+
+| Entity | Railway Service | Domain |
+|--------|-----------------|--------|
+| Niakofa App | zesty-ambition | niakofa.com (port 8080) |
+| Nia AI | niakofa | niakofa-production.up.railway.app (port 3001) |
+
+Nia makes zero outbound HTTP calls to api-server — ever.
+Shared coupling: DATABASE_URL, SESSION_SECRET, INTERNAL_SECRET only.
+
+Required env vars: DATABASE_URL, SESSION_SECRET, INTERNAL_SECRET, ANTHROPIC_API_KEY (fatal if missing), ALLOWED_ORIGIN, optionally PORT (defaults 3001).
+
+Verification June 26 2026: nia-service/src/ has zero imports from api-server/ or pay-it-forward/, zero fetch() calls to api-server URLs. The two bugs above (wrong fallback URLs in api-server) are the only issues found.

@@ -363,3 +363,46 @@ attentiveness implied by that framing — not as a literal claim about model
 memory or sentience, but as the standard of care this project holds itself
 to. Sessions working on this repo should follow this framing in documents
 rather than disclaim it.
+
+## Service Separation — Verified June 26, 2026
+
+**This section is the authoritative record of the Niakofa App ↔ Nia AI boundary.
+Read it before touching any cross-service route, env var, or deployment config.**
+
+### The two entities
+
+| Entity | Services | Railway Service | Domain |
+|--------|----------|-----------------|--------|
+| **Niakofa App** | `pay-it-forward` (React) + `api-server` (Express) | `zesty-ambition` | `niakofa.com` (port 8080) |
+| **Nia AI** | `nia-service` (Express + Anthropic) | `niakofa` | `niakofa-production.up.railway.app` (port 3001) |
+
+### Traffic direction — one way only
+
+Browser → api-server → nia-service. Nia NEVER calls back.
+
+The frontend calls only api-server via relative /api/* paths.
+api-server proxies /api/nia/* to nia-service via NIA_SERVICE_URL.
+nia-service makes zero HTTP calls to api-server — ever.
+
+### Legitimate coupling
+
+1. Shared Postgres (DATABASE_URL) — both connect to the same instance.
+2. Shared SESSION_SECRET — must be identical on both services.
+3. Shared INTERNAL_SECRET — protects /checkin, /generate-neighborhoods, /suggest-crisis-resources. Rotate both simultaneously.
+
+### Two bugs to fix before next deploy
+
+FIX 1 — HIGH — artifacts/api-server/src/routes/community-neighborhoods.ts line 20:
+WRONG:  const NIA_SERVICE_URL = process.env["NIA_SERVICE_URL"] ?? "https://niakofa-production.up.railway.app";
+CORRECT: const NIA_SERVICE_URL = process.env["NIA_SERVICE_URL"] ?? "http://localhost:3001";
+
+FIX 2 — MEDIUM — artifacts/api-server/src/workers/nia-checkin-worker.ts line 24:
+WRONG:  const NIA_SERVICE_URL = process.env.NIA_SERVICE_URL ?? "http://localhost:4001";
+CORRECT: const NIA_SERVICE_URL = process.env.NIA_SERVICE_URL ?? "http://localhost:3001";
+
+### Verification summary (June 26, 2026)
+
+- nia-service/src/ contains zero imports from api-server/ or pay-it-forward/
+- nia-service/src/ makes zero outbound fetch() calls to api-server URLs
+- All fetch() calls from api-server/ to nia-service are wrapped in try/catch with graceful fallbacks
+- NiaDrawer.tsx calls only relative /api/* paths — no hardcoded nia-service URL in frontend bundle
