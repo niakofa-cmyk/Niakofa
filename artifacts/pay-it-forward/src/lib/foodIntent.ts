@@ -235,12 +235,8 @@ export function buildFoodResourceMessage(opts: FoodResourceOptions): string {
   }[tod];
 
   const closer = isRepeatSignal
-    ? "
-
-I notice this comes up for you. Would it help to set up a recurring food request on Niakofa so neighbors can bring groceries on a regular schedule?"
-    : "
-
-You don't have to go through this alone. I'm right here.";
+    ? "\n\nI notice this comes up for you. Would it help to set up a recurring food request on Niakofa so neighbors can bring groceries on a regular schedule?"
+    : "\n\nYou don't have to go through this alone. I'm right here.";
 
   return `${opener[lang] ?? opener.en}
 
