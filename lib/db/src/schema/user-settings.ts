@@ -24,6 +24,12 @@ export const userSettingsTable = pgTable("user_settings", {
   max_travel_miles: real("max_travel_miles").default(15),
   specialties: text("specialties"),
 
+  // Nia voice / UI language preference — CulturalLanguage value from
+  // artifacts/pay-it-forward/src/lib/culturalGreetings.ts (en, sw, zu, tw,
+  // yo, ha, am, so, pcm, lg). Plain text rather than a DB enum so the app
+  // can add languages without a migration on this column.
+  preferred_language: text("preferred_language").notNull().default("en"),
+
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 });
 

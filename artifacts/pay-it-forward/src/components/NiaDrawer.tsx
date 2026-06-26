@@ -496,10 +496,21 @@ export function NiaDrawer({
   const [lastFoodSignal, setLastFoodSignal] = useState<string | null>(null);
   const [voiceLanguage, setVoiceLanguage] = useState<CulturalLanguage>("en");
 
-  // Phase 7a: Detect cultural language
+  // Phase 7a: Detect cultural language — browser locale is just the
+  // fallback. If the user has an explicit preference saved (Settings →
+  // Language), that wins; it's a deliberate choice, not a guess.
   useEffect(() => {
     setVoiceLanguage(detectUserLanguage());
-  }, []);
+    if (!userId) return;
+    fetch(`${API_BASE}/api/users/${userId}/settings`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.preferred_language) {
+          setVoiceLanguage(data.preferred_language as CulturalLanguage);
+        }
+      })
+      .catch(() => {});
+  }, [userId]);
 
   // Phase 7a: Voice wake word
   const { listening, listeningState, stopListening, startListening } = useVoiceWakeWord({

@@ -338,10 +338,14 @@ router.put("/users/:id/settings", requireAuth, requireOwnership(), async (req, r
     "notif_wallet_updates", "notif_community_activity", "notif_pledge_reminders",
     "privacy_profile_visible", "privacy_live_location", "privacy_activity_sharing",
     "privacy_anonymous_giving", "service_radius_miles", "max_travel_miles", "specialties",
+    "preferred_language",
   ];
+  const VALID_LANGUAGES = ["en", "sw", "zu", "tw", "yo", "ha", "am", "so", "pcm", "lg"];
   const updates: Record<string, unknown> = { updated_at: new Date() };
   for (const key of allowed) {
-    if (req.body[key] !== undefined) updates[key] = req.body[key];
+    if (req.body[key] === undefined) continue;
+    if (key === "preferred_language" && !VALID_LANGUAGES.includes(req.body[key])) continue;
+    updates[key] = req.body[key];
   }
   // Upsert
   const [existing] = await db.select().from(userSettingsTable).where(eq(userSettingsTable.user_id, id)).limit(1);
