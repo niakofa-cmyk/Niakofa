@@ -1,4 +1,3 @@
-import { isNiaEnabled } from "../lib/db";
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { checkSafety } from "../lib/safety.js";
@@ -11,10 +10,6 @@ import {
   getUserMemory,
   upsertUserMemory,
   saveCheckinConversation,
-  getFullMemory,
-  getStructuredMemory,
-  upsertStructuredMemory,
-  type StructuredMemory,
 } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
 import {
@@ -55,7 +50,7 @@ async function streamNiaResponse(
   const stream = await anthropic.messages.stream(
     {
       model: "claude-sonnet-4-6",
-      max_tokens: 2048,
+      max_tokens: 1024,
       system: systemPrompt,
       messages,
       tools: [WEB_SEARCH_TOOL],
@@ -72,12 +67,10 @@ async function streamNiaResponse(
     }
     if (
       chunk.type === "content_block_delta" &&
-      chunk.delta.type === "input_json_delta"
+      chunk.delta.type === "input_json_delta" &&
+      typeof (chunk.delta as any).partial_json === "string"
     ) {
-      const delta = chunk.delta as { type: "input_json_delta"; partial_json?: string };
-      if (typeof delta.partial_json === "string") {
-        fullResponse += delta.partial_json;
-      }
+      fullResponse += (chunk.delta as any).partial_json;
     }
   }
 
@@ -88,11 +81,6 @@ async function streamNiaResponse(
 // POST /chat — main Nia conversation endpoint
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res: Response) => {
-  // Kill-switch backstop
-  if (!(await isNiaEnabled())) {
-    return res.status(503).json({ error: "Nia is temporarily unavailable." });
-  }
-
   const body = req.body as Record<string, unknown>;
   const message = typeof body.message === "string" ? body.message : "";
   const sessionId =
@@ -125,40 +113,8 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       ? (body.liveContext as Record<string, unknown>)
       : null;
 
-  // Phase 11K: match reasons forwarded from helper-dashboard via AppContext
-  const matchReasons: string[] | null =
-    Array.isArray(liveContext?.matchReasons)
-      ? (liveContext!.matchReasons as string[])
-      : null;
-
-  // Phase 3: Language preference — from Accept-Language or explicit body field.
-  // Only set when non-English. Injected into the system prompt prefix.
-  const language =
-    typeof body.language === "string" && body.language.trim() && body.language.trim() !== "en"
-      ? body.language.trim()
-      : null;
-
-  // Phase 7c: Food intent signal — set by client-side foodIntent.ts detection.
-  // Tells Nia what signal was detected BEFORE the API call so she can respond
-  // with precisely calibrated food awareness, not a generic offer.
-  const foodSignal =
-    typeof body.foodSignal === "string" ? body.foodSignal : null;
-  const foodSignalCount =
-    typeof body.foodSignalCount === "number" ? body.foodSignalCount : 0;
-
-  // Phase 7a: Voice activation context
-  // When user activated Nia via "Hey Nia" or cultural equivalent wake word
-  const voiceActivated = body.voiceActivated === true;
-  const wakeWordLanguage =
-    typeof body.wakeWordLanguage === "string" ? body.wakeWordLanguage : undefined;
-
   if (!message.trim() || !sessionId) {
     return res.status(400).json({ error: "message and sessionId required" });
-  }
-
-  // Cap message length to bound token cost and prevent abuse via huge payloads.
-  if (message.length > 4000) {
-    return res.status(400).json({ error: "message is too long (max 4000 characters)" });
   }
 
   if (gpsLat !== null && gpsLon !== null) {
@@ -197,11 +153,11 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   }
 
   const history = await getRecentHistory(sessionId);
-  const { memory: userMemory, structured: structuredMemory } = userId
-    ? await getFullMemory(userId).catch(() => ({ memory: null, structured: {} as StructuredMemory }))
-    : { memory: null, structured: {} as StructuredMemory };
+  const userMemory = userId ? await getUserMemory(userId).catch(() => null) : null;
 
-  const memoryPrefix = buildMemoryPrefix(userMemory, structuredMemory);
+  const memoryPrefix = userMemory
+    ? `MEMORY OF THIS USER:\n${userMemory}\n\nUse this memory naturally — reference it when relevant, like a neighbor who pays attention. Don't recite it. Don't say "I remember." Just know it.\n\n`
+    : "";
 
   const activeRequest =
     activeRequestId !== null && !Number.isNaN(activeRequestId)
@@ -229,26 +185,10 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   }, NIA_TIMEOUT_MS);
 
   try {
-    const voiceContextPrefix = buildVoiceContextPrefix(voiceActivated, wakeWordLanguage);
-    const matchReasonsPrefix = matchReasons?.length
-      ? buildMatchReasonsPrefix(matchReasons)
-      : "";
-
-    const proactiveSuggestionsDirective = liveContext
-      ? buildProactiveSuggestionsDirective(liveContext, helperModeActive, accountType)
-      : "";
-
-    const foodIntentPrefix = buildFoodIntentPrefix(foodSignal, foodSignalCount, gpsLat, gpsLon);
-
     const systemPrompt =
-      buildLanguagePrefix(language) +
       memoryPrefix +
       softPrefix +
-      voiceContextPrefix +
-      foodIntentPrefix +
       liveContextPrefix +
-      matchReasonsPrefix +
-      proactiveSuggestionsDirective +
       buildLocationPrefix((req as any).locationContext as LocationContext | undefined) +
       buildAppContextPrefix({
         userName,
@@ -282,8 +222,9 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
     await saveConversation(userId, sessionId, message, fullResponse);
 
     if (userId) {
-      extractAndUpdateMemory(userId, userMemory, message, fullResponse, anthropic).catch(() => {});
-      extractAndUpdateStructuredMemory(userId, structuredMemory, message, fullResponse, language, anthropic).catch(() => {});
+      extractAndUpdateMemory(userId, userMemory, message, fullResponse, anthropic).catch(
+        () => {}
+      );
     }
   } catch (err) {
     clearTimeout(timeoutHandle);
@@ -315,8 +256,7 @@ router.post("/checkin", async (req: Request, res: Response) => {
   // Internal calls from the scheduler bypass Bearer auth but must supply the
   // shared INTERNAL_SECRET header to prevent abuse from outside.
   const secret = req.headers["x-internal-secret"];
-  const expectedSecret = process.env.INTERNAL_SECRET ?? process.env.SESSION_SECRET;
-  if (!expectedSecret || secret !== expectedSecret) {
+  if (!process.env.INTERNAL_SECRET || secret !== process.env.INTERNAL_SECRET) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
@@ -445,9 +385,9 @@ router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Respo
   try {
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 2048,
+      max_tokens: 1024,
       system:
-        "You are Nia, the Niakofa community assistant. " +
+        "You are Nia, the Niakofa community assistant for Fort Worth, TX. " +
         "When analyzing images, be helpful and community-minded. " +
         "If the image shows something someone needs help with (broken appliance, medical situation, " +
         "navigation question, flooded area, prescription bottle), describe what you see clearly and " +
@@ -497,56 +437,13 @@ router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Respo
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /history/:sessionId
-// BUG-21: Require authentication and verify the session belongs to the requesting user
-// so that guessable session IDs cannot expose another user's conversation history.
 // ─────────────────────────────────────────────────────────────────────────────
-router.get("/history/:sessionId", parseOptionalAuth, async (req: Request, res: Response) => {
-  const authenticatedUserId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId;
-  if (!authenticatedUserId) {
-    return res.status(401).json({ error: "Authentication required to access chat history" });
-  }
-  const sessionId = Array.isArray(req.params.sessionId) ? req.params.sessionId[0] : req.params.sessionId;
+router.get("/history/:sessionId", async (req: Request, res: Response) => {
+  const sessionId = req.params.sessionId;
   if (!sessionId) return res.status(400).json({ error: "sessionId required" });
-  const history = await getScrollbackHistory(sessionId, authenticatedUserId);
-  return res.json(history);
-});
-
-// ── GET /memory/:userId — privacy-facing memory view (Phase 1) ───────────────
-// Returns what Nia remembers about this user so they can review and delete it.
-// Only the user themselves may read their memory (userId in URL is checked against
-// the authenticated Bearer token).
-router.get("/memory/:userId", parseOptionalAuth, async (req: Request, res: Response) => {
-  const authenticatedUserId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId;
-  const requestedId = parseInt(req.params.userId as string, 10);
-  if (isNaN(requestedId)) return res.status(400).json({ error: "Invalid userId" });
-  if (!authenticatedUserId || authenticatedUserId !== requestedId) {
-    return res.status(403).json({ error: "You may only view your own memory" });
-  }
-  const { memory, structured } = await getFullMemory(requestedId).catch(() => ({ memory: null, structured: {} as StructuredMemory }));
-  return res.json({ memory, structured });
-});
-
-// ── DELETE /memory/:userId — clear user's Nia memory ────────────────────────
-router.delete("/memory/:userId", parseOptionalAuth, async (req: Request, res: Response) => {
-  const authenticatedUserId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId;
-  const requestedId = parseInt(req.params.userId as string, 10);
-  if (isNaN(requestedId)) return res.status(400).json({ error: "Invalid userId" });
-  if (!authenticatedUserId || authenticatedUserId !== requestedId) {
-    return res.status(403).json({ error: "You may only clear your own memory" });
-  }
-  try {
-    await upsertUserMemory(requestedId, "");
-    await upsertStructuredMemory(requestedId, {
-      recurring_needs: [],
-      accessibility_notes: [],
-      people_mentioned: [],
-      corrections: [],
-    });
-    return res.json({ cleared: true });
-  } catch (err) {
-    logger.error({ err, userId: requestedId }, "nia: memory clear failed");
-    return res.status(500).json({ error: "Failed to clear memory" });
-  }
+  return res.json(
+    await getScrollbackHistory(Array.isArray(sessionId) ? sessionId[0] : sessionId)
+  );
 });
 
 router.get("/health", (_req, res) => res.json({ status: "ok", service: "nia" }));
@@ -556,223 +453,6 @@ export default router;
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Build language/translation prefix if user has non-English preference
- * Phase 3: Language adaptation support
- */
-function buildLanguagePrefix(language: string | null): string {
-  if (!language || language === "en") {
-    return "";
-  }
-
-  const langMap: Record<string, string> = {
-    sw: "Swahili (East Africa)",
-    ak: "Akan/Twi (Ghana)",
-    zu: "Zulu (South Africa)",
-    yo: "Yoruba (Nigeria)",
-    lg: "Luganda (Uganda)",
-  };
-
-  const langName = langMap[language] || language;
-  return `LANGUAGE PREFERENCE: This user prefers ${langName}. Respond in ${langName} unless they write to you in a different language first — then match theirs immediately without comment.\n\n`;
-}
-
-/**
- * Build memory prefix from user's persistent memory
- * Includes both freeform and structured memory
- */
-function buildMemoryPrefix(
-  freeformMemory: string | null,
-  structuredMemory: StructuredMemory
-): string {
-  if (!freeformMemory && Object.keys(structuredMemory).length === 0) {
-    return "";
-  }
-
-  const lines: string[] = ["USER MEMORY (treat as ground truth about this person):"];
-
-  if (freeformMemory) {
-    lines.push(freeformMemory);
-  }
-
-  if (structuredMemory.recurring_needs && structuredMemory.recurring_needs.length > 0) {
-    lines.push(`Recurring needs: ${structuredMemory.recurring_needs.join(", ")}`);
-  }
-
-  if (structuredMemory.accessibility_notes && structuredMemory.accessibility_notes.length > 0) {
-    lines.push(`Accessibility notes: ${structuredMemory.accessibility_notes.join(", ")}`);
-  }
-
-  if (structuredMemory.people_mentioned && structuredMemory.people_mentioned.length > 0) {
-    lines.push(`Important people: ${structuredMemory.people_mentioned.join(", ")}`);
-  }
-
-  if (structuredMemory.resources_that_worked && structuredMemory.resources_that_worked.length > 0) {
-    lines.push(`Resources that helped before: ${structuredMemory.resources_that_worked.join(", ")}`);
-  }
-
-  lines.push("");
-  return lines.join("\n");
-}
-
-/**
- * Build voice context prefix if user activated Nia via voice wake-word
- * Phase 7a: Voice consciousness
- */
-function buildVoiceContextPrefix(voiceActivated: boolean, wakeWordLanguage?: string): string {
-  if (!voiceActivated) {
-    return "";
-  }
-
-  const culturalGreetings: Record<string, string> = {
-    en: "They greeted you in English — respond warmly and directly.",
-    sw: "They greeted you in Swahili with 'Habari Nia' or 'Umeshakula Nia' — they are speaking in their comfort language. Respond with Ubuntu warmth. Ask 'Umeshakula?' — have you eaten?",
-    ak: "They greeted you in Akan/Twi with 'Mema wo akye Nia' or 'Agoo Nia' — they are from a culture that shows care through asking about daily sustenance. Mirror that warmth. Ask 'Woadi anpa?' — have you eaten this morning?",
-    zu: "They greeted you in Zulu with 'Sawubona Nia' — they are calling you as a neighbor. Respond with recognition and presence. Sawubona means 'I see you' — see them back.",
-    yo: "They greeted you in Yoruba with 'E kaaro', 'E kaasan', or 'E kaaale Nia' — honor their dignity with the matching time-of-day greeting. Ask 'Ṣe o ti jẹun?' — have you eaten?",
-    lg: "They greeted you in Luganda — they are asking 'how did you wake up?' Respond by asking how THEY woke up — mutual care. 'Wasuze otya nno? Olidde?' — How did you sleep? Have you eaten?",
-    ha: "They greeted you in Hausa with 'Sannu Nia' or 'Ina kwana Nia' — respond with 'Ina kwana?' (How did you sleep?) in the morning, or 'Ina yini?' (How is your day?) in the afternoon. Ask 'Ka ci abinci?' — have you eaten? Hausa speakers value warm, respectful address.",
-    am: "They greeted you in Amharic with 'Selam Nia' or 'Tena yistilign Nia' — respond with 'Selam' and warmth. Ask 'Tewat beltehal?' — have you eaten this morning? Amharic speakers from Ethiopia and Eritrea carry deep cultural pride. Honor it.",
-    so: "They greeted you in Somali with 'Nabad Nia' or 'Assalamu calaykum Nia' — respond with 'Nabad' (peace) and care. Ask 'Ma cuntay?' — have you eaten? Somali community members may be navigating significant displacement — meet them with extra steadiness.",
-  };
-
-  const greeting =
-    (wakeWordLanguage && culturalGreetings[wakeWordLanguage]) ||
-    culturalGreetings.en;
-
-  return `VOICE ACTIVATION: This person spoke to you directly and used your name. ${greeting} Keep responses 2–4 sentences. Speak with breath and presence. End with an invitation for them to continue speaking.\n\n`;
-}
-
-/**
- * Extract memory facts from conversation (already implemented)
- * This was a missing function mentioned in Phase 4
- */
-async function extractAndUpdateMemory(
-  userId: number,
-  existingMemory: string | null,
-  userMessage: string,
-  niaResponse: string,
-  client: Anthropic
-): Promise<void> {
-  if (!userMessage.trim() || !niaResponse.trim()) {
-    return;
-  }
-
-  const prompt = `You are Nia's memory system. Extract any meaningful, lasting facts about this user from the conversation below.
-
-Existing memory:
-${existingMemory ?? "None yet."}
-
-New conversation:
-User: ${userMessage}
-Nia: ${niaResponse}
-
-Rules:
-- Only extract facts that would help Nia be more personal and helpful in FUTURE conversations
-- Include: life situation, needs, family members, struggles, wins, goals, preferences, location details, skills they have or need
-- Merge with existing memory — don't duplicate, update if changed
-- Keep it under 400 words, written as clear bullet points
-- If nothing new and meaningful to remember, return the existing memory unchanged
-- If there is emotional context, capture that briefly
-
-Return ONLY the updated memory, no preamble.`;
-
-  try {
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 500,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const newMemory =
-      response.content[0].type === "text" ? response.content[0].text.trim() : null;
-    if (newMemory && newMemory.length > 10) {
-      await upsertUserMemory(userId, newMemory);
-    }
-  } catch (err) {
-    logger.debug({ err, userId }, "nia: memory extraction skipped");
-  }
-}
-
-/**
- * Extract and update structured memory from conversation
- * (Already called but implementation needed)
- */
-async function extractAndUpdateStructuredMemory(
-  userId: number,
-  existing: StructuredMemory,
-  userMessage: string,
-  niaResponse: string,
-  language: string | null,
-  client: Anthropic
-): Promise<void> {
-  if (!userMessage.trim()) {
-    return;
-  }
-
-  const prompt = `From this conversation, extract structured facts about the user:
-User: ${userMessage}
-Nia: ${niaResponse}
-
-Return a JSON object with only the fields that have NEW information:
-{
-  "recurring_needs": ["array", "of", "needs"],
-  "accessibility_notes": ["array", "of", "accessibility", "info"],
-  "people_mentioned": ["family", "or", "important", "people"],
-  "resources_that_worked": ["services", "or", "resources", "they", "mentioned"],
-  "corrections": ["if", "any", "previous", "facts", "were", "corrected"]
-}
-
-Return ONLY valid JSON, no preamble. If no new structured facts, return {}.`;
-
-  try {
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 300,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const text =
-      response.content[0].type === "text" ? response.content[0].text.trim() : "{}";
-    const parsed = JSON.parse(text);
-
-    // Merge with existing
-    const updated: StructuredMemory = {
-      recurring_needs: [
-        ...(existing.recurring_needs ?? []),
-        ...(parsed.recurring_needs ?? []),
-      ],
-      accessibility_notes: [
-        ...(existing.accessibility_notes ?? []),
-        ...(parsed.accessibility_notes ?? []),
-      ],
-      people_mentioned: [
-        ...(existing.people_mentioned ?? []),
-        ...(parsed.people_mentioned ?? []),
-      ],
-      resources_that_worked: [
-        ...(existing.resources_that_worked ?? []),
-        ...(parsed.resources_that_worked ?? []),
-      ],
-      corrections: parsed.corrections ?? [],
-    };
-
-    // Deduplicate
-    Object.keys(updated).forEach((key) => {
-      if (Array.isArray(updated[key as keyof StructuredMemory])) {
-        const arr = updated[key as keyof StructuredMemory] as string[];
-        updated[key as keyof StructuredMemory] = [
-          ...new Set(arr),
-        ] as any;
-      }
-    });
-
-    await upsertStructuredMemory(userId, updated);
-  } catch (err) {
-    logger.debug({ err, userId }, "nia: structured memory extraction failed");
-  }
-}
 
 function buildLiveContextPrefix(ctx: Record<string, unknown>): string {
   const lines: string[] = ["LIVE COMMUNITY CONTEXT (real-time data — use it):"];
@@ -844,128 +524,47 @@ function buildImagePrompt(question: string | null, context: string | null): stri
   return "Please describe what you see in this image and note anything relevant to community help or safety.";
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Memory extraction — runs async after every chat turn
+// Uses Haiku (cheap + fast) for extraction; Sonnet is for conversation.
+// ─────────────────────────────────────────────────────────────────────────────
+async function extractAndUpdateMemory(
+  userId: number,
+  existingMemory: string | null,
+  userMessage: string,
+  niaResponse: string,
+  client: Anthropic
+): Promise<void> {
+  const prompt = `You are Nia's memory system. Extract any meaningful, lasting facts about this user from the conversation below.
 
-/**
- * Build match reasons prefix — explains why a helper was matched.
- * Only injected when real match_reasons are forwarded from the helper dashboard.
- */
-function buildMatchReasonsPrefix(reasons: string[]): string {
-  if (!reasons.length) return "";
-  return (
-    "MATCH CONTEXT: If the user asks why this helper was matched or why they were selected, " +
-    "explain using ONLY these reasons (never invent additional ones):\n" +
-    reasons.map((r) => `- ${r}`).join("\n") +
-    "\n\n"
-  );
-}
+Existing memory:
+${existingMemory ?? "None yet."}
 
-/**
- * Build proactive suggestions directive — tells Nia to append relevant action chips.
- * The frontend (NiaDrawer) already renders [SUGGEST:...] tags as tappable chips.
- *
- * Format Nia must use at END of response when relevant:
- * [SUGGEST: View open requests nearby | Start helper application | Post a request | Find food assistance]
- *
- * Rules:
- * - Only append when genuinely relevant to what the user asked
- * - Max 3 suggestions per response
- * - Use pipe | as separator
- * - Never suggest things the user just did or said they already did
- */
-function buildProactiveSuggestionsDirective(
-  ctx: Record<string, unknown>,
-  helperMode: boolean,
-  accountType: string | null
-): string {
-  const lines: string[] = [
-    "PROACTIVE SUGGESTIONS: When your response would naturally lead somewhere actionable,",
-    "append a suggestion line at the very end in this exact format:",
-    "[SUGGEST: Action one | Action two | Action three]",
-    "",
-    "Available actions based on current context:",
-  ];
+New conversation:
+User: ${userMessage}
+Nia: ${niaResponse}
 
-  if (typeof ctx.openRequestsNearby === "number" && ctx.openRequestsNearby > 0) {
-    lines.push(`- "View ${ctx.openRequestsNearby} open requests nearby" — use when user asks about helping or what's needed`);
+Rules:
+- Only extract facts that would help Nia be more personal and helpful in FUTURE conversations
+- Include: life situation, needs, family members, struggles, wins, goals, preferences, location details, skills they have or need
+- Merge with existing memory — don't duplicate, update if changed
+- Keep it under 400 words, written as clear bullet points
+- Note the approximate date of any key events (e.g. "car broke down — June 2026")
+- If nothing new and meaningful to remember, return the existing memory unchanged
+- If there is emotional context (person was going through something hard), capture that briefly
+- Return ONLY the updated memory bullets, no preamble or explanation
+
+Updated memory:`;
+
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 600,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const newMemory =
+    response.content[0].type === "text" ? response.content[0].text.trim() : null;
+  if (newMemory && newMemory.length > 10) {
+    await upsertUserMemory(userId, newMemory);
   }
-  if (!helperMode) {
-    lines.push('- "Become a helper" — use when user expresses desire to help their community');
-    lines.push('- "Start helper application" — use after explaining helper program');
-  }
-  if (helperMode) {
-    lines.push('- "View my active requests" — use when helper asks about their assignments');
-    lines.push('- "Turn off helper mode" — use if helper says they need a break');
-  }
-  lines.push('- "Post a request for help" — use when user describes a need they have not posted yet');
-  lines.push('- "Find food assistance near me" — use when user mentions hunger or food insecurity');
-  lines.push('- "Find shelter resources" — use when user mentions housing instability');
-  lines.push('- "Set up recurring help" — use when user describes a recurring need');
-  lines.push('- "Rate my recent helper" — use after discussing a completed request');
-  lines.push('- "Share to community board" — use when user has info that might help neighbors');
-  lines.push("");
-  lines.push("Only include [SUGGEST:...] when at least one action is genuinely relevant.");
-  lines.push("Omit entirely for crisis responses, pure emotional support, or when no action fits.");
-  lines.push("Never repeat the same suggestion twice in a conversation.\n");
-
-  return lines.join("\n") + "\n";
 }
-
-
-/**
- * Build food intent prefix — tells Nia what food signal was detected client-side
- * so she responds with precision, not a generic food offer.
- * Phase 7c: Food Intelligence
- */
-function buildFoodIntentPrefix(
-  signal: string | null,
-  signalCount: number,
-  lat: number | null,
-  lon: number | null
-): string {
-  if (!signal || signal === "none" || signal === "affirmative") return "";
-
-  const locationHint = lat !== null && lon !== null
-    ? `User coordinates: ${lat.toFixed(4)}, ${lon.toFixed(4)}. Use these to recommend the nearest food resource or farm. `
-    : "";
-
-  const signalInstructions: Record<string, string> = {
-    explicit_no:
-      "FOOD SIGNAL — EXPLICIT NO: The user just said no when asked if they've eaten. " +
-      "Do not ask follow-up questions about why. Do not make them justify their need. " +
-      "Lead immediately with the most accessible food resource for right now. " +
-      "Warm, fast, specific. One or two options maximum. " + locationHint,
-
-    implicit_no:
-      "FOOD SIGNAL — IMPLICIT: The user signaled they may not have food (mentioned being busy, " +
-      "tight on money, or similar). Acknowledge the weight of what they said first. " +
-      "Then offer a food resource naturally — not as a diagnosis. " +
-      "Keep it brief and non-intrusive. " + locationHint,
-
-    distress:
-      "FOOD SIGNAL — DISTRESS: The user has directly expressed hunger or that their family has " +
-      "no food. This is urgent. Move fast. Lead with the fastest option first " +
-      "(Text FOOD to 877-877 for immediate locator, or Presbyterian Night Shelter if it's evening). " +
-      "Then one stable option. Do not pad. Do not philosophize. Help now. " + locationHint,
-
-    deflection:
-      "FOOD SIGNAL — DEFLECTION: The user said they're fine after a care check, but may not be. " +
-      "Do not push. Plant one seed gently — mention you know of nearby food spots if ever needed — " +
-      "then move on to whatever they actually came to talk about. " + locationHint,
-  };
-
-  const repeatNote = signalCount > 1
-    ? "REPEAT FOOD SIGNAL: This user has signaled food need more than once this session. " +
-      "After addressing the immediate need, gently mention Niakofa's recurring request feature " +
-      "— a neighbor who brings groceries weekly beats a pantry run every time. " +
-      "Also consider mentioning a local CSA or community garden if appropriate."
-    : "";
-
-  const instruction = signalInstructions[signal];
-  if (!instruction) return "";
-
-  return `${instruction}
-
-${repeatNote}`;
-}
-
-// Note: extractAndUpdateMemory is now defined in the HELPERS section above

@@ -17,7 +17,7 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
-const NIA_SERVICE_URL = process.env["NIA_SERVICE_URL"] ?? "https://niakofa-production.up.railway.app";
+const NIA_SERVICE_URL = process.env["NIA_SERVICE_URL"] ?? "http://localhost:3001";
 const INTERNAL_SECRET = process.env["INTERNAL_SECRET"] ?? process.env["SESSION_SECRET"];
 
 function normalizeCityKey(city: string): string {
