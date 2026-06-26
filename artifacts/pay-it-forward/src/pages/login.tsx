@@ -1,0 +1,1034 @@
+import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Heart, Mail, User, Lock, Eye, EyeOff, Loader2, MapPin, Shield,
+  KeyRound, CheckCircle2, ChevronDown, ChevronUp, Globe, Car, Wrench,
+  Clock, AlertCircle,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useAppContext } from "@/lib/AppContext";
+import type { User as AppUser } from "@/lib/AppContext";
+
+type ApiAuthResponse = Partial<AppUser> & {
+  error?: string;
+  error_code?: string;
+  user_id?: number;
+  user_email?: string;
+  user_name?: string;
+  token?: string;
+  user?: AppUser;
+};
+import { setToken } from "@/lib/auth";
+import { NiaLoginOrb } from "@/components/NiaDrawer";
+import { toast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
+
+type Mode = "login" | "register";
+
+// ── Helper profile constants ──────────────────────────────────────────────────
+
+const HELPER_SKILLS = [
+  { id: "plumbing",         label: "Plumbing",         emoji: "🔧" },
+  { id: "electrical",       label: "Electrical",        emoji: "⚡" },
+  { id: "carpentry",        label: "Carpentry",         emoji: "🪚" },
+  { id: "painting",         label: "Painting",          emoji: "🖌️" },
+  { id: "yard_work",        label: "Yard Work",         emoji: "🌿" },
+  { id: "heavy_lifting",    label: "Heavy Lifting",     emoji: "💪" },
+  { id: "drives_truck",     label: "Drives Truck",      emoji: "🚛" },
+  { id: "cdl_driver",       label: "CDL Driver",        emoji: "🚚" },
+  { id: "grocery_shopping", label: "Grocery Shopping",  emoji: "🛒" },
+  { id: "cooking",          label: "Cooking",           emoji: "🍳" },
+  { id: "childcare",        label: "Childcare",         emoji: "👶" },
+  { id: "elder_care",       label: "Elder Care",        emoji: "🧓" },
+  { id: "medical_support",  label: "Medical Support",   emoji: "💊" },
+  { id: "tech_support",     label: "Tech Support",      emoji: "💻" },
+  { id: "tutoring",         label: "Tutoring",          emoji: "📚" },
+  { id: "translation",      label: "Translation",       emoji: "🌍" },
+  { id: "pet_care",         label: "Pet Care",          emoji: "🐾" },
+  { id: "food_delivery",    label: "Food Delivery",     emoji: "🍔" },
+  { id: "event_setup",      label: "Event Setup",       emoji: "🎪" },
+  { id: "emergency_first_aid", label: "First Aid",     emoji: "🚑" },
+];
+
+const HELPER_LANGUAGES = [
+  "English", "Spanish", "Vietnamese", "Arabic", "Somali", "Swahili",
+  "French", "Mandarin", "Hindi", "Urdu", "Tagalog", "Portuguese",
+  "Amharic", "Korean", "Japanese", "Russian",
+];
+
+const HELPER_QUALIFICATIONS = [
+  "Background check completed",
+  "CPR/First Aid certified",
+  "Licensed contractor",
+  "Licensed electrician",
+  "Licensed plumber",
+  "Certified EMT/Paramedic",
+  "Certified teacher/tutor",
+  "Food handler certified",
+  "Commercial driver (CDL)",
+  "Professional caregiver",
+  "Fluent bilingual",
+  "Military/Veteran",
+  "Community volunteer experience",
+  "Social work background",
+];
+
+const VEHICLE_OPTIONS = [
+  { id: "car",        label: "Has a car",        emoji: "🚗" },
+  { id: "truck",      label: "Drives a truck",   emoji: "🛻" },
+  { id: "van",        label: "Has a van/SUV",    emoji: "🚐" },
+  { id: "motorcycle", label: "Motorcycle",       emoji: "🏍️" },
+  { id: "bicycle",    label: "Bicycle/E-bike",   emoji: "🚲" },
+  { id: "none",       label: "No vehicle",       emoji: "🚶" },
+];
+
+// ── Helper signup form ─────────────────────────────────────────────────────────
+
+function HelperProfileForm({
+  selectedSkills, setSelectedSkills,
+  selectedLanguages, setSelectedLanguages,
+  selectedQuals, setSelectedQuals,
+  vehicle, setVehicle,
+  bio, setBio,
+  socialLinks, setSocialLinks,
+}: {
+  selectedSkills: string[];
+  setSelectedSkills: (s: string[]) => void;
+  selectedLanguages: string[];
+  setSelectedLanguages: (l: string[]) => void;
+  selectedQuals: string[];
+  setSelectedQuals: (q: string[]) => void;
+  vehicle: string;
+  setVehicle: (v: string) => void;
+  bio: string;
+  setBio: (b: string) => void;
+  socialLinks: string;
+  setSocialLinks: (s: string) => void;
+}) {
+  const [showAllSkills, setShowAllSkills] = useState(false);
+  const [showQuals, setShowQuals] = useState(false);
+
+  const toggleSkill = (id: string) => {
+    setSelectedSkills(
+      selectedSkills.includes(id)
+        ? selectedSkills.filter(s => s !== id)
+        : [...selectedSkills, id]
+    );
+  };
+
+  const toggleLanguage = (lang: string) => {
+    setSelectedLanguages(
+      selectedLanguages.includes(lang)
+        ? selectedLanguages.filter(l => l !== lang)
+        : [...selectedLanguages, lang]
+    );
+  };
+
+  const toggleQual = (q: string) => {
+    setSelectedQuals(
+      selectedQuals.includes(q)
+        ? selectedQuals.filter(x => x !== q)
+        : [...selectedQuals, q]
+    );
+  };
+
+  const visibleSkills = showAllSkills ? HELPER_SKILLS : HELPER_SKILLS.slice(0, 10);
+
+  return (
+    <motion.div
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: "auto", opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      className="overflow-hidden"
+    >
+      <div className="space-y-4 pt-2 pb-1">
+        {/* Skills */}
+        <div>
+          <div className="flex items-center gap-1.5 mb-2">
+            <Wrench className="w-3.5 h-3.5 text-primary" />
+            <span className="text-xs font-black uppercase tracking-wider text-foreground">
+              Skills & Specialties <span className="text-destructive">*</span>
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {visibleSkills.map(skill => (
+              <button
+                key={skill.id}
+                type="button"
+                onClick={() => toggleSkill(skill.id)}
+                className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-full border font-bold transition-all ${
+                  selectedSkills.includes(skill.id)
+                    ? "bg-primary/20 border-primary text-primary"
+                    : "bg-card border-border text-muted-foreground hover:border-primary/40"
+                }`}
+              >
+                <span>{skill.emoji}</span>
+                <span>{skill.label}</span>
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setShowAllSkills(p => !p)}
+              className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-full border border-dashed border-border text-muted-foreground hover:border-primary/40 transition-all"
+            >
+              {showAllSkills ? <><ChevronUp className="w-3 h-3" /> Less</> : <><ChevronDown className="w-3 h-3" /> More skills</>}
+            </button>
+          </div>
+          {selectedSkills.length > 0 && (
+            <p className="text-[10px] text-primary mt-1.5">{selectedSkills.length} skill{selectedSkills.length !== 1 ? "s" : ""} selected</p>
+          )}
+        </div>
+
+        {/* Languages */}
+        <div>
+          <div className="flex items-center gap-1.5 mb-2">
+            <Globe className="w-3.5 h-3.5 text-primary" />
+            <span className="text-xs font-black uppercase tracking-wider text-foreground">Languages Spoken</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {HELPER_LANGUAGES.map(lang => (
+              <button
+                key={lang}
+                type="button"
+                onClick={() => toggleLanguage(lang)}
+                className={`text-xs px-2.5 py-1.5 rounded-full border font-bold transition-all ${
+                  selectedLanguages.includes(lang)
+                    ? "bg-primary/20 border-primary text-primary"
+                    : "bg-card border-border text-muted-foreground hover:border-primary/40"
+                }`}
+              >
+                {lang}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Vehicle */}
+        <div>
+          <div className="flex items-center gap-1.5 mb-2">
+            <Car className="w-3.5 h-3.5 text-primary" />
+            <span className="text-xs font-black uppercase tracking-wider text-foreground">Transportation</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {VEHICLE_OPTIONS.map(v => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => setVehicle(vehicle === v.id ? "" : v.id)}
+                className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-full border font-bold transition-all ${
+                  vehicle === v.id
+                    ? "bg-primary/20 border-primary text-primary"
+                    : "bg-card border-border text-muted-foreground hover:border-primary/40"
+                }`}
+              >
+                <span>{v.emoji}</span>
+                <span>{v.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Qualifications */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowQuals(p => !p)}
+            className="flex items-center gap-1.5 mb-2 text-xs font-black uppercase tracking-wider text-foreground w-full text-left"
+          >
+            <Shield className="w-3.5 h-3.5 text-primary" />
+            <span>Certifications &amp; Qualifications</span>
+            <span className="ml-auto">{showQuals ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}</span>
+          </button>
+          {showQuals && (
+            <div className="space-y-2 bg-muted/30 rounded-xl p-3 border border-border">
+              {HELPER_QUALIFICATIONS.map(q => (
+                <label key={q} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedQuals.includes(q)}
+                    onChange={() => toggleQual(q)}
+                    className="accent-primary w-3.5 h-3.5 shrink-0"
+                  />
+                  <span className="text-xs text-muted-foreground">{q}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          {selectedQuals.length > 0 && (
+            <p className="text-[10px] text-primary mt-1.5">{selectedQuals.length} qualification{selectedQuals.length !== 1 ? "s" : ""} selected</p>
+          )}
+        </div>
+
+        {/* Bio */}
+        <div>
+          <div className="text-xs font-black uppercase tracking-wider text-foreground mb-1.5">About You (optional)</div>
+          <textarea
+            placeholder="Tell the community about yourself, why you want to help, and what makes you a great helper…"
+            value={bio}
+            onChange={e => setBio(e.target.value)}
+            rows={3}
+            maxLength={500}
+            className="w-full bg-card border border-border rounded-2xl px-4 py-3 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground resize-none"
+          />
+          <div className="text-[10px] text-muted-foreground mt-0.5 text-right">{bio.length}/500</div>
+        </div>
+
+        {/* Social links */}
+        <div>
+          <div className="text-xs font-black uppercase tracking-wider text-foreground mb-1.5">Social Media (optional)</div>
+          <input
+            type="text"
+            placeholder="@instagram, Facebook profile, LinkedIn…"
+            value={socialLinks}
+            onChange={e => setSocialLinks(e.target.value)}
+            className="w-full bg-card border border-border rounded-2xl px-4 py-3 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+          />
+        </div>
+
+        {/* Pending notice */}
+        <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3">
+          <Clock className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-yellow-400 leading-relaxed">
+            Your helper account will be <strong>held for admin review</strong> before you can accept requests. You'll be notified once approved.
+          </p>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Main login screen ──────────────────────────────────────────────────────────
+
+export default function LoginScreen() {
+  const { t } = useTranslation();
+  const [, setLocation] = useLocation();
+  const { setCurrentUser } = useAppContext();
+  const [mode, setMode] = useState<Mode>("login");
+
+  // ENH-003: show a clear message when we landed here because a 401
+  // bounced the user out of an expired session, instead of leaving them
+  // wondering why they were suddenly logged out.
+  useEffect(() => {
+    if (sessionStorage.getItem("niakofa_session_expired")) {
+      sessionStorage.removeItem("niakofa_session_expired");
+      toast({
+        title: "Session expired",
+        description: "Please sign in again to continue.",
+        variant: "destructive",
+      });
+    }
+  }, []);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [isHelper, setIsHelper] = useState(false);
+  const [accountType, setAccountType] = useState<"individual" | "business" | "sponsor">("individual");
+  const [organizationName, setOrganizationName] = useState("");
+  const [organizationDescription, setOrganizationDescription] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // Helper profile state
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]);
+  const [selectedQuals, setSelectedQuals] = useState<string[]>([]);
+  const [vehicle, setVehicle] = useState("");
+  const [bio, setBio] = useState("");
+  const [socialLinks, setSocialLinks] = useState("");
+
+  // Legacy account set-password flow
+  const [pendingLegacyUser, setPendingLegacyUser] = useState<{ id: number; email: string; name: string } | null>(null);
+  const [resetCode, setResetCode] = useState("");
+  const [codeSentMessage, setCodeSentMessage] = useState("");
+  const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
+  const [forgotStep, setForgotStep] = useState<"email" | "code">("email");
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotCode, setForgotCode] = useState("");
+  const [forgotNewPassword, setForgotNewPassword] = useState("");
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
+  const [forgotSaving, setForgotSaving] = useState(false);
+  const [forgotPasswordSaved, setForgotPasswordSaved] = useState(false);
+  const [showForgotNewPass, setShowForgotNewPass] = useState(false);
+  const [showForgotConfirmPass, setShowForgotConfirmPass] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [passwordSaved, setPasswordSaved] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!email.trim()) return;
+    if (mode === "register" && !name.trim()) return;
+    if (mode === "register" && isHelper && selectedSkills.length === 0) {
+      toast({ title: "Please select at least one skill", variant: "destructive" });
+      return;
+    }
+    if (mode === "register" && (accountType === "business" || accountType === "sponsor") && !organizationName.trim()) {
+      toast({ title: `Please enter your ${accountType} name`, variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+
+    try {
+      if (mode === "register") {
+        const res = await fetch("/api/users/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: name.trim(),
+            email: email.trim(),
+            password,
+            is_helper: false,
+            account_type: accountType,
+            organization_name: organizationName.trim() || undefined,
+            organization_description: organizationDescription.trim() || undefined,
+          }),
+        });
+        const data = await res.json().catch(() => ({})) as ApiAuthResponse;
+        if (!res.ok) {
+          const msgKey = data.error === "Email already registered" ? "auth.email_taken" : null;
+          throw new Error(msgKey ? t(msgKey) : (data.error ?? "Registration failed"));
+        }
+
+        if (!data.user) throw new Error("Registration failed");
+        const user = data.user;
+        if (data.token) setToken(data.token);
+
+        // If they want to be a helper, submit their profile application
+        if (isHelper && selectedSkills.length > 0) {
+          try {
+            const appRes = await fetch(`/api/users/${user.id}/helper-application`, {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${data.token}`,
+              },
+              body: JSON.stringify({
+                helper_skills: selectedSkills,
+                helper_languages: selectedLanguages,
+                helper_qualifications: selectedQuals,
+                helper_bio: bio.trim() || undefined,
+                helper_vehicle: vehicle || undefined,
+                helper_social_links: socialLinks.trim() || undefined,
+              }),
+            });
+            if (appRes.ok) {
+              const updatedUser = await appRes.json();
+              setCurrentUser(updatedUser);
+              localStorage.setItem("niakofa_user", JSON.stringify(updatedUser));
+              toast({ title: `Welcome, ${user.name}! 💙`, description: "Your helper application is pending admin review." });
+            } else {
+              setCurrentUser(user);
+              localStorage.setItem("niakofa_user", JSON.stringify(user));
+              toast({ title: `Welcome to Niakofa, ${user.name}! 💙` });
+            }
+          } catch {
+            setCurrentUser(user);
+            localStorage.setItem("niakofa_user", JSON.stringify(user));
+            toast({ title: `Welcome to Niakofa, ${user.name}! 💙` });
+          }
+        } else {
+          setCurrentUser(user);
+          localStorage.setItem("niakofa_user", JSON.stringify(user));
+          const welcomeDesc =
+            accountType === "business"
+              ? "Your business account is pending admin review."
+              : accountType === "sponsor"
+                ? "Your sponsor account is pending admin review."
+                : undefined;
+          toast({ title: `Welcome to Niakofa, ${user.name}! 💙`, description: welcomeDesc });
+        }
+
+        const onboarded = localStorage.getItem("niakofa_onboarded");
+        setLocation(onboarded ? "/" : "/onboarding");
+      } else {
+        const res = await fetch("/api/users/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.trim(), password }),
+        });
+        const data = await res.json().catch(() => ({})) as ApiAuthResponse;
+
+        if (!res.ok && res.status === 403 && data.error_code === "LEGACY_PASSWORD_REQUIRED" && data.user_id && data.user_email && data.user_name) {
+          setPendingLegacyUser({ id: data.user_id, email: data.user_email, name: data.user_name });
+          // Fire the emailed verification code immediately — no extra tap needed
+          fetch("/api/users/request-password-reset", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: data.user_email }),
+          }).then(() => setCodeSentMessage(`We sent a 6-digit code to ${data.user_email}`))
+            .catch(() => setCodeSentMessage("Enter the 6-digit code sent to your email"));
+          return;
+        }
+
+        if (!res.ok) {
+          const msgKey =
+            data.error === "Incorrect password" ? "auth.wrong_password" :
+            data.error === "No account found with that email" ? "auth.no_account" : null;
+          throw new Error(msgKey ? t(msgKey) : (data.error ?? t("common.error")));
+        }
+
+        if (!data.user) throw new Error(t("common.error"));
+        const user = data.user;
+        if (data.token) setToken(data.token);
+        setCurrentUser(user);
+        localStorage.setItem("niakofa_user", JSON.stringify(user));
+        toast({ title: `Welcome back, ${user.name}!` });
+        setLocation("/");
+      }
+    } catch (err) {
+      toast({ title: err instanceof Error ? err.message : t("common.error"), variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSetPassword = async () => {
+    if (!pendingLegacyUser) return;
+    if (newPassword.length < 8) {
+      toast({ title: "Password must be at least 8 characters", variant: "destructive" });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast({ title: "Passwords do not match", variant: "destructive" });
+      return;
+    }
+    if (resetCode.trim().length !== 6) {
+      toast({ title: "Enter the 6-digit code sent to your email", variant: "destructive" });
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const res = await fetch("/api/users/set-initial-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: pendingLegacyUser.id,
+          email: pendingLegacyUser.email,
+          code: resetCode.trim(),
+          new_password: newPassword,
+        }),
+      });
+      const data = await res.json().catch(() => ({})) as ApiAuthResponse;
+      if (!res.ok || !data.user) throw new Error(data.error ?? "Failed to save password");
+      if (data.token) setToken(data.token);
+      setCurrentUser(data.user);
+      localStorage.setItem("niakofa_user", JSON.stringify(data.user));
+      setPasswordSaved(true);
+      setTimeout(() => {
+        toast({ title: "Password set — welcome, " + pendingLegacyUser.name + "!" });
+        setLocation("/");
+      }, 1400);
+    } catch (err) {
+      toast({ title: err instanceof Error ? err.message : t("common.error"), variant: "destructive" });
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const handleRequestForgotCode = async () => {
+    if (!forgotEmail.trim()) return;
+    setForgotSaving(true);
+    try {
+      await fetch("/api/users/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail.trim() }),
+      });
+      setForgotStep("code");
+      toast({ title: "If that email has an account, a code has been sent." });
+    } catch {
+      toast({ title: t("common.error"), variant: "destructive" });
+    } finally {
+      setForgotSaving(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (forgotCode.trim().length !== 6) {
+      toast({ title: "Enter the 6-digit code sent to your email", variant: "destructive" });
+      return;
+    }
+    if (forgotNewPassword.length < 8) {
+      toast({ title: "Password must be at least 8 characters", variant: "destructive" });
+      return;
+    }
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      toast({ title: "Passwords do not match", variant: "destructive" });
+      return;
+    }
+    setForgotSaving(true);
+    try {
+      const res = await fetch("/api/users/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: forgotEmail.trim(),
+          code: forgotCode.trim(),
+          new_password: forgotNewPassword,
+        }),
+      });
+      const data = await res.json().catch(() => ({})) as ApiAuthResponse;
+      if (!res.ok || !data.user) throw new Error(data.error ?? "Failed to reset password");
+      if (data.token) setToken(data.token);
+      setCurrentUser(data.user);
+      localStorage.setItem("niakofa_user", JSON.stringify(data.user));
+      setForgotPasswordSaved(true);
+      const resetUserName = data.user.name;
+      setTimeout(() => {
+        toast({ title: `Welcome back, ${resetUserName}!` });
+        setLocation("/");
+      }, 1400);
+    } catch (err) {
+      toast({ title: err instanceof Error ? err.message : t("common.error"), variant: "destructive" });
+    } finally {
+      setForgotSaving(false);
+    }
+  };
+
+  // ── Forgot Password screen ───────────────────────────────────────────────────
+  if (forgotPasswordMode) {
+    return (
+      <div className="min-h-[100dvh] bg-background flex flex-col">
+        <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
+          <motion.div
+            initial={{ scale: 0.85, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 200, damping: 20 }}
+            className="w-full max-w-sm"
+          >
+            <div className="flex flex-col items-center mb-8">
+              <div className="w-16 h-16 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center mb-4 shadow-[0_0_40px_rgba(0,212,255,0.15)]">
+                <KeyRound className="w-8 h-8 text-primary" />
+              </div>
+              <h2 className="text-2xl font-black tracking-tight text-foreground">Reset Password</h2>
+              <p className="text-sm text-muted-foreground mt-2 text-center leading-relaxed">
+                {forgotStep === "email"
+                  ? "Enter your email and we'll send you a code."
+                  : `Enter the code sent to ${forgotEmail}`}
+              </p>
+            </div>
+            <AnimatePresence mode="wait">
+              {forgotPasswordSaved ? (
+                <motion.div key="saved" initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex flex-col items-center gap-3 py-8 text-center">
+                  <CheckCircle2 className="w-14 h-14 text-green-400" />
+                  <div className="font-black text-lg text-foreground">Password reset!</div>
+                  <div className="text-sm text-muted-foreground">Taking you to the app…</div>
+                </motion.div>
+              ) : forgotStep === "email" ? (
+                <motion.div key="email-step" className="space-y-3">
+                  <div className="relative">
+                    <input
+                      type="email"
+                      placeholder="Email address"
+                      value={forgotEmail}
+                      onChange={e => setForgotEmail(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleRequestForgotCode()}
+                      className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      autoComplete="email"
+                    />
+                  </div>
+                  <Button className="w-full h-13 font-black text-base mt-2" onClick={handleRequestForgotCode} disabled={forgotSaving || !forgotEmail.trim()}>
+                    {forgotSaving ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Sending…</span> : "Send Code"}
+                  </Button>
+                  <button onClick={() => setForgotPasswordMode(false)} className="w-full text-center text-xs text-muted-foreground active:text-foreground transition-colors py-2">
+                    Back to sign in
+                  </button>
+                </motion.div>
+              ) : (
+                <motion.div key="code-step" className="space-y-3">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="6-digit code"
+                    value={forgotCode}
+                    onChange={e => setForgotCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground tracking-widest"
+                    autoComplete="one-time-code"
+                  />
+                  <div className="relative">
+                    <input
+                      type={showForgotNewPass ? "text" : "password"}
+                      placeholder="New password (min 8 characters)"
+                      value={forgotNewPassword}
+                      onChange={e => setForgotNewPassword(e.target.value)}
+                      className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 pr-11 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      autoComplete="new-password"
+                    />
+                    <button type="button" onClick={() => setShowForgotNewPass(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors" tabIndex={-1}>
+                      {showForgotNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showForgotConfirmPass ? "text" : "password"}
+                      placeholder="Confirm password"
+                      value={forgotConfirmPassword}
+                      onChange={e => setForgotConfirmPassword(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleResetPassword()}
+                      className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 pr-11 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      autoComplete="new-password"
+                    />
+                    <button type="button" onClick={() => setShowForgotConfirmPass(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors" tabIndex={-1}>
+                      {showForgotConfirmPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <Button className="w-full h-13 font-black text-base mt-2" onClick={handleResetPassword} disabled={forgotSaving || forgotCode.length !== 6 || forgotNewPassword.length < 8 || forgotNewPassword !== forgotConfirmPassword}>
+                    {forgotSaving ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Saving…</span> : "Reset Password"}
+                  </Button>
+                  {/* BUG-020: "Resend code" must actually call the forgot-password API —
+                      previously it only reset UI state without sending a new code.
+                      Now it re-runs handleRequestForgotCode which POSTs to the endpoint
+                      (which also deletes any prior unused code) and moves back to code step. */}
+                  <button
+                    onClick={handleRequestForgotCode}
+                    disabled={forgotSaving || !forgotEmail.trim()}
+                    className="w-full text-center text-xs text-primary active:text-primary/70 transition-colors py-1 disabled:opacity-50"
+                  >
+                    Resend code
+                  </button>
+                  <button onClick={() => setForgotPasswordMode(false)} className="w-full text-center text-xs text-muted-foreground active:text-foreground transition-colors py-2">
+                    Back to sign in
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Legacy account "Set Password" screen ────────────────────────────────────
+  if (pendingLegacyUser) {
+    return (
+      <div className="min-h-[100dvh] bg-background flex flex-col">
+        <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
+          <motion.div
+            initial={{ scale: 0.85, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 200, damping: 20 }}
+            className="w-full max-w-sm"
+          >
+            <div className="flex flex-col items-center mb-8">
+              <div className="w-16 h-16 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center mb-4 shadow-[0_0_40px_rgba(0,212,255,0.15)]">
+                <KeyRound className="w-8 h-8 text-primary" />
+              </div>
+              <h2 className="text-2xl font-black tracking-tight text-foreground">{t("auth.set_password")}</h2>
+              <p className="text-sm text-muted-foreground mt-2 text-center leading-relaxed">{t("auth.password_setup_prompt")}</p>
+            </div>
+            <AnimatePresence mode="wait">
+              {passwordSaved ? (
+                <motion.div key="saved" initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex flex-col items-center gap-3 py-8 text-center">
+                  <CheckCircle2 className="w-14 h-14 text-green-400" />
+                  <div className="font-black text-lg text-foreground">Password saved!</div>
+                  <div className="text-sm text-muted-foreground">Taking you to the app…</div>
+                </motion.div>
+              ) : (
+                <motion.div key="form" className="space-y-3">
+                  {codeSentMessage && (
+                    <p className="text-xs text-muted-foreground text-center px-1 mb-1">{codeSentMessage}</p>
+                  )}
+                  <div className="relative">
+                    <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="6-digit code from your email"
+                      value={resetCode}
+                      onChange={e => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      className="w-full bg-card border border-border rounded-2xl pl-11 pr-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground tracking-widest"
+                      autoComplete="one-time-code"
+                    />
+                  </div>
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type={showNewPass ? "text" : "password"}
+                      placeholder="New password (min 8 characters)"
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                      className="w-full bg-card border border-border rounded-2xl pl-11 pr-12 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      autoComplete="new-password"
+                    />
+                    <button onClick={() => setShowNewPass(p => !p)} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground active:text-foreground transition-colors">
+                      {showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type="password"
+                      placeholder="Confirm password"
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleSetPassword()}
+                      className="w-full bg-card border border-border rounded-2xl pl-11 pr-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      autoComplete="new-password"
+                    />
+                  </div>
+                  {newPassword.length > 0 && confirmPassword.length > 0 && newPassword !== confirmPassword && (
+                    <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="text-xs text-destructive px-1">
+                      Passwords do not match
+                    </motion.p>
+                  )}
+                  <Button className="w-full h-13 font-black text-base mt-2" onClick={handleSetPassword} disabled={savingPassword || resetCode.length !== 6 || newPassword.length < 8 || newPassword !== confirmPassword}>
+                    {savingPassword ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Saving…</span> : t("auth.set_password")}
+                  </Button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        </div>
+        <div className="px-6 pb-safe pb-6 text-center">
+          <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+            <Shield className="w-3 h-3" />
+            No tracking, no ads, community-owned
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-[100dvh] bg-background flex flex-col">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-12 pb-8">
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 200, damping: 20 }}
+          className="flex flex-col items-center mb-8"
+        >
+          <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center mb-3 shadow-[0_0_40px_rgba(0,212,255,0.15)]">
+            <Heart className="w-10 h-10 text-primary" />
+          </div>
+          <div className="mb-2">
+            <NiaLoginOrb killswitch={true} />
+          </div>
+          <h1 className="text-3xl font-black tracking-tight text-foreground">Niakofa</h1>
+          <p className="text-sm text-muted-foreground mt-1 text-center max-w-xs">
+            Help Today. Pay It Forward Tomorrow.
+          </p>
+        </motion.div>
+
+        {/* Mode toggle */}
+        <div className="flex bg-muted rounded-2xl p-1 mb-5 w-full max-w-sm">
+          {(["login", "register"] as Mode[]).map(m => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`flex-1 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider transition-all ${
+                mode === m ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+              }`}
+            >
+              {m === "login" ? "Sign In" : "Join"}
+            </button>
+          ))}
+        </div>
+
+        <div className="w-full max-w-sm space-y-3">
+          <AnimatePresence mode="wait">
+            {mode === "register" && (
+              <motion.div key="name" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Your name"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    className="w-full bg-card border border-border rounded-2xl pl-11 pr-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                    autoComplete="name"
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence mode="wait">
+            {mode === "register" && (
+              <motion.div key="account-type" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["individual", "business", "sponsor"] as const).map(t => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setAccountType(t)}
+                        className={`py-2.5 rounded-xl border-2 text-xs font-black capitalize transition-all ${
+                          accountType === t ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground"
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+
+                  {(accountType === "business" || accountType === "sponsor") && (
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        placeholder={accountType === "business" ? "Business name" : "Organization name"}
+                        value={organizationName}
+                        onChange={e => setOrganizationName(e.target.value)}
+                        className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      />
+                      <textarea
+                        placeholder={`Tell us about your ${accountType} and how you'd like to support Niakofa`}
+                        value={organizationDescription}
+                        onChange={e => setOrganizationDescription(e.target.value)}
+                        rows={3}
+                        className="w-full bg-card border border-border rounded-2xl px-4 py-3 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground resize-none"
+                      />
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="relative">
+            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="email"
+              placeholder="Email address"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="w-full bg-card border border-border rounded-2xl pl-11 pr-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+              autoComplete="email"
+            />
+          </div>
+
+          <div className="relative">
+            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type={showPass ? "text" : "password"}
+              placeholder="Password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && !isHelper && handleSubmit()}
+              className="w-full bg-card border border-border rounded-2xl pl-11 pr-12 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+            />
+            <button onClick={() => setShowPass(p => !p)} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground active:text-foreground transition-colors">
+              {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+
+          {mode === "login" && (
+            <button
+              type="button"
+              onClick={() => setForgotPasswordMode(true)}
+              className="text-xs text-muted-foreground active:text-foreground transition-colors text-right w-full px-1"
+            >
+              Forgot password?
+            </button>
+          )}
+
+          {/* Helper toggle + expanded form */}
+          <AnimatePresence mode="wait">
+            {mode === "register" && (
+              <motion.div key="helper-section" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
+                <div className="space-y-3">
+                  {/* Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setIsHelper(p => !p)}
+                    className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 transition-all text-left ${
+                      isHelper ? "border-primary bg-primary/10" : "border-border bg-card"
+                    }`}
+                  >
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isHelper ? "bg-primary/20" : "bg-muted"}`}>
+                      <MapPin className={`w-5 h-5 ${isHelper ? "text-primary" : "text-muted-foreground"}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-black text-sm ${isHelper ? "text-primary" : "text-foreground"}`}>
+                        I want to be a helper
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {isHelper ? "Fill in your skills below to apply" : "Receive requests, earn goodwill & pay"}
+                      </div>
+                    </div>
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${isHelper ? "bg-primary border-primary" : "border-border"}`}>
+                      {isHelper && <div className="w-2 h-2 rounded-full bg-primary-foreground" />}
+                    </div>
+                  </button>
+
+                  {/* Expanded helper profile form */}
+                  {isHelper && (
+                    <HelperProfileForm
+                      selectedSkills={selectedSkills}
+                      setSelectedSkills={setSelectedSkills}
+                      selectedLanguages={selectedLanguages}
+                      setSelectedLanguages={setSelectedLanguages}
+                      selectedQuals={selectedQuals}
+                      setSelectedQuals={setSelectedQuals}
+                      vehicle={vehicle}
+                      setVehicle={setVehicle}
+                      bio={bio}
+                      setBio={setBio}
+                      socialLinks={socialLinks}
+                      setSocialLinks={setSocialLinks}
+                    />
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Validation hint */}
+          {mode === "register" && isHelper && selectedSkills.length === 0 && (
+            <div className="flex items-center gap-2 text-[11px] text-yellow-400">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>Select at least one skill to apply as a helper</span>
+            </div>
+          )}
+
+          <Button
+            className="w-full h-13 font-black text-base mt-2"
+            onClick={handleSubmit}
+            disabled={
+              loading ||
+              !email.trim() ||
+              (mode === "register" && !name.trim()) ||
+              (mode === "register" && isHelper && selectedSkills.length === 0)
+            }
+          >
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {mode === "login" ? "Signing in…" : "Creating account…"}
+              </span>
+            ) : (
+              mode === "login"
+                ? "Sign In"
+                : isHelper
+                  ? "Apply as Helper"
+                  : accountType === "business"
+                    ? "Register Business"
+                    : accountType === "sponsor"
+                      ? "Register as Sponsor"
+                      : "Create Account"
+            )}
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-2 mt-6 text-muted-foreground">
+          <Shield className="w-3.5 h-3.5" />
+          <span className="text-xs">No tracking, no ads, community-owned</span>
+        </div>
+      </div>
+
+      <div className="px-6 pb-safe pb-6 text-center">
+        <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+          <MapPin className="w-3 h-3" />
+          Global mutual aid · Building community one act of kindness at a time
+        </p>
+      </div>
+    </div>
+  );
+}
