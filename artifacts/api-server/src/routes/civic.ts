@@ -265,16 +265,16 @@ router.patch("/civic/suggestions/:id/review", requireAuth, requireAdmin(), async
 });
 
 
-// ── POST /civic/seed-farms — one-time admin seed for local farm resources ────
-// Protected by ADMIN_SECRET header. Delete this endpoint after first run.
+// ── POST /civic/seed-farms — idempotent admin seed for local farm resources ───
+// Protected by x-admin-token header (ADMIN_SECRET env var).
+// Safe to re-run: skips any entry where (org_name, state, county) already exists.
+// Call via: curl -X POST https://niakofa.com/api/civic/seed-farms \
+//             -H "x-admin-token: $ADMIN_SECRET"
 router.post("/civic/seed-farms", async (req, res) => {
   const adminSecret = process.env.ADMIN_SECRET;
   if (!adminSecret || req.headers["x-admin-token"] !== adminSecret) {
     return res.status(401).json({ error: "Unauthorized" });
   }
-
-  const { db: seedDb, civicResourcesTable: crt } = await import("@workspace/db");
-  const { eq, and } = await import("drizzle-orm");
 
   const FARMS = [
     { state: "TX", county: "Tarrant", city: "Fort Worth", org_name: "Cowtown Farmers Market", description: "Year-round Saturday market featuring local Texas farmers. Accepts SNAP/EBT with Double Up Food Bucks — spend $20 in SNAP, get $20 more on Texas-grown produce. Open Saturdays 8am–12pm.", url: "https://www.cowtownfarmersmarket.com", phone: "(817) 336-5000", category: "local_farm" },
@@ -298,10 +298,14 @@ router.post("/civic/seed-farms", async (req, res) => {
   const results: string[] = [];
 
   for (const farm of FARMS) {
-    const existing = await seedDb
-      .select({ id: crt.id })
-      .from(crt)
-      .where(and(eq(crt.org_name, farm.org_name), eq(crt.state, farm.state), eq(crt.county, farm.county)))
+    const existing = await db
+      .select({ id: civicResourcesTable.id })
+      .from(civicResourcesTable)
+      .where(and(
+        eq(civicResourcesTable.org_name, farm.org_name),
+        eq(civicResourcesTable.state, farm.state),
+        eq(civicResourcesTable.county, farm.county),
+      ))
       .limit(1);
 
     if (existing.length > 0) {
@@ -310,7 +314,7 @@ router.post("/civic/seed-farms", async (req, res) => {
       continue;
     }
 
-    await seedDb.insert(crt).values({
+    await db.insert(civicResourcesTable).values({
       state: farm.state,
       county: farm.county,
       city: farm.city ?? null,
@@ -325,11 +329,8 @@ router.post("/civic/seed-farms", async (req, res) => {
   }
 
   // Bust the civic resources cache so new entries appear immediately
-  try {
-    const { cacheDel, cacheDelPrefix } = await import("../lib/cache.js");
-    await cacheDel("civic:all");
-    await cacheDelPrefix("civic:loc:");
-  } catch { /* cache may not be running locally */ }
+  await cacheDel("civic:all");
+  await cacheDelPrefix("civic:loc:");
 
   logger.info({ inserted, skipped }, "civic farm seed complete");
   return res.json({ ok: true, inserted, skipped, results });
