@@ -143,7 +143,7 @@ export async function getActiveRequest(
   if (!userId) return null;
   const result = await pool.query(
     `SELECT id, title, description, category, urgency, status, neighborhood, lat, lng, created_at, requester_id, helper_id
-     FROM help_requests
+     FROM requests
      WHERE id = $1 AND (requester_id = $2 OR helper_id = $2)
      LIMIT 1`,
     [requestId, userId]
@@ -339,19 +339,19 @@ export async function getCompletedRequestsForCheckin(): Promise<
 > {
   const result = await pool.query(`
     SELECT
-      hr.id,
-      hr.title,
-      hr.category,
-      hr.requester_id,
+      r.id,
+      r.title,
+      r.category,
+      r.requester_id,
       u.name AS helper_name
-    FROM help_requests hr
-    LEFT JOIN users u ON u.id = hr.helper_id
-    WHERE hr.status = 'completed'
-      AND hr.completed_at BETWEEN NOW() - INTERVAL '25 hours' AND NOW() - INTERVAL '23 hours'
+    FROM requests hr
+    LEFT JOIN users u ON u.id = r.helper_id
+    WHERE r.status = 'completed'
+      AND r.completed_at BETWEEN NOW() - INTERVAL '25 hours' AND NOW() - INTERVAL '23 hours'
       AND NOT EXISTS (
         SELECT 1 FROM nia_conversations nc
-        WHERE nc.user_id = hr.requester_id
-          AND nc.user_message LIKE '[check-in:' || hr.id || ']%'
+        WHERE nc.user_id = r.requester_id
+          AND nc.user_message LIKE '[check-in:' || r.id || ']%'
       )
     LIMIT 20
   `);
@@ -443,7 +443,7 @@ async function computePhrasingInsights(): Promise<string[]> {
       category,
       AVG(EXTRACT(EPOCH FROM (claimed_at - created_at)) / 60.0) AS avg_minutes,
       COUNT(*) AS sample_size
-    FROM help_requests
+    FROM requests
     WHERE claimed_at IS NOT NULL AND created_at > NOW() - INTERVAL '90 days'
     GROUP BY category
     HAVING COUNT(*) >= $1
@@ -460,7 +460,7 @@ async function computePhrasingInsights(): Promise<string[]> {
 
   const overallResult = await pool.query(`
     SELECT AVG(EXTRACT(EPOCH FROM (claimed_at - created_at)) / 60.0) AS avg_minutes
-    FROM help_requests
+    FROM requests
     WHERE claimed_at IS NOT NULL AND created_at > NOW() - INTERVAL '90 days'
   `);
   const overallAvg = overallResult.rows[0]?.avg_minutes ? Number(overallResult.rows[0].avg_minutes) : null;
@@ -471,7 +471,7 @@ async function computePhrasingInsights(): Promise<string[]> {
         `SELECT
            AVG(EXTRACT(EPOCH FROM (claimed_at - created_at)) / 60.0) AS avg_minutes,
            COUNT(*) AS sample_size
-         FROM help_requests
+         FROM requests
          WHERE claimed_at IS NOT NULL
            AND created_at > NOW() - INTERVAL '90 days'
            AND title ILIKE $1`,

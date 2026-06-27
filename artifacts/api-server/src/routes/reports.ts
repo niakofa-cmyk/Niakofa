@@ -21,8 +21,7 @@ const CreateReportBody = z.object({
     "fake_profile",
     "dangerous_behavior",
     "spam",
-    "other",
-  ]),
+    "other",, "sos"]),
   description: z.string().min(10).max(2000),
 }).refine(d => d.reported_user_id || d.reported_request_id, {
   message: "Must specify either reported_user_id or reported_request_id",
