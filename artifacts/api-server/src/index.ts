@@ -10,6 +10,7 @@ import { startCleanupWorker } from "./workers/cleanup-worker";
 import { startNotificationWorker } from "./workers/notification-worker";
 import { startAnomalyDetectionWorker } from "./workers/anomaly-worker";
 import { startNiaCheckinWorker } from "./workers/nia-checkin-worker";
+import { initNiaEnabled } from "./routes/admin-analytics";
 import { processRecurringRequests } from "./routes/recurring";
 
 const rawPort = process.env["PORT"];
@@ -63,6 +64,8 @@ server.listen(port, async () => {
   // Anomaly detection — runs regardless of Redis; lightweight DB polling
   startAnomalyDetectionWorker();
   startNiaCheckinWorker();
+  // Seed the Nia kill-switch from DB so it survives redeploys
+  initNiaEnabled();
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────

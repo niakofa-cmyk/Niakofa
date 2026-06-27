@@ -5,11 +5,12 @@
  * All routes require authentication + admin role.
  */
 import { Router } from "express";
-import { db, requestsTable, usersTable, reportsTable } from "@workspace/db";
+import { db, requestsTable, usersTable, reportsTable, systemSettingsTable } from "@workspace/db";
 import { eq, sql, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -343,11 +344,30 @@ router.get("/admin/suspended", requireAuth, requireAdmin(), adminLimiter, async 
 });
 
 // ── Nia AI toggle ─────────────────────────────────────────────────────────────
-// In-memory flag — defaults to enabled. Persists for the lifetime of the
-// api-server process. A Railway redeploy resets it to ON, which is the safe
-// default. If you need persistence across deploys, set NIA_ENABLED=false in
-// Railway env vars and the flag will boot to off.
+// In-process cache of the DB value. Seeded from system_settings at boot via
+// initNiaEnabled() below. Falls back to NIA_ENABLED env var if DB is
+// unreachable at startup; defaults to true (enabled) if neither is set.
+// A write via POST /admin/nia-toggle updates BOTH this cache and the DB row
+// so the state survives Railway redeploys.
 let niaEnabled: boolean = process.env.NIA_ENABLED !== "false";
+
+// initNiaEnabled — called once at startup. Reads the persisted value from
+// system_settings so the server boots in the correct state after a redeploy.
+export async function initNiaEnabled(): Promise<void> {
+  try {
+    const [row] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "nia_enabled"))
+      .limit(1);
+    if (row) {
+      niaEnabled = row.value !== "false";
+      logger.info({ niaEnabled }, "admin: Nia enabled state loaded from DB");
+    }
+  } catch (err) {
+    logger.warn({ err }, "admin: could not read nia_enabled from system_settings, using default");
+  }
+}
 
 // GET /admin/nia-status — public, no auth. Frontend polls this to know
 // whether to show the NiaFab and drawer. Returns { enabled: boolean }.
@@ -361,7 +381,23 @@ router.post("/admin/nia-toggle", requireAuth, requireAdmin(), adminLimiter, asyn
   if (typeof enabled !== "boolean") {
     return res.status(400).json({ error: "enabled (boolean) is required" });
   }
+
+  // 1. Update in-process cache immediately so the proxy reacts with no lag
   niaEnabled = enabled;
+
+  // 2. Persist to DB so the value survives redeploys
+  try {
+    await db
+      .insert(systemSettingsTable)
+      .values({ key: "nia_enabled", value: enabled ? "true" : "false" })
+      .onConflictDoUpdate({
+        target: systemSettingsTable.key,
+        set: { value: enabled ? "true" : "false", updated_at: new Date() },
+      });
+  } catch (err) {
+    logger.error({ err }, "admin: failed to persist nia_enabled to system_settings");
+  }
+
   logger.info({ niaEnabled }, "admin: Nia AI toggled");
   return res.json({ ok: true, enabled: niaEnabled });
 });

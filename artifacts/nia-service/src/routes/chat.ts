@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { checkSafety } from "../lib/safety.js";
-import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit, getActiveRequest, getUserMemory, upsertUserMemory } from "../lib/db.js";
+import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit, getActiveRequest, getUserMemory, upsertUserMemory, isNiaEnabled } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
 import { injectLocation, buildLocationPrefix, buildAppContextPrefix, LocationContext } from "../middleware/location.js";
 import { pino } from "pino";
@@ -19,6 +19,11 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" })
 const NIA_TIMEOUT_MS = 60_000;
 
 router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res: Response) => {
+  // Defense-in-depth kill-switch check (primary block is in api-server nia-proxy)
+  if (!(await isNiaEnabled())) {
+    return res.status(503).json({ error: "Nia is temporarily unavailable." });
+  }
+
   const body = req.body as Record<string, unknown>;
   const message = typeof body.message === "string" ? body.message : "";
   const sessionId = Array.isArray(body.sessionId) ? body.sessionId[0] : typeof body.sessionId === "string" ? body.sessionId : "";
@@ -184,6 +189,11 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
 // defaults to 100kb — callers must ensure their server allows larger bodies,
 // or this endpoint will 413 before reaching the handler.
 router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Response) => {
+  // Defense-in-depth kill-switch check
+  if (!(await isNiaEnabled())) {
+    return res.status(503).json({ error: "Nia is temporarily unavailable." });
+  }
+
   const body = req.body as Record<string, unknown>;
 
   // Accept either a full data URL ("data:image/jpeg;base64,....") or raw base64
