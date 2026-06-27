@@ -204,18 +204,44 @@ Three more forensic reports were reviewed line-by-line against the live codebase
 
 ---
 
-## Service Separation — Verified June 26, 2026
+## Service Separation — Verified June 27, 2026
 
-Nia AI is a fully independent service. She starts, runs, and serves all routes without api-server being alive.
+Nia AI and the Niakofa app are fully independent services. Each can start, run, and serve its full feature set without the other being alive.
 
-| Entity | Railway Service | Domain |
-|--------|-----------------|--------|
-| Niakofa App | zesty-ambition | niakofa.com (port 8080) |
-| Nia AI | niakofa | niakofa-production.up.railway.app (port 3001) |
+| Entity | Railway Service Name | Notes |
+|--------|---------------------|-------|
+| **Niakofa App** | **zesty-ambition** | Express API (port 8080) + React SPA. All community features — map, requests, helpers, wallet, profile — work without Nia. |
+| **Nia AI** | **niakofa** | nia-service (port 3001). All chat, memory, check-in, and crisis-followup routes work without the Niakofa app. |
 
-Nia makes zero outbound HTTP calls to api-server — ever.
-Shared coupling: DATABASE_URL, SESSION_SECRET, INTERNAL_SECRET only.
+**Niakofa app without Nia:** The map, request lifecycle, wallet, community, admin, and profile screens have zero dependency on nia-service. The NiaFab/NiaDrawer degrade gracefully — when Nia is toggled off (503) the drawer shows a warm "Nia is resting" message instead of an error. A 30-second AbortController on the `/api/nia/chat` proxy prevents the API server from hanging if nia-service is unreachable.
 
-Required env vars: DATABASE_URL, SESSION_SECRET, INTERNAL_SECRET, ANTHROPIC_API_KEY (fatal if missing), ALLOWED_ORIGIN, optionally PORT (defaults 3001).
+**Nia without the Niakofa app:** nia-service makes zero outbound HTTP calls to api-server — ever. Shared coupling: DATABASE_URL, SESSION_SECRET, INTERNAL_SECRET only.
 
-Verification June 26 2026: nia-service/src/ has zero imports from api-server/ or pay-it-forward/, zero fetch() calls to api-server URLs. The two bugs above (wrong fallback URLs in api-server) are the only issues found.
+**Nia never stops learning:** The admin kill-switch (`nia_enabled = false`) ONLY disables user-facing chat and image-analysis endpoints (`/chat`, `/analyze-image`). It has zero effect on:
+- `crisis-followup-worker.ts` — hourly gentle follow-ups for crisis conversations
+- `nia-checkin-worker.ts` — 24h post-completion check-ins
+- `computePhrasingInsights()` — phrasing pattern analysis
+- `anomaly-worker.ts` — rating velocity and no-show anomaly detection
+
+Nia keeps watching, learning, and reaching back out — even when her chat UI is switched off. She does not die. She rests.
+
+Required env vars for nia-service: DATABASE_URL, SESSION_SECRET, INTERNAL_SECRET, ANTHROPIC_API_KEY (fatal if missing), ALLOWED_ORIGIN, optionally PORT (defaults 3001).
+
+---
+
+### Session: June 27, 2026 — Independence & Continuous Learning
+
+**Dual independence enforced and verified**
+Both services confirmed as fully standalone. Each runs its complete feature set without the other. Documented with explicit service-separation table above.
+
+**Nia's continuous learning never stops**
+Clarified and verified: the admin toggle only affects user-facing chat routes. All four background intelligence workers (crisis follow-up, 24h check-in, phrasing insights, anomaly detection) run on their own schedules regardless of the kill-switch. Nia learns from the community 24/7.
+
+**30-second fetch timeout on nia-proxy**
+`/api/nia/chat` proxy now uses `AbortController` (30s). If nia-service is unreachable or hangs, the proxy aborts cleanly and returns a graceful SSE error — the Niakofa app never hangs waiting for Nia.
+
+**Warm 503 screen in NiaDrawer**
+When Nia is toggled off by an admin, the drawer now shows: *"Nia is resting right now 💙 — She'll be back soon. All community features remain fully available."* No raw error, no cold failure. She steps back gracefully.
+
+**Wrong model ID fixed in crisis-followup-worker**
+`claude-haiku-4-5-20251001` corrected to `claude-haiku-4-5`. Crisis follow-ups now route to the correct model.

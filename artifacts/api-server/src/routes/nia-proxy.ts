@@ -114,17 +114,25 @@ router.post(
     });
 
     try {
-      const upstream = await fetch(`${getNiaUrl()}/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(req.headers.authorization
-            ? { Authorization: req.headers.authorization }
-            : {}),
-        },
-        body: upstreamBody,
-        duplex: "half",
-      } as RequestInit & { duplex: "half" });
+      const abortCtrl = new AbortController();
+      const abortTimer = setTimeout(() => abortCtrl.abort(), 30_000);
+      let upstream: Response;
+      try {
+        upstream = await fetch(`${getNiaUrl()}/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(req.headers.authorization
+              ? { Authorization: req.headers.authorization }
+              : {}),
+          },
+          body: upstreamBody,
+          duplex: "half",
+          signal: abortCtrl.signal,
+        } as RequestInit & { duplex: "half" });
+      } finally {
+        clearTimeout(abortTimer);
+      }
 
       if (upstream.status === 429) {
         const body = await upstream.json().catch(() => ({}));

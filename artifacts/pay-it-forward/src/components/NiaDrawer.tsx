@@ -516,6 +516,24 @@ export function NiaDrawer({
         }),
       });
 
+      if (res.status === 503) {
+        setMessages((prev) => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last?.role === "nia" && last.streaming) {
+            updated[updated.length - 1] = {
+              role: "nia",
+              content: "Nia is resting right now 💙\n\nShe'll be back soon. In the meantime, all of Niakofa's community features — the map, requests, helpers, and your wallet — are fully available.\n\nIf this is an emergency, please call 911 or text HOME to 741741.",
+              streaming: false,
+              timestamp: new Date(),
+            };
+          }
+          return updated;
+        });
+        setLoading(false);
+        return;
+      }
+
       if (res.status === 429) {
         const err = await res.json();
         const reset = new Date(err.resetAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
