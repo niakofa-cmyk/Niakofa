@@ -588,6 +588,25 @@ export default function MapScreen() {
               <span className="text-[10px] font-bold text-emerald-400">{skillMatchCount} skill match{skillMatchCount !== 1 ? "es" : ""}</span>
             </div>
           )}
+          {/* Zone demand indicator — shows how many requests are within the helper's
+              normal service radius, separate from total open count. Gives the helper
+              a quick read of local demand before deciding to travel far. */}
+          {helperModeActive && (() => {
+            const zoneCount = openRequests.filter(r => r.urgency !== "emergency" && (r.distance_miles ?? 99) <= serviceRadiusMiles).length;
+            const farCount = openRequests.filter(r => r.urgency !== "emergency" && (r.distance_miles ?? 0) > serviceRadiusMiles).length;
+            if (zoneCount === 0 && farCount === 0) return null;
+            return (
+              <div className="flex items-center gap-1.5 bg-indigo-500/20 backdrop-blur-md border border-indigo-500/50 px-2.5 py-1.5 rounded-full shadow-lg">
+                <MapPin className="w-3 h-3 text-indigo-400" />
+                <span className="text-[10px] font-bold text-indigo-400">
+                  {zoneCount > 0 ? `${zoneCount} in zone` : ""}
+                  {zoneCount > 0 && farCount > 0 ? " · " : ""}
+                  {farCount > 0 ? `${farCount} far` : ""}
+                </span>
+              </div>
+            );
+          })()}
+
           {activeHelperRoute && (
             <div className="flex items-center gap-1.5 bg-primary/10 backdrop-blur-md border border-primary/30 px-2.5 py-1.5 rounded-full shadow-lg">
               <Navigation2 className="w-3 h-3 text-primary" />
@@ -818,20 +837,7 @@ export default function MapScreen() {
           />
         </Source>
 
-                {/* Request density legend */}
-        {showDensity && (
-          <div className="absolute bottom-48 left-4 z-10 bg-black/70 backdrop-blur-sm rounded-xl px-3 py-2 pointer-events-none">
-            <div className="text-[9px] text-white/60 uppercase tracking-wider mb-1.5">Request Density</div>
-            <div className="flex items-center gap-0.5">
-              {["rgba(255,60,0,0.4)", "rgba(255,100,0,0.65)", "rgba(255,180,0,0.85)", "rgba(255,255,100,1)"].map((c, i) => (
-                <div key={i} className="w-5 h-2 rounded-sm" style={{ background: c }} />
-              ))}
-            </div>
-            <div className="flex justify-between text-[8px] text-white/50 mt-0.5">
-              <span>Low</span><span>High</span>
-            </div>
-          </div>
-        )}
+        
 
         {/* Request clusters — shown when zoom < 13, individual markers at zoom >= 13 */}
         <Source
@@ -921,6 +927,51 @@ export default function MapScreen() {
             </div>
             <div className="text-[8px] text-white/40 mt-1">Refreshes every 5 min</div>
           </div>
+        )}
+
+        {/* Helper service radius ring — visual circle on map showing helper's normal working area.
+            Non-emergency requests outside this ring show dashed marker + outside-area badges.
+            DESIGN: Local-First Dispatch per CLAUDE.md — helpers should finish nearby work
+            before accepting long-distance trips. The ring makes that boundary visible.
+            Emergency requests always bypass this — urgency overrides distance everywhere. */}
+        {helperModeActive && myLocation && (
+          <Source
+            id="helper-radius"
+            type="geojson"
+            data={{
+              type: "FeatureCollection" as const,
+              features: [{
+                type: "Feature" as const,
+                geometry: { type: "Point" as const, coordinates: [myLocation.lng, myLocation.lat] },
+                properties: {},
+              }],
+            }}
+          >
+            {/* Mapbox circle-radius in pixels scales with zoom. Formula:
+                radius_meters * (256 * 2^zoom) / (2 * PI * 6378137 * cos(lat_rad))
+                Simplified to a CSS-level graduated stop list for the two zoom boundaries. */}
+            <Layer
+              id="helper-radius-fill"
+              type="circle"
+              paint={{
+                "circle-radius": {
+                  stops: [
+                    [8,  Math.round(serviceRadiusMiles * 1609.34 / 152.874)],
+                    [10, Math.round(serviceRadiusMiles * 1609.34 / 38.219)],
+                    [12, Math.round(serviceRadiusMiles * 1609.34 / 9.555)],
+                    [14, Math.round(serviceRadiusMiles * 1609.34 / 2.389)],
+                    [16, Math.round(serviceRadiusMiles * 1609.34 / 0.597)],
+                  ],
+                  base: 2,
+                } as unknown as number,
+                "circle-color": "rgba(99,102,241,0.06)",
+                "circle-stroke-color": "rgba(99,102,241,0.5)",
+                "circle-stroke-width": 1.5,
+                "circle-pitch-alignment": "map" as const,
+                "circle-stroke-opacity": 0.8,
+              }}
+            />
+          </Source>
         )}
 
       </Map>
@@ -1013,13 +1064,14 @@ export default function MapScreen() {
           onAccept={handleClaim}
           onDismiss={() => setBestMatchDismissed(bestMatch.id)}
           isClaiming={claimMutation.isPending}
+          serviceRadiusMiles={serviceRadiusMiles}
         />
       )}
 
       {/* Helper mode bottom sheet */}
       {helperModeActive && openRequests.length > 0 && webGLSupported && !mapError && !showBestMatch && (
         <div className="pb-20">
-          <BottomSheet requests={openRequests} onClaim={handleClaim} isClaiming={claimMutation.isPending} dismissedId={bestMatchDismissed} />
+          <BottomSheet requests={openRequests} onClaim={handleClaim} isClaiming={claimMutation.isPending} dismissedId={bestMatchDismissed} serviceRadiusMiles={serviceRadiusMiles} helperModeActive={helperModeActive} />
         </div>
       )}
 

@@ -10,6 +10,10 @@ interface BottomSheetProps {
   isClaiming: boolean;
   /** ID of a request that was just dismissed as best-match — used to avoid re-highlighting it */
   dismissedId?: number | null;
+  /** Helper's normal service radius in miles — requests beyond this show an outside-area badge */
+  serviceRadiusMiles?: number;
+  /** Whether the map is in helper mode — only show outside-area badge in helper mode */
+  helperModeActive?: boolean;
 }
 
 function getCategoryIcon(category: string) {
@@ -55,7 +59,7 @@ function PaymentBadge({ type }: { type: string }) {
   }
 }
 
-export function BottomSheet({ requests, onClaim, isClaiming, dismissedId: _dismissedId }: BottomSheetProps) {
+export function BottomSheet({ requests, onClaim, isClaiming, dismissedId: _dismissedId, serviceRadiusMiles = 10, helperModeActive = false }: BottomSheetProps) {
   const [, setLocation] = useLocation();
   const sorted = [...requests].sort((a, b) => {
     const urgencyOrder: Record<string, number> = { emergency: 0, high: 1, medium: 2, low: 3 };
@@ -97,6 +101,13 @@ export function BottomSheet({ requests, onClaim, isClaiming, dismissedId: _dismi
               </div>
             )}
 
+            {/* Outside-area badge — shown when this request is beyond the helper's service radius */}
+            {helperModeActive && request.urgency !== "emergency" && (request.distance_miles ?? 0) > serviceRadiusMiles && (
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground bg-muted/60 border border-dashed border-muted-foreground/30 px-2.5 py-1 rounded-lg mb-3">
+                <span>📍</span>
+                <span>Outside your usual area · {((request.distance_miles ?? 0) - serviceRadiusMiles).toFixed(1)} mi farther than normal</span>
+              </div>
+            )}
             <div className="flex items-start justify-between gap-2 mb-3">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0">

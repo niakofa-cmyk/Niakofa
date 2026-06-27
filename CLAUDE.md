@@ -435,3 +435,42 @@ FIX 2 — ✅ RESOLVED (verified June 27, 2026) — nia-checkin-worker.ts alread
   - Layer 5: 5 orbiting sparkle particles at 72° intervals
 
 ### Status: RESOLVED
+
+
+## Incident #12 — June 27-28 Map Enhancements + Environment Audit
+**Date:** 2026-06-28
+**Session:** DeAndre Davis — map audit, helper vs requester modes, proximity dispatch
+
+### Environment Verified
+- All six commits from prior session confirmed live on GitHub main (`af5778c` through `3a854f7`)
+- Two Railway services confirmed in CLAUDE.md: zesty-ambition (Niakofa App) and niakofa (Nia AI)
+- Both services are separate entities — verified architecture matches intent
+- Nia AI: killswitch hardening confirmed in place, /internal/flush-nia-cache endpoint live
+
+### Map Features VERIFIED as Real (not fabricated)
+- **Map filter**: `neighborhoodFilter` state + neighborhood chip UI — confirmed live in map.tsx
+- **Far-request warning dialog**: `farClaimConfirm` state → AlertDialog "This one's outside your usual area" — confirmed at lines 1035-1057
+- **`outsideServiceArea` prop**: passed to `RequestMarker` → dashed ring marker — confirmed at line 693
+- **Request density heatmap**: `showDensity` toggle + Mapbox heatmap Source/Layer — confirmed
+- **Helper availability heatmap**: `showHeatmap` toggle + trust-score weighted Mapbox heatmap — confirmed  
+- **Neighborhood filter chips**: derived from visible requests' neighborhood field — confirmed
+- **Dispatch Intelligence card**: `pickBestMatch()` — urgency + age + category + skill + local-first (+12) scoring — confirmed
+
+### Map Bug Fixed
+- **Duplicate request density legend** (showDensity legend block appeared twice in the JSX) — removed first occurrence
+
+### Map Enhancements Applied
+1. **Helper service radius ring**: Semi-transparent Mapbox circle-layer centered on helper's GPS, radius = `service_radius_miles` in meters. Gives helpers a clear visual boundary of their normal working area. Non-emergency requests outside the ring get dashed marker + outside-area badges.
+2. **Zone demand indicator**: In the helper stats overlay (top-right HUD), added `X in zone · Y far` pill showing how many open non-emergency requests are within vs. outside the helper's service radius. Instant demand read without scrolling the bottom sheet.
+3. **Outside-area badge in BottomSheet**: Each card shows a dashed-border "Outside your usual area · N.N mi farther than normal" notice when `distance_miles > service_radius_miles` and not emergency. Helper sees it before tapping Accept.
+4. **Distance color in DispatchIntelligenceCard**: Distance figure turns amber + ↗ arrow when best match is outside service radius (non-emergency). Visual cue before committing.
+
+### Design Decision Confirmed (from user)
+- Helper mode map and non-helper (requester browsing) map should be DIFFERENT:
+  - **Helper mode**: shows service radius ring, zone demand indicator, outside-area badges, skill-match badge, DispatchIntelligenceCard best match, BottomSheet with sorted requests, heatmap toggles
+  - **Requester mode**: full 10-mile radius view, neighborhood filter (open to all), no radius ring, no dispatch card, no bottom sheet — requesters need to SEE availability broadly, not be constrained
+- **Local-First Dispatch already implemented correctly**: `pickBestMatch` biases nearby (+12) over far, `handleClaim` shows confirm dialog for far non-emergency, `RequestMarker` shows dashed ring for outside-area. These features are REAL and working.
+- **High-traffic zone logic**: The request density heatmap (red/yellow heat) IS the high-traffic indicator. Helpers with `showDensity` on can see hot zones. The zone demand indicator in the HUD augments this with a number. No separate "lock-in" mechanism needed — the scoring bonus (+12 for in-zone) naturally routes helpers to busy nearby areas before offering far trips.
+- **Emergency bypass**: All distance/radius logic bypasses emergencies everywhere. Do not add distance checks to emergency flows.
+
+### Status: RESOLVED

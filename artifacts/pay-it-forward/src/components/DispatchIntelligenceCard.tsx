@@ -9,6 +9,7 @@ interface DispatchIntelligenceCardProps {
   onAccept: (request: HelpRequest) => void;
   onDismiss: () => void;
   isClaiming: boolean;
+  serviceRadiusMiles?: number;
 }
 
 export function DispatchIntelligenceCard({
@@ -16,6 +17,7 @@ export function DispatchIntelligenceCard({
   onAccept,
   onDismiss,
   isClaiming,
+  serviceRadiusMiles = 10,
 }: DispatchIntelligenceCardProps) {
   const [, setLocation] = useLocation();
   if (!bestMatch) return null;
@@ -81,7 +83,10 @@ export function DispatchIntelligenceCard({
             {bestMatch.distance_miles != null && (
               <span className="flex items-center gap-1">
                 <MapPin className="w-3 h-3 text-primary" />
-                <span className="font-bold text-foreground">{bestMatch.distance_miles.toFixed(1)} mi</span>
+                <span className={`font-bold ${(bestMatch.distance_miles ?? 0) > serviceRadiusMiles && bestMatch.urgency !== "emergency" ? "text-amber-400" : "text-foreground"}`}>
+                  {bestMatch.distance_miles.toFixed(1)} mi
+                  {(bestMatch.distance_miles ?? 0) > serviceRadiusMiles && bestMatch.urgency !== "emergency" && " ↗"}
+                </span>
               </span>
             )}
             {bestMatch.estimated_duration_min != null && (
