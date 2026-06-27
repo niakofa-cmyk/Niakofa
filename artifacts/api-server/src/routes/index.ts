@@ -20,7 +20,6 @@ import regionCrisisResourcesRouter from "./region-crisis-resources";
 import niaContextRouter from "./nia-context";
 import niaVoiceRouter from "./nia-voice";
 import niaProxyRouter from "./nia-proxy";
-import niaShareStoryRouter from "./nia-share-story";
 
 const router: IRouter = Router();
 
@@ -45,6 +44,5 @@ router.use(regionCrisisResourcesRouter);
 router.use(niaContextRouter);
 router.use(niaVoiceRouter);
 router.use(niaProxyRouter);
-router.use(niaShareStoryRouter);
 
 export default router;
