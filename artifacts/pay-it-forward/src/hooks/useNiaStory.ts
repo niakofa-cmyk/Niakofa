@@ -1,9 +1,8 @@
 // useNiaStory — Phase 7c
 // Records a voice story, sends transcript to Nia, returns polished text
 import { useState, useRef, useCallback } from "react";
-import { authHeaders } from "../lib/auth";
 
-const API_BASE = "";
+const NIA_SERVICE_URL = (import.meta as any).env?.VITE_NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app";
 
 export type StoryState = "idle" | "recording" | "processing" | "done" | "error";
 
@@ -69,9 +68,9 @@ export function useNiaStory(userName: string) {
 
     setState("processing");
     try {
-      const res = await fetch(`${API_BASE}/api/nia/share-story`, {
+      const res = await fetch(`${NIA_SERVICE_URL}/share-story`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transcript: raw, userName, helperName, category }),
       });
       if (!res.ok) throw new Error(await res.text());
