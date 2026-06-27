@@ -402,10 +402,6 @@ router.post("/admin/nia-toggle", requireAuth, requireAdmin(), adminLimiter, asyn
   return res.json({ ok: true, enabled: niaEnabled });
 });
 
-// Export the flag so nia-proxy can read it from the same process
-export { niaEnabled };
-
-
 // POST /admin/trigger-checkin-worker — manually fire the Nia check-in worker (admin only)
 // Useful for testing without waiting 24h for a real completed request
 router.post("/admin/trigger-checkin-worker", async (req, res) => {
@@ -441,5 +437,9 @@ router.post("/admin/trigger-checkin-worker", async (req, res) => {
     return res.status(500).json({ error: err.message ?? "Failed to trigger checkin" });
   }
 });
+
+
+// Export the flag so nia-proxy can read it from the same process
+export { niaEnabled };
 
 export default router;
