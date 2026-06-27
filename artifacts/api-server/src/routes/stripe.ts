@@ -373,7 +373,7 @@ router.post("/stripe/connect/onboard", requireAuth, requireOwnership("userId"), 
 
 // ── CONNECT ACCOUNT STATUS ──────────────────────────────────────────────────
 router.get("/stripe/connect/status/:userId", requireAuth, requireOwnership("userId"), async (req, res) => {
-  const userId = parseInt(req.params.userId);
+  const userId = parseInt(String(req.params.userId));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
   const [acct] = await db
@@ -432,7 +432,7 @@ router.get("/stripe/connect/refresh", (_req, res) => {
 
 // ── PAYMENT TRANSACTIONS (for wallet display) ───────────────────────────────
 router.get("/stripe/payment-transactions/:userId", requireAuth, requireOwnership("userId"), async (req, res) => {
-  const userId = parseInt(req.params.userId);
+  const userId = parseInt(String(req.params.userId));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
   const txs = await db

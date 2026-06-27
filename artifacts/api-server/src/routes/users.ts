@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, helperAvailabilityTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
@@ -51,7 +52,7 @@ router.post("/users/login", authLimiter, async (req, res) => {
     return res.status(401).json({ error: "Incorrect password" });
   }
 
-  const token = signTokenById(user.id, user.token_version);
+  const token = signTokenById(user.id);
   const { password_hash, ...safeUser } = user;
   return res.json({ user: safeUser, token });
 });
@@ -77,7 +78,7 @@ router.post("/users/register", authLimiter, async (req, res) => {
     is_helper: is_helper ?? false,
     neighborhood: neighborhood ?? null,
   }).returning();
-  const token = signTokenById(user.id, user.token_version);
+  const token = signTokenById(user.id);
   const { password_hash: _ph, ...safeUser } = user;
   return res.status(201).json({ user: safeUser, token });
 });
@@ -93,7 +94,13 @@ router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
 
 router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
   const pParsed = UpdateUserParams.safeParse({ id: parseInt(String(req.params.id)) });
-  const bParsed = UpdateUserBody.safeParse(req.body);
+  const ExtendedUpdateUserBody = UpdateUserBody.extend({
+    city: z.string().optional(),
+    specialties: z.array(z.string()).optional(),
+    phone_masked: z.string().optional(),
+    quick_replies: z.array(z.string()).optional(),
+  });
+  const bParsed = ExtendedUpdateUserBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { name, avatar_url, neighborhood, is_helper, city, specialties, phone_masked, quick_replies } = bParsed.data;
 
@@ -522,7 +529,7 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
     helper_qualifications?: string[];
     helper_bio?: string;
     helper_vehicle?: string;
-    helper_social_links?: string;
+    helper_social_links?: string[];
   };
 
   const authenticatedUserId = req.authenticatedUserId;
@@ -567,7 +574,7 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
       helper_qualifications: helper_qualifications ?? [],
       helper_bio: helper_bio ?? null,
       helper_vehicle: helper_vehicle ?? null,
-      helper_social_links: helper_social_links ?? null,
+      helper_social_links: helper_social_links ?? undefined,
       helper_status: "pending",
       updated_at: new Date(),
     })

@@ -35,8 +35,25 @@ export const usersTable = pgTable("users", {
   is_suspended: boolean("is_suspended").notNull().default(false),
   suspended_at: timestamp("suspended_at"),
   suspended_reason: text("suspended_reason"),
+  // Helper profile fields (migration 0010)
+  helper_status: text("helper_status").default("offline"),
+  helper_languages: text("helper_languages").array(),
+  helper_qualifications: text("helper_qualifications").array(),
+  helper_bio: text("helper_bio"),
+  helper_vehicle: text("helper_vehicle"),
+  helper_social_links: text("helper_social_links").array(),
+  // Token versioning for forced logout (migration 0011)
+  token_version: integer("token_version").notNull().default(0),
+  // Helper approval workflow (migration 0012)
+  approval_status: text("approval_status").default("pending"),
+  approval_reviewed_by: integer("approval_reviewed_by"),
+  approval_reviewed_at: timestamp("approval_reviewed_at"),
   // Helper skills — free-text array used by matching engine
   helper_skills: text("helper_skills").array(),
+  // Account type + org fields (migration 0016)
+  account_type: text("account_type").notNull().default("individual"),
+  organization_name: text("organization_name"),
+  organization_description: text("organization_description"),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
