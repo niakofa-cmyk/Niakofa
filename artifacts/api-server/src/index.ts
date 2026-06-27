@@ -9,6 +9,8 @@ import { startPledgeWorker } from "./workers/pledge-worker";
 import { startCleanupWorker } from "./workers/cleanup-worker";
 import { startNotificationWorker } from "./workers/notification-worker";
 import { startAnomalyDetectionWorker } from "./workers/anomaly-worker";
+import { startNiaCheckinWorker } from "./workers/nia-checkin-worker";
+import { processRecurringRequests } from "./routes/recurring";
 
 const rawPort = process.env["PORT"];
 if (!rawPort) throw new Error("PORT environment variable is required but was not provided.");
