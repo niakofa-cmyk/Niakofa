@@ -413,3 +413,25 @@ FIX 2 — ✅ RESOLVED (verified June 27, 2026) — nia-checkin-worker.ts alread
 - nia-service/src/ makes zero outbound fetch() calls to api-server URLs
 - All fetch() calls from api-server/ to nia-service are wrapped in try/catch with graceful fallbacks
 - NiaDrawer.tsx calls only relative /api/* paths — no hardcoded nia-service URL in frontend bundle
+
+## Incident #11 — June 27 Killswitch Hardening + NiaFab Sparkle Orb
+**Date:** 2026-06-27
+**Commit:** 05eaaca + {next}
+
+### Killswitch Security Gaps Resolved
+1. **Phase 1** — `admin/verify-secret`: added `adminLimiter` to prevent brute-force
+2. **Phase 1** — `admin/nia-status`: added `adminLimiter` to prevent polling abuse
+3. **Phase 2** — `nia-service /history/:sessionId`: added `isNiaEnabled()` guard
+4. **Phase 4** — `admin/nia-toggle`: now calls `nia-service /internal/flush-nia-cache` on every toggle
+5. **Phase 4** — Added `/internal/flush-nia-cache` endpoint to nia-service (x-internal-secret protected)
+6. **Phase 3** — Added `resetNiaCache()` export to nia-service db.ts so cache is cleared instantly
+
+### NiaFab Enhancement
+- Full 5-layer sparkle orb restored:
+  - Layer 1: far outer aura that breathes (3.8s)
+  - Layer 2: heartbeat ring (2.2s)
+  - Layer 3: secondary slower ring (3.2s)
+  - Layer 4: main orb body — floating bob, rotating conic shimmer, glint, animated glowing N
+  - Layer 5: 5 orbiting sparkle particles at 72° intervals
+
+### Status: RESOLVED
