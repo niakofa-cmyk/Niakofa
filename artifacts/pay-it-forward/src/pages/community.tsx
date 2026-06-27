@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useNiaStory } from "@/hooks/useNiaStory";
+import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import LiveLeaderboard from "@/components/LiveLeaderboard";
-import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, MapPin, Award, Wrench, Globe } from "lucide-react";
+import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, MapPin, Award, Wrench, Globe, Mic, MicOff, Loader2, CheckCircle2 } from "lucide-react";
 import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
@@ -434,8 +436,113 @@ function SkillsMarketplaceTab() {
   );
 }
 
+// ── Phase 7c: NiaStoryModal ────────────────────────────────────────────────
+function NiaStoryModal({ onClose, onPosted }: { onClose: () => void; onPosted: (story: string) => void }) {
+  const { currentUser } = useAppContext();
+  const userName = currentUser?.name ?? "A neighbor";
+  const { state, story, error, transcript, startRecording, stopAndSubmit, reset } = useNiaStory(userName);
+
+  const handlePost = async () => {
+    if (!story) return;
+    try {
+      await fetch("/api/gratitude", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ message: story.story, author_name: userName }),
+      });
+      onPosted(story.story);
+      onClose();
+    } catch {
+      // post failed silently — story still shown to user
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-lg bg-background rounded-t-3xl p-6 pb-10 space-y-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-black text-base">Share Your Story</div>
+            <div className="text-xs text-muted-foreground">Nia will polish your words into a community post</div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-muted"><X className="w-4 h-4" /></button>
+        </div>
+
+        {state === "idle" && (
+          <button
+            onClick={startRecording}
+            className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground rounded-2xl py-4 font-bold text-sm"
+          >
+            <Mic className="w-5 h-5" /> Tap to Record
+          </button>
+        )}
+
+        {state === "recording" && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-primary font-semibold">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              Recording… speak naturally
+            </div>
+            {transcript && <p className="text-xs text-muted-foreground italic leading-relaxed">"{transcript}"</p>}
+            <button
+              onClick={() => stopAndSubmit()}
+              className="w-full flex items-center justify-center gap-2 bg-muted border border-border rounded-2xl py-3 font-bold text-sm"
+            >
+              <MicOff className="w-4 h-4" /> Done — let Nia craft it
+            </button>
+          </div>
+        )}
+
+        {state === "processing" && (
+          <div className="flex items-center justify-center gap-2 py-6 text-muted-foreground text-sm">
+            <Loader2 className="w-5 h-5 animate-spin" /> Nia is crafting your story…
+          </div>
+        )}
+
+        {state === "done" && story && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5 text-xs text-green-400 font-semibold">
+              <CheckCircle2 className="w-4 h-4" /> Nia crafted your story
+            </div>
+            <div className="bg-muted rounded-2xl p-4 text-sm leading-relaxed text-foreground">
+              "{story.story}"
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={reset}
+                className="flex-1 border border-border rounded-2xl py-3 text-sm font-bold text-muted-foreground hover:bg-muted"
+              >
+                Re-record
+              </button>
+              <button
+                onClick={handlePost}
+                className="flex-2 bg-primary text-primary-foreground rounded-2xl px-6 py-3 text-sm font-bold flex items-center gap-2"
+              >
+                <Send className="w-4 h-4" /> Post to Community
+              </button>
+            </div>
+          </div>
+        )}
+
+        {state === "error" && (
+          <div className="space-y-3">
+            <div className="text-xs text-destructive">{error ?? "Something went wrong."}</div>
+            <button onClick={reset} className="w-full border border-border rounded-2xl py-3 text-sm font-bold">Try Again</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 export default function CommunityScreen() {
   const [tab, setTab] = useState<Tab>("feed");
+  const [showNiaStory, setShowNiaStory] = useState(false);
   const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
   const [posts, setPosts] = useState<GratitudePost[]>([]);
   const [postsLoading, setPostsLoading] = useState(true);
@@ -548,7 +655,15 @@ export default function CommunityScreen() {
                 ))}
               </div>
             )}
-            <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Gratitude &amp; Stories</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Gratitude &amp; Stories</h3>
+              <button
+                onClick={() => setShowNiaStory(true)}
+                className="flex items-center gap-1.5 text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-full transition-colors"
+              >
+                <Mic className="w-3.5 h-3.5" /> Share with Nia
+              </button>
+            </div>
             {postsLoading ? (
               <div className="flex justify-center items-center py-10">
                 <motion.div
@@ -614,6 +729,8 @@ export default function CommunityScreen() {
             )}
           </div>
         )}
+
+        {showNiaStory && <NiaStoryModal onClose={() => setShowNiaStory(false)} onPosted={() => {}} />}
 
         {/* HEROES TAB — Live Leaderboard */}
         {tab === "heroes" && <LiveLeaderboard />}
