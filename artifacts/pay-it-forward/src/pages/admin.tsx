@@ -790,8 +790,6 @@ export default function AdminScreen() {
           );
         })}
       </div>
-
-          </>
         )}
       </div>
 
