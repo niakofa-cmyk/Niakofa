@@ -13,7 +13,14 @@ import { useTranslation } from "react-i18next";
 export default function PendingApprovalScreen() {
   const { t } = useTranslation();
   const { currentUser, setCurrentUser } = useAppContext();
-  const status = currentUser?.approval_status ?? "pending";
+  // approval_status, account_type, organization_name are extended fields not yet
+  // in the generated User OpenAPI type — cast to access them safely
+  const extUser = currentUser as (typeof currentUser & {
+    approval_status?: string;
+    account_type?: string;
+    organization_name?: string;
+  }) | null;
+  const status = extUser?.approval_status ?? "pending";
   const isDenied = status === "denied";
 
   const handleLogout = () => {
@@ -43,11 +50,11 @@ export default function PendingApprovalScreen() {
           : t("pending_approval.under_review_body")}
       </p>
 
-      {currentUser?.account_type && currentUser.account_type !== "individual" && (
+      {extUser?.account_type && extUser.account_type !== "individual" && (
         <p className="text-muted-foreground text-xs max-w-sm leading-relaxed mt-2 flex items-center gap-1.5 justify-center">
           <ShieldCheck className="w-3.5 h-3.5 text-primary" />
-          {t("pending_approval.registered_as", { accountType: currentUser.account_type })}
-          {currentUser.organization_name ? ` — ${currentUser.organization_name}` : ""}
+          {t("pending_approval.registered_as", { accountType: extUser.account_type })}
+          {extUser.organization_name ? ` — ${extUser.organization_name}` : ""}
         </p>
       )}
 

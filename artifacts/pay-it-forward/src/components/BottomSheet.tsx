@@ -8,6 +8,8 @@ interface BottomSheetProps {
   requests: HelpRequest[];
   onClaim: (request: HelpRequest) => void;
   isClaiming: boolean;
+  /** ID of a request that was just dismissed as best-match — used to avoid re-highlighting it */
+  dismissedId?: number | null;
 }
 
 function getCategoryIcon(category: string) {
@@ -53,7 +55,7 @@ function PaymentBadge({ type }: { type: string }) {
   }
 }
 
-export function BottomSheet({ requests, onClaim, isClaiming }: BottomSheetProps) {
+export function BottomSheet({ requests, onClaim, isClaiming, dismissedId: _dismissedId }: BottomSheetProps) {
   const [, setLocation] = useLocation();
   const sorted = [...requests].sort((a, b) => {
     const urgencyOrder: Record<string, number> = { emergency: 0, high: 1, medium: 2, low: 3 };

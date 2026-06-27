@@ -2,7 +2,15 @@ import type { HelpRequest } from "@workspace/api-client-react";
 import { AlertTriangle, Heart, DollarSign, Gift } from "lucide-react";
 import { useState } from "react";
 
-export function RequestMarker({ request }: { request: HelpRequest }) {
+interface RequestMarkerProps {
+  request: HelpRequest;
+  /** Whether the helper's skills match this request category */
+  skillMatch?: boolean;
+  /** Whether the request is outside the helper's normal service radius */
+  outsideServiceArea?: boolean;
+}
+
+export function RequestMarker({ request, skillMatch: _skillMatch, outsideServiceArea }: RequestMarkerProps) {
   const [tapped, setTapped] = useState(false);
   const getColors = () => {
     switch (request.urgency) {
@@ -26,6 +34,10 @@ export function RequestMarker({ request }: { request: HelpRequest }) {
 
   return (
     <div className="relative cursor-pointer" onClick={() => setTapped(p => !p)} onMouseEnter={() => setTapped(true)} onMouseLeave={() => setTapped(false)}>
+      {/* Outside service area — dashed ring indicator per CLAUDE.md Local-First Dispatch */}
+      {outsideServiceArea && !isEmergency && (
+        <div className="absolute -inset-2 rounded-full border-2 border-dashed border-muted-foreground/40 pointer-events-none" />
+      )}
       {isEmergency && (
         <>
           <div className={`absolute -inset-5 ${pulse} rounded-full opacity-20 animate-ping`} />

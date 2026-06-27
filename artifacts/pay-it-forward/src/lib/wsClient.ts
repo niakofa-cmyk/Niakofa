@@ -32,6 +32,7 @@ export type WsEventType =
   | "report_reviewed"
   | "chat_message"
   | "presence_update"
+  | "crisis_update"
   | "connected"
   | "pong"
   | "ping";
