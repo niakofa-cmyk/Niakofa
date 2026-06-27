@@ -174,17 +174,29 @@ router.post("/stripe/webhook", async (req, res) => {
     }
 
     case "transfer.created": {
+      // CRIT-04 fix: stripe_transfer_id hasn't been set on the row yet when this
+      // event fires. Match by stripe_payment_intent_id via source_transaction
+      // (Stripe populates transfer.source_transaction = the original charge ID).
       const transfer = event.data.object as Stripe.Transfer;
       try {
-        if (transfer.destination) {
-          await db
-            .update(paymentTransactionsTable)
-            .set({
-              stripe_transfer_id: transfer.id,
-              state: "completed",
-              updated_at: new Date(),
-            })
-            .where(eq(paymentTransactionsTable.stripe_transfer_id, transfer.id));
+        if (transfer.destination && (transfer as any).source_transaction) {
+          const sourceCharge = (transfer as any).source_transaction as string;
+          // source_transaction is the charge ID; fetch the payment intent from it
+          const charge = await stripe.charges.retrieve(sourceCharge).catch(() => null);
+          const piId = charge?.payment_intent as string | null;
+          if (piId) {
+            await db
+              .update(paymentTransactionsTable)
+              .set({
+                stripe_transfer_id: transfer.id,
+                state: "completed",
+                updated_at: new Date(),
+              })
+              .where(eq(paymentTransactionsTable.stripe_payment_intent_id, piId));
+          } else {
+            // Fallback: store the transfer ID for manual reconciliation
+            logger.warn({ transferId: transfer.id, sourceCharge }, "transfer.created: could not resolve payment_intent — storing transfer_id only");
+          }
         }
       } catch (err) {
         logger.error(

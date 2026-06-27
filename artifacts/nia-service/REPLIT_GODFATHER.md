@@ -287,3 +287,29 @@ Mobile touch devices need `:active` state, not `:hover`. Replaced inline `onMous
 - Admin kill-switch only disables user-facing `/chat` and `/analyze-image`
 - All 4 background workers (crisis follow-up, 24h check-in, phrasing insights, anomaly detection) continue running regardless of kill-switch state
 - Nia never stops learning. She rests, she doesn't die.
+
+
+## Session Log — June 27-28, 2026 (Coworker AI)
+
+### Commits Pushed
+- `105ac3b` — NiaFab/NiaDrawer global mount, auth history, iOS font-size fix, mobile touch
+- `05eaaca` — Killswitch hardening: adminLimiter on verify-secret + nia-status, /internal/flush-nia-cache endpoint, isNiaEnabled() on /history
+- `3a854f7` — 5-layer sparkle NiaFab orb (aura breathe, heartbeat rings, bob, shimmer, orbiting particles)
+- `7f59237` — Critical bug fixes: help_requests→requests table, NiaGlobal restored, SOS type in reports
+- This commit — Stripe transfer.created fix (CRIT-04), post-merge.sh safety fix
+
+### Critical Bugs Fixed
+1. CRIT-01/02: `getActiveRequest()` and `getCompletedRequestsForCheckin()` queried `help_requests` (non-existent) instead of `requests`. Nia was context-blind and check-ins never fired. Fixed.
+2. CRIT-04: Stripe `transfer.created` webhook matched rows by `stripe_transfer_id` before it was set — always no-op. Fixed to match via `stripe_payment_intent_id` through `source_transaction`.
+3. CRIT-05/06: Model IDs `claude-sonnet-4-6` and `claude-haiku-4-5-20251001` were already correct in this build (claude-sonnet-4-5 / claude-haiku-4-5). Verified.
+4. CRIT-03: Added `"sos"` to `reports.ts` type enum — was missing, causing inconsistency with verification.ts.
+5. BUG-002: `post-merge.sh` used destructive `drizzle-kit push` — changed to `drizzle-kit migrate`.
+
+### Killswitch Architecture (complete)
+- Admin kill-switch: POST /admin/nia-toggle → DB persist + immediate in-process cache update + notifies nia-service /internal/flush-nia-cache
+- nia-service: isNiaEnabled() on /chat, /analyze-image, /history. /checkin runs always (learning continues)
+- Rate limiting: adminLimiter on /admin/verify-secret, /admin/nia-status, /admin/nia-toggle
+- resetNiaCache() exported from db.ts for instant TTL invalidation
+
+### NiaFab Status
+- Full 5-layer sparkle orb live: far aura (3.8s breathe) + heartbeat ring (2.2s) + secondary ring (3.2s) + orb body (bob + conic shimmer + glint + glowing N) + 5 orbiting particles at 72° intervals

@@ -40,7 +40,7 @@ async function main() {
     // top-level side effects on import instead — so we access .default
     // through a typed cast rather than destructuring, since destructuring
     // requires TS to confirm the property exists on the module'''s type.
-    const seedModule = (await import("./seed-fort-worth.js")) as { default?: unknown };
+    const seedModule = (await import("./seed-fort-worth.ts")) as { default?: unknown };
     const runSeed = seedModule.default;
     if (typeof runSeed === "function") {
       await runSeed();
