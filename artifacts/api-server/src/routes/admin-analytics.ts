@@ -434,7 +434,7 @@ router.post("/admin/trigger-checkin-worker", requireAuth, requireAdmin(), adminL
       return res.status(upstream.status).json({ error: err });
     }
     const data = await upstream.json();
-    return res.json({ ok: true, sessionId, ...data });
+    return res.json({ ok: true, sessionId, ...(data as Record<string, unknown>) });
   } catch (err: any) {
     return res.status(500).json({ error: err.message ?? "Failed to trigger checkin" });
   }
