@@ -329,6 +329,60 @@ Use a caring, neighborly tone. Do NOT use emojis. Do NOT be formal.`;
   }
 });
 
+
+// ── PHASE 7c: Voice story sharing ─────────────────────────────────────────
+// Authenticated: user sends raw voice transcript, Nia crafts it into a
+// warm community story and returns the polished text for posting.
+router.post("/share-story", parseOptionalAuth, async (req: Request, res: Response) => {
+  const userId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId ?? null;
+  const body = req.body as Record<string, unknown>;
+  const transcript = typeof body.transcript === "string" ? body.transcript.trim() : "";
+  const userName   = typeof body.userName   === "string" ? body.userName.trim()   : "A neighbor";
+  const helperName = typeof body.helperName === "string" ? body.helperName.trim() : null;
+  const category   = typeof body.category   === "string" ? body.category.trim()   : "";
+
+  if (!transcript || transcript.length < 10) {
+    return res.status(400).json({ error: "transcript is required (min 10 chars)" });
+  }
+  if (transcript.length > 3000) {
+    return res.status(400).json({ error: "transcript too long (max 3000 chars)" });
+  }
+
+  const helperLine = helperName ? ` with the help of ${helperName}` : "";
+  const prompt = `You are Nia, a warm community AI for Niakofa — a mutual aid platform in Fort Worth, TX.
+
+${userName} just recorded a voice story about receiving community help${helperLine}. Here is their raw transcript:
+
+"${transcript}"
+
+Your job: Turn this into a warm, authentic 2–4 sentence community story in THEIR voice — not yours. 
+Rules:
+- Write in first person as ${userName}
+- Keep their authentic words and emotion — just clean up speech-to-text artifacts
+- Do NOT add emojis, hashtags, or formal language
+- Do NOT mention Nia or the AI
+- End with something that invites others ("If you need help, just ask" or similar)
+- Max 80 words
+- Return ONLY the polished story text, nothing else`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 200,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const story = response.content[0].type === "text"
+      ? response.content[0].text.trim()
+      : transcript;
+
+    return res.json({ ok: true, story, userName, helperName, category });
+  } catch (err) {
+    logger.error({ err }, "share-story: failed to craft story");
+    return res.status(500).json({ error: "Failed to craft story" });
+  }
+});
+
 export default router;
 
 async function extractAndUpdateMemory(
