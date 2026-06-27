@@ -26,9 +26,6 @@ const getNiaUrl = () =>
 
 // ── Sanitize message input ────────────────────────────────────────────────────
 const MAX_MESSAGE_LENGTH = 2000;
-// Session IDs from the frontend follow the pattern nia_${Date.now()}_${randomStr}
-// which uses underscores and alphanumerics — \w covers this. Max length 200
-// to match the storage key limit. Min 6 chars to reject empty/trivial values.
 const SESSION_ID_PATTERN = /^[\w-]{6,200}$/;
 
 function sanitizeMessage(raw: unknown): string | null {
@@ -45,13 +42,12 @@ function sanitizeSessionId(raw: unknown): string | null {
   return trimmed;
 }
 
-// ── POST /api/nia/chat — main conversational endpoint (SSE streaming) ─────────
+// ── POST /api/nia/chat ────────────────────────────────────────────────────────
 router.post(
   "/nia/chat",
   parseAuth,
   crisisAwareChatLimiter,
   async (req: Request, res: Response) => {
-    // Kill-switch: admin can disable Nia via /admin/nia-toggle
     if (!niaEnabled) {
       return res.status(503).json({ error: "Nia is temporarily unavailable." });
     }
@@ -65,15 +61,11 @@ router.post(
 
     const sessionId = sanitizeSessionId(body.sessionId);
     if (!sessionId) {
-      return res.status(400).json({ error: "sessionId is required (6–128 alphanumeric/dash characters)" });
+      return res.status(400).json({ error: "sessionId is required (6\u2013128 alphanumeric/dash characters)" });
     }
 
-    // userId comes ONLY from the verified Bearer token — never from the body
     const userId = req.authenticatedUserId ?? null;
 
-    // Phase 3: Detect language from Accept-Language header and pass to nia-service.
-    // The nia-service injects this into the system prompt so Nia responds in the
-    // user's language. Frontend may also pass an explicit language preference.
     const acceptLanguage = req.headers["accept-language"] ?? null;
     const explicitLanguage =
       typeof body.language === "string" && body.language.trim()
@@ -101,12 +93,9 @@ router.post(
         typeof body.liveContext === "object" && body.liveContext !== null
           ? body.liveContext
           : null,
-      // Phase 7a: voice wake word context — language and activation flag
       voiceActivated: body.voiceActivated === true,
       wakeWordLanguage:
         typeof body.wakeWordLanguage === "string" ? body.wakeWordLanguage : undefined,
-      // Phase 7c: food intent signal — detected client-side, forwarded so
-      // nia-service can inject the precision food directive into the system prompt
       foodSignal:
         typeof body.foodSignal === "string" ? body.foodSignal : undefined,
       foodSignalCount:
@@ -183,16 +172,13 @@ router.post(
   }
 );
 
-// ── GET /api/nia/history/:sessionId — conversation history ───────────────────
+// ── GET /api/nia/history/:sessionId ──────────────────────────────────────────
 router.get("/nia/history/:sessionId", parseAuth, niaChatHistoryLimiter, async (req: Request, res: Response) => {
-    if (!niaEnabled) { return res.status(503).json({ error: "Nia is temporarily unavailable." }); }
+  if (!niaEnabled) { return res.status(503).json({ error: "Nia is temporarily unavailable." }); }
   const sessionId = sanitizeSessionId(req.params.sessionId);
   if (!sessionId) return res.status(400).json({ error: "Invalid sessionId" });
 
   const userId = req.authenticatedUserId;
-  // Unauthenticated callers may only read anonymous sessions (anon- prefix).
-  // Authenticated callers may only read their own user sessions or anonymous sessions.
-  // This closes the bypass where !userId skipped the ownership check entirely.
   if (userId === undefined) {
     if (!sessionId.startsWith("anon-")) {
       return res.status(403).json({ error: "Authentication required to read non-anonymous conversation history" });
@@ -214,9 +200,7 @@ router.get("/nia/history/:sessionId", parseAuth, niaChatHistoryLimiter, async (r
   }
 });
 
-// ── GET /api/nia/memory — user's Nia memory (privacy-facing) ─────────────────
-// Phase 1: Returns what Nia remembers about the authenticated user so they can
-// review and understand their stored memory. Required for privacy/trust.
+// ── GET /api/nia/memory ───────────────────────────────────────────────────────
 router.get("/nia/memory", parseAuth, async (req: Request, res: Response) => {
   const userId = req.authenticatedUserId;
   if (!userId) return res.status(401).json({ error: "Authentication required" });
@@ -234,8 +218,7 @@ router.get("/nia/memory", parseAuth, async (req: Request, res: Response) => {
   }
 });
 
-// ── DELETE /api/nia/memory — clear user's Nia memory ────────────────────────
-// Privacy right: users can erase what Nia remembers about them at any time.
+// ── DELETE /api/nia/memory ────────────────────────────────────────────────────
 router.delete("/nia/memory", parseAuth, async (req: Request, res: Response) => {
   const userId = req.authenticatedUserId;
   if (!userId) return res.status(401).json({ error: "Authentication required" });
@@ -254,8 +237,7 @@ router.delete("/nia/memory", parseAuth, async (req: Request, res: Response) => {
   }
 });
 
-
-// ── POST /api/nia/share-story — Phase 7c voice story crafting ────────────────
+// ── POST /api/nia/share-story ─────────────────────────────────────────────────
 router.post("/nia/share-story", parseAuth, async (req: Request, res: Response) => {
   if (!niaEnabled) return res.status(503).json({ error: "Nia is temporarily unavailable." });
   const userId = req.authenticatedUserId;
@@ -294,12 +276,6 @@ export default router;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Extracts the primary language code from an Accept-Language header.
- * "es-MX,es;q=0.9,en;q=0.8" → "es"
- * Returns null if the header is absent or malformed, or if the primary
- * language is English (no need to inject a directive for the default).
- */
 function parsePrimaryLanguage(acceptLanguage: string | null): string | null {
   if (!acceptLanguage) return null;
   const primary = acceptLanguage.split(",")[0]?.split(";")[0]?.trim();
