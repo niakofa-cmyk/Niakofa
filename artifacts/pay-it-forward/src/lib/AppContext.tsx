@@ -163,9 +163,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── All useEffect calls last ──────────────────────────────────────────────
 
-  // Redirect to login if no user — except already on /login
+  // Redirect to login if no user — except already on /login or /admin (admin has its own auth)
   useEffect(() => {
-    if (!currentUser && location !== "/login") {
+    if (!currentUser && location !== "/login" && location !== "/admin") {
       setLocation("/login");
     }
   }, [currentUser, location, setLocation]);

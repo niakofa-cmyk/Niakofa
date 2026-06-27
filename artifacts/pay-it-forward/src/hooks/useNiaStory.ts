@@ -2,7 +2,8 @@
 // Records a voice story, sends transcript to Nia, returns polished text
 import { useState, useRef, useCallback } from "react";
 
-const NIA_SERVICE_URL = (import.meta as any).env?.VITE_NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app";
+// share-story routes through the api-server proxy
+const API_BASE = (import.meta as any).env?.BASE_URL?.replace(/\/$/, "") ?? "";
 
 export type StoryState = "idle" | "recording" | "processing" | "done" | "error";
 
@@ -68,9 +69,12 @@ export function useNiaStory(userName: string) {
 
     setState("processing");
     try {
-      const res = await fetch(`${NIA_SERVICE_URL}/share-story`, {
+      const res = await fetch(`${API_BASE}/api/nia/share-story`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...((() => { try { const t = localStorage.getItem("niakofa_token"); return t ? { Authorization: `Bearer ${t}` } : {}; } catch { return {}; } })()),
+        },
         body: JSON.stringify({ transcript: raw, userName, helperName, category }),
       });
       if (!res.ok) throw new Error(await res.text());
