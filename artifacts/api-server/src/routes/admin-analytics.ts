@@ -409,7 +409,7 @@ export { niaEnabled };
 // POST /admin/trigger-checkin-worker — manually fire the Nia check-in worker (admin only)
 // Useful for testing without waiting 24h for a real completed request
 router.post("/admin/trigger-checkin-worker", async (req, res) => {
-  const adminSecret = (req.headers["x-admin-secret"] as string) ?? (req.body as Record<string,unknown>)?.secret as string;
+  const adminSecret = (req.headers["x-admin-secret"] as string | undefined) ?? String((req.body as Record<string,unknown>)?.secret ?? "");
   if (!adminSecret || adminSecret !== (process.env.ADMIN_SECRET ?? "")) return res.status(403).json({ error: "Forbidden" });
   const body = req.body as Record<string, unknown>;
   const userId    = typeof body.userId    === "number" ? body.userId    : 1;
