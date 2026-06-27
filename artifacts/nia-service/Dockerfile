@@ -45,3 +45,4 @@ WORKDIR /app/deploy
 # Expose default port for documentation; actual port injected via PORT env var at runtime
 EXPOSE 3001
 CMD ["node", "dist/index.js"]
+# cache-bust: 1782572320
