@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import path from "path";
 import router from "./routes";
+import { voiceAudioRawParser } from "./routes/nia-voice";
 import { logger } from "./lib/logger";
 import { generalApiLimiter } from "./middlewares/rate-limit";
 import { parseAuth } from "./middlewares/auth";
@@ -65,6 +66,8 @@ app.use(
 // This MUST come before express.json() so the /stripe/webhook route gets the raw body.
 app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
 app.use("/api/verification/identity/webhook", express.raw({ type: "application/json" }));
+// Voice STT endpoint needs raw audio bytes before express.json() runs
+app.use("/api/nia/voice/transcribe", voiceAudioRawParser);
 
 app.use(express.json({ limit: "10mb" })); // 10mb to allow base64 avatar uploads
 app.use(express.urlencoded({ extended: true }));

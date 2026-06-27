@@ -22,6 +22,8 @@ export const userSettingsTable = pgTable("user_settings", {
   service_radius_miles: real("service_radius_miles").notNull().default(10),
   max_travel_miles: real("max_travel_miles").default(15),
   specialties: text("specialties"),
+  // Language preference (migration 0017)
+  preferred_language: text("preferred_language").notNull().default("en"),
 
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 });

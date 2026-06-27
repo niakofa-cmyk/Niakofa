@@ -62,6 +62,7 @@ server.listen(port, async () => {
 
   // Anomaly detection — runs regardless of Redis; lightweight DB polling
   startAnomalyDetectionWorker();
+  startNiaCheckinWorker();
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────

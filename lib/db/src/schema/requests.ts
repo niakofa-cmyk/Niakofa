@@ -24,6 +24,11 @@ export const requestsTable = pgTable("help_requests", {
   arrived_at: timestamp("arrived_at"),
   completed_at: timestamp("completed_at"),
   cancelled_at: timestamp("cancelled_at"),
+  // Voice analytics (migration 0014)
+  voice_activated: boolean("voice_activated").notNull().default(false),
+  voice_language: text("voice_language"),
+  // Nia check-in (migration 0013)
+  nia_checkin_sent_at: timestamp("nia_checkin_sent_at"),
 }, (t) => [
   index("help_requests_status_idx").on(t.status),
   index("help_requests_requester_id_idx").on(t.requester_id),

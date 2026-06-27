@@ -109,3 +109,60 @@ export const chatLimiter = rateLimit({
   },
   message: { error: "You're sending messages too fast. Slow down a little." },
 });
+// ── 7. Crisis-Aware Chat (20 / min per user, tighter during crisis window) ───
+// Used by nia-proxy for the /nia/chat endpoint. Named "crisis-aware" because
+// we intentionally keep this generous — someone in a mental health moment
+// should not hit a rate limit. 20/min is still abuse protection without
+// punishing someone who needs to talk.
+export const crisisAwareChatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const r = req as typeof req & { authenticatedUserId?: number };
+    return `nia-chat-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
+  },
+  message: { error: "You're sending messages too quickly. Please slow down." },
+});
+
+// ── 8. Nia Chat History (60 / 15 min per user) ───────────────────────────────
+// History reads are cheap but should still be throttled against scraping.
+export const niaChatHistoryLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const r = req as typeof req & { authenticatedUserId?: number };
+    return `nia-history-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
+  },
+  message: { error: "Too many history requests. Please wait a moment." },
+});
+
+// ── 9. Admin Endpoints (30 / 15 min) ─────────────────────────────────────────
+// Admin routes are low-volume by design; this mainly protects against
+// automated scripts hammering the analytics endpoints.
+export const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Too many admin requests. Please slow down." },
+});
+
+// ── 10. Voice I/O (30 / hour per user) ───────────────────────────────────────
+// STT and TTS calls hit OpenAI — cost-sensitive. 30/hour is generous for
+// real usage but protects against accidental loops or abuse.
+export const voiceLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const r = req as typeof req & { authenticatedUserId?: number };
+    return `voice-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
+  },
+  message: { error: "Voice limit reached. Please wait an hour before trying again." },
+});
+

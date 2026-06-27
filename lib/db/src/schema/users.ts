@@ -31,6 +31,12 @@ export const usersTable = pgTable("users", {
   passive_check_interval_min: integer("passive_check_interval_min").default(30),
   is_admin: boolean("is_admin").notNull().default(false),
   password_hash: text("password_hash"),
+  // Suspension (migration 0015)
+  is_suspended: boolean("is_suspended").notNull().default(false),
+  suspended_at: timestamp("suspended_at"),
+  suspended_reason: text("suspended_reason"),
+  // Helper skills — free-text array used by matching engine
+  helper_skills: text("helper_skills").array(),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
