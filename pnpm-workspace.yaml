@@ -166,3 +166,4 @@ overrides:
 allowBuilds:
   esbuild: true
   msgpackr-extract: true
+  unrs-resolver: false
