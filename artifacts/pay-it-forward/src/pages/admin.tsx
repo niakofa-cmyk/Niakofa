@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
   Shield, AlertCircle, CheckCircle2, Clock, X, ChevronLeft,
   Eye, Flag, User as UserIcon, RefreshCw, Filter, ExternalLink,
-  Users, Search, Ban, AlertTriangle, Star, Bot, Power
+  Users, Search, Ban, AlertTriangle, Star, Bot, Power, Timer
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -546,6 +546,10 @@ function NiaTab() {
   );
 }
 
+// ─── Admin session constants ─────────────────────────────────────────────────
+const SESSION_DURATION_MS  = 10 * 60 * 1000; // 10 minutes
+const BUMP_OFFER_BEFORE_MS =  5 * 60 * 1000; // show bump prompt at 5 min remaining
+
 export default function AdminScreen() {
   const [authed, setAuthed] = useState(false);
   const [adminInput, setAdminInput] = useState("");
@@ -557,6 +561,53 @@ export default function AdminScreen() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+
+  // ── Session timer ──────────────────────────────────────────────────────────
+  const [sessionSecondsLeft, setSessionSecondsLeft] = useState(SESSION_DURATION_MS / 1000);
+  const [showBumpPrompt, setShowBumpPrompt] = useState(false);
+  const expiryRef   = useRef<number | null>(null);
+  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+  }, []);
+
+  const logout = useCallback(() => {
+    clearTimer();
+    setAuthed(false);
+    setAdminInput("");
+    setShowBumpPrompt(false);
+    toast({ title: "Admin session ended", description: "Session expired — re-enter your secret to continue." });
+  }, [clearTimer]);
+
+  const startTimer = useCallback((durationMs = SESSION_DURATION_MS) => {
+    clearTimer();
+    expiryRef.current = Date.now() + durationMs;
+    setShowBumpPrompt(false);
+    timerRef.current = setInterval(() => {
+      const remaining = (expiryRef.current ?? 0) - Date.now();
+      if (remaining <= 0) { clearTimer(); logout(); return; }
+      setSessionSecondsLeft(Math.ceil(remaining / 1000));
+      if (remaining <= BUMP_OFFER_BEFORE_MS && !showBumpPrompt) setShowBumpPrompt(true);
+    }, 1000);
+  }, [clearTimer, logout, showBumpPrompt]);
+
+  useEffect(() => {
+    if (authed) startTimer();
+    return clearTimer;
+  }, [authed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const bumpSession = useCallback(() => {
+    setShowBumpPrompt(false);
+    startTimer();
+    toast({ title: "Session extended", description: "Admin session reset to 10 minutes." });
+  }, [startTimer]);
+
+  const fmtCountdown = (secs: number) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, "0");
+    const s = (secs % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  };
 
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -682,6 +733,39 @@ export default function AdminScreen() {
             </button>
           ))}
         </div>
+
+        {/* Session timer HUD */}
+        <div className={`flex items-center justify-between mt-3 px-1 text-[11px] font-bold ${
+          sessionSecondsLeft <= 60 ? "text-destructive" :
+          sessionSecondsLeft <= BUMP_OFFER_BEFORE_MS / 1000 ? "text-yellow-500" :
+          "text-muted-foreground"
+        }`}>
+          <span className="flex items-center gap-1">
+            <Timer className="w-3 h-3" />
+            Session: {fmtCountdown(sessionSecondsLeft)}
+          </span>
+          <button
+            onClick={bumpSession}
+            className="text-[10px] font-black px-2 py-0.5 rounded-full border border-current hover:bg-muted transition-colors"
+          >
+            +10 min
+          </button>
+        </div>
+
+        {/* Bump prompt — appears at 5 min remaining */}
+        {showBumpPrompt && (
+          <div className="mt-2 px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/30 flex items-center justify-between gap-3">
+            <span className="text-[11px] text-yellow-600 dark:text-yellow-400 font-bold">
+              Session expires in {fmtCountdown(sessionSecondsLeft)} — extend?
+            </span>
+            <button
+              onClick={bumpSession}
+              className="text-[11px] font-black bg-yellow-500 text-black px-3 py-1 rounded-full active:opacity-80"
+            >
+              Extend
+            </button>
+          </div>
+        )}
 
         {/* Report filter chips — only shown on reports tab */}
         {activeTab === "reports" && (
