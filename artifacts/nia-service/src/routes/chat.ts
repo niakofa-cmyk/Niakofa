@@ -273,6 +273,10 @@ router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Respo
 });
 
 router.get("/history/:sessionId", async (req: Request, res: Response) => {
+  // Kill-switch: respect admin toggle for history reads too
+  if (!(await isNiaEnabled())) {
+    return res.status(503).json({ error: "Nia is temporarily unavailable." });
+  }
   const sessionId = req.params.sessionId;
   if (!sessionId) return res.status(400).json({ error: "sessionId required" });
   return res.json(await getScrollbackHistory(Array.isArray(sessionId) ? sessionId[0] : sessionId));
@@ -422,5 +426,22 @@ Updated memory:`;
     await upsertUserMemory(userId, newMemory);
   }
 }
+
+// ── Internal cache-flush endpoint ─────────────────────────────────────────
+// Called by api-server's nia-toggle handler immediately after a toggle so the
+// 10-second in-process TTL doesn't delay the kill-switch effect.
+router.post("/internal/flush-nia-cache", (req: Request, res: Response) => {
+  const secret = req.headers["x-internal-secret"];
+  if (!secret || secret !== (process.env.INTERNAL_SECRET ?? "")) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  // Import the cache variables directly — reset them so the next isNiaEnabled()
+  // call hits the DB instead of returning the stale cached value.
+  // We re-export a resetNiaCache helper from db.ts (added separately)
+  import("../lib/db.js").then(({ resetNiaCache }) => {
+    if (typeof resetNiaCache === "function") resetNiaCache();
+  }).catch(() => {});
+  return res.json({ ok: true, flushed: true });
+});
 
 // cache-bust: 1782594200

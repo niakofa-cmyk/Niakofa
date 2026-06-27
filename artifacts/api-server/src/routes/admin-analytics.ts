@@ -275,7 +275,7 @@ router.get("/admin/helper-applications", requireAuth, requireAdmin(), adminLimit
 // POST /admin/verify-secret — verify admin secret server-side
 // No Bearer token required — this is the auth step itself.
 // Accepts secret via body or x-admin-secret header.
-router.post("/admin/verify-secret", async (req, res) => {
+router.post("/admin/verify-secret", adminLimiter, async (req, res) => {
   const secret = (req.body as { secret?: string }).secret
     ?? req.headers["x-admin-secret"] as string | undefined;
   const expected = process.env.ADMIN_SECRET;
@@ -369,9 +369,9 @@ export async function initNiaEnabled(): Promise<void> {
   }
 }
 
-// GET /admin/nia-status — public, no auth. Frontend polls this to know
+// GET /admin/nia-status — rate-limited. Frontend polls this to know
 // whether to show the NiaFab and drawer. Returns { enabled: boolean }.
-router.get("/admin/nia-status", (_req, res) => {
+router.get("/admin/nia-status", adminLimiter, (_req, res) => {
   return res.json({ enabled: niaEnabled });
 });
 
@@ -397,6 +397,17 @@ router.post("/admin/nia-toggle", requireAuth, requireAdmin(), adminLimiter, asyn
   } catch (err) {
     logger.error({ err }, "admin: failed to persist nia_enabled to system_settings");
   }
+
+  // 3. Notify nia-service to flush its in-process cache immediately
+  //    so the 10-second TTL doesn't delay the kill-switch effect
+  try {
+    const niaSvcUrl = process.env.NIA_SERVICE_URL ?? "http://localhost:3001";
+    const internalSecret = process.env.INTERNAL_SECRET ?? "";
+    await fetch(`${niaSvcUrl}/internal/flush-nia-cache`, {
+      method: "POST",
+      headers: { "x-internal-secret": internalSecret },
+    }).catch(() => { /* non-fatal — nia-service may be down */ });
+  } catch { /* non-fatal */ }
 
   logger.info({ niaEnabled }, "admin: Nia AI toggled");
   return res.json({ ok: true, enabled: niaEnabled });

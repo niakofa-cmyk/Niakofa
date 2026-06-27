@@ -521,6 +521,12 @@ let _niaCachedEnabled: boolean | null = null;
 let _niaCacheTs = 0;
 const NIA_CACHE_TTL_MS = 10_000;
 
+// Called by /internal/flush-nia-cache to instantly expire the TTL
+export function resetNiaCache(): void {
+  _niaCacheTs = 0;
+  _niaCachedEnabled = null;
+}
+
 export async function isNiaEnabled(): Promise<boolean> {
   const now = Date.now();
   if (_niaCachedEnabled !== null && now - _niaCacheTs < NIA_CACHE_TTL_MS) {
