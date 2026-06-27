@@ -405,4 +405,39 @@ router.post("/admin/nia-toggle", requireAuth, requireAdmin(), adminLimiter, asyn
 // Export the flag so nia-proxy can read it from the same process
 export { niaEnabled };
 
+
+// POST /admin/trigger-checkin-worker — manually fire the Nia check-in worker (admin only)
+// Useful for testing without waiting 24h for a real completed request
+router.post("/admin/trigger-checkin-worker", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const body = req.body as Record<string, unknown>;
+  const userId    = typeof body.userId    === "number" ? body.userId    : 1;
+  const userName  = typeof body.userName  === "string" ? body.userName  : "Test User";
+  const requestTitle = typeof body.requestTitle === "string" ? body.requestTitle : "test request";
+  const category  = typeof body.category  === "string" ? body.category  : "other";
+  const helperName = typeof body.helperName === "string" ? body.helperName : null;
+  const sessionId  = `checkin-${userId}-manual-${Date.now()}`;
+
+  const niaUrl = (process.env.NIA_SERVICE_URL ?? "http://localhost:3001").replace(/\/$/, "");
+  const secret = process.env.INTERNAL_SECRET ?? "";
+
+  try {
+    const upstream = await fetch(`${niaUrl}/checkin`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-internal-secret": secret,
+      },
+      body: JSON.stringify({ userId, userName, sessionId, requestTitle, category, helperName }),
+    });
+    if (!upstream.ok) {
+      const err = await upstream.text();
+      return res.status(upstream.status).json({ error: err });
+    }
+    const data = await upstream.json();
+    return res.json({ ok: true, sessionId, ...data });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message ?? "Failed to trigger checkin" });
+  }
+});
+
 export default router;
