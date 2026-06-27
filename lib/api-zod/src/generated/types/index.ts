@@ -64,3 +64,4 @@ export * from './transactionType';
 export * from './user';
 export * from './userRegistration';
 export * from './userUpdate';
+export * from './userUpdateAccountType';

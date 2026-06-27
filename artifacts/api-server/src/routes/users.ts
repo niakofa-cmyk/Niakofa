@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, helperAvailabilityTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
@@ -94,13 +93,7 @@ router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
 
 router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
   const pParsed = UpdateUserParams.safeParse({ id: parseInt(String(req.params.id)) });
-  const ExtendedUpdateUserBody = UpdateUserBody.extend({
-    city: z.string().optional(),
-    specialties: z.array(z.string()).optional(),
-    phone_masked: z.string().optional(),
-    quick_replies: z.array(z.string()).optional(),
-  });
-  const bParsed = ExtendedUpdateUserBody.safeParse(req.body);
+  const bParsed = UpdateUserBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { name, avatar_url, neighborhood, is_helper, city, specialties, phone_masked, quick_replies } = bParsed.data;
 

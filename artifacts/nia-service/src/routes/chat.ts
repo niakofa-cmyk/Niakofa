@@ -280,6 +280,55 @@ router.get("/history/:sessionId", async (req: Request, res: Response) => {
 
 router.get("/health", (_req, res) => res.json({ status: "ok", service: "nia" }));
 
+
+// ── PHASE 7b: Proactive check-in endpoint (called by nia-checkin-worker) ──
+// Internal-only: requires x-internal-secret header
+router.post("/checkin", async (req: Request, res: Response) => {
+  const secret = req.headers["x-internal-secret"];
+  if (!secret || secret !== (process.env.INTERNAL_SECRET ?? "")) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const body = req.body as Record<string, unknown>;
+  const userId   = typeof body.userId        === "number" ? body.userId        : null;
+  const userName = typeof body.userName      === "string" ? body.userName      : "friend";
+  const sessionId = typeof body.sessionId   === "string" ? body.sessionId     : `checkin-${userId}-${Date.now()}`;
+  const requestTitle  = typeof body.requestTitle === "string" ? body.requestTitle : "your recent request";
+  const category      = typeof body.category     === "string" ? body.category     : "";
+  const helperName    = typeof body.helperName   === "string" ? body.helperName   : null;
+
+  // Build a warm, short check-in message from Nia
+  const helperLine = helperName ? ` with ${helperName}` : "";
+  const checkinPrompt = `You are Nia, a warm community AI for Niakofa. 
+You are reaching out to ${userName} about their completed request: "${requestTitle}" (category: ${category}).
+They received help${helperLine} yesterday.
+
+Write a brief, warm check-in message (2-3 sentences max). Ask how it went, whether they got the help they needed, and gently invite them to share how they are doing. 
+Use a caring, neighborly tone. Do NOT use emojis. Do NOT be formal.`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 200,
+      messages: [{ role: "user", content: checkinPrompt }],
+    });
+
+    const niaMessage = response.content[0].type === "text"
+      ? response.content[0].text.trim()
+      : "Hey, just checking in — how did everything go? I hope you got the help you needed.";
+
+    // Save to conversation history so user sees it when they open Nia
+    if (userId) {
+      await saveConversation(sessionId, userId, "assistant", niaMessage);
+    }
+
+    return res.json({ ok: true, message: niaMessage, sessionId });
+  } catch (err) {
+    logger.error({ err }, "nia-checkin: failed to generate check-in message");
+    return res.status(500).json({ error: "Failed to generate check-in" });
+  }
+});
+
 export default router;
 
 async function extractAndUpdateMemory(

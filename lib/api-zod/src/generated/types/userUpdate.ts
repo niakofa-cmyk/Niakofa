@@ -5,10 +5,24 @@
  * Niakofa - Map-First Community Help Platform
  * OpenAPI spec version: 0.1.0
  */
+import type { UserUpdateAccountType } from './userUpdateAccountType';
 
 export interface UserUpdate {
   name?: string;
   avatar_url?: string;
   neighborhood?: string;
   is_helper?: boolean;
+  city?: string;
+  specialties?: string[];
+  phone_masked?: string;
+  quick_replies?: string[];
+  account_type?: UserUpdateAccountType;
+  organization_name?: string;
+  organization_description?: string;
+  helper_status?: string;
+  helper_languages?: string[];
+  helper_qualifications?: string[];
+  helper_bio?: string;
+  helper_vehicle?: string;
+  helper_social_links?: string[];
 }

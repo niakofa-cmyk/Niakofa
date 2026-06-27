@@ -31,13 +31,59 @@ export interface User {
   /** Community reputation score */
   goodwill_score: number;
   created_at?: string;
+  /** @nullable */
+  city?: string | null;
+  specialties?: string[] | null;
+  /** @nullable */
+  phone_masked?: string | null;
+  quick_replies?: string[] | null;
+  account_type?: string;
+  /** @nullable */
+  organization_name?: string | null;
+  /** @nullable */
+  organization_description?: string | null;
+  /** @nullable */
+  helper_status?: string | null;
+  helper_languages?: string[] | null;
+  helper_qualifications?: string[] | null;
+  /** @nullable */
+  helper_bio?: string | null;
+  /** @nullable */
+  helper_vehicle?: string | null;
+  helper_social_links?: string[] | null;
+  token_version?: number;
+  /** @nullable */
+  approval_status?: string | null;
+  is_suspended?: boolean;
+  helper_skills?: string[] | null;
 }
+
+export type UserUpdateAccountType = typeof UserUpdateAccountType[keyof typeof UserUpdateAccountType];
+
+
+export const UserUpdateAccountType = {
+  individual: 'individual',
+  organization: 'organization',
+} as const;
 
 export interface UserUpdate {
   name?: string;
   avatar_url?: string;
   neighborhood?: string;
   is_helper?: boolean;
+  city?: string;
+  specialties?: string[];
+  phone_masked?: string;
+  quick_replies?: string[];
+  account_type?: UserUpdateAccountType;
+  organization_name?: string;
+  organization_description?: string;
+  helper_status?: string;
+  helper_languages?: string[];
+  helper_qualifications?: string[];
+  helper_bio?: string;
+  helper_vehicle?: string;
+  helper_social_links?: string[];
 }
 
 export interface UserRegistration {
@@ -78,6 +124,10 @@ export const HelpRequestCategory = {
   medical: 'medical',
   emergency: 'emergency',
   other: 'other',
+  stock_shelves: 'stock_shelves',
+  event_setup: 'event_setup',
+  delivery_run: 'delivery_run',
+  tech_support: 'tech_support',
 } as const;
 
 export type HelpRequestUrgency = typeof HelpRequestUrgency[keyof typeof HelpRequestUrgency];
@@ -123,6 +173,13 @@ export interface HelpRequest {
   category: HelpRequestCategory;
   urgency?: HelpRequestUrgency;
   status: HelpRequestStatus;
+  /** @nullable */
+  outside_usual_area?: boolean | null;
+  voice_activated?: boolean;
+  /** @nullable */
+  voice_language?: string | null;
+  /** @nullable */
+  nia_checkin_sent_at?: string | null;
   /** immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer */
   payment_type: HelpRequestPaymentType;
   requester_id: number;
@@ -171,6 +228,10 @@ export const HelpRequestInputCategory = {
   medical: 'medical',
   emergency: 'emergency',
   other: 'other',
+  stock_shelves: 'stock_shelves',
+  event_setup: 'event_setup',
+  delivery_run: 'delivery_run',
+  tech_support: 'tech_support',
 } as const;
 
 export type HelpRequestInputUrgency = typeof HelpRequestInputUrgency[keyof typeof HelpRequestInputUrgency];

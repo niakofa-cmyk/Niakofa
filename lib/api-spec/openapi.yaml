@@ -834,6 +834,59 @@ components:
           description: Community reputation score
         created_at:
           type: string
+        city:
+          type: ["string", "null"]
+        specialties:
+          type: array
+          items:
+            type: string
+          nullable: true
+        phone_masked:
+          type: ["string", "null"]
+        quick_replies:
+          type: array
+          items:
+            type: string
+          nullable: true
+        account_type:
+          type: string
+          default: individual
+        organization_name:
+          type: ["string", "null"]
+        organization_description:
+          type: ["string", "null"]
+        helper_status:
+          type: ["string", "null"]
+        helper_languages:
+          type: array
+          items:
+            type: string
+          nullable: true
+        helper_qualifications:
+          type: array
+          items:
+            type: string
+          nullable: true
+        helper_bio:
+          type: ["string", "null"]
+        helper_vehicle:
+          type: ["string", "null"]
+        helper_social_links:
+          type: array
+          items:
+            type: string
+          nullable: true
+        token_version:
+          type: integer
+        approval_status:
+          type: ["string", "null"]
+        is_suspended:
+          type: boolean
+        helper_skills:
+          type: array
+          items:
+            type: string
+          nullable: true
 
     UserUpdate:
       type: object
@@ -846,6 +899,43 @@ components:
           type: string
         is_helper:
           type: boolean
+        city:
+          type: string
+        specialties:
+          type: array
+          items:
+            type: string
+        phone_masked:
+          type: string
+        quick_replies:
+          type: array
+          items:
+            type: string
+        account_type:
+          type: string
+          enum: [individual, organization]
+        organization_name:
+          type: string
+        organization_description:
+          type: string
+        helper_status:
+          type: string
+        helper_languages:
+          type: array
+          items:
+            type: string
+        helper_qualifications:
+          type: array
+          items:
+            type: string
+        helper_bio:
+          type: string
+        helper_vehicle:
+          type: string
+        helper_social_links:
+          type: array
+          items:
+            type: string
 
     UserRegistration:
       type: object
@@ -911,6 +1001,14 @@ components:
         status:
           type: string
           enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, cancelled]
+        outside_usual_area:
+          type: ["boolean", "null"]
+        voice_activated:
+          type: boolean
+        voice_language:
+          type: ["string", "null"]
+        nia_checkin_sent_at:
+          type: ["string", "null"]
         payment_type:
           type: string
           enum: [immediate, pay_it_forward, goodwill]
