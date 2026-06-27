@@ -182,7 +182,14 @@ router.get("/nia/history/:sessionId", parseAuth, niaChatHistoryLimiter, async (r
   if (!sessionId) return res.status(400).json({ error: "Invalid sessionId" });
 
   const userId = req.authenticatedUserId;
-  if (userId !== undefined && !sessionId.startsWith(`${userId}-`) && !sessionId.startsWith(`anon-`)) {
+  // Unauthenticated callers may only read anonymous sessions (anon- prefix).
+  // Authenticated callers may only read their own user sessions or anonymous sessions.
+  // This closes the bypass where !userId skipped the ownership check entirely.
+  if (userId === undefined) {
+    if (!sessionId.startsWith("anon-")) {
+      return res.status(403).json({ error: "Authentication required to read non-anonymous conversation history" });
+    }
+  } else if (!sessionId.startsWith(`${userId}-`) && !sessionId.startsWith("anon-")) {
     return res.status(403).json({ error: "You can only read your own conversation history" });
   }
 

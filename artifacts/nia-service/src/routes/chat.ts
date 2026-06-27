@@ -116,7 +116,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
 
     const stream = await anthropic.messages.stream(
       {
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-4-5",
         max_tokens: 1024,
         system:
           memoryPrefix +
@@ -237,7 +237,7 @@ router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Respo
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-4-5",
       max_tokens: 1024,
       system:
         "You are Nia, the Niakofa community assistant. When analyzing images, be helpful and community-minded. " +
@@ -308,7 +308,7 @@ Use a caring, neighborly tone. Do NOT use emojis. Do NOT be formal.`;
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
+      model: "claude-haiku-4-5",
       max_tokens: 200,
       messages: [{ role: "user", content: checkinPrompt }],
     });
@@ -319,7 +319,7 @@ Use a caring, neighborly tone. Do NOT use emojis. Do NOT be formal.`;
 
     // Save to conversation history so user sees it when they open Nia
     if (userId) {
-      await saveConversation(sessionId, userId, "assistant", niaMessage);
+      await saveConversation(userId, sessionId, "[check-in] Nia reached out", niaMessage);
     }
 
     return res.json({ ok: true, message: niaMessage, sessionId });
@@ -367,7 +367,7 @@ Rules:
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
+      model: "claude-haiku-4-5",
       max_tokens: 200,
       messages: [{ role: "user", content: prompt }],
     });
@@ -412,7 +412,7 @@ Rules:
 Updated memory:`;
 
   const response = await anthropic.messages.create({
-    model: "claude-haiku-4-5-20251001",
+    model: "claude-haiku-4-5",
     max_tokens: 500,
     messages: [{ role: "user", content: prompt }],
   });

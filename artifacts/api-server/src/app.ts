@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import path from "path";
@@ -101,5 +101,20 @@ if (process.env.NODE_ENV === "production" && process.env.SERVE_FRONTEND === "tru
     }
   });
 }
+
+// ── Global error handler ──────────────────────────────────────────────────────
+// Must have 4 arguments so Express recognises it as an error-handling middleware.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  const status = (err as { status?: number; statusCode?: number })?.status
+    ?? (err as { status?: number; statusCode?: number })?.statusCode
+    ?? 500;
+  const message =
+    err instanceof Error ? err.message : "An unexpected error occurred";
+  logger.error({ err, status }, "express: unhandled error");
+  if (!res.headersSent) {
+    res.status(status).json({ error: message });
+  }
+});
 
 export default app;

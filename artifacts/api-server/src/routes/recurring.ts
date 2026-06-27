@@ -10,7 +10,7 @@ import { requireAuth } from "../middlewares/auth";
 import { db, recurringRequestsTable, requestsTable, usersTable, helperAvailabilityTable } from "@workspace/db";
 import { eq, and, desc, lte, inArray } from "drizzle-orm";
 import { logger } from "../lib/logger";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 const router = Router();
 
