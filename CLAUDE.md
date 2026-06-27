@@ -209,6 +209,17 @@ time. Listed so the same mistakes aren't repeated.
    window opened. Fixed by exempting `is_crisis = TRUE` rows from purge until
    96h.
 
+
+10. **NiaFab + NiaDrawer never mounted in App.tsx — Nia invisible to all users.**
+   `App.tsx` never imported or rendered `NiaFab` or `NiaDrawer`, so Nia's entire UI
+   was invisible to every user on every screen. Also found in the same audit:
+   `NiaDrawer.tsx` history fetch was missing `authHeaders()` (authenticated users'
+   Nia conversation history always returned empty because the proxy ownership check
+   never saw their Bearer token); input `fontSize` was 14px (iOS Safari auto-zooms
+   inputs below 16px); `QuickPrompts` used inline `onMouseEnter`/`onMouseLeave` handlers
+   (broken on touch devices — replaced with CSS class `.nia-quick-prompt` with `:active`
+   state and `touch-action: manipulation`). All four fixed June 27, 2026.
+
 9. **Settings that saved correctly but were never consulted by anything —
    found repeatedly across one session (2026-06-26), same bug pattern each
    time.** In order found: (a) `local_farm`/`food_pantry` request
@@ -392,13 +403,9 @@ nia-service makes zero HTTP calls to api-server — ever.
 
 ### Two bugs to fix before next deploy
 
-FIX 1 — HIGH — artifacts/api-server/src/routes/community-neighborhoods.ts line 20:
-WRONG:  const NIA_SERVICE_URL = process.env["NIA_SERVICE_URL"] ?? "https://niakofa-production.up.railway.app";
-CORRECT: const NIA_SERVICE_URL = process.env["NIA_SERVICE_URL"] ?? "http://localhost:3001";
+FIX 1 — ✅ RESOLVED (verified June 27, 2026) — community-neighborhoods.ts already uses `http://localhost:3001` correctly.
 
-FIX 2 — MEDIUM — artifacts/api-server/src/workers/nia-checkin-worker.ts line 24:
-WRONG:  const NIA_SERVICE_URL = process.env.NIA_SERVICE_URL ?? "http://localhost:4001";
-CORRECT: const NIA_SERVICE_URL = process.env.NIA_SERVICE_URL ?? "http://localhost:3001";
+FIX 2 — ✅ RESOLVED (verified June 27, 2026) — nia-checkin-worker.ts already uses `http://localhost:3001` correctly.
 
 ### Verification summary (June 26, 2026)
 

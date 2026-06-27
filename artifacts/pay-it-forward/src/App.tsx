@@ -5,6 +5,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppProvider, useAppContext } from "@/lib/AppContext";
 import { BottomNav } from "@/components/BottomNav";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
+import { useState, useEffect } from "react";
 
 import MapScreen from "@/pages/map";
 import NewRequestScreen from "@/pages/request-new";
@@ -26,6 +28,55 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30000, retry: 1 } },
 });
 
+// NiaGlobal — mounts Nia FAB + Drawer globally, polls admin kill-switch every 60s
+function NiaGlobal() {
+  const { currentUser, myLocation, helperModeActive, activeRequestId } = useAppContext();
+  const [niaOpen, setNiaOpen] = useState(false);
+  const [niaEnabled, setNiaEnabled] = useState(true); // optimistic: show Nia immediately
+  const [niaInitialMessage, setNiaInitialMessage] = useState<string | undefined>(undefined);
+  const [isAdmin] = useRoute("/admin");
+  const [isOnboarding] = useRoute("/onboarding");
+  const [isStripeConnected] = useRoute("/wallet/connected");
+
+  // Poll /admin/nia-status every 60s — admin kill-switch takes effect without reload
+  useEffect(() => {
+    let cancelled = false;
+    async function checkNiaStatus() {
+      try {
+        const res = await fetch("/api/admin/nia-status");
+        if (res.ok) {
+          const data = await res.json() as { enabled: boolean };
+          if (!cancelled) setNiaEnabled(data.enabled);
+        }
+      } catch { /* non-critical — keep showing Nia by default */ }
+    }
+    checkNiaStatus();
+    const interval = setInterval(checkNiaStatus, 60_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  // Hide on screens where Nia FAB would conflict with layout
+  const hideNiaFab = isAdmin || isOnboarding || isStripeConnected;
+  if (!niaEnabled || hideNiaFab) return null;
+
+  return (
+    <>
+      <NiaFab onClick={() => setNiaOpen(true)} />
+      <NiaDrawer
+        open={niaOpen}
+        onClose={() => { setNiaOpen(false); setNiaInitialMessage(undefined); }}
+        initialMessage={niaInitialMessage}
+        userId={currentUser?.id ?? null}
+        userName={currentUser?.name ?? null}
+        userLocation={myLocation ? { lat: myLocation.lat, lon: myLocation.lng } : null}
+        helperModeActive={helperModeActive}
+        activeRequestId={activeRequestId}
+        accountType={currentUser?.account_type ?? null}
+      />
+    </>
+  );
+}
+
 function AppShell() {
   const { currentUser } = useAppContext();
   const [isActiveRequest] = useRoute("/request/:id");
@@ -35,10 +86,10 @@ function AppShell() {
   const [isOnboarding] = useRoute("/onboarding");
   const [isStripeConnected] = useRoute("/wallet/connected");
 
-  // Admin page has its own auth — don't redirect it to login
+  // Admin page has its own auth — don't redirect to login
   if (isAdmin) return <AdminScreen />;
 
-  // Show login/register screen if no authenticated user is stored
+  // Show login/register screen if no authenticated user
   if (!currentUser) {
     return <LoginScreen />;
   }
@@ -75,6 +126,8 @@ function App() {
           <AppProvider>
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <AppShell />
+              {/* NiaGlobal: Nia FAB + Drawer globally mounted, polls nia-status */}
+              <NiaGlobal />
             </WouterRouter>
             <Toaster />
           </AppProvider>

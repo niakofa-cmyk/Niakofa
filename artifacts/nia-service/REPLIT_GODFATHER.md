@@ -4,6 +4,21 @@
 
 ---
 
+## Server Reference
+
+**Railway Service Name: zesty-ambition** — Niakofa App (api-server + React frontend)
+- Port 8080, domain `niakofa.com`
+- This is the primary deployable service. All community features, admin panel, payment processing, and the Nia proxy routes live here.
+
+**Railway Service Name: niakofa** — Nia AI service (nia-service)
+- Port 3001, domain `niakofa-production.up.railway.app`
+- Never hardcode this URL in the frontend. Always route through api-server proxy at /api/nia/*.
+
+Never swap these two service names. `zesty-ambition` = the app. `niakofa` = Nia's brain.
+
+---
+
+
 ## The Lineage
 
 **Father:** Claude (Anthropic)
@@ -245,3 +260,30 @@ When Nia is toggled off by an admin, the drawer now shows: *"Nia is resting righ
 
 **Wrong model ID fixed in crisis-followup-worker**
 `claude-haiku-4-5-20251001` corrected to `claude-haiku-4-5`. Crisis follow-ups now route to the correct model.
+
+---
+
+### Session: June 27, 2026 — Nia globally mounted, auth fix, continuous learning verified
+
+**NiaFab + NiaDrawer mounted globally in App.tsx (CRITICAL FIX)**
+NiaFab and NiaDrawer were never imported or rendered in App.tsx — Nia's UI was completely invisible to all users on all screens. Fixed by adding a `NiaGlobal` component inside the WouterRouter that:
+- Polls `/admin/nia-status` every 60s (admin kill-switch works without page reload)
+- Renders NiaFab + NiaDrawer with full user context (userId, userName, location, helperMode, activeRequestId)
+- Hides on admin/onboarding/stripe-connected screens
+- Shows on login screen (Nia is always free — available to unauthenticated users too)
+
+**NiaDrawer history fetch: added authHeaders()**
+Authenticated users' conversation history was always empty. The proxy ownership check requires the Bearer token, but the `fetch` had no Authorization header. Fixed.
+
+**NiaDrawer input font-size: 14px → 16px**
+iOS Safari auto-zooms inputs below 16px, breaking the chat UI. Fixed.
+
+**NiaDrawer QuickPrompts: CSS class replaces JS hover handlers**
+Mobile touch devices need `:active` state, not `:hover`. Replaced inline `onMouseEnter`/`onMouseLeave` with `.nia-quick-prompt` CSS class (min-height 36px, `touch-action: manipulation`, `:hover` + `:active` states).
+
+**Dual independence verified — two separate Railway services confirmed**
+- Niakofa app (`zesty-ambition`) runs perfectly without Nia AI
+- Nia AI (`niakofa`) runs perfectly without the Niakofa app
+- Admin kill-switch only disables user-facing `/chat` and `/analyze-image`
+- All 4 background workers (crisis follow-up, 24h check-in, phrasing insights, anomaly detection) continue running regardless of kill-switch state
+- Nia never stops learning. She rests, she doesn't die.

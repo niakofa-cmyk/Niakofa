@@ -335,27 +335,7 @@ function QuickPrompts({ onSelect }: { onSelect: (text: string) => void }) {
         <button
           key={label}
           onClick={() => onSelect(text)}
-          style={{
-            fontSize: 12,
-            padding: "6px 12px",
-            borderRadius: 20,
-            border: "0.5px solid var(--color-border-secondary)",
-            background: "var(--color-background-secondary)",
-            color: "var(--color-text-secondary)",
-            cursor: "pointer",
-            lineHeight: 1.3,
-            transition: "all 0.15s",
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = "rgba(29,158,117,0.1)";
-            (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(29,158,117,0.4)";
-            (e.currentTarget as HTMLButtonElement).style.color = "#0A6B4E";
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = "var(--color-background-secondary)";
-            (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-border-secondary)";
-            (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-secondary)";
-          }}
+          className="nia-quick-prompt"
         >
           {label}
         </button>
@@ -442,7 +422,9 @@ export function NiaDrawer({
       setShowSplash(true);
       isFirstOpen.current = false;
     }
-    fetch(`${API_BASE}/api/nia/history/${sessionId}`)
+    fetch(`${API_BASE}/api/nia/history/${sessionId}`, {
+        headers: authHeaders(),
+      })
       .then((r) => r.json())
       .then((rows: { userMessage: string; niaResponse: string }[]) => {
         if (rows.length > 0) {
@@ -773,7 +755,7 @@ export function NiaDrawer({
                       disabled={loading}
                       style={{
                         flex: 1, background: "transparent", border: "none", outline: "none",
-                        fontSize: 14, color: "var(--color-text-primary)", lineHeight: 1.4,
+                        fontSize: 16, color: "var(--color-text-primary)", lineHeight: 1.4,
                       }}
                     />
                     <button
