@@ -112,9 +112,10 @@ export class VoiceWakeWordEngine {
       this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext;
       this.audioCtx = new AC();
-      this.analyser = this.audioCtx.createAnalyser();
+      const ctx = this.audioCtx;
+      this.analyser = ctx.createAnalyser();
       this.analyser.fftSize = 512;
-      const source = this.audioCtx.createMediaStreamSource(this.mediaStream);
+      const source = ctx.createMediaStreamSource(this.mediaStream!);
       source.connect(this.analyser);
 
       const buffer = new Uint8Array(this.analyser.fftSize);
