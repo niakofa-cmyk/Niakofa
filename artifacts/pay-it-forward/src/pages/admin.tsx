@@ -789,7 +789,7 @@ export default function AdminScreen() {
             </motion.button>
           );
         })}
-      </div>
+          </>
         )}
       </div>
 
