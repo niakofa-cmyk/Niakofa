@@ -18,6 +18,7 @@ import recurringRouter from "./recurring";
 import communityNeighborhoodsRouter from "./community-neighborhoods";
 import regionCrisisResourcesRouter from "./region-crisis-resources";
 import niaContextRouter from "./nia-context";
+import niaProxyRouter from "./nia-proxy";
 import niaVoiceRouter from "./nia-voice";
 
 const router: IRouter = Router();
@@ -41,6 +42,7 @@ router.use(recurringRouter);
 router.use(communityNeighborhoodsRouter);
 router.use(regionCrisisResourcesRouter);
 router.use(niaContextRouter);
+router.use(niaProxyRouter);
 router.use(niaVoiceRouter);
 
 export default router;
