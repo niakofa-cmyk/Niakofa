@@ -157,7 +157,15 @@ export function NavigationOverlay({
     }
   }, [currentStepIdx, currentStep, speak]);
 
+  // ─── Stable ref for currentStepIdx — prevents GPS effect restart on step change ────
+  const currentStepIdxRef = useRef<number>(0);
+  useEffect(() => { currentStepIdxRef.current = currentStepIdx; }, [currentStepIdx]);
+
   // ─── GPS tracking ─────────────────────────────────────────────────────────
+  // BUG-NAV-04 FIX: Removed `currentStepIdx` from dep array. Having it there
+  // caused watchPosition to be torn down and restarted on every step advance,
+  // producing GPS dropouts mid-navigation. We now read the step index via a
+  // stable ref so this effect only runs once per route.
   useEffect(() => {
     if (!navigator.geolocation) return;
 
@@ -179,13 +187,14 @@ export function NavigationOverlay({
         const isOffRoute = distToLine > OFF_ROUTE_THRESHOLD_M;
         setOffRoute(isOffRoute);
 
-        // Step advancement — advance when close to end of current step's path
-        if (!isOffRoute && currentStepIdx < steps.length - 1) {
+        // Step advancement — read current step from ref to avoid stale closure
+        const stepIdx = currentStepIdxRef.current;
+        if (!isOffRoute && stepIdx < steps.length - 1) {
           // Build cumulative waypoint index for this step
           const stepEndCoordIdx = Math.min(
             coords.length - 1,
             steps
-              .slice(0, currentStepIdx + 1)
+              .slice(0, stepIdx + 1)
               .reduce((acc, s) => acc + Math.round(s.distance_meters / 10), 0)
           );
           const [endLng, endLat] = coords[stepEndCoordIdx];
@@ -195,8 +204,8 @@ export function NavigationOverlay({
           }
         }
 
-        // Dynamic ETA recalculation
-        const remMeters = remainingDistance(lat, lng, steps, currentStepIdx);
+        // Dynamic ETA recalculation (uses ref for step index, avoids stale closure)
+        const remMeters = remainingDistance(lat, lng, steps, currentStepIdxRef.current);
         const avgSpeedMs = route.distance_meters / route.duration_seconds;
         const remSeconds = remMeters / (avgSpeedMs || 1);
         const remMin = Math.round(remSeconds / 60);
@@ -221,7 +230,10 @@ export function NavigationOverlay({
       }
       window.speechSynthesis?.cancel();
     };
-  }, [coords, steps, currentStepIdx, destination, route, speak]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coords, steps, destination, route, speak]);
+  // NOTE: currentStepIdx intentionally excluded — read via currentStepIdxRef to prevent
+  // GPS watch teardown/restart on every step advance (BUG-NAV-04).
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
@@ -346,3 +358,4 @@ export function NavigationOverlay({
     </div>
   );
 }
+
