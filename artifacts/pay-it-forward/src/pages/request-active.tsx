@@ -511,28 +511,45 @@ export default function ActiveRequestScreen() {
         </button>
       </motion.div>
 
-      {/* Navigation step overlay */}
-      <div className="absolute top-0 left-14 right-24 z-20 pointer-events-none">
-        <NavigationOverlay
-          step={currentStep}
-          eta={routeData?.eta_text ?? ""}
-          distanceText={routeData?.distance_text ?? ""}
-          status={request.status}
-          totalSteps={routeData?.steps?.length ?? 0}
-          currentStepIndex={currentStepIndex}
-          isOffRoute={isOffRoute}
-          speedMph={myLocation?.speed ? Math.round((myLocation.speed ?? 0) * 2.237) : null}
-          bearing={myLocation?.heading ?? null}
-          etaSeconds={etaCountdown > 0 ? etaCountdown : null}
-        />
-      </div>
+      {/* Navigation step overlay — only shown when we have a full route */}
+      {routeData && !isArrived && (
+        <div className="absolute top-0 left-14 right-24 z-20 pointer-events-none">
+          <NavigationOverlay
+            route={{
+              geometry: routeData.geometry as { coordinates: number[][] },
+              steps: routeData.steps ?? [],
+              distance_meters: routeData.distance_meters ?? 0,
+              duration_seconds: routeData.duration_seconds ?? 0,
+              eta_text: routeData.eta_text ?? "",
+              distance_text: routeData.distance_text ?? "",
+              profile: routeData.profile ?? routingProfile,
+            }}
+            destination={{
+              lat: request.lat,
+              lng: request.lng,
+              name: request.requester_name ?? undefined,
+            }}
+            onClose={() => setLocation("/")}
+            onReroute={() => {
+              queryClient.invalidateQueries({ queryKey: getGetRouteQueryKey(routeParams) });
+            }}
+            speakEnabled={true}
+          />
+        </div>
+      )}
 
       {/* Turn arrow HUD — bottom-left lane guidance, hidden on arrival */}
-      {!isArrived && (
-        <TurnArrowHUD
-          step={currentStep}
-          distanceToTurn={distanceToNextTurn}
-        />
+      {!isArrived && currentStep && (
+        <div className="absolute bottom-[22rem] left-4 right-4 z-30">
+          <TurnArrowHUD
+            maneuverType={currentStep.maneuver_type ?? null}
+            maneuverDirection={currentStep.maneuver_direction ?? null}
+            distanceMeters={currentStep.distance_meters ?? 0}
+            instruction={currentStep.instruction ?? ""}
+            speedMph={myLocation?.speed != null ? Math.round(myLocation.speed * 2.237) : null}
+            deviceHeading={deviceHeading}
+          />
+        </div>
       )}
 
       {/* Orientation toggle — heading-up / north-up, hidden on arrival */}
@@ -779,3 +796,4 @@ export default function ActiveRequestScreen() {
     </div>
   );
 }
+
