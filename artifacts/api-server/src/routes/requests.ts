@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
-import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, ratingsTable } from "@workspace/db";
+import { db, requestsTable, usersTable, userSettingsTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, ratingsTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -298,6 +298,32 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
     .from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
   if (!existing) return res.status(404).json({ error: "Request not found" });
   if (existing.requester_id === helperId) return res.status(403).json({ error: "Cannot claim your own request" });
+
+  // BUG-15b FIX: enforce max_travel_miles — CLAUDE.md documents this as a hard server-side block,
+  // but it was never implemented. Emergency requests bypass this check (consistent design intent).
+  // Non-emergency claims beyond max_travel_miles return 400 so the client can prompt accordingly.
+  const [existingFull] = await db
+    .select({ lat: requestsTable.lat, lng: requestsTable.lng, urgency: requestsTable.urgency })
+    .from(requestsTable).where(eq(requestsTable.id, pParsed.data.id)).limit(1);
+  if (existingFull && existingFull.urgency !== "emergency") {
+    const [helperSettings] = await db
+      .select({ max_travel_miles: userSettingsTable.max_travel_miles })
+      .from(userSettingsTable).where(eq(userSettingsTable.user_id, helperId)).limit(1);
+    const maxTravel = helperSettings?.max_travel_miles ?? 15;
+    const [helperUser] = await db
+      .select({ lat: usersTable.lat, lng: usersTable.lng })
+      .from(usersTable).where(eq(usersTable.id, helperId)).limit(1);
+    if (helperUser?.lat != null && helperUser?.lng != null) {
+      const dist = distanceMiles(helperUser.lat, helperUser.lng, existingFull.lat, existingFull.lng);
+      if (dist > maxTravel) {
+        return res.status(400).json({
+          error: `This request is ${dist.toFixed(1)} miles away — beyond your max travel distance of ${maxTravel} miles. Update your settings to extend your range.`,
+          distance_miles: parseFloat(dist.toFixed(1)),
+          max_travel_miles: maxTravel,
+        });
+      }
+    }
+  }
 
   const [request] = await db.update(requestsTable)
     .set({ status: "claimed", helper_id: helperId, claimed_at: new Date() })
@@ -766,3 +792,4 @@ router.post("/requests/:id/rate", requireAuth, async (req, res) => {
 });
 
 export default router;
+
