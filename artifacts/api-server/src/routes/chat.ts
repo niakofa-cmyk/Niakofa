@@ -14,6 +14,24 @@ router.get("/requests/:id/chat", requireAuth, async (req, res) => {
   const requestId = parseInt(req.params.id as string);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 
+  const r = req as typeof req & { authenticatedUserId: number };
+  const readerId = r.authenticatedUserId;
+
+  // AUTHZ: verify caller is a participant (requester or helper) before exposing messages.
+  // Any authenticated user could otherwise read any private conversation by guessing IDs.
+  const [request] = await db
+    .select({ requester_id: requestsTable.requester_id, helper_id: requestsTable.helper_id })
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+
+  if (!request) return res.status(404).json({ error: "Request not found" });
+
+  const isParticipant = readerId === request.requester_id || readerId === request.helper_id;
+  if (!isParticipant) {
+    return res.status(403).json({ error: "You are not a participant in this request" });
+  }
+
   const limit = Math.min(parseInt((req.query.limit as string) || "50"), 100);
   const before = req.query.before ? new Date(req.query.before as string) : null;
 
@@ -113,3 +131,4 @@ router.patch("/requests/:id/chat/read", requireAuth, async (req, res) => {
 });
 
 export default router;
+
