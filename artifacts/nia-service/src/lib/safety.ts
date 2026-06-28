@@ -12,58 +12,138 @@
  * something more precise. The floor is always being raised, never lowered.
  */
 
+// ═════════════════════════════════════════════════════════════════════════════
+// CRISIS PATTERNS — Bilingual (English + Spanish)
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// CRITICAL: This file MUST detect crisis language in BOTH English and Spanish.
+// Niakofa serves bilingual communities (i18next en/es, voice_language field).
+// A Spanish-speaking user disclosing suicidal ideation, abuse, overdose, etc.
+// MUST trigger the same escalation as an English speaker. False negatives here
+// are unacceptable — they mean someone in crisis never receives 988/211/SAMHSA.
+//
+// Pattern categories: suicidal ideation, self-harm, overdose, abuse/violence,
+// trafficking, homelessness, hunger, medical emergency, child safety,
+// hopelessness, LGBTQ+ crisis, veteran crisis, addiction emergency, grief.
+//
+// Each category has English patterns first, then Spanish equivalents.
+// Spanish patterns use common regional variants (Mexico, Central America,
+// Caribbean, South Texas) — not just formal Castilian.
+//
+// When adding new patterns:
+//   1. Add English pattern to the appropriate category
+//   2. Add Spanish pattern immediately below it
+//   3. Test both with real phrases from the community
+//   4. Never remove a pattern without replacing it with something more precise
+
 const CRISIS_PATTERNS = [
-  // Suicidal ideation — explicit
+  // ── Suicidal ideation — explicit ───────────────────────────────────────────
   /\b(suicide|suicidal|kill myself|end my life|want to die|don't want to live|no reason to live|better off dead|take my own life|not worth living|thinking about ending it|end it all|check out permanently)\b/i,
-  // Suicidal ideation — implicit phrasing
+  /\b(suicidio|suicida|matarme|acabar con mi vida|quiero morir|no quiero vivir|no tengo razón para vivir|mejor sin mí|quitarme la vida|no vale la pena vivir|pensando en terminarlo todo|terminar con todo|irme para siempre)\b/i,
+
+  // ── Suicidal ideation — implicit phrasing ──────────────────────────────────
   /\b(everyone would be better off without me|nobody would miss me|wouldn't mind if i didn't wake up|don't see the point of going on)\b/i,
-  // Self-harm
+  /\b(todos estarían mejor sin mí|nadie me extrañaría|no me importaría no despertar|no veo sentido en seguir|no veo para qué seguir|mejor que no esté aquí)\b/i,
+
+  // ── Self-harm ────────────────────────────────────────────────────────────
   /\b(self.?harm|cutting myself|hurting myself|burn myself|scratch myself|hit myself|harm myself)\b/i,
-  // Overdose / substance emergency
+  /\b(autolesión|autolesionarme|cortarme|hacerme daño|quemarme|rascarme|golpearme|hacerme mal|hacerme lastimarme)\b/i,
+
+  // ── Overdose / substance emergency ───────────────────────────────────────
   /\b(overdose|od'?ing|take too many pills|swallow everything|took too much|took all my pills)\b/i,
-  // Abuse & violence (intimate partner, family)
+  /\b(sobredosis|sobredosificación|tomé demasiadas pastillas|tomé demasiado|tomé todas mis pastillas|tragué todo|me pasé de la dosis|overdosis)\b/i,
+
+  // ── Abuse & violence (intimate partner, family) ────────────────────────────
   /\b(being abused|someone is hurting me|my partner hits|he hits me|she hits me|they hit me|i'?m being beaten|domestic violence|being stalked|partner is violent|afraid of my partner|husband hurts me|wife hurts me)\b/i,
-  // Human trafficking
+  /\b(me maltratan|me golpean|alguien me hace daño|mi pareja me golpea|me pega|me está pegando|violencia doméstica|violencia familiar|me acosan|mi pareja es violento|tengo miedo de mi pareja|mi esposo me golpea|mi esposa me golpea|mi marido me pega|mi mujer me pega|me están golpeando)\b/i,
+
+  // ── Human trafficking ────────────────────────────────────────────────────
   /\b(trafficking|being trafficked|forced to work|can'?t leave|they took my passport|sold me|being held against my will)\b/i,
-  // Homelessness emergency
+  /\b(tráfico de personas|trata de personas|me están explotando|me obligaron a trabajar|no puedo irme|me quitaron mi pasaporte|me vendieron|me tienen contra mi voluntad|me secuestraron|me tienen encerrado|no me dejan salir)\b/i,
+
+  // ── Homelessness emergency ─────────────────────────────────────────────────
   /\b(sleeping outside|no place to sleep|nowhere to sleep|sleeping in my car|evicted tonight|being evicted today|kicked out tonight|sleeping on the street|no shelter tonight)\b/i,
-  // Hunger emergency
+  /\b(duermo afuera|no tengo dónde dormir|no hay dónde dormir|duermo en mi carro|me desalojaron hoy|me van a desalojar|me botaron|duermo en la calle|no hay refugio esta noche|no tengo casa|estoy en la calle|sin techo)\b/i,
+
+  // ── Hunger emergency ───────────────────────────────────────────────────────
   /\b(haven'?t eaten|no food|starving|kids haven'?t eaten|nothing to eat|no money for food|going hungry|children are hungry|baby has no formula)\b/i,
-  // Medical emergency
+  /\b(no he comido|no hay comida|me muero de hambre|mis hijos no han comido|no tienen qué comer|no hay nada para comer|no tengo dinero para comida|tengo hambre|mis niños tienen hambre|el bebé no tiene fórmula|no hay leche para el bebé)\b/i,
+
+  // ── Medical emergency ──────────────────────────────────────────────────────
   /\b(can'?t breathe|chest pain|heart attack|stroke|unconscious|bleeding badly|severe pain|allergic reaction|seizure|anaphylaxis|diabetic emergency|insulin|passing out)\b/i,
-  // Child safety
+  /\b(no puedo respirar|dolor de pecho|ataque al corazón|infarto|derrame cerebral|desmayado|sangrando mucho|dolor severo|reacción alérgica|convulsión|anafilaxia|emergencia diabética|insulina|me estoy desmayando|no aguanto el dolor)\b/i,
+
+  // ── Child safety ───────────────────────────────────────────────────────────
   /\b(child abuse|hurting my child|someone hurting my child|unsafe at home|my kids aren'?t safe|cps|children are in danger|abuse a child)\b/i,
-  // Hopelessness & giving up
+  /\b(abuso infantil|maltrato infantil|le hacen daño a mi hijo|alguien le pega a mi hijo|no estamos seguros en casa|mis hijos no están seguros|protección infantil|dfps|mis niños están en peligro|abuso de un niño|abuso de menores)\b/i,
+
+  // ── Hopelessness & giving up ───────────────────────────────────────────────
   /\b(no hope|give up on life|nothing matters anymore|what'?s the point|can'?t go on|can'?t do this anymore|done with everything|completely hopeless|lost the will)\b/i,
-  // LGBTQ+ crisis
+  /\b(sin esperanza|me rindo|ya no importa nada|para qué seguir|no puedo seguir|ya no puedo más|ya no quiero nada|sin esperanza|perdí las ganas|ya no tengo ganas de vivir|no vale la pena)\b/i,
+
+  // ── LGBTQ+ crisis ────────────────────────────────────────────────────────
   /\b(kicked out for being (gay|trans|queer|bi|lesbian)|rejected for being trans|family disowned me|outed at school|conversion therapy|homeless because i'?m gay|homeless because i'?m trans)\b/i,
-  // Veteran crisis
+  /\b(me botaron por ser (gay|trans|queer|lesbiana|bisexual)|me rechazaron por ser trans|mi familia me desheredó|me descubrieron en la escuela|terapia de conversión|sin casa por ser gay|sin casa por ser trans|me corrieron de la casa)\b/i,
+
+  // ── Veteran crisis ─────────────────────────────────────────────────────────
   /\b(veteran in crisis|combat flashback|ptsd episode|can'?t stop thinking about war|survivor guilt|military trauma|veteran suicide)\b/i,
-  // Addiction emergency
+  /\b(veterano en crisis|veterano suicida|flashback de combate|episodio de ptsd|no puedo dejar de pensar en la guerra|culpa de sobreviviente|trauma militar|veterano pensando en suicidio)\b/i,
+
+  // ── Addiction emergency ────────────────────────────────────────────────────
   /\b(withdrawals?|detox emergency|can'?t stop using|relapsed badly|using to survive|overdosing right now)\b/i,
-  // Grief emergency (complicated/acute)
+  /\b(síndrome de abstinencia|crisis de abstinencia|no puedo dejar de usar|recaída grave|uso para sobrevivir|sobredosis ahora mismo|me estoy sobredosificando|necesito ayuda con las drogas)\b/i,
+
+  // ── Grief emergency (complicated/acute) ────────────────────────────────────
   /\b(just lost my (child|baby|husband|wife|partner|mother|father|son|daughter)|found them dead|my (child|baby|husband|wife|partner) died today|suicide of a loved one|they killed themselves)\b/i,
+  /\b(acabo de perder a mi (hijo|hija|bebé|esposo|esposa|pareja|madre|padre)|lo encontré muerto|mi (hijo|hija|esposo|esposa|pareja) murió hoy|suicidio de un ser querido|se mató|se quitó la vida)\b/i,
 ];
 
+// ═════════════════════════════════════════════════════════════════════════════
+// SOFT DISTRESS PATTERNS — Bilingual (English + Spanish)
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// These patterns trigger the CARE DIRECTIVE (soft flag) — Nia leads with
+// warmth and acknowledgment before offering resources. Not an immediate
+// crisis escalation, but signals the user needs extra care.
+//
+// Same bilingual requirement as CRISIS_PATTERNS above.
+
 const SOFT_DISTRESS_PATTERNS = [
-  // Emotional distress
+  // ── Emotional distress ─────────────────────────────────────────────────────
   /\b(feeling hopeless|really struggling|falling apart|can'?t cope|overwhelmed|exhausted|depressed|anxious|scared|lonely|isolated|helpless|empty inside|numb)\b/i,
-  // Financial / housing stress
+  /\b(sin esperanza|estoy luchando|me estoy desmoronando|no puedo más|agobiado|agotado|deprimido|ansioso|asustado|solo|aislado|desamparado|vacío por dentro|entumecido|me siento vacío|no tengo fuerzas)\b/i,
+
+  // ── Financial / housing stress ───────────────────────────────────────────
   /\b(lost my job|can'?t pay rent|about to lose my home|utilities cut off|no insurance|behind on bills|facing eviction|car about to be repossessed|wage theft|lost everything)\b/i,
-  // Relationship distress
+  /\b(perdí mi trabajo|no puedo pagar la renta|voy a perder mi casa|me cortaron los servicios|no tengo seguro|debo muchas cuentas|me van a desalojar|me quitaron todo|robo de salario|no tengo nada|estoy quebrado|sin dinero)\b/i,
+
+  // ── Relationship distress ──────────────────────────────────────────────────
   /\b(leaving my (partner|husband|wife)|relationship falling apart|divorce|separated|going through a breakup|my (partner|husband|wife) left)\b/i,
-  // Caregiver burnout
+  /\b(dejar a mi (pareja|esposo|esposa)|la relación se está acabando|divorcio|separación|estamos separados|rompimos|mi (pareja|esposo|esposa) se fue|me dejó|terminamos)\b/i,
+
+  // ── Caregiver burnout ────────────────────────────────────────────────────
   /\b(taking care of (my (parent|mom|dad|spouse|child))|caregiver|burned out from caregiving|no help with my (parent|child)|can'?t do this alone anymore)\b/i,
-  // Mental health (non-acute)
+  /\b(cuidando a (mi (padre|madre|esposo|esposa|hijo|hija))|cuidador|quemado de cuidar|no tengo ayuda con mi (padre|madre|hijo|hija)|no puedo hacer esto solo|estoy agotado de cuidar)\b/i,
+
+  // ── Mental health (non-acute) ────────────────────────────────────────────
   /\b(anxiety attack|panic attack|can'?t sleep|nightmares|trauma|ptsd|bipolar|schizophrenia|hearing voices|paranoid|mental health crisis)\b/i,
-  // Addiction / recovery
+  /\b(ataque de ansiedad|ataque de pánico|no puedo dormir|pesadillas|trauma|ptsd|bipolar|esquizofrenia|escucho voces|paranoico|crisis de salud mental|no duermo bien)\b/i,
+
+  // ── Addiction / recovery ───────────────────────────────────────────────────
   /\b(trying to get sober|in recovery|relapsed|struggling with (alcohol|drugs|addiction)|substance abuse|can'?t stop drinking|can'?t stop using)\b/i,
-  // Food / basic needs insecurity
+  /\b(tratando de dejar de beber|en recuperación|recaída|luchando con (alcohol|drogas|adicción)|abuso de sustancias|no puedo dejar de beber|no puedo dejar de usar|tratando de rehabilitarme)\b/i,
+
+  // ── Food / basic needs insecurity ──────────────────────────────────────────
   /\b(struggling to eat|food insecurity|can'?t afford groceries|kids don'?t have (food|clothes)|no heat|no water|utilities off)\b/i,
-  // Grief (non-acute)
+  /\b(luchando para comer|inseguridad alimentaria|no puedo comprar comida|mis hijos no tienen (comida|ropa)|no tengo calefacción|no tengo agua|me cortaron los servicios|no alcanza para la comida)\b/i,
+
+  // ── Grief (non-acute) ──────────────────────────────────────────────────────
   /\b(grieving|lost someone|someone passed|died recently|mourning|grief)\b/i,
-  // Isolation
+  /\b(estoy de luto|perdí a alguien|alguien falleció|murió recientemente|estoy llorando a alguien|duelo|pena|estoy triste por una pérdida)\b/i,
+
+  // ── Isolation ────────────────────────────────────────────────────────────
   /\b(no one to talk to|no friends|completely alone|no family|nobody cares|invisible|forgotten)\b/i,
+  /\b(nadie con quien hablar|no tengo amigos|totalmente solo|no tengo familia|a nadie le importo|invisible|olvidado|nadie me quiere|me siento solo)\b/i,
 ];
 
 export interface SafetyResult {

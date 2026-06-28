@@ -10,11 +10,26 @@
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { pino } from "pino";
+import { timingSafeEqual } from "crypto";
 
 const logger = pino({ level: "info" });
 const router = Router();
 
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? process.env.SESSION_SECRET;
+// HIGH-003: INTERNAL_SECRET must be explicitly set — never fall back to SESSION_SECRET.
+// If INTERNAL_SECRET is missing, the route returns 500 instead of silently using
+// the session-signing secret (which would let a compromised session secret bypass
+// internal-service auth). This is defense-in-depth: the two secrets must rotate
+// independently.
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET;
+if (!INTERNAL_SECRET) {
+  logger.error(
+    "FATAL: INTERNAL_SECRET is not set on nia-service. " +
+    "Crisis resource suggestion endpoint will reject all requests. " +
+    "Set INTERNAL_SECRET in Railway → nia-service → Variables. " +
+    "It must be DIFFERENT from SESSION_SECRET."
+  );
+}
+
 const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
@@ -25,9 +40,29 @@ interface SuggestedResource {
   url?: string;
 }
 
+// HIGH-003: Constant-time comparison to prevent timing attacks.
+// The previous implementation used `header !== INTERNAL_SECRET` which is
+// vulnerable to timing analysis. We now use Node's timingSafeEqual with
+// explicit length check — same pattern as nia-service/src/lib/auth.ts.
 function requireInternalSecret(req: Request, res: Response, next: () => void): void {
   const header = req.headers["x-internal-secret"];
-  if (!INTERNAL_SECRET || header !== INTERNAL_SECRET) {
+  if (!INTERNAL_SECRET || typeof header !== "string") {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  // Length check first — timingSafeEqual throws if buffers differ in length.
+  if (header.length !== INTERNAL_SECRET.length) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  try {
+    const headerBuf = Buffer.from(header, "utf8");
+    const secretBuf = Buffer.from(INTERNAL_SECRET, "utf8");
+    if (!timingSafeEqual(headerBuf, secretBuf)) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+  } catch {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }

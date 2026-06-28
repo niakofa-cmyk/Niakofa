@@ -20,6 +20,7 @@ import {
   saveCrisisFollowupConversation,
 } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
+import { pool } from "../lib/db.js";
 
 const logger = pino({ level: "info" });
 
@@ -62,6 +63,28 @@ async function fireCrisisFollowup(
       : "Hey — just thinking of you. No pressure to respond, but I'm here. 💙";
 
   await saveCrisisFollowupConversation(target.user_id, target.session_id, niaMessage);
+
+  // BUG-CRISIS-02: Queue push notification so the user actually sees Nia reached out.
+  // The general-checkin-worker already does this — crisis follow-ups were missing it.
+  // Without this, the gentle message sits unseen in chat history.
+  try {
+    await pool.query(
+      `INSERT INTO push_notification_queue (user_id, title, body, data, created_at)
+       VALUES ($1, $2, $3, $4::jsonb, NOW())`,
+      [
+        target.user_id,
+        "💙 Nia is thinking of you",
+        "Hey — you crossed my mind. Open Nia when you have a moment. No pressure.",
+        JSON.stringify({ type: "nia_checkin", source: "crisis_followup" }),
+      ]
+    );
+    logger.info({ user_id: target.user_id }, "nia: crisis follow-up push queued");
+  } catch (pushErr) {
+    logger.warn(
+      { pushErr, user_id: target.user_id },
+      "nia-crisis-followup: push queue insert failed (table may not exist)"
+    );
+  }
 
   logger.info({ user_id: target.user_id }, "nia: crisis follow-up sent");
 }
