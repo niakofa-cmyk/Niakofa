@@ -26,6 +26,8 @@ interface AppContextType {
   myLocation: Location | null;
   activeRequestId: number | null;
   setActiveRequestId: (id: number | null) => void;
+  /** City name from onboarding, profile, or IP fallback (e.g. "Atlanta, GA") */
+  userCity: string | null;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -81,6 +83,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [helperModeActive, setHelperModeActiveState] = useState(false);
   // Use last-known location from localStorage; fall back to null (not a hardcoded city)
   const [myLocation, setMyLocation] = useState<Location | null>(loadLastLocation);
+  // City from onboarding, profile, or IP fallback — shared so Nia has context
+  const [userCity] = useState<string | null>(() => {
+    try { return localStorage.getItem("niakofa_user_city"); } catch { return null; }
+  });
   const [gratitudePrompt, setGratitudePrompt] = useState<{
     requestId: number;
     requestTitle: string;
@@ -243,11 +249,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
           try {
             const ipRes = await fetch("https://ipapi.co/json/");
             if (ipRes.ok) {
-              const ipData = await ipRes.json() as { latitude?: number; longitude?: number };
+              const ipData = await ipRes.json() as { latitude?: number; longitude?: number; city?: string; region_code?: string };
               if (ipData.latitude && ipData.longitude) {
                 const fallbackLoc: Location = { lat: ipData.latitude, lng: ipData.longitude };
                 locationRef.current = fallbackLoc;
                 setMyLocation(fallbackLoc);
+                // Capture city from IP fallback — stored for Nia context
+                if (ipData.city && !localStorage.getItem("niakofa_user_city")) {
+                  const ipCity = ipData.region_code ? `${ipData.city}, ${ipData.region_code}` : ipData.city;
+                  try { localStorage.setItem("niakofa_user_city", ipCity); } catch {}
+                  (window as unknown as { __niakofaRegion?: string }).__niakofaRegion = ipCity;
+                }
                 sonnerToast.info("Using approximate location", {
                   description: "GPS unavailable — using IP-based location. Accuracy is limited.",
                   id: "ip-fallback",
@@ -325,6 +337,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       helperModeActive,
       setHelperModeActive,
       myLocation,
+      userCity,
       activeRequestId,
       setActiveRequestId,
     }}>

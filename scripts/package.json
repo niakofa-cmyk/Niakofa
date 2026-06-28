@@ -7,7 +7,8 @@
     "hello": "tsx ./src/hello.ts",
     "seed": "tsx ./src/seed-fort-worth.ts",
     "seed-if-empty": "tsx ./src/seed-if-empty.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "seed-crisis": "tsx ./src/seed-regional-crisis.ts"
   },
   "dependencies": {
     "@workspace/db": "workspace:*",
