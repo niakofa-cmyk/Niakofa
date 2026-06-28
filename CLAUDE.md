@@ -858,3 +858,52 @@ Niakofa is **well-architected** and **secure**. The team has:
 Two critical bugs were found and fixed. One more high-priority issue was identified (push notification tagging) which is straightforward to fix.
 
 **The codebase is production-ready** — just finish implementing BUG-15d before the next deployment.
+
+
+## Incident #14 — June 28 Continuation: BUG-15d Push Notification notifType Fix
+**Date:** 2026-06-28
+**Session:** Claude (Claudemd role) — completing BUG-15d from prior audit
+
+### What Was Fixed
+
+**BUG-15d ✅ RESOLVED**: Push notifications lacked `notifType` field — user notification preferences were being ignored because `userAllowsNotif()` in `push.ts` couldn't gate without the type tag.
+
+**Files changed:**
+- `artifacts/api-server/src/routes/requests.ts`:
+  - Emergency/high urgency payload: added `notifType: "emergency" | "nearby_requests"` (conditional on `isEmergency`)
+  - Medium/low urgency payload: added `notifType: "nearby_requests"`
+- `artifacts/api-server/src/routes/recurring.ts`:
+  - Recurring request push: added `notifType: "nearby_requests"`
+- `artifacts/api-server/src/routes/stripe.ts`:
+  - Payment notification: added `notifType: "wallet"`
+
+**Note on cancel notification (requests.ts ~L689)**: The helper-cancels push to the requester intentionally has NO `notifType` — it is time-critical system information (your helper is gone, find a new one). This is correct by design and was left ungated.
+
+### Commits
+| SHA | Message |
+|-----|---------|
+| 1264b6009342 | fix(requests): BUG-15d — add notifType to emergency and normal push notifications |
+| a2100b73b504 | fix(recurring): BUG-15d — add notifType:nearby_requests to recurring push notifications |
+| 59ce92e1e065 | fix(stripe): BUG-15d — add notifType:wallet to payment push notifications |
+
+### Audit Status After This Session
+- ✅ BUG-15b: max_travel_miles enforcement at claim time
+- ✅ BUG-15c: Missing /checkin endpoint in nia-service
+- ✅ BUG-15d: Push notification notifType tagging (FIXED THIS SESSION)
+- 🟡 BUG-15a: Duplicate check-in workers — architectural decision still pending (both run, idempotent via nia_checkin_sent_at)
+
+### Memory / Context Hygiene Note (standing instruction)
+Claude has no memory between sessions. This file IS the memory. Keep it lean:
+- When a bug is fully resolved and documented, move its entry from "In Progress" to "Resolved" rather than duplicating it across sections.
+- Remove or consolidate stale "Audit Progress Tracker" checklists once items are done — they accumulate and create noise.
+- Before a session ends, update the "Current state" section to reflect actual live state, not aspirational.
+- Do NOT re-document a fixed bug in a new incident if it's already covered — just note the commit SHA in the relevant incident entry.
+
+### Remaining Audit Items (Not Yet Done)
+- [ ] Auth/Authz boundary audit (privilege escalation scan)
+- [ ] Database FK constraint migration (orphaned record prevention)
+- [ ] WebSocket message routing security
+- [ ] Worker error handling and retry coverage
+- [ ] Performance: helper location cache, N+1 query scan on high-traffic routes
+- [ ] API contract consistency (zod schemas vs openapi.yaml)
+- [ ] Dependency vulnerability audit (pnpm audit)
