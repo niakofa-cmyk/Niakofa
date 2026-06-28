@@ -300,26 +300,32 @@ export default function RequesterTrackingScreen() {
       >
         {/* Status progress bar */}
         <div className="px-5 pt-4 pb-3 border-b border-border">
-          <div className="flex items-center justify-between">
+          {/* Status steps with inline connectors — flex-based, no hardcoded % math */}
+          <div className="flex items-start">
             {STATUS_STEPS.map((step, i) => {
               const done = i <= currentStatusIdx;
               const active = i === currentStatusIdx;
+              const isLast = i === STATUS_STEPS.length - 1;
               return (
-                <div key={step.key} className="flex flex-col items-center gap-1 flex-1">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all ${
-                    done
-                      ? "bg-primary border-primary"
-                      : "bg-muted border-border"
-                  } ${active ? "shadow-[0_0_10px_rgba(0,212,255,0.5)]" : ""}`}>
-                    <step.icon className={`w-3 h-3 ${done ? "text-primary-foreground" : "text-muted-foreground"}`} />
+                <div key={step.key} className="flex items-start flex-1">
+                  {/* Step dot + label */}
+                  <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all ${
+                      done
+                        ? "bg-primary border-primary"
+                        : "bg-muted border-border"
+                    } ${active ? "shadow-[0_0_10px_rgba(0,212,255,0.5)]" : ""}`}>
+                      <step.icon className={`w-3 h-3 ${done ? "text-primary-foreground" : "text-muted-foreground"}`} />
+                    </div>
+                    <span className={`text-[10px] font-bold text-center leading-tight w-12 ${done ? "text-primary" : "text-muted-foreground"}`}>
+                      {step.label}
+                    </span>
                   </div>
-                  <span className={`text-[10px] font-bold text-center leading-tight ${done ? "text-primary" : "text-muted-foreground"}`}>
-                    {step.label}
-                  </span>
-                  {i < STATUS_STEPS.length - 1 && (
-                    <div className={`absolute h-0.5 transition-all ${done ? "bg-primary" : "bg-border"}`}
-                      style={{ width: "calc(20% - 24px)", left: `calc(${i * 20 + 10}% + 12px)`, top: "22px" }}
-                    />
+                  {/* Connector line between steps */}
+                  {!isLast && (
+                    <div className={`flex-1 h-0.5 mt-3 mx-0.5 transition-all rounded-full ${
+                      i < currentStatusIdx ? "bg-primary" : "bg-border"
+                    }`} />
                   )}
                 </div>
               );
@@ -414,3 +420,4 @@ export default function RequesterTrackingScreen() {
     </div>
   );
 }
+
