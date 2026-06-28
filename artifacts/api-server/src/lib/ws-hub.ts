@@ -12,6 +12,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { IncomingMessage } from "http";
 import { logger } from "./logger";
+import { verifyToken } from "../middlewares/auth";
 
 // ── Standardized Niakofa Event Types ─────────────────────────────────────────
 export type WsEventType =
@@ -155,11 +156,24 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
         }
 
         if ((msg as { type: string }).type === "register") {
-          const { userId } = msg.payload as { userId: number };
-          if (userId) {
-            registeredUserId = userId;
-            if (!userSockets.has(userId)) userSockets.set(userId, new Set());
-            userSockets.get(userId)!.add(socket);
+          // SECURITY FIX: verify the Bearer token before trusting the claimed userId.
+          // Without this, any WebSocket client could register as any userId and receive
+          // that user's targeted push events (chat messages, payment confirmations, etc.).
+          const { userId, token } = msg.payload as { userId: number; token?: string };
+          if (userId && token) {
+            const { userId: verifiedId, valid } = verifyToken(token);
+            if (valid && verifiedId === userId) {
+              registeredUserId = userId;
+              if (!userSockets.has(userId)) userSockets.set(userId, new Set());
+              userSockets.get(userId)!.add(socket);
+            } else {
+              logger.warn({ ip, claimedUserId: userId }, "WS: register rejected — token mismatch");
+              socket.send(JSON.stringify({ type: "error", payload: { message: "Invalid token for this userId" } }));
+            }
+          } else if (userId && !token) {
+            // Legacy clients without token — log warning, allow for now but don't register
+            // to targeted delivery (they still get broadcast messages).
+            logger.warn({ ip, userId }, "WS: register without token — not registered for targeted delivery");
           }
           return;
         }
@@ -250,3 +264,4 @@ export function broadcastRequestEvent(
     broadcast({ type: legacyType, payload });
   }
 }
+
