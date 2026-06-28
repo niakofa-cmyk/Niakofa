@@ -658,3 +658,51 @@ All items below were verified or implemented in Claude sessions 1-3.
 - [x] All pages pass 375px viewport test
 - [x] Touch targets ≥ 44px everywhere
 - [x] Safe area insets on all fixed-bottom elements
+
+
+## Bugs Fixed in Session 2026-06-28 (Ongoing Audit)
+
+### BUG-15b: max_travel_miles not enforced at claim time ✅ FIXED
+- **Severity**: High
+- **Location**: `artifacts/api-server/src/routes/requests.ts` → POST `/requests/:id/claim`
+- **Issue**: CLAUDE.md documented `max_travel_miles` as "a hard server-side block at claim time" but the check was missing
+- **Fix**: Added enforcement in claim route after ownership check, before UPDATE
+- **Details**: Non-emergency requests beyond helper's `max_travel_miles` now return 400 with helpful distance info. Emergency requests bypass (consistent with design intent)
+- **Commit**: ec480fdfacfe
+
+### BUG-15c: Missing /checkin endpoint in nia-service ✅ FIXED
+- **Severity**: Critical (blocking feature)
+- **Location**: `artifacts/api-server/src/workers/nia-checkin-worker.ts` calls `POST /checkin` on nia-service, but endpoint didn't exist
+- **Issue**: The worker tries to invoke nia-service to generate check-in messages, but nia-service had no `/checkin` route
+- **Root Cause**: Two separate implementations existed:
+  - api-server's `nia-checkin-worker`: hourly worker that finds requests to check-in on
+  - nia-service's `general-checkin-worker`: separate hourly worker doing the same thing
+  - Design intent: api-server coordinates WHEN (request aging), nia-service handles WHAT (AI message generation)
+- **Fix**: Created `/checkin` endpoint in nia-service that:
+  1. Accepts POST from api-server's nia-checkin-worker with (userId, requestId, requestTitle, category, helperName, sessionId)
+  2. Calls Claude to generate warm, personalized 24-hour follow-up message
+  3. Saves to nia_conversations
+  4. Returns 200 so api-server can send push + mark sent
+  5. Requires `x-internal-secret` header for service-to-service auth
+- **New Files**: 
+  - `artifacts/nia-service/src/routes/checkin.ts` (133 lines, includes verifyInternalSecret middleware)
+- **Updated Files**:
+  - `artifacts/nia-service/src/index.ts` → imported and mounted checkinRouter
+- **Commits**: 0084ab04d7ab (checkin.ts), 1b3289ee5fee (index.ts)
+
+### BUG-15a: Duplicate nia-checkin logic (design consolidation needed)
+- **Severity**: Medium (not critical but architectural smell)
+- **Status**: Documented, not yet fixed
+- **Issue**: Both api-server and nia-service have hourly check-in workers doing similar work
+- **Recommendation**: With /checkin endpoint now live, consider removing nia-service's `general-checkin-worker` since api-server's `nia-checkin-worker` now coordinates both services. Or keep both as fallback redundancy (acceptable if intentional).
+- **Decision**: Left as-is pending product team decision on redundancy vs simplicity tradeoff
+
+## Audit in Progress
+
+Currently auditing:
+- [ ] All push notification routing — notifType tagging consistency
+- [ ] API routes for auth/authz issues (leakage, boundary crossing)
+- [ ] Database schema for orphaned/unreachable data patterns
+- [ ] WebSocket message routing security
+- [ ] Worker error handling and retry logic
+- [ ] Memory/performance issues in high-frequency operations (real-time tracking, matching)
