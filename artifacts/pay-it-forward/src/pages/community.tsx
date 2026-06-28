@@ -52,7 +52,7 @@ interface CivicResource {
 const CIVIC_ICONS: Record<string, string> = {
   shelter: "🏠", food: "🍱", medical: "💊", mental_health: "🧠",
   legal: "⚖️", financial: "💰", employment: "💼", transportation: "🚌",
-  childcare: "👶", education: "📚", other: "💙",
+  childcare: "👶", education: "📚", local_farm: "🍎", other: "💙",
 };
 
 interface SuggestionForm {

@@ -43,6 +43,10 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
         ? Number(body.activeRequestId)
         : null;
 
+  // Phase 7c: food intent signal from client-side detection
+  const foodSignal = typeof body.foodSignal === "string" ? body.foodSignal : null;
+  const foodSignalCount = typeof body.foodSignalCount === "number" ? body.foodSignalCount : 0;
+
   if (!message.trim() || !sessionId) {
     return res.status(400).json({ error: "message and sessionId required" });
   }
@@ -121,7 +125,9 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
         system:
           memoryPrefix +
           softPrefix +
-          buildLocationPrefix((req as any).locationContext as LocationContext | undefined) +
+          buildFoodIntentPrefix(foodSignal, foodSignalCount, gpsLat, gpsLon) +
+      buildFoodIntentPrefix(foodSignal, foodSignalCount, gpsLat, gpsLon) +
+      buildLocationPrefix((req as any).locationContext as LocationContext | undefined) +
           buildAppContextPrefix({
             userName,
             accountType,
@@ -445,3 +451,45 @@ router.post("/internal/flush-nia-cache", (req: Request, res: Response) => {
 });
 
 // cache-bust: 1782594200
+
+/**
+ * Build food intent prefix — tells Nia what food signal was detected client-side.
+ * Phase 7c: Food Intelligence
+ */
+function buildFoodIntentPrefix(
+  signal: string | null,
+  signalCount: number,
+  lat: number | null,
+  lon: number | null
+): string {
+  if (!signal || signal === "none" || signal === "affirmative") return "";
+
+  const locationHint = lat !== null && lon !== null
+    ? `User coordinates: ${lat.toFixed(4)}, ${lon.toFixed(4)}. Use these to recommend the nearest food resource. `
+    : "";
+
+  const signalInstructions: Record<string, string> = {
+    explicit_no:
+      "FOOD SIGNAL — EXPLICIT NO: The user said no when asked if they've eaten. " +
+      "Do not ask follow-up questions. Lead immediately with the most accessible food resource. " +
+      "Warm, fast, specific. One or two options max. " + locationHint,
+    implicit_no:
+      "FOOD SIGNAL — IMPLICIT: The user signaled they may not have food. " +
+      "Acknowledge what they said first. Then offer a food resource naturally. " + locationHint,
+    distress:
+      "FOOD SIGNAL — DISTRESS: The user directly expressed hunger or no food. URGENT. " +
+      "Lead with the fastest option (Text FOOD to 877-877 or Presbyterian Night Shelter if evening). " +
+      "Do not pad. Help now. " + locationHint,
+    deflection:
+      "FOOD SIGNAL — DEFLECTION: User said they're fine after a care check but may not be. " +
+      "Plant one seed gently then move on. " + locationHint,
+  };
+
+  const repeatNote = signalCount > 1
+    ? "REPEAT FOOD SIGNAL: After addressing immediate need, mention Niakofa's recurring request feature.\n\n"
+    : "";
+
+  const instruction = signalInstructions[signal];
+  if (!instruction) return "";
+  return `${instruction}\n\n${repeatNote}`;
+}
