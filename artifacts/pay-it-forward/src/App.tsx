@@ -16,6 +16,7 @@ import SettingsPage from "@/pages/settings";
 import WalletScreen from "@/pages/wallet";
 import CommunityScreen from "@/pages/community";
 import AdminScreen from "@/pages/admin";
+import AdminAnalyticsDashboard from "@/pages/admin-analytics";
 import NotFound from "@/pages/not-found";
 import RequesterTrackingScreen from "@/pages/request-track";
 import LoginScreen from "@/pages/login";
@@ -97,6 +98,12 @@ function AppShell() {
   if (!currentUser) {
     return <LoginScreen />;
   }
+  // Redirect unapproved users to pending-approval screen
+  const extUser = currentUser as (typeof currentUser & { approval_status?: string }) | null;
+  if (extUser?.approval_status === 'pending' || extUser?.approval_status === 'denied') {
+    return <PendingApprovalScreen />;
+  }
+
 
   return (
     <>
@@ -115,6 +122,11 @@ function AppShell() {
         <Route path="/profile" component={ProfileScreen} />
         <Route path="/settings" component={SettingsPage} />
         <Route path="/admin" component={AdminScreen} />
+        <Route path="/helper-dashboard" component={HelperDashboardScreen} />
+        <Route path="/helper-onboarding" component={HelperOnboardingScreen} />
+        <Route path="/pending-approval" component={PendingApprovalScreen} />
+        <Route path="/recurring" component={RecurringScreen} />
+        <Route path="/admin/analytics" component={AdminAnalyticsDashboard} />
         <Route component={NotFound} />
       </Switch>
       {!isActiveRequest && !isTrackingRequest && !isAdmin && !isLogin && !isOnboarding && !isStripeConnected && <BottomNav />}
