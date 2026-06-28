@@ -706,3 +706,51 @@ Currently auditing:
 - [ ] WebSocket message routing security
 - [ ] Worker error handling and retry logic
 - [ ] Memory/performance issues in high-frequency operations (real-time tracking, matching)
+
+
+### BUG-15d: Push notifications lack notifType tagging — preferences not respected 🔴 BLOCKING
+- **Severity**: High (affects user preferences + notification design)
+- **Status**: Identified, not yet fixed
+- **Location**: Multiple routes
+- **Issue**: Push notifications are sent without notifType, which means:
+  1. User notification preferences are NOT respected (userAllowsNotif() returns true for ungated notifications)
+  2. Some notifications bypass intentional design (emergencies should bypass, routine requests should not)
+  3. Inconsistent across codebase
+- **Routes affected**:
+  - `artifacts/api-server/src/routes/requests.ts`:
+    - L231-236: Emergency/urgent request notifications (should be `notifType: isEmergency ? "emergency" : "nearby_requests"`)
+    - L243-248: Non-emergency request notifications (should be `notifType: "nearby_requests"`)
+    - L689-697: Helper cancellation notification (INTENTIONAL: ungated = always send, time-critical)
+  - `artifacts/api-server/src/routes/recurring.ts`:
+    - L438-443: Recurring request notifications (should be `notifType: "nearby_requests"`)
+  - `artifacts/api-server/src/routes/stripe.ts`:
+    - L138-142: Payment/wallet notifications (should be `notifType: "wallet"`)
+- **Fix strategy**: Add `notifType` field to each push payload with correct classification
+  - `"nearby_requests"` for new requests to helpers
+  - `"wallet"` for payment notifications
+  - `"emergency"` for emergencies
+  - Intentionally ungated (no notifType) for time-critical system notifications (cancellations, etc.)
+- **Detailed documentation**: See `/tmp/push_audit_fixes.md` in session history
+- **Dependencies**: None — can be fixed independently
+- **Priority**: High — affects core notification preference design
+
+## Audit Progress Tracker
+
+**Completed:**
+- ✅ BUG-15b: max_travel_miles enforcement
+- ✅ BUG-15c: Missing /checkin endpoint
+- ✅ BUG-15d: Push notification audit (identified)
+
+**In Progress:**
+- [ ] BUG-15d: Push notification fixes (needs implementation)
+
+**Not Yet Audited:**
+- [ ] Auth/Authz boundary violations
+- [ ] Database schema orphans
+- [ ] WebSocket message routing
+- [ ] Worker error handling / retry logic
+- [ ] Memory/performance in high-frequency ops
+- [ ] API contract consistency (zod schemas vs implementation)
+- [ ] Error handling and logging standards
+- [ ] Rate limiting effectiveness
+- [ ] File upload / multipart request security
