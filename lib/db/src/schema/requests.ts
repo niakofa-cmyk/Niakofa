@@ -29,6 +29,8 @@ export const requestsTable = pgTable("help_requests", {
   voice_language: text("voice_language"),
   // Nia check-in (migration 0013)
   nia_checkin_sent_at: timestamp("nia_checkin_sent_at"),
+  // Photo upload (migration 0015) — base64 data URL, max ~800px
+  photo_url: text("photo_url"),
 }, (t) => [
   index("help_requests_status_idx").on(t.status),
   index("help_requests_requester_id_idx").on(t.requester_id),

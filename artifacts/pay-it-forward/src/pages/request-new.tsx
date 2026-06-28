@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minus } from "lucide-react";
+import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minus, Camera, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authHeaders } from "@/lib/auth";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -109,6 +109,8 @@ export default function NewRequestScreen() {
   const [webGLSupported] = useState(checkWebGL);
   const [checklistItems, setChecklistItems] = useState<string[]>([]);
   const [accessibilityNeeds, setAccessibilityNeeds] = useState<string[]>([]);
+  const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [pinLocation, setPinLocation] = useState<{ lat: number; lng: number } | null>(
     myLocation ? { lat: myLocation.lat, lng: myLocation.lng } : null
   );
@@ -168,6 +170,34 @@ export default function NewRequestScreen() {
     setLocation("/");
   };
 
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setPhotoError("Photo must be under 5MB");
+      return;
+    }
+    setPhotoError(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const original = ev.target?.result as string;
+      // Compress to max 800px on client side
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 800;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        setPhotoDataUrl(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      img.src = original;
+    };
+    reader.readAsDataURL(file);
+  };
+
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     if (!currentUser || !pinLocation) {
       toast({ title: "Error", description: "Please confirm your pickup location on the map", variant: "destructive" });
@@ -204,6 +234,8 @@ export default function NewRequestScreen() {
         lng: pinLocation.lng,
         pay_it_forward_amount: values.pay_it_forward_amount,
         pledge_amount: values.pledge_amount,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...(photoDataUrl ? { photo_url: photoDataUrl } as any : {}),
       }
     }, {
       onSuccess: async (request) => {
@@ -434,6 +466,39 @@ export default function NewRequestScreen() {
                     </label>
                   ))}
                 </div>
+              </div>
+
+              {/* Photo Upload — optional */}
+              <div>
+                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5" />
+                  Add a Photo <span className="ml-1 text-[10px] text-muted-foreground/60 normal-case font-normal tracking-normal">(optional — helps your helper)</span>
+                </div>
+                {photoDataUrl ? (
+                  <div className="relative rounded-xl overflow-hidden border border-border">
+                    <img src={photoDataUrl} alt="Request photo" className="w-full max-h-48 object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setPhotoDataUrl(null)}
+                      className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-all"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center gap-2 w-full h-24 rounded-xl border-2 border-dashed border-border hover:border-primary/50 cursor-pointer transition-colors bg-card">
+                    <Camera className="w-5 h-5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Tap to take or upload a photo</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="sr-only"
+                      onChange={handlePhotoChange}
+                    />
+                  </label>
+                )}
+                {photoError && <p className="text-xs text-destructive mt-1">{photoError}</p>}
               </div>
 
               {/* ── Location Picker ─────────────────────────────────────── */}
