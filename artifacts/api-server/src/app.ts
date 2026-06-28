@@ -24,13 +24,20 @@ app.use(
         scriptSrc: ["'self'", "'unsafe-inline'", "https://js.stripe.com", "https://maps.googleapis.com"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        imgSrc: ["'self'", "data:", "blob:", "https://*.stripe.com", "https://maps.gstatic.com", "https://*.googlevideo.com"],
+        // Mapbox GL JS loads tile images and its own glyphs/sprites from *.mapbox.com
+        imgSrc: ["'self'", "data:", "blob:", "https://*.stripe.com", "https://maps.gstatic.com", "https://*.googlevideo.com", "https://*.mapbox.com"],
+        // Mapbox GL JS spawns web workers from blob: URLs — required for map rendering
+        workerSrc: ["'self'", "blob:"],
+        // Mapbox fetches vector tiles, styles, geocoding, directions from these origins
         connectSrc: [
           "'self'",
           "wss:",
           "ws:",
           "https://api.stripe.com",
           "https://maps.googleapis.com",
+          // Mapbox GL JS + Mapbox APIs (tiles, geocoding, directions, events telemetry)
+          "https://*.mapbox.com",
+          "https://events.mapbox.com",
           process.env.NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app",
         ].filter(Boolean),
         frameSrc: ["'self'", "https://js.stripe.com", "https://hooks.stripe.com"],
