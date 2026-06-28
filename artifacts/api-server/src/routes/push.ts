@@ -1,7 +1,7 @@
 import { Router } from "express";
 import webpush from "web-push";
-import { db, pushSubscriptionsTable, usersTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { db, pushSubscriptionsTable, usersTable, userSettingsTable } from "@workspace/db";
+import { eq, and, inArray } from "drizzle-orm";
 import { sendAlertEmail } from "../lib/mailer";
 import { logger } from "../lib/logger";
 import { requireAuth } from "../middlewares/auth";
@@ -28,7 +28,6 @@ router.post("/push/subscribe", requireAuth, requireOwnership("userId"), async (r
   const { userId, subscription } = req.body as { userId: number; subscription: webpush.PushSubscription };
   if (!userId || !subscription?.endpoint) return res.status(400).json({ error: "userId and subscription required" });
 
-  // Upsert: if endpoint already exists, update the user_id; otherwise insert
   const existing = await db
     .select({ id: pushSubscriptionsTable.id })
     .from(pushSubscriptionsTable)
@@ -70,6 +69,14 @@ export type PushPayload = {
   urgency?: string;
   requestId?: number;
   icon?: string;
+  // notifType drives user-settings gate:
+  //   "nearby_requests"    → notif_nearby_requests
+  //   "task_accepted"      → notif_task_accepted
+  //   "wallet"             → notif_wallet_updates
+  //   "community"          → notif_community_activity
+  //   "emergency"          → notif_emergency (emergencies always bypass gate)
+  //   "nia_checkin" | undefined → not gated (always send)
+  notifType?: "nearby_requests" | "task_accepted" | "wallet" | "community" | "emergency" | "nia_checkin";
 };
 
 function pushOptions(urgency?: string): webpush.RequestOptions {
@@ -124,16 +131,59 @@ async function deliverToSubs(subs: webpush.PushSubscription[], payload: PushPayl
 }
 
 /**
+ * Return true if this user has opted in to this notification type.
+ * Emergency and nia_checkin types are never blocked by user settings.
+ * Missing settings row = all defaults = allow.
+ */
+async function userAllowsNotif(
+  userId: number,
+  notifType: PushPayload["notifType"]
+): Promise<boolean> {
+  // These types are never gated
+  if (!notifType || notifType === "emergency" || notifType === "nia_checkin") return true;
+
+  const rows = await db
+    .select({
+      notif_nearby_requests: userSettingsTable.notif_nearby_requests,
+      notif_task_accepted: userSettingsTable.notif_task_accepted,
+      notif_wallet_updates: userSettingsTable.notif_wallet_updates,
+      notif_community_activity: userSettingsTable.notif_community_activity,
+      notif_emergency: userSettingsTable.notif_emergency,
+    })
+    .from(userSettingsTable)
+    .where(eq(userSettingsTable.user_id, userId))
+    .limit(1);
+
+  if (rows.length === 0) return true; // no settings row = default on
+
+  const s = rows[0];
+  switch (notifType) {
+    case "nearby_requests": return s.notif_nearby_requests ?? true;
+    case "task_accepted":   return s.notif_task_accepted ?? true;
+    case "wallet":          return s.notif_wallet_updates ?? true;
+    case "community":       return s.notif_community_activity ?? false;
+    default:                return true;
+  }
+}
+
+/**
  * Send push to a specific user, falling back to email if:
  *   • VAPID keys are not configured, OR
  *   • the user has no active push subscriptions
- * The email fallback requires `fallbackEmail` and `fallbackEmailSubject` to be provided.
+ * Respects the user's notif_* preferences from user_settings.
+ * Emergency type bypasses all preference gates.
  */
 export async function sendPushToUser(
   userId: number,
   payload: PushPayload,
   options?: { fallbackEmail?: string; fallbackEmailSubject?: string }
 ): Promise<void> {
+  // Check user's notification preference first
+  if (!(await userAllowsNotif(userId, payload.notifType))) {
+    logger.debug({ userId, notifType: payload.notifType }, "push: skipped — user opted out");
+    return;
+  }
+
   const subs = await getSubsForUser(userId);
   const delivered = await deliverToSubs(subs, payload);
 
@@ -151,6 +201,7 @@ export async function sendPushToUser(
 /**
  * Send push to multiple users, with optional per-user email fallback.
  * Fetches each user's email from DB automatically when `emailFallback: true`.
+ * Each user's notification preferences are checked individually.
  */
 export async function sendPushToUsers(
   userIds: number[],
@@ -159,7 +210,6 @@ export async function sendPushToUsers(
 ): Promise<void> {
   if (userIds.length === 0) return;
 
-  // Fetch emails upfront if fallback is requested
   let emailMap: Map<number, string> = new Map();
   if (options?.emailFallback) {
     const users = await db
@@ -181,7 +231,13 @@ export async function sendPushToUsers(
 /**
  * Send a push notification to helpers within `radiusMiles` of (lat, lng).
  * Only helpers with helper_mode_active = true and a stored location are considered.
- * For emergency urgency, falls back to email if push is unavailable.
+ * Each helper's notif_nearby_requests preference is now respected.
+ *
+ * BUG-15a FIX: Previously never checked notif_* flags from user_settings —
+ * every helper in radius received every notification regardless of their
+ * notification preferences. Now uses userAllowsNotif() per helper.
+ * Emergency urgency bypasses the preference gate (consistent with the rest
+ * of the codebase's "emergency overrides everything" design intent).
  */
 export async function sendPushToNearbyHelpers(
   lat: number,
@@ -226,8 +282,13 @@ export async function sendPushToNearbyHelpers(
   const isEmergency = payload.urgency === "emergency";
 
   // Deliver push + email fallback for each nearby helper in parallel
+  // Each helper's notif preference is checked (emergency bypasses)
   await Promise.allSettled(
     nearbyHelpers.map(async h => {
+      // Check notification preference — emergency always goes through
+      if (!isEmergency && !(await userAllowsNotif(h.id, payload.notifType ?? "nearby_requests"))) {
+        return; // helper opted out of this notification type
+      }
       const subs = await getSubsForUser(h.id);
       const delivered = await deliverToSubs(subs, payload);
       if (delivered === 0 && isEmergency && h.email) {
