@@ -1243,6 +1243,9 @@ components:
           type: number
         waypoints:
           type: integer
+        profile:
+          type: string
+          description: Routing profile used (driving, walking, cycling)
 
     Transaction:
       type: object
@@ -1711,3 +1714,4 @@ components:
           description: Invalid request
         "403":
           description: Admin access required
+
