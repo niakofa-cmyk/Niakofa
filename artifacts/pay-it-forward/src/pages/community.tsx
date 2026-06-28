@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNiaStory } from "@/hooks/useNiaStory";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
@@ -442,19 +442,34 @@ function NiaStoryModal({ onClose, onPosted }: { onClose: () => void; onPosted: (
   const userName = currentUser?.name ?? "A neighbor";
   const { state, story, error, transcript, startRecording, stopAndSubmit, reset } = useNiaStory(userName);
 
+  const [posting, setPosting] = React.useState(false);
+  const [postError, setPostError] = React.useState<string | null>(null);
+
   const handlePost = async () => {
-    if (!story) return;
+    if (!story || !currentUser) return;
+    setPosting(true);
+    setPostError(null);
     try {
-      await fetch("/api/gratitude", {
+      const res = await fetch("/api/gratitude", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ message: story.story, author_name: userName }),
+        body: JSON.stringify({
+          message: story.story,
+          author_id: currentUser.id,          // FIX: was missing, caused silent 400
+          author_name: userName,
+          author_avatar: currentUser.avatar_url ?? undefined,
+        }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as any;
+        throw new Error(data.error ?? `Post failed (${res.status})`);
+      }
       onPosted(story.story);
       onClose();
-    } catch {
-      // post failed silently — story still shown to user
-      onClose();
+    } catch (err: any) {
+      setPostError(err.message ?? "Failed to post story. Try again.");
+    } finally {
+      setPosting(false);
     }
   };
 
@@ -520,10 +535,16 @@ function NiaStoryModal({ onClose, onPosted }: { onClose: () => void; onPosted: (
               </button>
               <button
                 onClick={handlePost}
-                className="flex-2 bg-primary text-primary-foreground rounded-2xl px-6 py-3 text-sm font-bold flex items-center gap-2"
+                disabled={posting}
+                className="flex-2 bg-primary text-primary-foreground rounded-2xl px-6 py-3 text-sm font-bold flex items-center gap-2 disabled:opacity-70"
               >
-                <Send className="w-4 h-4" /> Post to Community
+                {posting ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Posting…</>
+                ) : (
+                  <><Send className="w-4 h-4" /> Post to Community</>
+                )}
               </button>
+              {postError && <p className="text-xs text-destructive mt-1">{postError}</p>}
             </div>
           </div>
         )}
@@ -730,7 +751,20 @@ export default function CommunityScreen() {
           </div>
         )}
 
-        {showNiaStory && <NiaStoryModal onClose={() => setShowNiaStory(false)} onPosted={() => {}} />}
+        {showNiaStory && (
+          <NiaStoryModal
+            onClose={() => setShowNiaStory(false)}
+            onPosted={(_story: string) => {
+              setShowNiaStory(false);
+              // Re-fetch gratitude posts so the new story appears immediately
+              const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+              fetch(`${base}/api/gratitude`)
+                .then(r => r.json())
+                .then((data: GratitudePost[]) => setPosts(data))
+                .catch(() => {});
+            }}
+          />
+        )}
 
         {/* HEROES TAB — Live Leaderboard */}
         {tab === "heroes" && <LiveLeaderboard />}
