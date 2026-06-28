@@ -792,6 +792,141 @@ paths:
         "409":
           description: Account already has a password — use normal login
 
+# Nia paths appended below
+# ── Nia AI routes ────────────────────────────────────────────────────────────
+/nia/chat:
+  post:
+    operationId: niaChat
+    tags: [nia]
+    summary: Chat with Nia AI
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/NiaChatRequest"
+    responses:
+      "200":
+        description: SSE stream of Nia's response
+        content:
+          text/event-stream:
+            schema:
+              $ref: "#/components/schemas/NiaChatResponse"
+      "400":
+        description: Invalid request
+      "429":
+        description: Rate limited
+      "503":
+        description: Nia is temporarily unavailable
+
+/nia/history/{sessionId}:
+  get:
+    operationId: niaHistory
+    tags: [nia]
+    summary: Get conversation history for a session
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: string
+    responses:
+      "200":
+        description: Conversation history
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NiaHistoryResponse"
+      "403":
+        description: Unauthorized to access this history
+      "503":
+        description: Nia is temporarily unavailable
+
+/nia/memory:
+  get:
+    operationId: niaGetMemory
+    tags: [nia]
+    summary: Get user's Nia memory
+    responses:
+      "200":
+        description: User memory
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NiaMemoryResponse"
+      "401":
+        description: Authentication required
+  delete:
+    operationId: niaClearMemory
+    tags: [nia]
+    summary: Clear user's Nia memory
+    responses:
+      "200":
+        description: Memory cleared
+      "401":
+        description: Authentication required
+
+/nia/share-story:
+  post:
+    operationId: niaShareStory
+    tags: [nia]
+    summary: Share a story with Nia for crafting
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/NiaShareStoryRequest"
+    responses:
+      "200":
+        description: Crafted story
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NiaShareStoryResponse"
+      "400":
+        description: Invalid transcript
+      "503":
+        description: Nia is temporarily unavailable
+
+/admin/nia-status:
+  get:
+    operationId: niaStatus
+    tags: [nia]
+    summary: Check if Nia AI is enabled
+    responses:
+      "200":
+        description: Nia status
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NiaStatusResponse"
+
+/admin/nia-toggle:
+  post:
+    operationId: niaToggle
+    tags: [nia]
+    summary: Toggle Nia AI on/off (admin only)
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/NiaToggleRequest"
+    responses:
+      "200":
+        description: Toggle successful
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NiaToggleResponse"
+      "400":
+        description: Invalid request
+      "403":
+        description: Admin access required
+
+
+
 components:
   schemas:
     HealthStatus:
@@ -1581,137 +1716,4 @@ components:
           type: boolean
         enabled:
           type: boolean
-
-  # Nia paths appended below
-  # ── Nia AI routes ────────────────────────────────────────────────────────────
-  /nia/chat:
-    post:
-      operationId: niaChat
-      tags: [nia]
-      summary: Chat with Nia AI
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/NiaChatRequest"
-      responses:
-        "200":
-          description: SSE stream of Nia's response
-          content:
-            text/event-stream:
-              schema:
-                $ref: "#/components/schemas/NiaChatResponse"
-        "400":
-          description: Invalid request
-        "429":
-          description: Rate limited
-        "503":
-          description: Nia is temporarily unavailable
-
-  /nia/history/{sessionId}:
-    get:
-      operationId: niaHistory
-      tags: [nia]
-      summary: Get conversation history for a session
-      parameters:
-        - name: sessionId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Conversation history
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NiaHistoryResponse"
-        "403":
-          description: Unauthorized to access this history
-        "503":
-          description: Nia is temporarily unavailable
-
-  /nia/memory:
-    get:
-      operationId: niaGetMemory
-      tags: [nia]
-      summary: Get user's Nia memory
-      responses:
-        "200":
-          description: User memory
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NiaMemoryResponse"
-        "401":
-          description: Authentication required
-    delete:
-      operationId: niaClearMemory
-      tags: [nia]
-      summary: Clear user's Nia memory
-      responses:
-        "200":
-          description: Memory cleared
-        "401":
-          description: Authentication required
-
-  /nia/share-story:
-    post:
-      operationId: niaShareStory
-      tags: [nia]
-      summary: Share a story with Nia for crafting
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/NiaShareStoryRequest"
-      responses:
-        "200":
-          description: Crafted story
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NiaShareStoryResponse"
-        "400":
-          description: Invalid transcript
-        "503":
-          description: Nia is temporarily unavailable
-
-  /admin/nia-status:
-    get:
-      operationId: niaStatus
-      tags: [nia]
-      summary: Check if Nia AI is enabled
-      responses:
-        "200":
-          description: Nia status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NiaStatusResponse"
-
-  /admin/nia-toggle:
-    post:
-      operationId: niaToggle
-      tags: [nia]
-      summary: Toggle Nia AI on/off (admin only)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/NiaToggleRequest"
-      responses:
-        "200":
-          description: Toggle successful
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NiaToggleResponse"
-        "400":
-          description: Invalid request
-        "403":
-          description: Admin access required
 
