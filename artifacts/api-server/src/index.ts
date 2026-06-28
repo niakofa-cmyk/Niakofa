@@ -11,7 +11,6 @@ import { startNotificationWorker } from "./workers/notification-worker";
 import { startAnomalyDetectionWorker } from "./workers/anomaly-worker";
 import { startNiaCheckinWorker } from "./workers/nia-checkin-worker";
 import { startNiaPushQueueWorker } from "./workers/nia-push-queue-worker";
-import { initNiaEnabled } from "./routes/admin-analytics";
 import { processRecurringRequests } from "./routes/recurring";
 
 const rawPort = process.env["PORT"];
@@ -60,8 +59,6 @@ server.listen(port, async () => {
   // Nia push queue consumer — drains push_notification_queue written by nia-service
   // ambient-presence and general-checkin workers; delivers via sendPushToUser every 5 min
   startNiaPushQueueWorker();
-  // Seed the Nia kill-switch from DB so it survives redeploys
-  initNiaEnabled();
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────

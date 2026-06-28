@@ -87,8 +87,12 @@ async function drainPushQueue(): Promise<void> {
   await Promise.allSettled(
     rows.map(async row => {
       try {
-        // Determine notifType from data.type field for preference gating
-        const notifType = (row.data?.type as string | undefined)?.startsWith("nia_")
+        // Determine notifType from data.type or data.notifType field for preference gating
+        const rawType = (row.data?.type as string | undefined) ?? "";
+        const rawNotifType = (row.data?.notifType as string | undefined) ?? "";
+        const notifType = rawNotifType.startsWith("nia_")
+          ? "nia_checkin"
+          : rawType.startsWith("nia_")
           ? "nia_checkin"
           : undefined;
 

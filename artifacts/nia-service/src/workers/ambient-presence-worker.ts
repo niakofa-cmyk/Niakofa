@@ -131,7 +131,7 @@ async function processFoodSignals(): Promise<number> {
         row.user_id,
         "💙 Nia is thinking of you",
         `Hey ${firstName}, I noticed you might need food help. Tap to chat.`,
-        { type: "ambient_food_checkin", user_id: row.user_id }
+        { type: "ambient_food_checkin", notifType: "nia_checkin", user_id: row.user_id }
       );
       count++;
       logger.info({ userId: row.user_id }, "ambient-presence: food signal check-in sent");
@@ -240,7 +240,7 @@ async function processSilentUsers(): Promise<number> {
         row.user_id,
         "💙 Nia is thinking of you",
         `Hey ${firstName}, just checking in. Tap to chat whenever you're ready.`,
-        { type: "ambient_silent_checkin", user_id: row.user_id }
+        { type: "ambient_silent_checkin", notifType: "nia_checkin", user_id: row.user_id }
       );
       count++;
       logger.info({ userId: row.user_id }, "ambient-presence: silent user warm check-in sent");

@@ -21,6 +21,8 @@ tags:
     description: Trust and safety reporting
   - name: civic
     description: Location-aware civic and community resources
+  - name: nia
+    description: Nia AI chat, memory, and crisis support
 
 paths:
   /healthz:
@@ -1457,3 +1459,255 @@ components:
           type: string
           enum: [city, county, state, fallback]
           description: How specifically the resources were matched
+
+  # ── Nia AI schemas ───────────────────────────────────────────────────────────
+    NiaChatRequest:
+      type: object
+      required: [message, sessionId]
+      properties:
+        message:
+          type: string
+          maxLength: 2000
+          description: User message to Nia
+        sessionId:
+          type: string
+          pattern: '^[\w-]{6,200}$'
+          description: Session identifier for conversation continuity
+        userName:
+          type: string
+          maxLength: 100
+        accountType:
+          type: string
+        helperModeActive:
+          type: boolean
+        activeRequestId:
+          type: [integer, "null"]
+        lat:
+          type: [number, "null"]
+        lon:
+          type: [number, "null"]
+        language:
+          type: [string, "null"]
+        voiceActivated:
+          type: boolean
+        city:
+          type: string
+          maxLength: 100
+        county:
+          type: string
+          maxLength: 100
+        state:
+          type: string
+          maxLength: 100
+
+    NiaChatResponse:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [text, error, crisis, resource]
+        content:
+          type: string
+        sessionId:
+          type: string
+
+    NiaHistoryResponse:
+      type: array
+      items:
+        type: object
+        properties:
+          id:
+            type: integer
+          user_message:
+            type: string
+          nia_response:
+            type: string
+          created_at:
+            type: string
+
+    NiaMemoryResponse:
+      type: object
+      properties:
+        memory:
+          type: [string, "null"]
+        structured:
+          type: object
+
+    NiaShareStoryRequest:
+      type: object
+      required: [transcript]
+      properties:
+        transcript:
+          type: string
+          minLength: 10
+          maxLength: 3000
+        userName:
+          type: string
+          maxLength: 100
+        helperName:
+          type: [string, "null"]
+          maxLength: 100
+        category:
+          type: string
+
+    NiaShareStoryResponse:
+      type: object
+      properties:
+        story:
+          type: string
+        title:
+          type: string
+
+    NiaStatusResponse:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+
+    NiaToggleRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+
+    NiaToggleResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        enabled:
+          type: boolean
+
+  # Nia paths appended below
+  # ── Nia AI routes ────────────────────────────────────────────────────────────
+  /nia/chat:
+    post:
+      operationId: niaChat
+      tags: [nia]
+      summary: Chat with Nia AI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NiaChatRequest"
+      responses:
+        "200":
+          description: SSE stream of Nia's response
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/NiaChatResponse"
+        "400":
+          description: Invalid request
+        "429":
+          description: Rate limited
+        "503":
+          description: Nia is temporarily unavailable
+
+  /nia/history/{sessionId}:
+    get:
+      operationId: niaHistory
+      tags: [nia]
+      summary: Get conversation history for a session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Conversation history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NiaHistoryResponse"
+        "403":
+          description: Unauthorized to access this history
+        "503":
+          description: Nia is temporarily unavailable
+
+  /nia/memory:
+    get:
+      operationId: niaGetMemory
+      tags: [nia]
+      summary: Get user's Nia memory
+      responses:
+        "200":
+          description: User memory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NiaMemoryResponse"
+        "401":
+          description: Authentication required
+    delete:
+      operationId: niaClearMemory
+      tags: [nia]
+      summary: Clear user's Nia memory
+      responses:
+        "200":
+          description: Memory cleared
+        "401":
+          description: Authentication required
+
+  /nia/share-story:
+    post:
+      operationId: niaShareStory
+      tags: [nia]
+      summary: Share a story with Nia for crafting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NiaShareStoryRequest"
+      responses:
+        "200":
+          description: Crafted story
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NiaShareStoryResponse"
+        "400":
+          description: Invalid transcript
+        "503":
+          description: Nia is temporarily unavailable
+
+  /admin/nia-status:
+    get:
+      operationId: niaStatus
+      tags: [nia]
+      summary: Check if Nia AI is enabled
+      responses:
+        "200":
+          description: Nia status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NiaStatusResponse"
+
+  /admin/nia-toggle:
+    post:
+      operationId: niaToggle
+      tags: [nia]
+      summary: Toggle Nia AI on/off (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NiaToggleRequest"
+      responses:
+        "200":
+          description: Toggle successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NiaToggleResponse"
+        "400":
+          description: Invalid request
+        "403":
+          description: Admin access required
