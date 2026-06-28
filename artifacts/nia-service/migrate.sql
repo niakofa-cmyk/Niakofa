@@ -56,3 +56,27 @@ CREATE TABLE IF NOT EXISTS nia_knowledge (
 CREATE INDEX IF NOT EXISTS nia_knowledge_expires_idx
   ON nia_knowledge (expires_at)
   WHERE expires_at IS NOT NULL;
+
+-- push_notification_queue: lightweight queue for proactive Nia notifications.
+-- Written by: ambient-presence-worker.ts, general-checkin-worker.ts
+-- Consumed by: a future notification sender (api-server or standalone worker).
+-- Non-fatal if not yet consumed — rows accumulate until drained.
+--
+-- BUG-14c FIX: This table was previously missing from migrate.sql.
+-- Both ambient-presence-worker and general-checkin-worker tried to INSERT
+-- into it on every cycle, throwing "relation does not exist" silently
+-- (caught by their per-insert try/catch). All push notifications were
+-- silently dropped on every nia-service boot.
+CREATE TABLE IF NOT EXISTS push_notification_queue (
+  id         BIGSERIAL PRIMARY KEY,
+  user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  data       JSONB NOT NULL DEFAULT '{}',
+  sent_at    TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS push_notification_queue_unsent_idx
+  ON push_notification_queue (user_id, created_at)
+  WHERE sent_at IS NULL;
