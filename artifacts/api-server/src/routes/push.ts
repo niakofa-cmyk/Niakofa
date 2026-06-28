@@ -12,12 +12,23 @@ const router = Router();
 const VAPID_PUBLIC = process.env["VAPID_PUBLIC_KEY"] ?? "";
 const VAPID_PRIVATE = process.env["VAPID_PRIVATE_KEY"] ?? "";
 
+let vapidConfigured = false;
 if (VAPID_PUBLIC && VAPID_PRIVATE) {
-  webpush.setVapidDetails(
-    "mailto:hello@payitforward.community",
-    VAPID_PUBLIC,
-    VAPID_PRIVATE
-  );
+  try {
+    webpush.setVapidDetails(
+      "mailto:hello@payitforward.community",
+      VAPID_PUBLIC,
+      VAPID_PRIVATE
+    );
+    vapidConfigured = true;
+    logger.info("web-push: VAPID keys loaded successfully");
+  } catch (err) {
+    // Invalid VAPID key — log and degrade gracefully. Push notifications will
+    // be disabled but the server continues running. Fix by regenerating VAPID
+    // keys with: npx web-push generate-vapid-keys and updating Railway vars.
+    logger.error({ err }, "web-push: invalid VAPID keys — push notifications disabled. " +
+      "Regenerate with: npx web-push generate-vapid-keys");
+  }
 }
 
 router.get("/push/vapid-public-key", (_req, res) => {
