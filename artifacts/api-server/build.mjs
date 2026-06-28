@@ -11,7 +11,7 @@ globalThis.require = createRequire(import.meta.url);
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 
 async function buildAll() {
-  // force-rebuild: 1782597705
+  // force-rebuild: 1782685697
   const distDir = path.resolve(artifactDir, "dist");
   await rm(distDir, { recursive: true, force: true });
 
@@ -125,4 +125,5 @@ buildAll().catch((err) => {
   console.error(err);
   process.exit(1);
 });
-// cache-bust: 1782597120
+// cache-bust: 1782685697
+
