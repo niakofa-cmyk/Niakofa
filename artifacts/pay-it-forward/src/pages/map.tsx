@@ -16,7 +16,7 @@ import { TopBar } from "@/components/TopBar";
 import { BottomSheet } from "@/components/BottomSheet";
 import { RequestMarker } from "@/components/RequestMarker";
 import { HelperMarker } from "@/components/HelperMarker";
-import { DispatchIntelligenceCard } from "@/components/DispatchIntelligenceCard";
+import { BestMatchCard } from "@/components/BestMatchCard";
 import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2, Layers, X, Siren, Zap, Locate } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
@@ -838,66 +838,6 @@ export default function MapScreen() {
           />
         </Source>
 
-        
-
-        {/* Request clusters — shown when zoom < 13, individual markers at zoom >= 13 */}
-        <Source
-          id="request-clusters"
-          type="geojson"
-          data={requestClusterGeoJSON}
-          cluster={true}
-          clusterMaxZoom={12}
-          clusterRadius={50}
-        >
-          {/* Cluster circle */}
-          <Layer
-            id="request-cluster-circle"
-            type="circle"
-            filter={["has", "point_count"]}
-            paint={{
-              "circle-color": [
-                "step", ["get", "point_count"],
-                "#FF3C00", 5,
-                "#f97316", 15,
-                "#eab308"
-              ],
-              "circle-radius": ["step", ["get", "point_count"], 18, 5, 24, 15, 32],
-              "circle-opacity": 0.88,
-              "circle-stroke-width": 2,
-              "circle-stroke-color": "#fff",
-              "circle-stroke-opacity": 0.3,
-            }}
-          />
-          {/* Cluster count label */}
-          <Layer
-            id="request-cluster-count"
-            type="symbol"
-            filter={["has", "point_count"]}
-            layout={{
-              "text-field": "{point_count_abbreviated}",
-              "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
-              "text-size": 13,
-            }}
-            paint={{ "text-color": "#ffffff" }}
-          />
-          {/* Unclustered point — small dot (individual markers render on top at high zoom) */}
-          <Layer
-            id="request-unclustered"
-            type="circle"
-            filter={["!", ["has", "point_count"]]}
-            paint={{
-              "circle-color": [
-                "match", ["get", "urgency"],
-                "emergency", "#ef4444",
-                "high",      "#f97316",
-                "medium",    "#FF3C00",
-                "#6366f1"
-              ],
-              "circle-radius": 0,
-              "circle-opacity": 0,
-            }}
-          />
-        </Source>
 
                 {/* Request density legend */}
         {showDensity && (
@@ -1060,7 +1000,7 @@ export default function MapScreen() {
 
       {/* Dispatch Intelligence — Best Match card */}
       {showBestMatch && webGLSupported && !mapError && (
-        <DispatchIntelligenceCard
+        <BestMatchCard
           bestMatch={bestMatch}
           onAccept={handleClaim}
           onDismiss={() => setBestMatchDismissed(bestMatch.id)}
@@ -1111,3 +1051,4 @@ export default function MapScreen() {
     </div>
   );
 }
+
