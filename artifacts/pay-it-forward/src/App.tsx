@@ -78,7 +78,7 @@ function NiaGlobal() {
         zIndex: 9997,
         pointerEvents: "auto",
       }}>
-        <NiaFab onClick={() => setNiaOpen(true)} />
+        <NiaFab onClick={() => setNiaOpen(true)} enabled={niaEnabled} />
       </div>
       <NiaDrawer
         open={niaOpen}

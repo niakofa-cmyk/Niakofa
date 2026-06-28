@@ -1105,26 +1105,85 @@ Your limit resets at ${reset}. Rest well — I'll be here when you return.
   );
 }
 
-export function NiaFab({ onClick }: { onClick: () => void }) {
+export function NiaFab({ onClick, enabled = true }: { onClick: () => void; enabled?: boolean }) {
+  // Drag position — persisted in localStorage so Nia remembers where the user placed her
+  const safeRead = (key: string, fallback: number) => {
+    try { const v = localStorage.getItem(key); return v === null ? fallback : Number(v); } catch { return fallback; }
+  };
+  const safeWrite = (key: string, value: number) => {
+    try { localStorage.setItem(key, String(value)); } catch {}
+  };
+
+  const [fabX, setFabX] = useState(() => safeRead("nia_fab_x", 0));
+  const [fabY, setFabY] = useState(() => safeRead("nia_fab_y", 0));
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartTime = useRef(0);
+  const dragStartPos = useRef({ x: 0, y: 0 });
+
+  // Only allow drag when Nia is enabled
+  const handleDragStart = () => {
+    if (!enabled) return;
+    setIsDragging(true);
+    dragStartTime.current = Date.now();
+  };
+
+  const handleDragEnd = (_: unknown, info: { offset: { x: number; y: number } }) => {
+    if (!enabled) return;
+    setIsDragging(false);
+    const newX = fabX + info.offset.x;
+    const newY = fabY + info.offset.y;
+    setFabX(newX);
+    setFabY(newY);
+    safeWrite("nia_fab_x", newX);
+    safeWrite("nia_fab_y", newY);
+  };
+
+  const handleClick = () => {
+    // Only fire click if not dragging (drag distance < 8px)
+    const dragDuration = Date.now() - dragStartTime.current;
+    if (!isDragging || dragDuration < 150) {
+      onClick();
+    }
+  };
+
   return (
-    <motion.button
-      onClick={onClick}
-      aria-label="Open Nia — your community assistant"
-      whileHover={{ scale: 1.06 }}
-      whileTap={{ scale: 0.93 }}
-      style={{
-        background: "none",
-        border: "none",
-        cursor: "pointer",
-        padding: 0,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        touchAction: "manipulation",
-        WebkitTapHighlightColor: "transparent",
+    <motion.div
+      drag={enabled}
+      dragMomentum={false}
+      dragElastic={0.1}
+      dragConstraints={{
+        // Constrain to reasonable screen bounds; center of orb stays visible
+        left: -120,
+        right: 120,
+        top: -60,
+        bottom: 120,
       }}
+      animate={{ x: fabX, y: fabY }}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      style={{
+        cursor: enabled ? (isDragging ? "grabbing" : "grab") : "pointer",
+        touchAction: enabled ? "none" : "manipulation",
+      }}
+      aria-label="Open Nia — your community assistant"
     >
-      <NiaOrb size={68} pulse />
-    </motion.button>
+      <motion.button
+        onClick={handleClick}
+        whileHover={!isDragging ? { scale: 1.06 } : {}}
+        whileTap={!isDragging ? { scale: 0.93 } : {}}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "inherit",
+          padding: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          WebkitTapHighlightColor: "transparent",
+        }}
+      >
+        <NiaOrb size={68} pulse={enabled} />
+      </motion.button>
+    </motion.div>
   );
 }

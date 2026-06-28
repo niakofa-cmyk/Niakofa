@@ -12,6 +12,7 @@ import { purgeExpiredConversations } from "./lib/db.js";
 import { startCrisisFollowupWorker } from "./workers/crisis-followup-worker.js";
 import { startContinuousLearningWorker } from "./workers/continuous-learning-worker.js";
 import { startGeneralCheckinWorker } from "./workers/general-checkin-worker.js";
+import { startAmbientPresenceWorker } from "./workers/ambient-presence-worker.js";
 
 const logger = pino({ level: "info" });
 const app = express();
@@ -69,5 +70,7 @@ app.listen(port, () => {
   startContinuousLearningWorker();
   // General 24h check-in worker — Nia follows up 24h after every completed request.
   startGeneralCheckinWorker();
+  // Ambient presence worker — Nia proactively notices food signals, recurring needs, silent users.
+  startAmbientPresenceWorker();
 });
 // rebuilt: 1782611000
