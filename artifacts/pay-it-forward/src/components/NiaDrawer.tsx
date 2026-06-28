@@ -57,47 +57,172 @@ interface NiaDrawerProps {
   accountType?: string | null;
 }
 
+// ── Full 5-layer sparkle NiaOrb ───────────────────────────────────────────────
+const SPARKLE_ANGLES = [0, 72, 144, 216, 288]; // 5 evenly-spaced particle angles
+
 export function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: boolean }) {
+  const pad = Math.round(size * 0.55);  // extra space for aura + particles
+  const total = size + pad * 2;
+  const cx = total / 2;
+  const orbitR = size * 0.72;           // particle orbit radius
+  const dotR  = Math.max(2, size * 0.075); // particle dot size
+
   return (
-    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
+    <div style={{ position: "relative", width: total, height: total, flexShrink: 0, marginLeft: -pad, marginTop: -pad }}>
+      {/* Layer 1 — breathing aura (soft green radial glow) */}
+      <motion.div
+        animate={{ scale: [1, 1.55, 1], opacity: [0.3, 0, 0.3] }}
+        transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+        style={{
+          position: "absolute",
+          width: size * 1.8,
+          height: size * 1.8,
+          borderRadius: "50%",
+          top: cx - size * 0.9,
+          left: cx - size * 0.9,
+          background: "radial-gradient(circle, rgba(29,158,117,0.45) 0%, rgba(29,158,117,0.12) 50%, transparent 75%)",
+          pointerEvents: "none",
+        }}
+      />
+
+      {/* Layer 2 — heartbeat ring (expanding border) */}
+      <motion.div
+        animate={{ scale: [1, 1.35, 1], opacity: [0.6, 0, 0.6] }}
+        transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut", delay: 0.4 }}
+        style={{
+          position: "absolute",
+          width: size * 1.18,
+          height: size * 1.18,
+          borderRadius: "50%",
+          top: cx - size * 0.59,
+          left: cx - size * 0.59,
+          border: "1.5px solid rgba(93,202,165,0.7)",
+          pointerEvents: "none",
+        }}
+      />
+
+      {/* Layer 3 — slow outer ring */}
       {pulse && (
         <motion.div
-          animate={{ scale: [1, 1.45, 1], opacity: [0.45, 0, 0.45] }}
-          transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
+          animate={{ scale: [1, 1.22, 1], opacity: [0.35, 0, 0.35] }}
+          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", delay: 1.2 }}
           style={{
             position: "absolute",
-            inset: -4,
+            width: size * 1.36,
+            height: size * 1.36,
             borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(29,158,117,0.35) 0%, transparent 70%)",
+            top: cx - size * 0.68,
+            left: cx - size * 0.68,
+            border: "1px solid rgba(29,200,140,0.4)",
             pointerEvents: "none",
           }}
         />
       )}
+
+      {/* Layer 4 — orb body: bob + rotating shimmer */}
       <motion.div
-        animate={pulse ? { scale: [1, 1.04, 1] } : {}}
-        transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
+        animate={{ y: [0, -size * 0.06, 0] }}
+        transition={{ duration: 3.0, repeat: Infinity, ease: "easeInOut" }}
         style={{
+          position: "absolute",
           width: size,
           height: size,
-          borderRadius: "50%",
-          background: "linear-gradient(135deg, #1D9E75 0%, #0A6B4E 60%, #085041 100%)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          border: "1.5px solid rgba(93,202,165,0.5)",
+          top: cx - size / 2,
+          left: cx - size / 2,
         }}
       >
-        <span style={{
-          fontSize: size * 0.42,
-          fontWeight: 600,
-          color: "#E1F5EE",
-          fontFamily: "var(--font-sans)",
-          letterSpacing: "-0.01em",
-          userSelect: "none",
-        }}>
-          N
-        </span>
+        <motion.div
+          animate={pulse ? { scale: [1, 1.04, 1] } : {}}
+          transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
+          style={{
+            width: size,
+            height: size,
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #23CFA4 0%, #1D9E75 40%, #0A6B4E 75%, #063D2E 100%)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            border: `${Math.max(1.5, size * 0.025)}px solid rgba(93,202,165,0.6)`,
+            boxShadow: `0 0 ${size * 0.35}px rgba(35,207,164,0.45), 0 0 ${size * 0.7}px rgba(29,158,117,0.2), inset 0 1px 0 rgba(255,255,255,0.15)`,
+            overflow: "hidden",
+            position: "relative",
+          }}
+        >
+          {/* Rotating shimmer glint */}
+          <motion.div
+            animate={{ rotate: [0, 360] }}
+            transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
+            style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              background: "conic-gradient(from 0deg, transparent 70%, rgba(255,255,255,0.18) 85%, transparent 100%)",
+              pointerEvents: "none",
+            }}
+          />
+          {/* Glint highlight top-left */}
+          <div style={{
+            position: "absolute",
+            top: size * 0.12,
+            left: size * 0.15,
+            width: size * 0.22,
+            height: size * 0.1,
+            borderRadius: "50%",
+            background: "rgba(255,255,255,0.22)",
+            transform: "rotate(-25deg)",
+            pointerEvents: "none",
+          }} />
+          <span style={{
+            fontSize: size * 0.44,
+            fontWeight: 800,
+            color: "#E8FFF6",
+            fontFamily: "var(--font-sans)",
+            letterSpacing: "-0.02em",
+            userSelect: "none",
+            position: "relative",
+            textShadow: `0 1px ${size * 0.06}px rgba(0,0,0,0.3)`,
+            lineHeight: 1,
+          }}>
+            N
+          </span>
+        </motion.div>
       </motion.div>
+
+      {/* Layer 5 — 5 orbiting sparkle particles */}
+      {pulse && SPARKLE_ANGLES.map((angle, i) => (
+        <motion.div
+          key={i}
+          animate={{
+            rotate: [angle, angle + 360],
+            opacity: [0, 1, 0.8, 0],
+          }}
+          transition={{
+            rotate: { duration: 4 + i * 0.3, repeat: Infinity, ease: "linear" },
+            opacity: { duration: 1.4, repeat: Infinity, ease: "easeInOut", delay: i * 0.28 },
+          }}
+          style={{
+            position: "absolute",
+            top: cx,
+            left: cx,
+            width: 0,
+            height: 0,
+            pointerEvents: "none",
+          }}
+        >
+          <div style={{
+            position: "absolute",
+            top: -orbitR,
+            left: -dotR,
+            width: dotR * 2,
+            height: dotR * 2,
+            borderRadius: "50%",
+            background: i % 2 === 0
+              ? "rgba(35,207,164,0.95)"
+              : "rgba(147,250,210,0.85)",
+            boxShadow: `0 0 ${dotR * 3}px rgba(35,207,164,0.8)`,
+          }} />
+        </motion.div>
+      ))}
     </div>
   );
 }
@@ -799,44 +924,21 @@ export function NiaFab({ onClick }: { onClick: () => void }) {
     <motion.button
       onClick={onClick}
       aria-label="Open Nia — your community assistant"
-      whileHover={{ scale: 1.07 }}
-      whileTap={{ scale: 0.94 }}
+      whileHover={{ scale: 1.06 }}
+      whileTap={{ scale: 0.93 }}
       style={{
-        position: "fixed",
-        bottom: 80,
-        right: 18,
-        zIndex: 9997,
-        width: 56,
-        height: 56,
-        borderRadius: "50%",
-        background: "linear-gradient(135deg, #1D9E75 0%, #085041 100%)",
+        background: "none",
         border: "none",
         cursor: "pointer",
+        padding: 0,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        boxShadow: "0 4px 20px rgba(10,61,46,0.35)",
+        // Positioned to replace the center-slot in TopBar / Login topbar
+        // When floating (non-TopBar screens), wrapped by NiaGlobal positioning
       }}
     >
-      <motion.div
-        animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
-        transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-        style={{
-          position: "absolute",
-          inset: -4,
-          borderRadius: "50%",
-          border: "1.5px solid rgba(29,158,117,0.6)",
-          pointerEvents: "none",
-        }}
-      />
-      <span style={{
-        fontSize: 22, fontWeight: 700, color: "#E1F5EE",
-        fontFamily: "var(--font-sans)",
-        letterSpacing: "-0.01em",
-        userSelect: "none", lineHeight: 1,
-      }}>
-        N
-      </span>
+      <NiaOrb size={68} pulse />
     </motion.button>
   );
 }

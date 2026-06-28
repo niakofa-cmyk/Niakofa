@@ -23,6 +23,7 @@ import { requireAuth } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import { signTokenById } from "../middlewares/auth";
 import { logger } from "../lib/logger";
+import { sendAlertEmail } from "../lib/mailer";
 import { requestSelect } from "../lib/request-select";
 import { userSelect } from "../lib/user-select";
 
@@ -548,6 +549,20 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
       .returning();
 
     if (!updated) return res.status(404).json({ error: "User not found" });
+
+    // Notify the applicant of their approval/denial decision
+    if (updated.email && (status === "approved" || status === "denied")) {
+      const isApproved = status === "approved";
+      sendAlertEmail({
+        to: updated.email,
+        subject: isApproved ? "You've been approved as a Niakofa Helper!" : "Niakofa Helper Application Update",
+        title: isApproved ? "Welcome to the Helper Community! 💙" : "Application Status Update",
+        body: isApproved
+          ? `Hi ${updated.name ?? "there"}! Great news — your Niakofa Helper application has been approved. You can now go online and start helping your community. Thank you for paying it forward!`
+          : `Hi ${updated.name ?? "there"}, thank you for applying to be a Niakofa Helper. After review, we're unable to approve your application at this time. Please contact support@niakofa.community if you have questions.`,
+      }).catch(err => logger.warn({ err }, "helper-application: sendAlertEmail failed"));
+    }
+
     const { password_hash, ...safe } = updated;
     return res.json(safe);
   }
@@ -575,6 +590,17 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
     .returning();
 
   if (!updated) return res.status(404).json({ error: "User not found" });
+
+  // Confirm receipt of helper application to the applicant
+  if (updated.email) {
+    sendAlertEmail({
+      to: updated.email,
+      subject: "We received your Niakofa Helper application!",
+      title: "Application Received 💙",
+      body: `Hi ${updated.name ?? "there"}! We've received your Helper application and it's currently under review. We'll notify you once a decision has been made. Thank you for wanting to pay it forward!`,
+    }).catch(err => logger.warn({ err }, "helper-application: application confirmation email failed"));
+  }
+
   const { password_hash, ...safe } = updated;
   return res.json(safe);
 });

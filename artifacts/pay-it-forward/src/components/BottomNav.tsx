@@ -1,20 +1,31 @@
 import { useLocation, Link } from "wouter";
-import { Map, Users, Plus, Wallet, User, Bell } from "lucide-react";
+import { Map, Users, Plus, Wallet, User, Bell, LayoutDashboard } from "lucide-react";
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { NotificationsDrawer, type LiveNotification } from "./NotificationsDrawer";
 import { useWebSocket } from "@/lib/useWebSocket";
+import { useAppContext } from "@/lib/AppContext";
 import type { HelpRequest } from "@workspace/api-client-react";
 import { useTranslation } from "react-i18next";
 
 type Tab = { path: string; icon: React.ElementType; labelKey: string; center?: boolean };
 
-const tabs: Tab[] = [
-  { path: "/",            icon: Map,    labelKey: "nav.map"       },
-  { path: "/community",   icon: Users,  labelKey: "nav.community" },
-  { path: "/request/new", icon: Plus,   labelKey: "request.new",  center: true },
-  { path: "/wallet",      icon: Wallet, labelKey: "nav.wallet"    },
-  { path: "/profile",     icon: User,   labelKey: "nav.profile"   },
+// Base tabs always shown
+const BASE_TABS: Tab[] = [
+  { path: "/",            icon: Map,              labelKey: "nav.map"       },
+  { path: "/community",   icon: Users,            labelKey: "nav.community" },
+  { path: "/request/new", icon: Plus,             labelKey: "request.new",  center: true },
+  { path: "/wallet",      icon: Wallet,           labelKey: "nav.wallet"    },
+  { path: "/profile",     icon: User,             labelKey: "nav.profile"   },
+];
+
+// When helper mode is active, swap Map tab for Helper Dashboard
+const HELPER_TABS: Tab[] = [
+  { path: "/helper-dashboard", icon: LayoutDashboard, labelKey: "nav.helper_dashboard" },
+  { path: "/community",        icon: Users,           labelKey: "nav.community" },
+  { path: "/request/new",      icon: Plus,            labelKey: "request.new",  center: true },
+  { path: "/wallet",           icon: Wallet,          labelKey: "nav.wallet"    },
+  { path: "/profile",          icon: User,            labelKey: "nav.profile"   },
 ];
 
 const SEED_NOTIFICATIONS: LiveNotification[] = [
@@ -51,6 +62,8 @@ const SEED_NOTIFICATIONS: LiveNotification[] = [
 export function BottomNav() {
   const { t } = useTranslation();
   const [location] = useLocation();
+  const { helperModeActive } = useAppContext();
+  const tabs = helperModeActive ? HELPER_TABS : BASE_TABS;
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<LiveNotification[]>(SEED_NOTIFICATIONS);
   const [unreadCount, setUnreadCount] = useState(0);

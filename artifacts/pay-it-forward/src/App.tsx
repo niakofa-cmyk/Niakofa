@@ -37,10 +37,13 @@ const queryClient = new QueryClient({
 function NiaGlobal() {
   const { currentUser, myLocation, helperModeActive, activeRequestId } = useAppContext();
   const [niaOpen, setNiaOpen] = useState(false);
+  // Expose openNia globally so TopBar's center Nia orb can trigger the drawer
+  useEffect(() => { (window as any).openNia = () => setNiaOpen(true); return () => { delete (window as any).openNia; }; }, []);
   const [niaEnabled, setNiaEnabled] = useState(true); // optimistic: show Nia immediately
   const [niaInitialMessage, setNiaInitialMessage] = useState<string | undefined>(undefined);
   const [isAdmin] = useRoute("/admin");
   const [isOnboarding] = useRoute("/onboarding");
+  const [isMap] = useRoute("/");
   const [isStripeConnected] = useRoute("/wallet/connected");
 
   // Poll /admin/nia-status every 60s — admin kill-switch takes effect without reload
@@ -66,7 +69,17 @@ function NiaGlobal() {
 
   return (
     <>
-      <NiaFab onClick={() => setNiaOpen(true)} />
+      {/* Nia FAB — floats top-center on non-map screens */}
+      <div style={{
+        position: "fixed",
+        top: "max(8px, env(safe-area-inset-top))",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 9997,
+        pointerEvents: "auto",
+      }}>
+        <NiaFab onClick={() => setNiaOpen(true)} />
+      </div>
       <NiaDrawer
         open={niaOpen}
         onClose={() => { setNiaOpen(false); setNiaInitialMessage(undefined); }}

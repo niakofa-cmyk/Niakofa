@@ -3,8 +3,7 @@ import { useLocation } from "wouter";
 import {
   Shield, AlertCircle, CheckCircle2, Clock, X, ChevronLeft,
   Eye, Flag, User as UserIcon, RefreshCw, Filter, ExternalLink,
-  Users, Search, Ban, AlertTriangle, Star, Bot, Power, Timer
-} from "lucide-react";
+  Users, Search, Ban, AlertTriangle, Star, Bot, Power, Timer, BarChart2} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
@@ -102,7 +101,8 @@ function ReportDetailSheet({ report, onClose, onReviewed }: {
         className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl max-h-[92dvh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between p-5 pb-3 border-b border-border">
+        {/* admin header row with analytics button */}
+          <div className="flex items-center justify-between p-5 pb-3 border-b border-border">
           <div className="flex items-center gap-2">
             <Flag className="w-5 h-5 text-destructive" />
             <h3 className="font-black text-lg">Report #{report.id}</h3>
@@ -884,6 +884,17 @@ export default function AdminScreen() {
           onReviewed={handleReviewed}
         />
       )}
-    </div>
+    
+      {/* Analytics quick-access button */}
+      <div className="fixed bottom-24 right-4 z-50">
+        <button
+          onClick={() => setLocation('/admin/analytics')}
+          className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 active:scale-95 transition-all text-sm font-black"
+        >
+          <BarChart2 className="w-4 h-4" />
+          Analytics
+        </button>
+      </div>
+      </div>
   );
 }

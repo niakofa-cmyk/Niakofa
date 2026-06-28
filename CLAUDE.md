@@ -287,6 +287,39 @@ you're using a tool that auto-loads a root-level `CLAUDE.md` at session
 start (e.g. Claude Code), that mechanism is the tool's, not something this
 file can guarantee on its own.
 
+13. **Session 2026-06-27 — Gap fixes, Nia orb polish, and workflow audit.**
+   Full app workflow audit confirmed all 16 features operational. Fixed four critical
+   routing gaps found in App.tsx:
+   - 4 missing `<Route>` elements for `/helper-dashboard`, `/helper-onboarding`,
+     `/pending-approval`, `/recurring` (imports existed but routes were never inserted).
+   - `approval_status` guard added to AppShell — users with `pending`/`denied` status
+     now see `PendingApprovalScreen` instead of the main app.
+   - `/admin/analytics` route + `AdminAnalyticsDashboard` import added.
+   Commits `4c8a49e` and `e0ff3ec` cover these.
+
+   Additional fixes this session (commit to follow):
+   - **GAP-1**: BottomNav now shows a `Dashboard` tab (LayoutDashboard icon) when
+     `helperModeActive === true`, replacing the Map tab. When not in helper mode,
+     shows Map tab as before.
+   - **GAP-3**: `PATCH /users/:id/helper-application` admin path now calls
+     `sendAlertEmail` on `approved`/`denied` to notify the applicant. User submission
+     path sends a receipt email.
+   - **GAP-4**: Admin panel now has a floating Analytics button that navigates to
+     `/admin/analytics`.
+   - **Nia orb**: `NiaOrb` rebuilt with 5-layer sparkle animation:
+     aura glow → heartbeat ring → slow outer ring → bobbing orb body with rotating
+     shimmer + glint → 5 orbiting green/mint sparkle particles. Size 46 in TopBar
+     center (requester mode), size 70 on login page, size 68 for NiaFab on other screens.
+   - **TopBar center**: When NOT in helper mode, the center slot of TopBar now shows
+     the Nia sparkle orb (replaces old Go Online toggle in center). Helper mode still
+     shows the green `Helper Online` toggle. Clicking the orb calls `window.openNia()`
+     which NiaGlobal exposes.
+   - **Login page**: Heart icon replaced with NiaOrb (size=70, pulsing). Added
+     "Sawubona — I see you. Tap Nia to chat." tagline in green.
+   - **NiaGlobal**: NiaFab hidden on `/` (map route has its own Nia in TopBar).
+     On other screens it floats top-center via fixed positioning.
+   - **i18n**: `nav.helper_dashboard: "Dashboard"` added to en locale.
+
 ## Current state as of last update (2026-06-24, session covering commits
 `5db087f2` through `936ccb0d`)
 

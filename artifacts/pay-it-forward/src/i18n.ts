@@ -4,6 +4,7 @@ import { initReactI18next } from "react-i18next";
 const en = {
   nav: {
     map: "Map",
+    helper_dashboard: "Dashboard",
     community: "Community",
     wallet: "Wallet",
     profile: "Profile",
