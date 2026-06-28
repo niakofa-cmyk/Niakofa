@@ -100,11 +100,15 @@ async function processNiaCheckins(): Promise<void> {
       );
 
       // 3. Send a push notification so the user knows Nia reached out
+      // notifType: "nia_checkin" — this type is never gated by user preferences
+      // (always sends) so users always receive Nia's follow-up regardless of
+      // their notif_nearby_requests or other preference toggles.
       await sendPushToUser(req.requester_id, {
         title: "💙 Nia checked in on you",
         body: `How did ${req.title} go? Tap to chat with Nia.`,
         urgency: "normal",
         requestId: req.id,
+        notifType: "nia_checkin" as const,
       }).catch((err) =>
         logger.warn({ err, userId: req.requester_id }, "nia-checkin: push failed")
       );
@@ -160,3 +164,4 @@ export function startNiaCheckinWorker(): () => void {
  *
  *   nia_checkin_sent_at: timestamp("nia_checkin_sent_at", { withTimezone: true }),
  */
+
