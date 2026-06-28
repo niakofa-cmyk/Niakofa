@@ -48,10 +48,10 @@ export async function closeRedis(): Promise<void> {
 
 // ── Queue names ───────────────────────────────────────────────────────────────
 export const QUEUE = {
-  PAYOUTS:               "niakofa:payouts",
-  PLEDGE_RECONCILIATION: "niakofa:pledge-reconciliation",
-  REQUEST_CLEANUP:       "niakofa:request-cleanup",
-  NOTIFICATIONS:         "niakofa:notifications",
+  PAYOUTS:               "niakofa-payouts",
+  PLEDGE_RECONCILIATION: "niakofa-pledge-reconciliation",
+  REQUEST_CLEANUP:       "niakofa-request-cleanup",
+  NOTIFICATIONS:         "niakofa-notifications",
 } as const;
 
 // ── Default job options ───────────────────────────────────────────────────────
