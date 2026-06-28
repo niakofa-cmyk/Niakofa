@@ -2,12 +2,15 @@ import { Request, Response, NextFunction } from "express";
 
 export interface LocationContext {
   city?: string;
+  county?: string;
   region?: string;
   country?: string;
   zip?: string;
   lat?: number;
   lon?: number;
   timezone?: string;
+  /** True when city/county/state came from client GPS reverse geocode (more accurate than server IP) */
+  fromClientGPS?: boolean;
 }
 
 export async function injectLocation(
@@ -55,9 +58,16 @@ export async function injectLocation(
 }
 
 export function buildLocationPrefix(loc?: LocationContext): string {
-  if (!loc?.city) return "";
-  const parts = [loc.city, loc.region, loc.country].filter(Boolean);
-  return `[User location: ${parts.join(", ")}${loc.zip ? ` ${loc.zip}` : ""}. Timezone: ${loc.timezone || "unknown"}. Lat/Lon: ${loc.lat},${loc.lon}. Use this to give hyper-local, immediately actionable resources.]\n\n`;
+  if (!loc?.city && !loc?.county && !loc?.region) return "";
+  const city = loc.city ?? loc.county ?? null;
+  const county = loc.county && loc.county !== city ? loc.county : null;
+  const accuracy = loc.fromClientGPS ? "GPS-precise" : "approximate (IP-based)";
+  const parts = [city, county ? `${county} County` : null, loc.region, loc.country]
+    .filter(Boolean)
+    .join(", ");
+  const coords = (loc.lat != null && loc.lon != null)
+    ? ` Coordinates: ${loc.lat.toFixed(4)}, ${loc.lon.toFixed(4)}.` : "";
+  return `[User location (${accuracy}): ${parts}${loc.zip ? ` ${loc.zip}` : ""}.${coords} Timezone: ${loc.timezone || "unknown"}. Give hyper-local, immediately actionable resources.]\n\n`;
 }
 
 export interface AppContext {

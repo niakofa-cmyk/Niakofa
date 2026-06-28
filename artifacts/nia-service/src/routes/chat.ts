@@ -6,6 +6,7 @@ import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
 import { injectLocation, buildLocationPrefix, buildAppContextPrefix, LocationContext } from "../middleware/location.js";
 import { pino } from "pino";
 import { parseOptionalAuth } from "../lib/auth.js";
+import { getFreshKnowledge } from "../workers/continuous-learning-worker.js";
 
 const logger = pino({ level: "info" });
 const router = Router();
@@ -42,6 +43,11 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       : typeof body.activeRequestId === "string" && body.activeRequestId.trim() !== ""
         ? Number(body.activeRequestId)
         : null;
+
+  // GPS-resolved place from client reverse geocode (more accurate than server IP)
+  const clientCity = typeof body.city === "string" ? body.city.slice(0, 100) : null;
+  const clientCounty = typeof body.county === "string" ? body.county.slice(0, 100) : null;
+  const clientState = typeof body.state === "string" ? body.state.slice(0, 100) : null;
 
   // Phase 7c: food intent signal from client-side detection
   const foodSignal = typeof body.foodSignal === "string" ? body.foodSignal : null;
@@ -99,6 +105,21 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       "Ask one gentle question to understand their situation better. Stay present.\n\n"
     : "";
 
+  // Merge client GPS place into locationContext (overrides coarse IP geo)
+  if (clientCity || clientCounty || clientState) {
+    (req as any).locationContext = {
+      ...(req as any).locationContext,
+      ...(clientCity ? { city: clientCity } : {}),
+      ...(clientCounty ? { county: clientCounty } : {}),
+      ...(clientState ? { region: clientState } : {}),
+      fromClientGPS: true,
+    };
+  }
+
+  // Inject continuous learning knowledge from background worker
+  const knowledgePrefix = await getFreshKnowledge().catch(() => "");
+  const knowledgePrefixBlock = knowledgePrefix ? `${knowledgePrefix}\n\n` : "";
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -125,8 +146,8 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
         system:
           memoryPrefix +
           softPrefix +
+          knowledgePrefixBlock +
           buildFoodIntentPrefix(foodSignal, foodSignalCount, gpsLat, gpsLon) +
-      buildFoodIntentPrefix(foodSignal, foodSignalCount, gpsLat, gpsLon) +
       buildLocationPrefix((req as any).locationContext as LocationContext | undefined) +
           buildAppContextPrefix({
             userName,

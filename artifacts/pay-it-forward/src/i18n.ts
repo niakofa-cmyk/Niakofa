@@ -111,6 +111,7 @@ const en = {
 const es: typeof en = {
   nav: {
     map: "Mapa",
+    helper_dashboard: "Panel",
     community: "Comunidad",
     wallet: "Cartera",
     profile: "Perfil",

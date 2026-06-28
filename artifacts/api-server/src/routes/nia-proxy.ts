@@ -100,12 +100,16 @@ router.post(
         typeof body.foodSignal === "string" ? body.foodSignal : undefined,
       foodSignalCount:
         typeof body.foodSignalCount === "number" ? body.foodSignalCount : undefined,
+      // GPS-resolved City/County/State from client reverse geocode — more accurate than server IP
+      city: typeof body.city === "string" ? body.city.slice(0, 100) : undefined,
+      county: typeof body.county === "string" ? body.county.slice(0, 100) : undefined,
+      state: typeof body.state === "string" ? body.state.slice(0, 100) : undefined,
     });
 
     try {
       const abortCtrl = new AbortController();
       const abortTimer = setTimeout(() => abortCtrl.abort(), 30_000);
-      let upstream: Response;
+      let upstream: globalThis.Response;
       try {
         upstream = await fetch(`${getNiaUrl()}/chat`, {
           method: "POST",

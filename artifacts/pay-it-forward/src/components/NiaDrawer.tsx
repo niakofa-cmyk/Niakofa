@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown } from "lucide-react";
 import { authHeaders } from "../lib/auth";
+import { useAppContext } from "../lib/AppContext";
 import { useNiaTTS } from "../hooks/useNiaTTS";
 import {
   detectUserLanguage,
@@ -96,6 +97,10 @@ interface NiaDrawerProps {
   userId?: number | null;
   userName?: string | null;
   userLocation?: { lat: number; lon: number } | null;
+  /** City, County, State from GPS reverse geocode — from AppContext.userPlace */
+  userCity?: string | null;
+  userCounty?: string | null;
+  userState?: string | null;
   helperModeActive?: boolean;
   activeRequestId?: string | number | null;
   accountType?: string | null;
@@ -594,17 +599,30 @@ export function NiaDrawer({
   userId = null,
   userName = null,
   userLocation = null,
+  userCity = null,
+  userCounty = null,
+  userState = null,
   helperModeActive = false,
   activeRequestId = null,
   accountType = null,
 }: NiaDrawerProps) {
+  // Pull userPlace from AppContext — GPS-resolved city/county/state
+  const { userPlace } = useAppContext();
+  const resolvedCity = userCity ?? userPlace?.city ?? null;
+  const resolvedCounty = userCounty ?? userPlace?.county ?? null;
+  const resolvedState = userState ?? userPlace?.state ?? null;
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [showSplash, setShowSplash] = useState(false);
-  const [locationStatus, setLocationStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
-  const [locationLabel, setLocationLabel] = useState<string | null>(null);
+  // Location status derived from AppContext GPS
+  const locationStatus: "idle" | "requesting" | "granted" | "denied" =
+    (resolvedCity || resolvedCounty || userLocation) ? "granted" : "idle";
+  const locationLabel = resolvedCity
+    ? (resolvedCounty ? `${resolvedCity}, ${resolvedCounty} Co.` : resolvedCity)
+    : resolvedCounty ?? null;
   const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [liveContext, setLiveContext] = useState<NiaContext | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -629,25 +647,8 @@ export function NiaDrawer({
     speak(preview, lang);
   }, [speak]);
 
-  const requestLocation = useCallback(() => {
-    if (!navigator.geolocation) { setLocationStatus("denied"); return; }
-    setLocationStatus("requesting");
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude: lat, longitude: lon } = pos.coords;
-        setUserCoords({ lat, lon });
-        setLocationStatus("granted");
-        try {
-          const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
-          const d = await r.json();
-          const city = d.address?.city || d.address?.town || d.address?.village || d.address?.county || null;
-          if (city) setLocationLabel(city);
-        } catch { /* silent */ }
-      },
-      () => setLocationStatus("denied"),
-      { timeout: 8000, maximumAge: 300_000 }
-    );
-  }, []);
+  // GPS is managed by AppContext watchPosition — this is kept as a no-op for any remaining call-sites
+  const requestLocation = useCallback(() => {}, []);
 
   // Fetch live community context
   useEffect(() => {
@@ -700,9 +701,9 @@ ${profile.helpPrompt}`,
       .catch(() => {
         setMessages([{
           role: "nia",
-          content: "Sawubona — I see you. Akwaaba, you are welcome here.
+          content: `Sawubona — I see you. Akwaaba, you are welcome here.
 
-I am Nia. How can I support you today?",
+I am Nia. How can I support you today?`,
           timestamp: new Date(),
         }]);
         setHistoryLoaded(true);
@@ -747,7 +748,7 @@ I am Nia. How can I support you today?",
         markFoodResourcesShown();
         detectedFoodSignal = intent.signal;
         const resourceMsg = buildFoodResourceMessage({
-          lang: voiceLanguage,
+          lang: userLang,
           userName,
           signal: intent.signal,
           isRepeat: getFoodSignalCount() > 1,
@@ -791,6 +792,9 @@ I am Nia. How can I support you today?",
           liveContext: liveContext ?? undefined,
           preferredLanguage: userLang,
           ...(coords ?? {}),
+          city: resolvedCity ?? undefined,
+          county: resolvedCounty ?? undefined,
+          state: resolvedState ?? undefined,
         }),
       });
 
@@ -801,11 +805,11 @@ I am Nia. How can I support you today?",
           if (last?.role === "nia" && last.streaming) {
             updated[updated.length - 1] = {
               role: "nia",
-              content: "Nia is resting right now 💙
+              content: `Nia is resting right now 💙
 
 She'll be back soon. In the meantime, all of Niakofa's community features — the map, requests, helpers, and your wallet — are fully available.
 
-If this is an emergency, please call 911 or text HOME to 741741.",
+If this is an emergency, please call 911 or text HOME to 741741.`,
               streaming: false,
               timestamp: new Date(),
             };
@@ -851,8 +855,7 @@ Your limit resets at ${reset}. Rest well — I'll be here when you return.
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("
-");
+        const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
 
         for (const line of lines) {
@@ -1017,10 +1020,10 @@ Your limit resets at ${reset}. Rest well — I'll be here when you return.
                       }}
                     >
                       <MapPin size={11} />
-                      {locationLabel ?? "Location on"}
+                      {locationLabel ?? resolvedState ?? "Location on"}
                     </div>
                   )}
-                  {locationStatus === "denied" && (
+                  {locationStatus === "idle" && (
                     <button
                       onClick={requestLocation}
                       style={{

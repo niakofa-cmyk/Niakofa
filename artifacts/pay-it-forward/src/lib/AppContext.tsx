@@ -28,6 +28,19 @@ interface AppContextType {
   setActiveRequestId: (id: number | null) => void;
   /** City name from onboarding, profile, or IP fallback (e.g. "Atlanta, GA") */
   userCity: string | null;
+  /** Full resolved place: city, county, state — auto-populated from GPS reverse geocode */
+  userPlace: UserPlace;
+}
+
+/** Resolved place info from reverse geocoding — City, County, State */
+interface UserPlace {
+  city: string | null;
+  county: string | null;
+  state: string | null;
+  /** Formatted short label, e.g. "Fort Worth, TX" */
+  label: string | null;
+  /** Source that resolved this: "gps" | "ip" */
+  source: "gps" | "ip" | null;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -59,6 +72,72 @@ function emaSmooth(prev: number, next: number, alpha = 0.3): number {
   return alpha * next + (1 - alpha) * prev;
 }
 
+const LAST_PLACE_KEY = "niakofa_last_place";
+
+function loadLastPlace(): UserPlace {
+  try {
+    const stored = localStorage.getItem(LAST_PLACE_KEY);
+    if (stored) return JSON.parse(stored) as UserPlace;
+  } catch {}
+  return { city: null, county: null, state: null, label: null, source: null };
+}
+
+const STATE_ABBR: Record<string, string> = {
+  Alabama: "AL", Alaska: "AK", Arizona: "AZ", Arkansas: "AR",
+  California: "CA", Colorado: "CO", Connecticut: "CT", Delaware: "DE",
+  Florida: "FL", Georgia: "GA", Hawaii: "HI", Idaho: "ID",
+  Illinois: "IL", Indiana: "IN", Iowa: "IA", Kansas: "KS",
+  Kentucky: "KY", Louisiana: "LA", Maine: "ME", Maryland: "MD",
+  Massachusetts: "MA", Michigan: "MI", Minnesota: "MN", Mississippi: "MS",
+  Missouri: "MO", Montana: "MT", Nebraska: "NE", Nevada: "NV",
+  "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY",
+  "North Carolina": "NC", "North Dakota": "ND", Ohio: "OH", Oklahoma: "OK",
+  Oregon: "OR", Pennsylvania: "PA", "Rhode Island": "RI", "South Carolina": "SC",
+  "South Dakota": "SD", Tennessee: "TN", Texas: "TX", Utah: "UT",
+  Vermont: "VT", Virginia: "VA", Washington: "WA", "West Virginia": "WV",
+  Wisconsin: "WI", Wyoming: "WY", "District of Columbia": "DC",
+};
+function stateNameToAbbr(name: string): string | null { return STATE_ABBR[name] ?? null; }
+
+async function reverseGeocode(lat: number, lng: number): Promise<UserPlace | null> {
+  const token = (import.meta as { env?: { VITE_MAPBOX_TOKEN?: string } }).env?.VITE_MAPBOX_TOKEN;
+  if (!token) return null;
+  try {
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?types=place,district,region&access_token=${token}&language=en`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json() as {
+      features: Array<{ place_type: string[]; text: string; context?: Array<{ id: string; text: string }> }>;
+    };
+    let city: string | null = null;
+    let county: string | null = null;
+    let state: string | null = null;
+    for (const feature of data.features) {
+      if (feature.place_type.includes("place") && !city) {
+        city = feature.text;
+        for (const ctx of feature.context ?? []) {
+          if (ctx.id.startsWith("district.") && !county) county = ctx.text;
+          if (ctx.id.startsWith("region.") && !state) state = ctx.text;
+        }
+      }
+      if (feature.place_type.includes("district") && !county) {
+        county = feature.text;
+        for (const ctx of feature.context ?? []) {
+          if (ctx.id.startsWith("region.") && !state) state = ctx.text;
+        }
+      }
+      if (feature.place_type.includes("region") && !state) state = feature.text;
+    }
+    if (!city && !county && !state) return null;
+    const stateAbbr = state ? stateNameToAbbr(state) : null;
+    const labelCity = city ?? county ?? "";
+    const label = labelCity
+      ? (stateAbbr ? `${labelCity}, ${stateAbbr}` : `${labelCity}, ${state ?? ""}`)
+      : null;
+    return { city, county, state, label, source: "gps" };
+  } catch { return null; }
+}
+
 // Load last-known location from localStorage (avoids hardcoded default)
 function loadLastLocation(): Location | null {
   try {
@@ -84,9 +163,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Use last-known location from localStorage; fall back to null (not a hardcoded city)
   const [myLocation, setMyLocation] = useState<Location | null>(loadLastLocation);
   // City from onboarding, profile, or IP fallback — shared so Nia has context
-  const [userCity] = useState<string | null>(() => {
+  const [userCity, setUserCity] = useState<string | null>(() => {
     try { return localStorage.getItem("niakofa_user_city"); } catch { return null; }
   });
+  // Full place: City, County, State — resolved via GPS reverse geocoding or IP fallback
+  const [userPlace, setUserPlace] = useState<UserPlace>(loadLastPlace);
   const [gratitudePrompt, setGratitudePrompt] = useState<{
     requestId: number;
     requestTitle: string;
@@ -103,6 +184,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const prevBroadcastRef = useRef<Location | null>(null);
   const prevLocationRef = useRef<Location | null>(null);
   const smoothedRef = useRef<{ lat: number; lng: number } | null>(null);
+  // Tracks the last lat/lng sent to reverse geocoder — prevents hammering on tiny moves
+  const lastGeocodedLocRef = useRef<{ lat: number; lng: number } | null>(null);
 
   // ── Custom hooks ─────────────────────────────────────────────────────────
   const updateLocation = useUpdateUserLocation();
@@ -233,6 +316,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
         try {
           localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify({ lat: smoothed.lat, lng: smoothed.lng }));
         } catch {}
+
+        // Reverse geocode → City, County, State (throttled: only re-geocode after >800m move)
+        const lastGeo = lastGeocodedLocRef.current;
+        const movedFarEnough = !lastGeo
+          || Math.abs(smoothed.lat - lastGeo.lat) > 0.007
+          || Math.abs(smoothed.lng - lastGeo.lng) > 0.01;
+        if (movedFarEnough) {
+          lastGeocodedLocRef.current = { lat: smoothed.lat, lng: smoothed.lng };
+          reverseGeocode(smoothed.lat, smoothed.lng).then((place) => {
+            if (!place) return;
+            setUserPlace(place);
+            const label = place.label ?? place.city ?? place.county ?? "";
+            if (label) {
+              setUserCity(label);
+              try { localStorage.setItem("niakofa_user_city", label); } catch {}
+            }
+            try { localStorage.setItem(LAST_PLACE_KEY, JSON.stringify(place)); } catch {}
+            (window as unknown as { __niakofaRegion?: string }).__niakofaRegion = label || undefined;
+          });
+        }
       },
       async (err) => {
         const msgs: Record<number, string> = {
@@ -249,16 +352,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
           try {
             const ipRes = await fetch("https://ipapi.co/json/");
             if (ipRes.ok) {
-              const ipData = await ipRes.json() as { latitude?: number; longitude?: number; city?: string; region_code?: string };
+              const ipData = await ipRes.json() as { latitude?: number; longitude?: number; city?: string; region_code?: string; region?: string };
               if (ipData.latitude && ipData.longitude) {
                 const fallbackLoc: Location = { lat: ipData.latitude, lng: ipData.longitude };
                 locationRef.current = fallbackLoc;
                 setMyLocation(fallbackLoc);
-                // Capture city from IP fallback — stored for Nia context
-                if (ipData.city && !localStorage.getItem("niakofa_user_city")) {
-                  const ipCity = ipData.region_code ? `${ipData.city}, ${ipData.region_code}` : ipData.city;
-                  try { localStorage.setItem("niakofa_user_city", ipCity); } catch {}
+                // Capture city/state from IP fallback — populate UserPlace for Nia context
+                if (ipData.city) {
+                  const stateAbbr = ipData.region_code ?? null;
+                  const ipCity = stateAbbr ? `${ipData.city}, ${stateAbbr}` : ipData.city;
+                  const ipPlace: UserPlace = {
+                    city: ipData.city,
+                    county: null,
+                    state: ipData.region ?? stateAbbr,
+                    label: ipCity,
+                    source: "ip",
+                  };
+                  setUserPlace(ipPlace);
+                  setUserCity(ipCity);
+                  try {
+                    localStorage.setItem("niakofa_user_city", ipCity);
+                    localStorage.setItem(LAST_PLACE_KEY, JSON.stringify(ipPlace));
+                  } catch {}
                   (window as unknown as { __niakofaRegion?: string }).__niakofaRegion = ipCity;
+                  // Refine with Mapbox if possible (IP coords → proper city/county/state)
+                  reverseGeocode(ipData.latitude, ipData.longitude).then((place) => {
+                    if (!place) return;
+                    setUserPlace(place);
+                    const label = place.label ?? ipCity;
+                    setUserCity(label);
+                    try {
+                      localStorage.setItem("niakofa_user_city", label);
+                      localStorage.setItem(LAST_PLACE_KEY, JSON.stringify(place));
+                    } catch {}
+                    (window as unknown as { __niakofaRegion?: string }).__niakofaRegion = label;
+                  });
                 }
                 sonnerToast.info("Using approximate location", {
                   description: "GPS unavailable — using IP-based location. Accuracy is limited.",
@@ -300,6 +428,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!activeRequestId && loc.speed != null && loc.speed < 0.5) return;
 
       prevBroadcastRef.current = loc;
+      // Include GPS-resolved city in the broadcast so the DB stays current
+      const cityLabel = userPlace.city ?? userPlace.county ?? null;
       updateLocation.mutate(
         {
           id: currentUser.id,
@@ -308,6 +438,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             lng: loc.lng,
             heading: loc.heading ?? null,
             speed: loc.speed ?? null,
+            ...(cityLabel ? ({ city: cityLabel } as any) : {}),
           },
         },
         { onError: () => {} }
@@ -338,6 +469,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setHelperModeActive,
       myLocation,
       userCity,
+      userPlace,
       activeRequestId,
       setActiveRequestId,
     }}>

@@ -73,7 +73,7 @@ export function useNiaStory(userName: string) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...((() => { try { const t = localStorage.getItem("niakofa_token"); return t ? { Authorization: `Bearer ${t}` } : {}; } catch { return {}; } })()),
+          ...((() => { try { const t = localStorage.getItem("niakofa_token"); return t ? { Authorization: `Bearer ${t}` } : {} as Record<string,string>; } catch { return {} as Record<string,string>; } })()),
         },
         body: JSON.stringify({ transcript: raw, userName, helperName, category }),
       });
