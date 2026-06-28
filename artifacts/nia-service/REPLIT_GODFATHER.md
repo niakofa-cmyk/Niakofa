@@ -313,3 +313,26 @@ Mobile touch devices need `:active` state, not `:hover`. Replaced inline `onMous
 
 ### NiaFab Status
 - Full 5-layer sparkle orb live: far aura (3.8s breathe) + heartbeat ring (2.2s) + secondary ring (3.2s) + orb body (bob + conic shimmer + glint + glowing N) + 5 orbiting particles at 72° intervals
+
+---
+
+### Session: June 28, 2026 — Share with Nia fixed, routes + separation verified
+
+**BUG-CRIT: "Share with Nia" silently failed on every post**
+`NiaStoryModal.handlePost` was sending `{ message, author_name }` to `POST /api/gratitude`, but the Zod schema requires `author_id` (number, required). The missing field caused a 400 validation error that was silently swallowed — the modal closed but nothing was posted to the feed. Fixed:
+- `author_id: currentUser.id` added to the request body
+- `author_avatar` added for richer feed display
+- Proper loading state (`posting` flag) with spinner on Post button
+- Proper error state (`postError`) shown inline if the request fails
+- `onPosted` callback was `() => {}` (empty noop) — replaced with a re-fetch of `/api/gratitude` that updates the feed state immediately so the new story appears without a page reload
+
+**Routes audit — all 19 App.tsx routes verified present and correct:**
+`/login`, `/onboarding`, `/helper/:id`, `/request/:id/view`, `/wallet/connected`, `/`, `/community`, `/request/new`, `/request/:id/track`, `/request/:id`, `/wallet`, `/profile`, `/settings`, `/admin`, `/helper-dashboard`, `/helper-onboarding`, `/pending-approval`, `/recurring`, `/admin/analytics` — all wired with correct components
+
+**Nia separation — verified clean:**
+- Frontend makes zero direct calls to nia-service or `niakofa-production.up.railway.app`
+- All `/api/nia/*` calls go through api-server proxy (nia-proxy.ts): `/api/nia/chat`, `/api/nia/history/:sessionId`, `/api/nia/context`, `/api/nia/share-story`
+- nia-proxy.ts is ACTIVE — imported and mounted in routes/index.ts lines 22+46
+- share-story: `frontend → /api/nia/share-story (api-server, parseAuth) → getNiaUrl()/share-story (nia-service)`
+
+**Commit:** `455cd2f`
