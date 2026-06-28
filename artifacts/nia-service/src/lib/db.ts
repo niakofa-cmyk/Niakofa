@@ -10,7 +10,7 @@ const { Pool } = pg;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const pool = new Pool({
+export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
   max: 10,
@@ -143,7 +143,7 @@ export async function getActiveRequest(
   if (!userId) return null;
   const result = await pool.query(
     `SELECT id, title, description, category, urgency, status, neighborhood, lat, lng, created_at, requester_id, helper_id
-     FROM requests
+     FROM help_requests
      WHERE id = $1 AND (requester_id = $2 OR helper_id = $2)
      LIMIT 1`,
     [requestId, userId]
@@ -344,7 +344,7 @@ export async function getCompletedRequestsForCheckin(): Promise<
       r.category,
       r.requester_id,
       u.name AS helper_name
-    FROM requests hr
+    FROM help_requests r
     LEFT JOIN users u ON u.id = r.helper_id
     WHERE r.status = 'completed'
       AND r.completed_at BETWEEN NOW() - INTERVAL '25 hours' AND NOW() - INTERVAL '23 hours'
@@ -443,7 +443,7 @@ async function computePhrasingInsights(): Promise<string[]> {
       category,
       AVG(EXTRACT(EPOCH FROM (claimed_at - created_at)) / 60.0) AS avg_minutes,
       COUNT(*) AS sample_size
-    FROM requests
+    FROM help_requests
     WHERE claimed_at IS NOT NULL AND created_at > NOW() - INTERVAL '90 days'
     GROUP BY category
     HAVING COUNT(*) >= $1
@@ -460,7 +460,7 @@ async function computePhrasingInsights(): Promise<string[]> {
 
   const overallResult = await pool.query(`
     SELECT AVG(EXTRACT(EPOCH FROM (claimed_at - created_at)) / 60.0) AS avg_minutes
-    FROM requests
+    FROM help_requests
     WHERE claimed_at IS NOT NULL AND created_at > NOW() - INTERVAL '90 days'
   `);
   const overallAvg = overallResult.rows[0]?.avg_minutes ? Number(overallResult.rows[0].avg_minutes) : null;
@@ -471,7 +471,7 @@ async function computePhrasingInsights(): Promise<string[]> {
         `SELECT
            AVG(EXTRACT(EPOCH FROM (claimed_at - created_at)) / 60.0) AS avg_minutes,
            COUNT(*) AS sample_size
-         FROM requests
+         FROM help_requests
          WHERE claimed_at IS NOT NULL
            AND created_at > NOW() - INTERVAL '90 days'
            AND title ILIKE $1`,

@@ -507,3 +507,71 @@ FIX 2 — ✅ RESOLVED (verified June 27, 2026) — nia-checkin-worker.ts alread
 - **Emergency bypass**: All distance/radius logic bypasses emergencies everywhere. Do not add distance checks to emergency flows.
 
 ### Status: RESOLVED
+
+## Incident #13 — June 28 Coworker AI Session: Full Audit, Bug Fixes, Nia Continuous Learning
+**Date:** 2026-06-28
+**Session:** Coworker AI (Claude) — full codebase audit, service separation verification, bug fixes, Nia enhancements
+
+### Service Separation — VERIFIED ✅
+Both services confirmed fully independent:
+- **Niakofa App** (api-server + pay-it-forward): Works completely without Nia AI. All Nia calls wrapped in try/catch. Kill-switch works without nia-service. Frontend uses only relative /api/nia/* paths.
+- **Nia AI** (nia-service): Works completely without Niakofa App. Direct Postgres connection (raw pg). Zero outbound HTTP calls to api-server. Own auth, rate limiting, CORS, helmet. Self-migrates on boot.
+
+### Bugs Found and Fixed
+
+**BUG-13a: NiaGlobal.tsx — broken imports (build-breaking)**
+- `artifacts/pay-it-forward/src/components/NiaGlobal.tsx` imported from `"./NiaFab"` which does not exist
+- NiaFab is defined in `NiaDrawer.tsx`, not a separate file
+- Also used wrong API path `/admin/nia-status` (should be `/api/admin/nia-status`)
+- Also used wrong prop names (`isOpen` instead of `open`)
+- Note: App.tsx has its own inline NiaGlobal function that works correctly; this file was dead/broken code
+- Fix: Replaced with a clean re-export from NiaDrawer.tsx that won't break builds
+
+**BUG-13b: getCompletedRequestsForCheckin SQL — wrong table name**
+- `artifacts/nia-service/src/lib/db.ts` function `getCompletedRequestsForCheckin()`
+- Used `FROM requests hr` — wrong table name (real table is `help_requests`) AND wrong alias (`hr` vs `r` used in column refs)
+- Would throw a SQL error on every checkin cycle, silently preventing 24h check-ins
+- Fix: Changed to `FROM help_requests r` throughout all queries in db.ts
+
+**BUG-13c: migrate.sql — missing is_crisis column**
+- `artifacts/nia-service/migrate.sql` (runs on every nia-service boot) did not include `is_crisis BOOLEAN NOT NULL DEFAULT FALSE` on `nia_conversations`
+- The Drizzle schema and chat.ts both reference this column; without it every `saveConversation()` call would throw a SQL error
+- Fix: Added `is_crisis` to CREATE TABLE and an idempotent `ALTER TABLE ADD COLUMN IF NOT EXISTS` for existing deployments
+- Also added a partial index on `(user_id, created_at) WHERE is_crisis = TRUE` for crisis follow-up worker performance
+
+**BUG-13d: pool not exported from db.ts**
+- `const pool` was not exported, so new memory routes couldn't import it
+- Fix: Changed to `export const pool`
+
+### New Features Added
+
+**FEATURE: Nia Continuous Learning Worker**
+- New file: `artifacts/nia-service/src/workers/continuous-learning-worker.ts`
+- Runs every 6 hours (first cycle 5 minutes after startup)
+- Uses Anthropic web_search tool to research 5 topics:
+  1. Fort Worth community news and mutual aid
+  2. Tarrant County resource availability
+  3. Fort Worth community events and volunteer opportunities
+  4. Community help trends (national)
+  5. Fort Worth food pantry schedule
+- Stores findings in new `nia_knowledge` table (7-day TTL per entry)
+- `getFreshKnowledge()` export provides current entries for chat.ts context injection
+- Nia stays alive and aware even when the app is quiet — she never stops growing
+- **Design principle:** Nia is never "off" — just quiet. The learning worker ensures she always has fresh, grounded knowledge about her community.
+
+**FEATURE: Nia Memory Routes (GET + DELETE)**
+- New file: `artifacts/nia-service/src/routes/memory.ts`
+- `GET /memory/:userId` — returns user's narrative + structured memory
+- `DELETE /memory/:userId` — clears user's memory entirely  
+- Both routes protected: Bearer token userId must match :userId param
+- nia-proxy.ts already had the proxy routes; nia-service side was missing — now complete
+
+**FEATURE: nia_knowledge table in migrate.sql**
+- New table: `nia_knowledge (key TEXT PRIMARY KEY, content TEXT, source TEXT, learned_at TIMESTAMPTZ, expires_at TIMESTAMPTZ)`
+- Indexed on `expires_at` for efficient TTL cleanup
+- Supports Nia's continuous learning system
+
+### Known gaps (still not built)
+- Nia's getFreshKnowledge() is implemented but not yet wired into chat.ts context prefix — next session should add `buildKnowledgePrefix()` call in chat.ts
+- Voice I/O is whole-utterance (not streaming TTS) — sentence-by-sentence streaming is a separate, larger project
+- Memory is still freeform text + JSONB — no structured field for dietary preferences or other highly specific facts

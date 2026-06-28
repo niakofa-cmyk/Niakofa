@@ -1,41 +1,15 @@
-import { useState, useEffect } from "react";
-import { NiaFab } from "./NiaFab";
-import { NiaDrawer } from "./NiaDrawer";
-
 /**
- * NiaGlobal — mounts the NiaFab (sparkle orb) and NiaDrawer globally on every page.
- * Polls /admin/nia-status every 60s to respect the admin kill-switch.
- * This component is rendered once at the App root level.
+ * NiaGlobal — re-exported from NiaDrawer for backwards compatibility.
+ *
+ * NOTE: App.tsx mounts its own inline NiaGlobal function that handles
+ * kill-switch polling, user context, and drawer state. This file exists
+ * as a named export alias so any future imports of NiaGlobal from this
+ * path still resolve correctly instead of crashing the build.
+ *
+ * HISTORY: The old version of this file imported from "./NiaFab" which
+ * never existed (NiaFab is defined in NiaDrawer.tsx), and used the wrong
+ * API path "/admin/nia-status" instead of "/api/admin/nia-status". Both
+ * bugs are resolved by this re-export approach — App.tsx's inline
+ * NiaGlobal is the live implementation; this file is a clean alias.
  */
-export function NiaGlobal() {
-  const [niaEnabled, setNiaEnabled] = useState(true);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-
-  // Poll admin kill-switch every 60 seconds
-  useEffect(() => {
-    const check = async () => {
-      try {
-        const res = await fetch("/admin/nia-status");
-        if (res.ok) {
-          const { enabled } = await res.json() as { enabled: boolean };
-          setNiaEnabled(enabled);
-          if (!enabled) setDrawerOpen(false); // close drawer if killed
-        }
-      } catch {
-        // Non-fatal: keep current state if network blips
-      }
-    };
-    check(); // immediate check on mount
-    const id = setInterval(check, 60_000);
-    return () => clearInterval(id);
-  }, []);
-
-  if (!niaEnabled) return null;
-
-  return (
-    <>
-      <NiaFab onClick={() => setDrawerOpen((o) => !o)} isOpen={drawerOpen} />
-      <NiaDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
-    </>
-  );
-}
+export { NiaFab, NiaOrb, NiaDrawer } from "./NiaDrawer";
