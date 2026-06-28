@@ -166,3 +166,17 @@ export const voiceLimiter = rateLimit({
   message: { error: "Voice limit reached. Please wait an hour before trying again." },
 });
 
+// ── 11. Navigation / Directions (60 / min per user) ──────────────────────────
+// Mapbox directions calls are metered — 60/min is generous for real turn-by-turn
+// usage (a new route request per second) while blocking runaway loops or scrapers.
+export const navigationLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const r = req as typeof req & { authenticatedUserId?: number };
+    return `nav-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
+  },
+  message: { error: "Too many route requests. Please wait a moment before fetching a new route." },
+});
