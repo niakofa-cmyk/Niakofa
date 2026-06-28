@@ -29,7 +29,17 @@ const EMERGENCY_RESOURCES = [
     id: "shelter",
     label: "Find Nearest Shelter",
     sub: "Safe Haven FW · Presbyterian Night Shelter",
-    href: "https://maps.google.com/maps?q=emergency+shelter+fort+worth+tx",
+    href: (() => {
+      try {
+        const place = localStorage.getItem("niakofa_last_place");
+        if (place) {
+          const p = JSON.parse(place) as { city?: string; county?: string; state?: string };
+          const loc = [p.city ?? p.county, p.state].filter(Boolean).join("+").replace(/\s+/g, "+");
+          if (loc) return `https://maps.google.com/maps?q=emergency+shelter+${loc}`;
+        }
+      } catch {}
+      return "https://maps.google.com/maps?q=emergency+shelter+near+me";
+    })(),
     target: "_blank",
     color: "bg-orange-500/10 border-orange-500/30 hover:border-orange-500/60 text-orange-400",
     Icon: MapPin,
@@ -46,7 +56,7 @@ const EMERGENCY_RESOURCES = [
 function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [pressed, setPressed] = useState(false);
   const [countdown, setCountdown] = useState(0);
-  const { currentUser, myLocation } = useAppContext();
+  const { currentUser, myLocation, userPlace } = useAppContext();
   const cancelledRef = useRef(false);
 
   const handleEmergency = async () => {
@@ -78,6 +88,9 @@ function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
           user_id: currentUser?.id,
           lat: myLocation?.lat,
           lng: myLocation?.lng,
+          city: userPlace?.city ?? null,
+          county: userPlace?.county ?? null,
+          state: userPlace?.state ?? null,
           message: "SOS activated from Niakofa app",
         }),
       });

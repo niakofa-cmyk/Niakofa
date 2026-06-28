@@ -116,17 +116,21 @@ async function reverseGeocode(lat: number, lng: number): Promise<UserPlace | nul
       if (feature.place_type.includes("place") && !city) {
         city = feature.text;
         for (const ctx of feature.context ?? []) {
-          if (ctx.id.startsWith("district.") && !county) county = ctx.text;
-          if (ctx.id.startsWith("region.") && !state) state = ctx.text;
+          if (ctx.id.startsWith("district.") && !county)
+            county = ctx.text.replace(/ County$/i, "").trim();
+          if (ctx.id.startsWith("region.") && !state) {
+            // Extract short state code from "Texas, United States" → "TX"
+            state = ctx.text.trim();
+          }
         }
       }
       if (feature.place_type.includes("district") && !county) {
-        county = feature.text;
+        county = feature.text.replace(/ County$/i, "").trim();
         for (const ctx of feature.context ?? []) {
-          if (ctx.id.startsWith("region.") && !state) state = ctx.text;
+          if (ctx.id.startsWith("region.") && !state) state = ctx.text.trim();
         }
       }
-      if (feature.place_type.includes("region") && !state) state = feature.text;
+      if (feature.place_type.includes("region") && !state) state = feature.text.trim();
     }
     if (!city && !county && !state) return null;
     const stateAbbr = state ? stateNameToAbbr(state) : null;
@@ -201,10 +205,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // ── Centralized logout — clears all auth state ───────────────────────────
+  // ── Centralized logout — clears all auth + location cache ────────────────
   const logout = () => {
     clearToken();
     localStorage.removeItem("niakofa_user");
+    // Clear GPS/place cache so the next user starts fresh
+    try {
+      localStorage.removeItem("niakofa_last_location");
+      localStorage.removeItem("niakofa_user_city");
+      localStorage.removeItem("niakofa_last_place");
+      localStorage.removeItem("niakofa_user_county");
+    } catch {}
     setCurrentUserState(null);
     wsUnregister();
     setLocation("/login");

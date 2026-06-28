@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState , useEffect } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { Heart, MapPin, Bell, Shield, ChevronRight, Check, Loader2, Building2 } from "lucide-react";
@@ -78,11 +78,14 @@ const US_CITY_SUGGESTIONS = [
 
 export default function OnboardingScreen() {
   const [, setLocation] = useLocation();
-  const { currentUser } = useAppContext();
+  const { currentUser, userPlace } = useAppContext();
   const [step, setStep] = useState(0);
   const [locationGranted, setLocationGranted] = useState(false);
   const [notifGranted, setNotifGranted] = useState(false);
-  const [cityInput, setCityInput] = useState("");
+  const [cityInput, setCityInput] = useState(() => {
+    // Pre-fill from GPS-resolved city if available
+    try { return localStorage.getItem("niakofa_user_city") ?? ""; } catch { return ""; }
+  });
   const [citySaved, setCitySaved] = useState(false);
   const [citySuggestions, setCitySuggestions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -132,6 +135,10 @@ export default function OnboardingScreen() {
         try { localStorage.setItem("niakofa_user_city", cityInput.trim()); } catch {}
         // Set global window var for map.tsx crisis region lookup
         (window as unknown as { __niakofaRegion?: string }).__niakofaRegion = cityInput.trim();
+        // If GPS place has county data, also store that for richer Nia context
+        if (userPlace?.county) {
+          try { localStorage.setItem("niakofa_user_county", userPlace.county); } catch {}
+        }
         setCitySaved(true);
       } catch {
         // Non-fatal: still proceed even if save fails

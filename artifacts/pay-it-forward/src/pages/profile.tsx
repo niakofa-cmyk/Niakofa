@@ -143,6 +143,9 @@ function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId:
                 localStorage.removeItem("niakofa_token");
                 localStorage.removeItem("niakofa_user");
                 localStorage.removeItem("niakofa_last_location");
+                localStorage.removeItem("niakofa_user_city");
+                localStorage.removeItem("niakofa_last_place");
+                localStorage.removeItem("niakofa_user_county");
                 window.location.href = "/";
               } catch {
                 toast({ title: "Could not delete account — please try again", variant: "destructive" });
@@ -852,7 +855,7 @@ function RecentHelpersSection({
 
 export default function ProfileScreen() {
   const [, setLocation] = useLocation();
-  const { currentUser, helperModeActive, setHelperModeActive, myLocation, logout } = useAppContext();
+  const { currentUser, helperModeActive, setHelperModeActive, myLocation, logout, userPlace } = useAppContext();
   const [tab, setTab] = useState<ProfileTab>("overview");
 
   // Settings dialog state
@@ -996,7 +999,7 @@ export default function ProfileScreen() {
               <div>
                 <h2 className="text-xl font-black">{currentUser.name}</h2>
                 <p className="text-muted-foreground flex items-center gap-1 text-sm">
-                  <MapPin className="w-3.5 h-3.5" /> {currentUser.neighborhood || currentUser.city || "My Community"}
+                  <MapPin className="w-3.5 h-3.5" /> {currentUser.neighborhood || currentUser.city || userPlace?.label || "My Community"}
                 </p>
                 <div className="flex items-center flex-wrap gap-1.5 mt-1">
                   <TrustTierBadge
