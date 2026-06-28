@@ -56,7 +56,7 @@ Return ONLY a JSON array, no markdown fences, no preamble, in this exact shape:
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
+      model: "claude-haiku-4-5",
       max_tokens: 1024,
       messages: [{ role: "user", content: prompt }],
     });
