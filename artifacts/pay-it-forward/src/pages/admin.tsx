@@ -547,7 +547,7 @@ function NiaTab() {
 }
 
 // ─── Admin session constants ─────────────────────────────────────────────────
-const SESSION_DURATION_MS  = 10 * 60 * 1000; // 10 minutes
+const SESSION_DURATION_MS  = 15 * 60 * 1000; // 15 minutes
 const BUMP_OFFER_BEFORE_MS =  5 * 60 * 1000; // show bump prompt at 5 min remaining
 
 export default function AdminScreen() {
@@ -600,7 +600,7 @@ export default function AdminScreen() {
   const bumpSession = useCallback(() => {
     setShowBumpPrompt(false);
     startTimer();
-    toast({ title: "Session extended", description: "Admin session reset to 10 minutes." });
+    toast({ title: "Session extended", description: "Admin session reset to 15 minutes." });
   }, [startTimer]);
 
   const fmtCountdown = (secs: number) => {
