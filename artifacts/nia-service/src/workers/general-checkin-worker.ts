@@ -1,80 +1,93 @@
-import { db } from "../lib/db";
-import { sql } from "drizzle-orm";
-import { logger } from "../lib/logger";
-
 /**
  * General 24-hour check-in worker for Nia.
  *
  * Runs every hour. Finds completed help_requests where:
- *  - completed_at is 20–26 hours ago (window to catch if hourly run was delayed)
+ *  - completed_at is 20–26 hours ago (window to catch delayed hourly runs)
  *  - no check-in has been sent yet (nia_checkin_sent_at IS NULL)
  *
- * For each qualifying request, Nia sends a warm follow-up message:
- *  1. Saves a message to the conversation so user sees it when they open the drawer
+ * For each qualifying request, Nia sends a warm follow-up:
+ *  1. Saves a message to nia_conversations (user sees it in the drawer)
  *  2. Queues a push notification: "💙 Nia checked in on you"
  *
- * Processed in batches of 50. Runs every 60 minutes.
+ * BUG-14a FIX: Previously imported { db } from "../lib/db" and { sql } from
+ * "drizzle-orm" and { logger } from "../lib/logger" — none exist in nia-service
+ * (raw pg, not Drizzle; no logger.ts file). Rewrote to use exported `pool`
+ * from lib/db.ts directly.
+ *
+ * BUG-14b FIX: nia_conversations schema has (user_id, session_id, user_message,
+ * nia_response, is_crisis, created_at) — NOT a (role, content) pattern.
+ * Corrected all INSERTs.
+ *
+ * BUG-14c FIX: push_notification_queue table added to migrate.sql.
+ * Push inserts remain try/catch — non-fatal if table is still missing.
+ *
+ * Also fixed: help_requests column is requester_id, NOT user_id.
  */
+import { pino } from "pino";
+import { pool } from "../lib/db.js";
+
+const logger = pino({ level: "info" });
 
 const BATCH_SIZE = 50;
+const CHECKIN_SESSION_PREFIX = "nia_checkin_";
 
-// Check if the schema has the nia_checkin_sent_at column
-async function hasCheckinColumn(): Promise<boolean> {
+// ─── Schema guard ─────────────────────────────────────────────────────────────
+
+async function ensureCheckinColumn(): Promise<boolean> {
   try {
-    const result = await db.execute(sql`
-      SELECT column_name
-      FROM information_schema.columns
-      WHERE table_name = 'help_requests'
-        AND column_name = 'nia_checkin_sent_at'
-      LIMIT 1
-    `);
-    return (result.rows ?? result as any[]).length > 0;
-  } catch {
+    const result = await pool.query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_name = 'help_requests'
+         AND column_name = 'nia_checkin_sent_at'
+       LIMIT 1`
+    );
+    if (result.rows.length > 0) return true;
+
+    // Column missing — add it idempotently
+    await pool.query(
+      `ALTER TABLE help_requests
+       ADD COLUMN IF NOT EXISTS nia_checkin_sent_at TIMESTAMPTZ`
+    );
+    logger.info("general-checkin-worker: added nia_checkin_sent_at column");
+    return true;
+  } catch (err) {
+    logger.error({ err }, "general-checkin-worker: could not ensure nia_checkin_sent_at column");
     return false;
   }
 }
 
+// ─── Main cycle ───────────────────────────────────────────────────────────────
+
 async function runGeneralCheckin(): Promise<void> {
-  const hasColumn = await hasCheckinColumn();
-  if (!hasColumn) {
-    // Migrate: add the column if missing
-    try {
-      await db.execute(sql`
-        ALTER TABLE help_requests
-        ADD COLUMN IF NOT EXISTS nia_checkin_sent_at TIMESTAMPTZ
-      `);
-      logger.info("general-checkin-worker: added nia_checkin_sent_at column");
-    } catch (err) {
-      logger.error({ err }, "general-checkin-worker: could not add nia_checkin_sent_at column, skipping");
-      return;
-    }
-  }
+  const ready = await ensureCheckinColumn();
+  if (!ready) return;
 
   let offset = 0;
   let totalProcessed = 0;
 
   while (true) {
-    const rows = await db.execute(sql`
-      SELECT
-        hr.id         AS request_id,
-        hr.user_id    AS user_id,
-        u.name        AS user_name,
-        u.email       AS user_email,
-        hr.title      AS request_title,
-        hr.completed_at
-      FROM help_requests hr
-      JOIN users u ON u.id = hr.user_id
-      WHERE hr.status = 'completed'
-        AND hr.completed_at IS NOT NULL
-        AND hr.completed_at >= NOW() - INTERVAL '26 hours'
-        AND hr.completed_at <= NOW() - INTERVAL '20 hours'
-        AND hr.nia_checkin_sent_at IS NULL
-      ORDER BY hr.completed_at ASC
-      LIMIT ${BATCH_SIZE}
-      OFFSET ${offset}
-    `);
+    const result = await pool.query(
+      `SELECT
+         hr.id           AS request_id,
+         hr.requester_id AS user_id,
+         u.name          AS user_name,
+         u.email         AS user_email,
+         hr.title        AS request_title,
+         hr.completed_at
+       FROM help_requests hr
+       JOIN users u ON u.id = hr.requester_id
+       WHERE hr.status = 'completed'
+         AND hr.completed_at IS NOT NULL
+         AND hr.completed_at >= NOW() - INTERVAL '26 hours'
+         AND hr.completed_at <= NOW() - INTERVAL '20 hours'
+         AND hr.nia_checkin_sent_at IS NULL
+       ORDER BY hr.completed_at ASC
+       LIMIT $1 OFFSET $2`,
+      [BATCH_SIZE, offset]
+    );
 
-    const requests = (rows.rows ?? rows as any[]) as Array<{
+    const requests = result.rows as Array<{
       request_id: number;
       user_id: number;
       user_name: string;
@@ -89,13 +102,25 @@ async function runGeneralCheckin(): Promise<void> {
 
     for (const req of requests) {
       try {
-        // 1. Mark as sent first (idempotent guard)
-        await db.execute(sql`
-          UPDATE help_requests
-          SET nia_checkin_sent_at = NOW()
-          WHERE id = ${req.request_id}
-            AND nia_checkin_sent_at IS NULL
-        `);
+        // 1. Mark as sent first — idempotent guard prevents double check-ins
+        //    if the worker fires twice in the same window
+        const updateResult = await pool.query(
+          `UPDATE help_requests
+           SET nia_checkin_sent_at = NOW()
+           WHERE id = $1
+             AND nia_checkin_sent_at IS NULL
+           RETURNING id`,
+          [req.request_id]
+        );
+
+        // Another worker instance already processed this one — skip
+        if ((updateResult.rowCount ?? 0) === 0) {
+          logger.info(
+            { requestId: req.request_id },
+            "general-checkin-worker: already processed, skipping"
+          );
+          continue;
+        }
 
         // 2. Build warm Nia message
         const firstName = req.user_name?.split(" ")[0] ?? "friend";
@@ -105,47 +130,59 @@ async function runGeneralCheckin(): Promise<void> {
           `I was just thinking about you. Yesterday you received help with "${req.request_title}" — I hope everything went smoothly.`,
           ``,
           `Is there anything you're still working through, or anything new I can help you with today?`,
-        ].join("
-");
+        ].join("\n");
 
-        // 3. Save to nia_conversations so user sees it when they open the drawer
-        //    Only saves if nia_conversations table exists
+        // 3. Save to nia_conversations using correct schema
+        //    session_id = nia_checkin_{request_id} — groups this check-in thread
+        const sessionId = `${CHECKIN_SESSION_PREFIX}${req.request_id}`;
         try {
-          await db.execute(sql`
-            INSERT INTO nia_conversations (user_id, role, content, created_at)
-            VALUES (
-              ${req.user_id},
-              'assistant',
-              ${niaMessage},
-              NOW()
-            )
-          `);
+          await pool.query(
+            `INSERT INTO nia_conversations
+               (user_id, session_id, user_message, nia_response, is_crisis, created_at)
+             VALUES ($1, $2, $3, $4, FALSE, NOW())`,
+            [
+              req.user_id,
+              sessionId,
+              `[check-in:${req.request_id}] ${req.request_title}`,
+              niaMessage,
+            ]
+          );
         } catch (convErr) {
-          // Table might not exist yet — non-fatal
-          logger.warn({ convErr, userId: req.user_id }, "general-checkin-worker: could not save conversation message");
+          logger.warn(
+            { convErr, userId: req.user_id },
+            "general-checkin-worker: could not save conversation message"
+          );
         }
 
-        // 4. Queue push notification via pg-based queue (non-blocking)
+        // 4. Queue push notification — non-fatal if push_notification_queue missing
         try {
-          await db.execute(sql`
-            INSERT INTO push_notification_queue (user_id, title, body, data, created_at)
-            VALUES (
-              ${req.user_id},
-              '💙 Nia checked in on you',
-              ${`Hey ${firstName}! I just wanted to check in. Open Nia to chat.`},
-              ${JSON.stringify({ type: "nia_checkin", request_id: req.request_id })}::jsonb,
-              NOW()
-            )
-          `);
+          await pool.query(
+            `INSERT INTO push_notification_queue (user_id, title, body, data, created_at)
+             VALUES ($1, $2, $3, $4::jsonb, NOW())`,
+            [
+              req.user_id,
+              "💙 Nia checked in on you",
+              `Hey ${firstName}! I just wanted to check in. Open Nia to chat.`,
+              JSON.stringify({ type: "nia_checkin", request_id: req.request_id }),
+            ]
+          );
         } catch (pushErr) {
-          // Push queue table might not exist — non-fatal
-          logger.warn({ pushErr, userId: req.user_id }, "general-checkin-worker: could not queue push notification");
+          logger.warn(
+            { pushErr, userId: req.user_id },
+            "general-checkin-worker: push queue insert failed (table may not exist)"
+          );
         }
 
         totalProcessed++;
-        logger.info({ userId: req.user_id, requestId: req.request_id }, "general-checkin-worker: sent check-in");
+        logger.info(
+          { userId: req.user_id, requestId: req.request_id },
+          "general-checkin-worker: sent check-in"
+        );
       } catch (err) {
-        logger.error({ err, requestId: req.request_id }, "general-checkin-worker: error processing request");
+        logger.error(
+          { err, requestId: req.request_id },
+          "general-checkin-worker: error processing request"
+        );
       }
     }
 
@@ -156,23 +193,18 @@ async function runGeneralCheckin(): Promise<void> {
   logger.info({ totalProcessed }, "general-checkin-worker: cycle complete");
 }
 
-// ── Main entry: run once on startup then every 60 minutes ────────────────────
+// ─── Entry point ─────────────────────────────────────────────────────────────
+
 export async function startGeneralCheckinWorker(): Promise<void> {
   logger.info("general-checkin-worker: starting");
-  
+
   // Run immediately on startup
-  try {
-    await runGeneralCheckin();
-  } catch (err) {
-    logger.error({ err }, "general-checkin-worker: startup run failed");
-  }
+  try { await runGeneralCheckin(); }
+  catch (err) { logger.error({ err }, "general-checkin-worker: startup run failed"); }
 
   // Then every 60 minutes
   setInterval(async () => {
-    try {
-      await runGeneralCheckin();
-    } catch (err) {
-      logger.error({ err }, "general-checkin-worker: interval run failed");
-    }
+    try { await runGeneralCheckin(); }
+    catch (err) { logger.error({ err }, "general-checkin-worker: interval run failed"); }
   }, 60 * 60 * 1000);
 }
