@@ -1,4 +1,5 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
 import { db, usersTable } from "@workspace/db";
@@ -100,7 +101,18 @@ router.post("/verification/safety-checkin/:userId", requireAuth, requireOwnershi
 });
 
 // ── SOS panic alert ───────────────────────────────────────────────────────────
-router.post("/verification/sos", requireAuth, requireOwnership("user_id"), async (req, res) => {
+
+// ── SOS panic alert rate limiter (3 per hour per user) ────────────────────────
+const sosLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3,
+  keyGenerator: (req) => String((req as { userId?: number }).userId ?? req.ip),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "SOS rate limit exceeded. If this is a real emergency please call 911." },
+});
+
+router.post("/verification/sos", requireAuth, sosLimiter, requireOwnership("user_id"), async (req, res) => {
   const { user_id, lat, lng, message } = req.body as {
     user_id: number;
     lat?: number;

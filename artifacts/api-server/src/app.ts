@@ -7,11 +7,40 @@ import { voiceAudioRawParser } from "./routes/nia-voice";
 import { logger } from "./lib/logger";
 import { generalApiLimiter } from "./middlewares/rate-limit";
 import { parseAuth } from "./middlewares/auth";
+import helmet from "helmet";
 
 const app: Express = express();
 
 // Trust Railway / Railway proxy headers so req.ip is the real client IP
 app.set("trust proxy", 1);
+
+// Security headers — helmet with a Niakofa-tailored CSP
+// In production VITE_API_URL is served from the same origin so self covers the API.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "https://js.stripe.com", "https://maps.googleapis.com"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        imgSrc: ["'self'", "data:", "blob:", "https://*.stripe.com", "https://maps.gstatic.com", "https://*.googlevideo.com"],
+        connectSrc: [
+          "'self'",
+          "wss:",
+          "ws:",
+          "https://api.stripe.com",
+          "https://maps.googleapis.com",
+          process.env.NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app",
+        ].filter(Boolean),
+        frameSrc: ["'self'", "https://js.stripe.com", "https://hooks.stripe.com"],
+        objectSrc: ["'none'"],
+        upgradeInsecureRequests: process.env.NODE_ENV === "production" ? [] : null,
+      },
+    },
+    crossOriginEmbedderPolicy: false, // Stripe + Google Maps need cross-origin resources
+  })
+);
 
 // General API rate limit — broad protection, generous limit (200/15min)
 app.use("/api", generalApiLimiter);

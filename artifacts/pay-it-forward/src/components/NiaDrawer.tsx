@@ -29,10 +29,10 @@ const QUICK_PROMPTS = [
 ];
 
 function getSessionId(): string {
-  let id = sessionStorage.getItem("nia_session_id");
+  let id = localStorage.getItem("nia_session_id");
   if (!id) {
     id = `nia_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    sessionStorage.setItem("nia_session_id", id);
+    localStorage.setItem("nia_session_id", id);
   }
   return id;
 }
@@ -846,7 +846,7 @@ Your limit resets at ${reset}. Rest well — I'll be here when you return.
   }, [loading, sessionId, userCoords, userId, userName, userLocation, helperModeActive, activeRequestId, accountType, liveContext, userLang, speakNiaResponse]);
 
   const handleReset = () => {
-    sessionStorage.removeItem("nia_session_id");
+    localStorage.removeItem("nia_session_id");
     setHistoryLoaded(false);
     setMessages([]);
     contextFetchedRef.current = false;

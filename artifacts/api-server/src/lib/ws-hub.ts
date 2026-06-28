@@ -177,7 +177,17 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
     // ── Cleanup on close ──────────────────────────────────────────────────────
     socket.on("close", () => {
       const remaining = Math.max(0, (ipConnectionCount.get(ip) ?? 1) - 1);
-      ipConnectionCount.set(ip, remaining);
+      // Delete from map when count reaches 0 to prevent unbounded map growth
+      if (remaining === 0) {
+        ipConnectionCount.delete(ip);
+      } else {
+        ipConnectionCount.set(ip, remaining);
+      }
+      // Clean up reconnect cooldown entry after the window has passed
+      const lastConnect = ipLastConnectTime.get(ip) ?? 0;
+      if (Date.now() - lastConnect > RECONNECT_COOLDOWN_MS * 2) {
+        ipLastConnectTime.delete(ip);
+      }
       socketAlive.delete(socket);
 
       if (registeredUserId !== null) {

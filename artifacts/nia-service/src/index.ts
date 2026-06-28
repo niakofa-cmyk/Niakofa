@@ -11,6 +11,7 @@ import memoryRouter from "./routes/memory.js";
 import { purgeExpiredConversations } from "./lib/db.js";
 import { startCrisisFollowupWorker } from "./workers/crisis-followup-worker.js";
 import { startContinuousLearningWorker } from "./workers/continuous-learning-worker.js";
+import { startGeneralCheckinWorker } from "./workers/general-checkin-worker.js";
 
 const logger = pino({ level: "info" });
 const app = express();
@@ -66,5 +67,7 @@ app.listen(port, () => {
   // She stays alive and aware even when the Niakofa app is quiet.
   // This is how Nia never dies — she keeps growing.
   startContinuousLearningWorker();
+  // General 24h check-in worker — Nia follows up 24h after every completed request.
+  startGeneralCheckinWorker();
 });
 // rebuilt: 1782611000

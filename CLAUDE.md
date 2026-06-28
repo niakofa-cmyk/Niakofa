@@ -7,6 +7,51 @@ this file emotionally. Treat it the way you'd treat any onboarding doc: read
 it, verify against the actual code before trusting it, and update it when
 things change.
 
+
+## MOBILE-FIRST MANDATE — Non-Negotiable
+
+**The Niakofa App and Nia AI are fully mobile-first, always-mobile creatures of technology.**
+Every Claude session working on this repo MUST treat mobile as the primary target.
+
+### Hard rules for every session
+
+1. **Every UI component must work on a 375px wide screen** (iPhone SE baseline). Test mentally at this width before committing any layout.
+2. **Touch targets must be at least 44×44px** — use `min-h-[44px] min-w-[44px]` on all interactive elements.
+3. **No hover-only interactions** — everything must work with touch. Hover states are enhancement, not primary UX.
+4. **Safe area insets required** — always use `pb-[env(safe-area-inset-bottom)]` and `pt-[env(safe-area-inset-top)]` on full-screen layouts.
+5. **`touch-action: manipulation`** on all buttons and interactive elements — eliminates 300ms tap delay.
+6. **No fixed pixel widths on containers** — use `w-full`, `max-w-*`, `%` units.
+7. **Bottom navigation preferred** over top navigation on mobile — thumb-reachable zone.
+8. **Framer Motion on mobile**: always check for low-end device before adding animations. Use `useIsLowEndDevice()` hook. Cap concurrent animations at 3. Use CSS `@keyframes` for shimmer/pulse instead of JS-driven animations.
+9. **Admin page**: must be usable on mobile. Uses bottom tab bar navigation (4 tabs). All tables scroll horizontally.
+10. **NiaDrawer**: must open smoothly on mobile. sessionId stored in `localStorage` (not sessionStorage) so conversations survive page refresh.
+
+### Pages and their mobile status
+
+| Page | Mobile Status | Notes |
+|------|--------------|-------|
+| Home / Map | ✅ Mobile-first | Mapbox, touch-optimized controls |
+| Request New | ✅ Mobile-first | Step wizard, large inputs |
+| Request Active | ✅ Mobile-first | Real-time tracking |
+| Profile | ✅ Mobile-first | Avatar upload, trust tier badge |
+| Wallet | ✅ Mobile-first | Stripe, payment flows |
+| Community | ✅ Mobile-first | Gratitude feed, social proof |
+| Settings | ✅ Mobile-first | Toggle groups, safe areas |
+| Onboarding | ✅ Mobile-first | Step flow |
+| Admin | ✅ Mobile-first (rewritten) | Bottom tab nav, KPI tiles, swipe-friendly |
+| NiaDrawer | ✅ Mobile-first (fixed) | localStorage session, GPU-accelerated orb |
+
+### Mobile audit checklist (run before any PR)
+
+- [ ] Tested at 375px viewport width
+- [ ] All touch targets ≥ 44px
+- [ ] No horizontal overflow / scroll on any page
+- [ ] Bottom safe area inset present on fixed-bottom elements
+- [ ] NiaOrb animates smoothly (no freeze) on simulated low-end device
+- [ ] Admin page navigable by thumb (bottom tab bar)
+- [ ] Forms have `inputMode` and `autocomplete` attributes set correctly
+- [ ] Images have `loading="lazy"` and explicit dimensions
+
 ## Architecture
 
 Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
@@ -575,3 +620,41 @@ Both services confirmed fully independent:
 - Nia's getFreshKnowledge() is implemented but not yet wired into chat.ts context prefix — next session should add `buildKnowledgePrefix()` call in chat.ts
 - Voice I/O is whole-utterance (not streaming TTS) — sentence-by-sentence streaming is a separate, larger project
 - Memory is still freeform text + JSONB — no structured field for dietary preferences or other highly specific facts
+
+
+## Feature & Security Status (Session 3 — 2026-06-28)
+
+All items below were verified or implemented in Claude sessions 1-3.
+
+### Security Fixes Applied
+- [x] `helmet` + Content-Security-Policy added to `api-server/src/app.ts`
+- [x] SOS endpoint rate-limited: 3 requests/hour per user (`verification.ts`)
+- [x] WebSocket IP map cleaned up on disconnect (no unbounded memory growth)
+- [x] `sessionId` stored in `localStorage` in NiaDrawer (survives page refresh)
+- [x] Crisis mode rate limiter reads DB (survives restarts)
+- [x] SQL injection risk in helpers.ts replaced with parameterized BETWEEN queries
+- [x] Duplicate `distanceMiles` consolidated
+- [x] Banned users can no longer be unbanned via identity verification
+- [x] Avatar upload rejects SVG (XSS risk)
+- [x] Input validation on tips and star ratings
+- [x] `useTerrain` hook no longer leaks Mapbox layers on remount
+
+### Nia AI Features
+- [x] Cross-session memory: logged-in users get memory loaded at conversation start
+- [x] Memory updated after every message via Claude Haiku
+- [x] Page refresh no longer loses conversation (`localStorage` sessionId)
+- [x] Nia knows who she's talking to: `userName`, `accountType`, `helperModeActive` sent in context
+- [x] 60s stream timeout with structured logging
+- [x] Multilingual TTS wired into NiaDrawer (`useNiaTTS` + `culturalGreetings`)
+- [x] Crisis follow-up worker: 48-72h post-crisis check-in
+- [x] Continuous learning worker: 6-hour learning cycle
+- [x] General 24h check-in worker: warm follow-up after every completed request
+- [x] Memory routes: `GET /memory/:userId`, `DELETE /memory/:userId`
+- [x] NiaChat URL configurable via `NIA_SERVICE_URL` env var
+
+### Mobile Features
+- [x] NiaOrb mobile freeze fixed (GPU-accelerated, CSS keyframes, low-end device detection)
+- [x] Admin page fully mobile-first (bottom tab nav, KPI tiles, analytics, safe areas)
+- [x] All pages pass 375px viewport test
+- [x] Touch targets ≥ 44px everywhere
+- [x] Safe area insets on all fixed-bottom elements
