@@ -811,7 +811,7 @@ paths:
           content:
             text/event-stream:
               schema:
-                $ref: "#/components/schemas/NiaChatResponse"
+                $ref: "#/components/schemas/NiaChatResponseSchema"
         "400":
           description: Invalid request
         "429":
@@ -836,7 +836,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/NiaHistoryResponse"
+                $ref: "#/components/schemas/NiaHistoryResponseSchema"
         "403":
           description: Unauthorized to access this history
         "503":
@@ -883,7 +883,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/NiaShareStoryResponse"
+                $ref: "#/components/schemas/NiaShareStoryResponseSchema"
         "400":
           description: Invalid transcript
         "503":
@@ -900,7 +900,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/NiaStatusResponse"
+                $ref: "#/components/schemas/NiaStatusResponseSchema"
 
   /admin/nia-toggle:
     post:
@@ -919,7 +919,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/NiaToggleResponse"
+                $ref: "#/components/schemas/NiaToggleResponseSchema"
         "400":
           description: Invalid request
         "403":
@@ -1638,7 +1638,7 @@ components:
           type: string
           maxLength: 100
 
-    NiaChatResponse:
+    NiaChatResponseSchema:
       type: object
       properties:
         type:
@@ -1649,7 +1649,7 @@ components:
         sessionId:
           type: string
 
-    NiaHistoryResponse:
+    NiaHistoryResponseSchema:
       type: array
       items:
         type: object
@@ -1688,7 +1688,7 @@ components:
         category:
           type: string
 
-    NiaShareStoryResponse:
+    NiaShareStoryResponseSchema:
       type: object
       properties:
         story:
@@ -1696,7 +1696,7 @@ components:
         title:
           type: string
 
-    NiaStatusResponse:
+    NiaStatusResponseSchema:
       type: object
       properties:
         enabled:
@@ -1709,7 +1709,7 @@ components:
         enabled:
           type: boolean
 
-    NiaToggleResponse:
+    NiaToggleResponseSchema:
       type: object
       properties:
         ok:
