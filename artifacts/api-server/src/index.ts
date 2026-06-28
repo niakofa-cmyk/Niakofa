@@ -10,6 +10,7 @@ import { startCleanupWorker } from "./workers/cleanup-worker";
 import { startNotificationWorker } from "./workers/notification-worker";
 import { startAnomalyDetectionWorker } from "./workers/anomaly-worker";
 import { startNiaCheckinWorker } from "./workers/nia-checkin-worker";
+import { startNiaPushQueueWorker } from "./workers/nia-push-queue-worker";
 import { initNiaEnabled } from "./routes/admin-analytics";
 import { processRecurringRequests } from "./routes/recurring";
 
@@ -24,10 +25,6 @@ initWebSocketServer(server);
 server.listen(port, async () => {
   logger.info({ port }, "Server listening (HTTP + WebSocket)");
 
-  // ── Redis production guard ─────────────────────────────────────────────────
-  // Redis is required in production for reliable push notifications, payout
-  // retries, and pledge reconciliation. The setInterval fallback is only
-  // permitted in development so local dev stays frictionless.
   if (process.env["NODE_ENV"] === "production" && !isRedisConfigured()) {
     logger.error(
       "FATAL: REDIS_URL is required in production. " +
@@ -37,10 +34,7 @@ server.listen(port, async () => {
     );
   }
 
-  // ── Background workers ────────────────────────────────────────────────────
   if (isRedisConfigured()) {
-    // BullMQ workers handle everything — pledge reconciliation is a superset
-    // of the legacy setInterval scheduler, so we only run one or the other.
     logger.info("redis: configured — starting BullMQ workers");
     startPayoutWorker();
     startNotificationWorker();
@@ -52,8 +46,6 @@ server.listen(port, async () => {
     );
     logger.info("bullmq: all workers started");
   } else {
-    // No Redis — fall back to simple setInterval-based scheduler.
-    // When Redis is added, this branch is skipped automatically (no duplicate reminders).
     logger.warn(
       "redis: REDIS_URL not set — BullMQ workers disabled. " +
       "Falling back to legacy scheduler for payment reminders."
@@ -61,9 +53,13 @@ server.listen(port, async () => {
     startScheduledPaymentReminder();
   }
 
-  // Anomaly detection — runs regardless of Redis; lightweight DB polling
+  // Anomaly detection runs regardless of Redis
   startAnomalyDetectionWorker();
+  // 24h check-in worker — Nia follows up after every completed request
   startNiaCheckinWorker();
+  // Nia push queue consumer — drains push_notification_queue written by nia-service
+  // ambient-presence and general-checkin workers; delivers via sendPushToUser every 5 min
+  startNiaPushQueueWorker();
   // Seed the Nia kill-switch from DB so it survives redeploys
   initNiaEnabled();
 });
