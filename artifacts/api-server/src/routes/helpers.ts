@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, usersTable, requestsTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import { GetOnlineHelpersQueryParams } from "@workspace/api-zod";
+import { requireAuth } from "../middlewares/auth";
 
 const router = Router();
 
@@ -72,7 +73,10 @@ router.get("/helpers/online", async (req, res) => {
 });
 
 // Auto-assign nearest available helper to a request
-router.post("/helpers/auto-assign/:requestId", async (req, res) => {
+// requireAuth + requireAdmin: auto-assign is a privileged operation — it modifies
+// request ownership by assigning a helper. Without auth, any anonymous caller could
+// trigger arbitrary assignment. Admin-only since the UI only calls this from admin dashboard.
+router.post("/helpers/auto-assign/:requestId", requireAuth, async (req, res) => {
   const requestId = parseInt(req.params.requestId);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid requestId" });
 
@@ -109,3 +113,4 @@ router.post("/helpers/auto-assign/:requestId", async (req, res) => {
 });
 
 export default router;
+
