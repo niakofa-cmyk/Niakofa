@@ -440,6 +440,7 @@ export async function processRecurringRequests(): Promise<void> {
         body: `${userName} needs help with "${sub.title}". It's a ${sub.recurrence} request — tap to claim.`,
         urgency: "normal",
         requestId: newReq?.id,
+        notifType: "nearby_requests" as const,
       }).catch(() => {});
 
       logger.info({ recurringId: sub.id, newRequestId: newReq?.id }, "recurring-worker: fired");
@@ -454,3 +455,4 @@ export function dayLabel(dow: number | null | undefined): string {
   if (dow == null) return "";
   return DAYS[dow] ?? "";
 }
+
