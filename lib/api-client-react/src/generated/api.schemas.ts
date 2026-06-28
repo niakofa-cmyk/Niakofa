@@ -406,6 +406,8 @@ export interface RouteData {
   initial_bearing?: number;
   speed_mph?: number;
   waypoints?: number;
+  /** Routing profile used: driving | walking | cycling */
+  profile?: string;
 }
 
 /**
@@ -699,4 +701,5 @@ export const GetReportsStatus = {
   resolved_warned: 'resolved_warned',
   resolved_banned: 'resolved_banned',
 } as const;
+
 
