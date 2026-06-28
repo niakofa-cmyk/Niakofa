@@ -9,6 +9,7 @@ export const reportTypeEnum = pgEnum("report_type", [
   "dangerous_behavior",
   "spam",
   "other",
+  "sos",
 ]);
 
 export const reportStatusEnum = pgEnum("report_status", [

@@ -100,7 +100,7 @@ function checkWebGL(): boolean {
 
 export default function NewRequestScreen() {
   const [, setLocation] = useLocation();
-  const { currentUser, myLocation } = useAppContext();
+  const { currentUser, myLocation, userPlace } = useAppContext();
   const queryClient = useQueryClient();
   const createMutation = useCreateRequest();
   const [paymentType, setPaymentType] = useState<PaymentType>("pay_it_forward");
@@ -232,6 +232,7 @@ export default function NewRequestScreen() {
         requester_id: currentUser.id,
         lat: pinLocation.lat,
         lng: pinLocation.lng,
+        neighborhood: userPlace?.city ?? userPlace?.county ?? undefined,
         pay_it_forward_amount: values.pay_it_forward_amount,
         pledge_amount: values.pledge_amount,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

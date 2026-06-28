@@ -182,7 +182,7 @@ router.post("/stripe/webhook", async (req, res) => {
         if (transfer.destination && (transfer as any).source_transaction) {
           const sourceCharge = (transfer as any).source_transaction as string;
           // source_transaction is the charge ID; fetch the payment intent from it
-          const charge = await stripe.charges.retrieve(sourceCharge).catch(() => null);
+          const charge = await stripe!.charges.retrieve(sourceCharge).catch(() => null);
           const piId = charge?.payment_intent as string | null;
           if (piId) {
             await db

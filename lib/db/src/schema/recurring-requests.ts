@@ -1,7 +1,7 @@
 import { pgTable, serial, integer, text, real, numeric, boolean, timestamp, index } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 export const recurringRequestsTable = pgTable("recurring_requests", {
   id: serial("id").primaryKey(),

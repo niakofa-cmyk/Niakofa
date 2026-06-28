@@ -129,8 +129,17 @@ router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter,
   const bParsed = UpdateUserLocationBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { lat, lng, heading, speed } = bParsed.data;
+  // Accept GPS-resolved city from client — more accurate than server-side IP geo
+  const clientCity = typeof req.body.city === "string" && req.body.city.trim()
+    ? req.body.city.trim().slice(0, 120) : null;
+
   const [user] = await db.update(usersTable)
-    .set({ lat, lng, heading: heading ?? null, speed: speed ?? null })
+    .set({
+      lat, lng,
+      heading: heading ?? null,
+      speed: speed ?? null,
+      ...(clientCity ? { city: clientCity } : {}),
+    })
     .where(eq(usersTable.id, pParsed.data.id))
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });

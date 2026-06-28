@@ -35,7 +35,7 @@ const queryClient = new QueryClient({
 
 // NiaGlobal — mounts Nia FAB + Drawer globally, polls admin kill-switch every 60s
 function NiaGlobal() {
-  const { currentUser, myLocation, helperModeActive, activeRequestId } = useAppContext();
+  const { currentUser, myLocation, helperModeActive, activeRequestId, userPlace } = useAppContext();
   const [niaOpen, setNiaOpen] = useState(false);
   // Expose openNia globally so TopBar's center Nia orb can trigger the drawer
   useEffect(() => { (window as any).openNia = () => setNiaOpen(true); return () => { delete (window as any).openNia; }; }, []);
@@ -87,6 +87,9 @@ function NiaGlobal() {
         userId={currentUser?.id ?? null}
         userName={currentUser?.name ?? null}
         userLocation={myLocation ? { lat: myLocation.lat, lon: myLocation.lng } : null}
+        userCity={userPlace?.city ?? null}
+        userCounty={userPlace?.county ?? null}
+        userState={userPlace?.state ?? null}
         helperModeActive={helperModeActive}
         activeRequestId={activeRequestId}
         accountType={currentUser?.account_type ?? null}

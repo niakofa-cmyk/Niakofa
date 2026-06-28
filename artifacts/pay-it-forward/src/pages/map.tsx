@@ -150,7 +150,7 @@ interface CrisisState {
 
 export default function MapScreen() {
   const [, setLocation] = useLocation();
-  const { currentUser, helperModeActive, myLocation } = useAppContext();
+  const { currentUser, helperModeActive, myLocation, userPlace, userCity } = useAppContext();
   const queryClient = useQueryClient();
   const [webGLSupported] = useState(checkWebGL);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -209,7 +209,8 @@ export default function MapScreen() {
         // Fetch verified regional resources and merge — regional contacts take
         // precedence over anything the admin typed into the crisis status payload.
         try {
-          const loc = (window as unknown as { __niakofaRegion?: string }).__niakofaRegion ?? currentUser?.city ?? undefined;
+          // GPS-resolved county/city first, then IP city, then profile city
+          const loc = userPlace?.county ?? userPlace?.city ?? userCity ?? (window as unknown as { __niakofaRegion?: string }).__niakofaRegion ?? currentUser?.city ?? undefined;
           const qs = loc ? `?region=${encodeURIComponent(loc)}` : "";
           const rr = await fetch(`${base}/api/crisis/resources${qs}`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
