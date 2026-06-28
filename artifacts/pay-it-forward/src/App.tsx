@@ -23,6 +23,10 @@ import HelperProfileScreen from "@/pages/helper-profile";
 import RequestDetailScreen from "@/pages/request-detail";
 import OnboardingScreen from "@/pages/onboarding";
 import StripeConnectedScreen from "@/pages/stripe-connected";
+import HelperDashboardScreen from "@/pages/helper-dashboard";
+import HelperOnboardingScreen from "@/pages/helper-onboarding";
+import PendingApprovalScreen from "@/pages/pending-approval";
+import RecurringScreen from "@/pages/recurring";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30000, retry: 1 } },
