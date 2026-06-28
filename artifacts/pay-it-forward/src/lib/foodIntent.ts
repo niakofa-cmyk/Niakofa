@@ -213,7 +213,7 @@ export function buildFoodResourceMessage(opts: FoodResourceOptions): string {
     lg:  `Ndi wano okukuyamba okufuna emmere${name}.`,
   };
 
-  // Fort Worth / Tarrant County food resources — time-aware
+  // Local food resources (Fort Worth area) — time-aware; national: 211, feedingamerica.org
   const morningResources = [
     "🍽️ **Tarrant Area Food Bank** — open Mon–Fri 8am–5pm · tarrantareafoodbank.org",
     "📱 **Text FOOD to 877-877** — connects you to local food pantries right now",

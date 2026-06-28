@@ -407,7 +407,7 @@ export default function LoginScreen() {
       <div className="px-6 pb-safe pb-6 text-center">
         <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
           <MapPin className="w-3 h-3" />
-          Fort Worth, TX · Building community one act of kindness at a time
+          Building community one act of kindness at a time
         </p>
       </div>
     </div>

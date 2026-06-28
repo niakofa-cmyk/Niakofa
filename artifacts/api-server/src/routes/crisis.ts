@@ -33,13 +33,14 @@ router.post("/crisis/activate", requireAuth, requireAdmin(), (req, res) => {
   };
   crisisState = {
     active: true,
-    message: message ?? "⚠️ Emergency situation active in Tarrant County. Check nearby requests and stay safe.",
+    message: message ?? "⚠️ Emergency situation active in your area. Check nearby requests and stay safe.",
     level: (level as CrisisState["level"]) ?? "warning",
     activatedAt: new Date().toISOString(),
     resources: resources ?? [
-      { label: "Fort Worth Emergency Mgmt", phone: "817-392-6100" },
-      { label: "Tarrant County 211", phone: "211" },
-      { label: "Red Cross North TX", url: "https://www.redcross.org" },
+      { label: "Emergency Services (Police/Fire/Medical)", phone: "911" },
+      { label: "United Way 211 (local resources)", phone: "211" },
+      { label: "988 Suicide & Crisis Lifeline", phone: "988" },
+      { label: "American Red Cross", url: "https://www.redcross.org" },
     ],
   };
   broadcast({ type: "crisis_update", payload: crisisState });

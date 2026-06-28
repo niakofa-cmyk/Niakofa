@@ -353,7 +353,7 @@ router.post("/share-story", parseOptionalAuth, async (req: Request, res: Respons
   }
 
   const helperLine = helperName ? ` with the help of ${helperName}` : "";
-  const prompt = `You are Nia, a warm community AI for Niakofa — a mutual aid platform in Fort Worth, TX.
+  const prompt = `You are Nia, a warm community AI for Niakofa — a mutual aid platform that serves communities across the United States.
 
 ${userName} just recorded a voice story about receiving community help${helperLine}. Here is their raw transcript:
 

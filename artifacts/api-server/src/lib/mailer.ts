@@ -59,7 +59,7 @@ export async function sendReceipt(data: ReceiptData): Promise<void> {
     </div>
     <p style="text-align:center;font-size:12px;color:#64748b">
       Thank you for being part of the Niakofa community.<br>
-      Your kindness makes Fort Worth stronger.
+      Your kindness makes your community stronger.
     </p>
   </div>
 </body>

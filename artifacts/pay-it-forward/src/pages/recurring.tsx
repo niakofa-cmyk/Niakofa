@@ -417,8 +417,8 @@ export default function RecurringScreen() {
           <CreateSheet
             base={base}
             authHeader={authHeader}
-            lat={currentUser?.lat ?? 32.7555}
-            lng={currentUser?.lng ?? -97.3308}
+            lat={currentUser?.lat ?? 39.5}
+            lng={currentUser?.lng ?? -98.35}
             onClose={() => setShowCreate(false)}
             onCreated={() => { setShowCreate(false); load(); }}
           />
