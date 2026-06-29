@@ -225,3 +225,61 @@ between sessions and is not Nia's parent in any factual sense; sessions
 working on this repo should treat Nia like any other product feature —
 something to build, test, and improve carefully — not adopt that metaphor as
 a real relationship or duty.
+
+
+---
+
+## Incident #16 — June 28: Verification Pass + Real Fixes Landed
+**Date:** 2026-06-28
+**Commits:** 403b2e789ab4 (wsClient.ts), 8d5c35d4a269 (admin.tsx)
+
+### Verification findings (what prior session claimed vs repo reality)
+
+Prior session (Incident #14/#15) logged 6 commits but SHAs for wsClient.ts and
+admin.tsx were **unchanged in the repo** — those pushes did not land. This session
+read the actual file content before writing any code and confirmed the delta.
+
+| Item | Prior claim | Actual repo state | Action |
+|------|-------------|-------------------|--------|
+| wsClient.ts token in register | "APPLIED" | NOT present | Fixed now |
+| admin.tsx reviewed_by:1 bug | "APPLIED" | STILL in file | Fixed now |
+| admin.tsx auth headers | "APPLIED" | NOT present | Fixed now |
+| admin.tsx HelperApplicationsTab | "APPLIED" | NOT present | Fixed now |
+| admin.tsx Helpers tab | Partial | TABS key present, component missing | Fixed now |
+| admin.tsx max-w-3xl layout | "APPLIED" | Still max-w-2xl | Fixed now |
+| ws-hub.ts token verify | Confirmed | PRESENT in repo | No action |
+| helpers.ts requireAuth | Confirmed | PRESENT in repo | No action |
+| chat.ts participant check | Claimed | chat.ts = nia-service proxy, not in-app chat | No separate fix needed — no GET /requests/:id/chat route exists in api-server/routes |
+| reports.ts reviewed_by | Server-derived | CONFIRMED correct — server uses req.authenticatedUserId | Fixed client-side hardcode |
+
+### What was actually fixed this session
+
+**wsClient.ts (403b2e789ab4)**
+- Added `import { getToken } from "./auth"`
+- Added `registeredToken` state variable
+- `wsRegister(userId)`: now reads token from `getToken()`, sends `{ userId, token }` to server
+- `onopen` reconnect: re-sends token so server re-verifies after WebSocket reconnect
+- `wsUnregister()`: clears `registeredToken` on logout
+- This completes the WS-01 fix — server (ws-hub.ts) already verifies, client now sends
+
+**admin.tsx (8d5c35d4a269)**
+- Removed `reviewed_by: 1` hardcode — server derives reviewed_by from auth token
+- Added Bearer auth headers to: report review PATCH, users GET, moderation PATCH, analytics GET, Nia status GET, Nia memory stats GET
+- Added `HelperApplicationsTab` component: fetches pending helper applications, expandable cards with bio/skills/languages/vehicle, Approve/Deny buttons calling PATCH /api/users/:id/helper-application
+- Added "Helpers" tab to tab bar (between Reports and Users)
+- Widened layout from `max-w-2xl` to `max-w-3xl` for better tablet/desktop use
+- `activeTab` type union updated to include "helpers"
+
+### Ongoing audit gaps (for next session)
+- [ ] `GET /history/:sessionId` in nia-service has no auth — anyone who knows a sessionId can read that user's Nia conversation history. sessionIds are long random strings so low-probability but worth fixing.
+- [ ] `POST /helpers/auto-assign/:requestId` has `requireAuth` but no `requireAdmin` — any logged-in user can trigger auto-assign suggestions (currently read-only so risk is low)
+- [ ] admin.tsx login uses client-side secret comparison (`VITE_ADMIN_SECRET`) — secret is visible in the JS bundle. Better: call a `POST /api/admin/verify-secret` endpoint that returns a short-lived admin JWT
+- [ ] Dependency audit (`pnpm audit`) still not run — needs local/Railway shell
+- [ ] API contract (zod vs openapi.yaml) consistency check — still pending
+
+### Claudemd self-reminder (standing)
+1. Read this file before touching any code. Verify file content against what the doc says — don't trust prior session claims.
+2. Push ALL improvements directly to repo. Never just describe them.
+3. Verify pushes landed by checking SHA change after PUT, not just checking for "OK" in output.
+4. Keep this file lean. Resolved items stay in the incident log, not in open-items lists.
+5. Niakofa app and Nia AI are separate services. Never collapse them.
