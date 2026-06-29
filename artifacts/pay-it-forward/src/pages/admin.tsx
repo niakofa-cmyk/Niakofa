@@ -113,7 +113,7 @@ function AnalyticsTab() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`${BASE}/api/admin/stats`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${BASE}/api/admin/stats`, { headers: (() => { const t = getToken(); return t ? { Authorization: `Bearer ${t}` } : {}; })() }).then(r => r.ok ? r.json() : null).catch(() => null),
     ]).then(([statsData]) => {
       if (statsData) setStats(statsData);
       setLoading(false);
@@ -177,10 +177,11 @@ function ReportDetailSheet({ report, onClose, onReviewed }: {
     if (!valid.includes(status)) return;
     setSaving(true);
     try {
+      const token = getToken();
       const res = await fetch(`${BASE}/api/reports/${report.id}/review`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, admin_notes: notes || null, reviewed_by: 1 }),
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ status, admin_notes: notes || null }),
       });
       if (!res.ok) throw new Error("Failed");
       const updated = await res.json() as Report;
@@ -301,7 +302,8 @@ function UsersTab() {
   const [showHelperOnly, setShowHelperOnly] = useState(false);
 
   useEffect(() => {
-    fetch(`${BASE}/api/users?limit=200`)
+    const tok = getToken();
+    fetch(`${BASE}/api/users?limit=200`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} })
       .then(r => r.json())
       .then((data) => { if (Array.isArray(data)) setUsers(data); setLoading(false); })
       .catch(() => setLoading(false));
@@ -316,9 +318,10 @@ function UsersTab() {
 
   const handleAction = async (userId: number, action: "warn" | "ban") => {
     try {
+      const tok = getToken();
       await fetch(`${BASE}/api/users/${userId}/moderation`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
         body: JSON.stringify({ action }),
       });
       toast({ title: action === "ban" ? "User banned" : "Warning issued" });
@@ -476,12 +479,14 @@ function NiaTab() {
   const [memoryStats, setMemoryStats] = useState<{ users: number; entries: number } | null>(null);
 
   useEffect(() => {
-    fetch(`${BASE}/api/admin/nia-status`)
+    const niaTok = getToken();
+    const niaHdrs = niaTok ? { Authorization: `Bearer ${niaTok}` } : {};
+    fetch(`${BASE}/api/admin/nia-status`, { headers: niaHdrs })
       .then(r => r.json())
       .then((d: { enabled: boolean }) => setNiaEnabled(d.enabled))
       .catch(() => toast({ title: "Could not fetch Nia status", variant: "destructive" }));
     // Try to fetch memory stats
-    fetch(`${BASE}/api/admin/nia-memory-stats`)
+    fetch(`${BASE}/api/admin/nia-memory-stats`, { headers: niaHdrs })
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setMemoryStats(d); })
       .catch(() => {});
@@ -753,13 +758,166 @@ function ReportsTab({ authed }: { authed: boolean }) {
   );
 }
 
+
+// ── Helper Applications Tab ───────────────────────────────────────────────────
+interface PendingHelper {
+  id: number;
+  name: string;
+  email: string;
+  helper_status: string | null;
+  helper_skills: string[] | null;
+  helper_bio: string | null;
+  helper_languages: string[] | null;
+  helper_vehicle: string | null;
+  created_at: string;
+}
+
+function HelperApplicationsTab() {
+  const [pending, setPending] = useState<PendingHelper[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const [processing, setProcessing] = useState<number | null>(null);
+
+  useEffect(() => {
+    const tok = getToken();
+    fetch(`${BASE}/api/users?limit=200&helper_status=pending`, {
+      headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+    })
+      .then(r => r.json())
+      .then((users: PendingHelper[]) => {
+        if (Array.isArray(users)) setPending(users.filter(u => u.helper_status === "pending"));
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const decide = async (userId: number, decision: "approved" | "denied") => {
+    setProcessing(userId);
+    try {
+      const tok = getToken();
+      const res = await fetch(`${BASE}/api/users/${userId}/helper-application`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ status: decision }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setPending(prev => prev.filter(u => u.id !== userId));
+      toast({ title: decision === "approved" ? "Helper approved ✅" : "Application denied" });
+    } catch {
+      toast({ title: "Action failed", variant: "destructive" });
+    } finally {
+      setProcessing(null);
+      setExpanded(null);
+    }
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
+      <RefreshCw className="w-5 h-5 animate-spin" /><span className="text-sm">Loading applications…</span>
+    </div>
+  );
+
+  if (pending.length === 0) return (
+    <div className="text-center py-20">
+      <CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-green-400/40" />
+      <div className="font-black text-base text-muted-foreground">No pending applications</div>
+      <div className="text-xs text-muted-foreground/60 mt-1">All applications reviewed</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-2xl px-4 py-3">
+        <UserIcon className="w-4 h-4 text-primary shrink-0" />
+        <span className="text-sm font-bold text-primary">{pending.length} application{pending.length !== 1 ? "s" : ""} awaiting review</span>
+      </div>
+      {pending.map(u => (
+        <div key={u.id} className="bg-card border border-border rounded-2xl overflow-hidden">
+          <button
+            onClick={() => setExpanded(expanded === u.id ? null : u.id)}
+            style={{ touchAction: "manipulation" }}
+            className="w-full flex items-center gap-3 p-4 active:bg-muted/40 transition-colors text-left"
+          >
+            <div className="w-11 h-11 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 font-black text-primary">
+              {u.name[0]?.toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-black text-sm truncate">{u.name}</div>
+              <div className="text-[11px] text-muted-foreground truncate">{u.email}</div>
+              {u.helper_skills && u.helper_skills.length > 0 && (
+                <div className="flex gap-1 mt-1 flex-wrap">
+                  {u.helper_skills.slice(0, 3).map(s => (
+                    <span key={s} className="text-[10px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full font-bold">{s}</span>
+                  ))}
+                  {u.helper_skills.length > 3 && <span className="text-[10px] text-muted-foreground">+{u.helper_skills.length - 3} more</span>}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[10px] text-muted-foreground">{fmtDate(u.created_at)}</span>
+              {expanded === u.id ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+            </div>
+          </button>
+          <AnimatePresence>
+            {expanded === u.id && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden border-t border-border"
+              >
+                <div className="p-4 space-y-3">
+                  {u.helper_bio && (
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Bio</div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{u.helper_bio}</p>
+                    </div>
+                  )}
+                  {u.helper_languages && u.helper_languages.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Languages</div>
+                      <div className="flex gap-1 flex-wrap">
+                        {u.helper_languages.map(l => (
+                          <span key={l} className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">{l}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {u.helper_vehicle && (
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Transport</div>
+                      <div className="text-sm">{u.helper_vehicle}</div>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      onClick={() => decide(u.id, "denied")}
+                      disabled={processing === u.id}
+                      style={{ touchAction: "manipulation" }}
+                      className="h-11 rounded-xl border border-destructive/40 bg-destructive/10 text-destructive text-sm font-black disabled:opacity-50 active:opacity-70 transition-opacity"
+                    >{processing === u.id ? <RefreshCw className="w-4 h-4 animate-spin mx-auto" /> : "Deny"}</button>
+                    <button
+                      onClick={() => decide(u.id, "approved")}
+                      disabled={processing === u.id}
+                      style={{ touchAction: "manipulation" }}
+                      className="h-11 rounded-xl bg-green-500 text-white text-sm font-black disabled:opacity-50 active:opacity-70 transition-opacity"
+                    >{processing === u.id ? <RefreshCw className="w-4 h-4 animate-spin mx-auto" /> : "Approve ✓"}</button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Main Admin Screen ─────────────────────────────────────────────────────────
 export default function AdminScreen() {
   const [authed, setAuthed] = useState(false);
   const [adminInput, setAdminInput] = useState("");
   const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET ?? "niakofa-admin-2026";
   const [, setLocation] = useLocation();
-  const [activeTab, setActiveTab] = useState<"reports" | "users" | "nia" | "analytics">("reports");
+  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "nia" | "analytics">("reports");
 
   // ── Session timer ─────────────────────────────────────────────────────────
   const [sessionSecondsLeft, setSessionSecondsLeft] = useState(SESSION_DURATION_MS / 1000);
@@ -865,6 +1023,7 @@ export default function AdminScreen() {
 
   const TABS = [
     { key: "reports",   label: "Reports",   icon: Flag },
+    { key: "helpers",   label: "Helpers",   icon: UserIcon },
     { key: "users",     label: "Users",     icon: Users },
     { key: "nia",       label: "Nia AI",    icon: Bot },
     { key: "analytics", label: "Stats",     icon: BarChart2 },
@@ -922,9 +1081,10 @@ export default function AdminScreen() {
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 max-w-2xl mx-auto w-full px-4 pt-4 space-y-3">
+      <div className="flex-1 max-w-3xl mx-auto w-full px-4 pt-4 space-y-3">
         {activeTab === "analytics" && <AnalyticsTab />}
         {activeTab === "nia"       && <NiaTab />}
+        {activeTab === "helpers"   && <HelperApplicationsTab />}
         {activeTab === "users"     && <UsersTab />}
         {activeTab === "reports"   && <ReportsTab authed={authed} />}
       </div>
@@ -934,7 +1094,7 @@ export default function AdminScreen() {
         className="fixed bottom-0 left-0 right-0 z-20 bg-card/95 backdrop-blur-xl border-t border-border"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <div className="flex max-w-2xl mx-auto">
+        <div className="flex max-w-3xl mx-auto">
           {TABS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -953,3 +1113,4 @@ export default function AdminScreen() {
     </div>
   );
 }
+
