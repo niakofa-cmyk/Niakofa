@@ -151,7 +151,13 @@ router.get("/requests", async (req, res) => {
 
   const helperId = req.query.helper_id ? parseInt(req.query.helper_id as string) : null;
   const requesterId = req.query.requester_id ? parseInt(req.query.requester_id as string) : null;
-  const limitParam = req.query.limit ? parseInt(req.query.limit as string) : 200;
+
+  // Optional limit — enforce a hard cap to prevent memory exhaustion
+  const DEFAULT_LIMIT = 50;
+  const MAX_LIMIT = 200;
+  const limitParam = req.query.limit ? parseInt(req.query.limit as string) : null;
+  const limit = Math.min(Math.max(limitParam ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
+  const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
 
   // Build WHERE conditions in the DB — never load the full table.
   const conditions = [];
@@ -176,13 +182,17 @@ router.get("/requests", async (req, res) => {
     .from(requestsTable)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(sql`${requestsTable.created_at} DESC`)
-    .limit(Math.min(limitParam > 0 ? limitParam : 200, 500));
+    .limit(limit)
+    .offset(Math.max(offset, 0));
 
   // Exact radius filter in JS (bounding box above is a fast pre-filter)
   if (params.success && params.data.lat && params.data.lng) {
     const radius = params.data.radius_miles ?? 10;
     rows = rows.filter(r => distanceMiles(params.data.lat!, params.data.lng!, r.lat, r.lng) <= radius);
   }
+
+  // Sort newest first
+  rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   const allUserIds = [...new Set([
     ...rows.map(r => r.requester_id),
