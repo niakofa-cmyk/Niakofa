@@ -1,3 +1,5 @@
+import { getToken } from "./auth";
+
 /**
  * Niakofa WebSocket Client — shared singleton
  *
@@ -60,6 +62,7 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
 let attempt = 0;
 let registeredUserId: number | null = null;
+let registeredToken: string | null = null;
 let started = false;
 
 const handlers = new Set<Handler>();
@@ -84,9 +87,11 @@ function connect(): void {
       reconnectTimer = null;
     }
 
-    // Re-register the user after reconnect
+    // Re-register after reconnect — include Bearer token so the server
+    // can verify identity before routing targeted push events to this socket.
     if (registeredUserId !== null) {
-      send({ type: "register", payload: { userId: registeredUserId } });
+      const tok = registeredToken ?? getToken();
+      send({ type: "register", payload: { userId: registeredUserId, token: tok } });
     }
 
     // Keepalive ping every 25s
@@ -132,12 +137,14 @@ export function wsStart(): void {
  */
 export function wsRegister(userId: number): void {
   registeredUserId = userId;
-  send({ type: "register", payload: { userId } });
+  registeredToken = getToken();
+  send({ type: "register", payload: { userId, token: registeredToken } });
 }
 
 /** Clear registration (e.g. on logout). */
 export function wsUnregister(): void {
   registeredUserId = null;
+  registeredToken = null;
 }
 
 /**
@@ -173,3 +180,4 @@ if (typeof document !== "undefined") {
     }
   });
 }
+
