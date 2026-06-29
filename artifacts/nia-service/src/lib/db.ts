@@ -68,6 +68,85 @@ export async function saveConversation(
   );
 }
 
+// ── AI Cost Monitoring ─────────────────────────────────────────────────────────
+
+export interface CostLogEntry {
+  userId: number | null;
+  sessionId: string;
+  model: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  estimatedCostUsd?: number;
+  durationMs?: number;
+  success: boolean;
+  errorType?: string;
+}
+
+export async function logNiaCost(entry: CostLogEntry): Promise<void> {
+  try {
+    await pool.query(
+      `INSERT INTO nia_cost_log
+         (user_id, session_id, model, input_tokens, output_tokens, estimated_cost_usd, duration_ms, success, error_type, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+      [
+        entry.userId,
+        entry.sessionId,
+        entry.model,
+        entry.inputTokens ?? null,
+        entry.outputTokens ?? null,
+        entry.estimatedCostUsd ?? null,
+        entry.durationMs ?? null,
+        entry.success,
+        entry.errorType ?? null,
+      ]
+    );
+  } catch (err) {
+    logger.error({ err, userId: entry.userId }, "nia: failed to log cost");
+    // Non-fatal: cost logging should never break the chat flow
+  }
+}
+
+export async function getDailyCostSummary(userId?: number): Promise<{
+  date: string;
+  totalCalls: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  estimatedCostUsd: number;
+  failedCalls: number;
+}[]> {
+  const params: (number | undefined)[] = [];
+  let userFilter = "";
+  if (userId !== undefined) {
+    params.push(userId);
+    userFilter = `AND user_id = $${params.length}`;
+  }
+  
+  const result = await pool.query(
+    `SELECT
+       DATE(created_at) AS date,
+       COUNT(*) AS total_calls,
+       COALESCE(SUM(input_tokens), 0) AS total_input_tokens,
+       COALESCE(SUM(output_tokens), 0) AS total_output_tokens,
+       COALESCE(SUM(estimated_cost_usd), 0) AS estimated_cost_usd,
+       COUNT(*) FILTER (WHERE success = FALSE) AS failed_calls
+     FROM nia_cost_log
+     WHERE created_at >= NOW() - INTERVAL '30 days'
+       ${userFilter}
+     GROUP BY DATE(created_at)
+     ORDER BY date DESC`,
+    params
+  );
+  
+  return result.rows.map((r) => ({
+    date: r.date,
+    totalCalls: Number(r.total_calls),
+    totalInputTokens: Number(r.total_input_tokens),
+    totalOutputTokens: Number(r.total_output_tokens),
+    estimatedCostUsd: Number(r.estimated_cost_usd),
+    failedCalls: Number(r.failed_calls),
+  }));
+}
+
 export async function saveCheckinConversation(
   userId: number,
   sessionId: string,

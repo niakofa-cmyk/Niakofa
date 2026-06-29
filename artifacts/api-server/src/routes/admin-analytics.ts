@@ -369,4 +369,64 @@ router.post("/admin/nia-toggle", requireAuth, requireAdmin(), adminLimiter, asyn
 // Export the flag so nia-proxy can read it from the same process
 export { niaEnabled };
 
+// ── AI Cost Monitoring ────────────────────────────────────────────────────────
+// GET /admin/nia-costs — admin only. Returns daily AI cost summary from nia-service.
+router.get("/admin/nia-costs", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const days = Math.min(Math.max(parseInt(String(req.query.days ?? "7"), 10) || 7, 1), 30);
+  
+  try {
+    // Query nia-service for cost data via internal endpoint
+    const niaUrl = (process.env.NIA_SERVICE_URL ?? "http://localhost:3001").replace(/\/$/, "");
+    const response = await fetch(`${niaUrl}/admin/costs?days=${days}`, {
+      headers: {
+        "x-internal-secret": process.env.INTERNAL_SECRET ?? "",
+      },
+    });
+    
+    if (!response.ok) {
+      return res.status(502).json({ error: "Failed to fetch cost data from NIA service" });
+    }
+    
+    const costData = await response.json();
+    return res.json(costData);
+  } catch (err) {
+    logger.error({ err }, "admin: failed to fetch NIA cost data");
+    return res.status(500).json({ error: "Failed to fetch cost data" });
+  }
+});
+
+// GET /admin/nia-cost-alert — check if daily cost exceeds threshold
+router.get("/admin/nia-cost-alert", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const DAILY_COST_THRESHOLD = parseFloat(process.env.NIA_DAILY_COST_THRESHOLD ?? "50.00");
+  
+  try {
+    const niaUrl = (process.env.NIA_SERVICE_URL ?? "http://localhost:3001").replace(/\/$/, "");
+    const response = await fetch(`${niaUrl}/admin/costs?days=1`, {
+      headers: {
+        "x-internal-secret": process.env.INTERNAL_SECRET ?? "",
+      },
+    });
+    
+    if (!response.ok) {
+      return res.status(502).json({ error: "Failed to fetch cost data" });
+    }
+    
+    const costData = await response.json();
+    const todayCost = costData.daily?.[0]?.estimatedCostUsd ?? 0;
+    const isAlert = todayCost > DAILY_COST_THRESHOLD;
+    
+    return res.json({
+      alert: isAlert,
+      threshold: DAILY_COST_THRESHOLD,
+      todayCost,
+      message: isAlert 
+        ? `Daily AI cost $${todayCost.toFixed(2)} exceeds threshold $${DAILY_COST_THRESHOLD.toFixed(2)}`
+        : `Daily AI cost $${todayCost.toFixed(2)} within threshold $${DAILY_COST_THRESHOLD.toFixed(2)}`,
+    });
+  } catch (err) {
+    logger.error({ err }, "admin: failed to check cost alert");
+    return res.status(500).json({ error: "Failed to check cost alert" });
+  }
+});
+
 export default router;

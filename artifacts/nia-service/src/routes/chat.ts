@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { checkSafety } from "../lib/safety.js";
-import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit, getActiveRequest, getUserMemory, upsertUserMemory, isNiaEnabled } from "../lib/db.js";
+import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit, getActiveRequest, getUserMemory, upsertUserMemory, isNiaEnabled, logNiaCost } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
 import { injectLocation, buildLocationPrefix, buildAppContextPrefix, LocationContext } from "../middleware/location.js";
 import { pino } from "pino";
@@ -125,6 +125,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   res.setHeader("Connection", "keep-alive");
 
   let fullResponse = "";
+  let streamStartTime = 0;
 
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => {
@@ -172,6 +173,10 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       { signal: controller.signal }
     );
 
+    let inputTokens = 0;
+    let outputTokens = 0;
+    const streamStartTime = Date.now();
+
     for await (const chunk of stream) {
       if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
         const text = chunk.delta.text;
@@ -185,12 +190,36 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       ) {
         fullResponse += (chunk.delta as any).partial_json;
       }
+      // Track usage from message_start event
+      if (chunk.type === "message_start" && (chunk as any).message?.usage?.input_tokens) {
+        inputTokens = (chunk as any).message.usage.input_tokens;
+      }
+      // Track output tokens from message_delta event
+      if (chunk.type === "message_delta" && (chunk as any).usage?.output_tokens) {
+        outputTokens = (chunk as any).usage.output_tokens;
+      }
     }
+
+    const durationMs = Date.now() - streamStartTime;
+    // Estimate cost: Claude Sonnet 4.5 = $3/1M input tokens, $15/1M output tokens
+    const estimatedCostUsd = (inputTokens * 0.000003) + (outputTokens * 0.000015);
 
     clearTimeout(timeoutHandle);
     res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
     res.end();
     await saveConversation(userId, sessionId, message, fullResponse);
+
+    // Log cost for monitoring
+    await logNiaCost({
+      userId,
+      sessionId,
+      model: "claude-sonnet-4-5",
+      inputTokens,
+      outputTokens,
+      estimatedCostUsd,
+      durationMs,
+      success: true,
+    });
 
     if (userId) {
       extractAndUpdateMemory(userId, userMemory, message, fullResponse, anthropic).catch(() => {});
@@ -199,6 +228,17 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
     clearTimeout(timeoutHandle);
     const isTimeout = err instanceof Error && err.name === "AbortError";
     logger.error({ err, userId, sessionId, isTimeout }, "nia: chat error");
+    
+    // Log failed cost attempt
+    await logNiaCost({
+      userId,
+      sessionId,
+      model: "claude-sonnet-4-5",
+      success: false,
+      errorType: isTimeout ? "timeout" : "stream_error",
+      durationMs: Date.now() - streamStartTime,
+    }).catch(() => {});
+    
     res.write(`data: ${JSON.stringify({ type: "error", message: isTimeout ? "Nia took too long to respond. Please try again." : "Nia is unavailable right now. Please try again." })}\n\n`);
     res.end();
   }
@@ -310,6 +350,71 @@ router.get("/history/:sessionId", async (req: Request, res: Response) => {
 });
 
 router.get("/health", (_req, res) => res.json({ status: "ok", service: "nia" }));
+
+// ── Admin Cost Monitoring Endpoints ───────────────────────────────────────────
+// GET /admin/costs — internal only, requires x-internal-secret header
+router.get("/admin/costs", async (req: Request, res: Response) => {
+  const secret = req.headers["x-internal-secret"];
+  if (!secret || secret !== (process.env.INTERNAL_SECRET ?? "")) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  
+  const days = Math.min(Math.max(parseInt(String(req.query.days ?? "7"), 10) || 7, 1), 30);
+  
+  try {
+    const summary = await getDailyCostSummary();
+    // Filter to requested days
+    const filtered = summary.slice(0, days);
+    
+    // Calculate totals
+    const totalCalls = filtered.reduce((sum, d) => sum + d.totalCalls, 0);
+    const totalInputTokens = filtered.reduce((sum, d) => sum + d.totalInputTokens, 0);
+    const totalOutputTokens = filtered.reduce((sum, d) => sum + d.totalOutputTokens, 0);
+    const totalCost = filtered.reduce((sum, d) => sum + d.estimatedCostUsd, 0);
+    const totalFailed = filtered.reduce((sum, d) => sum + d.failedCalls, 0);
+    
+    return res.json({
+      daily: filtered,
+      summary: {
+        totalCalls,
+        totalInputTokens,
+        totalOutputTokens,
+        totalCostUsd: totalCost,
+        totalFailed,
+        averageCostPerCall: totalCalls > 0 ? totalCost / totalCalls : 0,
+      },
+      period: {
+        days,
+        startDate: filtered[filtered.length - 1]?.date ?? null,
+        endDate: filtered[0]?.date ?? null,
+      },
+    });
+  } catch (err) {
+    logger.error({ err }, "nia: failed to get cost summary");
+    return res.status(500).json({ error: "Failed to get cost summary" });
+  }
+});
+
+// GET /admin/costs/user/:userId — internal only, per-user cost breakdown
+router.get("/admin/costs/user/:userId", async (req: Request, res: Response) => {
+  const secret = req.headers["x-internal-secret"];
+  if (!secret || secret !== (process.env.INTERNAL_SECRET ?? "")) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  
+  const userId = parseInt(req.params.userId);
+  if (isNaN(userId)) {
+    return res.status(400).json({ error: "Invalid userId" });
+  }
+  
+  try {
+    const summary = await getDailyCostSummary(userId);
+    return res.json({ userId, daily: summary });
+  } catch (err) {
+    logger.error({ err, userId }, "nia: failed to get user cost summary");
+    return res.status(500).json({ error: "Failed to get user cost summary" });
+  }
+});
 
 
 // ── PHASE 7b: Proactive check-in endpoint (called by nia-checkin-worker) ──

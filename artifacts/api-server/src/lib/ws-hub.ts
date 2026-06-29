@@ -44,7 +44,15 @@ export type WsEventType =
   | "ping"
   | "new_report"
   | "report_reviewed"
-  | "chat_message";
+  | "chat_message"
+  // NIA AI event types — event-driven communication bridge
+  | "nia_message"
+  | "nia_checkin"
+  | "nia_crisis_alert"
+  | "nia_memory_update"
+  | "nia_typing"
+  | "nia_status"
+  | "nia_cost_alert";
 
 export interface WsEvent {
   type: WsEventType;
@@ -260,6 +268,42 @@ export function broadcastRequestEvent(
   payload: unknown
 ): void {
   broadcast({ type: standardType, payload });
+  if (standardType !== legacyType) {
+    broadcast({ type: legacyType, payload });
+  }
+}
+
+// ── NIA AI Event Helpers ──────────────────────────────────────────────────────
+/**
+ * Emit a NIA AI event to a specific user via WebSocket.
+ * Used for real-time status updates, typing indicators, and message delivery.
+ */
+export function sendNiaEventToUser(userId: number, type: WsEventType, payload: unknown): void {
+  sendToUser(userId, { type, payload });
+}
+
+/**
+ * Broadcast a NIA AI event to all connected clients.
+ * Used for global status updates, cost alerts, and system-wide NIA notifications.
+ */
+export function broadcastNiaEvent(type: WsEventType, payload: unknown): void {
+  broadcast({ type, payload });
+}
+
+/**
+ * Type guard for NIA AI event types.
+ */
+export function isNiaEventType(type: string): type is WsEventType {
+  return [
+    "nia_message",
+    "nia_checkin",
+    "nia_crisis_alert",
+    "nia_memory_update",
+    "nia_typing",
+    "nia_status",
+    "nia_cost_alert",
+  ].includes(type);
+}
   if (standardType !== legacyType) {
     broadcast({ type: legacyType, payload });
   }

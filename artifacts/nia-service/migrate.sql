@@ -80,3 +80,25 @@ CREATE TABLE IF NOT EXISTS push_notification_queue (
 CREATE INDEX IF NOT EXISTS push_notification_queue_unsent_idx
   ON push_notification_queue (user_id, created_at)
   WHERE sent_at IS NULL;
+
+-- ── AI Cost Monitoring ────────────────────────────────────────────────────────
+-- Tracks Anthropic API usage per user/session for cost transparency and alerts.
+-- Written by: routes/chat.ts after every successful/failed AI call.
+-- Consumed by: admin dashboard, cost alert worker, billing reconciliation.
+CREATE TABLE IF NOT EXISTS nia_cost_log (
+  id           BIGSERIAL PRIMARY KEY,
+  user_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  session_id   TEXT NOT NULL,
+  model        TEXT NOT NULL,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  estimated_cost_usd NUMERIC(10,6),
+  duration_ms  INTEGER,
+  success      BOOLEAN NOT NULL DEFAULT TRUE,
+  error_type   TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS nia_cost_log_user_idx ON nia_cost_log (user_id, created_at);
+CREATE INDEX IF NOT EXISTS nia_cost_log_session_idx ON nia_cost_log (session_id, created_at);
+CREATE INDEX IF NOT EXISTS nia_cost_log_daily_idx ON nia_cost_log (DATE(created_at), user_id);

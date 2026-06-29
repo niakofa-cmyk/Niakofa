@@ -36,9 +36,38 @@ router.post("/gratitude", async (req, res) => {
     return res.status(400).json({ error: "Invalid body", details: parsed.error.issues });
   }
 
+  const data = parsed.data;
+
+  // ── GRATITUDE DUPLICATION PREVENTION ────────────────────────────────────────
+  // Check for duplicate gratitude posts within the last 24 hours for the same
+  // request_id + author_id + helper_id combination. This prevents users from
+  // accidentally posting multiple thank-yous for the same completed request.
+  if (data.request_id && data.helper_id) {
+    const existing = await db
+      .select()
+      .from(gratitudePostsTable)
+      .where(
+        and(
+          eq(gratitudePostsTable.request_id, data.request_id),
+          eq(gratitudePostsTable.author_id, data.author_id),
+          eq(gratitudePostsTable.helper_id, data.helper_id),
+          gte(gratitudePostsTable.created_at, sql`NOW() - INTERVAL '24 hours'`)
+        )
+      )
+      .limit(1);
+
+    if (existing.length > 0) {
+      return res.status(409).json({
+        error: "Duplicate gratitude post",
+        message: "You already posted a thank-you for this request within the last 24 hours. Please edit your existing post instead.",
+        existing_post_id: existing[0].id,
+      });
+    }
+  }
+
   const [post] = await db
     .insert(gratitudePostsTable)
-    .values(parsed.data)
+    .values(data)
     .returning();
 
   // Push to all connected clients — Community feed updates live

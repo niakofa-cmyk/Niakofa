@@ -22,6 +22,7 @@
 import { pool } from "@workspace/db";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
+import { sendNiaEventToUser } from "../lib/ws-hub";
 
 const BATCH_SIZE = 100;
 const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -102,6 +103,20 @@ async function drainPushQueue(): Promise<void> {
           urgency: "normal",
           notifType,
         });
+        
+        // Emit WebSocket event for real-time NIA notification delivery
+        const niaEventType = rawType === "nia_checkin" || rawNotifType === "nia_checkin" 
+          ? "nia_checkin" 
+          : rawType === "nia_crisis_alert" || rawNotifType === "nia_crisis_alert"
+          ? "nia_crisis_alert"
+          : "nia_message";
+        sendNiaEventToUser(row.user_id, niaEventType, { 
+          title: row.title, 
+          body: row.body, 
+          data: row.data,
+          delivered: true 
+        });
+        
         delivered++;
       } catch (err) {
         logger.warn({ err, userId: row.user_id, rowId: row.id }, "nia-push-queue-worker: delivery failed");

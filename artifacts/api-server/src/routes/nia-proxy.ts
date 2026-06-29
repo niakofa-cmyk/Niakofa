@@ -18,6 +18,7 @@ import { parseAuth } from "../middlewares/auth";
 import { crisisAwareChatLimiter, niaChatHistoryLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { niaEnabled } from "./admin-analytics";
+import { sendNiaEventToUser, broadcastNiaEvent } from "../lib/ws-hub";
 
 const router = Router();
 
@@ -134,9 +135,18 @@ router.post(
 
       if (!upstream.ok) {
         logger.warn({ status: upstream.status }, "nia-proxy: upstream error");
+        // Emit nia_status event to inform client of NIA unavailability
+        if (userId) {
+          sendNiaEventToUser(userId, "nia_status", { status: "unavailable", reason: "upstream_error" });
+        }
         return res
           .status(upstream.status)
           .json({ error: "Nia is unavailable right now. Please try again." });
+      }
+
+      // Emit nia_typing event to indicate NIA is processing
+      if (userId) {
+        sendNiaEventToUser(userId, "nia_typing", { status: "started", sessionId });
       }
 
       res.setHeader("Content-Type", "text/event-stream");
@@ -155,9 +165,18 @@ router.post(
         if (!res.writableEnded) res.write(value);
       }
       if (!res.writableEnded) res.end();
+      // Emit nia_typing stopped and nia_message delivered events
+      if (userId) {
+        sendNiaEventToUser(userId, "nia_typing", { status: "stopped", sessionId });
+        sendNiaEventToUser(userId, "nia_message", { status: "delivered", sessionId });
+      }
       return;
     } catch (err) {
       logger.error({ err }, "nia-proxy: upstream fetch failed");
+      // Emit nia_status error event to inform client
+      if (userId) {
+        sendNiaEventToUser(userId, "nia_status", { status: "error", reason: "fetch_failed", sessionId });
+      }
       if (!res.headersSent) {
         res.setHeader("Content-Type", "text/event-stream");
         res.setHeader("Cache-Control", "no-cache");
@@ -269,7 +288,16 @@ router.post("/nia/share-story", parseAuth, async (req: Request, res: Response) =
       }),
     });
     if (!upstream.ok) return res.status(upstream.status).json({ error: "Failed to craft story" });
-    return res.json(await upstream.json());
+    
+    // Emit nia_memory_update event when story is successfully crafted
+    const result = await upstream.json();
+    sendNiaEventToUser(userId, "nia_memory_update", { 
+      type: "story_crafted", 
+      story: result.story,
+      category: result.category 
+    });
+    
+    return res.json(result);
   } catch (err) {
     logger.error({ err }, "nia-proxy: share-story failed");
     return res.status(500).json({ error: "Failed to craft story" });

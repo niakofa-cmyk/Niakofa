@@ -661,4 +661,187 @@ router.get("/requests/:id/helpers", requireAuth, async (req, res) => {
   return res.json(members);
 });
 
+// POST /requests/:id/rate
+// Either participant (requester or helper) can rate the other after completion.
+// Stars 1–5 are required; a short review text is optional.
+// Recomputes the ratee's trust_score as a scaled average across all received ratings.
+router.post("/requests/:id/rate", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id));
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  const { stars, review } = req.body as { stars?: number; review?: string };
+  const starsNum = Number(stars);
+  if (!starsNum || starsNum < 1 || starsNum > 5 || !Number.isInteger(starsNum)) {
+    return res.status(400).json({ error: "stars must be an integer from 1 to 5" });
+  }
+
+  const [request] = await db.select()
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.status !== "completed") {
+    return res.status(409).json({ error: "Can only rate completed requests" });
+  }
+
+  const isRequester = request.requester_id === callerId;
+  const isHelper = request.helper_id === callerId;
+
+  if (!isRequester && !isHelper) {
+    return res.status(403).json({ error: "Only participants can rate this request" });
+  }
+  if (!request.helper_id) {
+    return res.status(400).json({ error: "No helper to rate" });
+  }
+
+  const role = isRequester ? "requester" : "helper";
+  const rateeId = isRequester ? request.helper_id : request.requester_id;
+
+  // One rating per person per request
+  const [existing] = await db.select({ id: ratingsTable.id })
+    .from(ratingsTable)
+    .where(and(eq(ratingsTable.request_id, requestId), eq(ratingsTable.rater_id, callerId)))
+    .limit(1);
+  if (existing) return res.status(409).json({ error: "You have already rated this request" });
+
+  // ── DUPLICATE RECOGNITION PREVENTION ─────────────────────────────────────────
+  // Prevent duplicate recognition (gratitude posts) for the same request.
+  // A user can only create one gratitude post per request to avoid spamming
+  // the community feed with multiple thank-yous for the same help session.
+  const [existingGratitude] = await db.select({ id: gratitudePostsTable.id })
+    .from(gratitudePostsTable)
+    .where(eq(gratitudePostsTable.request_id, requestId))
+    .limit(1);
+  if (existingGratitude) {
+    return res.status(409).json({
+      error: "A gratitude post already exists for this request",
+      message: "A thank-you post has already been created for this request. You can edit your existing post instead.",
+      existing_post_id: existingGratitude.id,
+    });
+  }
+
+  const [rating] = await db.insert(ratingsTable).values({
+    request_id: requestId,
+    rater_id: callerId,
+    ratee_id: rateeId,
+    stars: starsNum,
+    review: typeof review === "string" && review.trim() ? review.trim() : null,
+    role,
+  }).returning();
+
+  // Recompute trust_score for ratee: average-stars × 20 (1 star = 20, 5 stars = 100)
+  const allRatings = await db.select({ stars: ratingsTable.stars })
+    .from(ratingsTable)
+    .where(eq(ratingsTable.ratee_id, rateeId));
+  const avgStars = allRatings.reduce((s, r) => s + r.stars, 0) / allRatings.length;
+  const newTrustScore = Math.round(avgStars * 20);
+
+  await db.update(usersTable)
+    .set({ trust_score: newTrustScore })
+    .where(eq(usersTable.id, rateeId));
+
+  // ── COMMUNITY SCORE SYNCHRONIZATION ───────────────────────────────────────────
+  // Update community goodwill score for the helper when a rating is submitted.
+  // This synchronizes the helper's goodwill score with their community contributions.
+  if (isRequester && request.helper_id) {
+    const [helperStats] = await db.select({
+      totalRatings: sql<number>`COUNT(*)::int`,
+      avgStars: sql<number>`AVG(${ratingsTable.stars})::float`,
+      totalGoodwill: sql<number>`COALESCE(SUM(${gratitudePostsTable.likes}), 0)::int`,
+    })
+    .from(ratingsTable)
+    .leftJoin(gratitudePostsTable, eq(gratitudePostsTable.helper_id, request.helper_id))
+    .where(eq(ratingsTable.ratee_id, request.helper_id));
+    
+    const communityScore = Math.round(
+      (helperStats?.avgStars ?? 0) * 20 + 
+      (helperStats?.totalGoodwill ?? 0) * 2 +
+      (helperStats?.totalRatings ?? 0) * 5
+    );
+    
+    await db.update(usersTable)
+      .set({ goodwill_score: communityScore })
+      .where(eq(usersTable.id, request.helper_id));
+      
+    logger.info({
+      helper_id: request.helper_id,
+      community_score: communityScore,
+      ratings_count: helperStats?.totalRatings ?? 0,
+    }, "community-score: synchronized helper goodwill score");
+  }
+
+  logger.info({ request_id: requestId, rater_id: callerId, ratee_id: rateeId, stars: starsNum }, "rate: submitted");
+
+  return res.status(201).json(rating);
+});
+
+export default router;
+    .from(gratitudePostsTable)
+    .where(eq(gratitudePostsTable.request_id, requestId))
+    .limit(1);
+  if (existingGratitude) {
+    return res.status(409).json({
+      error: "A gratitude post already exists for this request",
+      message: "A thank-you post has already been created for this request. You can edit your existing post instead.",
+      existing_post_id: existingGratitude.id,
+    });
+  }
+
+  const [rating] = await db.insert(ratingsTable).values({
+    request_id: requestId,
+    rater_id: callerId,
+    ratee_id: rateeId,
+    stars: starsNum,
+    review: typeof review === "string" && review.trim() ? review.trim() : null,
+    role,
+  }).returning();
+
+  // Recompute trust_score for ratee: average-stars × 20 (1 star = 20, 5 stars = 100)
+  const allRatings = await db.select({ stars: ratingsTable.stars })
+    .from(ratingsTable)
+    .where(eq(ratingsTable.ratee_id, rateeId));
+  const avgStars = allRatings.reduce((s, r) => s + r.stars, 0) / allRatings.length;
+  const newTrustScore = Math.round(avgStars * 20);
+
+  await db.update(usersTable)
+    .set({ trust_score: newTrustScore })
+    .where(eq(usersTable.id, rateeId));
+
+  // ── COMMUNITY SCORE SYNCHRONIZATION ───────────────────────────────────────────
+  // Update community goodwill score for the helper when a rating is submitted.
+  // This synchronizes the helper's goodwill score with their community contributions.
+  if (isRequester && request.helper_id) {
+    const [helperStats] = await db.select({
+      totalRatings: sql<number>`COUNT(*)::int`,
+      avgStars: sql<number>`AVG(${ratingsTable.stars})::float`,
+      totalGoodwill: sql<number>`COALESCE(SUM(${gratitudePostsTable.likes}), 0)::int`,
+    })
+    .from(ratingsTable)
+    .leftJoin(gratitudePostsTable, eq(gratitudePostsTable.helper_id, request.helper_id))
+    .where(eq(ratingsTable.ratee_id, request.helper_id));
+    
+    const communityScore = Math.round(
+      (helperStats?.avgStars ?? 0) * 20 + 
+      (helperStats?.totalGoodwill ?? 0) * 2 +
+      (helperStats?.totalRatings ?? 0) * 5
+    );
+    
+    await db.update(usersTable)
+      .set({ goodwill_score: communityScore })
+      .where(eq(usersTable.id, request.helper_id));
+      
+    logger.info({
+      helper_id: request.helper_id,
+      community_score: communityScore,
+      ratings_count: helperStats?.totalRatings ?? 0,
+    }, "community-score: synchronized helper goodwill score");
+  }
+
+  logger.info({ request_id: requestId, rater_id: callerId, ratee_id: rateeId, stars: starsNum }, "rate: submitted");
+
+  return res.status(201).json(rating);
+});
+
 export default router;

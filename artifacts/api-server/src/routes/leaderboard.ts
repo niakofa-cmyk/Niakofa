@@ -168,4 +168,75 @@ router.get("/leaderboard/cities", async (_req, res) => {
   return res.json(Array.from(cities).sort());
 });
 
+// ── POST /leaderboard/recalculate — force leaderboard recalculation ────────────
+// Admin only. Invalidates cache and recalculates all rankings.
+router.post("/leaderboard/recalculate", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  try {
+    await invalidateLeaderboardCache();
+    
+    // Recalculate all helper trust scores and goodwill scores
+    const helpers = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.is_helper, true));
+    
+    let recalculated = 0;
+    for (const helper of helpers) {
+      // Recalculate help_count from actual completed requests
+      const completedCount = await db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(requestsTable)
+        .where(
+          and(
+            eq(requestsTable.helper_id, helper.id),
+            eq(requestsTable.status, "completed")
+          )
+        );
+      
+      const actualHelpCount = completedCount[0]?.count ?? 0;
+      
+      // Recalculate goodwill_score from gratitude posts
+      const goodwillResult = await db
+        .select({ total: sql<number>`COALESCE(SUM(${gratitudePostsTable.likes}), 0)::int` })
+        .from(gratitudePostsTable)
+        .where(eq(gratitudePostsTable.helper_id, helper.id));
+      
+      const actualGoodwill = goodwillResult[0]?.total ?? 0;
+      
+      // Update if different
+      if (actualHelpCount !== helper.help_count || actualGoodwill !== helper.goodwill_score) {
+        await db
+          .update(usersTable)
+          .set({
+            help_count: actualHelpCount,
+            goodwill_score: actualGoodwill,
+          })
+          .where(eq(usersTable.id, helper.id));
+        recalculated++;
+      }
+    }
+    
+    // Fetch fresh leaderboard after recalculation
+    const entries = await fetchLeaderboard();
+    
+    broadcast({
+      type: "leaderboard_update",
+      payload: {
+        entries,
+        recalculated,
+        message: `Leaderboard recalculated: ${recalculated} helpers updated`,
+      },
+    });
+    
+    return res.json({
+      ok: true,
+      recalculated,
+      message: `Leaderboard recalculated: ${recalculated} helpers updated`,
+    });
+  } catch (err) {
+    logger.error({ err }, "leaderboard: recalculation failed");
+    return res.status(500).json({ error: "Failed to recalculate leaderboard" });
+  }
+});
+
 export default router;
