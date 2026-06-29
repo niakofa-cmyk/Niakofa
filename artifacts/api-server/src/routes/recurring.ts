@@ -441,7 +441,9 @@ export async function processRecurringRequests(): Promise<void> {
         urgency: "normal",
         requestId: newReq?.id,
         notifType: "nearby_requests" as const,
-      }).catch(() => {});
+      }).catch(() => {
+        // Non-fatal: recurring request push failed — subscription will retry on next cycle
+      });
 
       logger.info({ recurringId: sub.id, newRequestId: newReq?.id }, "recurring-worker: fired");
     } catch (err) {

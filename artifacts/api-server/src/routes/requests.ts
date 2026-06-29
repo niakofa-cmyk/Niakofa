@@ -257,7 +257,10 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
     };
     // Notify helpers within 15 miles of the request; fall back to all helpers if no nearby ones found
     sendPushToNearbyHelpers(request.lat, request.lng, 15, payload).catch(() => {
-      sendPushToAllHelpers(payload).catch(() => {});
+      // Non-fatal: nearby helper push failed — try broadcast fallback
+      sendPushToAllHelpers(payload).catch(() => {
+        // Non-fatal: broadcast fallback also failed — request is still created
+      });
     });
   } else {
     // For medium/low urgency, notify helpers within 5 miles
@@ -266,7 +269,10 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
       body: request.title,
       urgency: request.urgency,
       requestId: request.id,
-    }).catch(() => {});
+      notifType: "nearby_requests" as const,
+    }).catch(() => {
+      // Non-fatal: nearby helper push failed — request is still created
+    });
   }
 
   return res.status(201).json(enriched);
@@ -479,7 +485,9 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
           platform_fee_cents: platformFeeCents,
           stripe_account_id:  stripeAcct.stripe_account_id,
           request_title:      request.title,
-        }).catch(() => {});
+        }).catch(() => {
+          // Non-fatal: payout retry enqueue failure — manual reconciliation needed
+        });
       }
     }
   }
@@ -492,7 +500,9 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
     helperId,
     helperBefore?.help_count ?? 0,
     helperBefore?.trust_score ?? 0
-  ).catch(() => {});
+  ).catch(() => {
+    // Non-fatal: leaderboard broadcast failure doesn't affect request completion
+  });
 
 
   // Fire receipt email async (non-blocking)
@@ -507,7 +517,9 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
       amount: request.payment_type === "immediate" ? (request.pay_it_forward_amount ?? undefined) : undefined,
       paymentType: request.payment_type,
       completedAt: new Date(),
-    }).catch(() => {});
+    }).catch(() => {
+      // Non-fatal: receipt email failure doesn't affect request completion
+    });
   }
 
   // Prompt the requester to write a public thank-you post

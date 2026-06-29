@@ -22,6 +22,32 @@
  * Push inserts remain try/catch — non-fatal if table is still missing.
  *
  * Also fixed: help_requests column is requester_id, NOT user_id.
+ *
+ * ─── DESIGN DECISION: BUG-15a ──────────────────────────────────────────────
+ *
+ * This worker (nia-service) and the api-server's nia-checkin-worker.ts
+ * BOTH run independently. This is INTENTIONAL REDUNDANCY, not a bug.
+ *
+ * Rationale:
+ *  • The api-server worker coordinates timing (23–25h window) and calls the
+ *    nia-service /checkin endpoint for streaming AI generation.
+ *  • This nia-service worker is a FALLBACK: if the api-server worker is down,
+ *    delayed, or the /checkin endpoint fails, this worker still ensures users
+ *    receive their 24-hour check-in within the 20–26h window.
+ *
+ * Idempotency guard:
+ *  • Both workers UPDATE help_requests SET nia_checkin_sent_at = NOW()
+ *    with a WHERE nia_checkin_sent_at IS NULL clause.
+ *  • The first worker to reach a given request wins; the second sees
+ *    rowCount === 0 and skips (see "already processed, skipping" log).
+ *
+ * Monitoring: Watch for "already processed, skipping" log lines. Occasional
+ * hits are expected (race conditions). Sustained high counts indicate one
+ * worker is consistently behind or failing.
+ *
+ * Recommendation: Keep both workers. The redundancy cost (one extra DB query
+ * per hour) is negligible compared to the reliability gain of ensuring no user
+ * misses their Nia check-in due to a single service failure.
  */
 import { pino } from "pino";
 import { pool } from "../lib/db.js";

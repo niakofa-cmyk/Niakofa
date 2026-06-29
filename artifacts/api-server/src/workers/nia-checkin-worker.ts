@@ -14,6 +14,33 @@
  *
  * The check-in window is "completed between 23h and 25h ago" so we catch
  * everything that falls in the hourly scan gap regardless of server timing.
+ *
+ * ─── DESIGN DECISION: BUG-15a ──────────────────────────────────────────────
+ *
+ * This worker (api-server) and the nia-service's general-checkin-worker.ts
+ * BOTH run independently. This is INTENTIONAL REDUNDANCY, not a bug.
+ *
+ * Rationale:
+ *  • This worker is the PRIMARY coordinator: it calls the nia-service /checkin
+ *    endpoint for streaming AI generation and sends web-push notifications.
+ *  • The nia-service worker is a FALLBACK: if this worker is down, delayed,
+ *    or the /checkin endpoint fails, the nia-service worker still ensures
+ *    users receive their 24-hour check-in within the 20–26h window.
+ *
+ * Idempotency guard:
+ *  • Both workers UPDATE help_requests SET nia_checkin_sent_at = NOW()
+ *    with a WHERE nia_checkin_sent_at IS NULL clause.
+ *  • The first worker to reach a given request wins; the second sees
+ *    rowCount === 0 and skips.
+ *
+ * Monitoring: Watch for "nia-checkin: sent" log lines from this worker and
+ * "general-checkin-worker: already processed, skipping" from the nia-service
+ * worker. Occasional skipping is expected (race conditions). Sustained high
+ * counts indicate this worker is consistently behind or failing.
+ *
+ * Recommendation: Keep both workers. The redundancy cost (one extra DB query
+ * per hour) is negligible compared to the reliability gain of ensuring no user
+ * misses their Nia check-in due to a single service failure.
  */
 
 import { db, requestsTable, usersTable } from "@workspace/db";

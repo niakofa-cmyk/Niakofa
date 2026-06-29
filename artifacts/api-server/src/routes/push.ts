@@ -133,7 +133,9 @@ async function deliverToSubs(subs: webpush.PushSubscription[], payload: PushPayl
           if ((err as { statusCode?: number }).statusCode === 410) {
             db.delete(pushSubscriptionsTable)
               .where(eq(pushSubscriptionsTable.endpoint, sub.endpoint))
-              .catch(() => {});
+              .catch(() => {
+                // Non-fatal: subscription cleanup failure doesn't affect delivery count
+              });
           }
         })
     )
@@ -205,7 +207,9 @@ export async function sendPushToUser(
       subject: options.fallbackEmailSubject ?? payload.title,
       title: payload.title,
       body: payload.body,
-    }).catch(() => {});
+    }).catch(() => {
+      // Non-fatal: email fallback failure doesn't affect the main push flow
+    });
   }
 }
 
@@ -308,7 +312,9 @@ export async function sendPushToNearbyHelpers(
           subject: `🚨 Emergency request near you: ${payload.title}`,
           title: payload.title,
           body: `${payload.body}\n\nOpen the Niakofa app to respond.`,
-        }).catch(() => {});
+        }).catch(() => {
+          // Non-fatal: emergency email fallback failure doesn't block other helpers
+        });
       }
     })
   );

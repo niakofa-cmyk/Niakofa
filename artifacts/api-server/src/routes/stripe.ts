@@ -140,7 +140,9 @@ router.post("/stripe/webhook", async (req, res) => {
             body: `$${amount.toFixed(2)} was paid forward for: "${requestTitle}". Check your Goodwill Fund.`,
             requestId: txRow.request_id,
             notifType: "wallet" as const,
-          }).catch(() => {});
+          }).catch(() => {
+            // Non-fatal: payment receipt push failed — funds were still credited
+          });
         } else {
           broadcast({
             type: "payment_completed",
