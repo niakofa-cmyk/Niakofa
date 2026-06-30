@@ -187,6 +187,9 @@ importers:
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
+      '@workspace/trust-tiers':
+        specifier: workspace:*
+        version: link:../../lib/trust-tiers
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
@@ -664,6 +667,9 @@ importers:
       '@workspace/api-client-react':
         specifier: workspace:*
         version: link:../../lib/api-client-react
+      '@workspace/trust-tiers':
+        specifier: workspace:*
+        version: link:../../lib/trust-tiers
       class-variance-authority:
         specifier: 'catalog:'
         version: 0.7.1

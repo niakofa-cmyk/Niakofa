@@ -1,4 +1,6 @@
-export type TrustTier = "member" | "verified" | "trusted" | "elite" | "anchor";
+import { getTrustTier as getTrustTierShared, type TrustTier } from "@workspace/trust-tiers";
+
+export type { TrustTier };
 
 interface TierConfig {
   label: string;
@@ -64,13 +66,13 @@ export const TIER_CONFIG: Record<TrustTier, TierConfig> = {
   },
 };
 
-// Compute trust tier from trust_score (0-100) and help_count
+// Compute trust tier from trust_score (0-100) and help_count.
+// Re-exports @workspace/trust-tiers — this used to be its own hand-copied
+// version of the thresholds that had drifted from the canonical one
+// (missing the anti-gaming trustScore >= 50 guard on "verified"). Now there
+// is exactly one implementation.
 export function getTrustTier(trustScore: number, helpCount: number): TrustTier {
-  if (helpCount >= 50 && trustScore >= 97) return "anchor";
-  if (helpCount >= 30 && trustScore >= 95) return "elite";
-  if (helpCount >= 15 && trustScore >= 90) return "trusted";
-  if (helpCount >= 5 || trustScore >= 85) return "verified";
-  return "member";
+  return getTrustTierShared(trustScore, helpCount);
 }
 
 // Progress toward next tier (0-1)

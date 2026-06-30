@@ -14,6 +14,7 @@
     "@workspace/api-spec": "workspace:*",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@workspace/trust-tiers": "workspace:*",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.56.0",
     "cookie-parser": "^1.4.7",

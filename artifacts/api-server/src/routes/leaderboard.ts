@@ -7,20 +7,19 @@ import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
+import { getTrustTier } from "@workspace/trust-tiers";
 
 const LEADERBOARD_CACHE_KEY = "leaderboard:all";
 const LEADERBOARD_TTL = 60; // 60 seconds
 
 const router = Router();
 
-// ── Tier helper (mirrors TrustTierBadge.tsx logic) ────────────────────────────
-export function getTierName(trustScore: number, helpCount: number): string {
-  if (helpCount >= 50 && trustScore >= 97) return "anchor";
-  if (helpCount >= 30 && trustScore >= 95) return "elite";
-  if (helpCount >= 15 && trustScore >= 90) return "trusted";
-  if (helpCount >= 5 || trustScore >= 85) return "verified";
-  return "member";
-}
+// ── Tier helper — re-exports the canonical @workspace/trust-tiers logic.
+// Previously this was a hand-copied "mirror" of TrustTierBadge.tsx that had
+// drifted from the real shared thresholds (missing the anti-gaming
+// trustScore >= 50 guard on the "verified" tier). Now there is exactly one
+// implementation, imported here, not re-derived. ────────────────────────────
+export const getTierName = getTrustTier;
 
 // ── Monthly contributions per helper ─────────────────────────────────────────
 async function fetchMonthlyContributions(): Promise<Map<number, number>> {
