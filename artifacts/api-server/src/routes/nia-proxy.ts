@@ -17,13 +17,28 @@ import { Router, type Request, type Response } from "express";
 import { parseAuth } from "../middlewares/auth";
 import { crisisAwareChatLimiter, niaChatHistoryLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
-import { niaEnabled } from "./admin-analytics";
+import { db, systemSettingsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import { sendNiaEventToUser, broadcastNiaEvent } from "../lib/ws-hub";
 
 const router = Router();
 
 const getNiaUrl = () =>
   (process.env.NIA_SERVICE_URL ?? "http://localhost:3001").replace(/\/$/, "");
+
+// ── DB-backed Nia enabled check ───────────────────────────────────────────────
+async function isNiaEnabled(): Promise<boolean> {
+  try {
+    const [row] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "nia_enabled"))
+      .limit(1);
+    return row?.value !== "false";
+  } catch {
+    return true; // safe default
+  }
+}
 
 // ── Sanitize message input ────────────────────────────────────────────────────
 const MAX_MESSAGE_LENGTH = 2000;
@@ -49,7 +64,7 @@ router.post(
   parseAuth,
   crisisAwareChatLimiter,
   async (req: Request, res: Response) => {
-    if (!niaEnabled) {
+    if (!(await isNiaEnabled())) {
       return res.status(503).json({ error: "Nia is temporarily unavailable." });
     }
 
@@ -197,7 +212,7 @@ router.post(
 
 // ── GET /api/nia/history/:sessionId ──────────────────────────────────────────
 router.get("/nia/history/:sessionId", parseAuth, niaChatHistoryLimiter, async (req: Request, res: Response) => {
-  if (!niaEnabled) { return res.status(503).json({ error: "Nia is temporarily unavailable." }); }
+  if (!(await isNiaEnabled())) { return res.status(503).json({ error: "Nia is temporarily unavailable." }); }
   const sessionId = sanitizeSessionId(req.params.sessionId);
   if (!sessionId) return res.status(400).json({ error: "Invalid sessionId" });
 
@@ -262,7 +277,7 @@ router.delete("/nia/memory", parseAuth, async (req: Request, res: Response) => {
 
 // ── POST /api/nia/share-story ─────────────────────────────────────────────────
 router.post("/nia/share-story", parseAuth, async (req: Request, res: Response) => {
-  if (!niaEnabled) return res.status(503).json({ error: "Nia is temporarily unavailable." });
+  if (!(await isNiaEnabled())) return res.status(503).json({ error: "Nia is temporarily unavailable." });
   const userId = req.authenticatedUserId;
   if (!userId) return res.status(401).json({ error: "Authentication required" });
 

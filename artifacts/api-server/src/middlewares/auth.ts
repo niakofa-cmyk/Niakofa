@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import type { Request, Response, NextFunction } from "express";
+import { db, usersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 /**
  * HMAC-SHA256 stateless auth tokens.
@@ -78,6 +80,32 @@ export function parseAuth(req: Request, _res: Response, next: NextFunction): voi
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (!req.authenticatedUserId) {
     res.status(401).json({ error: "Unauthorized — valid Bearer token required" });
+    return;
+  }
+  next();
+}
+
+/** Express middleware — rejects with 403 if user account is suspended or banned. */
+export async function requireApproved(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (!req.authenticatedUserId) {
+    res.status(401).json({ error: "Unauthorized — valid Bearer token required" });
+    return;
+  }
+  const [user] = await db
+    .select({ is_suspended: usersTable.is_suspended, trust_score: usersTable.trust_score })
+    .from(usersTable)
+    .where(eq(usersTable.id, req.authenticatedUserId))
+    .limit(1);
+  if (!user) {
+    res.status(401).json({ error: "User not found" });
+    return;
+  }
+  if (user.is_suspended) {
+    res.status(403).json({ error: "Account suspended — contact support" });
+    return;
+  }
+  if (user.trust_score !== null && user.trust_score <= -1) {
+    res.status(403).json({ error: "Account banned — contact support" });
     return;
   }
   next();

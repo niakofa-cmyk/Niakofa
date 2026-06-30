@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Heart, Mail, User, Lock, Eye, EyeOff, Loader2, MapPin, Shield,
   KeyRound, CheckCircle2, ChevronDown, ChevronUp, Globe, Car, Wrench,
-  Clock, AlertCircle,
+  Clock, AlertCircle, Sparkles, MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
@@ -356,6 +356,26 @@ export default function LoginScreen() {
   const [showNewPass, setShowNewPass] = useState(false);
   const [passwordSaved, setPasswordSaved] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+
+  // Nia cultural greetings rotation
+  const CULTURAL_GREETINGS = [
+    { text: "Sawubona", sub: "I see you — we see each other", lang: "isiZulu" },
+    { text: "Salaam", sub: "Peace be upon you", lang: "Arabic" },
+    { text: "Shalom", sub: "Peace and wholeness", lang: "Hebrew" },
+    { text: "Namaste", sub: "The divine in me greets the divine in you", lang: "Sanskrit" },
+    { text: "As-Salaam-Alaikum", sub: "Peace be unto you", lang: "Swahili" },
+    { text: "Aloha", sub: "Love, peace, compassion", lang: "Hawaiian" },
+  ];
+
+  const [greetingIndex, setGreetingIndex] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setGreetingIndex(i => (i + 1) % CULTURAL_GREETINGS.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const currentGreeting = CULTURAL_GREETINGS[greetingIndex];
 
   const handleSubmit = async () => {
     if (!email.trim()) return;
@@ -796,17 +816,92 @@ export default function LoginScreen() {
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col">
       <div className="flex-1 flex flex-col items-center justify-center px-6 pt-12 pb-8">
+  // ── Nia cultural greetings rotation ───────────────────────────────────────────
+  const CULTURAL_GREETINGS = [
+    { text: "Sawubona", sub: "I see you — we see each other", lang: "isiZulu" },
+    { text: "Salaam", sub: "Peace be upon you", lang: "Arabic" },
+    { text: "Shalom", sub: "Peace and wholeness", lang: "Hebrew" },
+    { text: "Namaste", sub: "The divine in me greets the divine in you", lang: "Sanskrit" },
+    { text: "As-Salaam-Alaikum", sub: "Peace be unto you", lang: "Swahili" },
+    { text: "Aloha", sub: "Love, peace, compassion", lang: "Hawaiian" },
+    { text: "Sawubona", sub: "I see you — we see each other", lang: "isiZulu" },
+  ];
+
+  const [greetingIndex, setGreetingIndex] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setGreetingIndex(i => (i + 1) % CULTURAL_GREETINGS.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const currentGreeting = CULTURAL_GREETINGS[greetingIndex];
+
+  return (
+    <div className="min-h-[100dvh] bg-background flex flex-col">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-12 pb-8">
+        {/* ── NiaOrb Hero Element ─────────────────────────────────────────────── */}
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: "spring", stiffness: 200, damping: 20 }}
-          className="flex flex-col items-center mb-8"
+          className="flex flex-col items-center mb-6"
         >
-          <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center mb-5 shadow-[0_0_40px_rgba(0,212,255,0.15)]">
-            <Heart className="w-10 h-10 text-primary" />
+          {/* NiaOrb — pulsing animated orb */}
+          <div className="relative mb-4">
+            <motion.div
+              animate={{
+                scale: [1, 1.08, 1],
+                opacity: [0.7, 1, 0.7],
+              }}
+              transition={{
+                duration: 3,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
+              className="w-24 h-24 rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 blur-md absolute inset-0"
+            />
+            <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 flex items-center justify-center shadow-[0_0_60px_rgba(0,150,255,0.4)] border border-white/20">
+              <Sparkles className="w-10 h-10 text-white drop-shadow-lg" />
+            </div>
+            {/* Orbiting dots */}
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-0"
+            >
+              <div className="w-2 h-2 rounded-full bg-cyan-300 absolute -top-1 left-1/2 -translate-x-1/2 shadow-[0_0_8px_rgba(0,255,255,0.8)]" />
+            </motion.div>
+            <motion.div
+              animate={{ rotate: -360 }}
+              transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-[-8px]"
+            >
+              <div className="w-1.5 h-1.5 rounded-full bg-purple-300 absolute bottom-0 left-1/4 shadow-[0_0_6px_rgba(200,100,255,0.8)]" />
+            </motion.div>
           </div>
-          <h1 className="text-3xl font-black tracking-tight text-foreground">Niakofa</h1>
-          <p className="text-sm text-muted-foreground mt-1 text-center max-w-xs">
+
+          {/* Animated greeting */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={greetingIndex}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.5 }}
+              className="text-center"
+            >
+              <h1 className="text-2xl font-black tracking-tight text-foreground">
+                {currentGreeting.text}
+                <span className="text-primary"> — I see you</span>
+              </h1>
+              <p className="text-xs text-muted-foreground mt-1">
+                {currentGreeting.sub} · <span className="text-primary/70">{currentGreeting.lang}</span>
+              </p>
+            </motion.div>
+          </AnimatePresence>
+
+          <p className="text-sm text-muted-foreground mt-2 text-center max-w-xs">
             Help Today. Pay It Forward Tomorrow.
           </p>
         </motion.div>
@@ -1013,7 +1108,13 @@ export default function LoginScreen() {
           </Button>
         </div>
 
-        <div className="flex items-center gap-2 mt-6 text-muted-foreground">
+        {/* Nia presence indicator */}
+        <div className="flex items-center gap-2 mt-4 text-muted-foreground">
+          <MessageCircle className="w-3.5 h-3.5 text-primary animate-pulse" />
+          <span className="text-xs">Nia is here to help · Ask her anything</span>
+        </div>
+
+        <div className="flex items-center gap-2 mt-2 text-muted-foreground">
           <Shield className="w-3.5 h-3.5" />
           <span className="text-xs">No tracking, no ads, community-owned</span>
         </div>

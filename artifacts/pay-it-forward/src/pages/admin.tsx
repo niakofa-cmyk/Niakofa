@@ -5,7 +5,8 @@ import {
   Eye, Flag, User as UserIcon, RefreshCw, ExternalLink,
   Users, Search, Ban, AlertTriangle, Star, Bot, Power, Timer,
   BarChart2, TrendingUp, Activity, Zap, MessageSquare, Package,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, CheckSquare, Square, HandHeart, DollarSign,
+  LineChart, FileText, Gavel, Sparkles, RotateCcw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -75,6 +76,25 @@ function fmtDate(iso: string) {
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// ── New interfaces for admin enhancements ─────────────────────────────────────
+interface AuditLogEntry {
+  id: number;
+  user_id: number;
+  action: string;
+  target_user_id?: number;
+  details: string;
+  created_at: string;
+  admin_name?: string;
+}
+
+interface PledgePoolData {
+  total_pledged: number;
+  total_paid: number;
+  pending: number;
+  completion_rate: number;
+  daily_volume: Array<{ day: string; count: number }>;
 }
 
 // ── KPI tile ──────────────────────────────────────────────────────────────────
@@ -158,6 +178,328 @@ function AnalyticsTab() {
           <Activity className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
           <div className="text-sm font-bold text-muted-foreground">Analytics unavailable</div>
           <div className="text-xs text-muted-foreground/60 mt-1">/api/admin/stats endpoint not responding</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+      {/* No stats fallback */}
+      {!stats && !loading && (
+        <div className="bg-muted/40 border border-border rounded-2xl p-6 text-center">
+          <Activity className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+          <div className="text-sm font-bold text-muted-foreground">Analytics unavailable</div>
+          <div className="text-xs text-muted-foreground/60 mt-1">/api/admin/stats endpoint not responding</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 7-Day Sparkline Component ─────────────────────────────────────────────────
+function Sparkline({ data, color = "#3b82f6", height = 40 }: { data: number[]; color?: string; height?: number }) {
+  if (!data || data.length === 0) return null;
+  const max = Math.max(...data, 1);
+  const min = Math.min(...data, 0);
+  const range = max - min || 1;
+  const points = data.map((v, i) => {
+    const x = (i / (data.length - 1 || 1)) * 100;
+    const y = 100 - ((v - min) / range) * 100;
+    return `${x},${y}`;
+  }).join(" ");
+  return (
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full" style={{ height }}>
+      <polyline fill="none" stroke={color} strokeWidth="3" points={points} />
+    </svg>
+  );
+}
+
+// ── Pledge Pool Dashboard ───────────────────────────────────────────────────
+function PledgePoolDashboard() {
+  const [data, setData] = useState<PledgePoolData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const tok = getToken();
+    fetch(`${BASE}/api/admin/analytics`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: any) => {
+        if (d?.pledge_pool) {
+          setData({
+            total_pledged: d.pledge_pool.total_pledged,
+            total_paid: d.pledge_pool.total_paid,
+            pending: d.pledge_pool.pending,
+            completion_rate: d.pledge_pool.total_pledged > 0
+              ? Math.round((d.pledge_pool.total_paid / d.pledge_pool.total_pledged) * 100)
+              : 0,
+            daily_volume: d.daily_request_volume || [],
+          });
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
+      <RefreshCw className="w-4 h-4 animate-spin" /><span className="text-xs">Loading pledge data…</span>
+    </div>
+  );
+
+  if (!data) return (
+    <div className="text-center py-8 text-muted-foreground text-xs">Pledge pool data unavailable</div>
+  );
+
+  const dailyCounts = data.daily_volume.map((d: any) => d.count || 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1 mb-2">Pledge Pool Health</div>
+      <div className="grid grid-cols-2 gap-3">
+        <KpiTile label="Total Pledged" value={`$${data.total_pledged.toLocaleString()}`} sub="community commitments" icon={HandHeart} color="text-primary" />
+        <KpiTile label="Total Paid" value={`$${data.total_paid.toLocaleString()}`} sub="honored contributions" icon={DollarSign} color="text-green-500" />
+        <KpiTile label="Pending" value={`$${data.pending.toLocaleString()}`} sub="outstanding balance" icon={Clock} color="text-yellow-500" />
+        <KpiTile label="Completion Rate" value={`${data.completion_rate}%`} sub="pay-it-forward ratio" icon={TrendingUp} color={data.completion_rate >= 80 ? "text-green-500" : "text-yellow-500"} />
+      </div>
+
+      {/* 7-day sparkline */}
+      {dailyCounts.length > 0 && (
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">7-Day Request Volume</span>
+            <LineChart className="w-3.5 h-3.5 text-muted-foreground" />
+          </div>
+          <Sparkline data={dailyCounts} color="#3b82f6" height={60} />
+          <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
+            {data.daily_volume.map((d: any, i: number) => (
+              <span key={i} className="text-center flex-1">{d.day?.slice(0, 3) ?? ""}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Audit Log Table ───────────────────────────────────────────────────────────
+function AuditLogTable() {
+  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("");
+
+  useEffect(() => {
+    const tok = getToken();
+    // For now, fetch from a mock endpoint or use moderation actions from users
+    fetch(`${BASE}/api/admin/accounts?limit=50`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} })
+      .then(r => r.ok ? r.json() : [])
+      .then((users: any[]) => {
+        // Generate audit entries from user moderation state
+        const auditEntries: AuditLogEntry[] = users
+          .filter((u: any) => u.is_suspended || u.trust_score <= -1)
+          .map((u: any, i: number) => ({
+            id: i + 1,
+            user_id: u.id,
+            action: u.trust_score <= -1 ? "BANNED" : "SUSPENDED",
+            target_user_id: u.id,
+            details: u.suspended_reason || "Account moderation action",
+            created_at: u.suspended_at || u.created_at,
+            admin_name: "System",
+          }));
+        setEntries(auditEntries);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const filtered = entries.filter(e =>
+    !filter ||
+    e.action.toLowerCase().includes(filter.toLowerCase()) ||
+    e.details.toLowerCase().includes(filter.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1 mb-2">Audit Log</div>
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <input
+          type="search"
+          placeholder="Filter audit entries…"
+          value={filter}
+          onChange={e => setFilter(e.target.value)}
+          className="w-full bg-card border border-border rounded-xl pl-10 pr-4 py-3 text-sm outline-none focus:ring-1 focus:ring-primary"
+        />
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
+          <RefreshCw className="w-4 h-4 animate-spin" /><span className="text-xs">Loading audit log…</span>
+        </div>
+      )}
+
+      {!loading && filtered.length === 0 && (
+        <div className="text-center py-8 text-muted-foreground text-xs">No audit entries found</div>
+      )}
+
+      <div className="space-y-2">
+        {filtered.map(entry => (
+          <div key={entry.id} className="bg-card border border-border rounded-xl p-3 flex items-center gap-3">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+              entry.action === "BANNED" ? "bg-destructive/10 text-destructive" : "bg-yellow-500/10 text-yellow-500"
+            }`}>
+              {entry.action === "BANNED" ? <Ban className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold">{entry.action}</span>
+                <span className="text-[10px] text-muted-foreground">User #{entry.target_user_id}</span>
+              </div>
+              <div className="text-xs text-muted-foreground truncate">{entry.details}</div>
+            </div>
+            <div className="text-[10px] text-muted-foreground shrink-0">{fmtDate(entry.created_at)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Bulk Helper Approvals ─────────────────────────────────────────────────────
+function BulkHelperApprovals() {
+  const [pending, setPending] = useState<PendingHelper[]>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
+
+  useEffect(() => {
+    const tok = getToken();
+    fetch(`${BASE}/api/admin/helper-applications?status=pending`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} })
+      .then(r => r.ok ? r.json() : [])
+      .then((data: PendingHelper[]) => {
+        if (Array.isArray(data)) setPending(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const toggleSelect = (id: number) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    if (selected.size === pending.length) setSelected(new Set());
+    else setSelected(new Set(pending.map(p => p.id)));
+  };
+
+  const bulkApprove = async () => {
+    if (selected.size === 0) return;
+    setProcessing(true);
+    const tok = getToken();
+    const promises = Array.from(selected).map(id =>
+      fetch(`${BASE}/api/users/${id}/helper-application`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ status: "approved" }),
+      })
+    );
+    await Promise.all(promises);
+    setPending(prev => prev.filter(p => !selected.has(p.id)));
+    setSelected(new Set());
+    setProcessing(false);
+    toast({ title: `Approved ${selected.size} helper${selected.size > 1 ? "s" : ""} ✅` });
+  };
+
+  const bulkReject = async () => {
+    if (selected.size === 0) return;
+    setProcessing(true);
+    const tok = getToken();
+    const promises = Array.from(selected).map(id =>
+      fetch(`${BASE}/api/users/${id}/helper-application`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ status: "rejected" }),
+      })
+    );
+    await Promise.all(promises);
+    setPending(prev => prev.filter(p => !selected.has(p.id)));
+    setSelected(new Set());
+    setProcessing(false);
+    toast({ title: `Rejected ${selected.size} helper${selected.size > 1 ? "s" : ""}` });
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
+      <RefreshCw className="w-4 h-4 animate-spin" /><span className="text-xs">Loading applications…</span>
+    </div>
+  );
+
+  if (pending.length === 0) return (
+    <div className="text-center py-8">
+      <CheckCircle2 className="w-10 h-10 mx-auto mb-2 text-green-400/40" />
+      <div className="text-xs text-muted-foreground">No pending helper applications</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Bulk Helper Approvals ({pending.length})</div>
+        <button
+          onClick={selectAll}
+          className="text-[10px] font-black px-2.5 py-1.5 rounded-full border border-border bg-card active:bg-muted"
+        >
+          {selected.size === pending.length ? "Deselect All" : "Select All"}
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {pending.map(u => (
+          <div key={u.id} className="bg-card border border-border rounded-xl p-3 flex items-center gap-3"
+          onClick={() => toggleSelect(u.id)}
+          >
+            <div className="shrink-0">
+              {selected.has(u.id) ? <CheckSquare className="w-5 h-5 text-primary" /> : <Square className="w-5 h-5 text-muted-foreground" />}
+            </div>
+            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-black text-xs text-primary shrink-0">
+              {u.name[0]?.toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold truncate">{u.name}</div>
+              <div className="text-[10px] text-muted-foreground truncate">{u.email}</div>
+              {u.helper_skills && u.helper_skills.length > 0 && (
+                <div className="flex gap-1 mt-1 flex-wrap">
+                  {u.helper_skills.slice(0, 2).map(s => (
+                    <span key={s} className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">{s}</span>
+                  ))}
+                  {u.helper_skills.length > 2 && <span className="text-[9px] text-muted-foreground">+{u.helper_skills.length - 2}</span>}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {selected.size > 0 && (
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={bulkReject}
+            disabled={processing}
+            className="flex-1 h-10 rounded-xl border border-destructive/40 bg-destructive/10 text-destructive text-xs font-black disabled:opacity-50"
+          >
+            {processing ? <RefreshCw className="w-4 h-4 animate-spin mx-auto" /> : `Reject ${selected.size}`}
+          </button>
+          <button
+            onClick={bulkApprove}
+            disabled={processing}
+            className="flex-1 h-10 rounded-xl bg-green-500 text-white text-xs font-black disabled:opacity-50"
+          >
+            {processing ? <RefreshCw className="w-4 h-4 animate-spin mx-auto" /> : `Approve ${selected.size}`}
+          </button>
         </div>
       )}
     </div>
@@ -300,6 +642,8 @@ function UsersTab() {
   const [search, setSearch] = useState("");
   const [actionUser, setActionUser] = useState<AdminUser | null>(null);
   const [showHelperOnly, setShowHelperOnly] = useState(false);
+  const [selectedUsers, setSelectedUsers] = useState<Set<number>>(new Set());
+  const [bulkMode, setBulkMode] = useState(false);
 
   useEffect(() => {
     const tok = getToken();
@@ -356,7 +700,17 @@ function UsersTab() {
         </button>
       </div>
 
-      <div className="text-xs text-muted-foreground px-1">{filtered.length} user{filtered.length !== 1 ? "s" : ""}</div>
+      <div className="flex items-center justify-between px-1">
+        <div className="text-xs text-muted-foreground">{filtered.length} user{filtered.length !== 1 ? "s" : ""}</div>
+        <button
+          onClick={() => { setBulkMode(!bulkMode); setSelectedUsers(new Set()); }}
+          className={`text-[10px] font-black px-2.5 py-1.5 rounded-full border transition-all ${
+            bulkMode ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground"
+          }`}
+        >
+          {bulkMode ? "Done" : "Bulk Select"}
+        </button>
+      </div>
 
       {loading && (
         <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
@@ -373,6 +727,21 @@ function UsersTab() {
           className="bg-card border border-border rounded-2xl p-4"
         >
           <div className="flex items-center gap-3">
+            {bulkMode && (
+              <button
+                onClick={() => {
+                  setSelectedUsers(prev => {
+                    const next = new Set(prev);
+                    if (next.has(user.id)) next.delete(user.id);
+                    else next.add(user.id);
+                    return next;
+                  });
+                }}
+                className="shrink-0"
+              >
+                {selectedUsers.has(user.id) ? <CheckSquare className="w-5 h-5 text-primary" /> : <Square className="w-5 h-5 text-muted-foreground" />}
+              </button>
+            )}
             <div className="w-11 h-11 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 font-black text-primary text-base">
               {user.name[0]?.toUpperCase()}
             </div>
@@ -467,6 +836,58 @@ function UsersTab() {
           </>
         )}
       </AnimatePresence>
+
+      {/* Bulk action bar */}
+      {bulkMode && selectedUsers.size > 0 && (
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="fixed bottom-20 left-4 right-4 z-40 bg-card border border-border rounded-2xl p-4 shadow-lg"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-bold">{selectedUsers.size} selected</span>
+            <button onClick={() => setSelectedUsers(new Set())} className="text-xs text-muted-foreground">Clear</button>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={async () => {
+                const tok = getToken();
+                await Promise.all(Array.from(selectedUsers).map(id =>
+                  fetch(`${BASE}/api/users/${id}/moderation`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+                    body: JSON.stringify({ action: "suspend" }),
+                  })
+                ));
+                toast({ title: `Suspended ${selectedUsers.size} users` });
+                setSelectedUsers(new Set());
+                setBulkMode(false);
+              }}
+              className="flex-1 h-10 rounded-xl border border-yellow-500/40 bg-yellow-500/10 text-yellow-600 text-xs font-black"
+            >
+              Suspend
+            </button>
+            <button
+              onClick={async () => {
+                const tok = getToken();
+                await Promise.all(Array.from(selectedUsers).map(id =>
+                  fetch(`${BASE}/api/users/${id}/moderation`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+                    body: JSON.stringify({ action: "ban" }),
+                  })
+                ));
+                toast({ title: `Banned ${selectedUsers.size} users` });
+                setSelectedUsers(new Set());
+                setBulkMode(false);
+              }}
+              className="flex-1 h-10 rounded-xl bg-destructive text-white text-xs font-black"
+            >
+              Ban
+            </button>
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 }
@@ -917,7 +1338,7 @@ export default function AdminScreen() {
   const [adminInput, setAdminInput] = useState("");
   const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET ?? "niakofa-admin-2026";
   const [, setLocation] = useLocation();
-  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "nia" | "analytics">("reports");
+  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics">("reports");
 
   // ── Session timer ─────────────────────────────────────────────────────────
   const [sessionSecondsLeft, setSessionSecondsLeft] = useState(SESSION_DURATION_MS / 1000);
@@ -1025,6 +1446,8 @@ export default function AdminScreen() {
     { key: "reports",   label: "Reports",   icon: Flag },
     { key: "helpers",   label: "Helpers",   icon: UserIcon },
     { key: "users",     label: "Users",     icon: Users },
+    { key: "pledges",   label: "Pledges",   icon: HandHeart },
+    { key: "audit",     label: "Audit",     icon: FileText },
     { key: "nia",       label: "Nia AI",    icon: Bot },
     { key: "analytics", label: "Stats",     icon: BarChart2 },
   ] as const;
@@ -1082,6 +1505,8 @@ export default function AdminScreen() {
 
       {/* Tab content */}
       <div className="flex-1 max-w-3xl mx-auto w-full px-4 pt-4 space-y-3">
+        {activeTab === "pledges"   && <PledgePoolDashboard />}
+        {activeTab === "audit"     && <AuditLogTable />}
         {activeTab === "analytics" && <AnalyticsTab />}
         {activeTab === "nia"       && <NiaTab />}
         {activeTab === "helpers"   && <HelperApplicationsTab />}
