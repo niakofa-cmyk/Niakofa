@@ -432,16 +432,19 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
         const platformFeeCents = Math.round(amountCents * 0.05); // 5% platform fee
         const payoutCents = amountCents - platformFeeCents;
 
-        const transfer = await _stripe.transfers.create({
-          amount: payoutCents,
-          currency: "usd",
-          destination: stripeAcct.stripe_account_id,
-          metadata: {
-            request_id: String(request.id),
-            helper_id: String(helperId),
-            platform_fee_cents: String(platformFeeCents),
+        const transfer = await _stripe.transfers.create(
+          {
+            amount: payoutCents,
+            currency: "usd",
+            destination: stripeAcct.stripe_account_id,
+            metadata: {
+              request_id: String(request.id),
+              helper_id: String(helperId),
+              platform_fee_cents: String(platformFeeCents),
+            },
           },
-        });
+          { idempotencyKey: `payout-${request.id}-${helperId}` }
+        );
 
         // Record the completed payout
         await db.insert(paymentTransactionsTable).values({
