@@ -1,8 +1,12 @@
 import { Router } from "express";
-import { db, usersTable, requestsTable } from "@workspace/db";
+import { db, usersTable, requestsTable, gratitudePostsTable } from "@workspace/db";
 import { eq, sql, and, gte } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { cacheGet, cacheSet, cacheDel } from "../lib/cache";
+import { requireAuth } from "../middlewares/auth";
+import { requireAdmin } from "../middlewares/authz";
+import { adminLimiter } from "../middlewares/rate-limit";
+import { logger } from "../lib/logger";
 
 const LEADERBOARD_CACHE_KEY = "leaderboard:all";
 const LEADERBOARD_TTL = 60; // 60 seconds

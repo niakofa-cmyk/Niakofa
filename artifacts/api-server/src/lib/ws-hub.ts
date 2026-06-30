@@ -45,6 +45,8 @@ export type WsEventType =
   | "new_report"
   | "report_reviewed"
   | "chat_message"
+  | "help_chain_joined"
+  | "help_chain_left"
   // NIA AI event types — event-driven communication bridge
   | "nia_message"
   | "nia_checkin"

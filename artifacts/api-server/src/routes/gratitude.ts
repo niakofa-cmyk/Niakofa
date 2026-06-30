@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, gratitudePostsTable } from "@workspace/db";
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, sql, and, gte } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { z } from "zod";
 
