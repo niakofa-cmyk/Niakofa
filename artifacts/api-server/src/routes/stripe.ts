@@ -232,6 +232,29 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
     return res.status(400).json({ error: "requestId and amount (> 0) required" });
   }
 
+  // Cross-check the client-sent amount against the request's own stored amount —
+  // requireOwnership only verifies the caller IS the requester, not that the
+  // amount matches what this request actually says it pays. Without this, the
+  // PaymentIntent (charge) and the later payout transfer (which reads
+  // request.pay_it_forward_amount independently) can silently diverge.
+  const [targetRequest] = await db
+    .select({ pay_it_forward_amount: requestsTable.pay_it_forward_amount })
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+
+  if (!targetRequest) {
+    return res.status(404).json({ error: "Request not found" });
+  }
+  if (
+    targetRequest.pay_it_forward_amount != null &&
+    Math.round(targetRequest.pay_it_forward_amount * 100) !== Math.round(amount * 100)
+  ) {
+    return res.status(400).json({
+      error: "amount does not match the request's pay_it_forward_amount",
+    });
+  }
+
   // Check if helper has a Connect account for direct transfer
   let transferData: { destination: string } | undefined;
   if (helperId) {
@@ -245,18 +268,21 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
     }
   }
 
-  const pi = await stripe!.paymentIntents.create({
-    amount: Math.round(amount * 100), // convert to cents
-    currency: "usd",
-    metadata: {
-      requestId: requestId.toString(),
-      helperId: helperId?.toString() ?? "",
-      requesterId: (req as any).authenticatedUserId.toString(),
-      paymentType: paymentType ?? "immediate",
+  const pi = await stripe!.paymentIntents.create(
+    {
+      amount: Math.round(amount * 100), // convert to cents
+      currency: "usd",
+      metadata: {
+        requestId: requestId.toString(),
+        helperId: helperId?.toString() ?? "",
+        requesterId: (req as any).authenticatedUserId.toString(),
+        paymentType: paymentType ?? "immediate",
+      },
+      automatic_payment_methods: { enabled: true },
+      ...(transferData ? { transfer_data: transferData } : {}),
     },
-    automatic_payment_methods: { enabled: true },
-    ...(transferData ? { transfer_data: transferData } : {}),
-  });
+    { idempotencyKey: `payment-intent-${requestId}-${(req as any).authenticatedUserId}` }
+  );
 
   // Record in payment_transactions — starts as "authorized"
   const [tx] = await db
