@@ -190,6 +190,51 @@ router.post("/users/set-initial-password", authLimiter, async (req, res) => {
   return res.json({ user: safeUser, token });
 });
 
+// POST /users/:id/change-password — authenticated password change.
+// Requires the current password as proof of possession, distinct from the
+// email-code reset flow above (which is for users who've lost access).
+router.post("/users/:id/change-password", requireAuth, requireOwnership(), authLimiter, async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+  const { current_password, new_password } = req.body as {
+    current_password?: string; new_password?: string;
+  };
+  if (!current_password || !new_password) {
+    return res.status(400).json({ error: "current_password and new_password are required" });
+  }
+  if (new_password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+  if (new_password === current_password) {
+    return res.status(400).json({ error: "New password must be different from current password" });
+  }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  if (!user.password_hash) {
+    return res.status(403).json({ error_code: "LEGACY_PASSWORD_REQUIRED", user_id: user.id });
+  }
+
+  const matches = await bcrypt.compare(current_password, user.password_hash);
+  if (!matches) return res.status(401).json({ error: "Current password is incorrect" });
+
+  const password_hash = await bcrypt.hash(new_password, 12);
+  const [updatedPw] = await db.update(usersTable)
+    .set({
+      password_hash,
+      token_version: sql`${usersTable.token_version} + 1`,
+      updated_at: new Date(),
+    })
+    .where(eq(usersTable.id, id))
+    .returning();
+
+  const pwToken = signTokenById(updatedPw.id, updatedPw.token_version);
+  const { password_hash: _ph3, ...safePwUser } = updatedPw;
+  return res.json({ user: safePwUser, token: pwToken });
+});
+
 router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
   const parsed = GetUserParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
