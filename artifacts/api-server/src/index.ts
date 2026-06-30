@@ -12,6 +12,8 @@ import { startAnomalyDetectionWorker } from "./workers/anomaly-worker";
 import { startNiaCheckinWorker } from "./workers/nia-checkin-worker";
 import { startNiaPushQueueWorker } from "./workers/nia-push-queue-worker";
 import { processRecurringRequests } from "./routes/recurring";
+import { db, usersTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
 
 const rawPort = process.env["PORT"];
 if (!rawPort) throw new Error("PORT environment variable is required but was not provided.");
@@ -23,6 +25,27 @@ initWebSocketServer(server);
 
 server.listen(port, async () => {
   logger.info({ port }, "Server listening (HTTP + WebSocket)");
+
+  // BUG-CRIT-05: `pnpm --filter @workspace/db run migrate` referenced in
+  // railway.toml's startCommand silently failed on every deploy — that
+  // script never existed in lib/db/package.json (only "push"/"push-force"
+  // did). It's been added now, but to not depend on that deploy-time step
+  // actually running correctly going forward, this also self-heals at
+  // application startup: re-applies the same idempotent backfill from
+  // migration 0021 every time the server boots. Safe to run repeatedly —
+  // it only touches rows still sitting at the stuck default state, and a
+  // no-op WHERE clause costs one cheap query on every other boot.
+  try {
+    const result = await db.update(usersTable)
+      .set({ approval_status: "approved" })
+      .where(and(eq(usersTable.account_type, "individual"), eq(usersTable.approval_status, "pending")))
+      .returning({ id: usersTable.id });
+    if (result.length > 0) {
+      logger.info({ count: result.length }, "startup: auto-approved stuck individual accounts (approval_status backfill)");
+    }
+  } catch (err) {
+    logger.error({ err }, "startup: approval_status backfill failed — non-fatal, continuing boot");
+  }
 
   if (process.env["NODE_ENV"] === "production" && !isRedisConfigured()) {
     logger.error(
