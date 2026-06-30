@@ -2,6 +2,7 @@ import { Router } from "express";
 import { distanceMiles } from "../lib/geo.js";
 import { db, usersTable, requestsTable, userSettingsTable, helperAvailabilityTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
+import { requireAdmin } from "../middlewares/authz";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { GetOnlineHelpersQueryParams } from "@workspace/api-zod";
 import { computeMatchScore } from "../lib/matching";
@@ -78,7 +79,11 @@ router.get("/helpers/online", requireAuth, async (req, res) => {
 // it never writes to the database. There is no actual auto-assignment
 // happening here. If real auto-assignment is needed later, this is where
 // a requestsTable.update(...) call would need to be added.
-router.post("/helpers/auto-assign/:requestId", requireAuth, async (req, res) => {
+// Admin-only: no frontend caller exists for this route (grepped, none found);
+// it was reachable by any authenticated user with just requireAuth, which
+// could be used to enumerate which helpers are near a given request/location
+// — a privacy leak with no legitimate non-admin use case.
+router.post("/helpers/auto-assign/:requestId", requireAuth, requireAdmin(), async (req, res) => {
   const requestId = parseInt(req.params.requestId as string);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid requestId" });
 

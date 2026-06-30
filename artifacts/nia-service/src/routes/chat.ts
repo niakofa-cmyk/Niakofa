@@ -339,14 +339,24 @@ router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Respo
   }
 });
 
-router.get("/history/:sessionId", async (req: Request, res: Response) => {
+router.get("/history/:sessionId", parseOptionalAuth, async (req: Request, res: Response) => {
   // Kill-switch: respect admin toggle for history reads too
   if (!(await isNiaEnabled())) {
     return res.status(503).json({ error: "Nia is temporarily unavailable." });
   }
+  // HIGH-002 follow-up: sessionId alone used to be enough to read anyone's
+  // conversation history — sessionIds are long random strings (low
+  // probability of guessing) but that's not the same as actual access
+  // control. Require a valid auth token and scope the lookup to that user,
+  // matching how getScrollbackHistory already supports an optional userId
+  // filter (added for exactly this use, previously unused by this route).
+  const authedUserId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId;
+  if (!authedUserId) {
+    return res.status(401).json({ error: "Unauthorized — valid Bearer token required to read conversation history." });
+  }
   const sessionId = req.params.sessionId;
   if (!sessionId) return res.status(400).json({ error: "sessionId required" });
-  return res.json(await getScrollbackHistory(Array.isArray(sessionId) ? sessionId[0] : sessionId));
+  return res.json(await getScrollbackHistory(Array.isArray(sessionId) ? sessionId[0] : sessionId, authedUserId));
 });
 
 router.get("/health", (_req, res) => res.json({ status: "ok", service: "nia" }));

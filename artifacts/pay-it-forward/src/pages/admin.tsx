@@ -1324,7 +1324,19 @@ function HelperApplicationsTab() {
 export default function AdminScreen() {
   const [authed, setAuthed] = useState(false);
   const [adminInput, setAdminInput] = useState("");
-  const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET ?? "niakofa-admin-2026";
+  // SECURITY: previously fell back to a hardcoded literal ("niakofa-admin-2026")
+  // baked into the client JS bundle whenever VITE_ADMIN_SECRET wasn't set —
+  // meaning a misconfigured deploy (missing env var) would silently accept
+  // that one fixed string from anyone who inspected the bundle. No fallback
+  // now: if the env var is missing, ADMIN_SECRET is empty and the comparison
+  // below can never match a real (non-empty) input, so the gate fails closed
+  // instead of falling open. Note this gate is a client-side UI convenience
+  // only — actual authorization is enforced server-side by requireAdmin() on
+  // every real API call (see authHeaders/getToken() usage throughout this
+  // file), so bypassing this screen alone grants no real access. The
+  // documented longer-term improvement (a POST /api/admin/verify-secret
+  // endpoint issuing a short-lived admin JWT) is still open — see CLAUDE.md.
+  const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET ?? "";
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics">("reports");
 
