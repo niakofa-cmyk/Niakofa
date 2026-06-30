@@ -5,11 +5,12 @@
  * All routes require authentication + admin role.
  */
 import { Router } from "express";
-import { db, requestsTable, usersTable, reportsTable } from "@workspace/db";
+import { db, requestsTable, usersTable, reportsTable, systemSettingsTable, niaMemoriesTable, niaConversationsTable } from "@workspace/db";
 import { eq, sql, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -343,16 +344,37 @@ router.get("/admin/suspended", requireAuth, requireAdmin(), adminLimiter, async 
 });
 
 // ── Nia AI toggle ─────────────────────────────────────────────────────────────
-// In-memory flag — defaults to enabled. Persists for the lifetime of the
-// api-server process. A Railway redeploy resets it to ON, which is the safe
-// default. If you need persistence across deploys, set NIA_ENABLED=false in
-// Railway env vars and the flag will boot to off.
-let niaEnabled: boolean = process.env.NIA_ENABLED !== "false";
+// DB-backed flag — reads from system_settings table so the toggle survives
+// Railway redeploys. Falls back to enabled if no row exists (safe default).
+async function getNiaEnabled(): Promise<boolean> {
+  try {
+    const [row] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "nia_enabled"))
+      .limit(1);
+    return row?.value !== "false";
+  } catch {
+    return true; // safe default
+  }
+}
+
+async function setNiaEnabled(enabled: boolean): Promise<void> {
+  const value = enabled ? "true" : "false";
+  await db
+    .insert(systemSettingsTable)
+    .values({ key: "nia_enabled", value })
+    .onConflictDoUpdate({
+      target: systemSettingsTable.key,
+      set: { value, updated_at: new Date() },
+    });
+}
 
 // GET /admin/nia-status — public, no auth. Frontend polls this to know
 // whether to show the NiaFab and drawer. Returns { enabled: boolean }.
-router.get("/admin/nia-status", (_req, res) => {
-  return res.json({ enabled: niaEnabled });
+router.get("/admin/nia-status", async (_req, res) => {
+  const enabled = await getNiaEnabled();
+  return res.json({ enabled });
 });
 
 // POST /admin/nia-toggle — admin only. Body: { enabled: boolean }
@@ -361,12 +383,198 @@ router.post("/admin/nia-toggle", requireAuth, requireAdmin(), adminLimiter, asyn
   if (typeof enabled !== "boolean") {
     return res.status(400).json({ error: "enabled (boolean) is required" });
   }
-  niaEnabled = enabled;
-  logger.info({ niaEnabled }, "admin: Nia AI toggled");
-  return res.json({ ok: true, enabled: niaEnabled });
+  await setNiaEnabled(enabled);
+  logger.info({ enabled }, "admin: Nia AI toggled");
+  return res.json({ ok: true, enabled });
 });
 
-// Export the flag so nia-proxy can read it from the same process
-export { niaEnabled };
+// ── AI Cost Monitoring ────────────────────────────────────────────────────────
+// GET /admin/nia-costs — admin only. Returns daily AI cost summary from nia-service.
+router.get("/admin/nia-costs", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const days = Math.min(Math.max(parseInt(String(req.query.days ?? "7"), 10) || 7, 1), 30);
+  
+  try {
+    // Query nia-service for cost data via internal endpoint
+    const niaUrl = (process.env.NIA_SERVICE_URL ?? "http://localhost:3001").replace(/\/$/, "");
+    const response = await fetch(`${niaUrl}/admin/costs?days=${days}`, {
+      headers: {
+        "x-internal-secret": process.env.INTERNAL_SECRET ?? "",
+      },
+    });
+    
+    if (!response.ok) {
+      return res.status(502).json({ error: "Failed to fetch cost data from NIA service" });
+    }
+    
+    const costData = await response.json();
+    return res.json(costData);
+  } catch (err) {
+    logger.error({ err }, "admin: failed to fetch NIA cost data");
+    return res.status(500).json({ error: "Failed to fetch cost data" });
+  }
+});
+
+// GET /admin/nia-cost-alert — check if daily cost exceeds threshold
+router.get("/admin/nia-cost-alert", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const DAILY_COST_THRESHOLD = parseFloat(process.env.NIA_DAILY_COST_THRESHOLD ?? "50.00");
+  
+  try {
+    const niaUrl = (process.env.NIA_SERVICE_URL ?? "http://localhost:3001").replace(/\/$/, "");
+    const response = await fetch(`${niaUrl}/admin/costs?days=1`, {
+      headers: {
+        "x-internal-secret": process.env.INTERNAL_SECRET ?? "",
+      },
+    });
+    
+    if (!response.ok) {
+      return res.status(502).json({ error: "Failed to fetch cost data" });
+    }
+    
+    const costData = await response.json();
+    const todayCost = costData.daily?.[0]?.estimatedCostUsd ?? 0;
+    const isAlert = todayCost > DAILY_COST_THRESHOLD;
+    
+    return res.json({
+      alert: isAlert,
+      threshold: DAILY_COST_THRESHOLD,
+      todayCost,
+      message: isAlert 
+        ? `Daily AI cost $${todayCost.toFixed(2)} exceeds threshold $${DAILY_COST_THRESHOLD.toFixed(2)}`
+        : `Daily AI cost $${todayCost.toFixed(2)} within threshold $${DAILY_COST_THRESHOLD.toFixed(2)}`,
+    });
+  } catch (err) {
+    logger.error({ err }, "admin: failed to check cost alert");
+    return res.status(500).json({ error: "Failed to check cost alert" });
+  }
+});
+
+// GET /admin/stats — flat KPI summary for the Analytics tab's top cards.
+// BUG-CRIT-03: the frontend has called this since the Analytics tab was
+// built (with a hardcoded "/api/admin/stats endpoint not responding"
+// fallback message that's been silently showing for every admin, every
+// time) but the route never existed server-side. See CLAUDE.md Incident #19.
+router.get("/admin/stats", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const [
+    requestCounts,
+    userCounts,
+    reportCounts,
+    niaConvCount,
+    trustAvg,
+  ] = await Promise.all([
+    db.select({
+      total: sql<number>`COUNT(*)::int`,
+      completed: sql<number>`COUNT(*) FILTER (WHERE ${requestsTable.status} = 'completed')::int`,
+    }).from(requestsTable),
+    db.select({
+      total: sql<number>`COUNT(*)::int`,
+      activeHelpers: sql<number>`COUNT(*) FILTER (WHERE ${usersTable.helper_mode_active} = true)::int`,
+    }).from(usersTable),
+    db.select({
+      total: sql<number>`COUNT(*)::int`,
+      pending: sql<number>`COUNT(*) FILTER (WHERE ${reportsTable.status} = 'pending')::int`,
+    }).from(reportsTable),
+    db.select({ count: sql<number>`COUNT(*)::int` }).from(niaConversationsTable),
+    db.select({ avg: sql<number>`COALESCE(AVG(${usersTable.trust_score}), 0)::float` }).from(usersTable),
+  ]);
+
+  return res.json({
+    total_requests: requestCounts[0]?.total ?? 0,
+    completed_requests: requestCounts[0]?.completed ?? 0,
+    total_users: userCounts[0]?.total ?? 0,
+    active_helpers: userCounts[0]?.activeHelpers ?? 0,
+    total_reports: reportCounts[0]?.total ?? 0,
+    pending_reports: reportCounts[0]?.pending ?? 0,
+    nia_conversations: niaConvCount[0]?.count ?? 0,
+    avg_trust_score: trustAvg[0]?.avg ?? 0,
+  });
+});
+
+// GET /admin/nia-memory-stats — how many users have a stored Nia memory and
+// how many memory rows exist total. Same prior gap as /admin/stats above.
+router.get("/admin/nia-memory-stats", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const [row] = await db.select({
+    users: sql<number>`COUNT(DISTINCT ${niaMemoriesTable.user_id})::int`,
+    entries: sql<number>`COUNT(*)::int`,
+  }).from(niaMemoriesTable);
+  return res.json({ users: row?.users ?? 0, entries: row?.entries ?? 0 });
+});
+
+// PATCH /admin/accounts/:id/approval — approve or deny a pending account.
+// BUG-CRIT-01 (see CLAUDE.md Incident #19 and routes/users.ts register
+// route): GET /admin/accounts could list pending accounts but nothing could
+// ever change their status — there was no admin-side way to unblock anyone.
+// Individual accounts are now auto-approved at registration (see users.ts),
+// so in practice this exists for organization accounts requiring real
+// review, but works for any account_type an admin needs to act on.
+router.patch("/admin/accounts/:id/approval", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const userId = parseInt(req.params.id as string);
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+  const { status } = req.body as { status?: "approved" | "denied" | "pending" };
+  if (!status || !["approved", "denied", "pending"].includes(status)) {
+    return res.status(400).json({ error: "status must be 'approved', 'denied', or 'pending'" });
+  }
+
+  const adminUserId = req.authenticatedUserId;
+  const [updated] = await db.update(usersTable)
+    .set({
+      approval_status: status,
+      approval_reviewed_by: adminUserId ?? null,
+      approval_reviewed_at: new Date(),
+    })
+    .where(eq(usersTable.id, userId))
+    .returning();
+
+  if (!updated) return res.status(404).json({ error: "User not found" });
+  const { password_hash, ...safe } = updated;
+  return res.json(safe);
+});
+
+// POST /admin/bootstrap — one-time, self-locking way to create the very
+// first admin account without needing direct database/psql access.
+//
+// BUG-CRIT-04: requireAdmin()'s own code comment said "Set is_admin = true
+// on any user row to grant admin access" — but that always meant doing it
+// by hand via psql against the production database. Nothing in the app
+// itself, ever, set is_admin=true for anyone. If that manual step was never
+// run, no user has admin rights at all, regardless of knowing the
+// VITE_ADMIN_SECRET UI gate — every real admin API call 403s for everyone.
+// This endpoint exists so the very first admin can be created through the
+// app/terminal instead of requiring raw SQL access.
+//
+// Self-locking by design: refuses to do anything once ANY user already has
+// is_admin=true, so it cannot be used to create a second admin or be
+// exploited if ADMIN_BOOTSTRAP_SECRET ever leaks later. Requires an env var
+// that must be deliberately set (same pattern as INTERNAL_SECRET) — if it's
+// never configured, this route always 503s.
+router.post("/admin/bootstrap", async (req, res) => {
+  const expected = process.env.ADMIN_BOOTSTRAP_SECRET;
+  if (!expected) {
+    return res.status(503).json({ error: "Admin bootstrap is not configured. Set ADMIN_BOOTSTRAP_SECRET in Railway → api-server → Variables." });
+  }
+  const { email, secret } = req.body as { email?: string; secret?: string };
+  if (secret !== expected) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  if (!email) {
+    return res.status(400).json({ error: "email required" });
+  }
+
+  const [{ adminCount }] = await db.select({ adminCount: sql<number>`COUNT(*)::int` })
+    .from(usersTable).where(eq(usersTable.is_admin, true));
+  if (adminCount > 0) {
+    return res.status(403).json({ error: "An admin account already exists — this endpoint only works once." });
+  }
+
+  const [updated] = await db.update(usersTable)
+    .set({ is_admin: true })
+    .where(eq(usersTable.email, email.trim().toLowerCase()))
+    .returning();
+  if (!updated) {
+    return res.status(404).json({ error: "No account found with that email — register normally first, then run this." });
+  }
+
+  logger.info({ userId: updated.id, email: updated.email }, "admin: bootstrap created first admin account");
+  return res.json({ ok: true, user_id: updated.id, email: updated.email });
+});
 
 export default router;
