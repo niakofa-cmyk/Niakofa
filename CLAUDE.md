@@ -575,3 +575,39 @@ Incidents #16–#18 are good candidates to condense to short-paragraph form
     (e.g. parse the YAML/JSON with its real parser, outside the higher-level
     tool) before chasing version, config, or environment hypotheses — it's
     faster and rules out an entire class of wrong guesses in one step.
+
+---
+
+## Incident #22 — June 30: `/verification/*` full pass — missing ownership
+check on identity verification start, silent data-loss bug in panic contacts
+
+**Commits:** `f988b823`
+
+**`POST /verification/identity/start`** had `requireAuth` but no ownership
+check at all — unlike every other user-scoped route in this same file
+(`safety-checkin`, `sos`, `panic-contacts` all use `requireOwnership`).
+`user_id` came straight from the request body with nothing verifying the
+caller actually was that user. Impact: any authenticated user could (1)
+trigger a billable Stripe Identity verification session against someone
+else's account, and (2) overwrite that user's `stripe_identity_session_id`
+with a session the attacker controls — letting them complete verification
+with their own document/selfie while the webhook attributes it to the
+victim's account (sets `identity_verified: true`, `trust_score: 95` on the
+wrong user). Fixed: added `requireOwnership("user_id")`, same pattern `sos`
+already uses for a body-field (not route-param) ownership check.
+
+`identity/webhook` and `safety-checkin` were checked and are correct as-is —
+webhook verifies via Stripe's cryptographic signature (the right mechanism
+for a webhook, not app auth), and `express.raw()` is already correctly
+scoped to that route before the global `express.json()` in `app.ts`.
+`safety-checkin` already had proper `requireOwnership`.
+
+**`PATCH /verification/panic-contacts/:userId`**: the route's own summary
+comment says "max 5", and `UpdatePanicContactsInput` in the OpenAPI spec
+(added this session) documents `maxItems: 5` — but the handler did
+`contacts.slice(0, 3)`, silently capping at 3. Worse, the response echoed
+back the original, untruncated input (`{ ok: true, contacts }` using the
+request body, not what was actually stored), so a client submitting 5
+contacts was told all 5 saved when only 3 did — silent, undetectable data
+loss on a safety feature. Fixed: slice to 5 (matching the documented
+contract), and return the actually-persisted array, not the raw input.
