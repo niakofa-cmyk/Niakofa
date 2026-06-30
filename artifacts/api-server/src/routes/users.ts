@@ -18,10 +18,13 @@ import {
   GetScheduledPaymentsParams,
 } from "@workspace/api-zod";
 import { broadcast } from "../lib/ws-hub";
-import { authLimiter, gpsLimiter } from "../middlewares/rate-limit";
+import { authLimiter, gpsLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import { signTokenById } from "../middlewares/auth";
+import { logger } from "../lib/logger";
+import { requestSelect } from "../lib/request-select";
+import { userSelect } from "../lib/user-select";
 
 const router = Router();
 
@@ -57,15 +60,46 @@ router.post("/users/register", authLimiter, async (req, res) => {
   const parsed = RegisterUserBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
   const { name, email, avatar_url, is_helper, neighborhood } = parsed.data;
-  const password = (req.body as any).password as string | undefined;
+  // BUG-CRIT-01: account_type/organization_name/organization_description are
+  // sent by the registration UI (login.tsx) but were never part of the
+  // generated RegisterUserBody zod schema, so zod silently stripped them and
+  // every account — individual or organization — was created with the DB
+  // default account_type="individual". Read them directly off the raw body
+  // (same established pattern as `password` below) until the openapi spec
+  // is updated and codegen re-run to add them properly.
+  const body = req.body as {
+    password?: string;
+    account_type?: string;
+    organization_name?: string;
+    organization_description?: string;
+  };
+  const password = body.password;
+  const ALLOWED_ACCOUNT_TYPES = ["individual", "organization"];
+  const account_type = ALLOWED_ACCOUNT_TYPES.includes(body.account_type ?? "")
+    ? (body.account_type as string)
+    : "individual";
 
   const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
   if (existing.length > 0) {
-    const { password_hash, ...safeExisting } = existing[0]!;
-    return res.json(safeExisting);
+    // BUG-C01: Never return an existing user row to an arbitrary registrant — leaks PII.
+    return res.status(409).json({ error: "An account with that email already exists. Please sign in instead." });
   }
 
   const password_hash = password ? await bcrypt.hash(password, 12) : null;
+
+  // BUG-CRIT-01 (continued): approval_status defaults to "pending" at the DB
+  // level for every row, and — until this fix — NOTHING in the codebase ever
+  // set it to "approved". App.tsx gates the entire app on this field
+  // (pending-approval.tsx), and no admin endpoint existed to advance it
+  // (see CLAUDE.md Incident #19) — meaning every single person who ever
+  // registered was permanently stuck on the pending-approval screen with no
+  // way out. Individual accounts (the overwhelming majority — this is a
+  // community help app, not an org directory) are auto-approved at
+  // registration since there's no legitimate reason to gate a person asking
+  // for or offering help. Organization accounts still require admin review
+  // via the new PATCH /admin/accounts/:id/approval endpoint, since vetting a
+  // claimed nonprofit/business identity is a real, intentional checkpoint.
+  const approval_status = account_type === "organization" ? "pending" : "approved";
 
   const [user] = await db.insert(usersTable).values({
     name, email,
@@ -73,14 +107,91 @@ router.post("/users/register", authLimiter, async (req, res) => {
     avatar_url: avatar_url ?? null,
     is_helper: is_helper ?? false,
     neighborhood: neighborhood ?? null,
+    account_type,
+    organization_name: account_type === "organization" ? (body.organization_name ?? null) : null,
+    organization_description: account_type === "organization" ? (body.organization_description ?? null) : null,
+    approval_status,
   }).returning();
   const token = signTokenById(user.id, user.token_version);
   const { password_hash: _ph, ...safeUser } = user;
   return res.status(201).json({ user: safeUser, token });
 });
 
+// POST /users/request-password-reset — emails a 6-digit code, used both for
+// the legacy-account "set your first password" flow (login.tsx redirects
+// here when POST /users/login returns LEGACY_PASSWORD_REQUIRED) and as a
+// general forgot-password flow. BUG-CRIT-02: this endpoint was called by the
+// frontend but never existed server-side at all — every "returning user"
+// whose account predates password auth got a 404 here and never received an
+// email, with no way to ever log in again. Always returns 200 regardless of
+// whether the email exists, to avoid leaking which emails are registered.
+router.post("/users/request-password-reset", authLimiter, async (req, res) => {
+  const { email } = req.body as { email?: string };
+  if (!email) return res.status(400).json({ error: "Email required" });
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
+  if (user) {
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    await db.update(usersTable)
+      .set({ password_reset_code: code, password_reset_expires_at: expiresAt })
+      .where(eq(usersTable.id, user.id));
+
+    const { sendAlertEmail } = await import("../lib/mailer.js");
+    await sendAlertEmail({
+      to: user.email,
+      subject: "Your Niakofa sign-in code",
+      title: "Your sign-in code",
+      body: `Hi ${user.name}, use this code to finish setting up sign-in on Niakofa: <strong style="font-size:24px;letter-spacing:4px">${code}</strong><br><br>This code expires in 15 minutes. If you didn't request this, you can ignore this email.`,
+    });
+  }
+
+  return res.json({ ok: true });
+});
+
+// POST /users/set-initial-password — verifies the emailed code and writes a
+// real password_hash, completing the legacy-account / reset flow above.
+router.post("/users/set-initial-password", authLimiter, async (req, res) => {
+  const { user_id, email, code, new_password } = req.body as {
+    user_id?: number; email?: string; code?: string; new_password?: string;
+  };
+  if (!user_id || !email || !code || !new_password) {
+    return res.status(400).json({ error: "user_id, email, code, and new_password are required" });
+  }
+  if (new_password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+
+  const [user] = await db.select().from(usersTable)
+    .where(and(eq(usersTable.id, user_id), eq(usersTable.email, email.trim().toLowerCase())))
+    .limit(1);
+  if (!user) return res.status(404).json({ error: "Account not found" });
+
+  if (!user.password_reset_code || user.password_reset_code !== code.trim()) {
+    return res.status(400).json({ error: "Incorrect code" });
+  }
+  if (!user.password_reset_expires_at || user.password_reset_expires_at.getTime() < Date.now()) {
+    return res.status(400).json({ error: "Code expired — request a new one" });
+  }
+
+  const password_hash = await bcrypt.hash(new_password, 12);
+  const [updated] = await db.update(usersTable)
+    .set({
+      password_hash,
+      password_reset_code: null,
+      password_reset_expires_at: null,
+      token_version: sql`${usersTable.token_version} + 1`,
+    })
+    .where(eq(usersTable.id, user.id))
+    .returning();
+
+  const token = signTokenById(updated.id, updated.token_version);
+  const { password_hash: _ph2, password_reset_code: _prc, ...safeUser } = updated;
+  return res.json({ user: safeUser, token });
+});
+
 router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
-  const parsed = GetUserParams.safeParse({ id: parseInt(req.params.id) });
+  const parsed = GetUserParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, parsed.data.id)).limit(1);
   if (!user) return res.status(404).json({ error: "User not found" });
@@ -89,23 +200,34 @@ router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
 });
 
 router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
-  const pParsed = UpdateUserParams.safeParse({ id: parseInt(req.params.id) });
+  const pParsed = UpdateUserParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = UpdateUserBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
-  const { name, avatar_url, neighborhood, is_helper } = bParsed.data;
+  const { name, avatar_url, neighborhood, is_helper, city, specialties, phone_masked, quick_replies } = bParsed.data;
+
+  // BUG-5-H02: Build the update object from an explicit allowlist of safe
+  // fields only. Never allow is_admin, role, trust_score, token_version, or
+  // any other privileged column to be set via this user-facing endpoint, even
+  // if they somehow appear in the Zod-parsed body (the `as any` cast below
+  // was a potential vector for privilege escalation if the schema drifted).
   const updates: Partial<typeof usersTable.$inferInsert> = {};
   if (name !== undefined) updates.name = name;
   if (avatar_url !== undefined) updates.avatar_url = avatar_url;
   if (neighborhood !== undefined) updates.neighborhood = neighborhood;
   if (is_helper !== undefined) updates.is_helper = is_helper;
-  const { specialties, phone_masked, quick_replies } = bParsed.data as any;
+
+  // Extended profile fields — validated by UpdateUserBody Zod schema above,
+  // read from bParsed.data so they go through the single schema-validation point.
+  if (city !== undefined) (updates as any).city = city;
   if (specialties !== undefined) (updates as any).specialties = specialties;
   if (phone_masked !== undefined) (updates as any).phone_masked = phone_masked;
   if (quick_replies !== undefined) (updates as any).quick_replies = quick_replies;
+
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No fields to update" });
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  return res.json(user);
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
 });
 
 router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter, async (req, res) => {
@@ -124,13 +246,30 @@ router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter,
       payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng, heading: user.heading },
     });
   }
-  return res.json(user);
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
 });
 
 router.patch("/users/:id/helper-mode", requireAuth, requireOwnership(), async (req, res) => {
-  const pParsed = UpdateHelperModeParams.safeParse({ id: parseInt(req.params.id) });
+  const pParsed = UpdateHelperModeParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = UpdateHelperModeBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
+
+  // The Settings/Profile screens already hide the "Go Online" toggle from
+  // anyone who isn't an approved helper, but that's a client-side
+  // convenience, not enforcement — without this check, a direct API call
+  // could flip helper_mode_active on for an unapproved account, and every
+  // other system (push targeting, the map's online-helpers query,
+  // auto-assign) trusts that flag alone with no second check of
+  // helper_status. This is the actual enforcement boundary.
+  if (bParsed.data.active) {
+    const [existing] = await db.select({ helper_status: usersTable.helper_status })
+      .from(usersTable).where(eq(usersTable.id, pParsed.data.id)).limit(1);
+    if (existing?.helper_status !== "approved") {
+      return res.status(403).json({ error: "Only approved helpers can go online. Apply to become a helper in your profile first." });
+    }
+  }
+
   const [user] = await db.update(usersTable)
     .set({ helper_mode_active: bParsed.data.active })
     .where(eq(usersTable.id, pParsed.data.id))
@@ -140,15 +279,16 @@ router.patch("/users/:id/helper-mode", requireAuth, requireOwnership(), async (r
     type: bParsed.data.active ? "helper_online" : "helper_offline",
     payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng },
   });
-  return res.json(user);
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
 });
 
 router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, res) => {
-  const pParsed = MakePledgePaymentParams.safeParse({ id: parseInt(req.params.id) });
+  const pParsed = MakePledgePaymentParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = MakePledgePaymentBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { request_id, amount } = bParsed.data;
-  const [request] = await db.select().from(requestsTable)
+  const [request] = await db.select(requestSelect).from(requestsTable)
     .where(and(eq(requestsTable.id, request_id), eq(requestsTable.requester_id, pParsed.data.id)))
     .limit(1);
   if (!request) return res.status(404).json({ error: "Request not found or unauthorized" });
@@ -158,18 +298,10 @@ router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, re
     .where(eq(requestsTable.id, request_id))
     .returning();
 
-  if (request.helper_id && amount > 0) {
-    await db.update(usersTable)
-      .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${amount}` })
-      .where(eq(usersTable.id, request.helper_id));
-    await db.insert(transactionsTable).values({
-      user_id: request.helper_id,
-      request_id: request_id,
-      type: "pledge_received",
-      amount: amount,
-      description: request.title,
-    });
-  }
+  // BUG-C07/C08: Do NOT credit benevolence_wallet or insert pledge_received here.
+  // The Stripe webhook (payment_intent.succeeded) is the sole authoritative path
+  // for crediting the helper's wallet. Doing it here causes double-credit when
+  // the webhook fires for the same payment.
   await db.insert(transactionsTable).values({
     user_id: pParsed.data.id,
     request_id: request_id,
@@ -198,7 +330,7 @@ router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, re
 
 // GET /users/:id/transactions — real activity history
 router.get("/users/:id/transactions", requireAuth, requireOwnership(), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const txns = await db.select().from(transactionsTable)
     .where(eq(transactionsTable.user_id, id))
@@ -209,13 +341,18 @@ router.get("/users/:id/transactions", requireAuth, requireOwnership(), async (re
 
 // POST /users/:id/scheduled-payment — save a future repayment intent
 router.post("/users/:id/scheduled-payment", requireAuth, requireOwnership(), async (req, res) => {
-  const pParsed = CreateScheduledPaymentParams.safeParse({ id: parseInt(req.params.id) });
+  const pParsed = CreateScheduledPaymentParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = CreateScheduledPaymentBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
   const { request_id, amount, scheduled_date, note } = bParsed.data;
   const userId = pParsed.data.id;
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (!user) return res.status(404).json({ error: "User not found" });
+  // BUG-H07: Verify the requester owns the request they're scheduling a payment for
+  const [requestRow] = await db.select({ requester_id: requestsTable.requester_id })
+    .from(requestsTable).where(eq(requestsTable.id, request_id)).limit(1);
+  if (!requestRow) return res.status(404).json({ error: "Request not found" });
+  if (requestRow.requester_id !== userId) return res.status(403).json({ error: "You can only schedule payments for your own requests" });
   const [scheduled] = await db.insert(scheduledPaymentsTable).values({
     user_id: userId,
     request_id,
@@ -233,18 +370,18 @@ router.post("/users/:id/scheduled-payment", requireAuth, requireOwnership(), asy
 
 // GET /users/:id/scheduled-payment — list future payment intents
 router.get("/users/:id/scheduled-payment", requireAuth, requireOwnership(), async (req, res) => {
-  const parsed = GetScheduledPaymentsParams.safeParse({ id: parseInt(req.params.id) });
+  const parsed = GetScheduledPaymentsParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const rows = await db.select().from(scheduledPaymentsTable)
     .where(eq(scheduledPaymentsTable.user_id, parsed.data.id))
     .orderBy(scheduledPaymentsTable.scheduled_date);
-  return res.json(rows.map(r => ({ ...r, scheduled_date: r.scheduled_date.toISOString() })));
+  return res.json(rows.map((r: (typeof rows)[number]) => ({ ...r, scheduled_date: r.scheduled_date.toISOString() })));
 });
 
 // DELETE /users/:id/scheduled-payment/:paymentId — cancel a scheduled payment
 router.delete("/users/:id/scheduled-payment/:paymentId", requireAuth, requireOwnership(), async (req, res) => {
-  const userId = parseInt(req.params.id);
-  const paymentId = parseInt(req.params.paymentId);
+  const userId = parseInt(String(req.params.id));
+  const paymentId = parseInt(String(req.params.paymentId));
   if (isNaN(userId) || isNaN(paymentId)) return res.status(400).json({ error: "Invalid id" });
   const [deleted] = await db.delete(scheduledPaymentsTable)
     .where(and(
@@ -258,9 +395,9 @@ router.delete("/users/:id/scheduled-payment/:paymentId", requireAuth, requireOwn
 
 // GET /users/:id/outstanding-pledges — requests with unpaid pledge balance
 router.get("/users/:id/outstanding-pledges", requireAuth, requireOwnership(), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
-  const requests = await db.select().from(requestsTable)
+  const requests = await db.select(requestSelect).from(requestsTable)
     .where(
       and(
         eq(requestsTable.requester_id, id),
@@ -268,8 +405,8 @@ router.get("/users/:id/outstanding-pledges", requireAuth, requireOwnership(), as
         eq(requestsTable.status, "completed"),
       )
     );
-  const outstanding = requests.filter(r => (r.pledge_amount ?? 0) > (r.pledge_paid ?? 0));
-  return res.json(outstanding.map(r => ({
+  const outstanding = requests.filter((r: (typeof requests)[number]) => (r.pledge_amount ?? 0) > (r.pledge_paid ?? 0));
+  return res.json(outstanding.map((r: (typeof outstanding)[number]) => ({
     ...r,
     requester_name: null,
     requester_avatar: null,
@@ -281,7 +418,7 @@ router.get("/users/:id/outstanding-pledges", requireAuth, requireOwnership(), as
 
 // POST /users/:id/avatar — update profile photo (base64 data URL)
 router.post("/users/:id/avatar", requireAuth, requireOwnership(), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const { dataUrl } = req.body as { dataUrl?: string };
   if (!dataUrl || !dataUrl.startsWith("data:image/")) {
@@ -297,12 +434,13 @@ router.post("/users/:id/avatar", requireAuth, requireOwnership(), async (req, re
     .where(eq(usersTable.id, id))
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  return res.json(user);
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
 });
 
 // GET /users/:id/settings — fetch user notification + privacy prefs (upserts defaults if first visit)
 router.get("/users/:id/settings", requireAuth, requireOwnership(), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const [existing] = await db.select().from(userSettingsTable).where(eq(userSettingsTable.user_id, id)).limit(1);
   if (existing) return res.json(existing);
@@ -313,17 +451,21 @@ router.get("/users/:id/settings", requireAuth, requireOwnership(), async (req, r
 
 // PUT /users/:id/settings — persist notification + privacy prefs
 router.put("/users/:id/settings", requireAuth, requireOwnership(), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const allowed = [
     "notif_nearby_requests", "notif_emergency", "notif_task_accepted",
     "notif_wallet_updates", "notif_community_activity", "notif_pledge_reminders",
     "privacy_profile_visible", "privacy_live_location", "privacy_activity_sharing",
     "privacy_anonymous_giving", "service_radius_miles", "max_travel_miles", "specialties",
+    "preferred_language",
   ];
+  const VALID_LANGUAGES = ["en", "sw", "zu", "tw", "yo", "ha", "am", "so", "pcm", "lg"];
   const updates: Record<string, unknown> = { updated_at: new Date() };
   for (const key of allowed) {
-    if (req.body[key] !== undefined) updates[key] = req.body[key];
+    if (req.body[key] === undefined) continue;
+    if (key === "preferred_language" && !VALID_LANGUAGES.includes(req.body[key])) continue;
+    updates[key] = req.body[key];
   }
   // Upsert
   const [existing] = await db.select().from(userSettingsTable).where(eq(userSettingsTable.user_id, id)).limit(1);
@@ -348,12 +490,15 @@ router.patch("/users/:id/panic-contacts", requireAuth, requireOwnership(), async
     .set({ panic_contacts: contacts })
     .where(eq(usersTable.id, id))
     .returning();
-  return res.json(user);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
 });
 
-// Admin moderation actions
-router.delete("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
-  const userId = parseInt(req.params.id);
+// BUG-H03: Account deletion is admin-only. requireOwnership() would let any
+// authenticated user delete any other account by crafting the path parameter.
+router.delete("/users/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
 
   try {
@@ -367,21 +512,26 @@ router.delete("/users/:id", requireAuth, requireOwnership(), async (req, res) =>
 
     return res.json({ ok: true, message: "Account deleted successfully" });
   } catch (error) {
-    console.error("Error deleting user account:", error);
+    logger.error({ err: error }, "delete-account: failed");
     return res.status(500).json({ error: "Failed to delete account" });
   }
 });
 
-router.patch("/users/:id/moderation", requireAuth, requireAdmin(), async (req, res) => {
-  const userId = parseInt(req.params.id);
+router.patch("/users/:id/moderation", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
-  const { action } = req.body as { action: "warn" | "ban" };
-  if (!["warn", "ban"].includes(action)) return res.status(400).json({ error: "Invalid action" });
+  const { action } = req.body as { action: "warn" | "ban" | "suspend" };
+  if (!["warn", "ban", "suspend"].includes(action)) return res.status(400).json({ error: "Invalid action" });
 
   if (action === "ban") {
-    // Set trust_score to -1 as banned flag
+    // Set trust_score to -1 as banned flag + hard suspension
     await db.update(usersTable)
-      .set({ trust_score: -1, helper_mode_active: false })
+      .set({ trust_score: -1, helper_mode_active: false, is_suspended: true, suspended_at: new Date(), suspended_reason: "Banned by admin" })
+      .where(eq(usersTable.id, userId));
+  } else if (action === "suspend") {
+    // Soft suspension
+    await db.update(usersTable)
+      .set({ is_suspended: true, suspended_at: new Date(), suspended_reason: req.body.reason ?? "Suspended by admin", helper_mode_active: false })
       .where(eq(usersTable.id, userId));
   } else {
     // Reduce trust score by 10 for a warning
@@ -429,7 +579,7 @@ router.get("/users/:id/availability", requireAuth, requireOwnership(), async (re
 // Bumps token_version so every previously issued token for this user
 // is immediately invalid, even ones that haven't expired yet.
 router.post("/users/:id/logout", requireAuth, requireOwnership(), async (req, res) => {
-  const userId = parseInt(req.params.id);
+  const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
   await db.update(usersTable)
     .set({ token_version: sql`${usersTable.token_version} + 1` })
@@ -438,7 +588,7 @@ router.post("/users/:id/logout", requireAuth, requireOwnership(), async (req, re
 });
 
 // GET all users (admin)
-router.get("/users", requireAuth, requireAdmin(), async (_req, res) => {
+router.get("/users", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
   const users = await db.select({
     id: usersTable.id,
     name: usersTable.name,
@@ -446,9 +596,96 @@ router.get("/users", requireAuth, requireAdmin(), async (_req, res) => {
     is_helper: usersTable.is_helper,
     trust_score: usersTable.trust_score,
     help_count: usersTable.help_count,
+    is_suspended: usersTable.is_suspended,
+    suspended_at: usersTable.suspended_at,
+    suspended_reason: usersTable.suspended_reason,
     created_at: usersTable.created_at,
   }).from(usersTable).limit(200);
   return res.json(users);
+});
+
+// PATCH /users/:id/helper-application
+// Two modes:
+//   1. User submitting their own application (sends helper_skills, helper_bio, etc.) — requireOwnership
+//   2. Admin reviewing an application (sends status: approved|denied|rejected) — requireAdmin
+//      "rejected" is accepted as an alias for "denied" since the admin UI's bulk-action
+//      buttons send "rejected" while the single-review flow sends "denied" — both are
+//      normalized to the same stored value.
+router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid user id" });
+
+  const {
+    status,
+    helper_skills,
+    helper_languages,
+    helper_qualifications,
+    helper_bio,
+    helper_vehicle,
+    helper_social_links,
+  } = req.body as {
+    status?: string;
+    helper_skills?: string[];
+    helper_languages?: string[];
+    helper_qualifications?: string[];
+    helper_bio?: string;
+    helper_vehicle?: string;
+    helper_social_links?: string;
+  };
+
+  const authenticatedUserId = req.authenticatedUserId;
+  if (!authenticatedUserId) return res.status(401).json({ error: "Authentication required" });
+
+  // Admin status review path
+  if (status !== undefined) {
+    const [admin] = await db.select({ is_admin: usersTable.is_admin }).from(usersTable).where(eq(usersTable.id, authenticatedUserId)).limit(1);
+    if (!admin?.is_admin) return res.status(403).json({ error: "Forbidden: Admin access required" });
+
+    const normalizedStatus = status === "rejected" ? "denied" : status;
+    if (!["pending", "approved", "denied"].includes(normalizedStatus)) {
+      return res.status(400).json({ error: "status must be pending | approved | denied" });
+    }
+
+    const [updated] = await db
+      .update(usersTable)
+      .set({
+        helper_status: normalizedStatus,
+        is_helper: normalizedStatus === "approved",
+        updated_at: new Date(),
+      })
+      .where(eq(usersTable.id, id))
+      .returning();
+
+    if (!updated) return res.status(404).json({ error: "User not found" });
+    const { password_hash, ...safe } = updated;
+    return res.json(safe);
+  }
+
+  // User submitting their own helper application
+  if (authenticatedUserId !== id) return res.status(403).json({ error: "Forbidden: You can only update your own application" });
+
+  if (!helper_skills || helper_skills.length === 0) {
+    return res.status(400).json({ error: "At least one skill is required" });
+  }
+
+  const [updated] = await db
+    .update(usersTable)
+    .set({
+      helper_skills,
+      helper_languages: helper_languages ?? [],
+      helper_qualifications: helper_qualifications ?? [],
+      helper_bio: helper_bio ?? null,
+      helper_vehicle: helper_vehicle ?? null,
+      helper_social_links: helper_social_links ?? null,
+      helper_status: "pending",
+      updated_at: new Date(),
+    })
+    .where(eq(usersTable.id, id))
+    .returning();
+
+  if (!updated) return res.status(404).json({ error: "User not found" });
+  const { password_hash, ...safe } = updated;
+  return res.json(safe);
 });
 
 export default router;

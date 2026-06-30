@@ -624,6 +624,80 @@ function ReportDetailSheet({ report, onClose, onReviewed }: {
 }
 
 // ── Users Tab ─────────────────────────────────────────────────────────────────
+// ── Pending Account Approvals ─────────────────────────────────────────────────
+// BUG-CRIT-01: individual accounts now auto-approve at registration (see
+// CLAUDE.md Incident #19), but organization accounts still require real
+// admin review. This is the UI for that — previously GET /admin/accounts
+// could list pending accounts but no UI surfaced them and no endpoint could
+// act on them at all.
+function PendingAccountsCard() {
+  const [pending, setPending] = useState<AdminUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState<number | null>(null);
+
+  const load = useCallback(() => {
+    const tok = getToken();
+    fetch(`${BASE}/api/admin/accounts?approval_status=pending`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} })
+      .then(r => r.ok ? r.json() : [])
+      .then((data: AdminUser[]) => { if (Array.isArray(data)) setPending(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const decide = async (userId: number, status: "approved" | "denied") => {
+    setProcessing(userId);
+    try {
+      const tok = getToken();
+      const res = await fetch(`${BASE}/api/admin/accounts/${userId}/approval`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setPending(prev => prev.filter(u => u.id !== userId));
+      toast({ title: status === "approved" ? "Account approved ✅" : "Account denied" });
+    } catch {
+      toast({ title: "Action failed", variant: "destructive" });
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  if (loading || pending.length === 0) return null;
+
+  return (
+    <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 space-y-3">
+      <div className="text-xs font-black uppercase tracking-wider text-yellow-600 flex items-center gap-1.5">
+        <Clock className="w-3.5 h-3.5" /> Pending Account Approvals ({pending.length})
+      </div>
+      {pending.map(u => (
+        <div key={u.id} className="bg-card border border-border rounded-xl p-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-bold truncate">{u.name}</div>
+            <div className="text-xs text-muted-foreground truncate">{u.email}</div>
+            {(u as AdminUser & { organization_name?: string }).organization_name && (
+              <div className="text-[10px] text-primary mt-0.5">{(u as AdminUser & { organization_name?: string }).organization_name}</div>
+            )}
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={() => decide(u.id, "denied")}
+              disabled={processing === u.id}
+              className="h-9 px-3 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive text-xs font-black disabled:opacity-50"
+            >Deny</button>
+            <button
+              onClick={() => decide(u.id, "approved")}
+              disabled={processing === u.id}
+              className="h-9 px-3 rounded-lg bg-green-500 text-white text-xs font-black disabled:opacity-50"
+            >Approve</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function UsersTab() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -665,6 +739,7 @@ function UsersTab() {
 
   return (
     <div className="space-y-3">
+      <PendingAccountsCard />
       {/* Search + filter row */}
       <div className="flex gap-2">
         <div className="relative flex-1">

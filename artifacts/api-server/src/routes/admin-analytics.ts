@@ -5,7 +5,7 @@
  * All routes require authentication + admin role.
  */
 import { Router } from "express";
-import { db, requestsTable, usersTable, reportsTable, systemSettingsTable } from "@workspace/db";
+import { db, requestsTable, usersTable, reportsTable, systemSettingsTable, niaMemoriesTable, niaConversationsTable } from "@workspace/db";
 import { eq, sql, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
@@ -446,6 +446,87 @@ router.get("/admin/nia-cost-alert", requireAuth, requireAdmin(), adminLimiter, a
     logger.error({ err }, "admin: failed to check cost alert");
     return res.status(500).json({ error: "Failed to check cost alert" });
   }
+});
+
+// GET /admin/stats — flat KPI summary for the Analytics tab's top cards.
+// BUG-CRIT-03: the frontend has called this since the Analytics tab was
+// built (with a hardcoded "/api/admin/stats endpoint not responding"
+// fallback message that's been silently showing for every admin, every
+// time) but the route never existed server-side. See CLAUDE.md Incident #19.
+router.get("/admin/stats", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const [
+    requestCounts,
+    userCounts,
+    reportCounts,
+    niaConvCount,
+    trustAvg,
+  ] = await Promise.all([
+    db.select({
+      total: sql<number>`COUNT(*)::int`,
+      completed: sql<number>`COUNT(*) FILTER (WHERE ${requestsTable.status} = 'completed')::int`,
+    }).from(requestsTable),
+    db.select({
+      total: sql<number>`COUNT(*)::int`,
+      activeHelpers: sql<number>`COUNT(*) FILTER (WHERE ${usersTable.helper_mode_active} = true)::int`,
+    }).from(usersTable),
+    db.select({
+      total: sql<number>`COUNT(*)::int`,
+      pending: sql<number>`COUNT(*) FILTER (WHERE ${reportsTable.status} = 'pending')::int`,
+    }).from(reportsTable),
+    db.select({ count: sql<number>`COUNT(*)::int` }).from(niaConversationsTable),
+    db.select({ avg: sql<number>`COALESCE(AVG(${usersTable.trust_score}), 0)::float` }).from(usersTable),
+  ]);
+
+  return res.json({
+    total_requests: requestCounts[0]?.total ?? 0,
+    completed_requests: requestCounts[0]?.completed ?? 0,
+    total_users: userCounts[0]?.total ?? 0,
+    active_helpers: userCounts[0]?.activeHelpers ?? 0,
+    total_reports: reportCounts[0]?.total ?? 0,
+    pending_reports: reportCounts[0]?.pending ?? 0,
+    nia_conversations: niaConvCount[0]?.count ?? 0,
+    avg_trust_score: trustAvg[0]?.avg ?? 0,
+  });
+});
+
+// GET /admin/nia-memory-stats — how many users have a stored Nia memory and
+// how many memory rows exist total. Same prior gap as /admin/stats above.
+router.get("/admin/nia-memory-stats", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const [row] = await db.select({
+    users: sql<number>`COUNT(DISTINCT ${niaMemoriesTable.user_id})::int`,
+    entries: sql<number>`COUNT(*)::int`,
+  }).from(niaMemoriesTable);
+  return res.json({ users: row?.users ?? 0, entries: row?.entries ?? 0 });
+});
+
+// PATCH /admin/accounts/:id/approval — approve or deny a pending account.
+// BUG-CRIT-01 (see CLAUDE.md Incident #19 and routes/users.ts register
+// route): GET /admin/accounts could list pending accounts but nothing could
+// ever change their status — there was no admin-side way to unblock anyone.
+// Individual accounts are now auto-approved at registration (see users.ts),
+// so in practice this exists for organization accounts requiring real
+// review, but works for any account_type an admin needs to act on.
+router.patch("/admin/accounts/:id/approval", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const userId = parseInt(req.params.id as string);
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+  const { status } = req.body as { status?: "approved" | "denied" | "pending" };
+  if (!status || !["approved", "denied", "pending"].includes(status)) {
+    return res.status(400).json({ error: "status must be 'approved', 'denied', or 'pending'" });
+  }
+
+  const adminUserId = req.authenticatedUserId;
+  const [updated] = await db.update(usersTable)
+    .set({
+      approval_status: status,
+      approval_reviewed_by: adminUserId ?? null,
+      approval_reviewed_at: new Date(),
+    })
+    .where(eq(usersTable.id, userId))
+    .returning();
+
+  if (!updated) return res.status(404).json({ error: "User not found" });
+  const { password_hash, ...safe } = updated;
+  return res.json(safe);
 });
 
 export default router;
