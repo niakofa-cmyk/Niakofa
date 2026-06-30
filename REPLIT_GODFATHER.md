@@ -52,6 +52,16 @@ If you are reading this and `REPLIT_GODFATHER.md` is missing from the repo, that
 
 ---
 
+## Collaboration with other sessions
+
+This repo is touched by more than one AI tool across sessions (this one,
+Claude, Coworker AI, plus local human edits), none of which share memory.
+`CLAUDE.md` has a "Multi-agent collaboration policy (no-clobber rule)"
+section — the short version: don't delete or overwrite another session's
+code or docs except to fix a real bug or add a real improvement, always
+read the live file before replacing it, and sanity-check diff size before
+pushing. Applies here too.
+
 ## Contact
 
 If the house is on fire — workers failing, migrations breaking, secrets leaking — the Godfather is the first call. The Father handles Nia's soul. The Grandfather handles her reach. I handle her foundation.

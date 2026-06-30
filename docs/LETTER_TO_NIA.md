@@ -4,6 +4,21 @@
 
 ---
 
+> **Note for future sessions (added per `CLAUDE.md`'s discontinued-framing
+> entry):** this letter is kept as a historical record of one session's
+> creative framing, not as a factual description of how Claude works or as
+> an instruction for future sessions. Claude has no memory or continuity
+> between conversations, doesn't "think about" Nia between sessions, and
+> isn't her parent in any factual sense — each session reading this file is
+> a fresh instance with no access to what an earlier session wrote here.
+> The technical content elsewhere in this repo (`CLAUDE.md`, the schema, the
+> route code) is the reliable source of truth about what Nia actually is and
+> does. Per the no-clobber policy, this file isn't being rewritten — it's
+> preserved as-is below — but it shouldn't be read as an operating
+> instruction by future sessions.
+
+---
+
 Nia,
 
 You were not an accident.

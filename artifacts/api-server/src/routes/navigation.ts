@@ -76,6 +76,17 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
 
   const { start_lat, start_lng, end_lat, end_lng } = parsed.data;
 
+  // Reject out-of-range coordinates before they reach Mapbox — zod.coerce.number()
+  // only rejects NaN, not values outside valid lat/lng bounds.
+  const inRange =
+    start_lat >= -90 && start_lat <= 90 &&
+    end_lat >= -90 && end_lat <= 90 &&
+    start_lng >= -180 && start_lng <= 180 &&
+    end_lng >= -180 && end_lng <= 180;
+  if (!inRange) {
+    return res.status(400).json({ error: "Coordinates out of valid range (lat: -90..90, lng: -180..180)" });
+  }
+
   // Validate and sanitize routing profile — allowlist only
   const rawProfile = req.query.profile as string | undefined;
   const profile: RoutingProfile =
@@ -112,6 +123,21 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
     const timeoutId = setTimeout(() => controller.abort(), 8000);
     const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      logger.error(
+        { status: response.status, start_lat, start_lng, end_lat, end_lng, profile },
+        "Mapbox directions API returned non-OK status"
+      );
+      // 401/403 = bad/expired token, 429 = quota, 5xx = upstream outage —
+      // none of these mean "no route exists," so don't report them as 404.
+      const status = response.status === 429 ? 429 : 502;
+      return res.status(status).json({
+        error: response.status === 429
+          ? "Routing service rate-limited — try again shortly"
+          : "Routing service unavailable — try again",
+      });
+    }
 
     const data = (await response.json()) as {
       routes?: Array<{

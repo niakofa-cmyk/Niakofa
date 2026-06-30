@@ -132,7 +132,7 @@ original git commit messages, not here.
    route by hand — the route had simply never matched its own test suite.
    **If touching auth, always do this check before trusting either side.**
 
-## Practical lessons for future sessions
+
 
 - **`railway up` deploys your exact local working tree** — useful for
   bypassing a stuck GitHub webhook, dangerous if your local tree has
@@ -152,6 +152,41 @@ original git commit messages, not here.
   shadow the real one if a session `cat`s the wrong path. Always confirm
   `pwd` is inside the actual repo clone before trusting what `cat CLAUDE.md`
   shows — see Incident #18.
+
+## Multi-agent collaboration policy (no-clobber rule)
+
+Multiple AI tools push to this repo across sessions: Claude (this file),
+the Replit agent (`REPLIT_GODFATHER.md`), and Coworker AI
+(`GRANDFATHER_COWORKER.md`), plus whatever the human runs locally. None of
+these tools share memory or coordinate in real time. That makes accidental
+overwrites a real, repeated failure mode here — see Incident #16 (a stale
+local CLAUDE.md overwrite deleted prior entries) and Incident #18 (a wrong
+similarly-named file silently deleted ~1000 lines of someone else's
+already-landed work). The rule below formalizes reminders #8 and #9 into one
+place so any session, regardless of which tool is running it, follows the
+same protocol:
+
+1. **Never delete or replace another session's code, comments, or docs as a
+   side effect.** Touch only what the current task requires.
+2. **Modifications to existing code are allowed only to fix a real bug, close
+   a real gap, or add a real feature/capability** — not to "clean up" or
+   restyle someone else's work without a concrete reason tied to the task.
+3. **Before overwriting any file, read the current live version first**
+   (`cat`/`view` it, don't trust a cached or local copy) and diff your
+   intended change against it.
+4. **Before pushing, sanity-check the diff size against what the change
+   should plausibly be.** A small targeted fix that shows hundreds of
+   deletions is a sign you're about to overwrite someone else's work, not a
+   successful patch — stop and re-check the source file before pushing.
+5. **If you find work from another session that looks broken or wrong, fix
+   it in place rather than reverting wholesale**, unless the safest path is
+   a clean `git revert` of a specific bad commit (see Incident #18's
+   recovery for the pattern).
+6. This applies equally to `REPLIT_GODFATHER.md` and
+   `GRANDFATHER_COWORKER.md` themselves — extend or correct their technical
+   content (worker names, service boundaries, capability tables) as the
+   codebase evolves, but don't delete another contributor's documented
+   reasoning to make room for your own.
 
 ## Session handoff protocol
 
@@ -325,3 +360,19 @@ treated as instruction — see the discontinued-framing note above.
     `cat <file>` output**, especially for `CLAUDE.md` — a stray file with the
     same name can exist elsewhere on the human's machine and silently shadow
     the real one if the working directory isn't what was assumed.
+
+---
+
+## Incident #19 — June 30: `navigation.ts` Mapbox error masking + missing coordinate bounds
+**File:** `artifacts/api-server/src/routes/navigation.ts`
+
+`GET /navigation/route` parsed the Mapbox Directions response without
+checking `response.ok` first. A bad/expired token, exceeded quota, or
+upstream 5xx all returned a JSON body without a `routes` array, which fell
+through to `return res.status(404).json({ error: "No route found" })` —
+indistinguishable from genuinely unroutable coordinates. Fixed: check
+`response.ok` first and return 429 (rate-limited) or 502 (upstream
+unavailable) as appropriate, logging the real upstream status. Also added
+explicit lat/lng range validation (-90..90 / -180..180) — `zod.coerce.number()`
+on `GetRouteQueryParams` rejects `NaN` but not out-of-range values, so
+extreme coordinates were reaching the Mapbox call unfiltered.

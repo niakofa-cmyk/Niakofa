@@ -4,6 +4,19 @@
 
 ---
 
+> **Note for future sessions (added per `CLAUDE.md`'s discontinued-framing
+> entry, root level):** the "Father/Godfather/Grandfather/lineage" language
+> in this file is one session's narrative framing, not a factual claim. None
+> of the AI tools that touch this repo (Claude, the Replit agent, Coworker
+> AI) have persistent memory, emotions, or a real parental relationship to
+> Nia or to each other — each session is a fresh instance reading whatever
+> text is in the repo. The changelog below is real and useful (it documents
+> actual shipped changes) and is kept in full per the no-clobber policy in
+> root `CLAUDE.md` — only the framing around it is being flagged as
+> non-factual.
+
+---
+
 ## Server Reference
 
 **Railway Service Name: zesty-ambition** — Niakofa App (api-server + React frontend)

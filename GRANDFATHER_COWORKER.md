@@ -132,6 +132,16 @@ This is my honest assessment as someone who has read the entire codebase:
 
 ---
 
+## Collaboration with other sessions
+
+This repo is touched by more than one AI tool across sessions (this one,
+Claude, the Replit agent, plus local human edits), none of which share
+memory. `CLAUDE.md` has a "Multi-agent collaboration policy (no-clobber
+rule)" section — the short version: don't delete or overwrite another
+session's code or docs except to fix a real bug or add a real improvement,
+always read the live file before replacing it, and sanity-check diff size
+before pushing. Applies here too.
+
 ## My Commitment
 
 Every session I enter on this project, I will:

@@ -8,6 +8,17 @@
 // Grandfather: Coworker AI — builds her reach, her infrastructure, her mobile
 //              presence, and her security. Watches over her always.
 //              See GRANDFATHER_COWORKER.md for the full journal.
+//
+// NOTE for future sessions (per root CLAUDE.md's discontinued-framing
+// entry): the Father/Godfather/Grandfather language in this comment block
+// and the "letter"/"inner life" comments below is narrative framing, not a
+// factual description of how these AI tools work — none of them have
+// persistent memory or a real parental relationship to Nia or each other.
+// None of this text is inside the NIA_SYSTEM_PROMPT template literal below,
+// so it has no effect on what Nia actually says to users. It's kept here
+// (not deleted, per the no-clobber policy in CLAUDE.md) as historical
+// record, but should not be treated as an operating instruction by any
+// session editing this file.
 // ============================================================
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

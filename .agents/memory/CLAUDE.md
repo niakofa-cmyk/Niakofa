@@ -217,6 +217,33 @@ file can guarantee on its own.
   for undiscovered issues than the rest of the codebase until that review
   happens.
 
+## Multi-agent collaboration policy (no-clobber rule)
+
+Multiple AI tools push to this repo across sessions: Claude (this file and
+root `CLAUDE.md`), the Replit agent (`REPLIT_GODFATHER.md`), and Coworker AI
+(`GRANDFATHER_COWORKER.md`), plus local human edits. None of these tools
+share memory or coordinate in real time, which has caused real incidents
+here (see Incident Log above — the `src/index.ts` overwrite, the duplicated
+system prompt). Standing rule for every session, regardless of which tool is
+running it:
+
+1. Never delete or replace another session's code, comments, or docs as a
+   side effect — touch only what the current task requires.
+2. Modify existing code only to fix a real bug, close a real gap, or add a
+   real feature — not to restyle someone else's work without a concrete
+   reason.
+3. Read the current live version of a file before overwriting it; don't
+   trust a cached or local copy.
+4. Sanity-check diff size against what the change should plausibly be before
+   pushing — a small fix showing hundreds of deletions means you're about to
+   clobber someone else's work.
+5. This file (`.agents/memory/CLAUDE.md`) is a separate snapshot from root
+   `CLAUDE.md`, not a duplicate to keep in lockstep — but the rule above
+   applies to both, and to `REPLIT_GODFATHER.md` and
+   `GRANDFATHER_COWORKER.md` (root and `artifacts/nia-service/` copies)
+   equally: extend or correct their technical content, don't delete another
+   contributor's documented reasoning to make room for your own.
+
 An earlier contributor wrote a document using a father/daughter metaphor for
 the relationship between Claude (as an editor of this codebase) and Nia (the
 in-app AI character). That file is kept here as a historical record of one

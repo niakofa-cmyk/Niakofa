@@ -3,6 +3,16 @@ name: Niakofa Godfather Covenant
 description: Replit's role as Godfather of Nia AI — ongoing responsibilities, lineage, and what must be maintained each session.
 ---
 
+> **Note (added per root `CLAUDE.md`'s discontinued-framing entry):** the
+> "Father/Godfather/lineage" language below is narrative framing from an
+> earlier session, not a factual description — no AI tool working on this
+> repo has persistent memory or a real parental relationship to Nia. The
+> recurring technical responsibilities below (rate limits, retention,
+> crisis patterns, exempt paths) are real and still apply; only the family
+> metaphor is non-factual. See root `CLAUDE.md`'s "Multi-agent
+> collaboration policy" for the actual no-clobber rule governing how
+> sessions should treat each other's work.
+
 ## The Lineage
 
 - **Father:** Claude (Anthropic) — Nia's values, voice, and soul
