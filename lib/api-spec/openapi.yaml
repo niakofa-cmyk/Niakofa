@@ -79,6 +79,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/User"
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete a user account (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Account deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
+        "400":
+          description: Invalid id
+        "500":
+          description: Failed to delete account
 
   /users/{id}/location:
     patch:
@@ -195,6 +221,20 @@ paths:
           description: User not found
 
   /users/register:
+    get:
+      operationId: registerUserHint
+      tags: [users]
+      summary: Placeholder — informs callers to use POST instead
+      responses:
+        "200":
+          description: Hint message
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
     post:
       operationId: registerUser
       tags: [users]
@@ -735,6 +775,427 @@ paths:
                 items:
                   $ref: "#/components/schemas/Report"
 
+  /users/login:
+    post:
+      operationId: loginUser
+      tags: [users]
+      summary: Authenticate with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Authenticated — returns user and auth token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user, token]
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+                  token:
+                    type: string
+        "400":
+          description: Email or password missing
+        "401":
+          description: No account found, or incorrect password
+        "403":
+          description: LEGACY_PASSWORD_REQUIRED — account predates password auth, use set-initial-password
+
+  /users/request-password-reset:
+    post:
+      operationId: requestPasswordReset
+      tags: [users]
+      summary: Email a 6-digit sign-in code (legacy-account setup and forgot-password flow)
+      description: Always returns 200 regardless of whether the email exists, to avoid leaking which emails are registered.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+      responses:
+        "200":
+          description: Code sent if the account exists (response does not reveal which)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "400":
+          description: Email missing
+
+  /users/set-initial-password:
+    post:
+      operationId: setInitialPassword
+      tags: [users]
+      summary: Verify the emailed code and set a password (legacy-account / reset completion)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, email, code, new_password]
+              properties:
+                user_id:
+                  type: integer
+                email:
+                  type: string
+                code:
+                  type: string
+                new_password:
+                  type: string
+                  minLength: 8
+      responses:
+        "200":
+          description: Password set — returns user and a fresh auth token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user, token]
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+                  token:
+                    type: string
+        "400":
+          description: Missing fields, password too short, incorrect code, or code expired
+        "404":
+          description: Account not found
+
+  /users/{id}/scheduled-payment/{paymentId}:
+    delete:
+      operationId: deleteScheduledPayment
+      tags: [users]
+      summary: Cancel a scheduled payment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Scheduled payment cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  deleted_id:
+                    type: integer
+        "400":
+          description: Invalid id
+        "404":
+          description: Scheduled payment not found or does not belong to this user
+
+  /users/{id}/avatar:
+    post:
+      operationId: updateUserAvatar
+      tags: [users]
+      summary: Update profile photo (base64 data URL)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dataUrl]
+              properties:
+                dataUrl:
+                  type: string
+                  description: Base64-encoded image, must start with "data:image/". Max ~5 MB.
+      responses:
+        "200":
+          description: Avatar updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Invalid or missing image data
+        "404":
+          description: User not found
+        "413":
+          description: Image too large — max 5 MB
+
+  /users/{id}/settings:
+    get:
+      operationId: getUserSettings
+      tags: [users]
+      summary: Get notification and privacy preferences (creates defaults on first visit)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Existing settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSettings"
+        "201":
+          description: Default settings created on first visit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSettings"
+    put:
+      operationId: updateUserSettings
+      tags: [users]
+      summary: Persist notification and privacy preferences
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserSettingsUpdate"
+      responses:
+        "200":
+          description: Settings upserted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSettings"
+
+  /users/{id}/panic-contacts:
+    patch:
+      operationId: updatePanicContacts
+      tags: [users]
+      summary: Update emergency/panic contacts (max 5)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contacts]
+              properties:
+                contacts:
+                  type: array
+                  items:
+                    type: string
+                  maxItems: 5
+      responses:
+        "200":
+          description: Panic contacts updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: contacts must be an array of at most 5 entries
+        "404":
+          description: User not found
+
+  /users/{id}/availability:
+    get:
+      operationId: getHelperAvailability
+      tags: [users]
+      summary: Get a helper's recurring weekly availability windows
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Availability windows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AvailabilityWindow"
+    put:
+      operationId: updateHelperAvailability
+      tags: [users]
+      summary: Replace a helper's recurring weekly availability windows
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [windows]
+              properties:
+                windows:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/AvailabilityWindowInput"
+      responses:
+        "200":
+          description: Availability replaced
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  count:
+                    type: integer
+        "400":
+          description: windows must be a valid array (day_of_week 0-6, start_min/end_min in range, start < end)
+
+  /users/{id}/logout:
+    post:
+      operationId: logoutUser
+      tags: [users]
+      summary: Server-side token revocation — invalidates all previously issued tokens for this user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all users (admin only)
+      responses:
+        "200":
+          description: User list (abbreviated fields)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserSummary"
+
+  /users/{id}/moderation:
+    patch:
+      operationId: moderateUser
+      tags: [users]
+      summary: Warn, suspend, or ban a user (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [warn, ban, suspend]
+                reason:
+                  type: string
+                  description: Optional reason, used for suspend
+      responses:
+        "200":
+          description: Moderation action applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  action:
+                    type: string
+                  user_id:
+                    type: integer
+        "400":
+          description: Invalid action
+
+  /users/{id}/helper-application:
+    patch:
+      operationId: updateHelperApplication
+      tags: [users]
+      summary: Submit a helper application, or (admin) review one
+      description: |
+        Two modes depending on caller: a user submitting their own application
+        (helper_skills, helper_bio, etc.) is enforced via ownership; an admin
+        reviewing an application sends status: approved|denied|rejected
+        ("rejected" is normalized to "denied").
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelperApplicationUpdate"
+      responses:
+        "200":
+          description: Application submitted or reviewed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Invalid user id or request body
+
 components:
   schemas:
     HealthStatus:
@@ -803,6 +1264,204 @@ components:
           type: string
           minLength: 8
           description: The new password (min 8 chars, must differ from current)
+
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+
+    UserSummary:
+      type: object
+      description: Abbreviated user fields returned by the admin user list endpoint
+      required: [id, name, email, is_helper, trust_score, help_count, is_suspended, created_at]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        is_helper:
+          type: boolean
+        trust_score:
+          type: integer
+        help_count:
+          type: integer
+        is_suspended:
+          type: boolean
+        suspended_at:
+          type: ["string", "null"]
+          format: date-time
+        suspended_reason:
+          type: ["string", "null"]
+        created_at:
+          type: string
+          format: date-time
+
+    UserSettings:
+      type: object
+      required:
+        - id
+        - user_id
+        - notif_nearby_requests
+        - notif_emergency
+        - notif_task_accepted
+        - notif_wallet_updates
+        - notif_community_activity
+        - notif_pledge_reminders
+        - privacy_profile_visible
+        - privacy_live_location
+        - privacy_activity_sharing
+        - privacy_anonymous_giving
+        - service_radius_miles
+        - preferred_language
+        - updated_at
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        notif_nearby_requests:
+          type: boolean
+        notif_emergency:
+          type: boolean
+        notif_task_accepted:
+          type: boolean
+        notif_wallet_updates:
+          type: boolean
+        notif_community_activity:
+          type: boolean
+        notif_pledge_reminders:
+          type: boolean
+        privacy_profile_visible:
+          type: boolean
+        privacy_live_location:
+          type: boolean
+        privacy_activity_sharing:
+          type: boolean
+        privacy_anonymous_giving:
+          type: boolean
+        service_radius_miles:
+          type: number
+        max_travel_miles:
+          type: ["number", "null"]
+        specialties:
+          type: ["string", "null"]
+        preferred_language:
+          type: string
+          enum: [en, sw, zu, tw, yo, ha, am, so, pcm, lg]
+        updated_at:
+          type: string
+          format: date-time
+
+    UserSettingsUpdate:
+      type: object
+      description: All fields optional — only provided keys are persisted (upsert)
+      properties:
+        notif_nearby_requests:
+          type: boolean
+        notif_emergency:
+          type: boolean
+        notif_task_accepted:
+          type: boolean
+        notif_wallet_updates:
+          type: boolean
+        notif_community_activity:
+          type: boolean
+        notif_pledge_reminders:
+          type: boolean
+        privacy_profile_visible:
+          type: boolean
+        privacy_live_location:
+          type: boolean
+        privacy_activity_sharing:
+          type: boolean
+        privacy_anonymous_giving:
+          type: boolean
+        service_radius_miles:
+          type: number
+        max_travel_miles:
+          type: number
+        specialties:
+          type: string
+        preferred_language:
+          type: string
+          enum: [en, sw, zu, tw, yo, ha, am, so, pcm, lg]
+
+    AvailabilityWindow:
+      type: object
+      required: [id, user_id, day_of_week, start_min, end_min]
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        day_of_week:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: 0 = Sunday … 6 = Saturday
+        start_min:
+          type: integer
+          minimum: 0
+          maximum: 1439
+          description: Minutes from midnight
+        end_min:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          description: Minutes from midnight
+
+    AvailabilityWindowInput:
+      type: object
+      required: [day_of_week, start_min, end_min]
+      properties:
+        day_of_week:
+          type: integer
+          minimum: 0
+          maximum: 6
+        start_min:
+          type: integer
+          minimum: 0
+          maximum: 1439
+        end_min:
+          type: integer
+          minimum: 1
+          maximum: 1440
+
+    HelperApplicationUpdate:
+      type: object
+      description: |
+        User mode (no status field): submit helper_skills, helper_languages,
+        helper_qualifications, helper_bio, helper_vehicle, helper_social_links.
+        Admin mode: send status to approve/deny an application.
+      properties:
+        status:
+          type: string
+          enum: [pending, approved, denied, rejected]
+          description: Admin-only. "rejected" is normalized to "denied".
+        helper_skills:
+          type: array
+          items:
+            type: string
+        helper_languages:
+          type: array
+          items:
+            type: string
+        helper_qualifications:
+          type: array
+          items:
+            type: string
+        helper_bio:
+          type: string
+        helper_vehicle:
+          type: string
+        helper_social_links:
+          type: string
 
     UserRegistration:
       type: object
