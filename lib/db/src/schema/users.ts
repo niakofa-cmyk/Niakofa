@@ -54,9 +54,6 @@ export const usersTable = pgTable("users", {
   account_type: text("account_type").notNull().default("individual"),
   organization_name: text("organization_name"),
   organization_description: text("organization_description"),
-  // Password reset / legacy-account password setup (migration 0021)
-  password_reset_code: text("password_reset_code"),
-  password_reset_expires_at: timestamp("password_reset_expires_at", { withTimezone: true }),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
