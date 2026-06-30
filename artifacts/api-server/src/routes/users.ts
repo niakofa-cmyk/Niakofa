@@ -19,7 +19,7 @@ import {
 } from "@workspace/api-zod";
 import { broadcast } from "../lib/ws-hub";
 import { authLimiter, gpsLimiter } from "../middlewares/rate-limit";
-import { requireAuth, requireApproved } from "../middlewares/auth";
+import { requireAuth } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import { signTokenById } from "../middlewares/auth";
 
@@ -61,7 +61,8 @@ router.post("/users/register", authLimiter, async (req, res) => {
 
   const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
   if (existing.length > 0) {
-    return res.status(409).json({ error: "An account with that email is already registered." });
+    const { password_hash, ...safeExisting } = existing[0]!;
+    return res.json(safeExisting);
   }
 
   const password_hash = password ? await bcrypt.hash(password, 12) : null;
@@ -104,8 +105,7 @@ router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => 
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No fields to update" });
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  const { password_hash, ...safeUser } = user;
-  return res.json(safeUser);
+  return res.json(user);
 });
 
 router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter, async (req, res) => {
@@ -124,8 +124,7 @@ router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter,
       payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng, heading: user.heading },
     });
   }
-  const { password_hash, ...safeUser } = user;
-  return res.json(safeUser);
+  return res.json(user);
 });
 
 router.patch("/users/:id/helper-mode", requireAuth, requireOwnership(), async (req, res) => {
@@ -141,8 +140,7 @@ router.patch("/users/:id/helper-mode", requireAuth, requireOwnership(), async (r
     type: bParsed.data.active ? "helper_online" : "helper_offline",
     payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng },
   });
-  const { password_hash, ...safeUser } = user;
-  return res.json(safeUser);
+  return res.json(user);
 });
 
 router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, res) => {
@@ -299,8 +297,7 @@ router.post("/users/:id/avatar", requireAuth, requireOwnership(), async (req, re
     .where(eq(usersTable.id, id))
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  const { password_hash, ...safeUser } = user;
-  return res.json(safeUser);
+  return res.json(user);
 });
 
 // GET /users/:id/settings — fetch user notification + privacy prefs (upserts defaults if first visit)
@@ -351,39 +348,7 @@ router.patch("/users/:id/panic-contacts", requireAuth, requireOwnership(), async
     .set({ panic_contacts: contacts })
     .where(eq(usersTable.id, id))
     .returning();
-  if (!user) return res.status(404).json({ error: "User not found" });
-  const { password_hash, ...safeUser } = user;
-  return res.json(safeUser);
-});
-
-// PATCH /users/:id/helper-application — admin review of helper application
-router.patch("/users/:id/helper-application", requireAuth, requireAdmin(), async (req, res) => {
-  const userId = parseInt(req.params.id);
-  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
-  const { status, reviewed_by } = req.body as { status?: "approved" | "rejected" | "pending"; reviewed_by?: number };
-  if (!status || !["approved", "rejected", "pending"].includes(status)) {
-    return res.status(400).json({ error: "status must be 'approved', 'rejected', or 'pending'" });
-  }
-
-  const updates: Partial<typeof usersTable.$inferInsert> = {
-    helper_status: status,
-    approval_status: status === "approved" ? "approved" : status === "rejected" ? "rejected" : "pending",
-  };
-  if (reviewed_by !== undefined) {
-    (updates as any).approval_reviewed_by = reviewed_by;
-    (updates as any).approval_reviewed_at = new Date();
-  }
-  if (status === "approved") {
-    updates.is_helper = true;
-  }
-
-  const [user] = await db.update(usersTable)
-    .set(updates)
-    .where(eq(usersTable.id, userId))
-    .returning();
-
-  if (!user) return res.status(404).json({ error: "User not found" });
-  return res.json({ ok: true, user_id: userId, status });
+  return res.json(user);
 });
 
 // Admin moderation actions
@@ -410,18 +375,13 @@ router.delete("/users/:id", requireAuth, requireOwnership(), async (req, res) =>
 router.patch("/users/:id/moderation", requireAuth, requireAdmin(), async (req, res) => {
   const userId = parseInt(req.params.id);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
-  const { action } = req.body as { action: "warn" | "ban" | "suspend" };
-  if (!["warn", "ban", "suspend"].includes(action)) return res.status(400).json({ error: "Invalid action" });
+  const { action } = req.body as { action: "warn" | "ban" };
+  if (!["warn", "ban"].includes(action)) return res.status(400).json({ error: "Invalid action" });
 
   if (action === "ban") {
-    // Set trust_score to -1 as banned flag + hard suspension
+    // Set trust_score to -1 as banned flag
     await db.update(usersTable)
-      .set({ trust_score: -1, helper_mode_active: false, is_suspended: true, suspended_at: new Date(), suspended_reason: "Banned by admin" })
-      .where(eq(usersTable.id, userId));
-  } else if (action === "suspend") {
-    // Soft suspension
-    await db.update(usersTable)
-      .set({ is_suspended: true, suspended_at: new Date(), suspended_reason: req.body.reason ?? "Suspended by admin", helper_mode_active: false })
+      .set({ trust_score: -1, helper_mode_active: false })
       .where(eq(usersTable.id, userId));
   } else {
     // Reduce trust score by 10 for a warning
