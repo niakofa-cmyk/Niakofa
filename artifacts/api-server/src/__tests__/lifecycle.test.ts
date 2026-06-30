@@ -137,8 +137,26 @@ beforeEach(async () => {
   (db.where as jest.Mock).mockClear().mockReturnThis();
   (db.set as jest.Mock).mockClear().mockReturnThis();
   (db.values as jest.Mock).mockClear().mockReturnThis();
-  (db.limit as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
+  (db.limit as jest.Mock).mockClear();
   (db.returning as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
+  
+  // Pre-populate token versions for all tested users (10, 20, 99)
+  // These will be consumed in order by getCurrentTokenVersion during auth
+  // Multiple queues account for multiple test invocations
+  (db.limit as jest.Mock)
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 10, test 1
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 20, test 3
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 99, test 2
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 20, test 4
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 20, test 5
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 99, test 6
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 20, test 7
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 10, test 8
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 20, test 9
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 10, test 10
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 99, test 11
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 20, test 12
+    .mockImplementation(() => Promise.resolve([])); // fallback
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

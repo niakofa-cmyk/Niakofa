@@ -130,9 +130,25 @@ beforeEach(async () => {
   (db.where as jest.Mock).mockClear().mockReturnThis();
   (db.set as jest.Mock).mockClear().mockReturnThis();
   (db.values as jest.Mock).mockClear().mockReturnThis();
-  (db.limit as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
+  (db.limit as jest.Mock).mockClear();
   (db.returning as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
   (db.leftJoin as jest.Mock).mockClear().mockReturnThis();
+  
+  // Pre-populate token versions for tested users (10, 20)
+  // These will be consumed in order by getCurrentTokenVersion during auth
+  // 10 queries for the 10 bearerToken() calls in integration tests
+  (db.limit as jest.Mock)
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0
+    .mockImplementation(() => Promise.resolve([])); // fallback for all other queries
 });
 
 // ── Full Request Lifecycle Integration Tests ──────────────────────────────────

@@ -106,8 +106,18 @@ beforeEach(async () => {
   (db.where as jest.Mock).mockClear().mockReturnThis();
   (db.set as jest.Mock).mockClear().mockReturnThis();
   (db.values as jest.Mock).mockClear().mockReturnThis();
-  (db.limit as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
+  (db.limit as jest.Mock).mockClear();
   (db.returning as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
+  
+  // Pre-populate token versions for userId 20 (used in all tests via bearerToken(20))
+  // These will be consumed in order by getCurrentTokenVersion during auth
+  (db.limit as jest.Mock)
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0 for user 20
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // fallback token v0 for user 20
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0 for emergency test
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0 for default max_travel test
+    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0 for within limit test
+    .mockImplementation(() => Promise.resolve([])); // fallback for any additional calls
 });
 
 // ── BUG-15b: max_travel_miles enforcement ─────────────────────────────────────
