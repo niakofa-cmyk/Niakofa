@@ -1506,7 +1506,9 @@ components:
           type: integer
         amount:
           type: number
-          description: Contribution amount (any amount accepted)
+          minimum: 0.01
+          exclusiveMinimum: false
+          description: Contribution amount in USD, must be greater than 0
 
     HelpRequest:
       type: object

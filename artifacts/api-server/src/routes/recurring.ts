@@ -6,7 +6,7 @@
  */
 import { Router } from "express";
 import { isHelperAvailableNow } from "../lib/matching";
-import { requireAuth } from "../middlewares/auth";
+import { requireAuth, requireApproved } from "../middlewares/auth";
 import { db, recurringRequestsTable, requestsTable, usersTable, helperAvailabilityTable } from "@workspace/db";
 import { eq, and, desc, lte, inArray } from "drizzle-orm";
 import { logger } from "../lib/logger";
@@ -98,7 +98,7 @@ router.get("/recurring", requireAuth, async (req, res) => {
 });
 
 // POST /recurring — create a new recurring request subscription
-router.post("/recurring", requireAuth, async (req, res) => {
+router.post("/recurring", requireAuth, requireApproved, async (req, res) => {
   const userId = req.authenticatedUserId!;
 
   // BUG-H08: Only approved users may create recurring requests.

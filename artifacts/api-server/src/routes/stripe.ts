@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth } from "../middlewares/auth";
+import { requireAuth, requireApproved } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import Stripe from "stripe";
 import { db, stripeAccountsTable, paymentTransactionsTable, usersTable, requestsTable, transactionsTable } from "@workspace/db";
@@ -264,7 +264,7 @@ router.post("/stripe/webhook", async (req, res) => {
 });
 
 // ── PAYMENT INTENT (Phase 1 — immediate pay) ────────────────────────────────
-router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId"), paymentLimiter, async (req, res) => {
+router.post("/stripe/payment-intent", requireAuth, requireApproved, requireOwnership("requesterId"), paymentLimiter, async (req, res) => {
   if (!stripeRequired(res)) return;
 
   const { requestId, amount, helperId, paymentType } = req.body as {
@@ -326,7 +326,7 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
 });
 
 // ── STRIPE CONNECT ONBOARDING ───────────────────────────────────────────────
-router.post("/stripe/connect/onboard", requireAuth, requireOwnership("userId"), paymentLimiter, async (req, res) => {
+router.post("/stripe/connect/onboard", requireAuth, requireApproved, requireOwnership("userId"), paymentLimiter, async (req, res) => {
   if (!stripeRequired(res)) return;
 
   const { userId } = req.body as { userId: number };

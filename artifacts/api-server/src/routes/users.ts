@@ -19,7 +19,7 @@ import {
 } from "@workspace/api-zod";
 import { broadcast } from "../lib/ws-hub";
 import { authLimiter, gpsLimiter, adminLimiter } from "../middlewares/rate-limit";
-import { requireAuth } from "../middlewares/auth";
+import { requireAuth, requireApproved } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import { signTokenById } from "../middlewares/auth";
 import { logger } from "../lib/logger";
@@ -295,7 +295,7 @@ router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter,
   return res.json(safeUser);
 });
 
-router.patch("/users/:id/helper-mode", requireAuth, requireOwnership(), async (req, res) => {
+router.patch("/users/:id/helper-mode", requireAuth, requireApproved, requireOwnership(), async (req, res) => {
   const pParsed = UpdateHelperModeParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = UpdateHelperModeBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
@@ -328,7 +328,7 @@ router.patch("/users/:id/helper-mode", requireAuth, requireOwnership(), async (r
   return res.json(safeUser);
 });
 
-router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, res) => {
+router.post("/users/:id/pledge", requireAuth, requireApproved, requireOwnership(), async (req, res) => {
   const pParsed = MakePledgePaymentParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = MakePledgePaymentBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
@@ -385,7 +385,7 @@ router.get("/users/:id/transactions", requireAuth, requireOwnership(), async (re
 });
 
 // POST /users/:id/scheduled-payment — save a future repayment intent
-router.post("/users/:id/scheduled-payment", requireAuth, requireOwnership(), async (req, res) => {
+router.post("/users/:id/scheduled-payment", requireAuth, requireApproved, requireOwnership(), async (req, res) => {
   const pParsed = CreateScheduledPaymentParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = CreateScheduledPaymentBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
@@ -462,7 +462,7 @@ router.get("/users/:id/outstanding-pledges", requireAuth, requireOwnership(), as
 });
 
 // POST /users/:id/avatar — update profile photo (base64 data URL)
-router.post("/users/:id/avatar", requireAuth, requireOwnership(), async (req, res) => {
+router.post("/users/:id/avatar", requireAuth, requireApproved, requireOwnership(), async (req, res) => {
   const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const { dataUrl } = req.body as { dataUrl?: string };
@@ -525,7 +525,7 @@ router.put("/users/:id/settings", requireAuth, requireOwnership(), async (req, r
 
 
 // PATCH /users/:id/panic-contacts — update emergency contacts
-router.patch("/users/:id/panic-contacts", requireAuth, requireOwnership(), async (req, res) => {
+router.patch("/users/:id/panic-contacts", requireAuth, requireApproved, requireOwnership(), async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const { contacts } = req.body as { contacts?: string[] };
@@ -708,6 +708,18 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
 
   // User submitting their own helper application
   if (authenticatedUserId !== id) return res.status(403).json({ error: "Forbidden: You can only update your own application" });
+
+  const [applicant] = await db
+    .select({ is_suspended: usersTable.is_suspended, approval_status: usersTable.approval_status })
+    .from(usersTable)
+    .where(eq(usersTable.id, authenticatedUserId))
+    .limit(1);
+  if (applicant?.is_suspended) {
+    return res.status(403).json({ error: "Account suspended — contact support" });
+  }
+  if (applicant?.approval_status !== "approved") {
+    return res.status(403).json({ error: "Account pending approval", approval_status: applicant?.approval_status ?? "pending" });
+  }
 
   if (!helper_skills || helper_skills.length === 0) {
     return res.status(400).json({ error: "At least one skill is required" });

@@ -85,14 +85,19 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   next();
 }
 
-/** Express middleware — rejects with 403 if user account is suspended or banned. */
+/** Express middleware — rejects with 403 if user account is suspended, banned,
+ *  or not yet approved (approval_status !== "approved"). Must run after requireAuth. */
 export async function requireApproved(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (!req.authenticatedUserId) {
     res.status(401).json({ error: "Unauthorized — valid Bearer token required" });
     return;
   }
   const [user] = await db
-    .select({ is_suspended: usersTable.is_suspended, trust_score: usersTable.trust_score })
+    .select({
+      is_suspended: usersTable.is_suspended,
+      trust_score: usersTable.trust_score,
+      approval_status: usersTable.approval_status,
+    })
     .from(usersTable)
     .where(eq(usersTable.id, req.authenticatedUserId))
     .limit(1);
@@ -106,6 +111,10 @@ export async function requireApproved(req: Request, res: Response, next: NextFun
   }
   if (user.trust_score !== null && user.trust_score <= -1) {
     res.status(403).json({ error: "Account banned — contact support" });
+    return;
+  }
+  if (user.approval_status !== "approved") {
+    res.status(403).json({ error: "Account pending approval", approval_status: user.approval_status ?? "pending" });
     return;
   }
   next();

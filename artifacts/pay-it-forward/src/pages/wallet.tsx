@@ -802,9 +802,12 @@ export default function WalletScreen() {
             sendHonorSystemPledge(amt);
           }}
           onSkip={() => {
-            const amt = pledgePayment.amount;
+            // NOTE: the /users/:id/pledge endpoint increments pledge_paid immediately —
+            // it is a "paid" record, not a promise. Calling it here (as before) falsely
+            // marked a declined payment as paid. Skipping means no payment was made,
+            // so we must NOT call sendHonorSystemPledge/pledgeMutation here.
             setPledgePayment(null);
-            sendHonorSystemPledge(amt);
+            toast({ title: "Payment skipped", description: "No contribution was recorded." });
           }}
           onClose={() => {
             setPledgePayment(null);
@@ -825,10 +828,12 @@ export default function WalletScreen() {
             fulfillScheduledNow(sp, amt);
           }}
           onSkip={() => {
-            const sp = payNowScheduled;
-            const amt = payNowPayment.amount;
+            // Same issue as the pledge modal: fulfillScheduledNow records the pledge as
+            // paid and closes out the scheduled payment. Skipping must not do that —
+            // leave the scheduled payment pending so it can be retried later.
             setPayNowPayment(null);
-            fulfillScheduledNow(sp, amt);
+            setPayNowScheduled(null);
+            toast({ title: "Payment skipped", description: "Your scheduled payment is still pending." });
           }}
           onClose={() => {
             setPayNowPayment(null);

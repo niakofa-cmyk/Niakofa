@@ -232,7 +232,7 @@ export const MakePledgePaymentParams = zod.object({
 
 export const MakePledgePaymentBody = zod.object({
   "request_id": zod.number(),
-  "amount": zod.number().describe('Contribution amount (any amount accepted)')
+  "amount": zod.number().positive().describe('Contribution amount in USD, must be greater than 0')
 })
 
 export const makePledgePaymentResponsePledgePaidDefault = 0;

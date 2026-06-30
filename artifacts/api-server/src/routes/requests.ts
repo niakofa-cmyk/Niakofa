@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth } from "../middlewares/auth";
+import { requireAuth, requireApproved } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
 import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, ratingsTable, gratitudePostsTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
@@ -216,7 +216,7 @@ router.get("/requests", async (req, res) => {
   })));
 });
 
-router.post("/requests", requireAuth, requireOwnership("requester_id"), requestCreationLimiter, async (req, res) => {
+router.post("/requests", requireAuth, requireApproved, requireOwnership("requester_id"), requestCreationLimiter, async (req, res) => {
   const parsed = CreateRequestBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
 
@@ -333,7 +333,7 @@ router.patch("/requests/:id", requireAuth, async (req, res) => {
 // action this consequential. requireOwnership("helper_id") used to guard
 // against exactly this, by checking body.helper_id === authenticatedUserId
 // — safe, but a roundabout way to express "act as yourself."
-router.post("/requests/:id/claim", requireAuth, async (req, res) => {
+router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = ClaimRequestParams.safeParse({ id: parseInt(req.params.id) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -549,7 +549,7 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
 });
 
 
-router.post("/requests/:id/tip", requireAuth, requireOwnership("requester_id"), async (req, res) => {
+router.post("/requests/:id/tip", requireAuth, requireApproved, requireOwnership("requester_id"), async (req, res) => {
   const requestId = parseInt(req.params.id);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 
@@ -589,7 +589,7 @@ router.post("/requests/:id/tip", requireAuth, requireOwnership("requester_id"), 
 // ── Help Chains ──────────────────────────────────────────────────────────────
 
 // POST /requests/:id/helpers/join — join the help chain for a request
-router.post("/requests/:id/helpers/join", requireAuth, async (req, res) => {
+router.post("/requests/:id/helpers/join", requireAuth, requireApproved, async (req, res) => {
   const requestId = parseInt(req.params.id as string);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
   const r = req as typeof req & { authenticatedUserId: number };
