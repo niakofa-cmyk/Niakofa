@@ -303,3 +303,5 @@ export function isNiaEventType(type: string): type is WsEventType {
     "nia_status",
     "nia_cost_alert",
   ].includes(type);
+
+}

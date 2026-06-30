@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
-import { checkSafety } from "../lib/safety";
+import { checkSafety } from "../../nia-service/src/lib/safety";
 import {
   saveConversation,
   getRecentHistory,
@@ -10,16 +10,16 @@ import {
   getUserMemory,
   upsertUserMemory,
   saveCheckinConversation,
-} from "../lib/db";
-import { NIA_SYSTEM_PROMPT } from "../prompts/nia";
+} from "../../nia-service/src/lib/db";
+import { NIA_SYSTEM_PROMPT } from "../../nia-service/src/prompts/nia";
 import {
   injectLocation,
   buildLocationPrefix,
   buildAppContextPrefix,
   LocationContext,
-} from "../middleware/location";
+} from "../../nia-service/src/middleware/location";
 import { pino } from "pino";
-import { parseOptionalAuth } from "../lib/auth";
+import { parseOptionalAuth } from "../../nia-service/src/lib/auth";
 
 const logger = pino({ level: "info" });
 const router = Router();
