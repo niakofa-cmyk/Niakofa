@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { requireAuth, requireApproved } from "../middlewares/auth";
+import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
-import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, ratingsTable, gratitudePostsTable } from "@workspace/db";
+import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -151,13 +151,7 @@ router.get("/requests", async (req, res) => {
 
   const helperId = req.query.helper_id ? parseInt(req.query.helper_id as string) : null;
   const requesterId = req.query.requester_id ? parseInt(req.query.requester_id as string) : null;
-
-  // Optional limit — enforce a hard cap to prevent memory exhaustion
-  const DEFAULT_LIMIT = 50;
-  const MAX_LIMIT = 200;
-  const limitParam = req.query.limit ? parseInt(req.query.limit as string) : null;
-  const limit = Math.min(Math.max(limitParam ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
-  const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+  const limitParam = req.query.limit ? parseInt(req.query.limit as string) : 200;
 
   // Build WHERE conditions in the DB — never load the full table.
   const conditions = [];
@@ -182,17 +176,13 @@ router.get("/requests", async (req, res) => {
     .from(requestsTable)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(sql`${requestsTable.created_at} DESC`)
-    .limit(limit)
-    .offset(Math.max(offset, 0));
+    .limit(Math.min(limitParam > 0 ? limitParam : 200, 500));
 
   // Exact radius filter in JS (bounding box above is a fast pre-filter)
   if (params.success && params.data.lat && params.data.lng) {
     const radius = params.data.radius_miles ?? 10;
     rows = rows.filter(r => distanceMiles(params.data.lat!, params.data.lng!, r.lat, r.lng) <= radius);
   }
-
-  // Sort newest first
-  rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   const allUserIds = [...new Set([
     ...rows.map(r => r.requester_id),
@@ -216,7 +206,7 @@ router.get("/requests", async (req, res) => {
   })));
 });
 
-router.post("/requests", requireAuth, requireApproved, requireOwnership("requester_id"), requestCreationLimiter, async (req, res) => {
+router.post("/requests", requireAuth, requireOwnership("requester_id"), requestCreationLimiter, async (req, res) => {
   const parsed = CreateRequestBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
 
@@ -260,7 +250,6 @@ router.post("/requests", requireAuth, requireApproved, requireOwnership("request
   if (request.urgency === "emergency" || request.urgency === "high") {
     const isEmergency = request.urgency === "emergency";
     const payload = {
-      notifType: isEmergency ? "emergency" : "nearby_requests" as const,
       title: isEmergency ? "🚨 EMERGENCY — Help Needed Now!" : "🔴 Urgent Request Nearby",
       body: request.title,
       urgency: request.urgency,
@@ -268,10 +257,7 @@ router.post("/requests", requireAuth, requireApproved, requireOwnership("request
     };
     // Notify helpers within 15 miles of the request; fall back to all helpers if no nearby ones found
     sendPushToNearbyHelpers(request.lat, request.lng, 15, payload).catch(() => {
-      // Non-fatal: nearby helper push failed — try broadcast fallback
-      sendPushToAllHelpers(payload).catch(() => {
-        // Non-fatal: broadcast fallback also failed — request is still created
-      });
+      sendPushToAllHelpers(payload).catch(() => {});
     });
   } else {
     // For medium/low urgency, notify helpers within 5 miles
@@ -280,10 +266,7 @@ router.post("/requests", requireAuth, requireApproved, requireOwnership("request
       body: request.title,
       urgency: request.urgency,
       requestId: request.id,
-      notifType: "nearby_requests" as const,
-    }).catch(() => {
-      // Non-fatal: nearby helper push failed — request is still created
-    });
+    }).catch(() => {});
   }
 
   return res.status(201).json(enriched);
@@ -333,7 +316,7 @@ router.patch("/requests/:id", requireAuth, async (req, res) => {
 // action this consequential. requireOwnership("helper_id") used to guard
 // against exactly this, by checking body.helper_id === authenticatedUserId
 // — safe, but a roundabout way to express "act as yourself."
-router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res) => {
+router.post("/requests/:id/claim", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = ClaimRequestParams.safeParse({ id: parseInt(req.params.id) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -496,9 +479,7 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
           platform_fee_cents: platformFeeCents,
           stripe_account_id:  stripeAcct.stripe_account_id,
           request_title:      request.title,
-        }).catch(() => {
-          // Non-fatal: payout retry enqueue failure — manual reconciliation needed
-        });
+        }).catch(() => {});
       }
     }
   }
@@ -511,9 +492,7 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
     helperId,
     helperBefore?.help_count ?? 0,
     helperBefore?.trust_score ?? 0
-  ).catch(() => {
-    // Non-fatal: leaderboard broadcast failure doesn't affect request completion
-  });
+  ).catch(() => {});
 
 
   // Fire receipt email async (non-blocking)
@@ -528,9 +507,7 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
       amount: request.payment_type === "immediate" ? (request.pay_it_forward_amount ?? undefined) : undefined,
       paymentType: request.payment_type,
       completedAt: new Date(),
-    }).catch(() => {
-      // Non-fatal: receipt email failure doesn't affect request completion
-    });
+    }).catch(() => {});
   }
 
   // Prompt the requester to write a public thank-you post
@@ -549,7 +526,7 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
 });
 
 
-router.post("/requests/:id/tip", requireAuth, requireApproved, requireOwnership("requester_id"), async (req, res) => {
+router.post("/requests/:id/tip", requireAuth, requireOwnership("requester_id"), async (req, res) => {
   const requestId = parseInt(req.params.id);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
 
@@ -589,7 +566,7 @@ router.post("/requests/:id/tip", requireAuth, requireApproved, requireOwnership(
 // ── Help Chains ──────────────────────────────────────────────────────────────
 
 // POST /requests/:id/helpers/join — join the help chain for a request
-router.post("/requests/:id/helpers/join", requireAuth, requireApproved, async (req, res) => {
+router.post("/requests/:id/helpers/join", requireAuth, async (req, res) => {
   const requestId = parseInt(req.params.id as string);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
   const r = req as typeof req & { authenticatedUserId: number };
@@ -660,122 +637,6 @@ router.get("/requests/:id/helpers", requireAuth, async (req, res) => {
     .orderBy(requestHelpersTable.joined_at);
 
   return res.json(members);
-});
-
-// POST /requests/:id/rate
-// Either participant (requester or helper) can rate the other after completion.
-// Stars 1–5 are required; a short review text is optional.
-// Recomputes the ratee's trust_score as a scaled average across all received ratings.
-router.post("/requests/:id/rate", requireAuth, async (req, res) => {
-  const callerId = req.authenticatedUserId!;
-  const requestId = parseInt(String(req.params.id));
-  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
-
-  const { stars, review } = req.body as { stars?: number; review?: string };
-  const starsNum = Number(stars);
-  if (!starsNum || starsNum < 1 || starsNum > 5 || !Number.isInteger(starsNum)) {
-    return res.status(400).json({ error: "stars must be an integer from 1 to 5" });
-  }
-
-  const [request] = await db.select()
-    .from(requestsTable)
-    .where(eq(requestsTable.id, requestId))
-    .limit(1);
-
-  if (!request) return res.status(404).json({ error: "Request not found" });
-  if (request.status !== "completed") {
-    return res.status(409).json({ error: "Can only rate completed requests" });
-  }
-
-  const isRequester = request.requester_id === callerId;
-  const isHelper = request.helper_id === callerId;
-
-  if (!isRequester && !isHelper) {
-    return res.status(403).json({ error: "Only participants can rate this request" });
-  }
-  if (!request.helper_id) {
-    return res.status(400).json({ error: "No helper to rate" });
-  }
-
-  const role = isRequester ? "requester" : "helper";
-  const rateeId = isRequester ? request.helper_id : request.requester_id;
-
-  // One rating per person per request
-  const [existing] = await db.select({ id: ratingsTable.id })
-    .from(ratingsTable)
-    .where(and(eq(ratingsTable.request_id, requestId), eq(ratingsTable.rater_id, callerId)))
-    .limit(1);
-  if (existing) return res.status(409).json({ error: "You have already rated this request" });
-
-  // ── DUPLICATE RECOGNITION PREVENTION ─────────────────────────────────────────
-  // Prevent duplicate recognition (gratitude posts) for the same request.
-  // A user can only create one gratitude post per request to avoid spamming
-  // the community feed with multiple thank-yous for the same help session.
-  const [existingGratitude] = await db.select({ id: gratitudePostsTable.id })
-    .from(gratitudePostsTable)
-    .where(eq(gratitudePostsTable.request_id, requestId))
-    .limit(1);
-  if (existingGratitude) {
-    return res.status(409).json({
-      error: "A gratitude post already exists for this request",
-      message: "A thank-you post has already been created for this request. You can edit your existing post instead.",
-      existing_post_id: existingGratitude.id,
-    });
-  }
-
-  const [rating] = await db.insert(ratingsTable).values({
-    request_id: requestId,
-    rater_id: callerId,
-    ratee_id: rateeId,
-    stars: starsNum,
-    review: typeof review === "string" && review.trim() ? review.trim() : null,
-    role,
-  }).returning();
-
-  // Recompute trust_score for ratee: average-stars × 20 (1 star = 20, 5 stars = 100)
-  const allRatings = await db.select({ stars: ratingsTable.stars })
-    .from(ratingsTable)
-    .where(eq(ratingsTable.ratee_id, rateeId));
-  const avgStars = allRatings.reduce((s, r) => s + r.stars, 0) / allRatings.length;
-  const newTrustScore = Math.round(avgStars * 20);
-
-  await db.update(usersTable)
-    .set({ trust_score: newTrustScore })
-    .where(eq(usersTable.id, rateeId));
-
-  // ── COMMUNITY SCORE SYNCHRONIZATION ───────────────────────────────────────────
-  // Update community goodwill score for the helper when a rating is submitted.
-  // This synchronizes the helper's goodwill score with their community contributions.
-  if (isRequester && request.helper_id) {
-    const [helperStats] = await db.select({
-      totalRatings: sql<number>`COUNT(*)::int`,
-      avgStars: sql<number>`AVG(${ratingsTable.stars})::float`,
-      totalGoodwill: sql<number>`COALESCE(SUM(${gratitudePostsTable.likes}), 0)::int`,
-    })
-    .from(ratingsTable)
-    .leftJoin(gratitudePostsTable, eq(gratitudePostsTable.helper_id, request.helper_id))
-    .where(eq(ratingsTable.ratee_id, request.helper_id));
-    
-    const communityScore = Math.round(
-      (helperStats?.avgStars ?? 0) * 20 + 
-      (helperStats?.totalGoodwill ?? 0) * 2 +
-      (helperStats?.totalRatings ?? 0) * 5
-    );
-    
-    await db.update(usersTable)
-      .set({ goodwill_score: communityScore })
-      .where(eq(usersTable.id, request.helper_id));
-      
-    logger.info({
-      helper_id: request.helper_id,
-      community_score: communityScore,
-      ratings_count: helperStats?.totalRatings ?? 0,
-    }, "community-score: synchronized helper goodwill score");
-  }
-
-  logger.info({ request_id: requestId, rater_id: callerId, ratee_id: rateeId, stars: starsNum }, "rate: submitted");
-
-  return res.status(201).json(rating);
 });
 
 export default router;
