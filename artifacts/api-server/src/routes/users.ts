@@ -61,8 +61,7 @@ router.post("/users/register", authLimiter, async (req, res) => {
 
   const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
   if (existing.length > 0) {
-    const { password_hash, ...safeExisting } = existing[0]!;
-    return res.json(safeExisting);
+    return res.status(409).json({ error: "An account with that email is already registered." });
   }
 
   const password_hash = password ? await bcrypt.hash(password, 12) : null;
@@ -105,7 +104,8 @@ router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => 
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No fields to update" });
   const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  return res.json(user);
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
 });
 
 router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter, async (req, res) => {
@@ -124,7 +124,8 @@ router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter,
       payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng, heading: user.heading },
     });
   }
-  return res.json(user);
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
 });
 
 router.patch("/users/:id/helper-mode", requireAuth, requireOwnership(), async (req, res) => {
@@ -140,7 +141,8 @@ router.patch("/users/:id/helper-mode", requireAuth, requireOwnership(), async (r
     type: bParsed.data.active ? "helper_online" : "helper_offline",
     payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng },
   });
-  return res.json(user);
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
 });
 
 router.post("/users/:id/pledge", requireAuth, requireOwnership(), async (req, res) => {
@@ -297,7 +299,8 @@ router.post("/users/:id/avatar", requireAuth, requireOwnership(), async (req, re
     .where(eq(usersTable.id, id))
     .returning();
   if (!user) return res.status(404).json({ error: "User not found" });
-  return res.json(user);
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
 });
 
 // GET /users/:id/settings — fetch user notification + privacy prefs (upserts defaults if first visit)
@@ -348,7 +351,9 @@ router.patch("/users/:id/panic-contacts", requireAuth, requireOwnership(), async
     .set({ panic_contacts: contacts })
     .where(eq(usersTable.id, id))
     .returning();
-  return res.json(user);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
 });
 
 // PATCH /users/:id/helper-application — admin review of helper application
