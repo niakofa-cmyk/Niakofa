@@ -5,6 +5,7 @@ import { useUpdateUserLocation, useUpdateHelperMode } from "@workspace/api-clien
 import { useWebSocket } from "./useWebSocket";
 import { wsStart, wsRegister, wsUnregister } from "./wsClient";
 import { GratitudeModal } from "../components/GratitudeModal";
+import { clearToken } from "./auth";
 
 interface Location {
   lat: number;
@@ -12,6 +13,13 @@ interface Location {
   heading?: number | null;
   speed?: number | null;
   accuracy?: number | null;
+}
+
+interface UserPlace {
+  city: string | null;
+  county: string | null;
+  state: string | null;
+  label?: string | null;
 }
 
 interface AppContextType {
@@ -22,6 +30,9 @@ interface AppContextType {
   myLocation: Location | null;
   activeRequestId: number | null;
   setActiveRequestId: (id: number | null) => void;
+  userPlace: UserPlace | null;
+  setUserPlace: (place: UserPlace | null) => void;
+  logout: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -77,6 +88,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     authorAvatar?: string;
   } | null>(null);
   const [activeRequestId, setActiveRequestId] = useState<number | null>(null);
+  const [userPlace, setUserPlace] = useState<UserPlace | null>(null);
 
   // ── All useRef calls ─────────────────────────────────────────────────────
   const locationRef = useRef<Location | null>({ lat: 32.75, lng: -97.33 });
@@ -98,6 +110,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         { onError: () => {} }
       );
     }
+  };
+
+  // ── Logout ────────────────────────────────────────────────────────────────
+  const logout = () => {
+    clearToken();
+    try { localStorage.removeItem("niakofa_user"); } catch {}
+    setCurrentUser(null);
+    setActiveRequestId(null);
+    wsUnregister();
+    setLocation("/login");
   };
 
   // ── useWebSocket subscriptions ────────────────────────────────────────────
@@ -241,6 +263,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       myLocation,
       activeRequestId,
       setActiveRequestId,
+      userPlace,
+      setUserPlace,
+      logout,
     }}>
       {children}
       <GratitudeModal

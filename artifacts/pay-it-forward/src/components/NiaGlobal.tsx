@@ -114,9 +114,9 @@ export function NiaGlobal() {
           userId={currentUser?.id ?? null}
           userName={currentUser?.name ?? null}
           userLocation={userLocation}
-          userCity={userPlace.city}
-          userCounty={userPlace.county}
-          userState={userPlace.state}
+          userCity={userPlace?.city ?? null}
+          userCounty={userPlace?.county ?? null}
+          userState={userPlace?.state ?? null}
           helperModeActive={helperModeActive}
           activeRequestId={activeRequestId}
           accountType={currentUser ? (currentUser.is_helper ? "helper" : "requester") : null}
