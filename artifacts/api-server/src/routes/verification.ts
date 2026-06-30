@@ -16,7 +16,16 @@ const stripe = STRIPE_SK ? new Stripe(STRIPE_SK, { apiVersion: "2024-06-20" as S
 const APP_URL = process.env["APP_URL"] ?? "https://niakofa.com";
 
 // ── Stripe Identity verification session ─────────────────────────────────────
-router.post("/verification/identity/start", requireAuth, async (req, res) => {
+// requireOwnership("user_id") added — this route had requireAuth but no
+// ownership check at all, unlike every other user-scoped route in this file
+// (safety-checkin, sos, panic-contacts all use requireOwnership). Without it,
+// any authenticated user could pass an arbitrary user_id and: (1) trigger a
+// billable Stripe Identity session against someone else's account, and
+// (2) overwrite that user's stripe_identity_session_id with a session the
+// caller controls — letting them complete verification with their own
+// document/selfie while it gets attributed to the victim's account via the
+// webhook above.
+router.post("/verification/identity/start", requireAuth, requireOwnership("user_id"), async (req, res) => {
   const { user_id } = req.body as { user_id: number };
   if (!user_id) return res.status(400).json({ error: "user_id required" });
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
@@ -170,11 +179,18 @@ router.patch("/verification/panic-contacts/:userId", requireAuth, requireOwnersh
   const { contacts } = req.body as { contacts: string[] };
   if (!Array.isArray(contacts)) return res.status(400).json({ error: "contacts array required" });
 
+  // Route summary and the OpenAPI schema (UpdatePanicContactsInput, maxItems: 5)
+  // both say "max 5" — this used to silently truncate to 3 and then echo back
+  // the original (untruncated) input, so a client submitting 5 contacts was
+  // told all 5 saved when only 3 actually did. Now stores and returns the
+  // same, actually-persisted array.
+  const storedContacts = contacts.slice(0, 5);
+
   await db.update(usersTable)
-    .set({ panic_contacts: contacts.slice(0, 3) } as any)
+    .set({ panic_contacts: storedContacts } as any)
     .where(eq(usersTable.id, userId));
 
-  return res.json({ ok: true, contacts });
+  return res.json({ ok: true, contacts: storedContacts });
 });
 
 export default router;
