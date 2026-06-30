@@ -4,6 +4,7 @@ const config: Config = {
   preset: "ts-jest/presets/js-with-ts-esm",
   testEnvironment: "node",
   extensionsToTreatAsEsm: [".ts"],
+  setupFiles: ["<rootDir>/jest.setup.ts"],
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
   },
