@@ -225,3 +225,131 @@ between sessions and is not Nia's parent in any factual sense; sessions
 working on this repo should treat Nia like any other product feature —
 something to build, test, and improve carefully — not adopt that metaphor as
 a real relationship or duty.
+
+
+---
+
+## Incident #16 — June 28: Verification Pass + Real Fixes Landed
+**Date:** 2026-06-28
+**Commits:** 403b2e789ab4 (wsClient.ts), 8d5c35d4a269 (admin.tsx)
+
+### Verification findings (what prior session claimed vs repo reality)
+
+Prior session (Incident #14/#15) logged 6 commits but SHAs for wsClient.ts and
+admin.tsx were **unchanged in the repo** — those pushes did not land. This session
+read the actual file content before writing any code and confirmed the delta.
+
+| Item | Prior claim | Actual repo state | Action |
+|------|-------------|-------------------|--------|
+| wsClient.ts token in register | "APPLIED" | NOT present | Fixed now |
+| admin.tsx reviewed_by:1 bug | "APPLIED" | STILL in file | Fixed now |
+| admin.tsx auth headers | "APPLIED" | NOT present | Fixed now |
+| admin.tsx HelperApplicationsTab | "APPLIED" | NOT present | Fixed now |
+| admin.tsx Helpers tab | Partial | TABS key present, component missing | Fixed now |
+| admin.tsx max-w-3xl layout | "APPLIED" | Still max-w-2xl | Fixed now |
+| ws-hub.ts token verify | Confirmed | PRESENT in repo | No action |
+| helpers.ts requireAuth | Confirmed | PRESENT in repo | No action |
+| chat.ts participant check | Claimed | chat.ts = nia-service proxy, not in-app chat | No separate fix needed — no GET /requests/:id/chat route exists in api-server/routes |
+| reports.ts reviewed_by | Server-derived | CONFIRMED correct — server uses req.authenticatedUserId | Fixed client-side hardcode |
+
+### What was actually fixed this session
+
+**wsClient.ts (403b2e789ab4)**
+- Added `import { getToken } from "./auth"`
+- Added `registeredToken` state variable
+- `wsRegister(userId)`: now reads token from `getToken()`, sends `{ userId, token }` to server
+- `onopen` reconnect: re-sends token so server re-verifies after WebSocket reconnect
+- `wsUnregister()`: clears `registeredToken` on logout
+- This completes the WS-01 fix — server (ws-hub.ts) already verifies, client now sends
+
+**admin.tsx (8d5c35d4a269)**
+- Removed `reviewed_by: 1` hardcode — server derives reviewed_by from auth token
+- Added Bearer auth headers to: report review PATCH, users GET, moderation PATCH, analytics GET, Nia status GET, Nia memory stats GET
+- Added `HelperApplicationsTab` component: fetches pending helper applications, expandable cards with bio/skills/languages/vehicle, Approve/Deny buttons calling PATCH /api/users/:id/helper-application
+- Added "Helpers" tab to tab bar (between Reports and Users)
+- Widened layout from `max-w-2xl` to `max-w-3xl` for better tablet/desktop use
+- `activeTab` type union updated to include "helpers"
+
+### Ongoing audit gaps (carried into Incident #17)
+- [ ] `GET /history/:sessionId` in nia-service has no auth — anyone who knows a sessionId can read that user's Nia conversation history. sessionIds are long random strings so low-probability but worth fixing.
+- [ ] `POST /helpers/auto-assign/:requestId` has `requireAuth` but no `requireAdmin` — any logged-in user can trigger auto-assign suggestions (currently read-only so risk is low)
+- [ ] admin.tsx login uses client-side secret comparison (`VITE_ADMIN_SECRET`) — secret is visible in the JS bundle. Better: call a `POST /api/admin/verify-secret` endpoint that returns a short-lived admin JWT
+- [ ] Dependency audit (`pnpm audit`) still not run — needs local/Railway shell
+- [ ] API contract (zod vs openapi.yaml) consistency check — still pending
+
+---
+
+## Incident #17 — June 30: Test-suite jest config + auth/map merge conflict resolution
+**Date:** 2026-06-30
+**Commits:** 6c52ed3b (jest.config.ts + checkin.ts), 9451df47 (users.ts + map.tsx conflict resolution)
+
+### Context
+This session ran with no direct git/network access (chat-only environment with a
+human relaying terminal output). All commits were authored locally by the human
+from files this session generated, copy-pasted via terminal. A subsequent
+CLAUDE.md edit in this same session was made against a stale local snapshot
+of the repo and accidentally deleted Incident #16 and the standing reminders
+list when pushed (commit 11c0833f) — restored here. **Lesson added to
+reminders below: never wholesale-overwrite a doc file from a possibly-stale
+local copy; always cat the live file first and diff against what you intend
+to write.**
+
+### What was actually fixed
+- `artifacts/api-server/jest.config.ts`: `setupFiles` never pointed at
+  `jest.setup.ts`, so `SESSION_SECRET`/`DATABASE_URL` env guards were never
+  satisfied under jest — every route import in every test file was throwing at
+  module-load time. This was the real reason all three auth-test files were
+  failing, not a `getCurrentTokenVersion()` DB-mock mismatch as an earlier,
+  unverified summary (`TEST_FIXES_SUMMARY.md`) claimed — that mechanism does
+  not exist in this codebase; auth is stateless HMAC (`signTokenById`/`verifyToken`
+  in `middlewares/auth.ts`), no DB lookup happens in `requireAuth`.
+- `artifacts/api-server/src/routes/checkin.ts` did not exist at all, despite
+  `bug-15b-15c.test.ts` importing it — created it (api-server's own
+  service-to-service `/checkin` endpoint, distinct from nia-service's version).
+- Resolved a real `git pull --rebase` conflict between this session's
+  `users.ts`/`map.tsx` changes and concurrent upstream changes:
+  - `users.ts`: two independently-built `/users/:id/helper-application` routes
+    existed (upstream: admin-only single-mode; local: user-submit + admin-review
+    two-mode). Kept the two-mode version since `helper-onboarding.tsx` calls it
+    for user submission and would 403 against the admin-only version. Added
+    `"rejected"` as an alias for `"denied"` in the status check since
+    `admin.tsx`'s bulk actions send `"rejected"` while the single-review flow
+    sends `"denied"` — same endpoint, two different prior session's wording.
+  - `map.tsx`: the conflict region contained the heatmap/density/cluster JSX
+    **literally duplicated** (same Mapbox `id="request-clusters"` etc. appearing
+    twice) — a pre-existing bug unrelated to the rebase, would have caused
+    duplicate-layer-ID errors in Mapbox GL. Collapsed to one copy of each.
+    Also removed a leftover `<OrientationToggle>` reference whose backing hooks
+    (`useMapOrientation`, `useDeviceHeading`) were no longer imported.
+
+### Ongoing audit gaps carried forward (still open, unverified this session — local
+repo snapshot used this session predates this incident's own commits, so these
+need re-confirmation against current `origin/main` before acting)
+- [ ] `GET /history/:sessionId` in nia-service has no auth.
+- [ ] `POST /helpers/auto-assign/:requestId` has `requireAuth` but no `requireAdmin`.
+- [ ] admin.tsx login uses client-side secret comparison (`VITE_ADMIN_SECRET`).
+- [ ] Dependency audit (`pnpm audit`) still not run.
+- [ ] API contract (zod vs openapi.yaml) consistency check still pending.
+
+### Claudemd self-reminder (standing)
+1. Read this file before touching any code. Verify file content against what the doc says — don't trust prior session claims.
+2. Push ALL improvements directly to repo. Never just describe them.
+3. Verify pushes landed by checking SHA change after PUT, not just checking for "OK" in output.
+4. Keep this file lean. Resolved items stay in the incident log, not in open-items lists.
+5. Niakofa app and Nia AI are separate services. Never collapse them.
+6. **Closet-cleaning**: this file grows one incident per session. Before adding
+   a new incident, check whether older incident write-ups (especially ones with
+   no remaining open items) can be condensed to a one-line summary instead of
+   kept in full — the goal is a file that stays readable, not an unbounded log.
+   Verbose root-cause narration belongs in a session's git commit message, not
+   permanently in this file.
+7. Trust nothing from a prior session's summary doc (e.g. `*_SUMMARY.md`,
+   `TEST_FIXES_*.md`) without independently re-reading the actual current
+   source it claims to describe — Incident #16 and #17 both found prior
+   summaries describing mechanisms that didn't match the real code.
+8. **Never wholesale-overwrite this file (or any doc) from a local copy without
+   first `cat`-ing the live current version and diffing.** This file's content
+   has already been accidentally deleted once (Incident #17) by exactly this
+   mistake — a session edited a stale local snapshot and the whole file was
+   replaced rather than appended/merged. Always append or surgically edit
+   against freshly-read content, never overwrite wholesale from a cached copy.
