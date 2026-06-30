@@ -184,18 +184,6 @@ function AnalyticsTab() {
   );
 }
 
-      {/* No stats fallback */}
-      {!stats && !loading && (
-        <div className="bg-muted/40 border border-border rounded-2xl p-6 text-center">
-          <Activity className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-          <div className="text-sm font-bold text-muted-foreground">Analytics unavailable</div>
-          <div className="text-xs text-muted-foreground/60 mt-1">/api/admin/stats endpoint not responding</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── 7-Day Sparkline Component ─────────────────────────────────────────────────
 function Sparkline({ data, color = "#3b82f6", height = 40 }: { data: number[]; color?: string; height?: number }) {
   if (!data || data.length === 0) return null;

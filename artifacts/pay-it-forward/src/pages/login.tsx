@@ -816,30 +816,6 @@ export default function LoginScreen() {
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col">
       <div className="flex-1 flex flex-col items-center justify-center px-6 pt-12 pb-8">
-  // ── Nia cultural greetings rotation ───────────────────────────────────────────
-  const CULTURAL_GREETINGS = [
-    { text: "Sawubona", sub: "I see you — we see each other", lang: "isiZulu" },
-    { text: "Salaam", sub: "Peace be upon you", lang: "Arabic" },
-    { text: "Shalom", sub: "Peace and wholeness", lang: "Hebrew" },
-    { text: "Namaste", sub: "The divine in me greets the divine in you", lang: "Sanskrit" },
-    { text: "As-Salaam-Alaikum", sub: "Peace be unto you", lang: "Swahili" },
-    { text: "Aloha", sub: "Love, peace, compassion", lang: "Hawaiian" },
-    { text: "Sawubona", sub: "I see you — we see each other", lang: "isiZulu" },
-  ];
-
-  const [greetingIndex, setGreetingIndex] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setGreetingIndex(i => (i + 1) % CULTURAL_GREETINGS.length);
-    }, 4000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const currentGreeting = CULTURAL_GREETINGS[greetingIndex];
-
-  return (
-    <div className="min-h-[100dvh] bg-background flex flex-col">
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-12 pb-8">
         {/* ── NiaOrb Hero Element ─────────────────────────────────────────────── */}
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}

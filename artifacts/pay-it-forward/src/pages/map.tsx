@@ -16,13 +16,8 @@ import { TopBar } from "@/components/TopBar";
 import { BottomSheet } from "@/components/BottomSheet";
 import { RequestMarker } from "@/components/RequestMarker";
 import { HelperMarker } from "@/components/HelperMarker";
-<<<<<<< HEAD
-import { BestMatchCard } from "@/components/BestMatchCard";
-import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2, Layers, X, Siren, Zap, Locate } from "lucide-react";
-=======
 import { DispatchIntelligenceCard } from "@/components/DispatchIntelligenceCard";
 import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2 } from "lucide-react";
->>>>>>> ea36d2ac (feat(map): audit + enhance — filters, clustering, peek sheet, urgency colors, style toggle, stale WS banner)
 import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { wsIsConnected } from "@/lib/wsClient";
@@ -317,204 +312,12 @@ export default function MapScreen() {
             />
           </Source>
         )}
-<<<<<<< HEAD
-        {/* Helper availability heatmap — §3.3, §4.1, §4.7 */}
-        {showHeatmap && helperHeatmapGeoJSON.features.length > 0 && (
-          <Source id="helper-heatmap" type="geojson" data={helperHeatmapGeoJSON}>
-            <Layer
-              id="helper-heatmap-layer"
-              type="heatmap"
-              paint={{
-                "heatmap-weight": ["interpolate", ["linear"], ["get", "weight"], 0, 0, 1, 1],
-                "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 1, 15, 2],
-                "heatmap-color": [
-                  "interpolate", ["linear"], ["heatmap-density"],
-                  0,   "rgba(0,0,0,0)",
-                  0.2, "rgba(0,100,255,0.35)",
-                  0.5, "rgba(0,212,255,0.6)",
-                  0.8, "rgba(80,255,180,0.85)",
-                  1.0, "rgba(255,230,50,1)"
-                ],
-                "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 20, 15, 45],
-                "heatmap-opacity": 0.72,
-              }}
-            />
-          </Source>
-        )}
-
-        {/* Request density heatmap — Phase 10E */}
-        {showDensity && requestDensityGeoJSON.features.length > 0 && (
-          <Source id="request-density" type="geojson" data={requestDensityGeoJSON}>
-            <Layer
-              id="request-density-layer"
-              type="heatmap"
-              paint={{
-                "heatmap-weight": ["interpolate", ["linear"], ["get", "weight"], 0, 0, 1, 1],
-                "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 1, 15, 3],
-                "heatmap-color": [
-                  "interpolate", ["linear"], ["heatmap-density"],
-                  0,   "rgba(0,0,0,0)",
-                  0.2, "rgba(255,60,0,0.25)",
-                  0.5, "rgba(255,100,0,0.55)",
-                  0.8, "rgba(255,180,0,0.8)",
-                  1.0, "rgba(255,255,100,1)"
-                ],
-                "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 18, 15, 40],
-                "heatmap-opacity": 0.68,
-              }}
-            />
-          </Source>
-        )}
-
-        {/* Request clusters — shown when zoom < 13, individual markers at zoom >= 13 */}
-        <Source
-          id="request-clusters"
-          type="geojson"
-          data={requestClusterGeoJSON}
-          cluster={true}
-          clusterMaxZoom={12}
-          clusterRadius={50}
-        >
-          {/* Cluster circle */}
-          <Layer
-            id="request-cluster-circle"
-            type="circle"
-            filter={["has", "point_count"]}
-            paint={{
-              "circle-color": [
-                "step", ["get", "point_count"],
-                "#FF3C00", 5,
-                "#f97316", 15,
-                "#eab308"
-              ],
-              "circle-radius": ["step", ["get", "point_count"], 18, 5, 24, 15, 32],
-              "circle-opacity": 0.88,
-              "circle-stroke-width": 2,
-              "circle-stroke-color": "#fff",
-              "circle-stroke-opacity": 0.3,
-            }}
-          />
-          {/* Cluster count label */}
-          <Layer
-            id="request-cluster-count"
-            type="symbol"
-            filter={["has", "point_count"]}
-            layout={{
-              "text-field": "{point_count_abbreviated}",
-              "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
-              "text-size": 13,
-            }}
-            paint={{ "text-color": "#ffffff" }}
-          />
-          {/* Unclustered point — small dot (individual markers render on top at high zoom) */}
-          <Layer
-            id="request-unclustered"
-            type="circle"
-            filter={["!", ["has", "point_count"]]}
-            paint={{
-              "circle-color": [
-                "match", ["get", "urgency"],
-                "emergency", "#ef4444",
-                "high",      "#f97316",
-                "medium",    "#FF3C00",
-                "#6366f1"
-              ],
-              "circle-radius": 0,
-              "circle-opacity": 0,
-            }}
-          />
-        </Source>
-
-
-                {/* Request density legend */}
-        {showDensity && (
-          <div className="absolute bottom-48 left-4 z-10 bg-black/70 backdrop-blur-sm rounded-xl px-3 py-2 pointer-events-none">
-            <div className="text-[9px] text-white/60 uppercase tracking-wider mb-1.5">Request Density</div>
-            <div className="flex items-center gap-0.5">
-              {["rgba(255,60,0,0.4)", "rgba(255,100,0,0.65)", "rgba(255,180,0,0.85)", "rgba(255,255,100,1)"].map((c, i) => (
-                <div key={i} className="w-5 h-2 rounded-sm" style={{ background: c }} />
-              ))}
-            </div>
-            <div className="flex justify-between text-[8px] text-white/50 mt-0.5">
-              <span>Low</span><span>High</span>
-            </div>
-          </div>
-        )}
-
-                {/* Heatmap legend overlay */}
-        {showHeatmap && (
-          <div className="absolute bottom-32 left-4 z-10 bg-black/70 backdrop-blur-sm rounded-xl px-3 py-2 pointer-events-none">
-            <div className="text-[9px] text-white/60 uppercase tracking-wider mb-1.5">Helper Density</div>
-            <div className="flex items-center gap-0.5">
-              {["rgba(0,100,255,0.5)", "rgba(0,212,255,0.7)", "rgba(80,255,180,0.9)", "rgba(255,230,50,1)"].map((c, i) => (
-                <div key={i} className="w-5 h-2 rounded-sm" style={{ background: c }} />
-              ))}
-            </div>
-            <div className="flex justify-between text-[8px] text-white/50 mt-0.5">
-              <span>Low</span><span>High</span>
-            </div>
-            <div className="text-[8px] text-white/40 mt-1">Refreshes every 5 min</div>
-          </div>
-        )}
-
-        {/* Helper service radius ring — visual circle on map showing helper's normal working area.
-            Non-emergency requests outside this ring show dashed marker + outside-area badges.
-            DESIGN: Local-First Dispatch per CLAUDE.md — helpers should finish nearby work
-            before accepting long-distance trips. The ring makes that boundary visible.
-            Emergency requests always bypass this — urgency overrides distance everywhere. */}
-        {helperModeActive && myLocation && (
-          <Source
-            id="helper-radius"
-            type="geojson"
-            data={{
-              type: "FeatureCollection" as const,
-              features: [{
-                type: "Feature" as const,
-                geometry: { type: "Point" as const, coordinates: [myLocation.lng, myLocation.lat] },
-                properties: {},
-              }],
-            }}
-          >
-            {/* Mapbox circle-radius in pixels scales with zoom. Formula:
-                radius_meters * (256 * 2^zoom) / (2 * PI * 6378137 * cos(lat_rad))
-                Simplified to a CSS-level graduated stop list for the two zoom boundaries. */}
-            <Layer
-              id="helper-radius-fill"
-              type="circle"
-              paint={{
-                "circle-radius": {
-                  stops: [
-                    [8,  Math.round(serviceRadiusMiles * 1609.34 / 152.874)],
-                    [10, Math.round(serviceRadiusMiles * 1609.34 / 38.219)],
-                    [12, Math.round(serviceRadiusMiles * 1609.34 / 9.555)],
-                    [14, Math.round(serviceRadiusMiles * 1609.34 / 2.389)],
-                    [16, Math.round(serviceRadiusMiles * 1609.34 / 0.597)],
-                  ],
-                  base: 2,
-                } as unknown as number,
-                "circle-color": "rgba(99,102,241,0.06)",
-                "circle-stroke-color": "rgba(99,102,241,0.5)",
-                "circle-stroke-width": 1.5,
-                "circle-pitch-alignment": "map" as const,
-                "circle-stroke-opacity": 0.8,
-              }}
-            />
-          </Source>
-        )}
-
-=======
         <OrientationToggle mode={orientMode} onToggle={() => setOrientMode(orientMode === "heading-up" ? "north-up" : "heading-up")} />
->>>>>>> ea36d2ac (feat(map): audit + enhance — filters, clustering, peek sheet, urgency colors, style toggle, stale WS banner)
       </Map>
 
       {/* Dispatch Intelligence — Best Match card */}
-<<<<<<< HEAD
-      {showBestMatch && webGLSupported && !mapError && (
-        <BestMatchCard
-=======
       {showBestMatch && !mapError && (
         <DispatchIntelligenceCard
->>>>>>> ea36d2ac (feat(map): audit + enhance — filters, clustering, peek sheet, urgency colors, style toggle, stale WS banner)
           bestMatch={bestMatch}
           onAccept={handleClaim}
           onDismiss={() => setBestMatchDismissed(bestMatch.id)}
