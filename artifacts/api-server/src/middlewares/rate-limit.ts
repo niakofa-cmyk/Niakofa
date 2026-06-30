@@ -98,6 +98,38 @@ export const generalApiLimiter = rateLimit({
 // Key on the authenticated userId (set by parseAuth before this runs).
 // Falls back to IP only when there is no verified token (should not happen
 // on POST chat since requireAuth runs first, but defensive).
+// ── 5b. Community Posts (5 / 15 min per user) ────────────────────────────────
+// Gratitude/community feed posts. Keyed by authenticated userId (route now
+// requires requireAuth — see Incident in CLAUDE.md). This limiter was
+// referenced in artifacts/nia-service/REPLIT_GODFATHER.md's changelog as
+// already added, but never actually existed in this file — added for real.
+export const communityPostLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const r = req as typeof req & { authenticatedUserId?: number };
+    return `community-post-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
+  },
+  message: { error: "You're posting a little fast — take a short break and try again." },
+});
+
+// ── 5c. Community Likes (60 / 15 min per user) ───────────────────────────────
+// Likes are cheap and now idempotent per-user (gratitude_likes unique index),
+// but still throttled against scripted spam-liking.
+export const communityLikeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const r = req as typeof req & { authenticatedUserId?: number };
+    return `community-like-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
+  },
+  message: { error: "Too many likes too fast — slow down a little." },
+});
+
 export const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 30,

@@ -9,7 +9,7 @@ import { db, requestsTable, usersTable, reportsTable, systemSettingsTable, niaMe
 import { eq, sql, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
-import { adminLimiter } from "../middlewares/rate-limit";
+import { adminLimiter, authLimiter, generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -275,7 +275,7 @@ router.get("/admin/helper-applications", requireAuth, requireAdmin(), adminLimit
 // POST /admin/verify-secret — verify admin secret server-side
 // No Bearer token required — this is the auth step itself.
 // Accepts secret via body or x-admin-secret header.
-router.post("/admin/verify-secret", async (req, res) => {
+router.post("/admin/verify-secret", authLimiter, async (req, res) => {
   const secret = (req.body as { secret?: string }).secret
     ?? req.headers["x-admin-secret"] as string | undefined;
   const expected = process.env.ADMIN_SECRET;
@@ -372,7 +372,7 @@ async function setNiaEnabled(enabled: boolean): Promise<void> {
 
 // GET /admin/nia-status — public, no auth. Frontend polls this to know
 // whether to show the NiaFab and drawer. Returns { enabled: boolean }.
-router.get("/admin/nia-status", async (_req, res) => {
+router.get("/admin/nia-status", generalApiLimiter, async (_req, res) => {
   const enabled = await getNiaEnabled();
   return res.json({ enabled });
 });

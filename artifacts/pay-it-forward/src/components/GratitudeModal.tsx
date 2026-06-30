@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Heart, Sparkles, X, Send } from "lucide-react";
+import { authHeaders } from "../lib/auth";
 
 interface GratitudePrompt {
   requestId: number;
@@ -38,14 +39,15 @@ export function GratitudeModal({ prompt, onClose }: GratitudeModalProps) {
     setError(null);
 
     try {
+      // author_id/author_name/author_avatar are no longer sent — the server
+      // derives them from the authenticated user now (see CLAUDE.md incident
+      // log: this endpoint used to trust client-supplied author identity,
+      // which let anyone post as anyone).
       const res = await fetch("/api/gratitude", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           request_id: prompt.requestId,
-          author_id: prompt.authorId,
-          author_name: prompt.authorName,
-          author_avatar: prompt.authorAvatar,
           helper_id: prompt.helperId,
           helper_name: prompt.helperName,
           message: message.trim(),

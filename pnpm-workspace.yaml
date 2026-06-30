@@ -161,7 +161,15 @@ overrides:
   "@expo/ngrok-bin>@expo/ngrok-bin-win32-x64": "-"
   # drizzle-kit uses esbuild internally on an older version that's vulnerable, this overrides it
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
-  esbuild: "0.27.3"
+  esbuild: "0.28.1"
+  # `pnpm audit` (June 30, 2026) flagged js-yaml quadratic-complexity DoS via
+  # repeated alias merge keys. Two independent transitive chains pulled two
+  # different vulnerable ranges (<3.15.0 via @istanbuljs/load-nyc-config →
+  # babel-plugin-istanbul → jest tooling; >=4.0.0 <=4.1.1 via orval codegen),
+  # so each is pinned to its own patched major rather than forcing one
+  # version onto both (orval needs the v4 API, jest tooling's chain is v3).
+  "@istanbuljs/load-nyc-config>js-yaml": "^3.15.0"
+  "orval>js-yaml": "^4.1.2"
 
 allowBuilds:
   esbuild: true

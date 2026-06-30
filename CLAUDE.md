@@ -82,14 +82,41 @@ Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
   string per user.
 - No voice I/O for Nia.
 - No payment-splitting for multi-helper requests (see Help Chains note above).
-- `pnpm audit` dependency scan has never been run on this repo (needs a
-  local/Railway shell with network — not available from a chat-only session).
-- API contract consistency (`lib/api-spec/openapi.yaml` vs the generated
-  `lib/api-zod` schemas vs actual route validation) has never been
-  cross-checked end-to-end.
+- **`pnpm audit` — run June 30, 2026, now clean.** Found 3 real advisories
+  (1 low: esbuild arbitrary file read on Windows dev server; 2 moderate:
+  js-yaml quadratic-complexity DoS via two separate transitive chains — jest
+  tooling on `<3.15.0`, orval codegen on `4.0.0–4.1.1`). All dev-only
+  dependencies, none in the production runtime bundle. Fixed via targeted
+  `pnpm.overrides` in `pnpm-workspace.yaml` (per-parent pins, not a single
+  forced version, since the two chains need different js-yaml majors).
+  Re-ran audit after `pnpm install` to confirm zero vulnerabilities at every
+  severity — don't trust the override alone, verify the re-run. Re-run
+  `pnpm audit` periodically; this is a point-in-time clean result, not a
+  permanent guarantee.
+- **API contract consistency — checked June 30, 2026, real and significant
+  gap found.** Diffed every `router.get/post/put/patch/delete` path actually
+  mounted in `artifacts/api-server/src/routes/*.ts` (100 total) against every
+  path documented in `lib/api-spec/openapi.yaml` (37 total): **63 real,
+  live routes have no OpenAPI entry at all** — including all of `/stripe/*`
+  (payments, payouts, Stripe Connect), all of `/verification/*` (SOS, identity
+  verification, panic contacts), all of `/admin/*`, all of `/nia/*`, `/gratitude*`,
+  `/recurring*`, `/leaderboard*`, `/crisis/*`, `/civic/suggestions`, and
+  `/push/*`. Zero stale entries the other direction (everything documented
+  does correspond to a real route, just out of date on detail — not checked
+  field-by-field). This means `lib/api-zod` and `lib/api-client-react`
+  (orval-generated from the spec) have no generated types/hooks for almost
+  two-thirds of the real API surface — any frontend code calling those
+  routes is doing so with hand-written `fetch` calls and no compile-time
+  contract checking. Writing full path/schema entries for all 63 is a
+  dedicated multi-session task, not something to rush — a hastily-written
+  schema that doesn't match real route validation is worse than no schema
+  (silent false confidence). Tackle in priority order: payments/verification
+  first (highest blast radius if a generated client trusts a wrong schema),
+  then admin, then the rest.
 - A real admin-secret verify endpoint (`POST /api/admin/verify-secret`
   issuing a short-lived admin JWT) doesn't exist yet — see "Known design
-  choices" above.
+  choices" above. (Rate-limited as of Incident #20, but still a shared
+  static secret, not a real auth boundary.)
 
 ## Incident log — read before touching deploy config or auth
 
@@ -376,3 +403,59 @@ unavailable) as appropriate, logging the real upstream status. Also added
 explicit lat/lng range validation (-90..90 / -180..180) — `zod.coerce.number()`
 on `GetRouteQueryParams` rejects `NaN` but not out-of-range values, so
 extreme coordinates were reaching the Mapbox call unfiltered.
+
+---
+
+## Incident #20 — June 30: Gratitude impersonation + spam-like, orphan-claim bug, missing rate limits
+
+**Files:** `artifacts/api-server/src/routes/gratitude.ts`,
+`artifacts/api-server/src/middlewares/rate-limit.ts`,
+`artifacts/api-server/src/routes/admin-analytics.ts`,
+`artifacts/api-server/src/workers/cleanup-worker.ts`,
+`artifacts/pay-it-forward/src/components/GratitudeModal.tsx`,
+`artifacts/pay-it-forward/src/pages/community.tsx`
+
+**`POST /gratitude` had no auth at all** and trusted `author_id`,
+`author_name`, `author_avatar` straight from the request body — any
+unauthenticated caller could post a community message that displayed as any
+other user (impersonation). Fixed: `requireAuth`, identity now looked up
+server-side from `req.authenticatedUserId`, client no longer sends those
+fields.
+
+**`POST /gratitude/:id/like` had no auth and no per-user tracking** — a raw
+`UPDATE ... SET likes = likes + 1` that anyone could call in a loop with no
+limit. A `gratitude_likes` table with a unique `(post_id, user_id)` index
+already existed in the schema specifically to prevent this (its own comment
+says so), but no route ever used it. Fixed: `requireAuth` +
+`INSERT ... ON CONFLICT DO NOTHING` against `gratitude_likes`, only
+incrementing the counter on a genuine new like.
+
+**`communityPostLimiter` didn't exist** despite
+`artifacts/nia-service/REPLIT_GODFATHER.md`'s changelog claiming it was
+added in an earlier session (5 posts/15 min per user) — another instance of
+reminder #7 (don't trust a prior session's claimed fix without checking the
+actual code). Added for real, plus a new `communityLikeLimiter`.
+
+**`/admin/verify-secret` and `/admin/nia-status` had no rate limiting**,
+also despite a changelog entry claiming `adminLimiter` was added to both.
+`/admin/verify-secret` is an unauthenticated secret-guessing surface — added
+`authLimiter` (IP-based, 10/15min). `/admin/nia-status` is *intentionally*
+public (every visitor's client polls it every 60s to know whether to show
+Nia) — applying the existing userId-keyed `adminLimiter` there would have
+broken that for anyone behind a shared IP, so it got the generous
+IP-based `generalApiLimiter` (200/15min) instead, which protects against
+scraping without touching legitimate polling.
+
+**`cleanup-worker.ts`'s orphaned-claim handling didn't match its own
+comment.** Requests stuck in `claimed` for >4h (helper went silent) were
+being permanently marked `expired` — the function's own comment said it
+should reset them to `open` so another helper can pick them up "in a real
+system." Fixed to actually do that: `status: "open"`, `helper_id: null`,
+`claimed_at: null`, broadcast as `open` not `expired`.
+
+Frontend updates to match: `GratitudeModal.tsx` now sends `authHeaders()`
+and stopped sending the now-server-derived author fields;
+`community.tsx`'s `NiaStoryModal` stopped sending them too; the like-toggle
+fetch in `community.tsx` now sends `authHeaders()` (was previously sending
+no auth at all, which would have silently broken the moment the backend
+fix landed).

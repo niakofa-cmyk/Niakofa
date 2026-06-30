@@ -455,9 +455,6 @@ function NiaStoryModal({ onClose, onPosted }: { onClose: () => void; onPosted: (
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           message: story.story,
-          author_id: currentUser.id,          // FIX: was missing, caused silent 400
-          author_name: userName,
-          author_avatar: currentUser.avatar_url ?? undefined,
         }),
       });
       if (!res.ok) {
@@ -613,8 +610,10 @@ export default function CommunityScreen() {
         next.delete(id);
       } else {
         next.add(id);
-        // Fire-and-forget — WS event will broadcast the updated count
-        fetch(`${base}/api/gratitude/${id}/like`, { method: "POST" }).catch(() => {});
+        // Fire-and-forget — WS event will broadcast the updated count.
+        // Auth header required now that /like enforces per-user identity
+        // (gratitude_likes unique index) instead of a raw open counter.
+        fetch(`${base}/api/gratitude/${id}/like`, { method: "POST", headers: { ...authHeaders() } }).catch(() => {});
       }
       return next;
     });

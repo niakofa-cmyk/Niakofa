@@ -72,11 +72,15 @@ async function runCleanup(_job: Job): Promise<void> {
     }
   }
 
-  // 2. Expire orphaned "claimed" requests (stuck > 4 hours with no progress)
+  // 2. Reset orphaned "claimed" requests (stuck > 4 hours with no progress)
+  // back to "open" so another helper can pick them up. Was previously setting
+  // status: "expired" here, which contradicted this function's own comment
+  // and silently dropped the requester instead of recycling the request —
+  // a real bug, not the documented intent. Fixed to match the stated design.
   const orphanCutoff = new Date(now.getTime() - ORPHAN_CLAIMED_MS);
   const orphaned = await db
     .update(requestsTable)
-    .set({ status: "expired", helper_id: null })
+    .set({ status: "open", helper_id: null, claimed_at: null })
     .where(
       and(
         eq(requestsTable.status, "claimed"),
@@ -89,14 +93,13 @@ async function runCleanup(_job: Job): Promise<void> {
     totalExpired += orphaned.length;
     logger.warn(
       { count: orphaned.length },
-      "cleanup-worker: expired orphaned claimed requests"
+      "cleanup-worker: reset orphaned claimed requests back to open (helper unresponsive > 4h)"
     );
     for (const req of orphaned) {
       // Re-broadcast as "open" so another helper can pick it up
-      // (in a real system, we'd reset to open and re-notify)
       broadcast({
         type: "request_updated",
-        payload: { id: req.id, status: "expired" },
+        payload: { id: req.id, status: "open" },
       });
     }
   }
