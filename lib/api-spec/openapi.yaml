@@ -21,8 +21,6 @@ tags:
     description: Trust and safety reporting
   - name: civic
     description: Location-aware civic and community resources
-  - name: nia
-    description: Nia AI chat, memory, and crisis support
 
 paths:
   /healthz:
@@ -531,7 +529,7 @@ paths:
     get:
       operationId: getRoute
       tags: [navigation]
-      summary: Get route between two coordinates
+      summary: Get driving route between two coordinates
       parameters:
         - name: start_lat
           in: query
@@ -553,13 +551,6 @@ paths:
           required: true
           schema:
             type: number
-        - name: profile
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [driving, walking, cycling]
-            default: driving
       responses:
         "200":
           description: Route data with turn-by-turn steps
@@ -705,228 +696,6 @@ paths:
                 items:
                   $ref: "#/components/schemas/Report"
 
-  /requests/{id}/cancel:
-    post:
-      operationId: cancelRequest
-      tags: [requests]
-      summary: Cancel a request — helper unclaims (re-opens to pool) or requester withdraws (marks cancelled)
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Updated request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HelpRequest"
-        "403":
-          description: Not authorized to cancel this request
-        "404":
-          description: Request not found
-        "409":
-          description: Request is already completed or cancelled
-
-  /requests/{id}/rate:
-    post:
-      operationId: rateRequest
-      tags: [requests]
-      summary: Rate the other participant after a completed request (1–5 stars + optional review)
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RateInput"
-      responses:
-        "201":
-          description: Rating created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Rating"
-        "403":
-          description: Only participants can rate
-        "404":
-          description: Request not found
-        "409":
-          description: Already rated or request not completed
-
-  /users/set-initial-password:
-    post:
-      operationId: setInitialPassword
-      tags: [users]
-      summary: One-time password setup for legacy accounts that pre-date passwords (unauthenticated, rate-limited)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetInitialPasswordInput"
-      responses:
-        "200":
-          description: Password set — returns full auth token
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AuthResponse"
-        "400":
-          description: Missing fields or password too short
-        "403":
-          description: Email does not match account
-        "404":
-          description: User not found
-        "409":
-          description: Account already has a password — use normal login
-
-  # Nia paths appended below
-  # ── Nia AI routes ────────────────────────────────────────────────────────────
-  /nia/chat:
-    post:
-      operationId: niaChat
-      tags: [nia]
-      summary: Chat with Nia AI
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/NiaChatRequest"
-      responses:
-        "200":
-          description: SSE stream of Nia's response
-          content:
-            text/event-stream:
-              schema:
-                $ref: "#/components/schemas/NiaChatResponseSchema"
-        "400":
-          description: Invalid request
-        "429":
-          description: Rate limited
-        "503":
-          description: Nia is temporarily unavailable
-
-  /nia/history/{sessionId}:
-    get:
-      operationId: niaHistory
-      tags: [nia]
-      summary: Get conversation history for a session
-      parameters:
-        - name: sessionId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Conversation history
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NiaHistoryResponseSchema"
-        "403":
-          description: Unauthorized to access this history
-        "503":
-          description: Nia is temporarily unavailable
-
-  /nia/memory:
-    get:
-      operationId: niaGetMemory
-      tags: [nia]
-      summary: Get user's Nia memory
-      responses:
-        "200":
-          description: User memory
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NiaMemoryResponse"
-        "401":
-          description: Authentication required
-    delete:
-      operationId: niaClearMemory
-      tags: [nia]
-      summary: Clear user's Nia memory
-      responses:
-        "200":
-          description: Memory cleared
-        "401":
-          description: Authentication required
-
-  /nia/share-story:
-    post:
-      operationId: niaShareStory
-      tags: [nia]
-      summary: Share a story with Nia for crafting
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/NiaShareStoryRequest"
-      responses:
-        "200":
-          description: Crafted story
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NiaShareStoryResponseSchema"
-        "400":
-          description: Invalid transcript
-        "503":
-          description: Nia is temporarily unavailable
-
-  /admin/nia-status:
-    get:
-      operationId: niaStatus
-      tags: [nia]
-      summary: Check if Nia AI is enabled
-      responses:
-        "200":
-          description: Nia status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NiaStatusResponseSchema"
-
-  /admin/nia-toggle:
-    post:
-      operationId: niaToggle
-      tags: [nia]
-      summary: Toggle Nia AI on/off (admin only)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/NiaToggleRequest"
-      responses:
-        "200":
-          description: Toggle successful
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NiaToggleResponseSchema"
-        "400":
-          description: Invalid request
-        "403":
-          description: Admin access required
-
-
-
 components:
   schemas:
     HealthStatus:
@@ -971,59 +740,6 @@ components:
           description: Community reputation score
         created_at:
           type: string
-        city:
-          type: ["string", "null"]
-        specialties:
-          type: array
-          items:
-            type: string
-          nullable: true
-        phone_masked:
-          type: ["string", "null"]
-        quick_replies:
-          type: array
-          items:
-            type: string
-          nullable: true
-        account_type:
-          type: string
-          default: individual
-        organization_name:
-          type: ["string", "null"]
-        organization_description:
-          type: ["string", "null"]
-        helper_status:
-          type: ["string", "null"]
-        helper_languages:
-          type: array
-          items:
-            type: string
-          nullable: true
-        helper_qualifications:
-          type: array
-          items:
-            type: string
-          nullable: true
-        helper_bio:
-          type: ["string", "null"]
-        helper_vehicle:
-          type: ["string", "null"]
-        helper_social_links:
-          type: array
-          items:
-            type: string
-          nullable: true
-        token_version:
-          type: integer
-        approval_status:
-          type: ["string", "null"]
-        is_suspended:
-          type: boolean
-        helper_skills:
-          type: array
-          items:
-            type: string
-          nullable: true
 
     UserUpdate:
       type: object
@@ -1036,43 +752,6 @@ components:
           type: string
         is_helper:
           type: boolean
-        city:
-          type: string
-        specialties:
-          type: array
-          items:
-            type: string
-        phone_masked:
-          type: string
-        quick_replies:
-          type: array
-          items:
-            type: string
-        account_type:
-          type: string
-          enum: [individual, organization]
-        organization_name:
-          type: string
-        organization_description:
-          type: string
-        helper_status:
-          type: string
-        helper_languages:
-          type: array
-          items:
-            type: string
-        helper_qualifications:
-          type: array
-          items:
-            type: string
-        helper_bio:
-          type: string
-        helper_vehicle:
-          type: string
-        helper_social_links:
-          type: array
-          items:
-            type: string
 
     UserRegistration:
       type: object
@@ -1131,21 +810,13 @@ components:
           type: ["string", "null"]
         category:
           type: string
-          enum: [groceries, transportation, errands, home_repair, medical, emergency, other, stock_shelves, event_setup, delivery_run, tech_support]
+          enum: [groceries, transportation, errands, home_repair, medical, emergency, other]
         urgency:
           type: string
           enum: [low, medium, high, emergency]
         status:
           type: string
           enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, cancelled]
-        outside_usual_area:
-          type: ["boolean", "null"]
-        voice_activated:
-          type: boolean
-        voice_language:
-          type: ["string", "null"]
-        nia_checkin_sent_at:
-          type: ["string", "null"]
         payment_type:
           type: string
           enum: [immediate, pay_it_forward, goodwill]
@@ -1187,8 +858,6 @@ components:
           type: ["string", "null"]
         completed_at:
           type: ["string", "null"]
-        cancelled_at:
-          type: ["string", "null"]
 
     HelpRequestInput:
       type: object
@@ -1196,14 +865,11 @@ components:
       properties:
         title:
           type: string
-          minLength: 3
-          maxLength: 200
         description:
           type: string
-          maxLength: 2000
         category:
           type: string
-          enum: [groceries, transportation, errands, home_repair, medical, emergency, other, stock_shelves, event_setup, delivery_run, tech_support]
+          enum: [groceries, transportation, errands, home_repair, medical, emergency, other]
         urgency:
           type: string
           enum: [low, medium, high, emergency]
@@ -1218,7 +884,6 @@ components:
           type: number
         neighborhood:
           type: string
-          maxLength: 100
         pay_it_forward_amount:
           type: number
         pledge_amount:
@@ -1370,7 +1035,6 @@ components:
         eta_text:
           type: string
         distance_text:
-          type: string
         initial_bearing:
           type: number
           description: Compass bearing (0-359) from start toward first waypoint
@@ -1378,9 +1042,7 @@ components:
           type: number
         waypoints:
           type: integer
-        profile:
           type: string
-          description: Routing profile used (driving, walking, cycling)
 
     Transaction:
       type: object
@@ -1394,8 +1056,8 @@ components:
           type: ["integer", "null"]
         type:
           type: string
-          enum: [earned, pledge_received, pledge_sent, goodwill, tip_received]
-          description: earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester
+          enum: [earned, pledge_received, pledge_sent, goodwill]
+          description: earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act
         amount:
           type: number
         description:
@@ -1519,63 +1181,6 @@ components:
           type: ["string", "null"]
           description: "social_services | shelter | food | medical | housing"
 
-    Rating:
-      type: object
-      required: [id, request_id, rater_id, ratee_id, stars, role, created_at]
-      properties:
-        id:
-          type: integer
-        request_id:
-          type: integer
-        rater_id:
-          type: integer
-        ratee_id:
-          type: integer
-        stars:
-          type: integer
-          minimum: 1
-          maximum: 5
-        review:
-          type: ["string", "null"]
-        role:
-          type: string
-          enum: [requester, helper]
-        created_at:
-          type: string
-
-    RateInput:
-      type: object
-      required: [stars]
-      properties:
-        stars:
-          type: integer
-          minimum: 1
-          maximum: 5
-        review:
-          type: string
-          maxLength: 500
-
-    SetInitialPasswordInput:
-      type: object
-      required: [user_id, email, new_password]
-      properties:
-        user_id:
-          type: integer
-        email:
-          type: string
-        new_password:
-          type: string
-          minLength: 8
-
-    AuthResponse:
-      type: object
-      required: [user, token]
-      properties:
-        user:
-          $ref: "#/components/schemas/User"
-        token:
-          type: string
-
     CivicResourcesResponse:
       type: object
       required: [resources, place_name, match_level]
@@ -1597,123 +1202,3 @@ components:
           type: string
           enum: [city, county, state, fallback]
           description: How specifically the resources were matched
-
-  # ── Nia AI schemas ───────────────────────────────────────────────────────────
-    NiaChatRequest:
-      type: object
-      required: [message, sessionId]
-      properties:
-        message:
-          type: string
-          maxLength: 2000
-          description: User message to Nia
-        sessionId:
-          type: string
-          pattern: '^[\w-]{6,200}$'
-          description: Session identifier for conversation continuity
-        userName:
-          type: string
-          maxLength: 100
-        accountType:
-          type: string
-        helperModeActive:
-          type: boolean
-        activeRequestId:
-          type: [integer, "null"]
-        lat:
-          type: [number, "null"]
-        lon:
-          type: [number, "null"]
-        language:
-          type: [string, "null"]
-        voiceActivated:
-          type: boolean
-        city:
-          type: string
-          maxLength: 100
-        county:
-          type: string
-          maxLength: 100
-        state:
-          type: string
-          maxLength: 100
-
-    NiaChatResponseSchema:
-      type: object
-      properties:
-        type:
-          type: string
-          enum: [text, error, crisis, resource]
-        content:
-          type: string
-        sessionId:
-          type: string
-
-    NiaHistoryResponseSchema:
-      type: array
-      items:
-        type: object
-        properties:
-          id:
-            type: integer
-          user_message:
-            type: string
-          nia_response:
-            type: string
-          created_at:
-            type: string
-
-    NiaMemoryResponse:
-      type: object
-      properties:
-        memory:
-          type: [string, "null"]
-        structured:
-          type: object
-
-    NiaShareStoryRequest:
-      type: object
-      required: [transcript]
-      properties:
-        transcript:
-          type: string
-          minLength: 10
-          maxLength: 3000
-        userName:
-          type: string
-          maxLength: 100
-        helperName:
-          type: [string, "null"]
-          maxLength: 100
-        category:
-          type: string
-
-    NiaShareStoryResponseSchema:
-      type: object
-      properties:
-        story:
-          type: string
-        title:
-          type: string
-
-    NiaStatusResponseSchema:
-      type: object
-      properties:
-        enabled:
-          type: boolean
-
-    NiaToggleRequest:
-      type: object
-      required: [enabled]
-      properties:
-        enabled:
-          type: boolean
-
-    NiaToggleResponseSchema:
-      type: object
-      properties:
-        ok:
-          type: boolean
-        enabled:
-          type: boolean
-

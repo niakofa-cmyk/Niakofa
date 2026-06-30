@@ -1,0 +1,63 @@
+--- niakofa_orig/Niakofa-main/lib/api-spec/openapi.yaml	2026-06-30 16:46:25.000000000 +0000
++++ niakofa_audit/Niakofa-main/lib/api-spec/openapi.yaml	2026-06-30 16:54:58.627798931 +0000
+@@ -792,6 +792,41 @@
+         "409":
+           description: Account already has a password — use normal login
+ 
++  /users/{id}/change-password:
++    post:
++      operationId: changePassword
++      tags: [users]
++      summary: Authenticated password change — requires current password as proof of possession
++      security:
++        - bearerAuth: []
++      parameters:
++        - in: path
++          name: id
++          required: true
++          schema:
++            type: integer
++      requestBody:
++        required: true
++        content:
++          application/json:
++            schema:
++              $ref: "#/components/schemas/ChangePasswordInput"
++      responses:
++        "200":
++          description: Password changed — returns fresh auth token (old sessions invalidated)
++          content:
++            application/json:
++              schema:
++                $ref: "#/components/schemas/AuthResponse"
++        "400":
++          description: Missing fields, password too short, or new password same as current
++        "401":
++          description: Current password is incorrect
++        "403":
++          description: LEGACY_PASSWORD_REQUIRED — account has no password yet, use set-initial-password first
++        "404":
++          description: User not found
++
+   # Nia paths appended below
+   # ── Nia AI routes ────────────────────────────────────────────────────────────
+   /nia/chat:
+@@ -1555,6 +1590,18 @@
+           type: string
+           maxLength: 500
+ 
++    ChangePasswordInput:
++      type: object
++      required: [current_password, new_password]
++      properties:
++        current_password:
++          type: string
++          description: The user's current password
++        new_password:
++          type: string
++          minLength: 8
++          description: The new password (min 8 chars, must differ from current)
++
+     SetInitialPasswordInput:
+       type: object
+       required: [user_id, email, new_password]
