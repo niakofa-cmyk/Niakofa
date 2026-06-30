@@ -1,25 +1,12 @@
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { checkSafety } from "../lib/safety.js";
-import {
-  saveConversation,
-  getRecentHistory,
-  getScrollbackHistory,
-  checkRateLimit,
-  getActiveRequest,
-  getUserMemory,
-  upsertUserMemory,
-  saveCheckinConversation,
-} from "../lib/db.js";
+import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit, getActiveRequest, getUserMemory, upsertUserMemory, isNiaEnabled, logNiaCost } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
-import {
-  injectLocation,
-  buildLocationPrefix,
-  buildAppContextPrefix,
-  LocationContext,
-} from "../middleware/location.js";
+import { injectLocation, buildLocationPrefix, buildAppContextPrefix, LocationContext } from "../middleware/location.js";
 import { pino } from "pino";
 import { parseOptionalAuth } from "../lib/auth.js";
+import { getFreshKnowledge } from "../workers/continuous-learning-worker.js";
 
 const logger = pino({ level: "info" });
 const router = Router();
@@ -32,68 +19,19 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" })
 
 const NIA_TIMEOUT_MS = 60_000;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared streaming helper — sends SSE deltas and returns the full response text.
-// ─────────────────────────────────────────────────────────────────────────────
-async function streamNiaResponse(
-  res: Response,
-  messages: Anthropic.MessageParam[],
-  systemPrompt: string,
-  abortSignal: AbortSignal
-): Promise<string> {
-  const WEB_SEARCH_TOOL: Anthropic.Tool = {
-    name: "web_search",
-    // @ts-expect-error — web_search_20250305 is a special Anthropic tool type
-    type: "web_search_20250305",
-  };
-
-  const stream = await anthropic.messages.stream(
-    {
-      model: "claude-sonnet-4-6",
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages,
-      tools: [WEB_SEARCH_TOOL],
-    },
-    { signal: abortSignal }
-  );
-
-  let fullResponse = "";
-  for await (const chunk of stream) {
-    if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
-      const text = chunk.delta.text;
-      fullResponse += text;
-      res.write(`data: ${JSON.stringify({ type: "delta", text })}\n\n`);
-    }
-    if (
-      chunk.type === "content_block_delta" &&
-      chunk.delta.type === "input_json_delta" &&
-      typeof (chunk.delta as any).partial_json === "string"
-    ) {
-      fullResponse += (chunk.delta as any).partial_json;
-    }
+router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res: Response) => {
+  // Defense-in-depth kill-switch check (primary block is in api-server nia-proxy)
+  if (!(await isNiaEnabled())) {
+    return res.status(503).json({ error: "Nia is temporarily unavailable." });
   }
 
-  return fullResponse;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /chat — main Nia conversation endpoint
-// ─────────────────────────────────────────────────────────────────────────────
-router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res: Response) => {
   const body = req.body as Record<string, unknown>;
   const message = typeof body.message === "string" ? body.message : "";
-  const sessionId =
-    Array.isArray(body.sessionId)
-      ? body.sessionId[0]
-      : typeof body.sessionId === "string"
-      ? body.sessionId
-      : "";
-
-  // HIGH-002: userId comes ONLY from a verified Bearer token, never from body
-  const userId =
-    (req as Request & { authenticatedUserId?: number }).authenticatedUserId ?? null;
-
+  const sessionId = Array.isArray(body.sessionId) ? body.sessionId[0] : typeof body.sessionId === "string" ? body.sessionId : "";
+  // HIGH-002: userId now comes ONLY from a verified Bearer token, never from
+  // the client-supplied body — a body.userId previously let any caller read
+  // or write another user's memory, history, and rate-limit bucket.
+  const userId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId ?? null;
   const gpsLat = typeof body.lat === "number" ? body.lat : null;
   const gpsLon = typeof body.lon === "number" ? body.lon : null;
   const userName = typeof body.userName === "string" ? body.userName : null;
@@ -103,15 +41,17 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
     typeof body.activeRequestId === "number"
       ? body.activeRequestId
       : typeof body.activeRequestId === "string" && body.activeRequestId.trim() !== ""
-      ? Number(body.activeRequestId)
-      : null;
+        ? Number(body.activeRequestId)
+        : null;
 
-  // Optional live context (open requests count, helpers online, etc.)
-  // Injected by the API server when calling nia-service on behalf of the app
-  const liveContext =
-    typeof body.liveContext === "object" && body.liveContext !== null
-      ? (body.liveContext as Record<string, unknown>)
-      : null;
+  // GPS-resolved place from client reverse geocode (more accurate than server IP)
+  const clientCity = typeof body.city === "string" ? body.city.slice(0, 100) : null;
+  const clientCounty = typeof body.county === "string" ? body.county.slice(0, 100) : null;
+  const clientState = typeof body.state === "string" ? body.state.slice(0, 100) : null;
+
+  // Phase 7c: food intent signal from client-side detection
+  const foodSignal = typeof body.foodSignal === "string" ? body.foodSignal : null;
+  const foodSignalCount = typeof body.foodSignalCount === "number" ? body.foodSignalCount : 0;
 
   if (!message.trim() || !sessionId) {
     return res.status(400).json({ error: "message and sessionId required" });
@@ -128,10 +68,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
 
   const rateLimit = await checkRateLimit(userId, sessionId);
   if (!rateLimit.allowed) {
-    const reset = new Date(rateLimit.resetAt).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const reset = new Date(rateLimit.resetAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     return res.status(429).json({
       error: "Daily message limit reached",
       resetAt: rateLimit.resetAt,
@@ -144,19 +81,17 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
-    res.write(
-      `data: ${JSON.stringify({ type: "delta", text: safety.escalationMessage })}\n\n`
-    );
+    res.write(`data: ${JSON.stringify({ type: "delta", text: safety.escalationMessage })}\n\n`);
     res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
     await saveConversation(userId, sessionId, message, safety.escalationMessage!);
     return res.end();
   }
 
   const history = await getRecentHistory(sessionId);
-  const userMemory = userId ? await getUserMemory(userId).catch(() => null) : null;
 
+  const userMemory = userId ? await getUserMemory(userId).catch(() => null) : null;
   const memoryPrefix = userMemory
-    ? `MEMORY OF THIS USER:\n${userMemory}\n\nUse this memory naturally — reference it when relevant, like a neighbor who pays attention. Don't recite it. Don't say "I remember." Just know it.\n\n`
+    ? `MEMORY OF THIS USER:\n${userMemory}\n\nUse this memory naturally — reference it when relevant, like a friend who remembers. Don't recite it robotically.\n\n`
     : "";
 
   const activeRequest =
@@ -165,18 +100,32 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       : null;
 
   const softPrefix = safety.soft
-    ? "CARE DIRECTIVE: This person is showing signs of distress. Lead with warmth and acknowledgment. " +
-      "Do not rush to solutions. Ask one gentle question to understand their situation better. Stay present.\n\n"
+    ? "CARE DIRECTIVE: This person is showing signs of distress (struggling, overwhelmed, scared, or facing hardship). " +
+      "Lead with warmth and acknowledgment before offering any resources. Do not rush to solutions. " +
+      "Ask one gentle question to understand their situation better. Stay present.\n\n"
     : "";
 
-  // Live community context prefix
-  const liveContextPrefix = liveContext
-    ? buildLiveContextPrefix(liveContext)
-    : "";
+  // Merge client GPS place into locationContext (overrides coarse IP geo)
+  if (clientCity || clientCounty || clientState) {
+    (req as any).locationContext = {
+      ...(req as any).locationContext,
+      ...(clientCity ? { city: clientCity } : {}),
+      ...(clientCounty ? { county: clientCounty } : {}),
+      ...(clientState ? { region: clientState } : {}),
+      fromClientGPS: true,
+    };
+  }
+
+  // Inject continuous learning knowledge from background worker
+  const knowledgePrefix = await getFreshKnowledge().catch(() => "");
+  const knowledgePrefixBlock = knowledgePrefix ? `${knowledgePrefix}\n\n` : "";
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+
+  let fullResponse = "";
+  let streamStartTime = 0;
 
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => {
@@ -185,194 +134,163 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   }, NIA_TIMEOUT_MS);
 
   try {
-    const systemPrompt =
-      memoryPrefix +
-      softPrefix +
-      liveContextPrefix +
-      buildLocationPrefix((req as any).locationContext as LocationContext | undefined) +
-      buildAppContextPrefix({
-        userName,
-        accountType,
-        helperModeActive,
-        activeRequest: activeRequest
-          ? {
-              title: activeRequest.title,
-              description: activeRequest.description,
-              category: activeRequest.category,
-              urgency: activeRequest.urgency,
-              status: activeRequest.status,
-              neighborhood: activeRequest.neighborhood,
-              viewerRole: activeRequest.viewerRole,
-            }
-          : null,
-      }) +
-      NIA_SYSTEM_PROMPT;
+    const WEB_SEARCH_TOOL: Anthropic.Tool = {
+      name: "web_search",
+      // @ts-expect-error — web_search_20250305 is a special Anthropic tool type
+      type: "web_search_20250305",
+    };
 
-    const fullResponse = await streamNiaResponse(
-      res,
-      [...history, { role: "user", content: message }],
-      systemPrompt,
-      controller.signal
+    const stream = await anthropic.messages.stream(
+      {
+        model: "claude-sonnet-4-5",
+        max_tokens: 1024,
+        system:
+          memoryPrefix +
+          softPrefix +
+          knowledgePrefixBlock +
+          buildFoodIntentPrefix(foodSignal, foodSignalCount, gpsLat, gpsLon) +
+      buildLocationPrefix((req as any).locationContext as LocationContext | undefined) +
+          buildAppContextPrefix({
+            userName,
+            accountType,
+            helperModeActive,
+            activeRequest: activeRequest
+              ? {
+                  title: activeRequest.title,
+                  description: activeRequest.description,
+                  category: activeRequest.category,
+                  urgency: activeRequest.urgency,
+                  status: activeRequest.status,
+                  neighborhood: activeRequest.neighborhood,
+                  viewerRole: activeRequest.viewerRole,
+                }
+              : null,
+          }) +
+          NIA_SYSTEM_PROMPT,
+        messages: [...history, { role: "user", content: message }],
+        tools: [WEB_SEARCH_TOOL],
+      },
+      { signal: controller.signal }
     );
+
+    let inputTokens = 0;
+    let outputTokens = 0;
+    const streamStartTime = Date.now();
+
+    for await (const chunk of stream) {
+      if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
+        const text = chunk.delta.text;
+        fullResponse += text;
+        res.write(`data: ${JSON.stringify({ type: "delta", text })}\n\n`);
+      }
+      if (
+        chunk.type === "content_block_delta" &&
+        chunk.delta.type === "input_json_delta" &&
+        typeof (chunk.delta as any).partial_json === "string"
+      ) {
+        fullResponse += (chunk.delta as any).partial_json;
+      }
+      // Track usage from message_start event
+      if (chunk.type === "message_start" && (chunk as any).message?.usage?.input_tokens) {
+        inputTokens = (chunk as any).message.usage.input_tokens;
+      }
+      // Track output tokens from message_delta event
+      if (chunk.type === "message_delta" && (chunk as any).usage?.output_tokens) {
+        outputTokens = (chunk as any).usage.output_tokens;
+      }
+    }
+
+    const durationMs = Date.now() - streamStartTime;
+    // Estimate cost: Claude Sonnet 4.5 = $3/1M input tokens, $15/1M output tokens
+    const estimatedCostUsd = (inputTokens * 0.000003) + (outputTokens * 0.000015);
 
     clearTimeout(timeoutHandle);
     res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
     res.end();
-
     await saveConversation(userId, sessionId, message, fullResponse);
 
+    // Log cost for monitoring
+    await logNiaCost({
+      userId,
+      sessionId,
+      model: "claude-sonnet-4-5",
+      inputTokens,
+      outputTokens,
+      estimatedCostUsd,
+      durationMs,
+      success: true,
+    });
+
     if (userId) {
-      extractAndUpdateMemory(userId, userMemory, message, fullResponse, anthropic).catch(
-        () => {}
-      );
+      extractAndUpdateMemory(userId, userMemory, message, fullResponse, anthropic).catch(() => {});
     }
   } catch (err) {
     clearTimeout(timeoutHandle);
     const isTimeout = err instanceof Error && err.name === "AbortError";
     logger.error({ err, userId, sessionId, isTimeout }, "nia: chat error");
-    if (!res.writableEnded) {
-      res.write(
-        `data: ${JSON.stringify({
-          type: "error",
-          message: isTimeout
-            ? "Nia took too long to respond. Please try again."
-            : "Nia is unavailable right now. Please try again.",
-        })}\n\n`
-      );
-      res.end();
-    }
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /checkin — Nia reaches back after a completed request (24h follow-up)
-//
-// Body: { userId, requestId, requestTitle, category, helperName, sessionId }
-// Called by the scheduler (nia-checkin worker) — not by the client directly.
-// Streams Nia's opening message and saves it to conversation history so the
-// user can continue the conversation in-app.
-// ─────────────────────────────────────────────────────────────────────────────
-router.post("/checkin", async (req: Request, res: Response) => {
-  // Internal calls from the scheduler bypass Bearer auth but must supply the
-  // shared INTERNAL_SECRET header to prevent abuse from outside.
-  const secret = req.headers["x-internal-secret"];
-  if (!process.env.INTERNAL_SECRET || secret !== process.env.INTERNAL_SECRET) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  const body = req.body as Record<string, unknown>;
-  const userId = typeof body.userId === "number" ? body.userId : null;
-  const requestId = typeof body.requestId === "number" ? body.requestId : null;
-  const requestTitle = typeof body.requestTitle === "string" ? body.requestTitle : "your request";
-  const category = typeof body.category === "string" ? body.category : null;
-  const helperName = typeof body.helperName === "string" ? body.helperName : null;
-  const sessionId =
-    typeof body.sessionId === "string" ? body.sessionId : `checkin-${userId}-${requestId}`;
-
-  if (!userId) return res.status(400).json({ error: "userId required" });
-
-  const userMemory = await getUserMemory(userId).catch(() => null);
-  const memoryPrefix = userMemory
-    ? `MEMORY OF THIS USER:\n${userMemory}\n\nUse this memory naturally. Don't recite it.\n\n`
-    : "";
-
-  const checkinDirective = buildCheckinDirective({
-    requestTitle,
-    category,
-    helperName,
-  });
-
-  const systemPrompt = memoryPrefix + checkinDirective + NIA_SYSTEM_PROMPT;
-
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), NIA_TIMEOUT_MS);
-
-  try {
-    const openingPrompt = buildCheckinOpeningPrompt({ requestTitle, category, helperName });
-
-    const fullResponse = await streamNiaResponse(
-      res,
-      [{ role: "user", content: openingPrompt }],
-      systemPrompt,
-      controller.signal
-    );
-
-    clearTimeout(timeoutHandle);
-    res.write(`data: ${JSON.stringify({ type: "done", sessionId })}\n\n`);
+    
+    // Log failed cost attempt
+    await logNiaCost({
+      userId,
+      sessionId,
+      model: "claude-sonnet-4-5",
+      success: false,
+      errorType: isTimeout ? "timeout" : "stream_error",
+      durationMs: Date.now() - streamStartTime,
+    }).catch(() => {});
+    
+    res.write(`data: ${JSON.stringify({ type: "error", message: isTimeout ? "Nia took too long to respond. Please try again." : "Nia is unavailable right now. Please try again." })}\n\n`);
     res.end();
-
-    // Save so user can continue the conversation in-app
-    await saveCheckinConversation(userId, sessionId, openingPrompt, fullResponse, requestId);
-
-    // Update memory with any emotional context from request completion
-    if (userMemory !== null || fullResponse.length > 50) {
-      extractAndUpdateMemory(
-        userId,
-        userMemory,
-        `[Niakofa check-in: ${requestTitle} completed]`,
-        fullResponse,
-        anthropic
-      ).catch(() => {});
-    }
-  } catch (err) {
-    clearTimeout(timeoutHandle);
-    logger.error({ err, userId, requestId }, "nia: checkin error");
-    if (!res.writableEnded) {
-      res.write(
-        `data: ${JSON.stringify({ type: "error", message: "Nia couldn't send the check-in." })}\n\n`
-      );
-      res.end();
-    }
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /analyze-image — one-shot vision analysis
-// Body: { imageBase64: string, mediaType?: string, question?: string, context?: string }
-// context: optional hint ("broken appliance", "street sign", "medication bottle")
-// ─────────────────────────────────────────────────────────────────────────────
+
+// POST /analyze-image
+// One-shot vision analysis — no session history, no memory update.
+// Body: { imageBase64: string (data URL or raw base64), mediaType?: string, question?: string }
+// The image is passed directly to Claude vision; the optional question
+// focuses the analysis. Safety check runs on the question text.
+//
+// Size guard: the base64 body is capped at ~5MB (raw bytes ~3.75MB image)
+// which is well within Claude's image limits. The express.json() middleware
+// defaults to 100kb — callers must ensure their server allows larger bodies,
+// or this endpoint will 413 before reaching the handler.
 router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Response) => {
+  // Defense-in-depth kill-switch check
+  if (!(await isNiaEnabled())) {
+    return res.status(503).json({ error: "Nia is temporarily unavailable." });
+  }
+
   const body = req.body as Record<string, unknown>;
 
+  // Accept either a full data URL ("data:image/jpeg;base64,....") or raw base64
   const rawImage = typeof body.imageBase64 === "string" ? body.imageBase64 : "";
   if (!rawImage) return res.status(400).json({ error: "imageBase64 is required" });
 
+  // Strip data-URL prefix if present
   const dataUrlMatch = rawImage.match(/^data:([^;]+);base64,(.+)$/s);
   const mediaType: string = dataUrlMatch
     ? dataUrlMatch[1]
     : typeof body.mediaType === "string"
-    ? body.mediaType
-    : "image/jpeg";
+      ? body.mediaType
+      : "image/jpeg";
   const imageData: string = dataUrlMatch ? dataUrlMatch[2] : rawImage;
 
   const SUPPORTED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
   if (!SUPPORTED_TYPES.includes(mediaType)) {
-    return res
-      .status(400)
-      .json({ error: `Unsupported image type: ${mediaType}. Use JPEG, PNG, GIF, or WebP.` });
+    return res.status(400).json({ error: `Unsupported image type: ${mediaType}. Use JPEG, PNG, GIF, or WebP.` });
   }
 
-  // ~5MB raw limit
+  // Rough size check — base64 is ~4/3 the raw bytes; 6.8MB base64 ≈ 5MB raw
   if (imageData.length > 6_800_000) {
-    return res
-      .status(413)
-      .json({ error: "Image too large — please use an image under 5MB" });
+    return res.status(413).json({ error: "Image too large — please use an image under 5MB" });
   }
 
-  const question =
-    typeof body.question === "string" && body.question.trim()
-      ? body.question.trim()
-      : null;
+  const question = typeof body.question === "string" && body.question.trim()
+    ? body.question.trim()
+    : null;
 
-  const imageContext =
-    typeof body.context === "string" && body.context.trim()
-      ? body.context.trim()
-      : null;
-
+  // Safety check on the question text
   if (question) {
     const safety = checkSafety(question);
     if (safety.flagged) {
@@ -380,21 +298,20 @@ router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Respo
     }
   }
 
-  const userPrompt = buildImagePrompt(question, imageContext);
+  const userPrompt = question
+    ? `Please analyze this image. The user asks: "${question}"`
+    : "Please describe what you see in this image and note anything that might be relevant to community help or safety.";
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-4-5",
       max_tokens: 1024,
       system:
-        "You are Nia, the Niakofa community assistant for Fort Worth, TX. " +
-        "When analyzing images, be helpful and community-minded. " +
-        "If the image shows something someone needs help with (broken appliance, medical situation, " +
-        "navigation question, flooded area, prescription bottle), describe what you see clearly and " +
-        "suggest how the community might help or what the person should do next. " +
-        "If the image shows something concerning (injury, unsafe conditions, visible distress), respond with care first. " +
-        "Be concise — 2–4 sentences unless more detail is genuinely needed. " +
-        "Refer to yourself as Nia only. Never mention Claude or Anthropic.",
+        "You are Nia, the Niakofa community assistant. When analyzing images, be helpful and community-minded. " +
+        "If the image shows a help request (e.g. broken appliance, medical situation, navigation question), " +
+        "describe what you see and suggest how the community might help. " +
+        "If the image shows something concerning (injury, unsafe conditions, distress), respond with care. " +
+        "Be concise — 2-4 sentences unless detail is clearly needed. Refer to yourself as Nia only.",
       messages: [
         {
           role: "user",
@@ -403,11 +320,7 @@ router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Respo
               type: "image",
               source: {
                 type: "base64",
-                media_type: mediaType as
-                  | "image/jpeg"
-                  | "image/png"
-                  | "image/gif"
-                  | "image/webp",
+                media_type: mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
                 data: imageData,
               },
             },
@@ -417,123 +330,203 @@ router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Respo
       ],
     });
 
-    const analysis =
-      response.content[0].type === "text"
-        ? response.content[0].text
-        : "I couldn't analyze that image.";
-
-    logger.info(
-      { mediaType, questionLength: question?.length ?? 0, hasContext: !!imageContext },
-      "nia: image analyzed"
-    );
+    const analysis = response.content[0].type === "text" ? response.content[0].text : "I couldn't analyze that image.";
+    logger.info({ mediaType, questionLength: question?.length ?? 0 }, "nia: image analyzed");
     return res.json({ analysis });
   } catch (err) {
     logger.error({ err }, "nia: image analysis error");
-    return res
-      .status(500)
-      .json({ error: "Nia couldn't analyze the image right now. Please try again." });
+    return res.status(500).json({ error: "Nia couldn't analyze the image right now. Please try again." });
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /history/:sessionId
-// ─────────────────────────────────────────────────────────────────────────────
 router.get("/history/:sessionId", async (req: Request, res: Response) => {
+  // Kill-switch: respect admin toggle for history reads too
+  if (!(await isNiaEnabled())) {
+    return res.status(503).json({ error: "Nia is temporarily unavailable." });
+  }
   const sessionId = req.params.sessionId;
   if (!sessionId) return res.status(400).json({ error: "sessionId required" });
-  return res.json(
-    await getScrollbackHistory(Array.isArray(sessionId) ? sessionId[0] : sessionId)
-  );
+  return res.json(await getScrollbackHistory(Array.isArray(sessionId) ? sessionId[0] : sessionId));
 });
 
 router.get("/health", (_req, res) => res.json({ status: "ok", service: "nia" }));
 
+// ── Admin Cost Monitoring Endpoints ───────────────────────────────────────────
+// GET /admin/costs — internal only, requires x-internal-secret header
+router.get("/admin/costs", async (req: Request, res: Response) => {
+  const secret = req.headers["x-internal-secret"];
+  if (!secret || secret !== (process.env.INTERNAL_SECRET ?? "")) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  
+  const days = Math.min(Math.max(parseInt(String(req.query.days ?? "7"), 10) || 7, 1), 30);
+  
+  try {
+    const summary = await getDailyCostSummary();
+    // Filter to requested days
+    const filtered = summary.slice(0, days);
+    
+    // Calculate totals
+    const totalCalls = filtered.reduce((sum, d) => sum + d.totalCalls, 0);
+    const totalInputTokens = filtered.reduce((sum, d) => sum + d.totalInputTokens, 0);
+    const totalOutputTokens = filtered.reduce((sum, d) => sum + d.totalOutputTokens, 0);
+    const totalCost = filtered.reduce((sum, d) => sum + d.estimatedCostUsd, 0);
+    const totalFailed = filtered.reduce((sum, d) => sum + d.failedCalls, 0);
+    
+    return res.json({
+      daily: filtered,
+      summary: {
+        totalCalls,
+        totalInputTokens,
+        totalOutputTokens,
+        totalCostUsd: totalCost,
+        totalFailed,
+        averageCostPerCall: totalCalls > 0 ? totalCost / totalCalls : 0,
+      },
+      period: {
+        days,
+        startDate: filtered[filtered.length - 1]?.date ?? null,
+        endDate: filtered[0]?.date ?? null,
+      },
+    });
+  } catch (err) {
+    logger.error({ err }, "nia: failed to get cost summary");
+    return res.status(500).json({ error: "Failed to get cost summary" });
+  }
+});
+
+// GET /admin/costs/user/:userId — internal only, per-user cost breakdown
+router.get("/admin/costs/user/:userId", async (req: Request, res: Response) => {
+  const secret = req.headers["x-internal-secret"];
+  if (!secret || secret !== (process.env.INTERNAL_SECRET ?? "")) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  
+  const userId = parseInt(req.params.userId);
+  if (isNaN(userId)) {
+    return res.status(400).json({ error: "Invalid userId" });
+  }
+  
+  try {
+    const summary = await getDailyCostSummary(userId);
+    return res.json({ userId, daily: summary });
+  } catch (err) {
+    logger.error({ err, userId }, "nia: failed to get user cost summary");
+    return res.status(500).json({ error: "Failed to get user cost summary" });
+  }
+});
+
+
+// ── PHASE 7b: Proactive check-in endpoint (called by nia-checkin-worker) ──
+// Internal-only: requires x-internal-secret header
+router.post("/checkin", async (req: Request, res: Response) => {
+  const secret = req.headers["x-internal-secret"];
+  if (!secret || secret !== (process.env.INTERNAL_SECRET ?? "")) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const body = req.body as Record<string, unknown>;
+  const userId   = typeof body.userId        === "number" ? body.userId        : null;
+  const userName = typeof body.userName      === "string" ? body.userName      : "friend";
+  const sessionId = typeof body.sessionId   === "string" ? body.sessionId     : `checkin-${userId}-${Date.now()}`;
+  const requestTitle  = typeof body.requestTitle === "string" ? body.requestTitle : "your recent request";
+  const category      = typeof body.category     === "string" ? body.category     : "";
+  const helperName    = typeof body.helperName   === "string" ? body.helperName   : null;
+
+  // Build a warm, short check-in message from Nia
+  const helperLine = helperName ? ` with ${helperName}` : "";
+  const checkinPrompt = `You are Nia, a warm community AI for Niakofa. 
+You are reaching out to ${userName} about their completed request: "${requestTitle}" (category: ${category}).
+They received help${helperLine} yesterday.
+
+Write a brief, warm check-in message (2-3 sentences max). Ask how it went, whether they got the help they needed, and gently invite them to share how they are doing. 
+Use a caring, neighborly tone. Do NOT use emojis. Do NOT be formal.`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 200,
+      messages: [{ role: "user", content: checkinPrompt }],
+    });
+
+    const niaMessage = response.content[0].type === "text"
+      ? response.content[0].text.trim()
+      : "Hey, just checking in — how did everything go? I hope you got the help you needed.";
+
+    // Save to conversation history so user sees it when they open Nia
+    if (userId) {
+      await saveConversation(userId, sessionId, "[check-in] Nia reached out", niaMessage);
+    }
+
+    return res.json({ ok: true, message: niaMessage, sessionId });
+  } catch (err) {
+    logger.error({ err }, "nia-checkin: failed to generate check-in message");
+    return res.status(500).json({ error: "Failed to generate check-in" });
+  }
+});
+
+
+// ── PHASE 7c: Voice story sharing ─────────────────────────────────────────
+// Authenticated: user sends raw voice transcript, Nia crafts it into a
+// warm community story and returns the polished text for posting.
+router.post("/share-story", parseOptionalAuth, async (req: Request, res: Response) => {
+  const userId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId ?? null;
+  const body = req.body as Record<string, unknown>;
+  const transcript = typeof body.transcript === "string" ? body.transcript.trim() : "";
+  const userName   = typeof body.userName   === "string" ? body.userName.trim()   : "A neighbor";
+  const helperName = typeof body.helperName === "string" ? body.helperName.trim() : null;
+  const category   = typeof body.category   === "string" ? body.category.trim()   : "";
+
+  if (!transcript || transcript.length < 10) {
+    return res.status(400).json({ error: "transcript is required (min 10 chars)" });
+  }
+  if (transcript.length > 3000) {
+    return res.status(400).json({ error: "transcript too long (max 3000 chars)" });
+  }
+
+  const helperLine = helperName ? ` with the help of ${helperName}` : "";
+  const prompt = `You are Nia, a warm community AI for Niakofa — a mutual aid platform that serves communities across the United States.
+
+${userName} just recorded a voice story about receiving community help${helperLine}. Here is their raw transcript:
+
+"${transcript}"
+
+Your job: Turn this into a warm, authentic 2–4 sentence community story in THEIR voice — not yours. 
+Rules:
+- Write in first person as ${userName}
+- Keep their authentic words and emotion — just clean up speech-to-text artifacts
+- Do NOT add emojis, hashtags, or formal language
+- Do NOT mention Nia or the AI
+- End with something that invites others ("If you need help, just ask" or similar)
+- Max 80 words
+- Return ONLY the polished story text, nothing else`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 200,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const story = response.content[0].type === "text"
+      ? response.content[0].text.trim()
+      : transcript;
+
+    return res.json({ ok: true, story, userName, helperName, category });
+  } catch (err) {
+    logger.error({ err }, "share-story: failed to craft story");
+    return res.status(500).json({ error: "Failed to craft story" });
+  }
+});
+
 export default router;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
-
-function buildLiveContextPrefix(ctx: Record<string, unknown>): string {
-  const lines: string[] = ["LIVE COMMUNITY CONTEXT (real-time data — use it):"];
-  if (typeof ctx.openRequestsNearby === "number") {
-    lines.push(`- Open requests within 2 miles: ${ctx.openRequestsNearby}`);
-  }
-  if (typeof ctx.helpersOnlineNearby === "number") {
-    lines.push(`- Helpers currently online nearby: ${ctx.helpersOnlineNearby}`);
-  }
-  if (typeof ctx.topCategory === "string") {
-    lines.push(`- Most common request type right now: ${ctx.topCategory}`);
-  }
-  if (typeof ctx.neighborhood === "string") {
-    lines.push(`- User's neighborhood: ${ctx.neighborhood}`);
-  }
-  if (typeof ctx.estimatedResponseMinutes === "number") {
-    lines.push(
-      `- Estimated time to first helper response if they post now: ~${ctx.estimatedResponseMinutes} min`
-    );
-  }
-  lines.push(
-    "Use this context naturally if it's relevant. Never make up numbers that aren't here.\n"
-  );
-  return lines.join("\n") + "\n";
-}
-
-function buildCheckinDirective(opts: {
-  requestTitle: string;
-  category: string | null;
-  helperName: string | null;
-}): string {
-  return (
-    "CHECK-IN DIRECTIVE: You are reaching out to this person 24 hours after their request was completed. " +
-    `The request was: "${opts.requestTitle}"${opts.category ? ` (category: ${opts.category})` : ""}. ` +
-    (opts.helperName ? `Their helper was ${opts.helperName}. ` : "") +
-    "Open warmly and naturally — like a neighbor checking in, not a support ticket. " +
-    "Ask how things went. Show you care. Keep it short (2–3 sentences). " +
-    "Do NOT open with 'I'm checking in' or 'I wanted to follow up.' Just ask.\n\n"
-  );
-}
-
-function buildCheckinOpeningPrompt(opts: {
-  requestTitle: string;
-  category: string | null;
-  helperName: string | null;
-}): string {
-  // This becomes the "user" turn that prompts Nia's opening check-in message.
-  // It's an internal signal, not a real user message.
-  return (
-    `[INTERNAL: Generate Nia's check-in opening message for a completed "${opts.requestTitle}" request` +
-    (opts.helperName ? ` helped by ${opts.helperName}` : "") +
-    `. Warm, natural, 2–3 sentences. No preamble.]`
-  );
-}
-
-function buildImagePrompt(question: string | null, context: string | null): string {
-  if (question && context) {
-    return `The user is sharing a photo of: ${context}. They ask: "${question}" — please help them.`;
-  }
-  if (question) {
-    return `Please analyze this image. The user asks: "${question}"`;
-  }
-  if (context) {
-    return (
-      `The user shared a photo of: ${context}. ` +
-      "Describe what you see and tell them anything that would help them understand the situation or get community support."
-    );
-  }
-  return "Please describe what you see in this image and note anything relevant to community help or safety.";
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Memory extraction — runs async after every chat turn
-// Uses Haiku (cheap + fast) for extraction; Sonnet is for conversation.
-// ─────────────────────────────────────────────────────────────────────────────
 async function extractAndUpdateMemory(
   userId: number,
   existingMemory: string | null,
   userMessage: string,
   niaResponse: string,
-  client: Anthropic
+  anthropic: Anthropic
 ): Promise<void> {
   const prompt = `You are Nia's memory system. Extract any meaningful, lasting facts about this user from the conversation below.
 
@@ -546,25 +539,83 @@ Nia: ${niaResponse}
 
 Rules:
 - Only extract facts that would help Nia be more personal and helpful in FUTURE conversations
-- Include: life situation, needs, family members, struggles, wins, goals, preferences, location details, skills they have or need
+- Include: life situation, needs, family, struggles, wins, goals, preferences, location details
 - Merge with existing memory — don't duplicate, update if changed
-- Keep it under 400 words, written as clear bullet points
-- Note the approximate date of any key events (e.g. "car broke down — June 2026")
-- If nothing new and meaningful to remember, return the existing memory unchanged
-- If there is emotional context (person was going through something hard), capture that briefly
-- Return ONLY the updated memory bullets, no preamble or explanation
+- Keep it under 400 words, written as bullet points
+- If nothing meaningful to remember, return the existing memory unchanged
+- Return ONLY the updated memory bullets, no preamble
 
 Updated memory:`;
 
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 600,
+  const response = await anthropic.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 500,
     messages: [{ role: "user", content: prompt }],
   });
 
-  const newMemory =
-    response.content[0].type === "text" ? response.content[0].text.trim() : null;
+  const newMemory = response.content[0].type === "text" ? response.content[0].text.trim() : null;
   if (newMemory && newMemory.length > 10) {
     await upsertUserMemory(userId, newMemory);
   }
+}
+
+// ── Internal cache-flush endpoint ─────────────────────────────────────────
+// Called by api-server's nia-toggle handler immediately after a toggle so the
+// 10-second in-process TTL doesn't delay the kill-switch effect.
+router.post("/internal/flush-nia-cache", (req: Request, res: Response) => {
+  const secret = req.headers["x-internal-secret"];
+  if (!secret || secret !== (process.env.INTERNAL_SECRET ?? "")) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  // Import the cache variables directly — reset them so the next isNiaEnabled()
+  // call hits the DB instead of returning the stale cached value.
+  // We re-export a resetNiaCache helper from db.ts (added separately)
+  import("../lib/db.js").then(({ resetNiaCache }) => {
+    if (typeof resetNiaCache === "function") resetNiaCache();
+  }).catch(() => {});
+  return res.json({ ok: true, flushed: true });
+});
+
+// cache-bust: 1782594200
+
+/**
+ * Build food intent prefix — tells Nia what food signal was detected client-side.
+ * Phase 7c: Food Intelligence
+ */
+function buildFoodIntentPrefix(
+  signal: string | null,
+  signalCount: number,
+  lat: number | null,
+  lon: number | null
+): string {
+  if (!signal || signal === "none" || signal === "affirmative") return "";
+
+  const locationHint = lat !== null && lon !== null
+    ? `User coordinates: ${lat.toFixed(4)}, ${lon.toFixed(4)}. Use these to recommend the nearest food resource. `
+    : "";
+
+  const signalInstructions: Record<string, string> = {
+    explicit_no:
+      "FOOD SIGNAL — EXPLICIT NO: The user said no when asked if they've eaten. " +
+      "Do not ask follow-up questions. Lead immediately with the most accessible food resource. " +
+      "Warm, fast, specific. One or two options max. " + locationHint,
+    implicit_no:
+      "FOOD SIGNAL — IMPLICIT: The user signaled they may not have food. " +
+      "Acknowledge what they said first. Then offer a food resource naturally. " + locationHint,
+    distress:
+      "FOOD SIGNAL — DISTRESS: The user directly expressed hunger or no food. URGENT. " +
+      "Lead with the fastest option (Text FOOD to 877-877 or Presbyterian Night Shelter if evening). " +
+      "Do not pad. Help now. " + locationHint,
+    deflection:
+      "FOOD SIGNAL — DEFLECTION: User said they're fine after a care check but may not be. " +
+      "Plant one seed gently then move on. " + locationHint,
+  };
+
+  const repeatNote = signalCount > 1
+    ? "REPEAT FOOD SIGNAL: After addressing immediate need, mention Niakofa's recurring request feature.\n\n"
+    : "";
+
+  const instruction = signalInstructions[signal];
+  if (!instruction) return "";
+  return `${instruction}\n\n${repeatNote}`;
 }
