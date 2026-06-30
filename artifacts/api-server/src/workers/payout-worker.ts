@@ -45,6 +45,8 @@ async function processPayout(job: Job<PayoutJobData>): Promise<void> {
       retried:             "true",
       attempt:             String(job.attemptsMade + 1),
     },
+  }, {
+    idempotencyKey: `payout-${request_id}-${helper_id}`,
   });
 
   // Record in payment ledger
