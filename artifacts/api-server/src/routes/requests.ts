@@ -260,6 +260,7 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
   if (request.urgency === "emergency" || request.urgency === "high") {
     const isEmergency = request.urgency === "emergency";
     const payload = {
+      notifType: isEmergency ? "emergency" : "nearby_requests" as const,
       title: isEmergency ? "🚨 EMERGENCY — Help Needed Now!" : "🔴 Urgent Request Nearby",
       body: request.title,
       urgency: request.urgency,
