@@ -103,10 +103,16 @@ router.post("/verification/safety-checkin/:userId", requireAuth, requireOwnershi
 // ── SOS panic alert ───────────────────────────────────────────────────────────
 
 // ── SOS panic alert rate limiter (3 per hour per user) ────────────────────────
+// keyGenerator previously read req.userId, a field requireAuth never sets
+// (it sets req.authenticatedUserId — see middlewares/auth.ts). That meant
+// this always fell back to req.ip, so the limit was actually per-IP, not
+// per-user: anyone sharing a network (household, office, carrier CGNAT)
+// shared one 3-per-hour SOS bucket. sosLimiter runs after requireAuth in
+// this route's middleware chain, so authenticatedUserId is reliably set.
 const sosLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 3,
-  keyGenerator: (req) => String((req as { userId?: number }).userId ?? req.ip),
+  keyGenerator: (req) => String((req as { authenticatedUserId?: number }).authenticatedUserId ?? req.ip),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "SOS rate limit exceeded. If this is a real emergency please call 911." },
@@ -124,7 +130,10 @@ router.post("/verification/sos", requireAuth, sosLimiter, requireOwnership("user
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, user_id)).limit(1);
   if (!user) return res.status(404).json({ error: "User not found" });
 
-  const locationStr = lat && lng
+  // lat/lng of exactly 0 (equator / prime meridian) is a valid coordinate,
+  // not an absent one — `lat && lng` would wrongly report "Location
+  // unavailable" for those real locations since 0 is falsy in JS.
+  const locationStr = lat != null && lng != null
     ? `https://maps.google.com/maps?q=${lat},${lng}`
     : "Location unavailable";
 

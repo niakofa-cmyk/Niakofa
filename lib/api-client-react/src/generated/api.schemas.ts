@@ -30,60 +30,234 @@ export interface User {
   benevolence_wallet: number;
   /** Community reputation score */
   goodwill_score: number;
+  /** RBAC admin flag — see requireAdmin() middleware */
+  is_admin?: boolean;
   created_at?: string;
-  /** @nullable */
-  city?: string | null;
-  specialties?: string[] | null;
-  /** @nullable */
-  phone_masked?: string | null;
-  quick_replies?: string[] | null;
-  account_type?: string;
-  /** @nullable */
-  organization_name?: string | null;
-  /** @nullable */
-  organization_description?: string | null;
-  /** @nullable */
-  helper_status?: string | null;
-  helper_languages?: string[] | null;
-  helper_qualifications?: string[] | null;
-  /** @nullable */
-  helper_bio?: string | null;
-  /** @nullable */
-  helper_vehicle?: string | null;
-  helper_social_links?: string[] | null;
-  token_version?: number;
-  /** @nullable */
-  approval_status?: string | null;
-  is_suspended?: boolean;
-  helper_skills?: string[] | null;
 }
-
-export type UserUpdateAccountType = typeof UserUpdateAccountType[keyof typeof UserUpdateAccountType];
-
-
-export const UserUpdateAccountType = {
-  individual: 'individual',
-  organization: 'organization',
-} as const;
 
 export interface UserUpdate {
   name?: string;
   avatar_url?: string;
   neighborhood?: string;
   is_helper?: boolean;
-  city?: string;
-  specialties?: string[];
-  phone_masked?: string;
-  quick_replies?: string[];
-  account_type?: UserUpdateAccountType;
-  organization_name?: string;
-  organization_description?: string;
-  helper_status?: string;
+}
+
+export interface ChangePasswordInput {
+  /** The user's current password */
+  current_password: string;
+  /**
+     * The new password (min 8 chars, must differ from current)
+     * @minLength 8
+     */
+  new_password: string;
+}
+
+export interface LoginInput {
+  email: string;
+  password: string;
+}
+
+export interface RequestPasswordResetInput {
+  email: string;
+}
+
+export interface SetInitialPasswordInput {
+  user_id: number;
+  email: string;
+  code: string;
+  /** @minLength 8 */
+  new_password: string;
+}
+
+export interface UpdateUserAvatarInput {
+  /** Base64-encoded image, must start with "data:image/". Max ~5 MB. */
+  dataUrl: string;
+}
+
+export interface UpdatePanicContactsInput {
+  /** @maxItems 5 */
+  contacts: string[];
+}
+
+export interface AvailabilityWindowInput {
+  /**
+     * @minimum 0
+     * @maximum 6
+     */
+  day_of_week: number;
+  /**
+     * @minimum 0
+     * @maximum 1439
+     */
+  start_min: number;
+  /**
+     * @minimum 1
+     * @maximum 1440
+     */
+  end_min: number;
+}
+
+export interface UpdateHelperAvailabilityInput {
+  windows: AvailabilityWindowInput[];
+}
+
+export type ModerateUserInputAction = typeof ModerateUserInputAction[keyof typeof ModerateUserInputAction];
+
+
+export const ModerateUserInputAction = {
+  warn: 'warn',
+  ban: 'ban',
+  suspend: 'suspend',
+} as const;
+
+export interface ModerateUserInput {
+  action: ModerateUserInputAction;
+  /** Optional reason, used for suspend */
+  reason?: string;
+}
+
+/**
+ * Abbreviated user fields returned by the admin user list endpoint
+ */
+export interface UserSummary {
+  id: number;
+  name: string;
+  email: string;
+  is_helper: boolean;
+  trust_score: number;
+  help_count: number;
+  is_suspended: boolean;
+  /** @nullable */
+  suspended_at?: string | null;
+  /** @nullable */
+  suspended_reason?: string | null;
+  created_at: string;
+}
+
+export type UserSettingsPreferredLanguage = typeof UserSettingsPreferredLanguage[keyof typeof UserSettingsPreferredLanguage];
+
+
+export const UserSettingsPreferredLanguage = {
+  en: 'en',
+  sw: 'sw',
+  zu: 'zu',
+  tw: 'tw',
+  yo: 'yo',
+  ha: 'ha',
+  am: 'am',
+  so: 'so',
+  pcm: 'pcm',
+  lg: 'lg',
+} as const;
+
+export interface UserSettings {
+  id: number;
+  user_id: number;
+  notif_nearby_requests: boolean;
+  notif_emergency: boolean;
+  notif_task_accepted: boolean;
+  notif_wallet_updates: boolean;
+  notif_community_activity: boolean;
+  notif_pledge_reminders: boolean;
+  privacy_profile_visible: boolean;
+  privacy_live_location: boolean;
+  privacy_activity_sharing: boolean;
+  privacy_anonymous_giving: boolean;
+  service_radius_miles: number;
+  /** @nullable */
+  max_travel_miles?: number | null;
+  /** @nullable */
+  specialties?: string | null;
+  preferred_language: UserSettingsPreferredLanguage;
+  updated_at: string;
+}
+
+export type UserSettingsUpdatePreferredLanguage = typeof UserSettingsUpdatePreferredLanguage[keyof typeof UserSettingsUpdatePreferredLanguage];
+
+
+export const UserSettingsUpdatePreferredLanguage = {
+  en: 'en',
+  sw: 'sw',
+  zu: 'zu',
+  tw: 'tw',
+  yo: 'yo',
+  ha: 'ha',
+  am: 'am',
+  so: 'so',
+  pcm: 'pcm',
+  lg: 'lg',
+} as const;
+
+/**
+ * All fields optional — only provided keys are persisted (upsert)
+ */
+export interface UserSettingsUpdate {
+  notif_nearby_requests?: boolean;
+  notif_emergency?: boolean;
+  notif_task_accepted?: boolean;
+  notif_wallet_updates?: boolean;
+  notif_community_activity?: boolean;
+  notif_pledge_reminders?: boolean;
+  privacy_profile_visible?: boolean;
+  privacy_live_location?: boolean;
+  privacy_activity_sharing?: boolean;
+  privacy_anonymous_giving?: boolean;
+  service_radius_miles?: number;
+  max_travel_miles?: number;
+  specialties?: string;
+  preferred_language?: UserSettingsUpdatePreferredLanguage;
+}
+
+export interface AvailabilityWindow {
+  id: number;
+  user_id: number;
+  /**
+     * 0 = Sunday … 6 = Saturday
+     * @minimum 0
+     * @maximum 6
+     */
+  day_of_week: number;
+  /**
+     * Minutes from midnight
+     * @minimum 0
+     * @maximum 1439
+     */
+  start_min: number;
+  /**
+     * Minutes from midnight
+     * @minimum 1
+     * @maximum 1440
+     */
+  end_min: number;
+}
+
+/**
+ * Admin-only. "rejected" is normalized to "denied".
+ */
+export type HelperApplicationUpdateStatus = typeof HelperApplicationUpdateStatus[keyof typeof HelperApplicationUpdateStatus];
+
+
+export const HelperApplicationUpdateStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  denied: 'denied',
+  rejected: 'rejected',
+} as const;
+
+/**
+ * User mode (no status field): submit helper_skills, helper_languages,
+ * helper_qualifications, helper_bio, helper_vehicle, helper_social_links.
+ * Admin mode: send status to approve/deny an application.
+ */
+export interface HelperApplicationUpdate {
+  /** Admin-only. "rejected" is normalized to "denied". */
+  status?: HelperApplicationUpdateStatus;
+  helper_skills?: string[];
   helper_languages?: string[];
   helper_qualifications?: string[];
   helper_bio?: string;
   helper_vehicle?: string;
-  helper_social_links?: string[];
+  helper_social_links?: string;
 }
 
 export interface UserRegistration {
@@ -109,7 +283,10 @@ export interface HelperModeUpdate {
 
 export interface PledgePayment {
   request_id: number;
-  /** Contribution amount (any amount accepted) */
+  /**
+     * Contribution amount in USD, must be greater than 0
+     * @minimum 0.01
+     */
   amount: number;
 }
 
@@ -124,10 +301,6 @@ export const HelpRequestCategory = {
   medical: 'medical',
   emergency: 'emergency',
   other: 'other',
-  stock_shelves: 'stock_shelves',
-  event_setup: 'event_setup',
-  delivery_run: 'delivery_run',
-  tech_support: 'tech_support',
 } as const;
 
 export type HelpRequestUrgency = typeof HelpRequestUrgency[keyof typeof HelpRequestUrgency];
@@ -173,13 +346,6 @@ export interface HelpRequest {
   category: HelpRequestCategory;
   urgency?: HelpRequestUrgency;
   status: HelpRequestStatus;
-  /** @nullable */
-  outside_usual_area?: boolean | null;
-  voice_activated?: boolean;
-  /** @nullable */
-  voice_language?: string | null;
-  /** @nullable */
-  nia_checkin_sent_at?: string | null;
   /** immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer */
   payment_type: HelpRequestPaymentType;
   requester_id: number;
@@ -213,8 +379,6 @@ export interface HelpRequest {
   arrived_at?: string | null;
   /** @nullable */
   completed_at?: string | null;
-  /** @nullable */
-  cancelled_at?: string | null;
 }
 
 export type HelpRequestInputCategory = typeof HelpRequestInputCategory[keyof typeof HelpRequestInputCategory];
@@ -228,10 +392,6 @@ export const HelpRequestInputCategory = {
   medical: 'medical',
   emergency: 'emergency',
   other: 'other',
-  stock_shelves: 'stock_shelves',
-  event_setup: 'event_setup',
-  delivery_run: 'delivery_run',
-  tech_support: 'tech_support',
 } as const;
 
 export type HelpRequestInputUrgency = typeof HelpRequestInputUrgency[keyof typeof HelpRequestInputUrgency];
@@ -254,12 +414,7 @@ export const HelpRequestInputPaymentType = {
 } as const;
 
 export interface HelpRequestInput {
-  /**
-     * @minLength 3
-     * @maxLength 200
-     */
   title: string;
-  /** @maxLength 2000 */
   description?: string;
   category: HelpRequestInputCategory;
   urgency?: HelpRequestInputUrgency;
@@ -267,7 +422,6 @@ export interface HelpRequestInput {
   requester_id: number;
   lat: number;
   lng: number;
-  /** @maxLength 100 */
   neighborhood?: string;
   pay_it_forward_amount?: number;
   pledge_amount?: number;
@@ -406,12 +560,10 @@ export interface RouteData {
   initial_bearing?: number;
   speed_mph?: number;
   waypoints?: number;
-  /** Routing profile used: driving | walking | cycling */
-  profile?: string;
 }
 
 /**
- * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester
+ * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act
  */
 export type TransactionType = typeof TransactionType[keyof typeof TransactionType];
 
@@ -421,7 +573,6 @@ export const TransactionType = {
   pledge_received: 'pledge_received',
   pledge_sent: 'pledge_sent',
   goodwill: 'goodwill',
-  tip_received: 'tip_received',
 } as const;
 
 export interface Transaction {
@@ -429,7 +580,7 @@ export interface Transaction {
   user_id: number;
   /** @nullable */
   request_id?: number | null;
-  /** earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester */
+  /** earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act */
   type: TransactionType;
   amount: number;
   /** @nullable */
@@ -560,52 +711,6 @@ export interface CivicResource {
   category?: string | null;
 }
 
-export type RatingRole = typeof RatingRole[keyof typeof RatingRole];
-
-
-export const RatingRole = {
-  requester: 'requester',
-  helper: 'helper',
-} as const;
-
-export interface Rating {
-  id: number;
-  request_id: number;
-  rater_id: number;
-  ratee_id: number;
-  /**
-     * @minimum 1
-     * @maximum 5
-     */
-  stars: number;
-  /** @nullable */
-  review?: string | null;
-  role: RatingRole;
-  created_at: string;
-}
-
-export interface RateInput {
-  /**
-     * @minimum 1
-     * @maximum 5
-     */
-  stars: number;
-  /** @maxLength 500 */
-  review?: string;
-}
-
-export interface SetInitialPasswordInput {
-  user_id: number;
-  email: string;
-  /** @minLength 8 */
-  new_password: string;
-}
-
-export interface AuthResponse {
-  user: User;
-  token: string;
-}
-
 /**
  * How specifically the resources were matched
  */
@@ -632,6 +737,20 @@ export interface CivicResourcesResponse {
   /** How specifically the resources were matched */
   match_level: CivicResourcesResponseMatchLevel;
 }
+
+export type DeleteUser200 = {
+  ok?: boolean;
+  message?: string;
+};
+
+export type ChangePassword200 = {
+  user: User;
+  token: string;
+};
+
+export type RegisterUserHint200 = {
+  message?: string;
+};
 
 export type GetRequestsParams = {
 status?: GetRequestsStatus;
@@ -670,17 +789,7 @@ start_lat: number;
 start_lng: number;
 end_lat: number;
 end_lng: number;
-profile?: GetRouteProfile;
 };
-
-export type GetRouteProfile = typeof GetRouteProfile[keyof typeof GetRouteProfile];
-
-
-export const GetRouteProfile = {
-  driving: 'driving',
-  walking: 'walking',
-  cycling: 'cycling',
-} as const;
 
 export type GetCivicResourcesParams = {
 lat: number;
@@ -702,4 +811,37 @@ export const GetReportsStatus = {
   resolved_banned: 'resolved_banned',
 } as const;
 
+export type LoginUser200 = {
+  user: User;
+  token: string;
+};
+
+export type RequestPasswordReset200 = {
+  ok?: boolean;
+};
+
+export type SetInitialPassword200 = {
+  user: User;
+  token: string;
+};
+
+export type DeleteScheduledPayment200 = {
+  ok?: boolean;
+  deleted_id?: number;
+};
+
+export type UpdateHelperAvailability200 = {
+  ok?: boolean;
+  count?: number;
+};
+
+export type LogoutUser200 = {
+  ok?: boolean;
+};
+
+export type ModerateUser200 = {
+  ok?: boolean;
+  action?: string;
+  user_id?: number;
+};
 

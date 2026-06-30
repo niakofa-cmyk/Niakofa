@@ -6,9 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetRouteParams = {
-start_lat: number;
-start_lng: number;
-end_lat: number;
-end_lng: number;
-};
+export interface UpdateUserAvatarInput {
+  /** Base64-encoded image, must start with "data:image/". Max ~5 MB. */
+  dataUrl: string;
+}

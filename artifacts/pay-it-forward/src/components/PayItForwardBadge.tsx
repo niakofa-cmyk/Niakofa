@@ -1,18 +1,10 @@
 import { motion } from "framer-motion";
-import { Heart, Shield, Star, Zap, Award } from "lucide-react";
+import { Heart, Shield, Star, Zap, Award, Crown } from "lucide-react";
+import { getBadgeForUser, type BadgeRole, type TrustTier } from "@workspace/trust-tiers";
 
-type BadgeTier = "newcomer" | "helper" | "trusted" | "champion" | "legend";
+type BadgeKey = TrustTier | "admin";
 
-function getBadgeTier(helpCount: number, trustScore: number): BadgeTier {
-  if (helpCount >= 50 && trustScore >= 98) return "legend";
-  if (helpCount >= 25 && trustScore >= 95) return "champion";
-  if (helpCount >= 10 && trustScore >= 90) return "trusted";
-  if (helpCount >= 3) return "helper";
-  return "newcomer";
-}
-
-const TIERS: Record<BadgeTier, {
-  label: string;
+const TIERS: Record<BadgeKey, {
   color: string;
   bg: string;
   border: string;
@@ -20,8 +12,15 @@ const TIERS: Record<BadgeTier, {
   Icon: typeof Heart;
   description: string;
 }> = {
-  newcomer: {
-    label: "Newcomer",
+  admin: {
+    color: "text-rose-400",
+    bg: "bg-rose-500/10",
+    border: "border-rose-500/30",
+    glow: "shadow-[0_0_25px_rgba(244,63,94,0.3)]",
+    Icon: Crown,
+    description: "Niakofa team",
+  },
+  member: {
     color: "text-muted-foreground",
     bg: "bg-muted/30",
     border: "border-border",
@@ -29,8 +28,7 @@ const TIERS: Record<BadgeTier, {
     Icon: Heart,
     description: "Welcome to the community",
   },
-  helper: {
-    label: "Helper",
+  verified: {
     color: "text-primary",
     bg: "bg-primary/10",
     border: "border-primary/30",
@@ -39,7 +37,6 @@ const TIERS: Record<BadgeTier, {
     description: "Making a difference nearby",
   },
   trusted: {
-    label: "Trusted",
     color: "text-blue-400",
     bg: "bg-blue-500/10",
     border: "border-blue-500/30",
@@ -47,8 +44,7 @@ const TIERS: Record<BadgeTier, {
     Icon: Shield,
     description: "Verified community helper",
   },
-  champion: {
-    label: "Champion",
+  elite: {
     color: "text-yellow-400",
     bg: "bg-yellow-500/10",
     border: "border-yellow-500/30",
@@ -56,8 +52,7 @@ const TIERS: Record<BadgeTier, {
     Icon: Star,
     description: "Top contributor in the community",
   },
-  legend: {
-    label: "Legend",
+  anchor: {
     color: "text-purple-400",
     bg: "bg-purple-500/10",
     border: "border-purple-500/30",
@@ -68,21 +63,37 @@ const TIERS: Record<BadgeTier, {
 };
 
 interface PayItForwardBadgeProps {
-  helpCount: number;
-  trustScore: number;
+  /** Pass the real user fields — role and tier are derived, never guessed client-side. */
+  user: {
+    is_admin?: boolean | null;
+    is_helper?: boolean | null;
+    trust_score?: number | null;
+    help_count?: number | null;
+  };
   compact?: boolean;
 }
 
-export function PayItForwardBadge({ helpCount, trustScore, compact = false }: PayItForwardBadgeProps) {
-  const tier = getBadgeTier(helpCount, trustScore);
-  const config = TIERS[tier];
+/**
+ * Single Pay-It-Forward badge component, role-aware via @workspace/trust-tiers'
+ * getBadgeForUser. Previously this component had its own role-blind 5-tier
+ * ladder (newcomer/helper/trusted/champion/legend) with thresholds that had
+ * drifted from — and a "Trusted" label that collided in meaning with —
+ * TrustTierBadge.tsx's separate ladder. Now there is one source of truth for
+ * "what tier is this user," branched by role (admin / helper / member),
+ * shared with TrustTierBadge.tsx and the leaderboard.
+ */
+export function PayItForwardBadge({ user, compact = false }: PayItForwardBadgeProps) {
+  const badge = getBadgeForUser(user);
+  const config = TIERS[badge.tier];
   const { Icon } = config;
+  const helpCount = user.help_count ?? 0;
+  const trustScore = user.trust_score ?? 0;
 
   if (compact) {
     return (
       <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-black uppercase tracking-widest ${config.color} ${config.bg} ${config.border} ${config.glow}`}>
         <Icon className="w-3 h-3" />
-        {config.label}
+        {badge.label}
       </span>
     );
   }
@@ -99,16 +110,20 @@ export function PayItForwardBadge({ helpCount, trustScore, compact = false }: Pa
       </div>
       <div>
         <div className="flex items-center gap-2">
-          <span className={`text-base font-black ${config.color}`}>{config.label}</span>
-          {tier === "legend" && <Zap className="w-4 h-4 text-yellow-400 animate-pulse" />}
+          <span className={`text-base font-black ${config.color}`}>{badge.label}</span>
+          {badge.tier === "anchor" && <Zap className="w-4 h-4 text-yellow-400 animate-pulse" />}
         </div>
         <div className="text-xs text-muted-foreground">{config.description}</div>
-        <div className="flex items-center gap-3 mt-1.5">
-          <span className="text-[10px] text-muted-foreground">{helpCount} helped</span>
-          <span className="text-[10px] text-muted-foreground">·</span>
-          <span className="text-[10px] text-muted-foreground">{trustScore}% trust</span>
-        </div>
+        {badge.role === "helper" && (
+          <div className="flex items-center gap-3 mt-1.5">
+            <span className="text-[10px] text-muted-foreground">{helpCount} helped</span>
+            <span className="text-[10px] text-muted-foreground">·</span>
+            <span className="text-[10px] text-muted-foreground">{trustScore}% trust</span>
+          </div>
+        )}
       </div>
     </motion.div>
   );
 }
+
+export type { BadgeRole };

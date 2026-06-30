@@ -7,7 +7,7 @@
  */
 
 /**
- * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester
+ * earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act
  */
 export type TransactionType = typeof TransactionType[keyof typeof TransactionType];
 
@@ -17,5 +17,4 @@ export const TransactionType = {
   pledge_received: 'pledge_received',
   pledge_sent: 'pledge_sent',
   goodwill: 'goodwill',
-  tip_received: 'tip_received',
 } as const;

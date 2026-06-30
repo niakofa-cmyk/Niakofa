@@ -27,30 +27,7 @@ export interface User {
   benevolence_wallet: number;
   /** Community reputation score */
   goodwill_score: number;
+  /** RBAC admin flag — see requireAdmin() middleware */
+  is_admin?: boolean;
   created_at?: string;
-  /** @nullable */
-  city?: string | null;
-  specialties?: string[] | null;
-  /** @nullable */
-  phone_masked?: string | null;
-  quick_replies?: string[] | null;
-  account_type?: string;
-  /** @nullable */
-  organization_name?: string | null;
-  /** @nullable */
-  organization_description?: string | null;
-  /** @nullable */
-  helper_status?: string | null;
-  helper_languages?: string[] | null;
-  helper_qualifications?: string[] | null;
-  /** @nullable */
-  helper_bio?: string | null;
-  /** @nullable */
-  helper_vehicle?: string | null;
-  helper_social_links?: string[] | null;
-  token_version?: number;
-  /** @nullable */
-  approval_status?: string | null;
-  is_suspended?: boolean;
-  helper_skills?: string[] | null;
 }

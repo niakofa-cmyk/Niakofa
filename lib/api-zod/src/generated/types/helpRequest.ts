@@ -18,13 +18,6 @@ export interface HelpRequest {
   category: HelpRequestCategory;
   urgency?: HelpRequestUrgency;
   status: HelpRequestStatus;
-  /** @nullable */
-  outside_usual_area?: boolean | null;
-  voice_activated?: boolean;
-  /** @nullable */
-  voice_language?: string | null;
-  /** @nullable */
-  nia_checkin_sent_at?: string | null;
   /** immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer */
   payment_type: HelpRequestPaymentType;
   requester_id: number;
@@ -58,6 +51,4 @@ export interface HelpRequest {
   arrived_at?: string | null;
   /** @nullable */
   completed_at?: string | null;
-  /** @nullable */
-  cancelled_at?: string | null;
 }

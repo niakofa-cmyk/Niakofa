@@ -6,12 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface RateInput {
-  /**
-     * @minimum 1
-     * @maximum 5
-     */
-  stars: number;
-  /** @maxLength 500 */
-  review?: string;
-}
+export type DeleteScheduledPayment200 = {
+  ok?: boolean;
+  deleted_id?: number;
+};

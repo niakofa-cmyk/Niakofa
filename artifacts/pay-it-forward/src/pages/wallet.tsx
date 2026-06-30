@@ -357,7 +357,7 @@ export default function WalletScreen() {
         </div>
 
         {/* Community Badge */}
-        <PayItForwardBadge helpCount={helpCount} trustScore={trustScore} />
+        <PayItForwardBadge user={currentUser ?? {}} />
 
         {/* Stripe Connect — payout setup for helpers */}
         {currentUser?.is_helper && stripeStatus !== null && (

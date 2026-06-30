@@ -817,11 +817,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [email]
-              properties:
-                email:
-                  type: string
+              $ref: "#/components/schemas/RequestPasswordResetInput"
       responses:
         "200":
           description: Code sent if the account exists (response does not reveal which)
@@ -845,18 +841,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [user_id, email, code, new_password]
-              properties:
-                user_id:
-                  type: integer
-                email:
-                  type: string
-                code:
-                  type: string
-                new_password:
-                  type: string
-                  minLength: 8
+              $ref: "#/components/schemas/SetInitialPasswordInput"
       responses:
         "200":
           description: Password set — returns user and a fresh auth token
@@ -924,12 +909,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [dataUrl]
-              properties:
-                dataUrl:
-                  type: string
-                  description: Base64-encoded image, must start with "data:image/". Max ~5 MB.
+              $ref: "#/components/schemas/UpdateUserAvatarInput"
       responses:
         "200":
           description: Avatar updated
@@ -1008,14 +988,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [contacts]
-              properties:
-                contacts:
-                  type: array
-                  items:
-                    type: string
-                  maxItems: 5
+              $ref: "#/components/schemas/UpdatePanicContactsInput"
       responses:
         "200":
           description: Panic contacts updated
@@ -1063,13 +1036,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [windows]
-              properties:
-                windows:
-                  type: array
-                  items:
-                    $ref: "#/components/schemas/AvailabilityWindowInput"
+              $ref: "#/components/schemas/UpdateHelperAvailabilityInput"
       responses:
         "200":
           description: Availability replaced
@@ -1138,15 +1105,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [action]
-              properties:
-                action:
-                  type: string
-                  enum: [warn, ban, suspend]
-                reason:
-                  type: string
-                  description: Optional reason, used for suspend
+              $ref: "#/components/schemas/ModerateUserInput"
       responses:
         "200":
           description: Moderation action applied
@@ -1238,6 +1197,9 @@ components:
         goodwill_score:
           type: integer
           description: Community reputation score
+        is_admin:
+          type: boolean
+          description: RBAC admin flag — see requireAdmin() middleware
         created_at:
           type: string
 
@@ -1273,6 +1235,65 @@ components:
           type: string
         password:
           type: string
+
+    RequestPasswordResetInput:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+
+    SetInitialPasswordInput:
+      type: object
+      required: [user_id, email, code, new_password]
+      properties:
+        user_id:
+          type: integer
+        email:
+          type: string
+        code:
+          type: string
+        new_password:
+          type: string
+          minLength: 8
+
+    UpdateUserAvatarInput:
+      type: object
+      required: [dataUrl]
+      properties:
+        dataUrl:
+          type: string
+          description: Base64-encoded image, must start with "data:image/". Max ~5 MB.
+
+    UpdatePanicContactsInput:
+      type: object
+      required: [contacts]
+      properties:
+        contacts:
+          type: array
+          items:
+            type: string
+          maxItems: 5
+
+    UpdateHelperAvailabilityInput:
+      type: object
+      required: [windows]
+      properties:
+        windows:
+          type: array
+          items:
+            $ref: "#/components/schemas/AvailabilityWindowInput"
+
+    ModerateUserInput:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [warn, ban, suspend]
+        reason:
+          type: string
+          description: Optional reason, used for suspend
 
     UserSummary:
       type: object
@@ -1507,7 +1528,6 @@ components:
         amount:
           type: number
           minimum: 0.01
-          exclusiveMinimum: false
           description: Contribution amount in USD, must be greater than 0
 
     HelpRequest:
@@ -1747,6 +1767,7 @@ components:
         eta_text:
           type: string
         distance_text:
+          type: string
         initial_bearing:
           type: number
           description: Compass bearing (0-359) from start toward first waypoint
@@ -1754,7 +1775,6 @@ components:
           type: number
         waypoints:
           type: integer
-          type: string
 
     Transaction:
       type: object

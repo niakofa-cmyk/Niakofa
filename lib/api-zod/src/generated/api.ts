@@ -23,8 +23,6 @@ export const GetUserParams = zod.object({
   "id": zod.coerce.number()
 })
 
-export const getUserResponseAccountTypeDefault = `individual`;
-
 export const GetUserResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -39,24 +37,8 @@ export const GetUserResponse = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
-  "created_at": zod.string().optional(),
-  "city": zod.string().nullish(),
-  "specialties": zod.array(zod.string()).nullish(),
-  "phone_masked": zod.string().nullish(),
-  "quick_replies": zod.array(zod.string()).nullish(),
-  "account_type": zod.string().default(getUserResponseAccountTypeDefault),
-  "organization_name": zod.string().nullish(),
-  "organization_description": zod.string().nullish(),
-  "helper_status": zod.string().nullish(),
-  "helper_languages": zod.array(zod.string()).nullish(),
-  "helper_qualifications": zod.array(zod.string()).nullish(),
-  "helper_bio": zod.string().nullish(),
-  "helper_vehicle": zod.string().nullish(),
-  "helper_social_links": zod.array(zod.string()).nullish(),
-  "token_version": zod.number().optional(),
-  "approval_status": zod.string().nullish(),
-  "is_suspended": zod.boolean().optional(),
-  "helper_skills": zod.array(zod.string()).nullish()
+  "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
+  "created_at": zod.string().optional()
 })
 
 
@@ -71,23 +53,8 @@ export const UpdateUserBody = zod.object({
   "name": zod.string().optional(),
   "avatar_url": zod.string().optional(),
   "neighborhood": zod.string().optional(),
-  "is_helper": zod.boolean().optional(),
-  "city": zod.string().optional(),
-  "specialties": zod.array(zod.string()).optional(),
-  "phone_masked": zod.string().optional(),
-  "quick_replies": zod.array(zod.string()).optional(),
-  "account_type": zod.enum(['individual', 'organization']).optional(),
-  "organization_name": zod.string().optional(),
-  "organization_description": zod.string().optional(),
-  "helper_status": zod.string().optional(),
-  "helper_languages": zod.array(zod.string()).optional(),
-  "helper_qualifications": zod.array(zod.string()).optional(),
-  "helper_bio": zod.string().optional(),
-  "helper_vehicle": zod.string().optional(),
-  "helper_social_links": zod.array(zod.string()).optional()
+  "is_helper": zod.boolean().optional()
 })
-
-export const updateUserResponseAccountTypeDefault = `individual`;
 
 export const UpdateUserResponse = zod.object({
   "id": zod.number(),
@@ -103,24 +70,21 @@ export const UpdateUserResponse = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
-  "created_at": zod.string().optional(),
-  "city": zod.string().nullish(),
-  "specialties": zod.array(zod.string()).nullish(),
-  "phone_masked": zod.string().nullish(),
-  "quick_replies": zod.array(zod.string()).nullish(),
-  "account_type": zod.string().default(updateUserResponseAccountTypeDefault),
-  "organization_name": zod.string().nullish(),
-  "organization_description": zod.string().nullish(),
-  "helper_status": zod.string().nullish(),
-  "helper_languages": zod.array(zod.string()).nullish(),
-  "helper_qualifications": zod.array(zod.string()).nullish(),
-  "helper_bio": zod.string().nullish(),
-  "helper_vehicle": zod.string().nullish(),
-  "helper_social_links": zod.array(zod.string()).nullish(),
-  "token_version": zod.number().optional(),
-  "approval_status": zod.string().nullish(),
-  "is_suspended": zod.boolean().optional(),
-  "helper_skills": zod.array(zod.string()).nullish()
+  "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
+  "created_at": zod.string().optional()
+})
+
+
+/**
+ * @summary Delete a user account (admin only)
+ */
+export const DeleteUserParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteUserResponse = zod.object({
+  "ok": zod.boolean().optional(),
+  "message": zod.string().optional()
 })
 
 
@@ -138,8 +102,6 @@ export const UpdateUserLocationBody = zod.object({
   "speed": zod.number().nullish()
 })
 
-export const updateUserLocationResponseAccountTypeDefault = `individual`;
-
 export const UpdateUserLocationResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -154,24 +116,8 @@ export const UpdateUserLocationResponse = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
-  "created_at": zod.string().optional(),
-  "city": zod.string().nullish(),
-  "specialties": zod.array(zod.string()).nullish(),
-  "phone_masked": zod.string().nullish(),
-  "quick_replies": zod.array(zod.string()).nullish(),
-  "account_type": zod.string().default(updateUserLocationResponseAccountTypeDefault),
-  "organization_name": zod.string().nullish(),
-  "organization_description": zod.string().nullish(),
-  "helper_status": zod.string().nullish(),
-  "helper_languages": zod.array(zod.string()).nullish(),
-  "helper_qualifications": zod.array(zod.string()).nullish(),
-  "helper_bio": zod.string().nullish(),
-  "helper_vehicle": zod.string().nullish(),
-  "helper_social_links": zod.array(zod.string()).nullish(),
-  "token_version": zod.number().optional(),
-  "approval_status": zod.string().nullish(),
-  "is_suspended": zod.boolean().optional(),
-  "helper_skills": zod.array(zod.string()).nullish()
+  "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
+  "created_at": zod.string().optional()
 })
 
 
@@ -185,8 +131,6 @@ export const UpdateHelperModeParams = zod.object({
 export const UpdateHelperModeBody = zod.object({
   "active": zod.boolean()
 })
-
-export const updateHelperModeResponseAccountTypeDefault = `individual`;
 
 export const UpdateHelperModeResponse = zod.object({
   "id": zod.number(),
@@ -202,24 +146,8 @@ export const UpdateHelperModeResponse = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
-  "created_at": zod.string().optional(),
-  "city": zod.string().nullish(),
-  "specialties": zod.array(zod.string()).nullish(),
-  "phone_masked": zod.string().nullish(),
-  "quick_replies": zod.array(zod.string()).nullish(),
-  "account_type": zod.string().default(updateHelperModeResponseAccountTypeDefault),
-  "organization_name": zod.string().nullish(),
-  "organization_description": zod.string().nullish(),
-  "helper_status": zod.string().nullish(),
-  "helper_languages": zod.array(zod.string()).nullish(),
-  "helper_qualifications": zod.array(zod.string()).nullish(),
-  "helper_bio": zod.string().nullish(),
-  "helper_vehicle": zod.string().nullish(),
-  "helper_social_links": zod.array(zod.string()).nullish(),
-  "token_version": zod.number().optional(),
-  "approval_status": zod.string().nullish(),
-  "is_suspended": zod.boolean().optional(),
-  "helper_skills": zod.array(zod.string()).nullish()
+  "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
+  "created_at": zod.string().optional()
 })
 
 
@@ -230,9 +158,13 @@ export const MakePledgePaymentParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const makePledgePaymentBodyAmountMin = 0.01;
+
+
+
 export const MakePledgePaymentBody = zod.object({
   "request_id": zod.number(),
-  "amount": zod.number().positive().describe('Contribution amount in USD, must be greater than 0')
+  "amount": zod.number().min(makePledgePaymentBodyAmountMin).describe('Contribution amount in USD, must be greater than 0')
 })
 
 export const makePledgePaymentResponsePledgePaidDefault = 0;
@@ -241,13 +173,9 @@ export const MakePledgePaymentResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
-  "outside_usual_area": zod.boolean().nullish(),
-  "voice_activated": zod.boolean().optional(),
-  "voice_language": zod.string().nullish(),
-  "nia_checkin_sent_at": zod.string().nullish(),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -266,8 +194,53 @@ export const MakePledgePaymentResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "completed_at": zod.string().nullish()
+})
+
+
+/**
+ * @summary Authenticated password change — requires current password as proof of possession
+ */
+export const ChangePasswordParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const changePasswordBodyNewPasswordMin = 8;
+
+
+
+export const ChangePasswordBody = zod.object({
+  "current_password": zod.string().describe('The user\'s current password'),
+  "new_password": zod.string().min(changePasswordBodyNewPasswordMin).describe('The new password (min 8 chars, must differ from current)')
+})
+
+export const ChangePasswordResponse = zod.object({
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "avatar_url": zod.string().nullish(),
+  "is_helper": zod.boolean(),
+  "helper_mode_active": zod.boolean(),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "trust_score": zod.number().nullish(),
+  "help_count": zod.number(),
+  "neighborhood": zod.string().nullish(),
+  "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
+  "goodwill_score": zod.number().describe('Community reputation score'),
+  "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
+  "created_at": zod.string().optional()
+}),
+  "token": zod.string()
+})
+
+
+/**
+ * @summary Placeholder — informs callers to use POST instead
+ */
+export const RegisterUserHintResponse = zod.object({
+  "message": zod.string().optional()
 })
 
 
@@ -281,8 +254,6 @@ export const RegisterUserBody = zod.object({
   "is_helper": zod.boolean().optional(),
   "neighborhood": zod.string().optional()
 })
-
-export const registerUserResponseAccountTypeDefault = `individual`;
 
 export const RegisterUserResponse = zod.object({
   "id": zod.number(),
@@ -298,24 +269,8 @@ export const RegisterUserResponse = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
-  "created_at": zod.string().optional(),
-  "city": zod.string().nullish(),
-  "specialties": zod.array(zod.string()).nullish(),
-  "phone_masked": zod.string().nullish(),
-  "quick_replies": zod.array(zod.string()).nullish(),
-  "account_type": zod.string().default(registerUserResponseAccountTypeDefault),
-  "organization_name": zod.string().nullish(),
-  "organization_description": zod.string().nullish(),
-  "helper_status": zod.string().nullish(),
-  "helper_languages": zod.array(zod.string()).nullish(),
-  "helper_qualifications": zod.array(zod.string()).nullish(),
-  "helper_bio": zod.string().nullish(),
-  "helper_vehicle": zod.string().nullish(),
-  "helper_social_links": zod.array(zod.string()).nullish(),
-  "token_version": zod.number().optional(),
-  "approval_status": zod.string().nullish(),
-  "is_suspended": zod.boolean().optional(),
-  "helper_skills": zod.array(zod.string()).nullish()
+  "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
+  "created_at": zod.string().optional()
 })
 
 
@@ -335,13 +290,9 @@ export const GetRequestsResponseItem = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
-  "outside_usual_area": zod.boolean().nullish(),
-  "voice_activated": zod.boolean().optional(),
-  "voice_language": zod.string().nullish(),
-  "nia_checkin_sent_at": zod.string().nullish(),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -360,8 +311,7 @@ export const GetRequestsResponseItem = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "completed_at": zod.string().nullish()
 })
 export const GetRequestsResponse = zod.array(GetRequestsResponseItem)
 
@@ -369,25 +319,16 @@ export const GetRequestsResponse = zod.array(GetRequestsResponseItem)
 /**
  * @summary Create a help request
  */
-export const createRequestBodyTitleMin = 3;
-export const createRequestBodyTitleMax = 200;
-
-export const createRequestBodyDescriptionMax = 2000;
-
-export const createRequestBodyNeighborhoodMax = 100;
-
-
-
 export const CreateRequestBody = zod.object({
-  "title": zod.string().min(createRequestBodyTitleMin).max(createRequestBodyTitleMax),
-  "description": zod.string().max(createRequestBodyDescriptionMax).optional(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
+  "title": zod.string(),
+  "description": zod.string().optional(),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).optional(),
   "requester_id": zod.number(),
   "lat": zod.number(),
   "lng": zod.number(),
-  "neighborhood": zod.string().max(createRequestBodyNeighborhoodMax).optional(),
+  "neighborhood": zod.string().optional(),
   "pay_it_forward_amount": zod.number().optional(),
   "pledge_amount": zod.number().optional()
 })
@@ -398,13 +339,9 @@ export const CreateRequestResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
-  "outside_usual_area": zod.boolean().nullish(),
-  "voice_activated": zod.boolean().optional(),
-  "voice_language": zod.string().nullish(),
-  "nia_checkin_sent_at": zod.string().nullish(),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -423,8 +360,7 @@ export const CreateRequestResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "completed_at": zod.string().nullish()
 })
 
 
@@ -445,13 +381,9 @@ export const GetNearbyRequestsResponseItem = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
-  "outside_usual_area": zod.boolean().nullish(),
-  "voice_activated": zod.boolean().optional(),
-  "voice_language": zod.string().nullish(),
-  "nia_checkin_sent_at": zod.string().nullish(),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -470,8 +402,7 @@ export const GetNearbyRequestsResponseItem = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "completed_at": zod.string().nullish()
 })
 export const GetNearbyRequestsResponse = zod.array(GetNearbyRequestsResponseItem)
 
@@ -505,13 +436,9 @@ export const GetRequestResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
-  "outside_usual_area": zod.boolean().nullish(),
-  "voice_activated": zod.boolean().optional(),
-  "voice_language": zod.string().nullish(),
-  "nia_checkin_sent_at": zod.string().nullish(),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -530,8 +457,7 @@ export const GetRequestResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "completed_at": zod.string().nullish()
 })
 
 
@@ -554,13 +480,9 @@ export const UpdateRequestResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
-  "outside_usual_area": zod.boolean().nullish(),
-  "voice_activated": zod.boolean().optional(),
-  "voice_language": zod.string().nullish(),
-  "nia_checkin_sent_at": zod.string().nullish(),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -579,8 +501,7 @@ export const UpdateRequestResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "completed_at": zod.string().nullish()
 })
 
 
@@ -601,13 +522,9 @@ export const ClaimRequestResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
-  "outside_usual_area": zod.boolean().nullish(),
-  "voice_activated": zod.boolean().optional(),
-  "voice_language": zod.string().nullish(),
-  "nia_checkin_sent_at": zod.string().nullish(),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -626,8 +543,7 @@ export const ClaimRequestResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "completed_at": zod.string().nullish()
 })
 
 
@@ -648,13 +564,9 @@ export const MarkEnRouteResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
-  "outside_usual_area": zod.boolean().nullish(),
-  "voice_activated": zod.boolean().optional(),
-  "voice_language": zod.string().nullish(),
-  "nia_checkin_sent_at": zod.string().nullish(),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -673,8 +585,7 @@ export const MarkEnRouteResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "completed_at": zod.string().nullish()
 })
 
 
@@ -695,13 +606,9 @@ export const MarkArrivedResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
-  "outside_usual_area": zod.boolean().nullish(),
-  "voice_activated": zod.boolean().optional(),
-  "voice_language": zod.string().nullish(),
-  "nia_checkin_sent_at": zod.string().nullish(),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -720,8 +627,7 @@ export const MarkArrivedResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "completed_at": zod.string().nullish()
 })
 
 
@@ -743,13 +649,9 @@ export const CompleteRequestResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
-  "outside_usual_area": zod.boolean().nullish(),
-  "voice_activated": zod.boolean().optional(),
-  "voice_language": zod.string().nullish(),
-  "nia_checkin_sent_at": zod.string().nullish(),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -768,8 +670,7 @@ export const CompleteRequestResponse = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "completed_at": zod.string().nullish()
 })
 
 
@@ -784,7 +685,7 @@ export const GetUserTransactionsResponseItem = zod.object({
   "id": zod.number(),
   "user_id": zod.number(),
   "request_id": zod.number().nullish(),
-  "type": zod.enum(['earned', 'pledge_received', 'pledge_sent', 'goodwill', 'tip_received']).describe('earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act, tip_received=tip from requester'),
+  "type": zod.enum(['earned', 'pledge_received', 'pledge_sent', 'goodwill']).describe('earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act'),
   "amount": zod.number(),
   "description": zod.string().nullish(),
   "created_at": zod.string()
@@ -851,13 +752,9 @@ export const GetUserOutstandingPledgesResponseItem = zod.object({
   "id": zod.number(),
   "title": zod.string(),
   "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
+  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
-  "outside_usual_area": zod.boolean().nullish(),
-  "voice_activated": zod.boolean().optional(),
-  "voice_language": zod.string().nullish(),
-  "nia_checkin_sent_at": zod.string().nullish(),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -876,8 +773,7 @@ export const GetUserOutstandingPledgesResponseItem = zod.object({
   "claimed_at": zod.string().nullish(),
   "en_route_at": zod.string().nullish(),
   "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "completed_at": zod.string().nullish()
 })
 export const GetUserOutstandingPledgesResponse = zod.array(GetUserOutstandingPledgesResponseItem)
 
@@ -910,16 +806,13 @@ export const GetOnlineHelpersResponse = zod.array(GetOnlineHelpersResponseItem)
 
 
 /**
- * @summary Get route between two coordinates
+ * @summary Get driving route between two coordinates
  */
-export const getRouteQueryProfileDefault = `driving`;
-
 export const GetRouteQueryParams = zod.object({
   "start_lat": zod.coerce.number(),
   "start_lng": zod.coerce.number(),
   "end_lat": zod.coerce.number(),
-  "end_lng": zod.coerce.number(),
-  "profile": zod.enum(['driving', 'walking', 'cycling']).default(getRouteQueryProfileDefault)
+  "end_lng": zod.coerce.number()
 })
 
 export const GetRouteResponse = zod.object({
@@ -1108,84 +1001,50 @@ export const GetUserReportsResponse = zod.array(GetUserReportsResponseItem)
 
 
 /**
- * @summary Cancel a request — helper unclaims (re-opens to pool) or requester withdraws (marks cancelled)
+ * @summary Authenticate with email and password
  */
-export const CancelRequestParams = zod.object({
-  "id": zod.coerce.number()
+export const LoginUserBody = zod.object({
+  "email": zod.string(),
+  "password": zod.string()
 })
 
-export const cancelRequestResponsePledgePaidDefault = 0;
-
-export const CancelRequestResponse = zod.object({
+export const LoginUserResponse = zod.object({
+  "user": zod.object({
   "id": zod.number(),
-  "title": zod.string(),
-  "description": zod.string().nullish(),
-  "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support']),
-  "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
-  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
-  "outside_usual_area": zod.boolean().nullish(),
-  "voice_activated": zod.boolean().optional(),
-  "voice_language": zod.string().nullish(),
-  "nia_checkin_sent_at": zod.string().nullish(),
-  "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
-  "requester_id": zod.number(),
-  "requester_name": zod.string().nullish(),
-  "requester_avatar": zod.string().nullish(),
-  "helper_id": zod.number().nullish(),
-  "helper_name": zod.string().nullish(),
-  "lat": zod.number(),
-  "lng": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "avatar_url": zod.string().nullish(),
+  "is_helper": zod.boolean(),
+  "helper_mode_active": zod.boolean(),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "trust_score": zod.number().nullish(),
+  "help_count": zod.number(),
   "neighborhood": zod.string().nullish(),
-  "distance_miles": zod.number().nullish(),
-  "estimated_duration_min": zod.number().nullish(),
-  "pay_it_forward_amount": zod.number().nullish(),
-  "pledge_amount": zod.number().nullish(),
-  "pledge_paid": zod.number().default(cancelRequestResponsePledgePaidDefault),
-  "created_at": zod.string(),
-  "claimed_at": zod.string().nullish(),
-  "en_route_at": zod.string().nullish(),
-  "arrived_at": zod.string().nullish(),
-  "completed_at": zod.string().nullish(),
-  "cancelled_at": zod.string().nullish()
+  "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
+  "goodwill_score": zod.number().describe('Community reputation score'),
+  "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
+  "created_at": zod.string().optional()
+}),
+  "token": zod.string()
 })
 
 
 /**
- * @summary Rate the other participant after a completed request (1–5 stars + optional review)
+ * Always returns 200 regardless of whether the email exists, to avoid leaking which emails are registered.
+ * @summary Email a 6-digit sign-in code (legacy-account setup and forgot-password flow)
  */
-export const RateRequestParams = zod.object({
-  "id": zod.coerce.number()
+export const RequestPasswordResetBody = zod.object({
+  "email": zod.string()
 })
 
-export const rateRequestBodyStarsMax = 5;
-
-export const rateRequestBodyReviewMax = 500;
-
-
-
-export const RateRequestBody = zod.object({
-  "stars": zod.number().min(1).max(rateRequestBodyStarsMax),
-  "review": zod.string().max(rateRequestBodyReviewMax).optional()
-})
-
-export const rateRequestResponseStarsMax = 5;
-
-
-
-export const RateRequestResponse = zod.object({
-  "id": zod.number(),
-  "request_id": zod.number(),
-  "rater_id": zod.number(),
-  "ratee_id": zod.number(),
-  "stars": zod.number().min(1).max(rateRequestResponseStarsMax),
-  "review": zod.string().nullish(),
-  "role": zod.enum(['requester', 'helper']),
-  "created_at": zod.string()
+export const RequestPasswordResetResponse = zod.object({
+  "ok": zod.boolean().optional()
 })
 
 
 /**
- * @summary One-time password setup for legacy accounts that pre-date passwords (unauthenticated, rate-limited)
+ * @summary Verify the emailed code and set a password (legacy-account / reset completion)
  */
 export const setInitialPasswordBodyNewPasswordMin = 8;
 
@@ -1194,10 +1053,9 @@ export const setInitialPasswordBodyNewPasswordMin = 8;
 export const SetInitialPasswordBody = zod.object({
   "user_id": zod.number(),
   "email": zod.string(),
+  "code": zod.string(),
   "new_password": zod.string().min(setInitialPasswordBodyNewPasswordMin)
 })
-
-export const setInitialPasswordResponseUserAccountTypeDefault = `individual`;
 
 export const SetInitialPasswordResponse = zod.object({
   "user": zod.object({
@@ -1214,26 +1072,308 @@ export const SetInitialPasswordResponse = zod.object({
   "neighborhood": zod.string().nullish(),
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
-  "created_at": zod.string().optional(),
-  "city": zod.string().nullish(),
-  "specialties": zod.array(zod.string()).nullish(),
-  "phone_masked": zod.string().nullish(),
-  "quick_replies": zod.array(zod.string()).nullish(),
-  "account_type": zod.string().default(setInitialPasswordResponseUserAccountTypeDefault),
-  "organization_name": zod.string().nullish(),
-  "organization_description": zod.string().nullish(),
-  "helper_status": zod.string().nullish(),
-  "helper_languages": zod.array(zod.string()).nullish(),
-  "helper_qualifications": zod.array(zod.string()).nullish(),
-  "helper_bio": zod.string().nullish(),
-  "helper_vehicle": zod.string().nullish(),
-  "helper_social_links": zod.array(zod.string()).nullish(),
-  "token_version": zod.number().optional(),
-  "approval_status": zod.string().nullish(),
-  "is_suspended": zod.boolean().optional(),
-  "helper_skills": zod.array(zod.string()).nullish()
+  "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
+  "created_at": zod.string().optional()
 }),
   "token": zod.string()
+})
+
+
+/**
+ * @summary Cancel a scheduled payment
+ */
+export const DeleteScheduledPaymentParams = zod.object({
+  "id": zod.coerce.number(),
+  "paymentId": zod.coerce.number()
+})
+
+export const DeleteScheduledPaymentResponse = zod.object({
+  "ok": zod.boolean().optional(),
+  "deleted_id": zod.number().optional()
+})
+
+
+/**
+ * @summary Update profile photo (base64 data URL)
+ */
+export const UpdateUserAvatarParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateUserAvatarBody = zod.object({
+  "dataUrl": zod.string().describe('Base64-encoded image, must start with \"data:image\/\". Max ~5 MB.')
+})
+
+export const UpdateUserAvatarResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "avatar_url": zod.string().nullish(),
+  "is_helper": zod.boolean(),
+  "helper_mode_active": zod.boolean(),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "trust_score": zod.number().nullish(),
+  "help_count": zod.number(),
+  "neighborhood": zod.string().nullish(),
+  "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
+  "goodwill_score": zod.number().describe('Community reputation score'),
+  "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
+  "created_at": zod.string().optional()
+})
+
+
+/**
+ * @summary Get notification and privacy preferences (creates defaults on first visit)
+ */
+export const GetUserSettingsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetUserSettingsResponse = zod.object({
+  "id": zod.number(),
+  "user_id": zod.number(),
+  "notif_nearby_requests": zod.boolean(),
+  "notif_emergency": zod.boolean(),
+  "notif_task_accepted": zod.boolean(),
+  "notif_wallet_updates": zod.boolean(),
+  "notif_community_activity": zod.boolean(),
+  "notif_pledge_reminders": zod.boolean(),
+  "privacy_profile_visible": zod.boolean(),
+  "privacy_live_location": zod.boolean(),
+  "privacy_activity_sharing": zod.boolean(),
+  "privacy_anonymous_giving": zod.boolean(),
+  "service_radius_miles": zod.number(),
+  "max_travel_miles": zod.number().nullish(),
+  "specialties": zod.string().nullish(),
+  "preferred_language": zod.enum(['en', 'sw', 'zu', 'tw', 'yo', 'ha', 'am', 'so', 'pcm', 'lg']),
+  "updated_at": zod.coerce.date()
+})
+
+
+/**
+ * @summary Persist notification and privacy preferences
+ */
+export const UpdateUserSettingsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateUserSettingsBody = zod.object({
+  "notif_nearby_requests": zod.boolean().optional(),
+  "notif_emergency": zod.boolean().optional(),
+  "notif_task_accepted": zod.boolean().optional(),
+  "notif_wallet_updates": zod.boolean().optional(),
+  "notif_community_activity": zod.boolean().optional(),
+  "notif_pledge_reminders": zod.boolean().optional(),
+  "privacy_profile_visible": zod.boolean().optional(),
+  "privacy_live_location": zod.boolean().optional(),
+  "privacy_activity_sharing": zod.boolean().optional(),
+  "privacy_anonymous_giving": zod.boolean().optional(),
+  "service_radius_miles": zod.number().optional(),
+  "max_travel_miles": zod.number().optional(),
+  "specialties": zod.string().optional(),
+  "preferred_language": zod.enum(['en', 'sw', 'zu', 'tw', 'yo', 'ha', 'am', 'so', 'pcm', 'lg']).optional()
+}).describe('All fields optional — only provided keys are persisted (upsert)')
+
+export const UpdateUserSettingsResponse = zod.object({
+  "id": zod.number(),
+  "user_id": zod.number(),
+  "notif_nearby_requests": zod.boolean(),
+  "notif_emergency": zod.boolean(),
+  "notif_task_accepted": zod.boolean(),
+  "notif_wallet_updates": zod.boolean(),
+  "notif_community_activity": zod.boolean(),
+  "notif_pledge_reminders": zod.boolean(),
+  "privacy_profile_visible": zod.boolean(),
+  "privacy_live_location": zod.boolean(),
+  "privacy_activity_sharing": zod.boolean(),
+  "privacy_anonymous_giving": zod.boolean(),
+  "service_radius_miles": zod.number(),
+  "max_travel_miles": zod.number().nullish(),
+  "specialties": zod.string().nullish(),
+  "preferred_language": zod.enum(['en', 'sw', 'zu', 'tw', 'yo', 'ha', 'am', 'so', 'pcm', 'lg']),
+  "updated_at": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update emergency/panic contacts (max 5)
+ */
+export const UpdatePanicContactsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const updatePanicContactsBodyContactsMax = 5;
+
+
+
+export const UpdatePanicContactsBody = zod.object({
+  "contacts": zod.array(zod.string()).max(updatePanicContactsBodyContactsMax)
+})
+
+export const UpdatePanicContactsResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "avatar_url": zod.string().nullish(),
+  "is_helper": zod.boolean(),
+  "helper_mode_active": zod.boolean(),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "trust_score": zod.number().nullish(),
+  "help_count": zod.number(),
+  "neighborhood": zod.string().nullish(),
+  "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
+  "goodwill_score": zod.number().describe('Community reputation score'),
+  "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
+  "created_at": zod.string().optional()
+})
+
+
+/**
+ * @summary Get a helper's recurring weekly availability windows
+ */
+export const GetHelperAvailabilityParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const getHelperAvailabilityResponseDayOfWeekMin = 0;
+export const getHelperAvailabilityResponseDayOfWeekMax = 6;
+
+export const getHelperAvailabilityResponseStartMinMin = 0;
+export const getHelperAvailabilityResponseStartMinMax = 1439;
+
+export const getHelperAvailabilityResponseEndMinMax = 1440;
+
+
+
+export const GetHelperAvailabilityResponseItem = zod.object({
+  "id": zod.number(),
+  "user_id": zod.number(),
+  "day_of_week": zod.number().min(getHelperAvailabilityResponseDayOfWeekMin).max(getHelperAvailabilityResponseDayOfWeekMax).describe('0 = Sunday … 6 = Saturday'),
+  "start_min": zod.number().min(getHelperAvailabilityResponseStartMinMin).max(getHelperAvailabilityResponseStartMinMax).describe('Minutes from midnight'),
+  "end_min": zod.number().min(1).max(getHelperAvailabilityResponseEndMinMax).describe('Minutes from midnight')
+})
+export const GetHelperAvailabilityResponse = zod.array(GetHelperAvailabilityResponseItem)
+
+
+/**
+ * @summary Replace a helper's recurring weekly availability windows
+ */
+export const UpdateHelperAvailabilityParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const updateHelperAvailabilityBodyWindowsItemDayOfWeekMin = 0;
+export const updateHelperAvailabilityBodyWindowsItemDayOfWeekMax = 6;
+
+export const updateHelperAvailabilityBodyWindowsItemStartMinMin = 0;
+export const updateHelperAvailabilityBodyWindowsItemStartMinMax = 1439;
+
+export const updateHelperAvailabilityBodyWindowsItemEndMinMax = 1440;
+
+
+
+export const UpdateHelperAvailabilityBody = zod.object({
+  "windows": zod.array(zod.object({
+  "day_of_week": zod.number().min(updateHelperAvailabilityBodyWindowsItemDayOfWeekMin).max(updateHelperAvailabilityBodyWindowsItemDayOfWeekMax),
+  "start_min": zod.number().min(updateHelperAvailabilityBodyWindowsItemStartMinMin).max(updateHelperAvailabilityBodyWindowsItemStartMinMax),
+  "end_min": zod.number().min(1).max(updateHelperAvailabilityBodyWindowsItemEndMinMax)
+}))
+})
+
+export const UpdateHelperAvailabilityResponse = zod.object({
+  "ok": zod.boolean().optional(),
+  "count": zod.number().optional()
+})
+
+
+/**
+ * @summary Server-side token revocation — invalidates all previously issued tokens for this user
+ */
+export const LogoutUserParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const LogoutUserResponse = zod.object({
+  "ok": zod.boolean().optional()
+})
+
+
+/**
+ * @summary List all users (admin only)
+ */
+export const ListUsersResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "is_helper": zod.boolean(),
+  "trust_score": zod.number(),
+  "help_count": zod.number(),
+  "is_suspended": zod.boolean(),
+  "suspended_at": zod.coerce.date().nullish(),
+  "suspended_reason": zod.string().nullish(),
+  "created_at": zod.coerce.date()
+}).describe('Abbreviated user fields returned by the admin user list endpoint')
+export const ListUsersResponse = zod.array(ListUsersResponseItem)
+
+
+/**
+ * @summary Warn, suspend, or ban a user (admin only)
+ */
+export const ModerateUserParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ModerateUserBody = zod.object({
+  "action": zod.enum(['warn', 'ban', 'suspend']),
+  "reason": zod.string().optional().describe('Optional reason, used for suspend')
+})
+
+export const ModerateUserResponse = zod.object({
+  "ok": zod.boolean().optional(),
+  "action": zod.string().optional(),
+  "user_id": zod.number().optional()
+})
+
+
+/**
+ * Two modes depending on caller: a user submitting their own application
+ * (helper_skills, helper_bio, etc.) is enforced via ownership; an admin
+ * reviewing an application sends status: approved|denied|rejected
+ * ("rejected" is normalized to "denied").
+ * @summary Submit a helper application, or (admin) review one
+ */
+export const UpdateHelperApplicationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateHelperApplicationBody = zod.object({
+  "status": zod.enum(['pending', 'approved', 'denied', 'rejected']).optional().describe('Admin-only. \"rejected\" is normalized to \"denied\".'),
+  "helper_skills": zod.array(zod.string()).optional(),
+  "helper_languages": zod.array(zod.string()).optional(),
+  "helper_qualifications": zod.array(zod.string()).optional(),
+  "helper_bio": zod.string().optional(),
+  "helper_vehicle": zod.string().optional(),
+  "helper_social_links": zod.string().optional()
+}).describe('User mode (no status field): submit helper_skills, helper_languages,\nhelper_qualifications, helper_bio, helper_vehicle, helper_social_links.\nAdmin mode: send status to approve\/deny an application.\n')
+
+export const UpdateHelperApplicationResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "avatar_url": zod.string().nullish(),
+  "is_helper": zod.boolean(),
+  "helper_mode_active": zod.boolean(),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "trust_score": zod.number().nullish(),
+  "help_count": zod.number(),
+  "neighborhood": zod.string().nullish(),
+  "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
+  "goodwill_score": zod.number().describe('Community reputation score'),
+  "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
+  "created_at": zod.string().optional()
 })
 
 

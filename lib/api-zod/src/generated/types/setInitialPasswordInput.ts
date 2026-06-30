@@ -9,6 +9,7 @@
 export interface SetInitialPasswordInput {
   user_id: number;
   email: string;
+  code: string;
   /** @minLength 8 */
   new_password: string;
 }

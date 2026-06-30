@@ -6,9 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetRouteParams = {
-start_lat: number;
-start_lng: number;
-end_lat: number;
-end_lng: number;
+export type ModerateUser200 = {
+  ok?: boolean;
+  action?: string;
+  user_id?: number;
 };

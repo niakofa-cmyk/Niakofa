@@ -8,6 +8,9 @@
 
 export interface PledgePayment {
   request_id: number;
-  /** Contribution amount (any amount accepted) */
+  /**
+     * Contribution amount in USD, must be greater than 0
+     * @minimum 0.01
+     */
   amount: number;
 }

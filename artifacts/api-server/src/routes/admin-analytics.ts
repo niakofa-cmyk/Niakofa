@@ -546,7 +546,11 @@ router.patch("/admin/accounts/:id/approval", requireAuth, requireAdmin(), adminL
 // exploited if ADMIN_BOOTSTRAP_SECRET ever leaks later. Requires an env var
 // that must be deliberately set (same pattern as INTERNAL_SECRET) — if it's
 // never configured, this route always 503s.
-router.post("/admin/bootstrap", async (req, res) => {
+//
+// authLimiter applied — this is an unauthenticated secret-guessing surface,
+// same threat model as /admin/verify-secret (which already got authLimiter
+// in Incident #20), but this route had been missed.
+router.post("/admin/bootstrap", authLimiter, async (req, res) => {
   const expected = process.env.ADMIN_BOOTSTRAP_SECRET;
   if (!expected) {
     return res.status(503).json({ error: "Admin bootstrap is not configured. Set ADMIN_BOOTSTRAP_SECRET in Railway → api-server → Variables." });
