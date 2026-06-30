@@ -459,3 +459,119 @@ and stopped sending the now-server-derived author fields;
 fetch in `community.tsx` now sends `authHeaders()` (was previously sending
 no auth at all, which would have silently broken the moment the backend
 fix landed).
+
+---
+
+## Incident #21 — June 30: Stripe payment idempotency/integrity gaps, trust-tier
+drift across three duplicate implementations, missing admin rate limit, SOS
+panic-button bugs, and a YAML syntax error that had silently been blocking
+`pnpm --filter @workspace/api-spec run codegen` from ever completing
+
+**Commits:** `9e45dd0b`, `803d8f42`, `2ffb07b7`, `5762a8a8`
+
+### What was fixed
+- `artifacts/api-server/src/routes/requests.ts`: helper payout `transfers.create`
+  had no `idempotencyKey` — a retry (network blip, duplicate event) could
+  double-pay a helper. Added one, matching the pattern already used in
+  `payout-worker.ts`.
+- `artifacts/api-server/src/routes/stripe.ts`: `POST /stripe/payment-intent`
+  trusted the client-sent `amount` with no server-side check against the
+  request's actual `pay_it_forward_amount` — the charge and the later payout
+  (which reads `pay_it_forward_amount` independently) could silently diverge.
+  Added a cross-check + 400 on mismatch, plus an `idempotencyKey` (also
+  missing).
+- **Trust-tier drift, three independent copies of the same ladder.**
+  `lib/trust-tiers` (added in a prior session, "LOW-004") was never actually
+  imported by either real consumer. `leaderboard.ts` and
+  `TrustTierBadge.tsx` each carried their own hand-copied "verified" check —
+  `helpCount >= 5 || trustScore >= 85` — missing the `trustScore >= 50` guard
+  the shared module's own comment says it exists specifically to prevent
+  (a badly-rated user grinding to "verified" on volume alone). Wired both
+  real consumers to the actual shared `getTrustTier`. A third, separate
+  ladder in `PayItForwardBadge.tsx` (different vocabulary, no role-awareness
+  at all — a user with 3 helps and a tanked trust score still got a
+  positive-sounding badge) was rebuilt on a new `getBadgeForUser(user)`
+  resolver in the shared package, branching on `is_admin` / `is_helper` /
+  plain member. Added `is_admin` to the `User` OpenAPI schema (it was
+  missing entirely — `currentUser?.is_admin` didn't even typecheck before
+  this).
+- `artifacts/api-server/src/routes/admin-analytics.ts`: `POST /admin/bootstrap`
+  (one-time first-admin creation, gated by `ADMIN_BOOTSTRAP_SECRET`) had no
+  rate limit — same unauthenticated secret-guessing threat model as
+  `/admin/verify-secret`, which already got `authLimiter` in Incident #20,
+  but this route was missed. Added.
+- `artifacts/api-server/src/routes/verification.ts`, `POST /verification/sos`:
+  two bugs. (1) `sosLimiter`'s `keyGenerator` read `req.userId`, a field
+  `requireAuth` never sets (it sets `req.authenticatedUserId`) — the "3 per
+  hour per user" limit was actually per-IP, so anyone sharing a network
+  (household, office, carrier CGNAT) shared one SOS bucket. Fixed to key on
+  the real field. (2) `lat && lng` treated a coordinate of exactly `0`
+  (equator/prime meridian) as absent, since `0` is falsy in JS — would
+  report "Location unavailable" for a real location, backwards for a panic
+  button. Fixed to `lat != null && lng != null`.
+
+### `openapi.yaml` had a real YAML syntax error blocking codegen entirely
+`lib/api-spec/openapi.yaml`'s `RouteData.waypoints` had a duplicated mapping
+key (`type: integer` followed immediately by a second `type: string`), and
+`RouteData.distance_text` had no value at all. This is **invalid YAML**, not
+just a schema-quality issue — `js-yaml` (and orval's parser, which uses it
+internally) hard-fails on duplicate mapping keys by default. orval's own
+error handling swallowed the real `YAMLException` and surfaced a generic,
+unhelpful `Failed to resolve input: Please provide a valid string value or
+pass a loader to process the input` instead — this is what made the bug look
+like a config/version/environment problem at first (node version, pnpm
+install state, the `input.override.transformer` pattern, and a corrupted
+local orval install were all tested and ruled out one at a time before the
+real cause was found by parsing the file directly with `js-yaml` outside of
+orval entirely, which surfaced the actual line number).
+
+**Since `pnpm --filter @workspace/api-spec run codegen` is also a build step
+in `railpack.json`, this means any Railway build attempted after this bug was
+introduced would have failed at that exact step.** Whether that already
+happened (and Railway is currently serving a stale prior build) or this was
+introduced after the last deploy wasn't verified this session — worth a
+`railway logs` / dashboard check to confirm the most recent build actually
+succeeded past the codegen step.
+
+Also found while fixing the above: `PledgePayment.amount` had
+`exclusiveMinimum: false` — valid OpenAPI 3.0 (JSON Schema draft-4) syntax,
+but this spec declares `openapi: 3.1.0` (JSON Schema 2020-12), where
+`exclusiveMinimum` must itself be the numeric boundary, not a boolean
+modifier on `minimum`. This compiled fine inside `js-yaml` (it's valid YAML,
+just wrong JSON Schema for this draft) but broke the *next* stage — orval's
+generated zod code did `.gt(<value>)` expecting a number and got a boolean,
+a `tsc` error, not a YAML one. Removed the redundant/invalid key; intent
+("must be greater than 0") is already satisfied by `minimum: 0.01` alone.
+
+Separately, six operations (`requestPasswordReset`, `setInitialPassword`,
+`updateUserAvatar`, `updatePanicContacts`, `updateHelperAvailability`,
+`moderateUser`) defined their request bodies as anonymous inline objects
+instead of `$ref`-ing a named `components.schemas` entry, unlike every other
+operation in this file. orval auto-names anonymous bodies from the
+operationId in two different generated locations (`generated/api.ts` and the
+separate `generated/types` folder) — when `lib/api-zod/src/index.ts`
+blanket-`export *`s both, the two auto-generated names collided, a `tsc`
+error (`already exported a member named 'ModerateUserBody'`, etc.). Fixed by
+giving all six real named schemas (`ModerateUserInput`, etc.) matching the
+convention every other endpoint in this file already uses.
+
+**Lesson (now reminder #11): a generic, unhelpful error from a code-gen or
+build tool is not proof the bug is in that tool, your config, or your
+environment — test whether the *input file itself* parses with the
+underlying library directly (e.g. `js-yaml` outside of orval) before
+spending time on version/config/environment hypotheses.** Multiple plausible
+hypotheses (transformer override, node version, corrupted install) were
+tested and ruled out in this session before the actual cause — confirmed in
+under a minute once tested directly — was found.
+
+### Closet-cleaning note
+Incidents #16–#18 are good candidates to condense to short-paragraph form
+(per reminder #6) next time someone is in this file for an unrelated reason
+— left as-is this session since this entry was already the work in progress.
+
+### Claudemd self-reminder — add #11
+11. **A generic build-tool error message is a symptom, not a diagnosis.**
+    Test the actual input file against the underlying library directly
+    (e.g. parse the YAML/JSON with its real parser, outside the higher-level
+    tool) before chasing version, config, or environment hypotheses — it's
+    faster and rules out an entire class of wrong guesses in one step.
