@@ -51,7 +51,7 @@ router.post("/users/login", authLimiter, async (req, res) => {
     return res.status(401).json({ error: "Incorrect password" });
   }
 
-  const token = signTokenById(user.id);
+  const token = signTokenById(user.id, user.token_version);
   const { password_hash, ...safeUser } = user;
   return res.json({ user: safeUser, token });
 });
@@ -112,7 +112,7 @@ router.post("/users/register", authLimiter, async (req, res) => {
     organization_description: account_type === "organization" ? (body.organization_description ?? null) : null,
     approval_status,
   }).returning();
-  const token = signTokenById(user.id);
+  const token = signTokenById(user.id, user.token_version);
   const { password_hash: _ph, ...safeUser } = user;
   return res.status(201).json({ user: safeUser, token });
 });
@@ -198,7 +198,7 @@ router.post(["/users/set-initial-password", "/users/reset-password"], authLimite
     .where(eq(usersTable.id, user.id))
     .returning();
 
-  const token = signTokenById(updated.id);
+  const token = signTokenById(updated.id, updated.token_version);
   const { password_hash: _ph2, password_reset_code: _prc, ...safeUser } = updated;
   return res.json({ user: safeUser, token });
 });
@@ -243,7 +243,7 @@ router.post("/users/:id/change-password", requireAuth, requireOwnership(), authL
     .where(eq(usersTable.id, id))
     .returning();
 
-  const pwToken = signTokenById(updatedPw.id);
+  const pwToken = signTokenById(updatedPw.id, updatedPw.token_version);
   const { password_hash: _ph3, ...safePwUser } = updatedPw;
   return res.json({ user: safePwUser, token: pwToken });
 });
