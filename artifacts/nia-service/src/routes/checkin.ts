@@ -36,11 +36,13 @@ function verifyInternalSecret(req: Request, res: Response, next: NextFunction): 
   const secret = req.headers["x-internal-secret"];
   if (!INTERNAL_SECRET) {
     logger.warn("INTERNAL_SECRET not configured — /checkin endpoint will reject all requests");
-    return res.status(500).json({ error: "Internal secret not configured" });
+    res.status(500).json({ error: "Internal secret not configured" });
+    return;
   }
   if (secret !== INTERNAL_SECRET) {
     logger.warn({ headerSecret: secret?.toString().slice(0, 4) + "..." }, "checkin: invalid internal secret");
-    return res.status(403).json({ error: "Invalid internal secret" });
+    res.status(403).json({ error: "Invalid internal secret" });
+    return;
   }
   next();
 }

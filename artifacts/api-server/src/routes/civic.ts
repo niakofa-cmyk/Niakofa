@@ -1,6 +1,8 @@
 import { Router } from "express";
-import { db, civicResourcesTable } from "@workspace/db";
+import { db, civicResourcesTable, civicSuggestionsTable } from "@workspace/db";
 import { eq, and, or, isNull } from "drizzle-orm";
+import { requireAuth } from "../middlewares/auth";
+import { requireAdmin } from "../middlewares/authz";
 import { logger } from "../lib/logger";
 import { cacheGet, cacheSet } from "../lib/cache";
 
@@ -185,16 +187,81 @@ router.get("/civic/resources", async (req, res) => {
 });
 
 // POST /civic/suggestions — community-submitted resource suggestions (§3.3.2)
+// BUG FIX: this route previously only logged the suggestion and told the user
+// it would be reviewed, without ever writing to the database — every
+// submission was silently discarded. civicSuggestionsTable already existed
+// (with a comment anticipating this exact admin review route) but was never
+// wired up. Now actually persists, and the admin routes below make the
+// review queue real.
 router.post("/civic/suggestions", async (req, res) => {
   const { name, category, description, phone, website } = req.body as {
     name?: string; category?: string; description?: string; phone?: string; website?: string;
   };
   if (!name?.trim()) return res.status(400).json({ error: "name is required" });
-  logger.info(
-    { name, category, description, phone, website },
-    "civic resource suggestion received"
-  );
-  return res.json({ ok: true, message: "Thank you — your suggestion will be reviewed by the Niakofa team." });
+
+  try {
+    const [row] = await db.insert(civicSuggestionsTable).values({
+      name: name.trim(),
+      category: category?.trim() || null,
+      description: description?.trim() || null,
+      phone: phone?.trim() || null,
+      website: website?.trim() || null,
+      status: "pending",
+    }).returning();
+
+    logger.info({ id: row?.id, name, category }, "civic resource suggestion saved");
+    return res.json({ ok: true, message: "Thank you — your suggestion will be reviewed by the Niakofa team." });
+  } catch (err) {
+    logger.error({ err, name, category }, "civic: failed to save suggestion");
+    return res.status(500).json({ error: "Failed to save suggestion" });
+  }
+});
+
+const validStatuses = ["pending", "approved", "dismissed"] as const;
+
+// GET /admin/civic-suggestions — review queue, mirrors region-crisis-resources pagination pattern
+router.get("/admin/civic-suggestions", requireAuth, requireAdmin(), async (req, res) => {
+  const statusParam = req.query.status as string | undefined;
+  const limitRaw = parseInt(req.query.limit as string ?? "50", 10);
+  const offsetRaw = parseInt(req.query.offset as string ?? "0", 10);
+  const limit = isNaN(limitRaw) || limitRaw < 1 ? 50 : Math.min(limitRaw, 200);
+  const offset = isNaN(offsetRaw) || offsetRaw < 0 ? 0 : offsetRaw;
+
+  if (statusParam !== undefined && !validStatuses.includes(statusParam as typeof validStatuses[number])) {
+    return res.status(400).json({ error: `status must be one of: ${validStatuses.join(", ")}` });
+  }
+
+  const rows = statusParam
+    ? await db.select().from(civicSuggestionsTable)
+        .where(eq(civicSuggestionsTable.status, statusParam))
+        .limit(limit).offset(offset)
+    : await db.select().from(civicSuggestionsTable).limit(limit).offset(offset);
+  return res.json(rows);
+});
+
+// PATCH /admin/civic-suggestions/:id — approve/dismiss a suggestion
+router.patch("/admin/civic-suggestions/:id", requireAuth, requireAdmin(), async (req, res) => {
+  const id = parseInt(req.params.id as string, 10);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+  const r = req as typeof req & { authenticatedUserId?: number };
+  const { status, admin_notes } = req.body as { status?: string; admin_notes?: string };
+
+  if (status !== undefined && !validStatuses.includes(status as typeof validStatuses[number])) {
+    return res.status(400).json({ error: `status must be one of: ${validStatuses.join(", ")}` });
+  }
+
+  const [updated] = await db.update(civicSuggestionsTable)
+    .set({
+      ...(status !== undefined ? { status } : {}),
+      ...(admin_notes !== undefined ? { admin_notes } : {}),
+      ...(status !== undefined ? { reviewed_by: r.authenticatedUserId ?? null, reviewed_at: new Date() } : {}),
+    })
+    .where(eq(civicSuggestionsTable.id, id))
+    .returning();
+
+  if (!updated) return res.status(404).json({ error: "Not found" });
+  return res.json(updated);
 });
 
 export default router;

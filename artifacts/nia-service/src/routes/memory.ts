@@ -30,7 +30,7 @@ async function deleteUserMemory(pool: pg.Pool, userId: number): Promise<void> {
 // GET /memory/:userId — read memory for a user
 // Protected: Bearer token userId must match :userId
 router.get("/memory/:userId", parseOptionalAuth, async (req: Request, res: Response) => {
-  const paramId = parseInt(req.params.userId, 10);
+  const paramId = parseInt(String(req.params.userId), 10);
   if (isNaN(paramId) || paramId <= 0) {
     return res.status(400).json({ error: "Invalid userId" });
   }
@@ -57,7 +57,7 @@ router.get("/memory/:userId", parseOptionalAuth, async (req: Request, res: Respo
 
 // DELETE /memory/:userId — clear all memory for a user
 router.delete("/memory/:userId", parseOptionalAuth, async (req: Request, res: Response) => {
-  const paramId = parseInt(req.params.userId, 10);
+  const paramId = parseInt(String(req.params.userId), 10);
   if (isNaN(paramId) || paramId <= 0) {
     return res.status(400).json({ error: "Invalid userId" });
   }

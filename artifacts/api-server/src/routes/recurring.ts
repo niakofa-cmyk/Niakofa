@@ -191,7 +191,7 @@ router.patch("/recurring/:id", requireAuth, async (req, res) => {
     const [updated] = await db
       .update(recurringRequestsTable)
       .set(updates)
-      .where(eq(recurringRequestsTable.id, id))
+      .where(and(eq(recurringRequestsTable.id, id), eq(recurringRequestsTable.user_id, userId)))
       .returning();
 
     logger.info({ id, userId }, "recurring: updated");
@@ -234,7 +234,10 @@ router.delete("/recurring/:id", requireAuth, async (req, res) => {
 //   lat + lng (optional) — sort by distance (requires both)
 //   limit     (optional, default 10, max 50)
 router.get("/recurring/matched-helpers", requireAuth, async (req, res) => {
-  const userId = (req as any).user.id as number;
+  // BUG FIX: req.user is never set anywhere in api-server (only req.authenticatedUserId
+  // is), so this route threw a TypeError on every single call. Matches the pattern
+  // used by every other route in this file.
+  const userId = req.authenticatedUserId!;
   const { category, lat, lng, limit: limitStr } = req.query as Record<string, string | undefined>;
   const limit = Math.min(parseInt(limitStr ?? "10", 10) || 10, 50);
 

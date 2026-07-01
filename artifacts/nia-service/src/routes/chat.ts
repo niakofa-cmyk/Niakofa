@@ -427,54 +427,14 @@ router.get("/admin/costs/user/:userId", async (req: Request, res: Response) => {
 });
 
 
-// ── PHASE 7b: Proactive check-in endpoint (called by nia-checkin-worker) ──
-// Internal-only: requires x-internal-secret header
-router.post("/checkin", async (req: Request, res: Response) => {
-  const secret = req.headers["x-internal-secret"];
-  if (!secret || secret !== (process.env.INTERNAL_SECRET ?? "")) {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-
-  const body = req.body as Record<string, unknown>;
-  const userId   = typeof body.userId        === "number" ? body.userId        : null;
-  const userName = typeof body.userName      === "string" ? body.userName      : "friend";
-  const sessionId = typeof body.sessionId   === "string" ? body.sessionId     : `checkin-${userId}-${Date.now()}`;
-  const requestTitle  = typeof body.requestTitle === "string" ? body.requestTitle : "your recent request";
-  const category      = typeof body.category     === "string" ? body.category     : "";
-  const helperName    = typeof body.helperName   === "string" ? body.helperName   : null;
-
-  // Build a warm, short check-in message from Nia
-  const helperLine = helperName ? ` with ${helperName}` : "";
-  const checkinPrompt = `You are Nia, a warm community AI for Niakofa. 
-You are reaching out to ${userName} about their completed request: "${requestTitle}" (category: ${category}).
-They received help${helperLine} yesterday.
-
-Write a brief, warm check-in message (2-3 sentences max). Ask how it went, whether they got the help they needed, and gently invite them to share how they are doing. 
-Use a caring, neighborly tone. Do NOT use emojis. Do NOT be formal.`;
-
-  try {
-    const response = await anthropic.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 200,
-      messages: [{ role: "user", content: checkinPrompt }],
-    });
-
-    const niaMessage = response.content[0].type === "text"
-      ? response.content[0].text.trim()
-      : "Hey, just checking in — how did everything go? I hope you got the help you needed.";
-
-    // Save to conversation history so user sees it when they open Nia
-    if (userId) {
-      await saveConversation(userId, sessionId, "[check-in] Nia reached out", niaMessage);
-    }
-
-    return res.json({ ok: true, message: niaMessage, sessionId });
-  } catch (err) {
-    logger.error({ err }, "nia-checkin: failed to generate check-in message");
-    return res.status(500).json({ error: "Failed to generate check-in" });
-  }
-});
-
+// PHASE 7b's proactive check-in endpoint used to live here as a duplicate,
+// looser POST /checkin (haiku-based, no strict payload validation). It has
+// been removed: checkin.ts registers the same path with the actual
+// production-integrated implementation (strict CheckinPayload validation,
+// opus, proper upsert into nia_conversations) — see checkin.ts for details.
+// Because chatRouter mounted before checkinRouter, this dead duplicate was
+// silently winning on every real request; deleting it lets the correct
+// handler take over.
 
 // ── PHASE 7c: Voice story sharing ─────────────────────────────────────────
 // Authenticated: user sends raw voice transcript, Nia crafts it into a
