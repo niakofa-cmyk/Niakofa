@@ -58,7 +58,7 @@ async function setCrisisState(state: CrisisState): Promise<void> {
 
 router.get("/crisis/status", async (_req, res) => {
   const crisisState = await getCrisisState();
-  res.json(crisisState);
+  return res.json(crisisState);
 });
 
 router.post("/crisis/activate", requireAuth, requireAdmin(), async (req, res) => {
@@ -87,7 +87,7 @@ router.post("/crisis/activate", requireAuth, requireAdmin(), async (req, res) =>
   }
   broadcast({ type: "crisis_update", payload: crisisState });
   logger.warn({ crisisState }, "crisis: mode activated");
-  res.json(crisisState);
+  return res.json(crisisState);
 });
 
 router.post("/crisis/deactivate", requireAuth, requireAdmin(), async (_req, res) => {
@@ -100,7 +100,7 @@ router.post("/crisis/deactivate", requireAuth, requireAdmin(), async (_req, res)
   }
   broadcast({ type: "crisis_update", payload: crisisState });
   logger.info("crisis: mode deactivated");
-  res.json(crisisState);
+  return res.json(crisisState);
 });
 
 export default router;
