@@ -22,7 +22,7 @@ import {
 import { broadcast, broadcastRequestEvent, sendToUser } from "../lib/ws-hub";
 import { requestCreationLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
-import { sendPushToNearbyHelpers, sendPushToAllHelpers } from "./push";
+import { sendPushToNearbyHelpers, sendPushToAllHelpers, type PushPayload } from "./push";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { logger } from "../lib/logger";
 import { sendReceipt } from "../lib/mailer";
@@ -249,12 +249,12 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
   // Push notifications — geolocation-targeted when request has coordinates
   if (request.urgency === "emergency" || request.urgency === "high") {
     const isEmergency = request.urgency === "emergency";
-    const payload = {
+    const payload: PushPayload = {
       title: isEmergency ? "🚨 EMERGENCY — Help Needed Now!" : "🔴 Urgent Request Nearby",
       body: request.title,
       urgency: request.urgency,
       requestId: request.id,
-      notifType: (isEmergency ? "emergency" : "nearby_requests") as const,
+      notifType: isEmergency ? "emergency" : "nearby_requests",
     };
     // Notify helpers within 15 miles of the request; fall back to all helpers if no nearby ones found
     sendPushToNearbyHelpers(request.lat, request.lng, 15, payload).catch(() => {
