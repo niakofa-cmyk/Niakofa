@@ -82,6 +82,7 @@ async function reconcilePledges(_job: Job): Promise<void> {
         body: `Your $${scheduled.amount.toFixed(2)} Pay It Forward contribution was scheduled for ${dateStr}. Tap to pay when you're ready — no pressure.`,
         urgency: "normal",
         requestId: request.id ?? undefined,
+        notifType: "wallet" as const,
       }).catch(() => {});
 
       logger.info(

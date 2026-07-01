@@ -143,6 +143,7 @@ router.post("/stripe/webhook", async (req, res) => {
             title: "💙 Niakofa Received",
             body: `$${amount.toFixed(2)} was paid forward for: "${requestTitle}". Check your Goodwill Fund.`,
             requestId: txRow.request_id,
+            notifType: "wallet" as const,
           }).catch(() => {});
         } else {
           broadcast({

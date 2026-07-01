@@ -49,6 +49,7 @@ async function processScheduledReminders(): Promise<void> {
       body: `Your $${payment.amount.toFixed(2)} contribution was scheduled for ${d}. Tap to pay when you're ready — no pressure.`,
       urgency: "normal",
       requestId: payment.request_id ?? undefined,
+      notifType: "wallet" as const,
     }).catch(() => {});
   }
 }

@@ -254,6 +254,7 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
       body: request.title,
       urgency: request.urgency,
       requestId: request.id,
+      notifType: (isEmergency ? "emergency" : "nearby_requests") as const,
     };
     // Notify helpers within 15 miles of the request; fall back to all helpers if no nearby ones found
     sendPushToNearbyHelpers(request.lat, request.lng, 15, payload).catch(() => {
@@ -266,6 +267,7 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
       body: request.title,
       urgency: request.urgency,
       requestId: request.id,
+      notifType: "nearby_requests" as const,
     }).catch(() => {});
   }
 

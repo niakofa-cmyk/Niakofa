@@ -11,13 +11,14 @@ import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
 
 async function processNotification(job: Job<NotificationJobData>): Promise<void> {
-  const { user_id, title, body, urgency, requestId } = job.data;
+  const { user_id, title, body, urgency, requestId, notifType } = job.data;
 
   await sendPushToUser(user_id, {
     title,
     body,
     urgency: urgency ?? "normal",
     requestId,
+    notifType,
   });
 
   logger.info({ user_id, title }, "notification-worker: delivered");

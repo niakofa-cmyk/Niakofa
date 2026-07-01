@@ -114,6 +114,7 @@ export interface NotificationJobData {
   body:       string;
   urgency?:   string;
   requestId?: number;
+  notifType?: "nearby_requests" | "task_accepted" | "wallet" | "community" | "emergency" | "nia_checkin";
 }
 
 export async function enqueueNotification(data: NotificationJobData): Promise<boolean> {
