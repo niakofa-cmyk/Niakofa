@@ -697,3 +697,17 @@ passing means the codebase is clean — it only covers `lib/*`, not
 pipeline (or at minimum to CI) as a non-blocking warning step, since
 `esbuild` will happily ship real type errors like the ones above straight
 to production without ever surfacing them.
+
+### Claudemd self-reminder — add #12
+12. **When sharing a file for the human to download and copy into the repo,
+    never reuse a filename already used earlier in the same conversation
+    (or a common one like `openapi.yaml`, `users.ts` matching a real repo
+    path).** Browsers auto-number repeat downloads (`file.ts`, `file (1).ts`,
+    `file (2).ts`...) and Downloads folders accumulate many similarly-named
+    historical files from past sessions — this caused repeated wasted
+    round-trips this session (Incidents #21-23) where a stale or wrong-numbered
+    file got silently `cp`'d in and produced a "nothing to commit" no-op, or a
+    stale unfixed file overwrote a fix. Give every shared file a distinct
+    name up front (e.g. a short version suffix: `openapi_v5.yaml`,
+    `users_v9.ts`) so there is never an ambiguous `(N)` to guess at, and the
+    file the human downloads is unambiguously the one just generated.
