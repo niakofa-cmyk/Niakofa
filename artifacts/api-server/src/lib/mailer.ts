@@ -1,6 +1,27 @@
 import nodemailer from "nodemailer";
 import { logger } from "./logger";
 
+// Email bodies/subjects below interpolate user-controlled fields directly
+// (user.name in the password-reset code email, request titles, helper/
+// requester display names in receipts) with no escaping. That's an HTML-
+// injection risk in the rendered email (and, for subjects/headers, a
+// CRLF/SMTP-header-injection risk) — low severity today since most of these
+// land in the same user's own inbox, but real and easy to close. Referenced
+// by src/__tests__/mailer.test.ts, which specifies the exact expected
+// behavior for both.
+export function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export function sanitizeHeaderValue(input: string): string {
+  return input.replace(/\r\n|\r|\n/g, " ").trim();
+}
+
 const transporter = nodemailer.createTransport({
   host: process.env["SMTP_HOST"] ?? "smtp.mailgun.org",
   port: parseInt(process.env["SMTP_PORT"] ?? "587"),
@@ -44,12 +65,12 @@ export async function sendReceipt(data: ReceiptData): Promise<void> {
     </div>
     <div style="background:#111827;border:1px solid #1e3a5f;border-radius:16px;padding:24px;margin-bottom:24px">
       <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Request Completed</div>
-      <div style="font-size:18px;font-weight:700;margin-bottom:16px">${data.requestTitle}</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:16px">${escapeHtml(data.requestTitle)}</div>
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-        <span style="color:#64748b">Helper</span><span style="font-weight:600">${data.helperName}</span>
+        <span style="color:#64748b">Helper</span><span style="font-weight:600">${escapeHtml(data.helperName)}</span>
       </div>
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-        <span style="color:#64748b">Requester</span><span style="font-weight:600">${data.requesterName}</span>
+        <span style="color:#64748b">Requester</span><span style="font-weight:600">${escapeHtml(data.requesterName)}</span>
       </div>
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
         <span style="color:#64748b">Completed</span><span>${data.completedAt.toLocaleString()}</span>
@@ -69,7 +90,7 @@ export async function sendReceipt(data: ReceiptData): Promise<void> {
     await transporter.sendMail({
       from: `"Niakofa" <${smtpUser}>`,
       to: data.to,
-      subject: `✅ Help completed: ${data.requestTitle}`,
+      subject: sanitizeHeaderValue(`✅ Help completed: ${data.requestTitle}`),
       html,
     });
     logger.info({ to: data.to }, "receipt: email sent");
@@ -118,7 +139,7 @@ export async function sendAlertEmail(data: AlertEmailData): Promise<void> {
     await transporter.sendMail({
       from: `"Niakofa" <${smtpUser}>`,
       to: data.to,
-      subject: data.subject,
+      subject: sanitizeHeaderValue(data.subject),
       html,
     });
     logger.info({ to: data.to, subject: data.subject }, "alert email sent");
@@ -145,8 +166,8 @@ export async function sendTipNotification(data: TipData): Promise<void> {
   <div style="text-align:center;padding:32px;background:#111827;border:1px solid #16a34a33;border-radius:16px">
     <div style="font-size:48px;margin-bottom:16px">💚</div>
     <div style="font-size:28px;font-weight:900;color:#22c55e">+$${data.tipAmount.toFixed(2)}</div>
-    <div style="font-size:14px;color:#64748b;margin-top:8px">Tip received for: <strong style="color:#e2e8f0">${data.requestTitle}</strong></div>
-    <div style="font-size:12px;color:#64748b;margin-top:16px">Hi ${data.helperName}, someone appreciated your help so much they left a tip. It's been added to your wallet.</div>
+    <div style="font-size:14px;color:#64748b;margin-top:8px">Tip received for: <strong style="color:#e2e8f0">${escapeHtml(data.requestTitle)}</strong></div>
+    <div style="font-size:12px;color:#64748b;margin-top:16px">Hi ${escapeHtml(data.helperName)}, someone appreciated your help so much they left a tip. It's been added to your wallet.</div>
   </div>
 </body>
 </html>`;
@@ -155,7 +176,7 @@ export async function sendTipNotification(data: TipData): Promise<void> {
     await transporter.sendMail({
       from: `"Niakofa" <${smtpUser}>`,
       to: data.to,
-      subject: `💚 You received a tip for: ${data.requestTitle}`,
+      subject: sanitizeHeaderValue(`💚 You received a tip for: ${data.requestTitle}`),
       html,
     });
   } catch (err) {

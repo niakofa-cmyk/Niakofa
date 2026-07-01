@@ -6,8 +6,9 @@
  *   - Duplicate email rejection (409)
  *   - Missing required fields (400)
  *   - Happy-path login (200 + token)
- *   - Legacy account login (200 + password_reset_required: true)
+ *   - Legacy account login (403 LEGACY_PASSWORD_REQUIRED, no token issued)
  *   - Wrong password / unknown email (401)
+ *   - Business/sponsor registration keeps pending approval + org name (BUG-CRIT-03)
  *
  * DB interactions are mocked so no real Postgres connection is needed.
  */
@@ -108,7 +109,7 @@ describe("POST /api/users/register", () => {
       .send({ name: "Alice", email: "alice@example.com", password: "secret123" });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/already registered/i);
+    expect(res.body.error).toMatch(/already exists/i);
   });
 
   it("returns 201 with user and token on successful registration", async () => {
@@ -156,6 +157,65 @@ describe("POST /api/users/register", () => {
     expect(res.status).toBe(201);
     expect(res.body.user).toBeDefined();
     expect(res.body.token).toBeDefined();
+  });
+
+  // Regression tests for BUG-CRIT-03: account_type "business" / "sponsor"
+  // (the two options login.tsx's registration UI actually offers alongside
+  // "individual") were being silently downgraded to "individual" because the
+  // server-side allowlist only recognized "individual" and "organization".
+  // That skipped admin review entirely and dropped organization_name.
+  it.each(["business", "sponsor"])(
+    "stores account_type '%s' as-is and requires admin approval",
+    async (accountType) => {
+      const { db } = await import("@workspace/db");
+      (db.limit as jest.Mock).mockResolvedValueOnce([]); // no existing user
+      (db.returning as jest.Mock).mockResolvedValueOnce([{
+        id: 99, name: "Acme Helpers", email: `${accountType}@example.com`,
+        is_helper: false, trust_score: 50, help_count: 0, benevolence_wallet: 0,
+        password_hash: "$2a$12$fakehashedvalue",
+        account_type: accountType,
+        organization_name: "Acme Org",
+        approval_status: "pending",
+      }]);
+
+      const res = await request(app)
+        .post("/api/users/register")
+        .send({
+          name: "Acme Helpers",
+          email: `${accountType}@example.com`,
+          password: "securePass1",
+          account_type: accountType,
+          organization_name: "Acme Org",
+        });
+
+      expect(res.status).toBe(201);
+      // Assert what was actually handed to db.insert(...).values(...)
+      const insertedValues = (db.values as jest.Mock).mock.calls.at(-1)?.[0];
+      expect(insertedValues.account_type).toBe(accountType);
+      expect(insertedValues.approval_status).toBe("pending");
+      expect(insertedValues.organization_name).toBe("Acme Org");
+    }
+  );
+
+  it("auto-approves individual accounts and leaves organization_name null", async () => {
+    const { db } = await import("@workspace/db");
+    (db.limit as jest.Mock).mockResolvedValueOnce([]);
+    (db.returning as jest.Mock).mockResolvedValueOnce([{
+      id: 100, name: "Jane Doe", email: "jane@example.com",
+      is_helper: false, trust_score: 50, help_count: 0, benevolence_wallet: 0,
+      password_hash: "$2a$12$fakehashedvalue",
+      account_type: "individual", approval_status: "approved",
+    }]);
+
+    const res = await request(app)
+      .post("/api/users/register")
+      .send({ name: "Jane Doe", email: "jane@example.com", password: "securePass1" });
+
+    expect(res.status).toBe(201);
+    const insertedValues = (db.values as jest.Mock).mock.calls.at(-1)?.[0];
+    expect(insertedValues.account_type).toBe("individual");
+    expect(insertedValues.approval_status).toBe("approved");
+    expect(insertedValues.organization_name).toBeNull();
   });
 });
 
@@ -208,7 +268,7 @@ describe("POST /api/users/login", () => {
     expect(res.body.error).toMatch(/incorrect password/i);
   });
 
-  it("returns 200 with password_reset_required for legacy accounts", async () => {
+  it("returns 403 LEGACY_PASSWORD_REQUIRED for accounts with no password_hash set", async () => {
     const { db } = await import("@workspace/db");
     // Legacy account — no password_hash
     (db.limit as jest.Mock).mockResolvedValueOnce([{
@@ -220,9 +280,13 @@ describe("POST /api/users/login", () => {
       .post("/api/users/login")
       .send({ email: "legacy@example.com", password: "anything" });
 
-    expect(res.status).toBe(200);
-    expect(res.body.password_reset_required).toBe(true);
-    expect(res.body.token).toBeDefined();
-    expect(res.body.user.id).toBe(5);
+    // A legacy account (created before password auth existed) must never be
+    // logged straight in on an unverified password — it's routed to the
+    // password-setup flow instead (see routes/users.ts LEGACY_PASSWORD_REQUIRED
+    // and the /users/request-password-reset + /users/set-initial-password pair).
+    expect(res.status).toBe(403);
+    expect(res.body.error_code).toBe("LEGACY_PASSWORD_REQUIRED");
+    expect(res.body.user_id).toBe(5);
+    expect(res.body.token).toBeUndefined();
   });
 });

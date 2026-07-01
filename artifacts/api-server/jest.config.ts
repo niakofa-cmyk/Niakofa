@@ -16,6 +16,8 @@ const config: Config = {
         tsconfig: {
           module: "ESNext",
           moduleResolution: "bundler",
+          esModuleInterop: true,
+          allowSyntheticDefaultImports: true,
         },
       },
     ],

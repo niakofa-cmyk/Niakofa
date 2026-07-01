@@ -10,9 +10,22 @@
  */
 import { rateLimit } from "express-rate-limit";
 
+// Regression: the full users.test.ts suite (register + login describe
+// blocks) fires 9+ requests through authLimiter alone within one jest run,
+// which blows past the real 10/15min production limit and turns into
+// flaky 429s on unrelated assertions (e.g. "wrong password" tests getting
+// 429 instead of 401) — a rate limiter doing exactly its job in an
+// environment it was never meant to run in. express-rate-limit's own `skip`
+// option is the intended escape hatch; keying it off NODE_ENV=test (set by
+// jest's default env, and explicitly by CI) keeps this out of any real
+// deploy path — Railway never sets NODE_ENV=test.
+const skipInTest = () => process.env.NODE_ENV === "test";
+
+
 // ── 1. Auth Routes (10 / 15 min) ─────────────────────────────────────────────
 // Protects: login, signup, password reset against brute-force / credential stuffing.
 export const authLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 15 * 60 * 1000,
   limit: 10,
   standardHeaders: "draft-7",
@@ -29,6 +42,7 @@ export const authLimiter = rateLimit({
 // Keyed by requester_id from body (not IP) — prevents VPN bypass while
 // allowing multiple users behind a shared NAT.
 export const requestCreationLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 60 * 60 * 1000,
   limit: 10,
   standardHeaders: "draft-7",
@@ -51,6 +65,7 @@ export const requestCreationLimiter = rateLimit({
 // Prevents battery drain, server overload, and GPS stream abuse.
 // Keyed by userId from URL params so one user can't block another.
 export const gpsLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 3_000,
   limit: 1,
   standardHeaders: "draft-7",
@@ -68,6 +83,7 @@ export const gpsLimiter = rateLimit({
 // Protects: payout triggers, payment-intent creation, wallet operations
 // against replay attacks and spam triggers.
 export const paymentLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 15 * 60 * 1000,
   limit: 20,
   standardHeaders: "draft-7",
@@ -83,6 +99,7 @@ export const paymentLimiter = rateLimit({
 // Broad protection on all /api routes. High enough that normal users never hit it.
 // Blocks only clearly automated abuse (scrapers, bots, DoS).
 export const generalApiLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 15 * 60 * 1000,
   limit: 200,
   standardHeaders: "draft-7",
@@ -104,6 +121,7 @@ export const generalApiLimiter = rateLimit({
 // referenced in artifacts/nia-service/REPLIT_GODFATHER.md's changelog as
 // already added, but never actually existed in this file — added for real.
 export const communityPostLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 15 * 60 * 1000,
   limit: 5,
   standardHeaders: "draft-7",
@@ -119,6 +137,7 @@ export const communityPostLimiter = rateLimit({
 // Likes are cheap and now idempotent per-user (gratitude_likes unique index),
 // but still throttled against scripted spam-liking.
 export const communityLikeLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 15 * 60 * 1000,
   limit: 60,
   standardHeaders: "draft-7",
@@ -131,6 +150,7 @@ export const communityLikeLimiter = rateLimit({
 });
 
 export const chatLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 60 * 1000,
   limit: 30,
   standardHeaders: "draft-7",
@@ -147,6 +167,7 @@ export const chatLimiter = rateLimit({
 // should not hit a rate limit. 20/min is still abuse protection without
 // punishing someone who needs to talk.
 export const crisisAwareChatLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 60 * 1000,
   limit: 20,
   standardHeaders: "draft-7",
@@ -161,6 +182,7 @@ export const crisisAwareChatLimiter = rateLimit({
 // ── 8. Nia Chat History (60 / 15 min per user) ───────────────────────────────
 // History reads are cheap but should still be throttled against scraping.
 export const niaChatHistoryLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 15 * 60 * 1000,
   limit: 60,
   standardHeaders: "draft-7",
@@ -176,6 +198,7 @@ export const niaChatHistoryLimiter = rateLimit({
 // Admin routes are low-volume by design; this mainly protects against
 // automated scripts hammering the analytics endpoints.
 export const adminLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 15 * 60 * 1000,
   limit: 30,
   standardHeaders: "draft-7",
@@ -187,6 +210,7 @@ export const adminLimiter = rateLimit({
 // STT and TTS calls hit OpenAI — cost-sensitive. 30/hour is generous for
 // real usage but protects against accidental loops or abuse.
 export const voiceLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 60 * 60 * 1000,
   limit: 30,
   standardHeaders: "draft-7",
@@ -202,6 +226,7 @@ export const voiceLimiter = rateLimit({
 // Mapbox directions calls are metered — 60/min is generous for real turn-by-turn
 // usage (a new route request per second) while blocking runaway loops or scrapers.
 export const navigationLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 60 * 1000,
   limit: 60,
   standardHeaders: "draft-7",

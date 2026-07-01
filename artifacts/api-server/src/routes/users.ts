@@ -74,10 +74,26 @@ router.post("/users/register", authLimiter, async (req, res) => {
     organization_description?: string;
   };
   const password = body.password;
-  const ALLOWED_ACCOUNT_TYPES = ["individual", "organization"];
+  // BUG-CRIT-03: login.tsx's registration form sends account_type as
+  // "individual" | "business" | "sponsor" (see the accountType state and the
+  // three-way toggle in login.tsx), but this allowlist only recognized
+  // "individual" and "organization" — every "business" or "sponsor"
+  // registration silently fell through to the "individual" default. That
+  // meant: (1) business/sponsor accounts were auto-approved instead of held
+  // for admin review, even though the UI's own success toast told the user
+  // "Your business/sponsor account is pending admin review" — a lie; (2)
+  // organization_name / organization_description were dropped on the floor
+  // (see the account_type === "organization" checks below), permanently
+  // losing the business or sponsor's org name; (3) any downstream logic that
+  // branches on account_type (analytics filters, future sponsor-specific
+  // portal features) silently treated every sponsor/business as a plain
+  // individual. "organization" is kept in the allowlist for
+  // backwards-compatibility with any already-stored rows / other callers.
+  const ALLOWED_ACCOUNT_TYPES = ["individual", "organization", "business", "sponsor"];
   const account_type = ALLOWED_ACCOUNT_TYPES.includes(body.account_type ?? "")
     ? (body.account_type as string)
     : "individual";
+  const requiresOrgReview = account_type === "organization" || account_type === "business" || account_type === "sponsor";
 
   const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
   if (existing.length > 0) {
@@ -99,7 +115,7 @@ router.post("/users/register", authLimiter, async (req, res) => {
   // for or offering help. Organization accounts still require admin review
   // via the new PATCH /admin/accounts/:id/approval endpoint, since vetting a
   // claimed nonprofit/business identity is a real, intentional checkpoint.
-  const approval_status = account_type === "organization" ? "pending" : "approved";
+  const approval_status = requiresOrgReview ? "pending" : "approved";
 
   const [user] = await db.insert(usersTable).values({
     name, email,
@@ -108,8 +124,8 @@ router.post("/users/register", authLimiter, async (req, res) => {
     is_helper: is_helper ?? false,
     neighborhood: neighborhood ?? null,
     account_type,
-    organization_name: account_type === "organization" ? (body.organization_name ?? null) : null,
-    organization_description: account_type === "organization" ? (body.organization_description ?? null) : null,
+    organization_name: requiresOrgReview ? (body.organization_name ?? null) : null,
+    organization_description: requiresOrgReview ? (body.organization_description ?? null) : null,
     approval_status,
   }).returning();
   const token = signTokenById(user.id, user.token_version);
@@ -142,12 +158,12 @@ router.post(["/users/request-password-reset", "/users/forgot-password"], authLim
       .set({ password_reset_code: code, password_reset_expires_at: expiresAt })
       .where(eq(usersTable.id, user.id));
 
-    const { sendAlertEmail } = await import("../lib/mailer.js");
+    const { sendAlertEmail, escapeHtml } = await import("../lib/mailer.js");
     await sendAlertEmail({
       to: user.email,
       subject: "Your Niakofa sign-in code",
       title: "Your sign-in code",
-      body: `Hi ${user.name}, use this code to finish setting up sign-in on Niakofa: <strong style="font-size:24px;letter-spacing:4px">${code}</strong><br><br>This code expires in 15 minutes. If you didn't request this, you can ignore this email.`,
+      body: `Hi ${escapeHtml(user.name)}, use this code to finish setting up sign-in on Niakofa: <strong style="font-size:24px;letter-spacing:4px">${code}</strong><br><br>This code expires in 15 minutes. If you didn't request this, you can ignore this email.`,
     });
   }
 

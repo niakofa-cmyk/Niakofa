@@ -809,3 +809,126 @@ comment.
 failure is worse than no automation — it looks green while drifting. Any
 migrate step needs to actually block the deploy on failure, and that
 failure mode needs to be checked, not assumed, the first time it's added.**
+
+## Incident #29 — July 1: Login audit — `business`/`sponsor` registrations silently downgraded to `individual`, skipping admin review
+
+User reported "passwords don't work, users can't access the app" and asked
+for a full audit across the requester/community, helper, sponsor, and
+business login paths. Password hashing, login, and reset flows (users.ts)
+were already correct from prior incidents (#login-token fix, BUG-CRIT-01/02).
+The real gap found this pass: `login.tsx`'s registration UI offers
+`account_type` as `"individual" | "business" | "sponsor"` (see the toggle
+and its own success-toast copy promising business/sponsor accounts go to
+"admin review"), but the server's `ALLOWED_ACCOUNT_TYPES` allowlist in
+`routes/users.ts` only recognized `"individual"` and `"organization"`. Any
+`"business"` or `"sponsor"` value therefore failed the allowlist check and
+silently fell back to `"individual"` — meaning those accounts were
+auto-approved instead of held for review, and `organization_name` /
+`organization_description` were dropped entirely (both were gated on
+`account_type === "organization"`, which a downgraded row can never equal).
+
+**Fix:** allowlist now includes `business` and `sponsor` alongside
+`individual`/`organization`; a `requiresOrgReview` boolean
+(`organization || business || sponsor`) drives both the `approval_status`
+and whether `organization_name`/`organization_description` are persisted,
+instead of a single hardcoded `=== "organization"` check repeated three
+times. Added regression tests in `users.test.ts` (`it.each` over
+business/sponsor, plus an individual case) asserting the exact values
+passed to `db.insert(usersTable).values(...)` — this class of bug produces
+a 201 response either way, so only inspecting the insert payload (not just
+the HTTP status) would have caught it.
+
+**Note on the "4 portals":** there is no separate login screen or dashboard
+per account_type today — one `login.tsx` registration form, one `App.tsx`,
+gated only by `approval_status` (pending/denied → `pending-approval.tsx`)
+and `helper_status`/`is_admin` flags for helper- and admin-specific UI.
+`account_type` currently only affects the approval-review requirement and
+which org fields are stored, not routing. If distinct sponsor/business
+portals are wanted, that's a real feature to design, not a bug to fix.
+
+**Not reproducible in this environment:** could not confirm against a live
+Railway deploy or production Postgres — this was a static code audit of the
+zip snapshot. `pnpm exec jest src/__tests__/users.test.ts` in this sandbox
+fails all 12 tests (including pre-existing ones untouched by this change)
+with `TypeError: (0, express_1.default) is not a function` at
+`app = express()` — looks like an ESM/CJS interop mismatch between this
+sandbox's Node version and the `ts-jest` ESM preset, not something the code
+change caused. Worth a human running `pnpm test` in the real CI/dev
+environment to confirm the new tests actually pass there.
+
+## Housekeeping — keep this file and `.agents/memory/*.md` from growing unbounded
+
+This file is 800+ lines and `.agents/memory/` holds ~2000 more lines across
+27 small per-topic notes, several already stale (fixes long since shipped
+and confirmed in production). Every session should, before adding new
+notes:
+1. Skim existing incident entries / memory files for the area being touched
+   — don't re-diagnose something already fixed and documented.
+2. When closing out, fold anything now-obsolete (superseded fixes, one-time
+   migration notes for migrations that have long since run clean) into a
+   single short "resolved" line instead of leaving the full original
+   write-up in place indefinitely.
+3. Prefer editing/trimming an existing incident entry over always appending
+   a new one, when the new work is a continuation of the same root cause.
+4. `.agents/memory/*.md` is for narrow, reusable "how this subsystem works"
+   notes — not a running diary. If a memory file's fix has been live and
+   unproblematic for a while, it can be deleted once its lesson is folded
+   into CLAUDE.md's Known-design-choices or Incident Log.
+
+Goal: this file should stay a fast, high-signal read for whoever (human or
+Claude) opens it next — not an archive nobody re-reads.
+
+## Incident #29 (continued) — test infra was masking real results, plus two more real gaps found while getting `users.test.ts` green
+
+While verifying Incident #29's fix actually ran (not just compiled), three
+pre-existing, unrelated problems surfaced that were blocking anyone from
+trusting `pnpm test` output at all:
+
+1. **`jest.config.ts` had no `esModuleInterop`/`allowSyntheticDefaultImports`
+   in the ts-jest tsconfig override.** Every test file doing
+   `import express from "express"` (or `bcryptjs`, etc.) failed at
+   `beforeAll` with `TypeError: express is not a function` — all 12
+   `users.test.ts` tests "failed" for a tooling reason, not a code reason.
+   Fixed by adding both flags to the inline tsconfig.
+
+2. **No test-environment bypass on the rate limiters** (`middlewares/rate-limit.ts`).
+   `authLimiter` is a real 10-req/15-min limiter shared across every test in
+   a file — running the full `register` + `login` describe blocks together
+   trips it, and tests that should assert `401`/`200` get a `429` instead
+   depending on run order. Added `skip: skipInTest` (checks
+   `NODE_ENV === "test"`) to all 13 limiters, and `jest.setup.ts` now sets
+   `NODE_ENV ??= "test"` explicitly rather than assuming jest's CLI does it
+   (it wasn't reliably set under this ESM preset). Railway never sets
+   `NODE_ENV=test`, so production behavior is unchanged.
+
+3. **Two `users.test.ts` cases were stale**, asserting behavior from before
+   earlier incidents shipped: the 409-duplicate-email test expected the old
+   `"already registered"` message (BUG-C01 changed it to avoid confirming
+   which emails exist); the legacy-account login test expected a `200` +
+   auto-issued token (the `niakofa-login-token.md` redesign correctly makes
+   this a `403 LEGACY_PASSWORD_REQUIRED` with no token). Both updated to
+   assert the actual, correct current behavior.
+
+4. **`escapeHtml`/`sanitizeHeaderValue` were imported by `mailer.test.ts`
+   but never implemented anywhere** — a real gap, not just a test bug.
+   `sendReceipt`/`sendTipNotification`/`sendAlertEmail` in `lib/mailer.ts`
+   interpolate user-controlled fields (request title, helper/requester
+   name, and — via `users.ts`'s password-reset code email — the
+   registrant's own `name`) directly into email HTML and subject lines with
+   no escaping: HTML-injection in the rendered email, and unsanitized
+   subjects are a latent SMTP-header-injection surface if a user-controlled
+   value is ever passed directly as a subject in the future. Implemented
+   both functions and applied them at every interpolation site in
+   `mailer.ts`, plus `escapeHtml(user.name)` at the one call site in
+   `users.ts` that builds a body string outside `mailer.ts`
+   (`AlertEmailData.body` is otherwise treated as caller-owned pre-built
+   HTML, not raw user text, so it isn't blanket-escaped).
+
+**Still failing, not fixed (out of scope for this pass, pre-existing on
+original `main` too — confirmed by running against an unmodified checkout):**
+`lifecycle.test.ts`, `integration-lifecycle.test.ts`, `bug-15b-15c.test.ts`
+all fail with `Configuration error: Could not locate module ./push.js` —
+`jest.mock("./push.js", ...)` isn't resolving through the `.js`→`.ts`
+`moduleNameMapper` the way route-file imports do. Needs someone familiar
+with this ESM/ts-jest setup to dig into mock resolution order; flagging
+here so it isn't re-discovered from scratch next session.
