@@ -101,9 +101,10 @@ export function parseAuth(req: Request, _res: Response, next: NextFunction): voi
   const authHeader = req.headers["authorization"];
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice(7).trim();
-    const { userId, valid } = verifyToken(token);
+    const { userId, valid, tokenVersion } = verifyToken(token);
     if (valid) {
       req.authenticatedUserId = userId;
+      req.authenticatedTokenVersion = tokenVersion;
     }
   }
   next();
@@ -130,12 +131,21 @@ export async function requireApproved(req: Request, res: Response, next: NextFun
       is_suspended: usersTable.is_suspended,
       trust_score: usersTable.trust_score,
       approval_status: usersTable.approval_status,
+      token_version: usersTable.token_version,
     })
     .from(usersTable)
     .where(eq(usersTable.id, req.authenticatedUserId))
     .limit(1);
   if (!user) {
     res.status(401).json({ error: "User not found" });
+    return;
+  }
+  // Token was issued before a subsequent logout or password change bumped
+  // token_version — reject it. This is the enforcement side of the version
+  // field every token has carried since the nia-service format alignment;
+  // signing already embeds it, this is what makes it actually mean something.
+  if (req.authenticatedTokenVersion === undefined || req.authenticatedTokenVersion !== user.token_version) {
+    res.status(401).json({ error: "Session expired — please log in again", error_code: "TOKEN_REVOKED" });
     return;
   }
   if (user.is_suspended) {
