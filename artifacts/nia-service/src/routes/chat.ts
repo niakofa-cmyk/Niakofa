@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { checkSafety } from "../lib/safety.js";
-import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit, getActiveRequest, getUserMemory, upsertUserMemory, isNiaEnabled, logNiaCost } from "../lib/db.js";
+import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit, getActiveRequest, getUserMemory, upsertUserMemory, isNiaEnabled, logNiaCost, getDailyCostSummary } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
 import { injectLocation, buildLocationPrefix, buildAppContextPrefix, LocationContext } from "../middleware/location.js";
 import { pino } from "pino";
@@ -412,7 +412,7 @@ router.get("/admin/costs/user/:userId", async (req: Request, res: Response) => {
     return res.status(403).json({ error: "Forbidden" });
   }
   
-  const userId = parseInt(req.params.userId);
+  const userId = parseInt(String(req.params.userId), 10);
   if (isNaN(userId)) {
     return res.status(400).json({ error: "Invalid userId" });
   }
