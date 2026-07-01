@@ -128,6 +128,13 @@ Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
   issuing a short-lived admin JWT) doesn't exist yet — see "Known design
   choices" above. (Rate-limited as of Incident #20, but still a shared
   static secret, not a real auth boundary.)
+- **`lib/db/scripts/run-migrations.mjs`'s `BASELINE_CUTOFF` (currently
+  `0021_password_reset_code.sql`) needs periodic attention** — see Incident
+  #28. Files at or before the cutoff are marked applied without executing
+  them (they're legacy raw `drizzle-kit generate` output, non-idempotent).
+  Every *new* migration file added from now on should be genuinely
+  idempotent (the established `IF NOT EXISTS` pattern) so it's safe to bump
+  the cutoff forward later without re-auditing old files individually.
 
 ## Incident log — read before touching deploy config or auth
 
@@ -755,3 +762,50 @@ actually reachable and actionable, not just silently stuck.
 **Lesson: same pattern as Incident #26 — a design doc and a fully-written
 helper function are not evidence a feature is wired in. Grep for the actual
 call site.**
+
+---
+
+## Incident #28 — July 1: The production "migrate" step has been silently failing on every deploy — real schema drift confirmed and fixed
+**Files:** `lib/db/scripts/run-migrations.mjs` (new),
+`lib/db/package.json`, `lib/db/migrations/0023_help_requests_photo_url.sql`,
+`lib/db/src/schema/requests.ts`
+
+Deploy logs (checked while diagnosing why migration 0022 hadn't landed)
+showed `drizzle-kit push` throwing `Interactive prompts require a TTY
+terminal` on every single boot — it needs a human to answer a rename-vs-add
+ambiguity prompt, which can't happen under Railway's non-TTY
+`startCommand`. Critically, that failure was **not stopping the deploy**:
+the container started the API server anyway on whatever schema already
+existed. This has apparently been happening for a while, confirmed by real
+drift found in production: `help_requests.photo_url` exists in the Drizzle
+schema (with a comment incorrectly citing "migration 0015", which is
+actually `users.is_suspended`) but was never in a migration file and was
+missing from the live table — crashing `pledge-worker`'s daily
+reconciliation job every single run with `column "photo_url" does not
+exist`.
+
+Fixed by replacing the `migrate` script entirely: `run-migrations.mjs` is a
+plain non-interactive runner that applies `lib/db/migrations/*.sql` files
+directly via `pg`, tracked in a `_migrations_applied` table, and exits
+non-zero on real failure (so `startCommand`'s `&&` actually blocks the
+server from booting on a broken migration, instead of silently continuing).
+`push`/`push-force` remain available for local interactive dev use.
+
+One more real risk caught before shipping this: files `0000`, `0001`,
+`0002`, `0003`, `0005`, `0006` are raw, never-idempotent
+`drizzle-kit generate` output (bare `CREATE TABLE`, `ADD CONSTRAINT` with no
+`IF NOT EXISTS` — Postgres has no `ADD CONSTRAINT IF NOT EXISTS` syntax at
+all). Since production already has this schema, replaying them raw would
+have crashed the *first* deploy with the new script on "relation already
+exists" — turning a silent failure into a hard outage. Fixed by seeding
+`_migrations_applied` with everything through `0021` as already-applied
+(matches real production state) without executing it; only `0022+` actually
+run. Documented as `BASELINE_CUTOFF` in the script with a comment on why —
+bump forward over time, never backward. Also added the missing
+`0023_help_requests_photo_url.sql` migration and corrected the stale schema
+comment.
+
+**Lesson: an automated step that "usually" runs and swallows its own
+failure is worse than no automation — it looks green while drifting. Any
+migrate step needs to actually block the deploy on failure, and that
+failure mode needs to be checked, not assumed, the first time it's added.**
