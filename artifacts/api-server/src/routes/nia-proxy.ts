@@ -305,7 +305,7 @@ router.post("/nia/share-story", parseAuth, async (req: Request, res: Response) =
     if (!upstream.ok) return res.status(upstream.status).json({ error: "Failed to craft story" });
     
     // Emit nia_memory_update event when story is successfully crafted
-    const result = await upstream.json();
+    const result = await upstream.json() as { story?: string; category?: string };
     sendNiaEventToUser(userId, "nia_memory_update", { 
       type: "story_crafted", 
       story: result.story,

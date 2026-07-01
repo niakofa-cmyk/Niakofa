@@ -53,7 +53,11 @@ export const UpdateUserBody = zod.object({
   "name": zod.string().optional(),
   "avatar_url": zod.string().optional(),
   "neighborhood": zod.string().optional(),
-  "is_helper": zod.boolean().optional()
+  "is_helper": zod.boolean().optional(),
+  "city": zod.string().optional(),
+  "specialties": zod.array(zod.string()).optional(),
+  "phone_masked": zod.string().optional(),
+  "quick_replies": zod.array(zod.string()).optional()
 })
 
 export const UpdateUserResponse = zod.object({
@@ -1355,7 +1359,7 @@ export const UpdateHelperApplicationBody = zod.object({
   "helper_qualifications": zod.array(zod.string()).optional(),
   "helper_bio": zod.string().optional(),
   "helper_vehicle": zod.string().optional(),
-  "helper_social_links": zod.string().optional()
+  "helper_social_links": zod.array(zod.string()).optional()
 }).describe('User mode (no status field): submit helper_skills, helper_languages,\nhelper_qualifications, helper_bio, helper_vehicle, helper_social_links.\nAdmin mode: send status to approve\/deny an application.\n')
 
 export const UpdateHelperApplicationResponse = zod.object({

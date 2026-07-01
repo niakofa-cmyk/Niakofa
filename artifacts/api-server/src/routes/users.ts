@@ -683,7 +683,7 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
     helper_qualifications?: string[];
     helper_bio?: string;
     helper_vehicle?: string;
-    helper_social_links?: string;
+    helper_social_links?: string[];
   };
 
   const authenticatedUserId = req.authenticatedUserId;

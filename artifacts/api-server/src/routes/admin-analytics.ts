@@ -430,7 +430,7 @@ router.get("/admin/nia-cost-alert", requireAuth, requireAdmin(), adminLimiter, a
       return res.status(502).json({ error: "Failed to fetch cost data" });
     }
     
-    const costData = await response.json();
+    const costData = await response.json() as { daily?: Array<{ estimatedCostUsd?: number }> };
     const todayCost = costData.daily?.[0]?.estimatedCostUsd ?? 0;
     const isAlert = todayCost > DAILY_COST_THRESHOLD;
     

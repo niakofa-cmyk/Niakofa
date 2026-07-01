@@ -20,5 +20,5 @@ export interface HelperApplicationUpdate {
   helper_qualifications?: string[];
   helper_bio?: string;
   helper_vehicle?: string;
-  helper_social_links?: string;
+  helper_social_links?: string[];
 }

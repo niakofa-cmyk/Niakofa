@@ -1214,6 +1214,18 @@ components:
           type: string
         is_helper:
           type: boolean
+        city:
+          type: string
+        specialties:
+          type: array
+          items:
+            type: string
+        phone_masked:
+          type: string
+        quick_replies:
+          type: array
+          items:
+            type: string
 
     ChangePasswordInput:
       type: object
@@ -1482,7 +1494,9 @@ components:
         helper_vehicle:
           type: string
         helper_social_links:
-          type: string
+          type: array
+          items:
+            type: string
 
     UserRegistration:
       type: object

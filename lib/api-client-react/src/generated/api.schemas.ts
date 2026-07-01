@@ -40,6 +40,10 @@ export interface UserUpdate {
   avatar_url?: string;
   neighborhood?: string;
   is_helper?: boolean;
+  city?: string;
+  specialties?: string[];
+  phone_masked?: string;
+  quick_replies?: string[];
 }
 
 export interface ChangePasswordInput {
@@ -257,7 +261,7 @@ export interface HelperApplicationUpdate {
   helper_qualifications?: string[];
   helper_bio?: string;
   helper_vehicle?: string;
-  helper_social_links?: string;
+  helper_social_links?: string[];
 }
 
 export interface UserRegistration {

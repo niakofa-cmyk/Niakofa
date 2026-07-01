@@ -11,4 +11,8 @@ export interface UserUpdate {
   avatar_url?: string;
   neighborhood?: string;
   is_helper?: boolean;
+  city?: string;
+  specialties?: string[];
+  phone_masked?: string;
+  quick_replies?: string[];
 }
