@@ -125,7 +125,12 @@ router.post("/users/register", authLimiter, async (req, res) => {
 // whose account predates password auth got a 404 here and never received an
 // email, with no way to ever log in again. Always returns 200 regardless of
 // whether the email exists, to avoid leaking which emails are registered.
-router.post("/users/request-password-reset", authLimiter, async (req, res) => {
+// Registered under two paths: /users/request-password-reset is used by the
+// LEGACY_PASSWORD_REQUIRED auto-redirect (see /users/login above);
+// /users/forgot-password is what login.tsx's general "Forgot password?"
+// link calls. Both need the exact same behavior, so one handler serves both
+// instead of drifting into two copies.
+router.post(["/users/request-password-reset", "/users/forgot-password"], authLimiter, async (req, res) => {
   const { email } = req.body as { email?: string };
   if (!email) return res.status(400).json({ error: "Email required" });
 
@@ -151,20 +156,28 @@ router.post("/users/request-password-reset", authLimiter, async (req, res) => {
 
 // POST /users/set-initial-password — verifies the emailed code and writes a
 // real password_hash, completing the legacy-account / reset flow above.
-router.post("/users/set-initial-password", authLimiter, async (req, res) => {
+router.post(["/users/set-initial-password", "/users/reset-password"], authLimiter, async (req, res) => {
   const { user_id, email, code, new_password } = req.body as {
     user_id?: number; email?: string; code?: string; new_password?: string;
   };
-  if (!user_id || !email || !code || !new_password) {
-    return res.status(400).json({ error: "user_id, email, code, and new_password are required" });
+  if (!email || !code || !new_password) {
+    return res.status(400).json({ error: "email, code, and new_password are required" });
   }
   if (new_password.length < 8) {
     return res.status(400).json({ error: "Password must be at least 8 characters" });
   }
 
-  const [user] = await db.select().from(usersTable)
-    .where(and(eq(usersTable.id, user_id), eq(usersTable.email, email.trim().toLowerCase())))
-    .limit(1);
+  // user_id is only ever sent by the LEGACY_PASSWORD_REQUIRED flow (login.tsx
+  // has it from the /users/login response). The general "Forgot password?"
+  // flow only has email — fall back to an email-only lookup in that case.
+  // Identity is still verified by the random code + expiry check below either way.
+  const [user] = user_id
+    ? await db.select().from(usersTable)
+        .where(and(eq(usersTable.id, user_id), eq(usersTable.email, email.trim().toLowerCase())))
+        .limit(1)
+    : await db.select().from(usersTable)
+        .where(eq(usersTable.email, email.trim().toLowerCase()))
+        .limit(1);
   if (!user) return res.status(404).json({ error: "Account not found" });
 
   if (!user.password_reset_code || user.password_reset_code !== code.trim()) {
