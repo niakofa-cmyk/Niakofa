@@ -758,3 +758,22 @@ zero errors), then `npx tsc -p tsconfig.json --noEmit` inside
 gone. `pnpm-lock.yaml` updated via a real `pnpm install` (not
 `--frozen-lockfile`, which correctly rejected the run until the new
 dependency was reflected) to pick up the new `@anthropic-ai/sdk` entry.
+
+---
+
+## Incident #25 — June 30: Consolidated duplicate panic-contacts routes
+
+**Commits:** `e72372d8`
+
+Two independent `PATCH .../panic-contacts` routes existed for the same
+feature: `/users/:id/panic-contacts` (in `users.ts`) and
+`/verification/panic-contacts/:userId` (in `verification.ts`, the one fixed
+for the max-5/stale-echo bug in Incident #22). Verified repo-wide (routes,
+tests, every frontend caller) that `/users/:id/panic-contacts` had zero
+frontend callers and zero test coverage — the frontend
+(`IdentityVerificationCard.tsx`) only ever called the `/verification/*`
+one. Removed the dead route rather than leave it as a landmine that could
+silently drift from the real one again. Updated `openapi.yaml` to document
+the actually-live route instead of the dead one (also closes one more entry
+in the `/verification/*` undocumented-routes gap from the original audit),
+and added the missing `verification` tag declaration.
