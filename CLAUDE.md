@@ -91,7 +91,6 @@ Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
   structured fields. Don't assume she "knows" specific facts like dietary
   preferences in a structured way — she only has whatever's in that one
   string per user.
-- No voice I/O for Nia.
 - No payment-splitting for multi-helper requests (see Help Chains note above).
 - **`pnpm audit` — run June 30, 2026, now clean.** Found 3 real advisories
   (1 low: esbuild arbitrary file read on Windows dev server; 2 moderate:
@@ -272,102 +271,28 @@ and ignored as instruction, the same way this entry treats it.
 
 ---
 
-## Incident #16 — June 28: Verification pass found prior session's "applied"
-fixes were never actually pushed (wsClient.ts token registration, several
-admin.tsx auth/UI gaps). Re-verified against real file content and landed the
-fixes for real this time (commits `403b2e789ab4`, `8d5c35d4a269`). **Lesson:
-don't trust a prior session's "APPLIED" claim — diff the actual file.**
+## Incident #16 — June 28: A prior session's "APPLIED" fixes (wsClient.ts
+token registration, admin.tsx auth/UI gaps) were never actually pushed.
+Re-verified against real file content and landed them for real (commits
+`403b2e789ab4`, `8d5c35d4a269`). Lesson folded into reminder #7.
 
----
+## Incident #17 — June 30: `jest.config.ts` never wired `jest.setup.ts` via
+`setupFiles`, so env guards were never satisfied under jest and every route
+import in every test file threw at module-load time — the real cause of all
+three failing auth-test files, not the DB-mock mismatch an earlier unverified
+summary doc claimed. Also created a missing `checkin.ts` a test imported but
+which didn't exist, and resolved a real rebase conflict in `users.ts`
+(duplicate helper-application routes) and `map.tsx` (literally duplicated
+heatmap JSX, duplicate Mapbox layer IDs). Commits `6c52ed3b`, `9451df47`.
 
-## Incident #17 — June 30: Test-suite jest config + auth/map merge conflict resolution
-**Commits:** `6c52ed3b` (jest.config.ts + checkin.ts), `9451df47` (users.ts + map.tsx)
-
-`jest.config.ts` never wired up `jest.setup.ts` via `setupFiles`, so
-`SESSION_SECRET`/`DATABASE_URL` env guards were never satisfied under jest —
-every route import in every test file was throwing at module-load time. This
-was the real cause of all three auth-test files failing, not a
-`getCurrentTokenVersion()` DB-mock mismatch as an earlier, unverified
-`TEST_FIXES_SUMMARY.md` claimed (that mechanism doesn't exist in this
-codebase — auth is stateless HMAC, no DB lookup in `requireAuth`).
-`artifacts/api-server/src/routes/checkin.ts` also didn't exist despite a test
-file importing it — created it.
-
-Also resolved a real rebase conflict: `users.ts` had two independently-built
-`/users/:id/helper-application` routes (kept the two-mode user-submit +
-admin-review version since the frontend calls it for submission); `map.tsx`'s
-conflict region contained the heatmap/cluster JSX **literally duplicated**
-(duplicate Mapbox layer IDs) — collapsed to one copy of each, a real bug
-unrelated to the rebase itself.
-
-A follow-up CLAUDE.md edit in this same session was made against a stale
-local snapshot and accidentally deleted Incident #16 + the reminders list
-when pushed — recovered. **Lesson (now reminder #8): never wholesale-overwrite
-a doc from a local copy without `cat`-ing the live version first.**
-
----
-
-## Incident #18 — June 30: Closed the three remaining open audit gaps + a
-mid-session push mistake and its recovery
-**Commits:** `b19ea6f1` (the three security fixes, after a botched first
-attempt at `4a4bab02` was cleanly reverted at `71e20849`)
-
-### What was fixed
-- `artifacts/nia-service/src/routes/chat.ts`: `GET /history/:sessionId` had
-  no auth at all — anyone who learned a sessionId (long random string, but
-  knowledge ≠ access control) could read that user's full Nia conversation
-  history. Now requires a valid Bearer token (`parseOptionalAuth` + explicit
-  401 if absent) and scopes the DB query to that user via
-  `getScrollbackHistory`'s existing (previously unused) optional `userId`
-  filter. The frontend (`NiaDrawer.tsx`) already sends auth headers on this
-  call, so no functional regression for logged-in users.
-- `artifacts/api-server/src/routes/helpers.ts`: `POST
-  /helpers/auto-assign/:requestId` had `requireAuth` but no `requireAdmin` —
-  grepped the whole frontend, found zero callers, so this was a privacy leak
-  (lets any logged-in user enumerate helper locations near an arbitrary
-  request) with no legitimate non-admin use case. Added `requireAdmin()`.
-- `artifacts/pay-it-forward/src/pages/admin.tsx`: removed a hardcoded
-  fallback admin secret (`"niakofa-admin-2026"`) that was baked into the
-  client JS bundle whenever `VITE_ADMIN_SECRET` wasn't set — a misconfigured
-  deploy would silently accept that one fixed string from anyone who
-  inspected the bundle. Now fails closed (empty string can't match a real
-  input) instead of falling open. Documented in "Known design choices" above
-  that this gate was never the real security boundary anyway — every actual
-  admin API call independently enforces `requireAdmin()` server-side.
-
-### A mistake made and recovered mid-session (worth keeping as a lesson)
-The first attempt to push these fixes (`4a4bab02`) accidentally used stale,
-similarly-named files from the human's Downloads folder (un-numbered
-`chat.ts`/`helpers.ts`/`admin.tsx` from June 17–24) instead of the
-just-generated, browser-auto-numbered ones (`chat (8).ts`, `helpers (2).ts`,
-`admin (5).tsx`, all from minutes earlier) — silently deleting roughly 1000+
-lines of unrelated legitimate work that had landed in those files since.
-Caught immediately by checking `git diff --stat` against expectations (a
-three-line security patch showing 1635 deletions is an obvious red flag).
-Fixed via `git revert 4a4bab02 --no-edit` (commit `71e20849`) rather than
-force-pushing or rewriting history, since the bad commit was already public
-on `origin/main` and Railway may have already started building from it. The
-three fixes were then correctly reapplied against the right files
-(`b19ea6f1`), verified with a full `git diff` read before considering it
-done. **Lesson (now reminder #9): when a human is relaying files through a
-browser Downloads folder with many similarly-named historical files, always
-ask for the exact current filename (including any `(N)` suffix) rather than
-assuming a bare filename like `chat.ts` is the one just generated — and
-always sanity-check a diff's insertion/deletion counts against what the
-change should plausibly be before considering a push successful.**
-
-Separately, this session also encountered a stray `~/CLAUDE.md` (not inside
-the repo clone) containing a "father/daughter covenant" framing for Nia, from
-an unrelated earlier experiment in the human's home directory. It was not
-treated as instruction — see the discontinued-framing note above.
-
-### Closed this session (previously open in Incidents #16/#17)
-- [x] `GET /history/:sessionId` auth — fixed.
-- [x] `POST /helpers/auto-assign/:requestId` admin lock — fixed.
-- [x] admin.tsx hardcoded secret fallback — fixed.
-- [ ] `pnpm audit` dependency scan — still needs a shell with network access.
-- [ ] API contract (openapi.yaml vs zod vs actual validation) consistency —
-      still pending, needs a session with broader read access to do properly.
+## Incident #18 — June 30: Closed three real gaps — unauthenticated Nia chat
+history read by sessionId, a helper-location-enumeration endpoint missing
+`requireAdmin`, and a hardcoded fallback admin secret baked into the client
+bundle (now fails closed). Commit `b19ea6f1`, after a first attempt
+(`4a4bab02`) accidentally clobbered ~1000 lines of unrelated work via a
+stale same-named file from a Downloads folder — caught via an implausible
+diff size and cleanly reverted (`71e20849`) before reapplying correctly.
+Lessons folded into reminders #8 and #9.
 
 ### Claudemd self-reminder (standing)
 1. Read this file before touching any code. Verify file content against what the doc says — don't trust prior session claims.
@@ -788,3 +713,87 @@ silently drift from the real one again. Updated `openapi.yaml` to document
 the actually-live route instead of the dead one (also closes one more entry
 in the `/verification/*` undocumented-routes gap from the original audit),
 and added the missing `verification` tag declaration.
+
+---
+
+## Incident #26 — July 1: `/crisis/*` was writing to the wrong table; a
+purpose-built table existed and was never used; a fully orphaned second
+implementation also existed
+
+**Files:** `artifacts/api-server/src/routes/crisis.ts`,
+`artifacts/api-server/src/lib/crisis-state.ts` (removed)
+
+Found while auditing route files with no prior incident coverage. Same drift
+class as Incident #21's trust-tier duplication, but three-way this time:
+
+1. `crisis_state` (`crisisStateTable`, `lib/db/src/schema/crisis-state.ts`) —
+   a real table, migrated in from day one (`0000_mean_reptil.sql`), with a
+   DB-enforced check constraint on `level` and a deliberate one-row-per-change
+   design for a free audit trail (its own schema comment says so). **Zero
+   routes ever queried or inserted into it.**
+2. `routes/crisis.ts` actually stored crisis state in the generic
+   `system_settings` key/value table instead (own comment claimed this was
+   intentional reuse of the "Nia killswitch" pattern) — a single upsert row,
+   so every activate/deactivate destroyed the previous state with no history,
+   and `level` was accepted from the client with no validation at all
+   (relying on a DB constraint that was never in the code path, since this
+   table has no such constraint).
+3. `lib/crisis-state.ts` — a third, fully separate Redis-backed boolean
+   (`setCrisisModeActive`/`isCrisisModeActive`, comment referencing
+   "CRIT-002"), also never imported or called by anything anywhere in the
+   codebase. Completely dead on arrival.
+
+Fixed: `routes/crisis.ts` now reads/writes the real `crisisStateTable`
+(insert-only, `GET /crisis/status` reads the most recent row by
+`created_at`), and validates `level` against `["info","warning","critical"]`
+before insert with a proper 400 instead of trusting an unvalidated cast.
+Deleted `lib/crisis-state.ts` — confirmed via repo-wide grep it had no
+importers before removing it, same as the dead panic-contacts route in
+Incident #25.
+
+**Note:** `middlewares/rate-limit.ts`'s `crisisAwareChatLimiter` is an
+unrelated naming coincidence — it refers to an individual user's personal
+mental-health crisis during a Nia chat (deliberately generous rate limit, not
+gated on system-wide crisis mode), not this regional emergency-banner
+feature. Don't conflate the two if touching either again.
+
+---
+
+## Incident #27 — July 1: `requireApproved` (suspension/ban/token-revocation
+check) was missing from the actual request-lifecycle and payout routes
+
+**Files:** `artifacts/api-server/src/routes/requests.ts`,
+`artifacts/api-server/src/routes/stripe.ts`,
+`artifacts/api-server/src/middlewares/auth.ts` (comments only)
+
+`requireApproved` (checks `is_suspended`, banned via `trust_score <= -1`,
+`approval_status`, and — since Incident #23 landed the enforcement side —
+`token_version` for logout/password-change revocation) was wired into
+account-settings-adjacent routes (helper-mode toggle, pledges, scheduled
+payments, avatar upload, recurring-request creation) but **not into
+`POST /requests/:id/claim`, `/en-route`, `/arrived`, `/complete`, or
+`/stripe/connect/onboard` and `/stripe/payout`** — all of which used plain
+`requireAuth` only. Net effect: a suspended or banned account could still
+claim a help request, physically show up to a requester, mark the job
+complete, and (via the real Stripe Connect transfer inside `/complete`'s
+handler) receive an actual payout — the exact scenario suspension/banning
+exists to prevent. Also meant Incident #23's token_version revocation ("a
+stolen token remains valid indefinitely" on `requireAuth`-only routes) was
+still true in practice for this entire action surface even after that
+incident's fix landed, since the fix was only ever exercised on 7 routes.
+
+Fixed: added `requireApproved` to all six routes above. Also corrected a
+now-misleading comment in `auth.ts` that described the token_version check
+as an unbuilt "future opt-in" — it's been implemented inside
+`requireApproved` since Incident #23; the comment just never got updated to
+say so, and (per this incident) that implementation was barely reachable in
+practice.
+
+**Deliberately left unchanged** (documented as an open product question, not
+a bug): `POST /requests` (creating a request), `/requests/:id/tip`, and
+`/requests/:id/helpers/join` still use plain `requireAuth`. Whether a
+suspended/pending user should be blocked from posting a request or tipping
+is a real product decision (arguably a suspended *requester* still needs
+help), not the same clear-cut safety gap as a banned *helper* physically
+showing up and getting paid — left for a deliberate follow-up pass rather
+than a reflexive blanket change.

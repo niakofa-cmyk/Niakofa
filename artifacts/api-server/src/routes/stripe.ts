@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth } from "../middlewares/auth";
+import { requireAuth, requireApproved } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
 import Stripe from "stripe";
 import { db, stripeAccountsTable, paymentTransactionsTable, usersTable, requestsTable, transactionsTable } from "@workspace/db";
@@ -307,7 +307,11 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
 });
 
 // ── STRIPE CONNECT ONBOARDING ───────────────────────────────────────────────
-router.post("/stripe/connect/onboard", requireAuth, requireOwnership("userId"), paymentLimiter, async (req, res) => {
+// BUG FIX (same audit finding as requests.ts's claim/complete gap): a
+// suspended or banned user could previously still start Stripe Connect
+// onboarding (identity + bank account collection) and receive payouts.
+// Added requireApproved.
+router.post("/stripe/connect/onboard", requireAuth, requireApproved, requireOwnership("userId"), paymentLimiter, async (req, res) => {
   if (!stripeRequired(res)) return;
 
   const { userId } = req.body as { userId: number };
@@ -441,7 +445,8 @@ router.get("/stripe/payment-transactions/:userId", requireAuth, requireOwnership
 });
 
 // ── PAYOUT TO HELPER (called after request completion) ─────────────────────
-router.post("/stripe/payout", requireAuth, requireOwnership("helperId"), paymentLimiter, async (req, res) => {
+// BUG FIX: same gap as connect/onboard above — added requireApproved.
+router.post("/stripe/payout", requireAuth, requireApproved, requireOwnership("helperId"), paymentLimiter, async (req, res) => {
   if (!stripeRequired(res)) return;
 
   const { helperId, amount, description, requestId } = req.body as {

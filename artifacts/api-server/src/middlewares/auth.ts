@@ -18,12 +18,16 @@ import { eq } from "drizzle-orm";
  * user as anonymous. This format now matches nia-service's parser exactly;
  * nia-service required no changes.
  *
- * tokenVersion is carried in the token but — same deliberate tradeoff as
- * before — is NOT checked against the DB by this stateless verifyToken (that
- * would require a DB lookup on every authenticated request). It's there so a
- * future opt-in check (e.g. inside requireApproved, which already does a
- * per-request DB lookup) can start enforcing "logout everywhere" /
- * password-change revocation without another format migration.
+ * tokenVersion is carried in the token but is NOT checked against the DB by
+ * this stateless verifyToken() itself (that would require a DB lookup on
+ * every authenticated request, defeating the point of a stateless token).
+ * It IS enforced by requireApproved() below, which already does a per-
+ * request DB lookup for suspension/ban/approval checks and piggybacks the
+ * token_version comparison onto that same query — so "logout everywhere"
+ * and password-change revocation work today on any route that uses
+ * requireApproved. Routes using plain requireAuth (no requireApproved) do
+ * NOT get this check — see the audit note on requireApproved's own docstring
+ * below for which routes that currently leaves out.
  *
  * SERVER STARTUP GUARD
  * SESSION_SECRET must be set before this module is loaded.
@@ -120,7 +124,24 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 }
 
 /** Express middleware — rejects with 403 if user account is suspended, banned,
- *  or not yet approved (approval_status !== "approved"). Must run after requireAuth. */
+ *  or not yet approved (approval_status !== "approved"), and rejects with 401
+ *  if the token's embedded token_version doesn't match the DB (logout /
+ *  password-change revocation). Must run after requireAuth.
+ *
+ *  AUDIT NOTE (2026-07-01): this is intentionally not applied to every
+ *  requireAuth route (e.g. read-only GETs shouldn't force a DB round trip),
+ *  but was found completely missing from the request-lifecycle actions
+ *  where it matters most — a suspended/banned/unapproved user could claim,
+ *  mark en-route/arrived, and complete requests, and could start Stripe
+ *  Connect onboarding and trigger payouts. Added to those routes this
+ *  session (requests.ts claim/en-route/arrived/complete, stripe.ts
+ *  connect/onboard and payout). POST /requests (creating a request),
+ *  /requests/:id/tip, and /requests/:id/helpers/join were NOT changed this
+ *  session — creating a request or tipping isn't a physical-safety or
+ *  payout-triggering action the same way claiming/completing is, so
+ *  whether those should also require full approval is a product decision,
+ *  not obviously a bug. Worth a deliberate pass, not a reflexive blanket
+ *  addition. */
 export async function requireApproved(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (!req.authenticatedUserId) {
     res.status(401).json({ error: "Unauthorized — valid Bearer token required" });

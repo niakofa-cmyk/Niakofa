@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth } from "../middlewares/auth";
+import { requireAuth, requireApproved } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
 import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
@@ -318,7 +318,17 @@ router.patch("/requests/:id", requireAuth, async (req, res) => {
 // action this consequential. requireOwnership("helper_id") used to guard
 // against exactly this, by checking body.helper_id === authenticatedUserId
 // — safe, but a roundabout way to express "act as yourself."
-router.post("/requests/:id/claim", requireAuth, async (req, res) => {
+// BUG FIX (found during audit, unrelated to Incident #23 that added
+// requireApproved's enforcement logic): requireApproved existed and is
+// wired into account-settings routes (helper-mode toggle, pledges, avatar),
+// but was never applied to the actual request-lifecycle actions — the ones
+// where a suspended, banned, or never-approved user physically interacts
+// with a requester and (on completion) receives a real Stripe payout. A
+// suspended/banned account could previously still claim, mark en-route,
+// mark arrived, and complete requests, bypassing the entire point of
+// is_suspended/trust_score-ban/approval_status. Added requireApproved to
+// all four lifecycle transitions below.
+router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = ClaimRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -333,7 +343,7 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/en-route", requireAuth, async (req, res) => {
+router.post("/requests/:id/en-route", requireAuth, requireApproved, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -347,7 +357,7 @@ router.post("/requests/:id/en-route", requireAuth, async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/arrived", requireAuth, async (req, res) => {
+router.post("/requests/:id/arrived", requireAuth, requireApproved, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = MarkArrivedParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -361,7 +371,7 @@ router.post("/requests/:id/arrived", requireAuth, async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/complete", requireAuth, async (req, res) => {
+router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = CompleteRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = CompleteRequestBody.safeParse(req.body);
