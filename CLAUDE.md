@@ -711,3 +711,50 @@ to production without ever surfacing them.
     name up front (e.g. a short version suffix: `openapi_v5.yaml`,
     `users_v9.ts`) so there is never an ambiguous `(N)` to guess at, and the
     file the human downloads is unambiguously the one just generated.
+
+---
+
+## Incident #24 — June 30: Closed all 21 open `tsc` findings from Incident #23
+
+**Commits:** `977f6ce1`
+
+- `UserUpdate` (openapi.yaml) was missing `city`, `specialties`,
+  `phone_masked`, `quick_replies` — `PATCH /users/:id` had a fully-written,
+  privilege-escalation-safe allowlist for these four fields (comment
+  `BUG-5-H02` explicitly names them as "Extended profile fields"), but zod
+  silently stripped them before the handler ever saw them since the schema
+  never defined them. **A user could not update city, specialties, phone,
+  or quick replies via this endpoint at all, with no error returned.**
+  Added all four to the schema with the correct types matching the real DB
+  columns (`text`, `text[]`, `text`, `text[]`).
+- `helper_social_links` was typed `string` (singular) in both the route's
+  manual body-type assertion and `HelperApplicationUpdate` in the spec,
+  while the DB column is `text().array()` and every sibling field
+  (`helper_languages`, `helper_qualifications`) was correctly `string[]` —
+  a copy-paste miss on this one field. Fixed both.
+- `requests.ts`: 8 call sites doing `parseInt(req.params.id)` where
+  `req.params.id` types as `string | string[]`. Wrapped all 8 in
+  `String(...)`, matching the pattern already used elsewhere
+  (`requireOwnership`).
+- `checkin.ts` imports `@anthropic-ai/sdk`, which was never declared as a
+  dependency of `artifacts/api-server` (only `nia-service` has it) — pnpm's
+  strict per-package resolution means this would fail to resolve the moment
+  the module is loaded. Confirmed via `routes/index.ts` that `checkin.ts`
+  isn't currently mounted into the live route tree (dead code today, exists
+  only for a test file's import per Incident #17), which is why this hasn't
+  crashed the running server — but the test suite importing it was very
+  likely failing on this exact "Cannot find module" error, and the app would
+  crash on boot the moment anyone wires this route in for real. Added the
+  dependency (`^0.24.0`, matching `nia-service`'s version) rather than
+  leaving the landmine in place.
+- `admin-analytics.ts` and `nia-proxy.ts`: two untyped
+  `await response.json()` results (Node's built-in fetch types this as
+  `unknown`, not `any`). Added explicit type assertions for the actual
+  shapes being accessed instead of leaving them as bare `unknown`.
+
+Verified end-to-end: `pnpm run codegen` clean (both projects, `tsc --build`
+zero errors), then `npx tsc -p tsconfig.json --noEmit` inside
+`artifacts/api-server` directly — zero output, all 21 original findings
+gone. `pnpm-lock.yaml` updated via a real `pnpm install` (not
+`--frozen-lockfile`, which correctly rejected the run until the new
+dependency was reflected) to pick up the new `@anthropic-ai/sdk` entry.
