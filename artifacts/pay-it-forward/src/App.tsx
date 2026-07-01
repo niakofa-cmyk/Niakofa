@@ -64,7 +64,10 @@ function NiaGlobal() {
   }, []);
 
   // Hide on screens where Nia FAB would conflict with layout
-  const hideNiaFab = isAdmin || isOnboarding || isStripeConnected;
+  // isMap included: map screen's TopBar already renders its own Nia orb
+  // (wired to window.openNia) — without this, the fixed-position FAB below
+  // stacks on top of it, producing two visible orbs on the map screen.
+  const hideNiaFab = isAdmin || isOnboarding || isStripeConnected || isMap;
   if (!niaEnabled || hideNiaFab) return null;
 
   return (
