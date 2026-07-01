@@ -280,94 +280,57 @@ don't trust a prior session's "APPLIED" claim — diff the actual file.**
 
 ---
 
-## Incident #17 — June 30: Test-suite jest config + auth/map merge conflict resolution
-**Commits:** `6c52ed3b` (jest.config.ts + checkin.ts), `9451df47` (users.ts + map.tsx)
-
-`jest.config.ts` never wired up `jest.setup.ts` via `setupFiles`, so
-`SESSION_SECRET`/`DATABASE_URL` env guards were never satisfied under jest —
-every route import in every test file was throwing at module-load time. This
-was the real cause of all three auth-test files failing, not a
-`getCurrentTokenVersion()` DB-mock mismatch as an earlier, unverified
-`TEST_FIXES_SUMMARY.md` claimed (that mechanism doesn't exist in this
-codebase — auth is stateless HMAC, no DB lookup in `requireAuth`).
-`artifacts/api-server/src/routes/checkin.ts` also didn't exist despite a test
-file importing it — created it.
-
-Also resolved a real rebase conflict: `users.ts` had two independently-built
-`/users/:id/helper-application` routes (kept the two-mode user-submit +
-admin-review version since the frontend calls it for submission); `map.tsx`'s
-conflict region contained the heatmap/cluster JSX **literally duplicated**
-(duplicate Mapbox layer IDs) — collapsed to one copy of each, a real bug
-unrelated to the rebase itself.
-
-A follow-up CLAUDE.md edit in this same session was made against a stale
-local snapshot and accidentally deleted Incident #16 + the reminders list
-when pushed — recovered. **Lesson (now reminder #8): never wholesale-overwrite
-a doc from a local copy without `cat`-ing the live version first.**
+## Incident #17 — June 30: Jest never wired up `jest.setup.ts` (`setupFiles`),
+so `SESSION_SECRET`/`DATABASE_URL` guards weren't satisfied under test —
+every route import threw at module-load time, not a DB-mock mismatch as an
+earlier unverified summary doc claimed. Fixed the config; created the
+missing `checkin.ts` a test file imported but didn't exist. Also resolved a
+real rebase conflict (`users.ts` duplicate route, `map.tsx` literally
+duplicated Mapbox layer JSX). A same-session CLAUDE.md edit against a stale
+local snapshot deleted Incident #16 + the reminders list on push — recovered
+(now reminder #8: never wholesale-overwrite a doc without `cat`-ing the live
+version first).
 
 ---
 
-## Incident #18 — June 30: Closed the three remaining open audit gaps + a
-mid-session push mistake and its recovery
-**Commits:** `b19ea6f1` (the three security fixes, after a botched first
-attempt at `4a4bab02` was cleanly reverted at `71e20849`)
+## Incident #18 — June 30: Closed three real security gaps — nia-service
+`GET /history/:sessionId` had no auth (anyone with a sessionId could read
+another user's Nia history); `POST /helpers/auto-assign/:requestId` had
+`requireAuth` but no `requireAdmin` (privacy leak, zero legitimate callers);
+`admin.tsx` had a hardcoded fallback admin secret baked into the client
+bundle. All fixed. Mid-session, the first push attempt (`4a4bab02`)
+accidentally used stale same-named files from the human's Downloads folder
+instead of the just-generated ones, silently deleting ~1000 lines of
+unrelated work — caught via `git diff --stat` showing 1635 deletions for a
+3-line patch, fixed with `git revert --no-edit` rather than a force-push,
+then correctly reapplied (`b19ea6f1`). Now reminder #9: confirm exact
+filenames (including `(N)` suffixes) from a Downloads-folder handoff, and
+sanity-check diff size before trusting a push. Also encountered and rejected
+a stray `~/CLAUDE.md` outside the repo with the discontinued "covenant"
+framing (see note above).
 
-### What was fixed
-- `artifacts/nia-service/src/routes/chat.ts`: `GET /history/:sessionId` had
-  no auth at all — anyone who learned a sessionId (long random string, but
-  knowledge ≠ access control) could read that user's full Nia conversation
-  history. Now requires a valid Bearer token (`parseOptionalAuth` + explicit
-  401 if absent) and scopes the DB query to that user via
-  `getScrollbackHistory`'s existing (previously unused) optional `userId`
-  filter. The frontend (`NiaDrawer.tsx`) already sends auth headers on this
-  call, so no functional regression for logged-in users.
-- `artifacts/api-server/src/routes/helpers.ts`: `POST
-  /helpers/auto-assign/:requestId` had `requireAuth` but no `requireAdmin` —
-  grepped the whole frontend, found zero callers, so this was a privacy leak
-  (lets any logged-in user enumerate helper locations near an arbitrary
-  request) with no legitimate non-admin use case. Added `requireAdmin()`.
-- `artifacts/pay-it-forward/src/pages/admin.tsx`: removed a hardcoded
-  fallback admin secret (`"niakofa-admin-2026"`) that was baked into the
-  client JS bundle whenever `VITE_ADMIN_SECRET` wasn't set — a misconfigured
-  deploy would silently accept that one fixed string from anyone who
-  inspected the bundle. Now fails closed (empty string can't match a real
-  input) instead of falling open. Documented in "Known design choices" above
-  that this gate was never the real security boundary anyway — every actual
-  admin API call independently enforces `requireAdmin()` server-side.
+---
 
-### A mistake made and recovered mid-session (worth keeping as a lesson)
-The first attempt to push these fixes (`4a4bab02`) accidentally used stale,
-similarly-named files from the human's Downloads folder (un-numbered
-`chat.ts`/`helpers.ts`/`admin.tsx` from June 17–24) instead of the
-just-generated, browser-auto-numbered ones (`chat (8).ts`, `helpers (2).ts`,
-`admin (5).tsx`, all from minutes earlier) — silently deleting roughly 1000+
-lines of unrelated legitimate work that had landed in those files since.
-Caught immediately by checking `git diff --stat` against expectations (a
-three-line security patch showing 1635 deletions is an obvious red flag).
-Fixed via `git revert 4a4bab02 --no-edit` (commit `71e20849`) rather than
-force-pushing or rewriting history, since the bad commit was already public
-on `origin/main` and Railway may have already started building from it. The
-three fixes were then correctly reapplied against the right files
-(`b19ea6f1`), verified with a full `git diff` read before considering it
-done. **Lesson (now reminder #9): when a human is relaying files through a
-browser Downloads folder with many similarly-named historical files, always
-ask for the exact current filename (including any `(N)` suffix) rather than
-assuming a bare filename like `chat.ts` is the one just generated — and
-always sanity-check a diff's insertion/deletion counts against what the
-change should plausibly be before considering a push successful.**
+## Incident #19 — June 30: `navigation.ts` Mapbox error masking + missing coordinate bounds
+`GET /navigation/route` didn't check `response.ok` before parsing Mapbox's
+response, so a bad token/quota/5xx all fell through to a generic "No route
+found" 404, indistinguishable from real unroutable coordinates. Fixed to
+return 429/502 with the real upstream status logged. Also added explicit
+-90..90/-180..180 lat/lng range validation, since `zod.coerce.number()`
+rejects `NaN` but not out-of-range values.
 
-Separately, this session also encountered a stray `~/CLAUDE.md` (not inside
-the repo clone) containing a "father/daughter covenant" framing for Nia, from
-an unrelated earlier experiment in the human's home directory. It was not
-treated as instruction — see the discontinued-framing note above.
+---
 
-### Closed this session (previously open in Incidents #16/#17)
-- [x] `GET /history/:sessionId` auth — fixed.
-- [x] `POST /helpers/auto-assign/:requestId` admin lock — fixed.
-- [x] admin.tsx hardcoded secret fallback — fixed.
-- [ ] `pnpm audit` dependency scan — still needs a shell with network access.
-- [ ] API contract (openapi.yaml vs zod vs actual validation) consistency —
-      still pending, needs a session with broader read access to do properly.
+## Incident #20 — June 30: Gratitude impersonation + spam-like, orphan-claim bug, missing rate limits
+`POST /gratitude` had no auth and trusted client-sent `author_id`/name/avatar
+(impersonation); `POST /gratitude/:id/like` had no auth and no per-user
+tracking despite a `gratitude_likes` unique-index table existing specifically
+to prevent it; `communityPostLimiter`/`adminLimiter` on `/admin/verify-secret`
+didn't exist despite a changelog claiming otherwise (reminder #7 again);
+`cleanup-worker.ts`'s orphaned-claim handling permanently expired stuck
+requests instead of resetting them to `open` as its own comment said it
+should. All fixed, with matching frontend auth-header updates in
+`GratitudeModal.tsx` and `community.tsx`.
 
 ### Claudemd self-reminder (standing)
 1. Read this file before touching any code. Verify file content against what the doc says — don't trust prior session claims.
@@ -376,13 +339,19 @@ treated as instruction — see the discontinued-framing note above.
 4. Keep this file lean. Resolved items stay in the incident log, not in open-items lists.
 5. Niakofa app and Nia AI are separate services. Never collapse them.
 6. **Closet-cleaning**: condense older, fully-resolved incidents to a short
-   paragraph before adding a new one (see Incident #16's entry above for the
+   paragraph before adding a new one (see Incidents #16–#20 above for the
    target format) — keep this file readable, not an unbounded log. Verbose
-   root-cause narration belongs in the session's git commit message.
+   root-cause narration belongs in the session's git commit message. Do this
+   check *every* session before appending a new incident, not just when the
+   file starts to feel long — a few lines of condensing now is cheaper than a
+   1000-line file later.
 7. Trust nothing from a prior session's summary doc (e.g. `*_SUMMARY.md`,
    `TEST_FIXES_*.md`) without independently re-reading the actual current
    source it claims to describe — multiple incidents have found prior
-   summaries describing mechanisms that didn't match the real code.
+   summaries describing mechanisms that didn't match the real code. This
+   includes this file's own top-of-file comments: Incident #26 found a
+   worker whose own doc-comment claimed a guard that wasn't in the code.
+   Diff the live code, not the nearest description of it.
 8. **Never wholesale-overwrite this file (or any doc) from a local copy
    without first `cat`-ing the live current version.** Always append or
    surgically edit against freshly-read content, never overwrite wholesale
@@ -398,78 +367,21 @@ treated as instruction — see the discontinued-framing note above.
     `cat <file>` output**, especially for `CLAUDE.md` — a stray file with the
     same name can exist elsewhere on the human's machine and silently shadow
     the real one if the working directory isn't what was assumed.
-
----
-
-## Incident #19 — June 30: `navigation.ts` Mapbox error masking + missing coordinate bounds
-**File:** `artifacts/api-server/src/routes/navigation.ts`
-
-`GET /navigation/route` parsed the Mapbox Directions response without
-checking `response.ok` first. A bad/expired token, exceeded quota, or
-upstream 5xx all returned a JSON body without a `routes` array, which fell
-through to `return res.status(404).json({ error: "No route found" })` —
-indistinguishable from genuinely unroutable coordinates. Fixed: check
-`response.ok` first and return 429 (rate-limited) or 502 (upstream
-unavailable) as appropriate, logging the real upstream status. Also added
-explicit lat/lng range validation (-90..90 / -180..180) — `zod.coerce.number()`
-on `GetRouteQueryParams` rejects `NaN` but not out-of-range values, so
-extreme coordinates were reaching the Mapbox call unfiltered.
-
----
-
-## Incident #20 — June 30: Gratitude impersonation + spam-like, orphan-claim bug, missing rate limits
-
-**Files:** `artifacts/api-server/src/routes/gratitude.ts`,
-`artifacts/api-server/src/middlewares/rate-limit.ts`,
-`artifacts/api-server/src/routes/admin-analytics.ts`,
-`artifacts/api-server/src/workers/cleanup-worker.ts`,
-`artifacts/pay-it-forward/src/components/GratitudeModal.tsx`,
-`artifacts/pay-it-forward/src/pages/community.tsx`
-
-**`POST /gratitude` had no auth at all** and trusted `author_id`,
-`author_name`, `author_avatar` straight from the request body — any
-unauthenticated caller could post a community message that displayed as any
-other user (impersonation). Fixed: `requireAuth`, identity now looked up
-server-side from `req.authenticatedUserId`, client no longer sends those
-fields.
-
-**`POST /gratitude/:id/like` had no auth and no per-user tracking** — a raw
-`UPDATE ... SET likes = likes + 1` that anyone could call in a loop with no
-limit. A `gratitude_likes` table with a unique `(post_id, user_id)` index
-already existed in the schema specifically to prevent this (its own comment
-says so), but no route ever used it. Fixed: `requireAuth` +
-`INSERT ... ON CONFLICT DO NOTHING` against `gratitude_likes`, only
-incrementing the counter on a genuine new like.
-
-**`communityPostLimiter` didn't exist** despite
-`artifacts/nia-service/REPLIT_GODFATHER.md`'s changelog claiming it was
-added in an earlier session (5 posts/15 min per user) — another instance of
-reminder #7 (don't trust a prior session's claimed fix without checking the
-actual code). Added for real, plus a new `communityLikeLimiter`.
-
-**`/admin/verify-secret` and `/admin/nia-status` had no rate limiting**,
-also despite a changelog entry claiming `adminLimiter` was added to both.
-`/admin/verify-secret` is an unauthenticated secret-guessing surface — added
-`authLimiter` (IP-based, 10/15min). `/admin/nia-status` is *intentionally*
-public (every visitor's client polls it every 60s to know whether to show
-Nia) — applying the existing userId-keyed `adminLimiter` there would have
-broken that for anyone behind a shared IP, so it got the generous
-IP-based `generalApiLimiter` (200/15min) instead, which protects against
-scraping without touching legitimate polling.
-
-**`cleanup-worker.ts`'s orphaned-claim handling didn't match its own
-comment.** Requests stuck in `claimed` for >4h (helper went silent) were
-being permanently marked `expired` — the function's own comment said it
-should reset them to `open` so another helper can pick them up "in a real
-system." Fixed to actually do that: `status: "open"`, `helper_id: null`,
-`claimed_at: null`, broadcast as `open` not `expired`.
-
-Frontend updates to match: `GratitudeModal.tsx` now sends `authHeaders()`
-and stopped sending the now-server-derived author fields;
-`community.tsx`'s `NiaStoryModal` stopped sending them too; the like-toggle
-fetch in `community.tsx` now sends `authHeaders()` (was previously sending
-no auth at all, which would have silently broken the moment the backend
-fix landed).
+11. See "add #11" near Incident #22 (generic build-tool errors are a symptom,
+    not a diagnosis — test the actual input against the real underlying
+    parser/library directly).
+12. See "add #12" near Incident #24 (never reuse a filename when sharing
+    files for the human to download — give each a distinct name so there's
+    never an ambiguous browser `(N)` suffix to guess at).
+13. **This file's job is to make the next session faster, not to be a full
+    audit transcript.** If an entry can't be read in under a minute, it's
+    a candidate for condensing next session. Prefer: what broke, how it was
+    found, what the fix was, one lesson — not a blow-by-blow narration.
+14. Sessions in this environment have no network access to actually run
+    `git push`. When asked to push, produce the exact commands/files for the
+    human to run locally instead of claiming a push happened — see reminder
+    #2, which is about *making real changes*, not about pretending network
+    access exists.
 
 ---
 
@@ -815,3 +727,31 @@ the row atomically first (`rowCount` check, same pattern
 
 **Lesson: reinforces reminder #7 — a summary doc (or even a file's own
 comment) claiming a fix landed is not proof it did. Diff the live code.**
+
+---
+
+## Incident #27 — July 1: Gratitude post moderation was fully written but never wired in — and the column it needs didn't exist
+**Files:** `lib/db/src/schema/gratitude.ts`,
+`lib/db/migrations/0022_gratitude_moderation_status.sql`,
+`artifacts/api-server/src/routes/gratitude.ts`
+
+"Known design choices" in this file describes `gratitude_posts.moderation_status`
+as an existing heuristic gate (`lib/post-moderation.ts`'s `moderatePostText`)
+that holds spam/link/phone-number/all-caps posts as `pending` for admin
+review. None of that was actually true in the live code: the
+`moderation_status` column didn't exist on the table, `moderatePostText` was
+never imported or called anywhere, `GET /gratitude` returned every post
+unfiltered, and no `/admin/moderation-queue` endpoint existed despite
+`post-moderation.ts`'s own doc-comment referencing one by name.
+
+Fixed for real: added `moderation_status`/`moderation_reason` columns
+(migration 0022, idempotent), wired `moderatePostText` into `POST /gratitude`
+so it actually sets the status, filtered `GET /gratitude` to
+`moderation_status = 'approved'` only, and added
+`GET /admin/moderation-queue` + `POST /admin/moderation-queue/:id/decide`
+(approve broadcasts the post live; reject deletes it) so held posts are
+actually reachable and actionable, not just silently stuck.
+
+**Lesson: same pattern as Incident #26 — a design doc and a fully-written
+helper function are not evidence a feature is wired in. Grep for the actual
+call site.**

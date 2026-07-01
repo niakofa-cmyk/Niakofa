@@ -4,7 +4,9 @@ import { desc, eq, sql, and, gte } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { z } from "zod";
 import { requireAuth } from "../middlewares/auth";
-import { communityPostLimiter, communityLikeLimiter } from "../middlewares/rate-limit";
+import { requireAdmin } from "../middlewares/authz";
+import { communityPostLimiter, communityLikeLimiter, adminLimiter } from "../middlewares/rate-limit";
+import { moderatePostText } from "../lib/post-moderation";
 
 const router = Router();
 
@@ -21,13 +23,57 @@ const CreateGratitudeBody = z.object({
 });
 
 // ── GET /gratitude — latest 50 posts for Community feed ───────────────────────
+// Only "approved" posts are public. lib/post-moderation.ts's heuristic (run
+// at write time in POST /gratitude below) holds spam/link/phone-number/
+// all-caps matches as "pending" until an admin reviews them via
+// GET/POST /admin/moderation-queue — this filter is what actually makes that
+// hold meaningful; without it, pending posts were visible to everyone anyway.
 router.get("/gratitude", async (_req, res) => {
   const posts = await db
     .select()
     .from(gratitudePostsTable)
+    .where(eq(gratitudePostsTable.moderation_status, "approved"))
     .orderBy(desc(gratitudePostsTable.created_at))
     .limit(50);
   return res.json(posts);
+});
+
+// ── GET /admin/moderation-queue — posts held for review ───────────────────────
+router.get("/admin/moderation-queue", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const posts = await db
+    .select()
+    .from(gratitudePostsTable)
+    .where(eq(gratitudePostsTable.moderation_status, "pending"))
+    .orderBy(desc(gratitudePostsTable.created_at))
+    .limit(100);
+  return res.json(posts);
+});
+
+// ── POST /admin/moderation-queue/:id/decide — approve or reject a held post ──
+const ModerationDecisionBody = z.object({ decision: z.enum(["approve", "reject"]) });
+
+router.post("/admin/moderation-queue/:id/decide", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const parsed = ModerationDecisionBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "decision must be 'approve' or 'reject'" });
+
+  if (parsed.data.decision === "reject") {
+    const [deleted] = await db.delete(gratitudePostsTable).where(eq(gratitudePostsTable.id, id)).returning();
+    if (!deleted) return res.status(404).json({ error: "Post not found" });
+    return res.json({ ok: true, id, decision: "reject" });
+  }
+
+  const [approved] = await db
+    .update(gratitudePostsTable)
+    .set({ moderation_status: "approved", moderation_reason: null })
+    .where(eq(gratitudePostsTable.id, id))
+    .returning();
+  if (!approved) return res.status(404).json({ error: "Post not found" });
+
+  // Now that it's approved, surface it to the live Community feed.
+  broadcast({ type: "new_gratitude", payload: approved });
+  return res.json({ ok: true, id, decision: "approve", post: approved });
 });
 
 // ── POST /gratitude — create a new thank-you post ────────────────────────────
@@ -51,11 +97,18 @@ router.post("/gratitude", requireAuth, communityPostLimiter, async (req, res) =>
     .limit(1);
   if (!author) return res.status(401).json({ error: "User not found" });
 
+  // Deterministic write-time moderation screen (lib/post-moderation.ts).
+  // Spam/link/phone-number/all-caps matches are held as "pending" instead
+  // of going straight to the public feed.
+  const moderation = moderatePostText(parsed.data.message);
+
   const data = {
     ...parsed.data,
     author_id: authorId,
     author_name: author.name,
     author_avatar: author.avatar_url,
+    moderation_status: moderation.status,
+    moderation_reason: moderation.reason,
   };
 
   // ── GRATITUDE DUPLICATION PREVENTION ────────────────────────────────────────
@@ -90,8 +143,11 @@ router.post("/gratitude", requireAuth, communityPostLimiter, async (req, res) =>
     .values(data)
     .returning();
 
-  // Push to all connected clients — Community feed updates live
-  broadcast({ type: "new_gratitude", payload: post });
+  // Only broadcast to the live Community feed if it cleared moderation —
+  // pending posts stay invisible until an admin approves them.
+  if (post.moderation_status === "approved") {
+    broadcast({ type: "new_gratitude", payload: post });
+  }
 
   return res.status(201).json(post);
 });

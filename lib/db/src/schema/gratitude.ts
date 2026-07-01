@@ -26,6 +26,14 @@ export const gratitudePostsTable = pgTable("gratitude_posts", {
   // Simple heart-count (no per-user tracking needed for MVP)
   likes: integer("likes").notNull().default(0),
 
+  // Set at write time by lib/post-moderation.ts's deterministic heuristic
+  // (spam/link/phone-number/all-caps patterns → "pending", otherwise
+  // "approved"). "pending" posts are excluded from the public GET /gratitude
+  // feed and from the new-post broadcast until an admin approves them via
+  // GET/POST /admin/moderation-queue.
+  moderation_status: text("moderation_status").notNull().default("approved"),
+  moderation_reason: text("moderation_reason"),
+
   created_at: timestamp("created_at").defaultNow().notNull(),
 });
 
