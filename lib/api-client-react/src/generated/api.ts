@@ -65,6 +65,7 @@ import type {
   Transaction,
   UpdateHelperAvailability200,
   UpdateHelperAvailabilityInput,
+  UpdatePanicContacts200,
   UpdatePanicContactsInput,
   UpdateUserAvatarInput,
   User,
@@ -2995,21 +2996,21 @@ export const useUpdateUserSettings = <TError = ErrorType<unknown>,
       return useMutation(getUpdateUserSettingsMutationOptions(options));
     }
 
-export const getUpdatePanicContactsUrl = (id: number,) => {
+export const getUpdatePanicContactsUrl = (userId: number,) => {
 
 
 
 
-  return `/api/users/${id}/panic-contacts`
+  return `/api/verification/panic-contacts/${userId}`
 }
 
 /**
- * @summary Update emergency/panic contacts (max 5)
+ * @summary Update emergency/panic contacts (max 5) — the route the frontend actually calls
  */
-export const updatePanicContacts = async (id: number,
-    updatePanicContactsInput: UpdatePanicContactsInput, options?: RequestInit): Promise<User> => {
+export const updatePanicContacts = async (userId: number,
+    updatePanicContactsInput: UpdatePanicContactsInput, options?: RequestInit): Promise<UpdatePanicContacts200> => {
 
-  return customFetch<User>(getUpdatePanicContactsUrl(id),
+  return customFetch<UpdatePanicContacts200>(getUpdatePanicContactsUrl(userId),
   {
     ...options,
     method: 'PATCH',
@@ -3022,8 +3023,8 @@ export const updatePanicContacts = async (id: number,
 
 
 export const getUpdatePanicContactsMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePanicContacts>>, TError,{id: number;data: BodyType<UpdatePanicContactsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof updatePanicContacts>>, TError,{id: number;data: BodyType<UpdatePanicContactsInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePanicContacts>>, TError,{userId: number;data: BodyType<UpdatePanicContactsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePanicContacts>>, TError,{userId: number;data: BodyType<UpdatePanicContactsInput>}, TContext> => {
 
 const mutationKey = ['updatePanicContacts'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -3035,10 +3036,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePanicContacts>>, {id: number;data: BodyType<UpdatePanicContactsInput>}> = (props) => {
-          const {id,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePanicContacts>>, {userId: number;data: BodyType<UpdatePanicContactsInput>}> = (props) => {
+          const {userId,data} = props ?? {};
 
-          return  updatePanicContacts(id,data,requestOptions)
+          return  updatePanicContacts(userId,data,requestOptions)
         }
 
 
@@ -3053,14 +3054,14 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UpdatePanicContactsMutationError = ErrorType<void>
 
     /**
- * @summary Update emergency/panic contacts (max 5)
+ * @summary Update emergency/panic contacts (max 5) — the route the frontend actually calls
  */
 export const useUpdatePanicContacts = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePanicContacts>>, TError,{id: number;data: BodyType<UpdatePanicContactsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePanicContacts>>, TError,{userId: number;data: BodyType<UpdatePanicContactsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updatePanicContacts>>,
         TError,
-        {id: number;data: BodyType<UpdatePanicContactsInput>},
+        {userId: number;data: BodyType<UpdatePanicContactsInput>},
         TContext
       > => {
       return useMutation(getUpdatePanicContactsMutationOptions(options));

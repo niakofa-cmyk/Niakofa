@@ -1201,10 +1201,10 @@ export const UpdateUserSettingsResponse = zod.object({
 
 
 /**
- * @summary Update emergency/panic contacts (max 5)
+ * @summary Update emergency/panic contacts (max 5) — the route the frontend actually calls
  */
 export const UpdatePanicContactsParams = zod.object({
-  "id": zod.coerce.number()
+  "userId": zod.coerce.number()
 })
 
 export const updatePanicContactsBodyContactsMax = 5;
@@ -1216,21 +1216,8 @@ export const UpdatePanicContactsBody = zod.object({
 })
 
 export const UpdatePanicContactsResponse = zod.object({
-  "id": zod.number(),
-  "name": zod.string(),
-  "email": zod.string(),
-  "avatar_url": zod.string().nullish(),
-  "is_helper": zod.boolean(),
-  "helper_mode_active": zod.boolean(),
-  "lat": zod.number().nullish(),
-  "lng": zod.number().nullish(),
-  "trust_score": zod.number().nullish(),
-  "help_count": zod.number(),
-  "neighborhood": zod.string().nullish(),
-  "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
-  "goodwill_score": zod.number().describe('Community reputation score'),
-  "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
-  "created_at": zod.string().optional()
+  "ok": zod.boolean().optional(),
+  "contacts": zod.array(zod.string()).optional()
 })
 
 

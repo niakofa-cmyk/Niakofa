@@ -76,6 +76,7 @@ export * from './transaction';
 export * from './transactionType';
 export * from './updateHelperAvailability200';
 export * from './updateHelperAvailabilityInput';
+export * from './updatePanicContacts200';
 export * from './updatePanicContactsInput';
 export * from './updateUserAvatarInput';
 export * from './user';

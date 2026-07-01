@@ -21,6 +21,8 @@ tags:
     description: Trust and safety reporting
   - name: civic
     description: Location-aware civic and community resources
+  - name: verification
+    description: Identity verification and safety/panic features
 
 paths:
   /healthz:
@@ -972,13 +974,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/UserSettings"
 
-  /users/{id}/panic-contacts:
+  /verification/panic-contacts/{userId}:
     patch:
       operationId: updatePanicContacts
-      tags: [users]
-      summary: Update emergency/panic contacts (max 5)
+      tags: [verification]
+      summary: Update emergency/panic contacts (max 5) — the route the frontend actually calls
       parameters:
-        - name: id
+        - name: userId
           in: path
           required: true
           schema:
@@ -991,13 +993,20 @@ paths:
               $ref: "#/components/schemas/UpdatePanicContactsInput"
       responses:
         "200":
-          description: Panic contacts updated
+          description: Panic contacts updated — returns the actually-persisted (post-truncation) list
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  contacts:
+                    type: array
+                    items:
+                      type: string
         "400":
-          description: contacts must be an array of at most 5 entries
+          description: contacts must be an array
         "404":
           description: User not found
 

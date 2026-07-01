@@ -834,6 +834,11 @@ export type DeleteScheduledPayment200 = {
   deleted_id?: number;
 };
 
+export type UpdatePanicContacts200 = {
+  ok?: boolean;
+  contacts?: string[];
+};
+
 export type UpdateHelperAvailability200 = {
   ok?: boolean;
   count?: number;

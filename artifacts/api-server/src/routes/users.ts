@@ -524,21 +524,11 @@ router.put("/users/:id/settings", requireAuth, requireOwnership(), async (req, r
 });
 
 
-// PATCH /users/:id/panic-contacts — update emergency contacts
-router.patch("/users/:id/panic-contacts", requireAuth, requireApproved, requireOwnership(), async (req, res) => {
-  const id = parseInt(req.params.id as string);
-  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
-  const { contacts } = req.body as { contacts?: string[] };
-  if (!Array.isArray(contacts)) return res.status(400).json({ error: "contacts must be an array" });
-  if (contacts.length > 5) return res.status(400).json({ error: "Max 5 panic contacts" });
-  const [user] = await db.update(usersTable)
-    .set({ panic_contacts: contacts })
-    .where(eq(usersTable.id, id))
-    .returning();
-  if (!user) return res.status(404).json({ error: "User not found" });
-  const { password_hash, ...safeUser } = user;
-  return res.json(safeUser);
-});
+// Note: panic contacts are managed via PATCH /verification/panic-contacts/:userId
+// (the route the frontend actually calls — see verification.ts). A duplicate
+// PATCH /users/:id/panic-contacts route previously lived here with zero
+// frontend callers and zero test coverage; removed rather than left as dead
+// code that could silently drift from the real one.
 
 // BUG-H03: Account deletion is admin-only. requireOwnership() would let any
 // authenticated user delete any other account by crafting the path parameter.
