@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { requireAuth, requireApproved } from "../middlewares/auth";
+import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
-import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable } from "@workspace/db";
+import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, userSettingsTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -318,20 +318,44 @@ router.patch("/requests/:id", requireAuth, async (req, res) => {
 // action this consequential. requireOwnership("helper_id") used to guard
 // against exactly this, by checking body.helper_id === authenticatedUserId
 // — safe, but a roundabout way to express "act as yourself."
-// BUG FIX (found during audit, unrelated to Incident #23 that added
-// requireApproved's enforcement logic): requireApproved existed and is
-// wired into account-settings routes (helper-mode toggle, pledges, avatar),
-// but was never applied to the actual request-lifecycle actions — the ones
-// where a suspended, banned, or never-approved user physically interacts
-// with a requester and (on completion) receives a real Stripe payout. A
-// suspended/banned account could previously still claim, mark en-route,
-// mark arrived, and complete requests, bypassing the entire point of
-// is_suspended/trust_score-ban/approval_status. Added requireApproved to
-// all four lifecycle transitions below.
-router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res) => {
+router.post("/requests/:id/claim", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = ClaimRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
+
+  // Enforce max_travel_miles as a hard server-side block at claim time.
+  // Emergency requests bypass this check by design (consistent with the
+  // rest of the urgency-based bypass pattern used elsewhere in this file).
+  const [existingFull] = await db
+    .select({ lat: requestsTable.lat, lng: requestsTable.lng, urgency: requestsTable.urgency })
+    .from(requestsTable)
+    .where(eq(requestsTable.id, pParsed.data.id))
+    .limit(1);
+
+  if (existingFull && existingFull.urgency !== "emergency") {
+    const [helperSettings] = await db
+      .select({ max_travel_miles: userSettingsTable.max_travel_miles })
+      .from(userSettingsTable)
+      .where(eq(userSettingsTable.user_id, helperId))
+      .limit(1);
+    const maxTravel = helperSettings?.max_travel_miles ?? 15;
+    const [helperUser] = await db
+      .select({ lat: usersTable.lat, lng: usersTable.lng })
+      .from(usersTable)
+      .where(eq(usersTable.id, helperId))
+      .limit(1);
+    if (helperUser?.lat != null && helperUser?.lng != null && existingFull.lat != null && existingFull.lng != null) {
+      const dist = distanceMiles(helperUser.lat, helperUser.lng, existingFull.lat, existingFull.lng);
+      if (dist > maxTravel) {
+        return res.status(400).json({
+          error: `This request is ${dist.toFixed(1)} miles away — beyond your max travel distance of ${maxTravel} miles. You can change this in Settings.`,
+          distance_miles: parseFloat(dist.toFixed(1)),
+          max_travel_miles: maxTravel,
+        });
+      }
+    }
+  }
+
   const [request] = await db.update(requestsTable)
     .set({ status: "claimed", helper_id: helperId, claimed_at: new Date() })
     .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.status, "open")))
@@ -343,7 +367,7 @@ router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res
   return res.json(enriched);
 });
 
-router.post("/requests/:id/en-route", requireAuth, requireApproved, async (req, res) => {
+router.post("/requests/:id/en-route", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -357,7 +381,7 @@ router.post("/requests/:id/en-route", requireAuth, requireApproved, async (req, 
   return res.json(enriched);
 });
 
-router.post("/requests/:id/arrived", requireAuth, requireApproved, async (req, res) => {
+router.post("/requests/:id/arrived", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = MarkArrivedParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -371,7 +395,7 @@ router.post("/requests/:id/arrived", requireAuth, requireApproved, async (req, r
   return res.json(enriched);
 });
 
-router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, res) => {
+router.post("/requests/:id/complete", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = CompleteRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = CompleteRequestBody.safeParse(req.body);

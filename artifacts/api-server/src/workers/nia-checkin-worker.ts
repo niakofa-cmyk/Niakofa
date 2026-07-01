@@ -29,7 +29,8 @@
  *
  * Idempotency guard:
  *  • Both workers UPDATE help_requests SET nia_checkin_sent_at = NOW()
- *    with a WHERE nia_checkin_sent_at IS NULL clause.
+ *    with a WHERE nia_checkin_sent_at IS NULL clause, claimed BEFORE any
+ *    side effect (push, nia-service call) — not after.
  *  • The first worker to reach a given request wins; the second sees
  *    rowCount === 0 and skips.
  *
@@ -98,10 +99,25 @@ async function processNiaCheckins(): Promise<void> {
 
   for (const req of due) {
     try {
-      // 1. Generate the check-in session ID (stable for this request)
+      // 1. Claim this request FIRST, atomically, before any side effects.
+      //    This is the real idempotency guard: WHERE nia_checkin_sent_at IS NULL
+      //    means only one of {this worker, a concurrent run of this worker,
+      //    nia-service's general-checkin-worker} can win the race. If we don't
+      //    win it, skip entirely rather than sending a duplicate check-in.
+      const claim = await db.execute(sql`
+        UPDATE help_requests
+        SET nia_checkin_sent_at = NOW()
+        WHERE id = ${req.id} AND nia_checkin_sent_at IS NULL
+      `);
+      if ((claim.rowCount ?? 0) === 0) {
+        logger.info({ requestId: req.id }, "nia-checkin: already processed, skipping");
+        continue;
+      }
+
+      // 2. Generate the check-in session ID (stable for this request)
       const sessionId = `checkin-${req.requester_id}-${req.id}`;
 
-      // 2. Call nia-service to generate Nia's opening message and save
+      // 3. Call nia-service to generate Nia's opening message and save
       //    the conversation (fire-and-forget — we don't need to wait for
       //    full streaming, just kick it off)
       const niaPayload = {
@@ -126,7 +142,7 @@ async function processNiaCheckins(): Promise<void> {
         logger.warn({ err, requestId: req.id }, "nia-checkin: nia-service call failed")
       );
 
-      // 3. Send a push notification so the user knows Nia reached out
+      // 4. Send a push notification so the user knows Nia reached out
       // notifType: "nia_checkin" — this type is never gated by user preferences
       // (always sends) so users always receive Nia's follow-up regardless of
       // their notif_nearby_requests or other preference toggles.
@@ -139,13 +155,6 @@ async function processNiaCheckins(): Promise<void> {
       }).catch((err) =>
         logger.warn({ err, userId: req.requester_id }, "nia-checkin: push failed")
       );
-
-      // 4. Mark as sent so we don't re-send
-      await db.execute(sql`
-        UPDATE help_requests
-        SET nia_checkin_sent_at = NOW()
-        WHERE id = ${req.id}
-      `);
 
       logger.info(
         { requestId: req.id, userId: req.requester_id },
