@@ -399,13 +399,23 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = CompleteRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = CompleteRequestBody.safeParse(req.body);
-  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
+  if (!pParsed.success || !bParsed.success) {
+    return res.status(400).json({ 
+      error: "Invalid request parameters",
+      details: !pParsed.success ? pParsed.error.issues : bParsed.error.issues
+    });
+  }
 
   const [request] = await db.update(requestsTable)
     .set({ status: "completed", completed_at: new Date() })
     .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, helperId)))
     .returning();
-  if (!request) return res.status(404).json({ error: "Not found" });
+  if (!request) {
+    return res.status(404).json({ 
+      error: "Request not found or you are not the assigned helper",
+      request_id: pParsed.data.id
+    });
+  }
 
   // Capture pre-increment stats for tier-change detection + name for gratitude prompt
   const [helperBefore] = await db
@@ -418,6 +428,14 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
   await db.update(usersTable)
     .set({ help_count: sql`${usersTable.help_count} + 1` })
     .where(eq(usersTable.id, helperId));
+
+  // Log request completion
+  logger.info({ 
+    request_id: request.id, 
+    helper_id: helperId, 
+    payment_type: request.payment_type,
+    amount: request.pay_it_forward_amount 
+  }, "Request marked as completed");
 
   // Immediate-pay jobs: record in earnings history ONLY — do NOT credit benevolence_wallet.
   // benevolence_wallet is the goodwill/donation pot (pledges, sponsorships, tips).
@@ -444,6 +462,7 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
       amount: 0,
       description: request.title,
     });
+    logger.info({ helper_id: helperId, request_id: request.id }, "Goodwill point awarded");
   }
 
   // ── Real Stripe payout for immediate-pay completed requests ───────────────
@@ -463,10 +482,21 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
         .where(eq(stripeAccountsTable.user_id, helperId))
         .limit(1);
 
-      if (stripeAcct?.payouts_enabled && stripeAcct.stripe_account_id) {
+      if (!stripeAcct) {
+        logger.warn({ helper_id: helperId, request_id: request.id }, "No Stripe account found for helper");
+      } else if (!stripeAcct.payouts_enabled) {
+        logger.info({ helper_id: helperId, request_id: request.id }, "Payouts disabled for helper account");
+      } else if (stripeAcct.stripe_account_id) {
         const amountCents = Math.round(request.pay_it_forward_amount * 100);
         const platformFeeCents = Math.round(amountCents * 0.05); // 5% platform fee
         const payoutCents = amountCents - platformFeeCents;
+
+        logger.info({ 
+          helper_id: helperId, 
+          request_id: request.id,
+          amount_usd: (amountCents / 100).toFixed(2),
+          platform_fee_usd: (platformFeeCents / 100).toFixed(2)
+        }, "Processing Stripe transfer");
 
         const transfer = await _stripe.transfers.create(
           {
@@ -494,6 +524,13 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
           notes: `Auto-payout on completion. Platform fee: $${(platformFeeCents / 100).toFixed(2)}`,
         });
 
+        logger.info({ 
+          helper_id: helperId, 
+          request_id: request.id,
+          transfer_id: transfer.id,
+          amount_transferred: (payoutCents / 100).toFixed(2)
+        }, "Stripe transfer completed successfully");
+
         broadcast({
           type: "payout_sent",
           payload: {
@@ -505,7 +542,13 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
       }
     } catch (err: unknown) {
       // Non-fatal — wallet was already credited, but payout must be retried
-      logger.error({ err, request_id: request.id }, "Stripe payout failed — enqueuing retry");
+      logger.error({ 
+        err, 
+        request_id: request.id,
+        helper_id: helperId,
+        stripe_account_id: stripeAcct?.stripe_account_id
+      }, "Stripe payout failed — enqueuing retry");
+      
       // Enqueue for exponential-backoff retry via BullMQ (up to 5 attempts)
       if (stripeAcct?.stripe_account_id) {
         const amountCents = Math.round((request.pay_it_forward_amount ?? 0) * 100);
@@ -518,7 +561,9 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
           platform_fee_cents: platformFeeCents,
           stripe_account_id:  stripeAcct.stripe_account_id,
           request_title:      request.title,
-        }).catch(() => {});
+        }).catch((err) => {
+          logger.error({ err, request_id: request.id }, "Failed to enqueue payout retry");
+        });
       }
     }
   }
