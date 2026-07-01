@@ -3223,7 +3223,7 @@ export const getLogoutUserUrl = (id: number,) => {
 }
 
 /**
- * @summary Server-side token revocation — invalidates all previously issued tokens for this user
+ * @summary Client-side sign-out signal — does NOT revoke previously issued tokens (auth is stateless HMAC by design; see server code comments)
  */
 export const logoutUser = async (id: number, options?: RequestInit): Promise<LogoutUser200> => {
 
@@ -3271,7 +3271,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type LogoutUserMutationError = ErrorType<unknown>
 
     /**
- * @summary Server-side token revocation — invalidates all previously issued tokens for this user
+ * @summary Client-side sign-out signal — does NOT revoke previously issued tokens (auth is stateless HMAC by design; see server code comments)
  */
 export const useLogoutUser = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutUser>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}

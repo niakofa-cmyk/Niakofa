@@ -1289,7 +1289,7 @@ export const UpdateHelperAvailabilityResponse = zod.object({
 
 
 /**
- * @summary Server-side token revocation — invalidates all previously issued tokens for this user
+ * @summary Client-side sign-out signal — does NOT revoke previously issued tokens (auth is stateless HMAC by design; see server code comments)
  */
 export const LogoutUserParams = zod.object({
   "id": zod.coerce.number()

@@ -51,7 +51,7 @@ router.post("/users/login", authLimiter, async (req, res) => {
     return res.status(401).json({ error: "Incorrect password" });
   }
 
-  const token = signTokenById(user.id, user.token_version);
+  const token = signTokenById(user.id);
   const { password_hash, ...safeUser } = user;
   return res.json({ user: safeUser, token });
 });
@@ -112,7 +112,7 @@ router.post("/users/register", authLimiter, async (req, res) => {
     organization_description: account_type === "organization" ? (body.organization_description ?? null) : null,
     approval_status,
   }).returning();
-  const token = signTokenById(user.id, user.token_version);
+  const token = signTokenById(user.id);
   const { password_hash: _ph, ...safeUser } = user;
   return res.status(201).json({ user: safeUser, token });
 });
@@ -185,7 +185,7 @@ router.post("/users/set-initial-password", authLimiter, async (req, res) => {
     .where(eq(usersTable.id, user.id))
     .returning();
 
-  const token = signTokenById(updated.id, updated.token_version);
+  const token = signTokenById(updated.id);
   const { password_hash: _ph2, password_reset_code: _prc, ...safeUser } = updated;
   return res.json({ user: safeUser, token });
 });
@@ -230,7 +230,7 @@ router.post("/users/:id/change-password", requireAuth, requireOwnership(), authL
     .where(eq(usersTable.id, id))
     .returning();
 
-  const pwToken = signTokenById(updatedPw.id, updatedPw.token_version);
+  const pwToken = signTokenById(updatedPw.id);
   const { password_hash: _ph3, ...safePwUser } = updatedPw;
   return res.json({ user: safePwUser, token: pwToken });
 });
@@ -620,9 +620,17 @@ router.get("/users/:id/availability", requireAuth, requireOwnership(), async (re
   return res.json(windows);
 });
 
-// POST /users/:id/logout — server-side token revocation.
-// Bumps token_version so every previously issued token for this user
-// is immediately invalid, even ones that haven't expired yet.
+// POST /users/:id/logout — client-side sign-out signal only.
+// NOT server-side token revocation, despite bumping token_version below.
+// Auth tokens are stateless HMAC(userId) (see middlewares/auth.ts —
+// signTokenById/verifyToken never read token_version, by deliberate design,
+// to avoid a DB lookup on every authenticated request). Bumping
+// token_version here does not invalidate any previously issued token; a
+// token issued before this call remains valid until SESSION_SECRET itself
+// changes. This endpoint exists so the client has a server round-trip to
+// confirm before discarding its local token, and so token_version keeps
+// incrementing for potential future use, but it provides no actual
+// "log out everywhere" or stolen-token-revocation guarantee today.
 router.post("/users/:id/logout", requireAuth, requireOwnership(), async (req, res) => {
   const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });

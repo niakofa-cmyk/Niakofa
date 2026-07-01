@@ -200,7 +200,7 @@ paths:
               $ref: "#/components/schemas/ChangePasswordInput"
       responses:
         "200":
-          description: Password changed — returns user and a fresh auth token (old sessions invalidated)
+          description: Password changed — returns user and a fresh auth token
           content:
             application/json:
               schema:
@@ -1056,7 +1056,7 @@ paths:
     post:
       operationId: logoutUser
       tags: [users]
-      summary: Server-side token revocation — invalidates all previously issued tokens for this user
+      summary: Client-side sign-out signal — does NOT revoke previously issued tokens (auth is stateless HMAC by design; see server code comments)
       parameters:
         - name: id
           in: path

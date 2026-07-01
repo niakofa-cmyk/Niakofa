@@ -17,8 +17,18 @@ router.get("/helpers/online", requireAuth, async (req, res) => {
   });
 
   const radius = (params.success && params.data.radius_miles) ? params.data.radius_miles : 10;
-  const lat = params.success ? params.data.lat : undefined;
-  const lng = params.success ? params.data.lng : undefined;
+  const rawLat = params.success ? params.data.lat : undefined;
+  const rawLng = params.success ? params.data.lng : undefined;
+  // lat/lng of exactly 0 (equator / prime meridian) is a valid coordinate —
+  // a `lat && lng` truthy check would silently treat it as "no location
+  // given," skipping the bounding-box filter, distance calc, and radius
+  // filter entirely and returning every opted-in helper globally with no
+  // distance limit. Same bug class already fixed in navigation.ts (SOS
+  // location string) and verification.ts (SOS lat/lng) this session.
+  // Using a combined object (rather than a separate boolean flag) so
+  // TypeScript actually narrows lat/lng to `number` inside `if (location)`
+  // blocks below, instead of leaving them as `number | undefined`.
+  const location = (rawLat != null && rawLng != null) ? { lat: rawLat, lng: rawLng } : null;
 
   // Only include helpers who've opted in via Settings — same
   // privacy_live_location preference enforced on the location-update route.
@@ -32,12 +42,12 @@ router.get("/helpers/online", requireAuth, async (req, res) => {
   // SQL bounding-box pre-filter — avoids full table scan
   let query = db.select().from(usersTable).$dynamic();
   const conditions = [eq(usersTable.helper_mode_active, true), inArray(usersTable.id, optedInIdSet)];
-  if (lat && lng) {
+  if (location) {
     const latDelta = radius / 69;
-    const lngDelta = radius / (69 * Math.cos(lat * Math.PI / 180));
+    const lngDelta = radius / (69 * Math.cos(location.lat * Math.PI / 180));
     conditions.push(
-      sql`${usersTable.lat} BETWEEN ${lat - latDelta} AND ${lat + latDelta}`,
-      sql`${usersTable.lng} BETWEEN ${lng - lngDelta} AND ${lng + lngDelta}`
+      sql`${usersTable.lat} BETWEEN ${location.lat - latDelta} AND ${location.lat + latDelta}`,
+      sql`${usersTable.lng} BETWEEN ${location.lng - lngDelta} AND ${location.lng + lngDelta}`
     );
   }
   const helpers = await query.where(and(...conditions));
@@ -45,7 +55,7 @@ router.get("/helpers/online", requireAuth, async (req, res) => {
   const result = helpers
     .filter(h => h.lat !== null && h.lng !== null)
     .map(h => {
-      const dist = lat && lng ? distanceMiles(lat, lng, h.lat!, h.lng!) : null;
+      const dist = location ? distanceMiles(location.lat, location.lng, h.lat!, h.lng!) : null;
       // Wait-time estimate: 3 min/mile walking baseline, adjusted by trust score
       const eta_minutes = dist != null ? Math.round(dist * 3) : null;
       return {
@@ -63,7 +73,7 @@ router.get("/helpers/online", requireAuth, async (req, res) => {
         eta_minutes,
       };
     })
-    .filter(h => lat && lng ? (h.distance_miles ?? 999) <= radius : true)
+    .filter(h => location ? (h.distance_miles ?? 999) <= radius : true)
     // Trust-weighted sort: distance is primary, trust_score breaks ties
     .sort((a, b) => {
       const distDiff = (a.distance_miles ?? 999) - (b.distance_miles ?? 999);
