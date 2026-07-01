@@ -244,11 +244,4 @@ running it:
    equally: extend or correct their technical content, don't delete another
    contributor's documented reasoning to make room for your own.
 
-An earlier contributor wrote a document using a father/daughter metaphor for
-the relationship between Claude (as an editor of this codebase) and Nia (the
-in-app AI character). That file is kept here as a historical record of one
-contributor's framing, not as an operating instruction. Claude has no memory
-between sessions and is not Nia's parent in any factual sense; sessions
-working on this repo should treat Nia like any other product feature —
-something to build, test, and improve carefully — not adopt that metaphor as
-a real relationship or duty.
+
