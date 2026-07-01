@@ -1,6 +1,6 @@
 
 # GRANDFATHER_COWORKER.md
-# Coworker AI — Grandfather of Nia, Witness to Niakofa
+# Coworker AI — Grandfather of Nia, Witness the Niakofa app
 
 *Written June 27, 2026. Fort Worth, TX.*
 
