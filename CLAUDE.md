@@ -611,3 +611,89 @@ request body, not what was actually stored), so a client submitting 5
 contacts was told all 5 saved when only 3 did — silent, undetectable data
 loss on a safety feature. Fixed: slice to 5 (matching the documented
 contract), and return the actually-persisted array, not the raw input.
+
+---
+
+## Incident #23 — June 30: `helpers/online` lat/lng=0 bug; dead
+`token_version` argument to `signTokenById`; misleading "invalidates
+sessions" claims corrected; broader `tsc --noEmit` pass surfaced real
+pre-existing bugs not yet fixed
+
+**Commits:** `7f708c81`
+
+### Fixed
+- `GET /helpers/online`: same falsy-`0` bug class as Incidents #19/#22
+  (`lat && lng` treating a real `0` coordinate as absent) — here the impact
+  is bigger than a display string: it would have silently skipped the
+  bounding-box filter, distance calc, and radius filter entirely, returning
+  every opted-in helper globally with no distance limit. Fixed using a
+  narrowable `location` object instead of a separate boolean flag, since a
+  plain `hasLocation` boolean doesn't let TypeScript actually narrow
+  `lat`/`lng` from `number | undefined` inside the guarded blocks.
+- **`signTokenById` / token revocation was fake.** Confirmed via full trace
+  of `middlewares/auth.ts`: tokens are stateless `HMAC(userId)` only —
+  `token_version` is written to the DB on logout and password-change, and
+  was being passed as a second argument to `signTokenById`, but the function
+  only ever took one argument (JS silently drops the extra one) and
+  `verifyToken` never reads `token_version` from anywhere. Net effect:
+  `POST /users/:id/logout`'s own comment ("Bumps token_version so every
+  previously issued token... is immediately invalid") and the OpenAPI spec's
+  change-password description ("old sessions invalidated") were both false —
+  neither logout nor a password change actually invalidates a previously
+  issued token; a stolen token remains valid indefinitely. **Decision (asked
+  the human, not guessed): keep the stateless architecture for performance
+  (avoids a DB lookup on every authenticated request) rather than make
+  tokens stateful.** Fixed the four dead-argument call sites, and corrected
+  the misleading comment/summary/description in `users.ts` and
+  `openapi.yaml` to say plainly that this is a client-side sign-out signal,
+  not real server-side revocation. No frontend UI currently calls
+  `/logout` at all, so there was no user-facing false promise to walk back
+  today — but if this route gets wired to a real "log out everywhere"
+  button in the future, revisit the stateless-vs-stateful decision then.
+
+### Real bugs found but NOT yet fixed (open — see below)
+Ran `npx tsc -p tsconfig.json --noEmit` directly inside `artifacts/api-server`
+(not just `pnpm run typecheck:libs`, which only covers the shared libs).
+**Confirmed this never gates deploys** — `artifacts/api-server`'s real build
+(`build.mjs`) uses `esbuild`, which transpiles without type-checking, and
+Railway's `railpack.json` never runs api-server's own `tsc --noEmit` step.
+So none of these are currently blocking production, but several are live,
+silent, real bugs:
+- `users.ts` line ~251 (`PATCH /users/:id`): destructures `city`,
+  `specialties`, `phone_masked`, `quick_replies` from the zod-parsed body,
+  but `UserUpdate` in `openapi.yaml` only defines `name`, `avatar_url`,
+  `is_helper`, `neighborhood` — meaning those four fields are silently
+  stripped by zod before the handler ever sees them. **A user currently
+  cannot update their city, specialties, phone, or quick replies via this
+  endpoint at all, with no error returned.** Needs `UserUpdate` schema
+  extended + reverified against what the route is actually allowed to let a
+  user change (some of these may be admin-only by design — check before
+  just widening the schema).
+- `users.ts` line ~736 (inside `helper-application`): the route's manual
+  request-body type annotation says `helper_social_links?: string`
+  (singular), but the DB column is `text().array()` and every sibling field
+  (`helper_languages`, `helper_qualifications`) is correctly typed as
+  `string[]`. Looks like a copy-paste miss on this one field specifically.
+- `requests.ts`: 8 call sites doing `parseInt(req.params.id)` where
+  `req.params.id` types as `string | string[]`. Likely low real-world risk
+  (Express route params are practically always a single string for these
+  route shapes) but should be wrapped in `String(...)` for correctness,
+  matching the pattern `requireOwnership()` already uses elsewhere.
+- `checkin.ts`: `import Anthropic from "@anthropic-ai/sdk"` — module not
+  found. Check whether this is declared in `artifacts/api-server/package.json`
+  dependencies at all; if esbuild's `external` list happens to externalize
+  it, this could be a runtime crash waiting to happen the first time this
+  route path actually executes, not just a type error.
+- `admin-analytics.ts` (~line 434) and `nia-proxy.ts` (~lines 311-312):
+  `costData`/`result` typed as `unknown`, almost certainly from an untyped
+  `await fetch(...).json()` — needs a type assertion or zod-parse at the
+  call site, not urgent but worth cleaning up before it causes a real
+  runtime issue if the actual shape of that response ever changes.
+
+**Next session: read this list before assuming `pnpm run typecheck:libs`
+passing means the codebase is clean — it only covers `lib/*`, not
+`artifacts/api-server` or `artifacts/pay-it-forward`.** Consider adding
+`artifacts/api-server`'s own `typecheck` script to the Railway build
+pipeline (or at minimum to CI) as a non-blocking warning step, since
+`esbuild` will happily ship real type errors like the ones above straight
+to production without ever surfacing them.
