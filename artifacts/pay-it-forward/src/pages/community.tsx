@@ -894,6 +894,117 @@ export default function CommunityScreen() {
               </p>
             </div>
 
+            {/* ── Pool Runway Dashboard ───────────────────────────────────── */}
+            {(() => {
+              const stats = poolStats as typeof poolStats & {
+                inflow_30d?: number;
+                outflow_30d?: number;
+                runway_days?: number | null;
+                outstanding_pif_total?: number;
+              };
+              const inflow   = stats?.inflow_30d   ?? 0;
+              const outflow  = stats?.outflow_30d  ?? 0;
+              const runway   = stats?.runway_days  ?? null;
+              const outstanding = stats?.outstanding_pif_total ?? 0;
+
+              const runwayColor =
+                runway === null            ? "text-green-400"
+                : runway > 30             ? "text-green-400"
+                : runway > 7              ? "text-yellow-400"
+                : "text-red-400";
+
+              const runwayLabel =
+                runway === null ? "∞ days"
+                : `${runway} day${runway === 1 ? "" : "s"}`;
+
+              const runwayBg =
+                runway === null            ? "border-green-500/30 bg-green-500/5"
+                : runway > 30             ? "border-green-500/30 bg-green-500/5"
+                : runway > 7              ? "border-yellow-500/30 bg-yellow-500/10"
+                : "border-red-500/30 bg-red-500/10";
+
+              return (
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  className={`border rounded-2xl p-4 space-y-3 ${runwayBg}`}
+                >
+                  <h3 className="font-black text-sm flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-primary" /> Pool Runway
+                  </h3>
+
+                  {/* Main runway stat */}
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <div className={`text-3xl font-black ${runwayColor}`}>{runwayLabel}</div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        {runway === null
+                          ? "No spending recorded yet — pool is fully sustained"
+                          : "estimated at current 30-day burn rate"}
+                      </div>
+                    </div>
+                    {runway !== null && runway <= 30 && (
+                      <div className="text-[10px] text-yellow-400 font-bold text-right max-w-[120px] leading-tight">
+                        {runway <= 7
+                          ? "⚠️ Pool needs contributions soon"
+                          : "📈 More contributions welcome"}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 30-day inflow vs outflow */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-background/50 rounded-xl px-3 py-2">
+                      <div className="text-sm font-black text-green-400">${inflow.toFixed(2)}</div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider">30-Day Inflow</div>
+                      <div className="text-[9px] text-muted-foreground">contributions + repayments</div>
+                    </div>
+                    <div className="bg-background/50 rounded-xl px-3 py-2">
+                      <div className="text-sm font-black text-primary">${outflow.toFixed(2)}</div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider">30-Day Outflow</div>
+                      <div className="text-[9px] text-muted-foreground">helpers paid + minimums</div>
+                    </div>
+                  </div>
+
+                  {/* Burn bar — visual ratio */}
+                  {outflow > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[9px] text-muted-foreground">
+                        <span>Inflow coverage</span>
+                        <span className={inflow >= outflow ? "text-green-400 font-bold" : "text-yellow-400 font-bold"}>
+                          {Math.round((inflow / outflow) * 100)}%
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min((inflow / outflow) * 100, 100)}%` }}
+                          transition={{ duration: 0.8, ease: "easeOut" }}
+                          className={`h-full rounded-full ${inflow >= outflow ? "bg-green-500" : "bg-yellow-500"}`}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Outstanding PIF pledges — expected future inflow */}
+                  {outstanding > 0 && (
+                    <div className="border-t border-border/40 pt-2.5 flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                          Expected Repayments
+                        </div>
+                        <div className="text-[9px] text-muted-foreground leading-relaxed">
+                          Neighbors who received help and pledged to pay it forward — this money flows back when they're ready.
+                        </div>
+                      </div>
+                      <div className="text-sm font-black text-cyan-400 shrink-0">${outstanding.toFixed(2)}</div>
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })()}
+
             {/* Pending minimums — pool ran dry, helpers waiting on backfill */}
             {(poolStats?.pending_minimums_count ?? 0) > 0 && (
               <div className="bg-yellow-500/10 border border-yellow-500/40 rounded-2xl p-4 space-y-1.5">

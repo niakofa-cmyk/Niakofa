@@ -418,3 +418,25 @@ The Community Pool's open review items are closed: a depleted pool no longer sil
 **Legal/tax flags documented (NOT legal advice — needs a lawyer before scale):**
 - *Lending-law exposure:* the pool "fronting" a helper's payment before the requester repays could be construed as an extension of credit to the requester. Mitigants: no interest, no fees, no repayment obligation enforcement (repayment is voluntary pay-it-forward), no credit reporting. Still: consult a TX-licensed attorney before scaling beyond community pilot.
 - *1099 reporting:* helper payouts through Stripe Connect Express delegate 1099-K/1099-NEC issuance to Stripe at IRS thresholds. Benevolence-wallet credits from the pool (minimums, fronts) do NOT flow through Stripe Connect until cashed out via `/api/stripe/payout` — cumulative pool payments to a single helper approaching $600/yr may create direct 1099-NEC obligations for the platform entity. Track it.
+
+### Session: July 2, 2026 — Pin fuzzing, PIF repayment nudges, pool-runway dashboard
+
+Three privacy / sustainability features shipped and confirmed running clean.
+
+**Pin-coordinate fuzzing (`artifacts/api-server/src/routes/requests.ts`):**
+- `GET /requests/nearby` and `GET /requests` (open-status rows only) now return coordinates with ~100 m deterministic jitter (Knuth multiplicative hash seeded by `request.id`). Pins are stable across refreshes — no glitching on the map.
+- Emergency requests (`urgency = 'emergency'`) are exempt: exact location matters more than address privacy when seconds count.
+- Full precision is preserved in `GET /requests/:id`, which is only reachable after a helper claims the request. The privacy gate is therefore the claim action itself, not an extra auth layer.
+- Non-open requests (claimed, completed, cancelled) are also returned at full precision — the helper/requester relationship is already established.
+
+**Pay-It-Forward repayment nudge worker (`artifacts/api-server/src/lib/scheduler.ts`):**
+- `startPifNudgeWorker()` added: runs every 6 hours (same cycle as `startScheduledPaymentReminder`), registered in `index.ts` regardless of Redis.
+- Targets completed PIF requests where `pledge_paid = 0` and `completed_at` is within the last 90 days — these are requesters who got help but have made zero repayment and set no scheduled payment.
+- Nudge windows: **2 days** ("Whenever you're ready"), **14 days** ("2 weeks later"), **60 days** ("2 months"). Each window has a ±6h trigger band so the 6h polling cycle doesn't miss it.
+- Dedup: in-memory `Set<string>` keyed `${requestId}:${windowDays}`. Resets on restart (worst case: one extra nudge per window after a server restart) — mirrors the anomaly-worker dedup pattern. No migration needed.
+- The existing `pledge-worker.ts` handles requesters who *did* set a scheduled payment (deadline-based reminders). This worker covers the gap: requesters who chose pay-it-forward with no deadline and zero follow-up path.
+
+**Pool runway dashboard (`artifacts/api-server/src/routes/pool.ts`, `artifacts/pay-it-forward/src/pages/community.tsx`):**
+- `GET /pool/stats` extended with four new fields computed in the same query: `inflow_30d` (contributions + repayments in last 30 days), `outflow_30d` (fronts + minimums, ABS of negative ledger entries in last 30 days), `runway_days` (balance / daily burn, `null` when no spending recorded = infinite runway), `outstanding_pif_total` (SUM of pledge_amount − pledge_paid for completed PIF requests with outstanding balance — expected future inflow).
+- **RunwayCard** injected in the Community Pool tab between "Where the Money Goes" and "Helpers Waiting on the Pool": shows runway as a large headline number (green > 30 days, yellow 7–30, red ≤ 7), 30-day inflow vs outflow grid, an inflow-coverage progress bar, and the outstanding PIF repayment figure.
+- The card uses an IIFE pattern with a local type extension (`typeof poolStats & { runway_days?: ... }`) to access the new fields without a full OpenAPI codegen cycle.

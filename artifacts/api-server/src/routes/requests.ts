@@ -38,6 +38,36 @@ const _stripe = _STRIPE_SK
 
 const router = Router();
 
+// ─── Pin-coordinate fuzzing ───────────────────────────────────────────────────
+// Browsing helpers see a ~100 m neighbourhood-level pin, not the requester's
+// exact address. Full precision is only returned via GET /requests/:id — which
+// a helper reaches after claiming (the claim flow navigates there).
+//
+// The jitter is deterministic (seeded by request ID) so the pin is stable
+// across map refreshes and doesn't appear to "jump". Emergency requests are
+// not fuzzed: getting there fast matters more than address privacy.
+//
+// Math: 0.001° lat ≈ 111 m; 0.001° lng ≈ 111 m × cos(lat).
+function fuzzCoordinates(
+  lat: number,
+  lng: number,
+  requestId: number,
+  urgency: string,
+): { lat: number; lng: number } {
+  if (urgency === "emergency") return { lat, lng };
+  // Two independent Knuth multiplicative hash steps for lat and lng jitter.
+  // >>> 0 converts to unsigned 32-bit so bitwise ops stay predictable.
+  const h1 = ((requestId * 2654435761) >>> 0);
+  const h2 = ((requestId * 1234567891 + 9876543) >>> 0);
+  const fuzzLat = ((h1 % 10000) / 10000 - 0.5) * 0.002;         // ±0.001°
+  const fuzzLng = ((h2 % 10000) / 10000 - 0.5) * 0.002
+    / Math.cos(lat * (Math.PI / 180));
+  return {
+    lat: Math.round((lat + fuzzLat) * 1e5) / 1e5,
+    lng: Math.round((lng + fuzzLng) * 1e5) / 1e5,
+  };
+}
+
 function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 3958.8;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -134,13 +164,20 @@ router.get("/requests/nearby", async (req, res) => {
     : [];
   const userMap = Object.fromEntries(users.map(u => [u.id, u]));
 
-  return res.json(nearby.map(r => ({
-    ...r,
-    requester_name: userMap[r.requester_id]?.name ?? null,
-    requester_avatar: userMap[r.requester_id]?.avatar_url ?? null,
-    helper_name: null,
-    estimated_duration_min: Math.round(r.distance_miles * 3),
-  })));
+  return res.json(nearby.map(r => {
+    // Fuzz open-request coordinates so browsing helpers see a neighbourhood
+    // pin (~100 m jitter), not the requester's exact address.
+    const { lat: fLat, lng: fLng } = fuzzCoordinates(r.lat, r.lng, r.id, r.urgency);
+    return {
+      ...r,
+      lat: fLat,
+      lng: fLng,
+      requester_name: userMap[r.requester_id]?.name ?? null,
+      requester_avatar: userMap[r.requester_id]?.avatar_url ?? null,
+      helper_name: null,
+      estimated_duration_min: Math.round(r.distance_miles * 3),
+    };
+  }));
 });
 
 router.get("/requests", async (req, res) => {
@@ -197,15 +234,25 @@ router.get("/requests", async (req, res) => {
     : [];
   const userMap = Object.fromEntries(users.map(u => [u.id, u]));
 
-  return res.json(rows.map(r => ({
-    ...r,
-    requester_name: userMap[r.requester_id]?.name ?? null,
-    requester_avatar: userMap[r.requester_id]?.avatar_url ?? null,
-    helper_name: r.helper_id ? (userMap[r.helper_id]?.name ?? null) : null,
-    helper_avatar: r.helper_id ? (userMap[r.helper_id]?.avatar_url ?? null) : null,
-    distance_miles: null,
-    estimated_duration_min: null,
-  })));
+  return res.json(rows.map(r => {
+    // Fuzz coordinates for open requests — claimed/completed rows already
+    // belong to the helper/requester relationship, no need to hide them.
+    const isOpen = r.status === "open";
+    const { lat: fLat, lng: fLng } = isOpen
+      ? fuzzCoordinates(r.lat, r.lng, r.id, r.urgency)
+      : { lat: r.lat, lng: r.lng };
+    return {
+      ...r,
+      lat: fLat,
+      lng: fLng,
+      requester_name: userMap[r.requester_id]?.name ?? null,
+      requester_avatar: userMap[r.requester_id]?.avatar_url ?? null,
+      helper_name: r.helper_id ? (userMap[r.helper_id]?.name ?? null) : null,
+      helper_avatar: r.helper_id ? (userMap[r.helper_id]?.avatar_url ?? null) : null,
+      distance_miles: null,
+      estimated_duration_min: null,
+    };
+  }));
 });
 
 router.post("/requests", requireAuth, requireOwnership("requester_id"), requestCreationLimiter, async (req, res) => {

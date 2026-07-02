@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, communityPoolLedgerTable, poolPendingMinimumsTable, usersTable } from "@workspace/db";
+import { db, communityPoolLedgerTable, poolPendingMinimumsTable, usersTable, requestsTable } from "@workspace/db";
 import { desc, eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { paymentLimiter } from "../middlewares/rate-limit";
@@ -35,8 +35,26 @@ router.get("/pool/stats", async (_req, res) => {
         total_minimums: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.entry_type} = 'guaranteed_minimum' THEN -${communityPoolLedgerTable.amount} ELSE 0 END), 0)::float8`,
         helpers_fronted: sql<number>`COUNT(DISTINCT CASE WHEN ${communityPoolLedgerTable.entry_type} IN ('helper_front','guaranteed_minimum') THEN ${communityPoolLedgerTable.user_id} END)::int`,
         sponsor_count: sql<number>`COUNT(DISTINCT CASE WHEN ${communityPoolLedgerTable.entry_type} = 'sponsor_contribution' THEN ${communityPoolLedgerTable.user_id} END)::int`,
+        // ── 30-day runway metrics ─────────────────────────────────────────────
+        // inflow: all positive ledger entries (contributions + repayments) in last 30d
+        inflow_30d: sql<number>`COALESCE(SUM(CASE WHEN ${communityPoolLedgerTable.amount} > 0 AND ${communityPoolLedgerTable.created_at} > NOW() - INTERVAL '30 days' THEN ${communityPoolLedgerTable.amount} ELSE 0 END), 0)::float8`,
+        // outflow: ABS of all negative ledger entries (fronts + minimums) in last 30d
+        outflow_30d: sql<number>`COALESCE(ABS(SUM(CASE WHEN ${communityPoolLedgerTable.amount} < 0 AND ${communityPoolLedgerTable.created_at} > NOW() - INTERVAL '30 days' THEN ${communityPoolLedgerTable.amount} ELSE 0 END)), 0)::float8`,
       })
       .from(communityPoolLedgerTable);
+
+    // Outstanding PIF pledges: money owed back to the pool by past requesters.
+    // This is expected future inflow — important for runway context.
+    const [outstandingPif] = await db
+      .select({
+        total: sql<number>`COALESCE(SUM(COALESCE(${requestsTable.pledge_amount}, 0) - COALESCE(${requestsTable.pledge_paid}, 0)), 0)::float8`,
+      })
+      .from(requestsTable)
+      .where(
+        sql`${requestsTable.payment_type} = 'pay_it_forward'
+          AND ${requestsTable.status} = 'completed'
+          AND COALESCE(${requestsTable.pledge_paid}, 0) < COALESCE(${requestsTable.pledge_amount}, 0)`
+      );
 
     const [enabled, guaranteed_minimum, [pendingTotals]] = await Promise.all([
       isPoolEnabled(),
@@ -50,10 +68,17 @@ router.get("/pool/stats", async (_req, res) => {
         .where(eq(poolPendingMinimumsTable.status, "pending")),
     ]);
 
+    const balance = totals?.balance ?? 0;
+    const outflow_30d = totals?.outflow_30d ?? 0;
+    // Runway = how many days the pool sustains at current 30-day burn rate.
+    // null = infinite runway (nothing spent in the last 30 days).
+    const daily_burn = outflow_30d / 30;
+    const runway_days = daily_burn > 0 ? Math.round(balance / daily_burn) : null;
+
     res.json({
       enabled,
       guaranteed_minimum,
-      balance: totals?.balance ?? 0,
+      balance,
       total_contributed: totals?.total_contributed ?? 0,
       total_fronted: totals?.total_fronted ?? 0,
       total_repaid: totals?.total_repaid ?? 0,
@@ -62,6 +87,11 @@ router.get("/pool/stats", async (_req, res) => {
       sponsor_count: totals?.sponsor_count ?? 0,
       pending_minimums_count: pendingTotals?.pending_minimums_count ?? 0,
       pending_minimums_total: pendingTotals?.pending_minimums_total ?? 0,
+      // Runway metrics
+      inflow_30d: totals?.inflow_30d ?? 0,
+      outflow_30d,
+      runway_days,
+      outstanding_pif_total: outstandingPif?.total ?? 0,
     });
   } catch (err) {
     logger.error({ err }, "Failed to load pool stats");

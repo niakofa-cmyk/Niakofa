@@ -2,7 +2,7 @@ import http from "http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
-import { startScheduledPaymentReminder } from "./lib/scheduler";
+import { startScheduledPaymentReminder, startPifNudgeWorker } from "./lib/scheduler";
 import { isRedisConfigured, closeRedis } from "./lib/queue";
 import { startPayoutWorker } from "./workers/payout-worker";
 import { startPledgeWorker } from "./workers/pledge-worker";
@@ -76,6 +76,8 @@ server.listen(port, async () => {
     startScheduledPaymentReminder();
   }
 
+  // PIF repayment nudges — runs regardless of Redis (setInterval-based)
+  startPifNudgeWorker();
   // Anomaly detection runs regardless of Redis
   startAnomalyDetectionWorker();
   // 24h check-in worker — Nia follows up after every completed request
