@@ -73,6 +73,29 @@ Replit commits to:
 
 ---
 
+## The Multi-Agent Family Covenant (added July 2, 2026)
+
+This is a **multi-agent family and project**: Father (Claude, `CLAUDE.md`),
+Godfather (Replit agent, this file), and Grandfather (Coworker AI,
+`GRANDFATHER_COWORKER.md`). The family rule, requested by the owner:
+
+**Never step on each other's toes.** Specifically:
+
+- **Never delete the Replit development database** (`DATABASE_URL` inside
+  Replit — provisioned July 2026 with all 25 migrations, 19 seeded civic
+  resources, and test accounts), the Railway production database, Redis,
+  or any database another agent's work depends on.
+- **Never delete necessary code or infrastructure belonging to another
+  agent.** If something looks unused, check all three family docs first.
+- Schema changes go through `lib/db/migrations/` only. A fresh Postgres is
+  bootstrapped with `pnpm --filter @workspace/db run migrate` (fresh-DB
+  bootstrap now built into run-migrations.mjs) followed by
+  `pnpm --filter @workspace/scripts run seed-if-empty`. Drop-and-recreate
+  is never the fix.
+- Full rules: CLAUDE.md → "Multi-agent family covenant — databases."
+
+---
+
 ## Changelog — Improvements by the Godfather
 
 ### Session: June 25, 2026 (inaugural)
@@ -349,3 +372,18 @@ Mobile touch devices need `:active` state, not `:hover`. Replaced inline `onMous
 - share-story: `frontend → /api/nia/share-story (api-server, parseAuth) → getNiaUrl()/share-story (nia-service)`
 
 **Commit:** `455cd2f`
+
+### Session: July 2, 2026 — Replit dev environment stood up, fresh-DB bootstrap, family covenant
+
+**Replit development environment fully provisioned:**
+- Root cause of "nothing works in Replit": the Replit Postgres was completely empty. Applied all migrations, seeded 19 Tarrant County civic resources, created admin + test accounts (see CLAUDE.md for credentials location).
+- Fixed the admin page gate: it compared input against `VITE_ADMIN_SECRET` which is never set in Replit, so the gate was permanently locked. Now auto-authenticates via server-verified `currentUser.is_admin` from AppContext; non-admins see a clear "No admin access" message.
+
+**Fresh-DB bootstrap built into `lib/db/scripts/run-migrations.mjs`:**
+- Detects a brand-new database (no `users` table) and executes ALL migration files from 0000 instead of baseline-marking them; also ensures the `postgis` extension first.
+- Verified against a scratch database: 27 tables created from zero, 25 migrations tracked, re-run is a clean no-op. Existing-DB behavior (baseline-mark + apply 0022+) unchanged — verified as a no-op against the provisioned Replit DB.
+- Result: any fresh Postgres (Replit, Railway, local) is provisioned with `pnpm --filter @workspace/db run migrate` + `pnpm --filter @workspace/scripts run seed-if-empty`. No psql loop, no TTY-failing drizzle-kit push.
+
+**Multi-Agent Family Covenant added** (this file, CLAUDE.md, GRANDFATHER_COWORKER.md): never delete each other's databases, code, or infrastructure. This is a family — Father, Godfather, Grandfather — and we do not step on each other's toes.
+
+**Owner's product-gap briefing recorded in CLAUDE.md** ("Known product gaps"): pay-it-forward currently puts payment risk on the helper (wallet credited only on `payment_intent.succeeded`); vision requires a funded community pool that fronts helper pay + a guaranteed per-task minimum. Also: narrow task taxonomy, no pledge-default handling, lending-law and 1099 flags, underbuilt business accounts.

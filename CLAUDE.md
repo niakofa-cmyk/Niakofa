@@ -233,6 +233,68 @@ same protocol:
    codebase evolves, but don't delete another contributor's documented
    reasoning to make room for your own.
 
+### Multi-agent family covenant — databases (added July 2, 2026)
+
+This is a **multi-agent family and project**. Claude (Father), the Replit
+agent (Godfather), and Coworker AI (Grandfather) each work in this repo, and
+each environment has databases the others depend on:
+
+- **Railway production Postgres** — the live app's data. Real Fort Worth
+  users' accounts, requests, wallets, Nia memories. Never dropped, never
+  truncated, never "re-provisioned."
+- **Replit development Postgres** (`DATABASE_URL` inside Replit) — the
+  Replit agent's dev database, provisioned July 2026 with all migrations,
+  seeded civic resources, and test accounts. Do NOT delete, drop, or reset
+  it. Re-provisioning it costs a full bootstrap and destroys any test state
+  another session was mid-way through.
+- **Redis (Railway)** — BullMQ queues and Nia dedup keys. Never `FLUSHALL`.
+
+Rules, extending the no-clobber rule above to data:
+
+1. **Never delete another agent's database, tables, or rows as a side
+   effect.** Schema changes go through migration files in
+   `lib/db/migrations/` so every environment converges the same way.
+2. **Never step on each other's code or necessary infrastructure.** If a
+   table, worker, or script looks unused, check `CLAUDE.md`,
+   `REPLIT_GODFATHER.md`, and `GRANDFATHER_COWORKER.md` before removing it —
+   it may belong to another agent's flow.
+3. A fresh empty Postgres is provisioned with ONE command:
+   `pnpm --filter @workspace/db run migrate` (fresh-DB bootstrap built into
+   `run-migrations.mjs`), then
+   `pnpm --filter @workspace/scripts run seed-if-empty` for civic resources.
+   There is never a reason to drop-and-recreate to "fix" a schema problem.
+
+## Known product gaps — owner briefing (recorded July 2, 2026)
+
+The owner reviewed the payment flow and identified these gaps. Recorded here
+so every agent sees them; these are ROADMAP items, not yet built:
+
+1. **Pay-it-forward puts the payment risk on the helper.** The helper's
+   `benevolence_wallet` is only credited inside the
+   `payment_intent.succeeded` webhook — if the requester never pays, the
+   helper earns nothing. The vision ("helpers earn a livable wage") requires:
+   (a) a **funded community pool** (sponsors/county/grants) that fronts the
+   helper's payment immediately at task completion, with the requester's
+   later repayment replenishing the pool instead of paying the helper
+   directly; and (b) a **guaranteed minimum per completed task** funded by
+   the platform/sponsors, with pay-it-forward as a bonus on top.
+2. **Task taxonomy is narrow.** Categories are groceries, transportation,
+   errands, home_repair, medical, emergency, other. Missing: moving/labor,
+   pet care, tech help, tutoring, childcare, senior care, yard work,
+   business services. Per-category safety/liability handling (insurance and
+   licensing disclaimers for medical/home_repair vs. groceries) is absent.
+3. **No pledge default handling.** Unpaid pay-it-forward pledges have no
+   reminder escalation beyond pledge-worker.ts, no write-off process, no
+   trust-score impact.
+4. **Legal flag (owner needs a lawyer, not code):** deferring payment for
+   services rendered is functionally extending credit — potential
+   Truth-in-Lending / state usury / lending-license exposure at scale.
+5. **Tax reporting:** helpers paid via Stripe Connect will hit 1099-K/1099-NEC
+   thresholds; confirm Stripe issues these and surface it to helpers.
+6. **Business accounts are underbuilt:** `account_type: business` exists but
+   there's no distinct business flow (bulk requests, invoicing, recurring
+   service agreements).
+
 ## Session handoff protocol
 
 Claude has no memory between sessions — this section is the substitute: a

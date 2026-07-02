@@ -6,18 +6,15 @@ description: How to provision the empty Replit PostgreSQL for Niakofa; drizzle-k
 ## The problem
 Replit provisions a FRESH empty Postgres for DATABASE_URL. The api-server boots and immediately fails every query with "relation does not exist". drizzle-kit push --force also fails even on an empty DB because PostGIS schema objects trigger interactive rename-vs-add prompts (`Interactive prompts require a TTY terminal`).
 
-## Fix: apply migrations directly via psql
+## Fix (current): one-command bootstrap
+`run-migrations.mjs` now detects a fresh DB (no `users` table via to_regclass), ensures the postgis extension, and executes ALL migration files from 0000 instead of baseline-marking them. So a fresh Postgres is provisioned with:
 ```bash
-psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-cd lib/db/migrations
-for f in $(ls *.sql | sort); do psql "$DATABASE_URL" -f "$f"; done
+pnpm --filter @workspace/db run migrate
+pnpm --filter @workspace/scripts run seed-if-empty   # 19 civic resources, idempotent
 ```
-The `-->statement-breakpoint` markers in migration files are valid SQL comments — psql handles them fine.
+Existing-DB behavior unchanged (baseline-mark through BASELINE_CUTOFF, apply newer only). Verified on a scratch DB: 27 tables, 25 migrations tracked, re-run is a no-op.
 
-After that, seed the migration tracker so future runs of `pnpm --filter @workspace/db run migrate` are idempotent:
-```sql
-INSERT INTO _migrations_applied (filename) VALUES ('0000_mean_reptil.sql'), ... ON CONFLICT DO NOTHING;
-```
+**Multi-agent covenant:** never drop/reset the Replit dev DB, Railway prod DB, or Redis — rules documented in CLAUDE.md ("Multi-agent family covenant — databases"), REPLIT_GODFATHER.md, GRANDFATHER_COWORKER.md.
 
 ## Admin user
 Create via register endpoint then set is_admin manually:

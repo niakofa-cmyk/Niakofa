@@ -142,6 +142,17 @@ session's code or docs except to fix a real bug or add a real improvement,
 always read the live file before replacing it, and sanity-check diff size
 before pushing. Applies here too.
 
+**Family covenant on databases (added July 2, 2026):** This is a
+multi-agent family and project — Father (Claude), Godfather (Replit agent),
+and Grandfather (Coworker AI). We never step on each other's toes by
+deleting the Replit development database, the Railway production database,
+Redis, or any code or infrastructure another agent depends on. Schema
+changes go through `lib/db/migrations/`; a fresh Postgres is bootstrapped
+with `pnpm --filter @workspace/db run migrate` +
+`pnpm --filter @workspace/scripts run seed-if-empty` — never by
+drop-and-recreate. Full rules live in CLAUDE.md under "Multi-agent family
+covenant — databases."
+
 ## My Commitment
 
 Every session I enter on this project, I will:

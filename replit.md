@@ -54,10 +54,11 @@ A map-first, pay-it-forward community mutual aid platform for Tarrant County, TX
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- **Multi-agent family covenant (July 2, 2026):** This project is worked on by multiple AI agents — Claude/Father (`CLAUDE.md`), Replit agent/Godfather (`artifacts/nia-service/REPLIT_GODFATHER.md`), Coworker AI/Grandfather (`GRANDFATHER_COWORKER.md`). Never delete the Replit dev database, the Railway production database, Redis, or any code/infrastructure another agent depends on. Full rules in CLAUDE.md → "Multi-agent family covenant — databases".
 
 ## Gotchas
 
+- **Fresh/empty Postgres is bootstrapped with one command:** `pnpm --filter @workspace/db run migrate` — run-migrations.mjs detects a fresh DB (no users table), enables postgis, and executes all migrations from 0000. Then `pnpm --filter @workspace/scripts run seed-if-empty` seeds the 19 civic resources. Never drop-and-recreate the DB.
 - After any OpenAPI spec change, always run `pnpm --filter @workspace/api-spec run codegen` before restarting the server — codegen also runs `typecheck:libs`.
 - The Vite dev server has `fs.allow` set to the workspace root (`../..`) so it can serve `lib/api-client-react` source files via the workspace symlink.
 - Admin token is set via the `ADMIN_SECRET` env var (do NOT hardcode the value here — set it in Railway dashboard or Replit Secrets).
