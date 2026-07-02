@@ -1,21 +1,25 @@
 /**
- * Niakofa — Community Post Moderation (first pass)
+ * Niakofa — Content Moderation (first pass)
  *
- * This is a deterministic, zero-dependency screen applied at write-time to
- * every community post (thanks/offer/resource/update) before it's allowed
- * into the public feed. It is NOT a replacement for human review — it only
- * decides whether a post goes straight to "approved" or gets held as
- * "pending" for an admin to look at via the moderation queue
- * (GET/POST /admin/moderation-queue).
+ * Two exported functions:
+ *   moderatePostText(message)         — community/gratitude posts
+ *   moderateRequestText(title, desc)  — help request title + description
  *
- * Deliberately conservative: false positives (good posts held for review)
- * are an acceptable cost; false negatives (harmful posts going live
- * unreviewed) are not. When in doubt, this returns "pending".
+ * Both are deterministic, zero-dependency screens applied at write-time.
+ * They are NOT replacements for human review — they decide whether content
+ * goes straight to "approved" or gets held as "pending" for an admin.
  *
- * Positivity filter: posts that match community-positive patterns (offers
- * of help, resource shares, uplifting updates) are fast-tracked to
- * "approved" even if they're short, because short helpful offers are normal
- * and valuable in the community feed.
+ * Deliberately conservative: false positives (held for review) are an
+ * acceptable cost; false negatives (harmful content going live) are not.
+ * When in doubt, return "pending".
+ *
+ * Help requests are treated differently from community posts:
+ * - Emergency requests ALWAYS bypass the heuristic (life safety > screening).
+ * - The spam patterns are retained, but we also check for illegal-service
+ *   signals that someone might embed in the "other" category free-text.
+ * - "Pending" requests still go live (helper community should not be
+ *   blocked from helping someone in genuine need), but they are flagged for
+ *   admin review via GET /admin/requests/flagged.
  */
 
 const BLOCKED_PATTERNS: RegExp[] = [
@@ -52,6 +56,27 @@ const POSITIVE_PATTERNS: RegExp[] = [
   /\b(neighborhood|neighbor|community|block|local)\b/i,
   /\b(volunteer|donated|giving away|free to a good home)\b/i,
   /\b(thank(s| you)|gratitude|appreciate|blessed|grateful)\b/i,
+];
+
+// ── Request-specific illegal/unsafe service patterns ─────────────────────────
+// These detect signals that someone may be using the free-text category "other"
+// to request illegal goods or services. Positive matches always → "pending".
+// Patterns are intentionally narrow to avoid false-positives on legitimate
+// requests (e.g. "prescription pickup" → medical category, not flagged here).
+const ILLEGAL_SERVICE_PATTERNS: RegExp[] = [
+  // Controlled substances
+  /\b(buy|sell|get|find|deliver|score)\s+(me\s+)?(drugs?|weed|marijuana|cocaine|heroin|meth|fentanyl|pills)\b/i,
+  /\b(controlled\s+substance|illegal\s+substance)\b/i,
+  // Weapons (not lawful transfers — the "buy" intent is the signal)
+  /\b(buy|sell|get)\s+(me\s+)?(unlicensed\s+)?(gun|firearm|ammo|ammunition|weapon)\b/i,
+  // Solicitation / trafficking signals — requires intent context to avoid
+  // false-positives on benign requests like "escort my mother to an appointment"
+  /\b(hire|book|find|get|need)\s+(an?\s+)?(escort|sex\s+worker|prostitut)\b/i,
+  /\b(prostitut|sex\s+work|adult\s+service|happy\s+ending)\b/i,
+  // Fraud / document forgery
+  /\b(fake\s+(id|passport|license|document)|forge|counterfeit)\b/i,
+  // Hacking / unauthorized access
+  /\b(hack\s+(into|an?|my)|crack\s+(password|account)|ddos|phishing)\b/i,
 ];
 
 export interface ModerationResult {
@@ -102,5 +127,63 @@ export function moderatePostText(message: string): ModerationResult {
 
   // Default: approve if no signals fired. The moderation queue + user reports
   // catch what this heuristic misses.
+  return { status: "approved", reason: null };
+}
+
+/**
+ * moderateRequestText — heuristic screen for help request title + description.
+ *
+ * Key differences from moderatePostText:
+ * 1. Checks illegal-service patterns (drugs, weapons, solicitation, etc.)
+ * 2. Does NOT fast-track positivity — short help requests are normal and
+ *    should not be auto-approved if other signals fire.
+ * 3. Spam patterns still apply (raw links, phone numbers, etc.)
+ *
+ * Returns "approved" or "pending". The caller decides what to do with
+ * "pending" — for help requests, the convention is: let the request go live
+ * (someone may genuinely need help) but flag it for admin review.
+ *
+ * Emergency requests should bypass this entirely — life safety > screening.
+ */
+export function moderateRequestText(title: string, description: string): ModerationResult {
+  const combined = `${title} ${description}`.trim();
+
+  if (combined.length < 3) {
+    return { status: "pending", reason: "too short to evaluate" };
+  }
+
+  // Illegal service signals — most important check
+  for (const pattern of ILLEGAL_SERVICE_PATTERNS) {
+    if (pattern.test(combined)) {
+      return { status: "pending", reason: "possible illegal service request" };
+    }
+  }
+
+  // Spam patterns — same as community posts
+  for (const pattern of SPAM_PATTERNS) {
+    if (pattern.test(combined)) {
+      return { status: "pending", reason: `spam signal: ${pattern.source.slice(0, 40)}` };
+    }
+  }
+
+  // Hard-block patterns (future: real classifier)
+  for (const pattern of BLOCKED_PATTERNS) {
+    if (pattern.test(combined)) {
+      return { status: "pending", reason: "matched blocked content pattern" };
+    }
+  }
+
+  if (EXCESSIVE_CAPS.test(combined)) {
+    return { status: "pending", reason: "excessive capitalization" };
+  }
+
+  if (EXCESSIVE_PUNCTUATION.test(combined)) {
+    return { status: "pending", reason: "excessive punctuation" };
+  }
+
+  if (/(.)\1{9,}/.test(combined)) {
+    return { status: "pending", reason: "repeated character flood" };
+  }
+
   return { status: "approved", reason: null };
 }

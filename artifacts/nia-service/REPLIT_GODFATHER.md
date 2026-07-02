@@ -440,3 +440,34 @@ Three privacy / sustainability features shipped and confirmed running clean.
 - `GET /pool/stats` extended with four new fields computed in the same query: `inflow_30d` (contributions + repayments in last 30 days), `outflow_30d` (fronts + minimums, ABS of negative ledger entries in last 30 days), `runway_days` (balance / daily burn, `null` when no spending recorded = infinite runway), `outstanding_pif_total` (SUM of pledge_amount − pledge_paid for completed PIF requests with outstanding balance — expected future inflow).
 - **RunwayCard** injected in the Community Pool tab between "Where the Money Goes" and "Helpers Waiting on the Pool": shows runway as a large headline number (green > 30 days, yellow 7–30, red ≤ 7), 30-day inflow vs outflow grid, an inflow-coverage progress bar, and the outstanding PIF repayment figure.
 - The card uses an IIFE pattern with a local type extension (`typeof poolStats & { runway_days?: ... }`) to access the new fields without a full OpenAPI codegen cycle.
+
+### Session: July 2, 2026 — Content moderation on help requests, PIF pledge cap, tip-endpoint security fix
+
+**Document reviewed line-by-line:** uploaded owner-briefing document identifying five security/product gaps.
+
+**Critical money-security fix:**
+- `POST /requests/:id/tip` was crediting arbitrary client-supplied `tip_amount` directly to a helper's benevolence_wallet with no Stripe payment verification — a real money-security hole.
+- Endpoint **retired as `410 Gone`**. Tips now flow through the Stripe PaymentIntent path (`POST /payments/create-intent`) or the standard pledge path (`POST /users/:id/pledge`).
+
+**Content moderation extended to help requests (gap #2 from owner briefing):**
+- `lib/post-moderation.ts` now exports both `moderatePostText` (community posts) and `moderateRequestText` (help request title + description).
+- `ILLEGAL_SERVICE_PATTERNS` added: controlled substances, weapons, solicitation/trafficking signals, fraud/document forgery, hacking/unauthorized access — all expressed as narrow regex patterns to minimize false positives.
+- Emergency requests (`urgency = 'emergency'`) bypass screening entirely — life safety > content guard.
+- Flagged requests still go live (someone genuinely needs help) but are held as `pending` for admin review.
+- Admin moderation queue: `GET /admin/requests/flagged` + `POST /admin/requests/:id/moderate` (approve/reject). Both protected by `requireAdmin()` + `adminLimiter`.
+- **Lifecycle guard on reject:** cannot cancel a request that is already claimed/completed — returns 409 with a clear message directing admin to the pledge write-off endpoint instead.
+
+**PIF outstanding pledge cap (gap #3 — pool abuse prevention):**
+- Users with ≥ 3 completed pay-it-forward requests with `pledge_paid = 0` and no active repayment are blocked from posting new PIF requests.
+- Cap is server-enforced at the DB query level, not just client-side.
+- Returns `403` with `pif_pledge_cap_exceeded` code and the actual unpaid count.
+
+**Schema migration 0032 (`lib/db/migrations/`):**
+- `moderation_status` (text, default 'approved'), `moderation_reason` (text, nullable), `estimated_hours` (real, nullable) added to `help_requests`.
+- Partial index on `(moderation_status, created_at) WHERE moderation_status != 'approved'` — keeps the index small; only pending/rejected rows hit it.
+- Existing rows default to 'approved' — no backfill needed.
+
+**Admin pledge write-off hardened:**
+- `PATCH /admin/requests/:id/pledge-status` now uses `requireAdmin()` middleware + `adminLimiter` instead of a manual DB `is_admin` check inside the handler. Consistent with the rest of the admin surface.
+
+**CLAUDE.md updated:** "Known product gaps — owner briefing" section added, moderation design choice updated to reflect both post and request coverage.

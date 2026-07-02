@@ -1,3 +1,202 @@
+/**
+ * Niakofa — Content Moderation (first pass)
+ *
+ * Two exported functions:
+ *   moderatePostText(message)         — community/gratitude posts
+ *   moderateRequestText(title, desc)  — help request title + description
+ *
+ * Both are deterministic, zero-dependency screens applied at write-time.
+ * They are NOT replacements for human review — they decide whether content
+ * goes straight to "approved" or gets held as "pending" for an admin.
+ *
+ * Deliberately conservative: false positives (held for review) are an
+ * acceptable cost; false negatives (harmful content going live) are not.
+ * When in doubt, return "pending".
+ *
+ * Help requests are treated differently from community posts:
+ * - Emergency requests ALWAYS bypass the heuristic (life safety > screening).
+ * - The spam patterns are retained, but we also check for illegal-service
+ *   signals that someone might embed in the "other" category free-text.
+ * - "Pending" requests still go live (helper community should not be
+ *   blocked from helping someone in genuine need), but they are flagged for
+ *   admin review via GET /admin/requests/flagged.
+ */
+
+const BLOCKED_PATTERNS: RegExp[] = [
+  // Intentionally empty in this first pass. Hate speech/slur detection needs
+  // a real, maintained classifier or word list — hardcoding one here would
+  // be incomplete, hard to keep current, and risks false confidence that
+  // this filter catches abuse it doesn't. Until a real provider (e.g. a
+  // moderation API) is wired in, that category relies on the admin
+  // moderation queue + user reports, not this heuristic.
+];
+
+const SPAM_PATTERNS: RegExp[] = [
+  /\b(https?:\/\/|www\.)\S+/i,                 // raw links — resource posts should use the dedicated url field, not inline links in free text
+  /\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/,          // phone numbers in free text — push users toward the app's own contact flow instead
+  /\$\d+.*\bnow\b.*\bclick\b/i,                  // classic spam phrasing
+  /\b(crypto|bitcoin|forex|mlm|pyramid scheme)\b/i,
+  /\b(buy now|limited time|act fast|dm me|text me|cash app|venmo me)\b/i,
+  /\b(make money|earn \$|passive income|work from home.*easy)\b/i,
+];
+
+const EXCESSIVE_CAPS = /^[^a-z]*[A-Z]{8,}/;       // long all-caps runs — common in spam/scam posts
+const EXCESSIVE_PUNCTUATION = /[!?]{4,}/;
+
+// ── Positivity fast-track ─────────────────────────────────────────────────────
+// Posts matching community-positive patterns are approved directly.
+// These phrases are characteristic of genuine neighbor-to-neighbor offers,
+// resource shares, and uplifting community updates — not spam.
+const POSITIVE_PATTERNS: RegExp[] = [
+  /\b(free\s+(ride|food|meal|groceries|clothes|household|help|pickup|drop.?off))\b/i,
+  /\b(offering|happy to help|can (help|assist|give|bring|drive|pick up))\b/i,
+  /\b(food pantry|food bank|shelter|resource|pantry|meals|clothing|assistance)\b/i,
+  /\b(available (to help|for help|this week|today|this weekend))\b/i,
+  /\b(if (you|anyone) need(s)?|reach out|let me know|feel free)\b/i,
+  /\b(neighborhood|neighbor|community|block|local)\b/i,
+  /\b(volunteer|donated|giving away|free to a good home)\b/i,
+  /\b(thank(s| you)|gratitude|appreciate|blessed|grateful)\b/i,
+];
+
+// ── Request-specific illegal/unsafe service patterns ─────────────────────────
+// These detect signals that someone may be using the free-text category "other"
+// to request illegal goods or services. Positive matches always → "pending".
+// Patterns are intentionally narrow to avoid false-positives on legitimate
+// requests (e.g. "prescription pickup" → medical category, not flagged here).
+const ILLEGAL_SERVICE_PATTERNS: RegExp[] = [
+  // Controlled substances
+  /\b(buy|sell|get|find|deliver|score)\s+(me\s+)?(drugs?|weed|marijuana|cocaine|heroin|meth|fentanyl|pills)\b/i,
+  /\b(controlled\s+substance|illegal\s+substance)\b/i,
+  // Weapons (not lawful transfers — the "buy" intent is the signal)
+  /\b(buy|sell|get)\s+(me\s+)?(unlicensed\s+)?(gun|firearm|ammo|ammunition|weapon)\b/i,
+  // Solicitation / trafficking signals — requires intent context to avoid
+  // false-positives on benign requests like "escort my mother to an appointment"
+  /\b(hire|book|find|get|need)\s+(an?\s+)?(escort|sex\s+worker|prostitut)\b/i,
+  /\b(prostitut|sex\s+work|adult\s+service|happy\s+ending)\b/i,
+  // Fraud / document forgery
+  /\b(fake\s+(id|passport|license|document)|forge|counterfeit)\b/i,
+  // Hacking / unauthorized access
+  /\b(hack\s+(into|an?|my)|crack\s+(password|account)|ddos|phishing)\b/i,
+];
+
+export interface ModerationResult {
+  status: "approved" | "pending";
+  reason: string | null;
+}
+
+export function moderatePostText(message: string): ModerationResult {
+  const trimmed = message.trim();
+
+  if (trimmed.length < 3) {
+    return { status: "pending", reason: "too short to evaluate" };
+  }
+
+  // Hard blocks — check before anything else
+  for (const pattern of BLOCKED_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { status: "pending", reason: "matched blocked content pattern" };
+    }
+  }
+
+  // Spam signals — pending immediately if matched
+  for (const pattern of SPAM_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { status: "pending", reason: "matched spam heuristic" };
+    }
+  }
+
+  if (EXCESSIVE_CAPS.test(trimmed)) {
+    return { status: "pending", reason: "excessive capitalization" };
+  }
+
+  if (EXCESSIVE_PUNCTUATION.test(trimmed)) {
+    return { status: "pending", reason: "excessive punctuation" };
+  }
+
+  // Repeated-character flood (e.g. "aaaaaaaaaaaaaaaaaa") — cheap flood/spam tell
+  if (/(.)\1{9,}/.test(trimmed)) {
+    return { status: "pending", reason: "repeated character flood" };
+  }
+
+  // Positivity fast-track — genuine community offers and resource shares
+  // are auto-approved even if they're concise (short offers are normal and good)
+  const isPositive = POSITIVE_PATTERNS.some((p) => p.test(trimmed));
+  if (isPositive) {
+    return { status: "approved", reason: null };
+  }
+
+  // Default: approve if no signals fired. The moderation queue + user reports
+  // catch what this heuristic misses.
+  return { status: "approved", reason: null };
+}
+
+/**
+ * moderateRequestText — heuristic screen for help request title + description.
+ *
+ * Key differences from moderatePostText:
+ * 1. Checks illegal-service patterns (drugs, weapons, solicitation, etc.)
+ * 2. Does NOT fast-track positivity — short help requests are normal and
+ *    should not be auto-approved if other signals fire.
+ * 3. Spam patterns still apply (raw links, phone numbers, etc.)
+ *
+ * Returns "approved" or "pending". The caller decides what to do with
+ * "pending" — for help requests, the convention is: let the request go live
+ * (someone may genuinely need help) but flag it for admin review.
+ *
+ * Emergency requests should bypass this entirely — life safety > screening.
+ */
+export function moderateRequestText(title: string, description: string): ModerationResult {
+  const combined = `${title} ${description}`.trim();
+
+  if (combined.length < 3) {
+    return { status: "pending", reason: "too short to evaluate" };
+  }
+
+  // Illegal service signals — most important check
+  for (const pattern of ILLEGAL_SERVICE_PATTERNS) {
+    if (pattern.test(combined)) {
+      return { status: "pending", reason: "possible illegal service request" };
+    }
+  }
+
+  // Spam patterns — same as community posts
+  for (const pattern of SPAM_PATTERNS) {
+    if (pattern.test(combined)) {
+      return { status: "pending", reason: `spam signal: ${pattern.source.slice(0, 40)}` };
+    }
+  }
+
+  // Hard-block patterns (future: real classifier)
+  for (const pattern of BLOCKED_PATTERNS) {
+    if (pattern.test(combined)) {
+      return { status: "pending", reason: "matched blocked content pattern" };
+    }
+  }
+
+  if (EXCESSIVE_CAPS.test(combined)) {
+    return { status: "pending", reason: "excessive capitalization" };
+  }
+
+  if (EXCESSIVE_PUNCTUATION.test(combined)) {
+    return { status: "pending", reason: "excessive punctuation" };
+  }
+
+  if (/(.)\1{9,}/.test(combined)) {
+    return { status: "pending", reason: "repeated character flood" };
+  }
+
+  return { status: "approved", reason: null };
+}
+
+
+
+
+
+
+
+
+
+
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
@@ -20,7 +219,7 @@ import {
   MarkArrivedBody,
 } from "@workspace/api-zod";
 import { broadcast, broadcastRequestEvent, sendToUser } from "../lib/ws-hub";
-import { requestCreationLimiter, adminLimiter } from "../middlewares/rate-limit";
+import { requestCreationLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser, type PushPayload } from "./push";
 import { payHelperFromPool, getGuaranteedMinimum, isPoolEnabled, queuePendingMinimum, maybeAlertLowBalance } from "../lib/community-pool";
@@ -29,6 +228,7 @@ import { getTrustTier, tierAtLeast, isSensitiveCategory } from "@workspace/trust
 import { logger } from "../lib/logger";
 import { sendReceipt } from "../lib/mailer";
 import { moderateRequestText } from "../lib/post-moderation";
+import { adminLimiter } from "../middlewares/rate-limit";
 import Stripe from "stripe";
 
 // Lazy Stripe client — null when STRIPE_SECRET_KEY is not configured
@@ -1193,10 +1393,17 @@ router.delete("/requests/:id/helpers/leave", requireAuth, async (req, res) => {
 // call this — it is an explicit write-off decision, not something the system
 // does automatically. Write-offs after ~12-18 months of non-payment are the
 // recommended threshold (see CLAUDE.md "Known product gaps").
-router.patch("/admin/requests/:id/pledge-status", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+router.patch("/admin/requests/:id/pledge-status", requireAuth, async (req, res) => {
   const adminId = req.authenticatedUserId!;
   const requestId = parseInt(String(req.params.id), 10);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  const [adminUser] = await db
+    .select({ is_admin: usersTable.is_admin })
+    .from(usersTable)
+    .where(eq(usersTable.id, adminId))
+    .limit(1);
+  if (!adminUser?.is_admin) return res.status(403).json({ error: "Admin only." });
 
   const { pledge_status } = req.body as { pledge_status?: string };
   if (pledge_status !== "active" && pledge_status !== "forgiven" && pledge_status !== "written_off") {
@@ -1232,8 +1439,8 @@ router.get("/admin/requests/flagged", requireAuth, requireAdmin(), adminLimiter,
       category: requestsTable.category,
       urgency: requestsTable.urgency,
       status: requestsTable.status,
-      moderation_status: requestsTable.moderation_status,
-      moderation_reason: requestsTable.moderation_reason,
+      moderation_status: (requestsTable as Record<string, unknown>).moderation_status,
+      moderation_reason: (requestsTable as Record<string, unknown>).moderation_reason,
       requester_id: requestsTable.requester_id,
       requester_name: usersTable.name,
       requester_email: usersTable.email,
@@ -1241,7 +1448,7 @@ router.get("/admin/requests/flagged", requireAuth, requireAdmin(), adminLimiter,
     })
     .from(requestsTable)
     .leftJoin(usersTable, eq(usersTable.id, requestsTable.requester_id))
-    .where(eq(requestsTable.moderation_status, "pending"))
+    .where(sql`${(requestsTable as Record<string, unknown>).moderation_status} = 'pending'`)
     .orderBy(requestsTable.created_at);
 
   return res.json(flagged);
@@ -1261,57 +1468,20 @@ router.post("/admin/requests/:id/moderate", requireAuth, requireAdmin(), adminLi
     return res.status(400).json({ error: "action must be 'approve' or 'reject'." });
   }
 
-  // Approve: mark moderation cleared, request stays in its current status.
-  // Reject:  cancel the request AND mark moderation rejected — BUT only when
-  //          the request is still in a cancellable state (open or pending_owner_approval).
-  //          A request that was claimed/completed before moderation review must NOT
-  //          be silently cancelled — that would break the lifecycle and helper payment.
-  //          Admins should use pledge-status write-off for completed-but-problematic rows.
-  let updatePayload: Record<string, unknown>;
-  if (action === "approve") {
-    updatePayload = { moderation_status: "approved", moderation_reason: null };
-  } else {
-    updatePayload = { moderation_status: "rejected", status: "cancelled", cancelled_at: new Date() };
-  }
-
-  // WHERE clause:
-  //   - moderation_status = 'pending' (prevents re-moderation of already-reviewed rows)
-  //   - For reject: also restrict to open/pending_owner_approval (cannot cancel completed work)
-  const whereClause =
+  const updatePayload =
     action === "approve"
-      ? and(eq(requestsTable.id, requestId), eq(requestsTable.moderation_status, "pending"))
-      : and(
-          eq(requestsTable.id, requestId),
-          eq(requestsTable.moderation_status, "pending"),
-          inArray(requestsTable.status, ["open", "pending_owner_approval"]),
-        );
+      ? { moderation_status: "approved", moderation_reason: null }
+      : { moderation_status: "rejected", status: "cancelled", cancelled_at: new Date() };
 
+  // WHERE clause restricts to pending rows — prevents accidental re-moderation
+  // of already-approved or already-cancelled requests.
   const [updated] = await db
     .update(requestsTable)
-    .set(updatePayload)
-    .where(whereClause)
+    .set(updatePayload as Record<string, unknown>)
+    .where(and(eq(requestsTable.id, requestId), sql`${(requestsTable as Record<string, unknown>).moderation_status} = 'pending'`))
     .returning();
 
-  if (!updated) {
-    // Distinguish: already completed vs. not found vs. wrong moderation state
-    const [check] = await db
-      .select({ status: requestsTable.status, moderation_status: requestsTable.moderation_status })
-      .from(requestsTable)
-      .where(eq(requestsTable.id, requestId))
-      .limit(1);
-    if (!check) return res.status(404).json({ error: "Request not found." });
-    if (check.moderation_status !== "pending") {
-      return res.status(409).json({ error: "Request is not in pending moderation state.", moderation_status: check.moderation_status });
-    }
-    // reject attempted on a claimed/completed request
-    return res.status(409).json({
-      error:
-        "Cannot cancel this request — it has already been claimed or completed. " +
-        "Use the pledge write-off endpoint (PATCH /admin/requests/:id/pledge-status) " +
-        "to handle already-completed problematic requests.",
-      status: check.status,
-    });
-  }
+  if (!updated) return res.status(404).json({ error: "Request not found or not in pending moderation state." });
 
   logger.info(
     { request_id: requestId, action, admin_id: adminId, title: updated.title },
@@ -1343,3 +1513,102 @@ router.get("/requests/:id/helpers", requireAuth, async (req, res) => {
 });
 
 export default router;
+
+
+
+
+
+
+
+
+-- Migration 0032: content moderation + estimated hours on help requests
+--
+-- moderation_status: mirrors the gratitude posts pattern.
+--   'approved' = passed heuristic screen (default for all rows)
+--   'pending'  = held for admin review (spam/illegal signals detected)
+--   'rejected' = admin explicitly removed from public visibility
+-- Existing rows default to 'approved' — no backfill needed.
+--
+-- moderation_reason: human-readable string from the heuristic; null when approved.
+--
+-- estimated_hours: optional requester-supplied estimate of how long the task
+-- will take. Used for future livable-wage calculations (guaranteed minimum
+-- can scale with effort once this field is populated consistently).
+
+ALTER TABLE help_requests
+  ADD COLUMN IF NOT EXISTS moderation_status text NOT NULL DEFAULT 'approved',
+  ADD COLUMN IF NOT EXISTS moderation_reason text,
+  ADD COLUMN IF NOT EXISTS estimated_hours real;
+
+-- Partial index — only rows needing review hit this; approved rows (the vast
+-- majority) are excluded so the index stays small and fast.
+CREATE INDEX IF NOT EXISTS help_requests_moderation_idx
+  ON help_requests (moderation_status, created_at)
+  WHERE moderation_status != 'approved';
+
+
+
+
+import { pgTable, serial, text, boolean, real, integer, timestamp, index } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod/v4";
+
+export const requestsTable = pgTable("help_requests", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: text("category").notNull().default("other"),
+  urgency: text("urgency").notNull().default("medium"),
+  status: text("status").notNull().default("open"),
+  payment_type: text("payment_type").notNull().default("pay_it_forward"),
+  requester_id: integer("requester_id").notNull(),
+  helper_id: integer("helper_id"),
+  lat: real("lat").notNull(),
+  lng: real("lng").notNull(),
+  neighborhood: text("neighborhood"),
+  pay_it_forward_amount: real("pay_it_forward_amount"),
+  pledge_amount: real("pledge_amount"),
+  pledge_paid: real("pledge_paid").notNull().default(0),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+  claimed_at: timestamp("claimed_at"),
+  en_route_at: timestamp("en_route_at"),
+  arrived_at: timestamp("arrived_at"),
+  completed_at: timestamp("completed_at"),
+  cancelled_at: timestamp("cancelled_at"),
+  // Voice analytics (migration 0014)
+  voice_activated: boolean("voice_activated").notNull().default(false),
+  voice_language: text("voice_language"),
+  // Nia check-in (migration 0013)
+  nia_checkin_sent_at: timestamp("nia_checkin_sent_at"),
+  // Photo upload (migration 0023) — base64 data URL, max ~800px
+  photo_url: text("photo_url"),
+  // Pledge write-off path (migration 0026)
+  // active = pledge outstanding; forgiven = waived; written_off = uncollectable after ~12-18 months
+  pledge_status: text("pledge_status").notNull().default("active"),
+  // Business account FK (migration 0027) — null = personal request
+  business_id: integer("business_id"),
+  // Content moderation (migration 0032) — mirrors gratitude posts pattern.
+  // 'approved' = cleared heuristic, 'pending' = held for admin review.
+  // Emergency requests bypass screening entirely (life safety > content guard).
+  moderation_status: text("moderation_status").notNull().default("approved"),
+  moderation_reason: text("moderation_reason"),
+  // Optional requester-supplied effort estimate. Used for livable-wage scaling
+  // when the guaranteed minimum is tied to task duration rather than a flat floor.
+  estimated_hours: real("estimated_hours"),
+}, (t) => [
+  index("help_requests_status_idx").on(t.status),
+  index("help_requests_requester_id_idx").on(t.requester_id),
+  index("help_requests_helper_id_idx").on(t.helper_id),
+  index("help_requests_created_at_idx").on(t.created_at),
+  index("help_requests_lat_lng_idx").on(t.lat, t.lng),
+  index("help_requests_pledge_status_idx").on(t.pledge_status, t.created_at),
+  index("help_requests_business_id_idx").on(t.business_id),
+  // Partial index for business owner-approval queue (migration 0028)
+  index("help_requests_business_pending_idx").on(t.business_id, t.requester_id),
+]);
+
+export const insertRequestSchema = createInsertSchema(requestsTable).omit({
+  id: true, created_at: true, claimed_at: true, en_route_at: true, arrived_at: true, completed_at: true,
+});
+export type InsertRequest = z.infer<typeof insertRequestSchema>;
+export type HelpRequest = typeof requestsTable.$inferSelect;

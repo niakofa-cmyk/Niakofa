@@ -66,11 +66,18 @@ Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
   extend this table to do it without a dedicated design pass on the
   Stripe Connect transfer logic.
 
-- **Community feed moderation** (`gratitude_posts.moderation_status`) is a
-  deterministic heuristic (`lib/post-moderation.ts`), not an AI classifier.
-  Spam/phone-number/link patterns get held as `pending` for admin review.
-  Hate-speech/slur detection is NOT implemented in the heuristic — that
-  category currently relies on the admin queue + user reports only.
+- **Content moderation** (`lib/post-moderation.ts`) covers both community posts
+  (`moderatePostText`) and help request descriptions (`moderateRequestText`).
+  Both are deterministic heuristics — spam/phone-number/link patterns + illegal-
+  service signals (drugs, weapons, solicitation, forgery, hacking) hold content
+  as `pending` for admin review. Emergency requests bypass screening (life safety
+  > screening). Hate-speech/slur detection is NOT implemented — that category
+  relies on the admin queue + user reports only.
+  Admin queue: `GET /admin/requests/flagged`, `POST /admin/requests/:id/moderate`
+  (approve/reject, with lifecycle guard: reject is blocked on claimed/completed rows).
+  Tip endpoint (`POST /requests/:id/tip`) was a money-security hole (arbitrary
+  wallet credit with no Stripe verification) — retired as `410 Gone` (July 2, 2026).
+  Tips now flow through the Stripe PaymentIntent path or standard pledge flow.
 
 - **Matching engine** (`lib/matching.ts`) ranks nearby requests by urgency
   (dominant signal) + skill/specialty keyword overlap + proximity. It is a
@@ -84,6 +91,18 @@ Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
   As of Incident #18 it has no hardcoded fallback secret, so a missing env
   var fails closed (locks everyone out of the UI) rather than falling open.
   A real fix (short-lived admin JWT from a verify endpoint) is still open.
+
+## Known product gaps — owner briefing
+
+These gaps are real and documented, not code bugs:
+
+1. **Background-check provider (top priority):** `background_check_status` column exists and is checked in the claim route for `childcare`, `senior_care`, `medical` — but no automated Checkr-style provider is wired in. Status is currently manual/stub. Before scaling those categories, wire a real provider.
+2. **No liability/waiver flow in code:** for `home_repair`, `moving_labor`, `medical`, `senior_care`, etc. a ToS waiver needs to be added (both frontend acknowledgement and server-side record). Not in code; may need a lawyer to draft the ToS first.
+3. **Pool sustainability:** no public anonymous donation endpoint yet (only signed-in users + gov sponsors can contribute). Diversified funding (grants, county, public) is the intended long-term model.
+4. **Guaranteed minimum is flat:** `estimated_hours` field now exists on requests (migration 0032) to enable future per-hour scaling, but the floor is still a flat per-task number in `system_settings`.
+5. **Pay-it-forward = community gift, not debt (legal):** structuring PIF pledges as voluntary gifts (not loans) is what keeps the platform out of consumer-lending/usury territory. No interest, no enforcement, no credit reporting. Consult a TX-licensed attorney before scaling past community pilot. (See community-pool session note for full 1099/lending details.)
+6. **Business accounts underbuilt:** schema + guardrails exist but no bulk requests, invoicing, or recurring service agreements yet.
+7. **No pledge default handling beyond admin write-off:** no automated reminder escalation or trust-score consequence for users who never pay back. Admin `PATCH /admin/requests/:id/pledge-status` is the only tool.
 
 ## Known gaps (real, not yet built)
 

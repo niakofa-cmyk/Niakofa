@@ -36,6 +36,14 @@ export const requestsTable = pgTable("help_requests", {
   pledge_status: text("pledge_status").notNull().default("active"),
   // Business account FK (migration 0027) — null = personal request
   business_id: integer("business_id"),
+  // Content moderation (migration 0032) — mirrors gratitude posts pattern.
+  // 'approved' = cleared heuristic, 'pending' = held for admin review.
+  // Emergency requests bypass screening entirely (life safety > content guard).
+  moderation_status: text("moderation_status").notNull().default("approved"),
+  moderation_reason: text("moderation_reason"),
+  // Optional requester-supplied effort estimate. Used for livable-wage scaling
+  // when the guaranteed minimum is tied to task duration rather than a flat floor.
+  estimated_hours: real("estimated_hours"),
 }, (t) => [
   index("help_requests_status_idx").on(t.status),
   index("help_requests_requester_id_idx").on(t.requester_id),
@@ -46,6 +54,8 @@ export const requestsTable = pgTable("help_requests", {
   index("help_requests_business_id_idx").on(t.business_id),
   // Partial index for business owner-approval queue (migration 0028)
   index("help_requests_business_pending_idx").on(t.business_id, t.requester_id),
+  // Partial index for moderation queue — only non-approved rows (migration 0032)
+  index("help_requests_moderation_idx").on(t.moderation_status, t.created_at),
 ]);
 
 export const insertRequestSchema = createInsertSchema(requestsTable).omit({
