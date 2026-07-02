@@ -97,6 +97,28 @@ interface PledgePoolData {
   daily_volume: Array<{ day: string; count: number }>;
 }
 
+interface NiaCostDailyEntry {
+  date: string;
+  totalCalls: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  estimatedCostUsd: number;
+  failedCalls: number;
+}
+
+interface NiaCostData {
+  daily: NiaCostDailyEntry[];
+  summary: {
+    totalCalls: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalCostUsd: number;
+    totalFailed: number;
+    averageCostPerCall: number;
+  };
+  period: { days: number; startDate: string | null; endDate: string | null };
+}
+
 // ── KPI tile ──────────────────────────────────────────────────────────────────
 function KpiTile({ label, value, sub, color = "text-foreground", icon: Icon }: {
   label: string;
@@ -961,6 +983,8 @@ function NiaTab() {
   const [toggling, setToggling] = useState(false);
   const [confirmPending, setConfirmPending] = useState<boolean | null>(null);
   const [memoryStats, setMemoryStats] = useState<{ users: number; entries: number } | null>(null);
+  const [costData, setCostData] = useState<NiaCostData | null>(null);
+  const [costLoading, setCostLoading] = useState(false);
 
   useEffect(() => {
     const niaTok = getToken();
@@ -969,11 +993,15 @@ function NiaTab() {
       .then(r => r.json())
       .then((d: { enabled: boolean }) => setNiaEnabled(d.enabled))
       .catch(() => toast({ title: "Could not fetch Nia status", variant: "destructive" }));
-    // Try to fetch memory stats
     fetch(`${BASE}/api/admin/nia-memory-stats`, { headers: niaHdrs })
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setMemoryStats(d); })
       .catch(() => {});
+    setCostLoading(true);
+    fetch(`${BASE}/api/admin/nia-costs?days=7`, { headers: niaHdrs })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: NiaCostData | null) => { if (d) setCostData(d); setCostLoading(false); })
+      .catch(() => { setCostLoading(false); });
   }, []);
 
   const submitToggle = async (enabled: boolean) => {
@@ -1075,6 +1103,75 @@ function NiaTab() {
           <div className="text-sm font-bold">{memoryStats?.entries ?? "—"}</div>
           <div className="text-[10px] text-muted-foreground">total facts</div>
         </div>
+      </div>
+
+      {/* Nia AI Cost Dashboard */}
+      <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <DollarSign className="w-3.5 h-3.5 text-primary" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">AI Cost Dashboard (7d)</span>
+          </div>
+          {costLoading && <RefreshCw className="w-3 h-3 text-muted-foreground animate-spin" />}
+        </div>
+
+        {costData ? (
+          <>
+            {/* Summary row */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-background rounded-xl p-2.5 text-center">
+                <div className="text-base font-black text-foreground">${costData.summary.totalCostUsd.toFixed(3)}</div>
+                <div className="text-[9px] text-muted-foreground mt-0.5">Total Cost</div>
+              </div>
+              <div className="bg-background rounded-xl p-2.5 text-center">
+                <div className="text-base font-black text-primary">{costData.summary.totalCalls.toLocaleString()}</div>
+                <div className="text-[9px] text-muted-foreground mt-0.5">API Calls</div>
+              </div>
+              <div className="bg-background rounded-xl p-2.5 text-center">
+                <div className={`text-base font-black ${costData.summary.totalFailed > 0 ? "text-destructive" : "text-green-400"}`}>
+                  {costData.summary.totalFailed}
+                </div>
+                <div className="text-[9px] text-muted-foreground mt-0.5">Failed</div>
+              </div>
+            </div>
+            {/* Avg cost per call */}
+            <div className="text-[10px] text-muted-foreground px-0.5">
+              Avg <span className="font-bold text-foreground">${costData.summary.averageCostPerCall.toFixed(5)}</span> / call ·{" "}
+              <span className="font-bold text-foreground">{(costData.summary.totalInputTokens + costData.summary.totalOutputTokens).toLocaleString()}</span> total tokens
+            </div>
+            {/* Daily breakdown */}
+            {costData.daily.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <div className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Daily Breakdown</div>
+                {costData.daily.slice(0, 5).map(d => (
+                  <div key={d.date} className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground w-16 shrink-0 font-mono">{d.date.slice(5)}</span>
+                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full"
+                        style={{
+                          width: costData.summary.totalCostUsd > 0
+                            ? `${Math.max(4, (d.estimatedCostUsd / Math.max(...costData.daily.map(x => x.estimatedCostUsd), 0.0001)) * 100)}%`
+                            : "4%",
+                        }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-bold text-foreground w-14 text-right shrink-0">
+                      ${d.estimatedCostUsd.toFixed(4)}
+                    </span>
+                    {d.failedCalls > 0 && (
+                      <span className="text-[9px] text-destructive shrink-0">{d.failedCalls}✗</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : !costLoading ? (
+          <div className="text-[11px] text-muted-foreground text-center py-3">
+            Cost data unavailable — nia-service may be offline
+          </div>
+        ) : null}
       </div>
 
       {/* Confirm sheet */}

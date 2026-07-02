@@ -3,10 +3,11 @@ import { useNiaStory } from "@/hooks/useNiaStory";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import LiveLeaderboard from "@/components/LiveLeaderboard";
-import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, MapPin, Award, Wrench, Globe, Mic, MicOff, Loader2, CheckCircle2 } from "lucide-react";
+import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, MapPin, Award, Wrench, Globe, Mic, MicOff, Loader2, CheckCircle2, RefreshCw, Clock } from "lucide-react";
 import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
+import { useGetSponsorHistory } from "@/hooks/useGetSponsorHistory";
 
 interface GratitudePost {
   id: number;
@@ -567,6 +568,9 @@ export default function CommunityScreen() {
 
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
+  const { currentUser } = useAppContext();
+  const sponsorHistory = useGetSponsorHistory(currentUser?.id ?? null);
+
   // Load initial gratitude posts from API
   useEffect(() => {
     fetch(`${base}/api/gratitude`)
@@ -860,16 +864,77 @@ export default function CommunityScreen() {
               </div>
             </div>
 
-            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4">
-              <div className="flex items-start gap-3">
-                <Sparkles className="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
-                <div>
+            {/* Sponsor Portal — contribution history */}
+            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-yellow-400 shrink-0" />
                   <div className="font-bold text-sm text-yellow-400">Sponsor a Neighbor</div>
-                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                    Businesses and individuals can sponsor the community pool directly. Coming soon.
-                  </p>
                 </div>
+                {sponsorHistory.loading && <RefreshCw className="w-3 h-3 text-yellow-400/60 animate-spin" />}
               </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Businesses and individuals can sponsor the community pool directly. Your contributions go directly to helpers serving Fort Worth neighbors.
+              </p>
+
+              {/* Contribution history */}
+              {currentUser ? (
+                <>
+                  {sponsorHistory.error && (
+                    <div className="text-xs text-destructive/80 bg-destructive/10 rounded-xl px-3 py-2">
+                      Could not load history: {sponsorHistory.error}
+                    </div>
+                  )}
+                  {!sponsorHistory.loading && sponsorHistory.data.length === 0 && !sponsorHistory.error && (
+                    <div className="text-center py-4">
+                      <DollarSign className="w-7 h-7 mx-auto mb-1.5 text-yellow-400/30" />
+                      <p className="text-xs text-muted-foreground">No contributions yet</p>
+                      <p className="text-[10px] text-muted-foreground/60 mt-0.5">Pay-it-forward requests appear here</p>
+                    </div>
+                  )}
+                  {sponsorHistory.data.length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      <div className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Your Contributions</div>
+                      {sponsorHistory.data.slice(0, 5).map(entry => (
+                        <div key={entry.id} className="flex items-center gap-2.5 bg-background/60 rounded-xl px-3 py-2">
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                            entry.state === "completed" ? "bg-green-500/10" : "bg-yellow-500/10"
+                          }`}>
+                            {entry.state === "completed"
+                              ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
+                              : <Clock className="w-3.5 h-3.5 text-yellow-400" />
+                            }
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-bold truncate">
+                              {entry.request_title ?? "Community contribution"}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground capitalize">
+                              {entry.request_category?.replace(/_/g, " ") ?? entry.payment_type?.replace(/_/g, " ")}
+                              {entry.sponsored_by && ` · via ${entry.sponsored_by}`}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className="text-xs font-black text-yellow-400">${entry.amount.toFixed(2)}</div>
+                            <div className="text-[9px] text-muted-foreground">
+                              {new Date(entry.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {sponsorHistory.data.length > 5 && (
+                        <div className="text-center text-[10px] text-muted-foreground pt-1">
+                          +{sponsorHistory.data.length - 5} more contributions
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-xs text-muted-foreground text-center py-2">
+                  Sign in to view your contribution history
+                </div>
+              )}
             </div>
           </div>
         )}

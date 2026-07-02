@@ -809,3 +809,49 @@ comment.
 failure is worse than no automation — it looks green while drifting. Any
 migrate step needs to actually block the deploy on failure, and that
 failure mode needs to be checked, not assumed, the first time it's added.**
+
+---
+
+## Session — Sponsor History + Nia Cost Dashboard
+
+**Changes shipped:**
+
+1. **`artifacts/pay-it-forward/src/hooks/useGetSponsorHistory.ts`** — new
+   custom hook. Fetches `GET /api/users/:id/sponsor-history` with auth
+   headers. Exposes `{ data, loading, error, refetch }`. Uses
+   `useCallback`-stabilized `load` so the effect only re-fires when
+   `userId` changes.
+
+2. **`artifacts/api-server/src/routes/users.ts`** — new endpoint:
+   `GET /users/:id/sponsor-history`. `requireAuth + requireOwnership()`
+   guard. Drizzle query: `paymentTransactionsTable` left-joined with
+   `requestsTable` on `request_id`, filtered by `requester_id = userId`,
+   ordered DESC, limit 50. Returns `{ id, request_id, amount, state,
+   payment_type, sponsored_by, notes, created_at, request_title,
+   request_category }`.
+
+3. **`artifacts/pay-it-forward/src/pages/admin.tsx`** — wired Nia cost
+   dashboard into `NiaTab`. Added `NiaCostDailyEntry` + `NiaCostData`
+   interfaces. Added `costData`/`costLoading` state. Fetches
+   `GET /api/admin/nia-costs?days=7` alongside the existing nia-status
+   and nia-memory-stats fetches. Renders: 3-cell summary row
+   (Total Cost / API Calls / Failed), avg-cost-per-call + token count
+   line, and a per-day mini bar chart (up to 5 days). All behind
+   null-guard so it gracefully degrades when nia-service is offline.
+
+4. **`artifacts/pay-it-forward/src/pages/community.tsx`** — replaced
+   the "Coming soon" sponsor section in the `pool` tab with a live
+   `Sponsor Portal`. Calls `useGetSponsorHistory(currentUser?.id)`.
+   Shows: description copy, loading spinner, empty state (with icon),
+   or up to 5 contribution rows with amount, date, request title,
+   category, and a ✓/⏳ icon keyed on `state === "completed"`.
+   Overflow shown as "+N more contributions" footer.
+
+**Architecture note:** `requireOwnership()` in users.ts checks the `:id`
+route param against the authenticated `req.user.id` — no arg needed for
+the default `"id"` param name (confirmed from existing routes at lines
+209, 251, 260, etc.).
+
+**Lesson: always grep for existing import lists before adding new ones —
+`sql`, `eq`, `DollarSign`, `RefreshCw` were all already imported in their
+respective files; would have caused duplicate-import TS errors.**

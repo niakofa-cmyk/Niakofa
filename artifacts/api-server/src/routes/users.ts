@@ -756,4 +756,33 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
   return res.json(safe);
 });
 
+// GET /users/:id/sponsor-history — contribution and payment history for a user.
+// Owners only (requireOwnership). Returns up to 50 most recent payment transactions,
+// joined with the request title/category so the UI can render meaningful rows.
+router.get("/users/:id/sponsor-history", requireAuth, requireOwnership(), async (req, res) => {
+  const userId = parseInt(String(req.params.id), 10);
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+
+  const history = await db
+    .select({
+      id: paymentTransactionsTable.id,
+      request_id: paymentTransactionsTable.request_id,
+      amount: paymentTransactionsTable.amount,
+      state: paymentTransactionsTable.state,
+      payment_type: paymentTransactionsTable.payment_type,
+      sponsored_by: paymentTransactionsTable.sponsored_by,
+      notes: paymentTransactionsTable.notes,
+      created_at: paymentTransactionsTable.created_at,
+      request_title: requestsTable.title,
+      request_category: requestsTable.category,
+    })
+    .from(paymentTransactionsTable)
+    .leftJoin(requestsTable, eq(requestsTable.id, paymentTransactionsTable.request_id))
+    .where(eq(paymentTransactionsTable.requester_id, userId))
+    .orderBy(sql`${paymentTransactionsTable.created_at} DESC`)
+    .limit(50);
+
+  return res.json(history);
+});
+
 export default router;
