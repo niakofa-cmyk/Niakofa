@@ -41,13 +41,14 @@ A map-first, pay-it-forward community mutual aid platform for Tarrant County, TX
 - Civic resources are seeded in the DB (not fetched live) for 19 Tarrant County organizations across 8 categories.
 - WebSocket hub (`/ws`) broadcasts live events: new requests, helper location updates, new reports, report reviews. The `/ws` path is listed in `artifact.toml` paths alongside `/api`.
 - BullMQ workers handle payouts and pledge reconciliation when `REDIS_URL` is set; falls back to setInterval-based scheduler otherwise.
+- Community Pool (`community_pool_ledger`, migration 0024): signed-amount ledger, balance = SUM. On pay-it-forward completion the pool fronts the helper's payment immediately; the requester's Stripe repayment replenishes the pool (helper is NOT paid twice). Every completed task gets a guaranteed minimum (default $5, tunable via `system_settings.pool_guaranteed_minimum`; `pool_enabled` toggles the feature). Debits serialized with `pg_advisory_xact_lock(727502)`; partial unique indexes prevent double-front/double-minimum per request. Routes in `artifacts/api-server/src/routes/pool.ts`, service in `lib/community-pool.ts`. `/requests/:id/complete` is idempotent (status guard); the Stripe webhook uses a state-transition guard on `payment_transactions` for retry safety.
 
 ## Product
 
 - **Map screen** (`/`): Live Mapbox map showing open help requests and online helpers in real time. SOS button for emergency requests.
 - **Request new** (`/request/new`): Create a help request with category, urgency, payment type (immediate/pay-it-forward/goodwill).
 - **Active request** (`/request/:id`): Track a live request — claim, en-route, arrived, complete flow.
-- **Community** (`/community`): Leaderboard, stats, civic resources for Tarrant County.
+- **Community** (`/community`): Leaderboard, stats, civic resources for Tarrant County. Pool tab: Community Pool live stats, transparency ledger, and contribute flow.
 - **Wallet** (`/wallet`): Benevolence wallet, scheduled payments, pay-it-forward pledges.
 - **Profile** (`/profile`): User profile, helper mode toggle, trust score.
 - **Admin** (`/admin`): Token-gated trust & safety report review queue.

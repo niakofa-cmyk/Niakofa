@@ -22,7 +22,8 @@ import {
 import { broadcast, broadcastRequestEvent, sendToUser } from "../lib/ws-hub";
 import { requestCreationLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
-import { sendPushToNearbyHelpers, sendPushToAllHelpers, type PushPayload } from "./push";
+import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser, type PushPayload } from "./push";
+import { payHelperFromPool, getGuaranteedMinimum, isPoolEnabled } from "../lib/community-pool";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { logger } from "../lib/logger";
 import { sendReceipt } from "../lib/mailer";
@@ -402,17 +403,24 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
   if (!pParsed.success || !bParsed.success) {
     return res.status(400).json({ 
       error: "Invalid request parameters",
-      details: !pParsed.success ? pParsed.error.issues : bParsed.error.issues
+      details: !pParsed.success ? pParsed.error.issues : (bParsed.success ? [] : bParsed.error.issues)
     });
   }
 
+  // Status guard makes completion idempotent: a request can only transition to
+  // completed ONCE, so every side effect below (help_count, pool front,
+  // guaranteed minimum, payout) fires exactly once even on repeated calls.
   const [request] = await db.update(requestsTable)
     .set({ status: "completed", completed_at: new Date() })
-    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, helperId)))
+    .where(and(
+      eq(requestsTable.id, pParsed.data.id),
+      eq(requestsTable.helper_id, helperId),
+      sql`${requestsTable.status} NOT IN ('completed', 'cancelled')`
+    ))
     .returning();
   if (!request) {
     return res.status(404).json({ 
-      error: "Request not found or you are not the assigned helper",
+      error: "Request not found, already completed, or you are not the assigned helper",
       request_id: pParsed.data.id
     });
   }
@@ -463,6 +471,78 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
       description: request.title,
     });
     logger.info({ helper_id: helperId, request_id: request.id }, "Goodwill point awarded");
+  }
+
+  // ── Community Pool: front pay-it-forward payment + guaranteed minimum ─────
+  // The pool pays the helper NOW; the requester's later repayment replenishes
+  // the pool (handled in the Stripe webhook). Goodwill and underfunded
+  // pay-it-forward tasks get a guaranteed minimum floor. Immediate-pay jobs
+  // are untouched — they're paid via Stripe Connect transfer below.
+  try {
+    if (request.payment_type !== "immediate" && (await isPoolEnabled())) {
+      const pledge = request.pay_it_forward_amount ?? 0;
+      let paidFromPool = 0;
+
+      if (request.payment_type === "pay_it_forward" && pledge > 0) {
+        const fronted = await payHelperFromPool({
+          entryType: "helper_front",
+          amount: pledge,
+          requestId: request.id,
+          helperId,
+          requestTitle: request.title,
+        });
+        if (fronted) {
+          paidFromPool = pledge;
+          await db.insert(paymentTransactionsTable).values({
+            request_id: request.id,
+            helper_id: helperId,
+            requester_id: request.requester_id,
+            amount: pledge,
+            state: "sponsored",
+            payment_type: "pay_it_forward",
+            sponsored_by: "community_pool",
+            notes: "Community Pool fronted helper payment at completion — requester repayment replenishes the pool",
+          });
+          broadcast({
+            type: "pool_front_paid",
+            payload: { request_id: request.id, helper_id: helperId, amount: pledge },
+          });
+          sendPushToUser(helperId, {
+            title: "💙 Paid by the Community Pool",
+            body: `$${pledge.toFixed(2)} was added to your Goodwill Fund right away for: "${request.title}". No waiting.`,
+            requestId: request.id,
+            notifType: "wallet" as const,
+          }).catch(() => {});
+          logger.info({ request_id: request.id, helper_id: helperId, amount: pledge }, "Community pool fronted helper payment");
+        }
+      }
+
+      // Guaranteed minimum floor: top up to the minimum when the pool front
+      // didn't happen or came in under the floor (goodwill tasks included).
+      const minimum = await getGuaranteedMinimum();
+      if (minimum > 0 && paidFromPool < minimum) {
+        const topUp = Math.round((minimum - paidFromPool) * 100) / 100;
+        const paid = await payHelperFromPool({
+          entryType: "guaranteed_minimum",
+          amount: topUp,
+          requestId: request.id,
+          helperId,
+          requestTitle: request.title,
+        });
+        if (paid) {
+          sendPushToUser(helperId, {
+            title: "💙 Community Pool Thank-You",
+            body: `The Community Pool added $${topUp.toFixed(2)} to your Goodwill Fund for helping with: "${request.title}".`,
+            requestId: request.id,
+            notifType: "wallet" as const,
+          }).catch(() => {});
+          logger.info({ request_id: request.id, helper_id: helperId, amount: topUp }, "Guaranteed minimum paid from community pool");
+        }
+      }
+    }
+  } catch (err) {
+    // Never block completion on pool payment issues
+    logger.error({ err, request_id: request.id, helper_id: helperId }, "Community pool payment step failed");
   }
 
   // ── Real Stripe payout for immediate-pay completed requests ───────────────

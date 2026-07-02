@@ -1164,8 +1164,149 @@ paths:
         "400":
           description: Invalid user id or request body
 
+  /pool/stats:
+    get:
+      operationId: getPoolStats
+      tags: [pool]
+      summary: Get Community Pool balance and transparency stats
+      responses:
+        "200":
+          description: Pool stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoolStats"
+
+  /pool/ledger:
+    get:
+      operationId: getPoolLedger
+      tags: [pool]
+      summary: Get recent Community Pool ledger activity (public transparency feed)
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        "200":
+          description: Recent ledger entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoolLedgerResponse"
+
+  /pool/contribute:
+    post:
+      operationId: contributeToPool
+      tags: [pool]
+      summary: Contribute funds to the Community Pool
+      description: |
+        With Stripe configured, returns a client_secret for a PaymentIntent
+        (the webhook records the ledger entry on success). Without Stripe
+        (development), the contribution is recorded directly.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PoolContributeBody"
+      responses:
+        "200":
+          description: Contribution initiated or recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoolContributeResponse"
+        "400":
+          description: Invalid amount
+
 components:
   schemas:
+    PoolStats:
+      type: object
+      required: [enabled, guaranteed_minimum, balance, total_contributed, total_fronted, total_repaid, total_minimums, helpers_fronted, sponsor_count]
+      properties:
+        enabled:
+          type: boolean
+        guaranteed_minimum:
+          type: number
+        balance:
+          type: number
+        total_contributed:
+          type: number
+        total_fronted:
+          type: number
+        total_repaid:
+          type: number
+        total_minimums:
+          type: number
+        helpers_fronted:
+          type: integer
+        sponsor_count:
+          type: integer
+
+    PoolLedgerEntry:
+      type: object
+      required: [id, entry_type, amount, created_at]
+      properties:
+        id:
+          type: integer
+        entry_type:
+          type: string
+          enum: [sponsor_contribution, helper_front, pledge_repayment, guaranteed_minimum, adjustment]
+        amount:
+          type: number
+        request_id:
+          type: integer
+          nullable: true
+        display_name:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    PoolLedgerResponse:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/PoolLedgerEntry"
+
+    PoolContributeBody:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: number
+          minimum: 1
+          maximum: 10000
+
+    PoolContributeResponse:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [stripe, recorded]
+        client_secret:
+          type: string
+          nullable: true
+        payment_intent_id:
+          type: string
+          nullable: true
+        balance:
+          type: number
+          nullable: true
+
     HealthStatus:
       type: object
       properties:

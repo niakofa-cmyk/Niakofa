@@ -4,10 +4,11 @@ import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import LiveLeaderboard from "@/components/LiveLeaderboard";
 import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, MapPin, Award, Wrench, Globe, Mic, MicOff, Loader2, CheckCircle2, RefreshCw, Clock } from "lucide-react";
-import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey } from "@workspace/api-client-react";
+import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey, useGetPoolStats, getGetPoolStatsQueryKey, useGetPoolLedger, getGetPoolLedgerQueryKey, useContributeToPool } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { useGetSponsorHistory } from "@/hooks/useGetSponsorHistory";
+import { StripePaymentModal } from "@/components/StripePaymentModal";
 
 interface GratitudePost {
   id: number;
@@ -29,12 +30,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   emergency: "🚨 Emergency",
   other: "💙 Other",
 };
-
-const FUND_POOLS = [
-  { label: "Emergency Fund", description: "Covers helpers for urgent requests when users can't pay", pct: 62, color: "bg-destructive" },
-  { label: "Medical Assist", description: "Prescription pickups, medical transport", pct: 21, color: "bg-primary" },
-  { label: "General Pool", description: "Everyday help — groceries, errands, transport", pct: 17, color: "bg-green-500" },
-];
 
 type Tab = "feed" | "heroes" | "pool" | "impact" | "resources" | "circles" | "skills";
 
@@ -603,9 +598,47 @@ export default function CommunityScreen() {
     query: { queryKey: getGetRequestStatsQueryKey(), staleTime: 30000 }
   });
 
-  const totalPledgeVolume = stats?.total_pledge_volume ?? 0;
+  // ── Community Pool: live stats, transparency ledger, contribute flow ──────
+  const { data: poolStats, refetch: refetchPoolStats } = useGetPoolStats({
+    query: { queryKey: getGetPoolStatsQueryKey(), staleTime: 15000 }
+  });
+  const { data: poolLedger, refetch: refetchPoolLedger } = useGetPoolLedger(
+    { limit: 15 },
+    { query: { queryKey: getGetPoolLedgerQueryKey({ limit: 15 }), staleTime: 15000 } }
+  );
+  const contributeMutation = useContributeToPool();
+  const [contributeAmount, setContributeAmount] = useState("");
+  const [contributeMsg, setContributeMsg] = useState<string | null>(null);
+  const [contributeSecret, setContributeSecret] = useState<string | null>(null);
+
+  useWebSocket("pool_updated", () => { refetchPoolStats(); refetchPoolLedger(); });
+  useWebSocket("pool_front_paid", () => { refetchPoolStats(); refetchPoolLedger(); });
+
+  const submitContribution = async () => {
+    const amt = parseFloat(contributeAmount);
+    if (!Number.isFinite(amt) || amt < 1) {
+      setContributeMsg("Enter an amount of $1 or more.");
+      return;
+    }
+    setContributeMsg(null);
+    try {
+      const result = await contributeMutation.mutateAsync({ data: { amount: amt } });
+      if (result.mode === "stripe" && result.client_secret) {
+        setContributeSecret(result.client_secret);
+      } else {
+        setContributeMsg(`Thank you! $${amt.toFixed(2)} added to the pool. 💙`);
+        setContributeAmount("");
+        refetchPoolStats();
+        refetchPoolLedger();
+      }
+    } catch {
+      setContributeMsg("Contribution failed. Please try again.");
+    }
+  };
+
+  const poolBalance = poolStats?.balance ?? 0;
   const poolTarget = 500;
-  const poolPct = Math.min(Math.round((totalPledgeVolume / poolTarget) * 100), 100);
+  const poolPct = Math.min(Math.round((poolBalance / poolTarget) * 100), 100);
 
   const toggleLike = (id: number) => {
     setLikedPosts(prev => {
@@ -787,8 +820,15 @@ export default function CommunityScreen() {
               </div>
               <div className="text-center">
                 <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Community Pool</div>
-                <div className="text-4xl font-black text-primary mt-1">${totalPledgeVolume.toFixed(2)}</div>
-                <div className="text-xs text-muted-foreground mt-1">Total paid forward by neighbors</div>
+                <div className="text-4xl font-black text-primary mt-1">${poolBalance.toFixed(2)}</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Available now to pay helpers instantly
+                </div>
+                {poolStats && poolStats.guaranteed_minimum > 0 && (
+                  <div className="text-[10px] text-green-400 font-bold mt-1">
+                    ✓ ${poolStats.guaranteed_minimum.toFixed(2)} guaranteed minimum per completed task
+                  </div>
+                )}
               </div>
 
               {/* Progress to milestone */}
@@ -811,34 +851,65 @@ export default function CommunityScreen() {
               </div>
             </motion.div>
 
-            {/* Pool breakdown */}
-            <div className="bg-card border border-border rounded-2xl p-4 space-y-4">
+            {/* Pool flow — real numbers */}
+            <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
               <h3 className="font-black text-sm flex items-center gap-2">
-                <Shield className="w-4 h-4 text-primary" /> How the Pool is Allocated
+                <Shield className="w-4 h-4 text-primary" /> Where the Money Goes
               </h3>
-              {FUND_POOLS.map((pool, i) => (
-                <motion.div
-                  key={pool.label}
-                  initial={{ opacity: 0, x: -12 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.1 }}
-                >
-                  <div className="flex items-center justify-between text-sm mb-1.5">
-                    <span className="font-bold">{pool.label}</span>
-                    <span className="text-muted-foreground font-mono text-xs">{pool.pct}%</span>
+              <div className="grid grid-cols-2 gap-2.5">
+                {[
+                  { label: "Contributed", value: poolStats?.total_contributed ?? 0, color: "text-green-400", desc: "From sponsors & neighbors" },
+                  { label: "Paid to Helpers", value: (poolStats?.total_fronted ?? 0) + (poolStats?.total_minimums ?? 0), color: "text-primary", desc: "Fronted instantly at completion" },
+                  { label: "Repaid to Pool", value: poolStats?.total_repaid ?? 0, color: "text-cyan-400", desc: "Requesters paying it forward" },
+                  { label: "Helpers Backed", value: poolStats?.helpers_fronted ?? 0, color: "text-yellow-400", desc: "Neighbors paid by the pool", isCount: true },
+                ].map((item) => (
+                  <div key={item.label} className="bg-background/60 rounded-xl px-3 py-2.5">
+                    <div className={`text-lg font-black ${item.color}`}>
+                      {item.isCount ? item.value : `$${Number(item.value).toFixed(2)}`}
+                    </div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider">{item.label}</div>
+                    <div className="text-[9px] text-muted-foreground mt-0.5">{item.desc}</div>
                   </div>
-                  <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-1">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${pool.pct}%` }}
-                      transition={{ duration: 0.8, delay: i * 0.1, ease: "easeOut" }}
-                      className={`h-full ${pool.color} rounded-full`}
-                    />
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">{pool.description}</div>
-                </motion.div>
-              ))}
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                When a pay-it-forward request completes, the pool pays the helper immediately — no waiting on the requester. When the requester later pays it forward, the money flows back into the pool for the next neighbor.
+              </p>
             </div>
+
+            {/* Transparency ledger */}
+            {poolLedger && poolLedger.entries.length > 0 && (
+              <div className="bg-card border border-border rounded-2xl p-4 space-y-2.5">
+                <h3 className="font-black text-sm flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-primary" /> Pool Activity
+                </h3>
+                {poolLedger.entries.map((entry) => {
+                  const meta: Record<string, { icon: string; label: string }> = {
+                    sponsor_contribution: { icon: "💛", label: entry.display_name ? `${entry.display_name} funded the pool` : "Pool contribution" },
+                    helper_front: { icon: "⚡", label: "Helper paid instantly at completion" },
+                    pledge_repayment: { icon: "🔄", label: "Pledge repaid — pool replenished" },
+                    guaranteed_minimum: { icon: "💙", label: "Guaranteed minimum paid to a helper" },
+                    adjustment: { icon: "🛠️", label: "Pool adjustment" },
+                  };
+                  const m = meta[entry.entry_type] ?? { icon: "💙", label: "Pool activity" };
+                  const positive = entry.amount >= 0;
+                  return (
+                    <div key={entry.id} className="flex items-center gap-2.5 bg-background/60 rounded-xl px-3 py-2">
+                      <div className="text-base shrink-0">{m.icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold truncate">{m.label}</div>
+                        <div className="text-[9px] text-muted-foreground">
+                          {new Date(entry.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        </div>
+                      </div>
+                      <div className={`text-xs font-black shrink-0 ${positive ? "text-green-400" : "text-primary"}`}>
+                        {positive ? "+" : "−"}${Math.abs(entry.amount).toFixed(2)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {/* How it works */}
             <div className="bg-card/50 border border-border/50 rounded-2xl p-4">
@@ -876,6 +947,59 @@ export default function CommunityScreen() {
               <p className="text-xs text-muted-foreground leading-relaxed">
                 Businesses and individuals can sponsor the community pool directly. Your contributions go directly to helpers serving Fort Worth neighbors.
               </p>
+
+              {/* Contribute to the pool */}
+              {currentUser && (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <DollarSign className="w-4 h-4 text-yellow-400/60 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min={1}
+                        max={10000}
+                        placeholder="Amount"
+                        value={contributeAmount}
+                        onChange={(e) => setContributeAmount(e.target.value)}
+                        className="w-full bg-background/60 border border-yellow-500/30 rounded-xl pl-9 pr-3 py-2.5 text-base font-bold focus:outline-none focus:border-yellow-400/60"
+                      />
+                    </div>
+                    <button
+                      onClick={submitContribution}
+                      disabled={contributeMutation.isPending}
+                      className="shrink-0 bg-yellow-400 text-black font-black text-xs uppercase tracking-wider rounded-xl px-4 py-2.5 active:scale-95 transition-transform disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      {contributeMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Heart className="w-3.5 h-3.5" />}
+                      Fund the Pool
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5">
+                    {[5, 10, 25, 50].map((amt) => (
+                      <button
+                        key={amt}
+                        onClick={() => setContributeAmount(String(amt))}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                          contributeAmount === String(amt)
+                            ? "bg-yellow-400/20 border-yellow-400/60 text-yellow-400"
+                            : "bg-background/40 border-border text-muted-foreground"
+                        }`}
+                      >
+                        ${amt}
+                      </button>
+                    ))}
+                  </div>
+                  {contributeMsg && (
+                    <div className={`text-xs rounded-xl px-3 py-2 ${
+                      contributeMsg.startsWith("Thank")
+                        ? "text-green-400 bg-green-500/10"
+                        : "text-destructive/80 bg-destructive/10"
+                    }`}>
+                      {contributeMsg}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Contribution history */}
               {currentUser ? (
@@ -936,6 +1060,23 @@ export default function CommunityScreen() {
                 </div>
               )}
             </div>
+
+            {/* Stripe payment sheet for pool contributions */}
+            {contributeSecret && (
+              <StripePaymentModal
+                clientSecret={contributeSecret}
+                amount={parseFloat(contributeAmount) || 0}
+                description="Community Pool contribution"
+                onSuccess={() => {
+                  setContributeSecret(null);
+                  setContributeMsg("Thank you! Your contribution is on its way to the pool. 💙");
+                  setContributeAmount("");
+                  setTimeout(() => { refetchPoolStats(); refetchPoolLedger(); }, 2500);
+                }}
+                onSkip={() => setContributeSecret(null)}
+                onClose={() => setContributeSecret(null)}
+              />
+            )}
           </div>
         )}
 

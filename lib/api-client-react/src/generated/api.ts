@@ -33,6 +33,7 @@ import type {
   GetCivicResourcesParams,
   GetNearbyRequestsParams,
   GetOnlineHelpersParams,
+  GetPoolLedgerParams,
   GetReportsParams,
   GetRequestsParams,
   GetRouteParams,
@@ -51,6 +52,10 @@ import type {
   ModerateUser200,
   ModerateUserInput,
   PledgePayment,
+  PoolContributeBody,
+  PoolContributeResponse,
+  PoolLedgerResponse,
+  PoolStats,
   RegisterUserHint200,
   Report,
   ReportDetail,
@@ -3506,5 +3511,239 @@ export const useUpdateHelperApplication = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getUpdateHelperApplicationMutationOptions(options));
+    }
+
+export const getGetPoolStatsUrl = () => {
+
+
+
+
+  return `/api/pool/stats`
+}
+
+/**
+ * @summary Get Community Pool balance and transparency stats
+ */
+export const getPoolStats = async ( options?: RequestInit): Promise<PoolStats> => {
+
+  return customFetch<PoolStats>(getGetPoolStatsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPoolStatsQueryKey = () => {
+    return [
+    `/api/pool/stats`
+    ] as const;
+    }
+
+
+export const getGetPoolStatsQueryOptions = <TData = Awaited<ReturnType<typeof getPoolStats>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPoolStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPoolStatsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPoolStats>>> = ({ signal }) => getPoolStats({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPoolStats>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPoolStatsQueryResult = NonNullable<Awaited<ReturnType<typeof getPoolStats>>>
+export type GetPoolStatsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get Community Pool balance and transparency stats
+ */
+
+export function useGetPoolStats<TData = Awaited<ReturnType<typeof getPoolStats>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPoolStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPoolStatsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetPoolLedgerUrl = (params?: GetPoolLedgerParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/pool/ledger?${stringifiedParams}` : `/api/pool/ledger`
+}
+
+/**
+ * @summary Get recent Community Pool ledger activity (public transparency feed)
+ */
+export const getPoolLedger = async (params?: GetPoolLedgerParams, options?: RequestInit): Promise<PoolLedgerResponse> => {
+
+  return customFetch<PoolLedgerResponse>(getGetPoolLedgerUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPoolLedgerQueryKey = (params?: GetPoolLedgerParams,) => {
+    return [
+    `/api/pool/ledger`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetPoolLedgerQueryOptions = <TData = Awaited<ReturnType<typeof getPoolLedger>>, TError = ErrorType<unknown>>(params?: GetPoolLedgerParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPoolLedger>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPoolLedgerQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPoolLedger>>> = ({ signal }) => getPoolLedger(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPoolLedger>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPoolLedgerQueryResult = NonNullable<Awaited<ReturnType<typeof getPoolLedger>>>
+export type GetPoolLedgerQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get recent Community Pool ledger activity (public transparency feed)
+ */
+
+export function useGetPoolLedger<TData = Awaited<ReturnType<typeof getPoolLedger>>, TError = ErrorType<unknown>>(
+ params?: GetPoolLedgerParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPoolLedger>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPoolLedgerQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getContributeToPoolUrl = () => {
+
+
+
+
+  return `/api/pool/contribute`
+}
+
+/**
+ * With Stripe configured, returns a client_secret for a PaymentIntent
+ * (the webhook records the ledger entry on success). Without Stripe
+ * (development), the contribution is recorded directly.
+ * @summary Contribute funds to the Community Pool
+ */
+export const contributeToPool = async (poolContributeBody: PoolContributeBody, options?: RequestInit): Promise<PoolContributeResponse> => {
+
+  return customFetch<PoolContributeResponse>(getContributeToPoolUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(poolContributeBody)
+  }
+);}
+
+
+
+
+export const getContributeToPoolMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof contributeToPool>>, TError,{data: BodyType<PoolContributeBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof contributeToPool>>, TError,{data: BodyType<PoolContributeBody>}, TContext> => {
+
+const mutationKey = ['contributeToPool'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof contributeToPool>>, {data: BodyType<PoolContributeBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  contributeToPool(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ContributeToPoolMutationResult = NonNullable<Awaited<ReturnType<typeof contributeToPool>>>
+    export type ContributeToPoolMutationBody = BodyType<PoolContributeBody>
+    export type ContributeToPoolMutationError = ErrorType<void>
+
+    /**
+ * @summary Contribute funds to the Community Pool
+ */
+export const useContributeToPool = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof contributeToPool>>, TError,{data: BodyType<PoolContributeBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof contributeToPool>>,
+        TError,
+        {data: BodyType<PoolContributeBody>},
+        TContext
+      > => {
+      return useMutation(getContributeToPoolMutationOptions(options));
     }
 

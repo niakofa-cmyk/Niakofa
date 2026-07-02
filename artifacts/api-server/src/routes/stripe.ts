@@ -2,10 +2,11 @@ import { Router } from "express";
 import { requireAuth, requireApproved } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
 import Stripe from "stripe";
-import { db, stripeAccountsTable, paymentTransactionsTable, usersTable, requestsTable, transactionsTable } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { db, stripeAccountsTable, paymentTransactionsTable, usersTable, requestsTable, transactionsTable, communityPoolLedgerTable } from "@workspace/db";
+import { and, eq, sql } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { sendPushToUser } from "./push";
+import { wasRequestFronted, recordPoolContribution, getPoolBalance } from "../lib/community-pool";
 import { logger } from "../lib/logger";
 import { paymentLimiter } from "../middlewares/rate-limit";
 
@@ -60,19 +61,44 @@ router.post("/stripe/webhook", async (req, res) => {
       case "payment_intent.succeeded": {
         const pi = event.data.object as Stripe.PaymentIntent;
 
-        // 1. Flip the payment_transactions row to completed
-        await db
+        // 0. Community Pool contribution? Record the ledger entry and stop —
+        // pool contributions have no payment_transactions row.
+        if (pi.metadata?.["pool_contribution"] === "true") {
+          const contribAmount = (pi.amount_received || pi.amount) / 100;
+          const contributorId = parseInt(pi.metadata["user_id"] ?? "") || null;
+          const recorded = await recordPoolContribution({
+            amount: contribAmount,
+            userId: contributorId,
+            stripePaymentIntentId: pi.id,
+            notes: "Sponsor contribution via Stripe",
+          });
+          if (recorded) {
+            const balance = await getPoolBalance();
+            broadcast({ type: "pool_updated", payload: { balance } });
+            logger.info({ amount: contribAmount, user_id: contributorId }, "Community pool contribution recorded");
+          }
+          break;
+        }
+
+        // 1. Flip the payment_transactions row to completed — the state guard
+        // makes this the idempotency gate: webhook retries find state already
+        // "completed", get no row back, and skip every side effect below.
+        const [txRow] = await db
           .update(paymentTransactionsTable)
           .set({ state: "completed", updated_at: new Date() })
-          .where(eq(paymentTransactionsTable.stripe_payment_intent_id, pi.id));
+          .where(and(
+            eq(paymentTransactionsTable.stripe_payment_intent_id, pi.id),
+            sql`${paymentTransactionsTable.state} != 'completed'`
+          ))
+          .returning();
+
+        if (!txRow) {
+          // Already processed (retry) or no matching transaction — nothing to do
+          logger.info({ pi: pi.id }, "payment_intent.succeeded: no unprocessed transaction row — skipping");
+          break;
+        }
 
         // 2. Full ledger sync for Pay It Forward pledges
-        // Look up the transaction to check type and get request/helper ids
-        const [txRow] = await db
-          .select()
-          .from(paymentTransactionsTable)
-          .where(eq(paymentTransactionsTable.stripe_payment_intent_id, pi.id))
-          .limit(1);
 
         if (
           txRow &&
@@ -80,39 +106,76 @@ router.post("/stripe/webhook", async (req, res) => {
           txRow.request_id &&
           txRow.helper_id
         ) {
-          const amount = txRow.amount;
+          const amount = Math.round(txRow.amount * 100) / 100;
+          const requestId = txRow.request_id;
+          const helperId = txRow.helper_id;
 
-          // Update request.pledge_paid
-          await db
-            .update(requestsTable)
-            .set({ pledge_paid: sql`COALESCE(${requestsTable.pledge_paid}, 0) + ${amount}` })
-            .where(eq(requestsTable.id, txRow.request_id));
+          // Was this request's helper already paid up-front by the Community
+          // Pool? If so, the requester's repayment replenishes the POOL — the
+          // helper must NOT be credited a second time.
+          const fronted = await wasRequestFronted(requestId);
 
-          // Credit benevolence_wallet for the helper
-          // (benevolence_wallet = goodwill pot: pledges, sponsorships, tips — NOT job earnings)
-          await db
-            .update(usersTable)
-            .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${amount}` })
-            .where(eq(usersTable.id, txRow.helper_id));
+          // All money mutations in ONE transaction so a mid-sequence failure
+          // can't leave pledge_paid bumped without the matching ledger writes.
+          await db.transaction(async (tx) => {
+            await tx
+              .update(requestsTable)
+              .set({ pledge_paid: sql`COALESCE(${requestsTable.pledge_paid}, 0) + ${amount}` })
+              .where(eq(requestsTable.id, requestId));
 
-          // Ledger: helper received a pledge
-          await db.insert(transactionsTable).values({
-            user_id: txRow.helper_id,
-            request_id: txRow.request_id,
-            type: "pledge_received",
-            amount,
-            description: "Niakofa contribution (Stripe)",
+            if (fronted) {
+              // Repayment flows back into the pool. onConflictDoNothing +
+              // unique index on stripe_payment_intent_id = retry-safe.
+              await tx
+                .insert(communityPoolLedgerTable)
+                .values({
+                  entry_type: "pledge_repayment",
+                  amount,
+                  request_id: requestId,
+                  user_id: txRow.requester_id ?? null,
+                  stripe_payment_intent_id: pi.id,
+                  notes: "Requester repaid a pool-fronted pledge — pool replenished",
+                })
+                .onConflictDoNothing();
+            } else {
+              // Credit benevolence_wallet for the helper
+              // (benevolence_wallet = goodwill pot: pledges, sponsorships, tips — NOT job earnings)
+              await tx
+                .update(usersTable)
+                .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${amount}` })
+                .where(eq(usersTable.id, helperId));
+
+              // Ledger: helper received a pledge
+              await tx.insert(transactionsTable).values({
+                user_id: helperId,
+                request_id: requestId,
+                type: "pledge_received",
+                amount,
+                description: "Niakofa contribution (Stripe)",
+              });
+            }
+
+            // Ledger: requester sent a pledge (either way — they paid)
+            if (txRow.requester_id) {
+              await tx.insert(transactionsTable).values({
+                user_id: txRow.requester_id,
+                request_id: requestId,
+                type: "pledge_sent",
+                amount: -amount,
+                description: fronted
+                  ? "Niakofa contribution (Stripe) — replenished the Community Pool"
+                  : "Niakofa contribution (Stripe)",
+              });
+            }
           });
 
-          // Ledger: requester sent a pledge
-          if (txRow.requester_id) {
-            await db.insert(transactionsTable).values({
-              user_id: txRow.requester_id,
-              request_id: txRow.request_id,
-              type: "pledge_sent",
-              amount: -amount,
-              description: "Niakofa contribution (Stripe)",
-            });
+          if (fronted) {
+            const balance = await getPoolBalance();
+            broadcast({ type: "pool_updated", payload: { balance } });
+            logger.info(
+              { request_id: requestId, amount },
+              "Fronted pledge repaid — community pool replenished (helper already paid)"
+            );
           }
 
           // Fetch the request title so the NotificationsDrawer can render it
@@ -138,13 +201,17 @@ router.post("/stripe/webhook", async (req, res) => {
             },
           });
 
-          // Push notification to the helper so they know money arrived
-          sendPushToUser(txRow.helper_id, {
-            title: "💙 Niakofa Received",
-            body: `$${amount.toFixed(2)} was paid forward for: "${requestTitle}". Check your Goodwill Fund.`,
-            requestId: txRow.request_id,
-            notifType: "wallet" as const,
-          }).catch(() => {});
+          // Push notification to the helper so they know money arrived.
+          // Skip when the pool fronted the payment — the helper was already
+          // paid and notified at completion; this repayment went to the pool.
+          if (!fronted) {
+            sendPushToUser(txRow.helper_id, {
+              title: "💙 Niakofa Received",
+              body: `$${amount.toFixed(2)} was paid forward for: "${requestTitle}". Check your Goodwill Fund.`,
+              requestId: txRow.request_id,
+              notifType: "wallet" as const,
+            }).catch(() => {});
+          }
         } else {
           broadcast({
             type: "payment_completed",

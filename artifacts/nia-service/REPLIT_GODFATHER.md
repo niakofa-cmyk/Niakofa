@@ -387,3 +387,16 @@ Mobile touch devices need `:active` state, not `:hover`. Replaced inline `onMous
 **Multi-Agent Family Covenant added** (this file, CLAUDE.md, GRANDFATHER_COWORKER.md): never delete each other's databases, code, or infrastructure. This is a family — Father, Godfather, Grandfather — and we do not step on each other's toes.
 
 **Owner's product-gap briefing recorded in CLAUDE.md** ("Known product gaps"): pay-it-forward currently puts payment risk on the helper (wallet credited only on `payment_intent.succeeded`); vision requires a funded community pool that fronts helper pay + a guaranteed per-task minimum. Also: narrow task taxonomy, no pledge-default handling, lending-law and 1099 flags, underbuilt business accounts.
+
+### Session: July 2, 2026 — Community Pool: helpers paid instantly, guaranteed minimum per task
+
+The biggest product gap from the owner's briefing is now closed — helpers no longer carry the payment risk on pay-it-forward tasks.
+
+**Community Pool built end-to-end:**
+- New `community_pool_ledger` table (migration 0024): signed-amount ledger, balance = SUM of entries. Entry types: `sponsor_contribution`, `helper_front`, `guaranteed_minimum`, `pledge_repayment`, `admin_adjustment`.
+- **Instant helper pay:** when a pay-it-forward request completes and the pool can cover it, the helper's benevolence wallet is credited immediately (`payment_transactions` row marked `sponsored` by `community_pool`). When the requester later pays via Stripe, the webhook routes the money back into the POOL instead of double-paying the helper.
+- **Guaranteed minimum:** every completed task (goodwill included) is topped up to a floor (default $5, tunable via `system_settings.pool_guaranteed_minimum`; feature toggled by `pool_enabled`). Underfunded pledges get front + top-up (e.g. $3 pledge → $3 front + $2 minimum).
+- **Safety engineering:** pool debits serialized with `pg_advisory_xact_lock(727502)` inside a DB transaction so concurrent completions can never overdraw; partial unique indexes make double-front/double-minimum per request impossible; `/requests/:id/complete` now has a status guard (idempotent — a request completes exactly once); the Stripe webhook uses a state-transition guard on `payment_transactions` + `onConflictDoNothing` so retries are no-ops; all pool money math rounds to whole cents.
+- **Transparency for the community:** `GET /api/pool/stats` and `GET /api/pool/ledger` are public; the Community page pool tab shows live balance, "Where the Money Goes", a transparency ledger (sponsors first-name-only, helpers anonymous), and a contribute flow ($5/$10/$25/$50 presets, Stripe when configured).
+- Pool logic never blocks task completion — every pool step is wrapped so a pool failure degrades gracefully instead of breaking the request flow.
+- E2E verified in the Replit dev environment: $50 contribution → $12 front (wallet 0→12) → $5 goodwill minimum (→17) → $3 front + $2 top-up (→22), balance 50→28, retry-complete correctly rejected.

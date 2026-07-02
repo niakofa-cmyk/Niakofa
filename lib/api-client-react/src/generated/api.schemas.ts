@@ -5,6 +5,66 @@
  * Niakofa - Map-First Community Help Platform
  * OpenAPI spec version: 0.1.0
  */
+export interface PoolStats {
+  enabled: boolean;
+  guaranteed_minimum: number;
+  balance: number;
+  total_contributed: number;
+  total_fronted: number;
+  total_repaid: number;
+  total_minimums: number;
+  helpers_fronted: number;
+  sponsor_count: number;
+}
+
+export type PoolLedgerEntryEntryType = typeof PoolLedgerEntryEntryType[keyof typeof PoolLedgerEntryEntryType];
+
+
+export const PoolLedgerEntryEntryType = {
+  sponsor_contribution: 'sponsor_contribution',
+  helper_front: 'helper_front',
+  pledge_repayment: 'pledge_repayment',
+  guaranteed_minimum: 'guaranteed_minimum',
+  adjustment: 'adjustment',
+} as const;
+
+export interface PoolLedgerEntry {
+  id: number;
+  entry_type: PoolLedgerEntryEntryType;
+  amount: number;
+  request_id?: number | null;
+  display_name?: string | null;
+  notes?: string | null;
+  created_at: string;
+}
+
+export interface PoolLedgerResponse {
+  entries: PoolLedgerEntry[];
+}
+
+export interface PoolContributeBody {
+  /**
+     * @minimum 1
+     * @maximum 10000
+     */
+  amount: number;
+}
+
+export type PoolContributeResponseMode = typeof PoolContributeResponseMode[keyof typeof PoolContributeResponseMode];
+
+
+export const PoolContributeResponseMode = {
+  stripe: 'stripe',
+  recorded: 'recorded',
+} as const;
+
+export interface PoolContributeResponse {
+  mode: PoolContributeResponseMode;
+  client_secret?: string | null;
+  payment_intent_id?: string | null;
+  balance?: number | null;
+}
+
 export interface HealthStatus {
   status: string;
 }
@@ -852,5 +912,13 @@ export type ModerateUser200 = {
   ok?: boolean;
   action?: string;
   user_id?: number;
+};
+
+export type GetPoolLedgerParams = {
+/**
+ * @minimum 1
+ * @maximum 50
+ */
+limit?: number;
 };
 
