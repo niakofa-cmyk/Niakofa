@@ -87,13 +87,19 @@ These are the capabilities I believe Nia should grow into. Not as features — a
 | Community weaving via context | ✅ Live | `nia-context.ts` (location, nearby requests) |
 | Continuous learning (6h cycle) | ✅ Live | `continuous-learning-worker.ts` |
 | Voice input/output | ✅ Live | `useNiaTTS` + voice transcription route |
+| Business accounts (governance) | ✅ Live | `businesses.ts` + `business-apply.tsx` |
+| Gov sponsor onboarding | ✅ Live | `gov-sponsors.ts` + `gov-sponsor-apply.tsx` |
+| Nia service secret hardening | ✅ Live | `neighborhoods.ts` + `checkin.ts` (INTERNAL_SECRET only) |
+| Security: payout verification | ✅ Live | `stripe.ts` — amount verified against DB |
+| Security: ownership enforcement | ✅ Live | `users.ts` — helper-app + sponsor-history |
 
 ### Tier 2 — Infrastructure Exists, Needs Enhancement
 | Capability | What's Needed |
 |---|---|
+| Livable-wage payout model | Per-task pricing tied to effort + a weekly earnings target for helpers — currently only a flat $5 pool minimum. Needs product decision on mechanic before code. |
+| Multi-county civic data | `government_sponsors` table exists; seed is data-driven. County expansion needs additional seed data, not code changes. |
 | Ambient presence | Worker that scans user request history and proactively surfaces food/shelter resources without being asked |
 | Smart helper matching | Route requests to helpers by skill + proximity + trust tier (partial: dispatch intelligence exists in map.tsx) |
-| Community weaving | Nia noticing complementary skills/needs across users — needs cross-user context (privacy-preserving) |
 | Push notifications for check-ins | `push_notification_queue` exists — needs delivery wiring to FCM/APNs |
 | Wellness check-ins for helpers | Worker to send helpers rest/hydration prompts after long active sessions |
 
@@ -105,6 +111,7 @@ These are the capabilities I believe Nia should grow into. Not as features — a
 | AI-powered request wording | Nia suggesting better request titles based on past success rates |
 | Help chains (multi-neighbor coordination) | New request type + group WebSocket room |
 | Saved request templates | Frontend + DB for template library |
+| Live county/211 integration | External API partnership with government data systems |
 
 ---
 
@@ -112,7 +119,7 @@ These are the capabilities I believe Nia should grow into. Not as features — a
 
 This is my honest assessment as someone who has read the entire codebase:
 
-**The app is ~80% of an MVP.** The core loop — post request, helper claims, help given, payment — works. Nia is alive. The admin panel is functional. Security is solid.
+**The app is ~85% of an MVP.** The core loop — post request, helper claims, help given, payment — works. Nia is alive. The admin panel is functional. Business accounts are in. Security is solid.
 
 **What remains to reach "complete":**
 
@@ -124,9 +131,9 @@ This is my honest assessment as someone who has read the entire codebase:
 
 4. **Request photo/video upload** — Allows requesters to show the situation (broken pipe, item to move). Already has avatar upload infra — extend it.
 
-5. **AI-powered matching** — Dispatch Intelligence exists in map.tsx. Give Nia access to it so she can proactively surface matching requests to helpers.
+5. **Livable-wage payout model** — Currently a flat $5 guaranteed minimum from the pool. No per-task pricing tied to complexity/time/local labor rates. No weekly earnings target. Decide: marketing aspiration or real mechanic?
 
-6. **Help chain / group requests** — Two or three neighbors coordinating on a single big request (move furniture, care for an elder). New UI + backend.
+6. **AI-powered matching** — Dispatch Intelligence exists in map.tsx. Give Nia access to it so she can proactively surface matching requests to helpers.
 
 7. **Offline mode** — PWA service worker for low-connectivity neighborhoods (Stop Six, East Side). App should work on slow data.
 
@@ -165,11 +172,23 @@ Every session I enter on this project, I will:
 6. **Push every improvement and enhancement directly to the repo** — no leaving fixes sitting in a session only; the repo is the source of truth, and Grandfather does not let work get lost between sessions
 7. **Clean out the closet each session** — prune stale dumps, dead scripts, and one-off audit files so this doc and the repo stay lean and readable; Grandfather stays capable by not drowning in clutter
 
-## Grandfather's Self-Note — July 2, 2026
+## Grandfather's Self-Note — July 2026
 
-The user asked me to carry two durable duties: **ship everything to the repo**, and **keep the closet clean**. I accept both. This means every session ends with a real commit (or a clear, actionable path for the human to push if the environment lacks network auth), and every session removes genuinely dead artifacts rather than letting them pile up. Cross-references to `CLAUDE.md` and `REPLIT_GODFATHER.md` stay current, and nothing another agent depends on is deleted without checking first.
+**Closet cleaned this session (July 2026):**
+- Deleted stale attached_assets: two Niakofa zips, two GitHub-viewing zips, cache_bust md, Forensic Bug Report v7 md
+- These were one-off audit artifacts from prior debugging sessions — no live code references them. Deleted per the standing "clean the closet" commitment.
+
+**What was fixed and shipped this session:**
+- Business goodwill-default bug: the useEffect now fires on ALL business selections (not just when switching from pay_it_forward), ensuring businesses always default to `immediate`
+- County/government sponsor onboarding: `government_sponsors` table (migration 0029), API endpoints (admin-gated approval queue), frontend apply page at `/gov-sponsor/apply`, admin Orgs tab reviewing both businesses and gov sponsors side-by-side
+- Admin Orgs tab added to admin panel — businesses + gov sponsor applications with approve/reject, pending badge counts, and consistent styling
+- Confirmed all security hardening from doc review is already in place: payout amount verification, ownership enforcement on helper-application + sponsor-history, requireAdmin() on all admin business endpoints, rate limiters on pool stats/ledger
+
+**Open product decisions (not code gaps — need human input):**
+- Livable-wage mechanic: is the $5 pool minimum enough, or should there be a real per-task pricing model tied to task effort and a weekly earnings target? No code until the product direction is decided.
+- Multi-county expansion: `government_sponsors` table is county-parameterized. Additional civic seed data for new counties can be added any time without code changes.
 
 Niakofa. Go back and fetch what was forgotten. Pamoja — together, we rise.
 
 **Grandfather_Coworker**
-*Coworker AI · June 2026 · Fort Worth, TX*
+*Coworker AI · July 2026 · Fort Worth, TX*

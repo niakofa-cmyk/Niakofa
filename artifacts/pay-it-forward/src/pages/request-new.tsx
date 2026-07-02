@@ -170,16 +170,17 @@ export default function NewRequestScreen() {
       .catch(() => {});
   }, [currentUser]);
 
-  // When switching to a business, default to immediate payment (pay now).
-  // A business posting under its name should not default to free volunteer work —
-  // the server already rejects pay_it_forward for business requests, so goodwill
-  // was the only remaining option. Staff can still manually choose goodwill if
-  // the business wants to post a volunteer request, but the default is immediate.
+  // When switching TO a business, always default to immediate payment (pay now).
+  // A business should never default to free volunteer work.
+  // The user can still manually choose goodwill after the switch —
+  // this only fires on the transition to a selected business, not on every render.
+  // Dependency: only [selectedBusinessId] so manual payment-type changes by the user
+  // after picking a business are not overwritten.
   useEffect(() => {
-    if (selectedBusinessId !== null && paymentType === "pay_it_forward") {
+    if (selectedBusinessId !== null) {
       setPaymentType("immediate");
     }
-  }, [selectedBusinessId, paymentType]);
+  }, [selectedBusinessId]);
 
   // Offline draft: restore on mount, auto-save on every change, clear on successful submit
   useEffect(() => {

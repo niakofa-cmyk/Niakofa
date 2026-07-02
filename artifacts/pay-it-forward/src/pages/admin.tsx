@@ -6,7 +6,7 @@ import {
   Users, Search, Ban, AlertTriangle, Star, Bot, Power, Timer,
   BarChart2, TrendingUp, Activity, Zap, MessageSquare, Package,
   ChevronDown, ChevronUp, CheckSquare, Square, HandHeart, DollarSign,
-  LineChart, FileText, Gavel, Sparkles, RotateCcw
+  LineChart, FileText, Gavel, Sparkles, RotateCcw, Landmark, Building2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -1695,6 +1695,175 @@ function HelperApplicationsTab() {
   );
 }
 
+// ── Orgs Tab — businesses + government sponsor review queue ──────────────────
+function OrgsTab({ authed }: { authed: boolean }) {
+  const [businesses, setBusinesses] = useState<{
+    id: number; legal_name: string; display_name: string;
+    approval_status: string; created_at: string;
+  }[]>([]);
+  const [govSponsors, setGovSponsors] = useState<{
+    id: number; entity_name: string; county: string; state: string;
+    contact_name: string; contact_email: string; description: string | null;
+    approval_status: string; created_at: string;
+    submitter_name?: string | null; submitter_email?: string | null;
+  }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState<string | null>(null);
+
+  const authHeaders = () => getToken() ? { Authorization: `Bearer ${getToken()}` } : {};
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [bRes, gRes] = await Promise.all([
+        fetch(`${BASE}/api/admin/businesses`, { headers: authHeaders() }),
+        fetch(`${BASE}/api/admin/gov-sponsors`, { headers: authHeaders() }),
+      ]);
+      if (bRes.ok) setBusinesses(await bRes.json());
+      if (gRes.ok) setGovSponsors(await gRes.json());
+    } catch { /* non-critical */ } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { if (authed) load(); }, [authed, load]);
+
+  const decideBusiness = async (id: number, status: "approved" | "rejected") => {
+    const key = `b-${id}`;
+    setProcessing(key);
+    try {
+      const res = await fetch(`${BASE}/api/admin/businesses/${id}/approve`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ approval_status: status }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setBusinesses(prev => prev.map(b => b.id === id ? { ...b, approval_status: status } : b));
+      toast({ title: `Business ${status}` });
+    } catch { toast({ title: "Error", variant: "destructive" }); }
+    finally { setProcessing(null); }
+  };
+
+  const decideGovSponsor = async (id: number, status: "approved" | "rejected") => {
+    const key = `g-${id}`;
+    setProcessing(key);
+    try {
+      const res = await fetch(`${BASE}/api/admin/gov-sponsors/${id}/approve`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ approval_status: status }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setGovSponsors(prev => prev.map(g => g.id === id ? { ...g, approval_status: status } : g));
+      toast({ title: `Gov sponsor ${status}` });
+    } catch { toast({ title: "Error", variant: "destructive" }); }
+    finally { setProcessing(null); }
+  };
+
+  const statusBadge = (s: string) => {
+    if (s === "approved") return <span className="text-[10px] font-black text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20">Approved</span>;
+    if (s === "rejected") return <span className="text-[10px] font-black text-destructive bg-destructive/10 px-2 py-0.5 rounded-full border border-destructive/20">Rejected</span>;
+    return <span className="text-[10px] font-black text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded-full border border-yellow-500/20">Pending</span>;
+  };
+
+  const ActionButtons = ({ id, kind, status }: { id: number; kind: "b" | "g"; status: string }) => {
+    if (status !== "pending") return null;
+    const key = `${kind}-${id}`;
+    const decide = kind === "b" ? decideBusiness : decideGovSponsor;
+    return (
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        <button
+          onClick={() => decide(id, "rejected")}
+          disabled={processing === key}
+          style={{ touchAction: "manipulation" }}
+          className="h-9 rounded-xl border border-destructive/40 bg-destructive/10 text-destructive text-xs font-black disabled:opacity-50"
+        >{processing === key ? <RefreshCw className="w-3 h-3 animate-spin mx-auto" /> : "Reject"}</button>
+        <button
+          onClick={() => decide(id, "approved")}
+          disabled={processing === key}
+          style={{ touchAction: "manipulation" }}
+          className="h-9 rounded-xl bg-green-500 text-white text-xs font-black disabled:opacity-50"
+        >{processing === key ? <RefreshCw className="w-3 h-3 animate-spin mx-auto" /> : "Approve ✓"}</button>
+      </div>
+    );
+  };
+
+  if (loading) return <div className="flex justify-center py-12"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
+
+  const pendingBusinesses = businesses.filter(b => b.approval_status === "pending");
+  const pendingGov = govSponsors.filter(g => g.approval_status === "pending");
+
+  return (
+    <div className="space-y-6 pb-8">
+      {/* Business Applications */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <Building2 className="w-3.5 h-3.5" />
+            Business Applications
+            {pendingBusinesses.length > 0 && (
+              <span className="bg-yellow-500 text-black text-[10px] font-black px-1.5 py-0.5 rounded-full">{pendingBusinesses.length}</span>
+            )}
+          </div>
+        </div>
+        {businesses.length === 0 ? (
+          <div className="rounded-xl border border-border bg-card/50 p-4 text-center text-sm text-muted-foreground">No applications yet.</div>
+        ) : (
+          <div className="space-y-2">
+            {businesses.map(b => (
+              <div key={b.id} className="rounded-xl border border-border bg-card p-3 space-y-1">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-bold">{b.display_name}</p>
+                    <p className="text-[11px] text-muted-foreground">{b.legal_name}</p>
+                    <p className="text-[10px] text-muted-foreground/70">{fmtDate(b.created_at)}</p>
+                  </div>
+                  {statusBadge(b.approval_status)}
+                </div>
+                <ActionButtons id={b.id} kind="b" status={b.approval_status} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Government Sponsor Applications */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <Landmark className="w-3.5 h-3.5" />
+            Gov Sponsor Applications
+            {pendingGov.length > 0 && (
+              <span className="bg-yellow-500 text-black text-[10px] font-black px-1.5 py-0.5 rounded-full">{pendingGov.length}</span>
+            )}
+          </div>
+        </div>
+        {govSponsors.length === 0 ? (
+          <div className="rounded-xl border border-border bg-card/50 p-4 text-center text-sm text-muted-foreground">No applications yet.</div>
+        ) : (
+          <div className="space-y-2">
+            {govSponsors.map(g => (
+              <div key={g.id} className="rounded-xl border border-border bg-card p-3 space-y-1">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-bold">{g.entity_name}</p>
+                    <p className="text-[11px] text-muted-foreground">{g.county}, {g.state}</p>
+                    <p className="text-[11px] text-muted-foreground">{g.contact_name} · {g.contact_email}</p>
+                    {g.submitter_name && (
+                      <p className="text-[10px] text-muted-foreground/70">Submitted by {g.submitter_name} · {fmtDate(g.created_at)}</p>
+                    )}
+                    {g.description && <p className="text-[11px] text-muted-foreground/80 mt-1 leading-relaxed">{g.description}</p>}
+                  </div>
+                  {statusBadge(g.approval_status)}
+                </div>
+                <ActionButtons id={g.id} kind="g" status={g.approval_status} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Admin Screen ─────────────────────────────────────────────────────────
 export default function AdminScreen() {
   const [authed, setAuthed] = useState(false);
@@ -1709,7 +1878,7 @@ export default function AdminScreen() {
   }, [currentUser?.is_admin]);
 
   const [, setLocation] = useLocation();
-  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics">("reports");
+  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics" | "orgs">("reports");
 
   // ── Session timer ─────────────────────────────────────────────────────────
   const [sessionSecondsLeft, setSessionSecondsLeft] = useState(SESSION_DURATION_MS / 1000);
@@ -1857,6 +2026,7 @@ export default function AdminScreen() {
     { key: "helpers",   label: "Helpers",   icon: UserIcon },
     { key: "users",     label: "Users",     icon: Users },
     { key: "pledges",   label: "Pledges",   icon: HandHeart },
+    { key: "orgs",      label: "Orgs",      icon: Landmark },
     { key: "audit",     label: "Audit",     icon: FileText },
     { key: "nia",       label: "Nia AI",    icon: Bot },
     { key: "analytics", label: "Stats",     icon: BarChart2 },
@@ -1915,6 +2085,7 @@ export default function AdminScreen() {
 
       {/* Tab content */}
       <div className="flex-1 max-w-3xl mx-auto w-full px-4 pt-4 space-y-3">
+        {activeTab === "orgs"      && <OrgsTab authed={authed} />}
         {activeTab === "pledges"   && (
           <div className="space-y-4">
             <PledgePoolDashboard />

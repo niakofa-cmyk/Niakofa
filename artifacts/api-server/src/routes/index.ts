@@ -21,6 +21,7 @@ import niaVoiceRouter from "./nia-voice";
 import niaProxyRouter from "./nia-proxy";
 import poolRouter from "./pool";
 import businessesRouter from "./businesses";
+import govSponsorsRouter from "./gov-sponsors";
 
 const router: IRouter = Router();
 
@@ -46,5 +47,6 @@ router.use(niaVoiceRouter);
 router.use(niaProxyRouter);
 router.use(poolRouter);
 router.use(businessesRouter);
+router.use(govSponsorsRouter);
 
 export default router;

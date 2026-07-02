@@ -18,3 +18,27 @@ Baseline migration (0000_mean_reptil.sql): this captures the full schema as it e
 Local DATABASE_URL: Railway's DATABASE_URL var points to postgres.railway.internal, only reachable from inside Railway's network. For any local drizzle-kit command (generate, migrate, etc.) against the real DB, use DATABASE_PUBLIC_URL instead:
 
 DATABASE_URL="$(railway variables --kv | grep '^DATABASE_PUBLIC_URL=' | cut -d= -f2-)" pnpm run migrate
+
+## ALTER TYPE ADD VALUE split-file pattern (July 2026)
+
+PostgreSQL's `ALTER TYPE ... ADD VALUE` has two separate constraints:
+1. Cannot run inside a BEGIN/COMMIT transaction block (older PG versions).
+2. Even in autocommit (no-transaction) mode, the new enum value is not visible
+   to any subsequent statement in the SAME `client.query(sql)` call — PostgreSQL
+   plans the entire query batch before executing and rejects the reference with
+   error 55P04 "New enum values must be committed before they can be used."
+
+The migration runner in run-migrations.mjs supports a `-- no-transaction` marker
+that skips BEGIN/COMMIT for that file. But even with this, if the same file also
+contains a CREATE INDEX or similar that references the new value, it fails.
+
+**Rule**: Whenever a migration adds an enum value AND references it in the same
+migration, split it into TWO files:
+- File A (e.g. 0028_*): `-- no-transaction` marker + only the `ALTER TYPE ... ADD VALUE`
+- File B (e.g. 0028b_*): normal transaction + the CREATE INDEX / constraint using the new value
+
+File naming: `0028_` sorts before `0028b_` (underscore 0x5F < b 0x62), so the
+runner applies them in the right order automatically.
+
+See migrations 0028_business_governance.sql and 0028b_business_pending_idx.sql
+as the canonical example of this pattern.
