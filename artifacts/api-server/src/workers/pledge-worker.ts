@@ -1,20 +1,22 @@
 /**
- * Pay It Forward Pledge Reconciliation Worker
+ * Pay It Forward Pledge Reconciliation + Repayment Reminder Worker
  *
  * Runs daily via BullMQ repeatable job.
  * Scans all completed Pay It Forward requests where pledge_paid < pledge_amount
- * and either:
- *   a) Sends a push reminder if a scheduled_payment date has passed
+ * and pledge_status = 'active' (skips forgiven/written_off — those are closed
+ * and should not generate reminders or affect the runway metric) and either:
+ *   a) Sends a push + email reminder if a scheduled_payment date has passed
  *   b) Marks the payment_transaction as "partially_repaid" if some was paid back
  *   c) Marks as "pending_contribution" if nothing paid yet (awaiting Pay It Forward)
  *
  * Pay It Forward payment state transitions:
  *   PLEDGED (pending_contribution) → PARTIAL (partially_repaid) → CLOSED (completed)
  *   Or: PLEDGED → SPONSORED (community pool covers it)
+ *   Or: PLEDGED → FORGIVEN/WRITTEN_OFF (pledge_status set by admin — no further reminders)
  */
 import { Worker, type Job } from "bullmq";
-import { db, requestsTable, scheduledPaymentsTable, paymentTransactionsTable } from "@workspace/db";
-import { eq, and, lt, lte, sql } from "drizzle-orm";
+import { db, requestsTable, scheduledPaymentsTable, paymentTransactionsTable, usersTable } from "@workspace/db";
+import { eq, and, lte, sql } from "drizzle-orm";
 import { getRedisConnection, QUEUE } from "../lib/queue";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
@@ -27,7 +29,9 @@ async function reconcilePledges(_job: Job): Promise<void> {
   const now = new Date();
   logger.info({ at: now.toISOString() }, "pledge-worker: starting reconciliation");
 
-  // 1. Find all Pay It Forward requests that are completed but not fully paid back
+  // 1. Find all active Pay It Forward requests that are completed but not fully paid back.
+  //    Exclude forgiven / written_off pledges — those are closed by admin decision and
+  //    must never generate reminders or pollute the outstanding-balance metric.
   const unpaidPledges = await db
     .select()
     .from(requestsTable)
@@ -35,6 +39,7 @@ async function reconcilePledges(_job: Job): Promise<void> {
       and(
         eq(requestsTable.payment_type, "pay_it_forward"),
         eq(requestsTable.status, "completed"),
+        eq(requestsTable.pledge_status, "active"),
         // pledge_paid < pledge_amount (still outstanding)
         sql`COALESCE(${requestsTable.pledge_paid}, 0) < COALESCE(${requestsTable.pledge_amount}, 0)`
       )
@@ -71,24 +76,51 @@ async function reconcilePledges(_job: Job): Promise<void> {
         )
       );
 
-    // 4. Send push reminder for each overdue scheduled payment
+    // 4. Send push + email reminder for each overdue scheduled payment.
+    //    Push reaches users who enabled notifications; email reaches everyone else.
     for (const scheduled of overdueScheduled) {
       const dateStr = scheduled.scheduled_date.toLocaleDateString("en-US", {
         month: "long", day: "numeric",
       });
+      const amountStr = `${scheduled.amount.toFixed(2)}`;
 
+      // Push notification (non-fatal if not subscribed)
       await sendPushToUser(scheduled.user_id, {
         title: "💙 Pay It Forward — Ready When You Are",
-        body: `Your $${scheduled.amount.toFixed(2)} Pay It Forward contribution was scheduled for ${dateStr}. Tap to pay when you're ready — no pressure.`,
+        body: `Your ${amountStr} Pay It Forward contribution was scheduled for ${dateStr}. Tap to pay when you're ready — no pressure.`,
         urgency: "normal",
         requestId: request.id ?? undefined,
         notifType: "wallet" as const,
-      }).catch(() => {});
+      }).catch(err => logger.warn({ err, user_id: scheduled.user_id }, "pledge-worker: push reminder failed (non-fatal)"));
 
-      logger.info(
-        { user_id: scheduled.user_id, request_id: request.id, amount: scheduled.amount },
-        "pledge-worker: reminder sent"
-      );
+      // Email reminder — look up the requester's email so we can send a warm reminder.
+      // Uses lazy import to avoid circular dependency with the workers bootstrap file.
+      try {
+        const [requester] = await db
+          .select({ email: usersTable.email, name: usersTable.name })
+          .from(usersTable)
+          .where(eq(usersTable.id, scheduled.user_id))
+          .limit(1);
+
+        if (requester?.email) {
+          const { sendAlertEmail } = await import("../lib/mailer.js");
+          await sendAlertEmail({
+            to: requester.email,
+            subject: "💙 Your Pay It Forward reminder — ready when you are",
+            title: "Pay It Forward",
+            body: `Hi ${requester.name ?? "neighbor"},<br><br>
+Your ${amountStr} Pay It Forward contribution for <strong>${request.title ?? "a recent request"}</strong> was scheduled for ${dateStr}.<br><br>
+When you're ready, you can pay through the Niakofa app — every contribution keeps the cycle of care going in Fort Worth.<br><br>
+<em>No pressure, no deadline. Pay it forward when it's right for you. 💙</em>`,
+          });
+          logger.info(
+            { user_id: scheduled.user_id, request_id: request.id, amount: scheduled.amount },
+            "pledge-worker: email + push reminder sent"
+          );
+        }
+      } catch (err) {
+        logger.warn({ err, user_id: scheduled.user_id }, "pledge-worker: email reminder failed (non-fatal)");
+      }
     }
 
     // 5. Log long-outstanding pledges (> 30 days) for admin visibility
@@ -98,7 +130,7 @@ async function reconcilePledges(_job: Job): Promise<void> {
       if (daysSinceCompletion > 30 && outstanding > 0) {
         logger.warn(
           { request_id: request.id, outstanding, days: Math.round(daysSinceCompletion) },
-          "pledge-worker: long-outstanding Pay It Forward pledge (>30 days)"
+          "pledge-worker: long-outstanding Pay It Forward pledge (>30 days) — consider marking forgiven/written_off in admin panel"
         );
       }
     }

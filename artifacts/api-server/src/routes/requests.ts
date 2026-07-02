@@ -188,8 +188,13 @@ router.get("/requests", async (req, res) => {
     radius_miles: req.query.radius_miles ? parseFloat(req.query.radius_miles as string) : undefined,
   });
 
-  const helperId = req.query.helper_id ? parseInt(req.query.helper_id as string) : null;
-  const requesterId = req.query.requester_id ? parseInt(req.query.requester_id as string) : null;
+  const helperIdRaw = req.query.helper_id ? parseInt(req.query.helper_id as string) : null;
+  const requesterIdRaw = req.query.requester_id ? parseInt(req.query.requester_id as string) : null;
+  // Guard against parseInt("abc") === NaN producing a malformed SQL query
+  if (helperIdRaw !== null && isNaN(helperIdRaw)) return res.status(400).json({ error: "helper_id must be a valid integer" });
+  if (requesterIdRaw !== null && isNaN(requesterIdRaw)) return res.status(400).json({ error: "requester_id must be a valid integer" });
+  const helperId = helperIdRaw;
+  const requesterId = requesterIdRaw;
   const limitParam = req.query.limit ? parseInt(req.query.limit as string) : 200;
 
   // Build WHERE conditions in the DB — never load the full table.
@@ -541,11 +546,20 @@ router.post("/requests/:id/en-route", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
+  // Include status = 'claimed' in WHERE to make the transition atomic.
+  // Without it, a concurrent cancellation or admin reassignment between the
+  // caller's ownership check and this UPDATE could leave the row in an
+  // inconsistent state. The UPDATE returning null → 409 (not 404) because the
+  // request still exists — the caller is just no longer the assigned helper.
   const [request] = await db.update(requestsTable)
     .set({ status: "en_route", en_route_at: new Date() })
-    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, helperId)))
+    .where(and(
+      eq(requestsTable.id, pParsed.data.id),
+      eq(requestsTable.helper_id, helperId),
+      eq(requestsTable.status, "claimed"),
+    ))
     .returning();
-  if (!request) return res.status(404).json({ error: "Not found" });
+  if (!request) return res.status(409).json({ error: "Cannot mark en-route — request may have been cancelled or you are no longer the assigned helper." });
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
   broadcastRequestEvent("HELPER_MOVING", "request_updated", enriched);
   return res.json(enriched);
@@ -555,11 +569,18 @@ router.post("/requests/:id/arrived", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = MarkArrivedParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
+  // Include status = 'en_route' to make the transition atomic — same pattern
+  // as en-route above. A concurrent cancellation between check and write is
+  // caught by the missing row, returning 409 not 404.
   const [request] = await db.update(requestsTable)
     .set({ status: "arrived", arrived_at: new Date() })
-    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.helper_id, helperId)))
+    .where(and(
+      eq(requestsTable.id, pParsed.data.id),
+      eq(requestsTable.helper_id, helperId),
+      eq(requestsTable.status, "en_route"),
+    ))
     .returning();
-  if (!request) return res.status(404).json({ error: "Not found" });
+  if (!request) return res.status(409).json({ error: "Cannot mark arrived — request may have been cancelled or is not currently in en-route status." });
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
   broadcastRequestEvent("HELPER_ARRIVED", "request_updated", enriched);
   return res.json(enriched);

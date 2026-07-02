@@ -964,8 +964,44 @@ respective files; would have caused duplicate-import TS errors.**
 
 6. **Codegen** — `pnpm --filter @workspace/api-spec run codegen` ran clean (both orval targets + typecheck).
 
+**Verified as already built (do not re-apply):**
+- Frontend business signup form: `login.tsx` already has `accountType === "business"` path with organization/business name field and pending-approval redirect.
+- "Posting as" switcher: `request-new.tsx` lines ~149-301 already fetch `GET /api/businesses/mine` and show the business switcher when user belongs to ≥1 approved business.
+- Pin-coordinate fuzzing: `requests.ts` lines ~41-67 already implement `fuzzCoordinates()` applied to all open-request `GET /requests/nearby` and `GET /requests` responses.
+- Crisis default message: already updated to "in your area" (not hardcoded "Tarrant County").
+- Pool-runway dashboard: `community.tsx` PledgePoolDashboard + `admin.tsx` runway_days widget already built.
+- Repayment reminder job (push-based): pledge-worker already existed with push reminders.
+- Cancel route: fully implemented with helper-release and requester-withdraw paths, concurrency-safe.
+
 **Still open:**
-- Frontend: business signup form in login.tsx (mirrors org flow), "posting as" switcher in request-new.tsx, staff invite screen
 - `businesses_enabled` system_settings seed (need a one-time DB insert or admin toggle to enable the feature)
 - Pledge write-off admin UI (endpoint exists at PATCH /admin/requests/:id/pledge-status)
 - Bulk request UI for approved businesses
+
+---
+
+## Session — Forensic v7 bug fixes + pledge-worker email reminders (July 2, 2026)
+
+**Read before this session:** forensic bug report v7, CLAUDE.md, REPLIT_GODFATHER.md, GRANDFATHER_COWORKER.md. Verified each issue against live code before touching anything.
+
+**Changes shipped:**
+
+1. **`artifacts/api-server/src/routes/users.ts` — three fixes:**
+   - Issue 1 (pledge dedup missing user_id): Added proper 10-second dedup check before pledge insert with `user_id` in the WHERE clause. Without user_id, User A's pledge blocked User B from pledging the same amount on the same request within 10 seconds — a cross-user denial-of-service on pledging.
+   - Issue 2 (pledge_paid TOCTOU): Changed `pledge_paid` update from read-then-write to `SET pledge_paid = COALESCE(pledge_paid, 0) + amount` — atomic SQL increment. The prior code read the current value and wrote it back; two concurrent pledges would both read the same original value and the second write would silently overwrite the first.
+   - Issue 3 (reset-password leaks account existence): Changed `res.status(404)` to `res.status(403)` when account not found in reset-password, so both "no account" and "bad/expired code" return the same HTTP status, preventing email enumeration via status code difference.
+   - Issue 20 (GET /users admin missing fields): Added `approval_status`, `account_type`, `is_admin` to the admin user list query so admins can see pending/denied accounts and account types without separate fetches.
+
+2. **`artifacts/api-server/src/routes/requests.ts` — three fixes:**
+   - Issue 11 (en-route TOCTOU): Added `AND status = 'claimed'` to the en-route UPDATE WHERE clause. Without it, a concurrent cancellation between ownership check and write could leave the row inconsistent. Returns 409 not 404 on miss (request exists, caller is no longer assigned helper).
+   - Issue 11 (arrived TOCTOU): Same fix — added `AND status = 'en_route'` to the arrived UPDATE WHERE clause.
+   - Issue 14 (helperId/requesterId isNaN): Added `isNaN()` guard after `parseInt` on both `helper_id` and `requester_id` query params. `parseInt("abc")` returns `NaN`, producing a malformed SQL query.
+
+3. **`artifacts/api-server/src/workers/pledge-worker.ts` — two enhancements:**
+   - Added `eq(requestsTable.pledge_status, "active")` filter to the unpaid-pledges query. Forgiven/written_off pledges are now excluded from reconciliation and reminder sending — they were admin-closed and must not generate reminders or affect the runway metric.
+   - Added email reminders alongside push notifications for overdue scheduled payments. Looks up the requester's email, sends a warm non-pressuring reminder via `sendAlertEmail`. Non-fatal (wrapped in try/catch); push failure is also now logged as warn instead of silently swallowed.
+
+**Verified as unchanged (not re-applied) this session:**
+- Cancel route, pin-coordinate fuzzing, crisis message, pool-runway dashboard, business frontend UI, "posting as" switcher — all already correctly implemented from prior sessions. See "Verified as already built" note above.
+
+**Lesson: always grep the live code before assuming a reported bug is still present. Three of the seven items the user flagged were already fixed; implementing them again would have introduced regressions.**

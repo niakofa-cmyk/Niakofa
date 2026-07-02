@@ -178,7 +178,10 @@ router.post(["/users/set-initial-password", "/users/reset-password"], authLimite
     : await db.select().from(usersTable)
         .where(eq(usersTable.email, email.trim().toLowerCase()))
         .limit(1);
-  if (!user) return res.status(404).json({ error: "Account not found" });
+  // Return 403 (not 404) regardless of whether the account exists or the code
+  // is wrong — both cases get the same HTTP status so an attacker cannot
+  // distinguish "no account for this email" from "account exists, bad code".
+  if (!user) return res.status(403).json({ error: "Invalid or expired code. Please request a new one." });
 
   if (!user.password_reset_code || user.password_reset_code !== code.trim()) {
     return res.status(400).json({ error: "Incorrect code" });
@@ -350,9 +353,28 @@ router.post("/users/:id/pledge", requireAuth, requireApproved, requireOwnership(
     .where(and(eq(requestsTable.id, request_id), eq(requestsTable.requester_id, pParsed.data.id)))
     .limit(1);
   if (!request) return res.status(404).json({ error: "Request not found or unauthorized" });
-  const newPledgePaid = (request.pledge_paid || 0) + amount;
+
+  // Dedup check: prevent double-submission from the same user on the same request
+  // within a 10-second window (e.g. accidental double-tap). Must include user_id so
+  // that User A's pledge doesn't block User B pledging the same amount on the same
+  // request — a cross-user denial-of-service that a missing user_id filter would cause.
+  const [recentDup] = await db.select({ id: transactionsTable.id })
+    .from(transactionsTable)
+    .where(and(
+      eq(transactionsTable.user_id, pParsed.data.id),
+      eq(transactionsTable.request_id, request_id),
+      eq(transactionsTable.type, "pledge_sent"),
+      eq(transactionsTable.amount, -amount),
+      sql`${transactionsTable.created_at} > NOW() - INTERVAL '10 seconds'`,
+    ))
+    .limit(1);
+  if (recentDup) return res.status(409).json({ error: "Duplicate pledge — please wait a moment before pledging again." });
+
+  // Atomic increment — never read-then-write pledge_paid; two concurrent pledges
+  // on the same request reading the same original value and writing back would
+  // make the second write silently overwrite the first. COALESCE handles NULL.
   const [updated] = await db.update(requestsTable)
-    .set({ pledge_paid: newPledgePaid })
+    .set({ pledge_paid: sql`COALESCE(${requestsTable.pledge_paid}, 0) + ${amount}` })
     .where(eq(requestsTable.id, request_id))
     .returning();
 
@@ -644,6 +666,9 @@ router.post("/users/:id/logout", requireAuth, requireOwnership(), async (req, re
 });
 
 // GET all users (admin)
+// Returns approval_status and account_type so admins can see pending/denied
+// accounts and distinguish individual vs. organization vs. business accounts
+// from the user list without needing separate fetches.
 router.get("/users", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
   const users = await db.select({
     id: usersTable.id,
@@ -656,6 +681,9 @@ router.get("/users", requireAuth, requireAdmin(), adminLimiter, async (_req, res
     suspended_at: usersTable.suspended_at,
     suspended_reason: usersTable.suspended_reason,
     created_at: usersTable.created_at,
+    approval_status: usersTable.approval_status,
+    account_type: usersTable.account_type,
+    is_admin: usersTable.is_admin,
   }).from(usersTable).limit(200);
   return res.json(users);
 });
