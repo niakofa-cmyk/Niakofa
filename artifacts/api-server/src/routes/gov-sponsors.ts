@@ -4,18 +4,21 @@
  * Endpoints for county and government entities to apply as named community pool
  * sponsors. Follows the same approval-queue pattern as businesses.ts.
  *
- * POST   /gov-sponsors              — submit an application (authenticated user)
- * GET    /gov-sponsors/mine         — list my own applications
- * GET    /admin/gov-sponsors        — list all (admin only)
- * PATCH  /admin/gov-sponsors/:id/approve — approve or reject (admin only)
+ * POST   /gov-sponsors                    — submit an application (authenticated user)
+ * GET    /gov-sponsors/mine               — list my own applications
+ * POST   /gov-sponsors/:id/fund           — fund the pool from an approved sponsor (admin)
+ * GET    /admin/gov-sponsors              — list all (admin only)
+ * PATCH  /admin/gov-sponsors/:id/approve  — approve or reject (admin only)
  */
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { db, governmentSponsorsTable, usersTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { adminLimiter, generalApiLimiter } from "../middlewares/rate-limit";
+import { recordPoolContribution, processPendingMinimums, getPoolBalance } from "../lib/community-pool";
+import { broadcast } from "../lib/ws-hub";
 
 const router = Router();
 
@@ -120,6 +123,81 @@ router.get(
       )
       .orderBy(governmentSponsorsTable.created_at);
     return res.json(rows);
+  },
+);
+
+// ── POST /gov-sponsors/:id/fund — fund the community pool from an approved sponsor ─
+// Admin-only: records an inbound contribution from a government/county sponsor.
+// Body: { amount: number, notes?: string }
+// The sponsor must be in "approved" state. Amount is in dollars (positive).
+// After recording the contribution, backfills any queued helpers who were
+// waiting because the pool was empty (processPendingMinimums), then broadcasts
+// a real-time pool_updated event so the frontend balance reflects instantly.
+router.post(
+  "/gov-sponsors/:id/fund",
+  requireAuth,
+  requireAdmin(),
+  adminLimiter,
+  async (req, res) => {
+    const sponsorId = parseInt(req.params.id as string, 10);
+    if (isNaN(sponsorId)) return res.status(400).json({ error: "Invalid sponsor id" });
+
+    const rawAmount = (req.body as { amount?: unknown }).amount;
+    const amount = typeof rawAmount === "number" ? rawAmount : parseFloat(String(rawAmount ?? ""));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: "amount must be a positive number (dollars)." });
+    }
+
+    const [sponsor] = await db
+      .select({ id: governmentSponsorsTable.id, entity_name: governmentSponsorsTable.entity_name, approval_status: governmentSponsorsTable.approval_status })
+      .from(governmentSponsorsTable)
+      .where(eq(governmentSponsorsTable.id, sponsorId))
+      .limit(1);
+
+    if (!sponsor) return res.status(404).json({ error: "Government sponsor not found." });
+    if (sponsor.approval_status !== "approved") {
+      return res.status(403).json({
+        error: `"${sponsor.entity_name}" is not yet approved. Approve the sponsor before recording a pool contribution.`,
+        approval_status: sponsor.approval_status,
+      });
+    }
+
+    const customNotes = (req.body as { notes?: string }).notes?.trim();
+    const notes = customNotes || `Pool funding from ${sponsor.entity_name} (Gov Sponsor #${sponsorId})`;
+
+    const recorded = await recordPoolContribution({
+      amount,
+      userId: req.authenticatedUserId!,
+      notes,
+      governmentSponsorId: sponsorId,
+    });
+
+    if (!recorded) {
+      return res.status(409).json({ error: "Contribution already recorded (duplicate detected)." });
+    }
+
+    // Backfill helpers who were waiting because the pool was empty.
+    const backfilled = await processPendingMinimums().catch((err: unknown) => {
+      logger.error({ err }, "gov-sponsor fund: processPendingMinimums failed (non-fatal)");
+      return 0;
+    });
+
+    const newBalance = await getPoolBalance();
+
+    broadcast({ type: "pool_updated", payload: { balance: newBalance } });
+
+    logger.info(
+      { gov_sponsor_id: sponsorId, entity: sponsor.entity_name, amount, backfilled, new_balance: newBalance },
+      "gov-sponsor: pool funding recorded",
+    );
+
+    return res.status(201).json({
+      gov_sponsor_id: sponsorId,
+      entity_name: sponsor.entity_name,
+      amount_contributed: amount,
+      backfilled_helpers: backfilled,
+      new_pool_balance: newBalance,
+    });
   },
 );
 

@@ -1709,6 +1709,8 @@ function OrgsTab({ authed }: { authed: boolean }) {
   }[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState<string | null>(null);
+  const [fundingId, setFundingId] = useState<number | null>(null);
+  const [fundAmount, setFundAmount] = useState("");
 
   const authHeaders = () => getToken() ? { Authorization: `Bearer ${getToken()}` } : {};
 
@@ -1756,6 +1758,38 @@ function OrgsTab({ authed }: { authed: boolean }) {
       toast({ title: `Gov sponsor ${status}` });
     } catch { toast({ title: "Error", variant: "destructive" }); }
     finally { setProcessing(null); }
+  };
+
+  const fundPool = async (id: number, entityName: string) => {
+    const dollars = parseFloat(fundAmount);
+    if (!Number.isFinite(dollars) || dollars <= 0) {
+      toast({ title: "Enter a valid dollar amount", variant: "destructive" });
+      return;
+    }
+    const key = `fund-${id}`;
+    setProcessing(key);
+    try {
+      const res = await fetch(`${BASE}/api/gov-sponsors/${id}/fund`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ amount: dollars }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Funding failed");
+      }
+      const result = await res.json() as { new_pool_balance: number; backfilled_helpers: number };
+      toast({
+        title: `Pool funded! $${dollars.toFixed(2)} from ${entityName}`,
+        description: `New balance: $${result.new_pool_balance.toFixed(2)}${result.backfilled_helpers > 0 ? ` · ${result.backfilled_helpers} helper(s) backfilled` : ""}`,
+      });
+      setFundingId(null);
+      setFundAmount("");
+    } catch (err) {
+      toast({ title: err instanceof Error ? err.message : "Funding failed", variant: "destructive" });
+    } finally {
+      setProcessing(null);
+    }
   };
 
   const statusBadge = (s: string) => {
@@ -1855,6 +1889,43 @@ function OrgsTab({ authed }: { authed: boolean }) {
                   {statusBadge(g.approval_status)}
                 </div>
                 <ActionButtons id={g.id} kind="g" status={g.approval_status} />
+                {g.approval_status === "approved" && (
+                  <div className="mt-2">
+                    {fundingId === g.id ? (
+                      <div className="flex gap-2 items-center">
+                        <div className="relative flex-1">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
+                          <input
+                            type="number"
+                            min="1"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={fundAmount}
+                            onChange={e => setFundAmount(e.target.value)}
+                            className="w-full h-9 rounded-xl bg-muted/40 border border-primary/30 text-sm pl-6 pr-3 outline-none focus:ring-1 focus:ring-primary"
+                            style={{ fontSize: "16px" }}
+                          />
+                        </div>
+                        <button
+                          onClick={() => fundPool(g.id, g.entity_name)}
+                          disabled={processing === `fund-${g.id}`}
+                          style={{ touchAction: "manipulation" }}
+                          className="h-9 px-3 rounded-xl bg-primary text-black text-xs font-black disabled:opacity-50 shrink-0"
+                        >{processing === `fund-${g.id}` ? <RefreshCw className="w-3 h-3 animate-spin" /> : "Fund Pool"}</button>
+                        <button
+                          onClick={() => { setFundingId(null); setFundAmount(""); }}
+                          className="h-9 px-2 rounded-xl border border-border text-xs text-muted-foreground"
+                        >✕</button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setFundingId(g.id)}
+                        style={{ touchAction: "manipulation" }}
+                        className="w-full h-9 rounded-xl border border-primary/40 bg-primary/10 text-primary text-xs font-black"
+                      >+ Fund Community Pool</button>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

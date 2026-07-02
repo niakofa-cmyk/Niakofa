@@ -340,8 +340,9 @@ export async function recordPoolContribution(params: {
   userId: number | null;
   stripePaymentIntentId?: string;
   notes?: string;
+  governmentSponsorId?: number;
 }): Promise<boolean> {
-  const { userId, stripePaymentIntentId, notes } = params;
+  const { userId, stripePaymentIntentId, notes, governmentSponsorId } = params;
   const amount = roundMoney(params.amount);
   if (amount <= 0) return false;
   try {
@@ -351,6 +352,7 @@ export async function recordPoolContribution(params: {
       user_id: userId,
       stripe_payment_intent_id: stripePaymentIntentId ?? null,
       notes: notes ?? "Sponsor contribution to the Community Pool",
+      government_sponsor_id: governmentSponsorId ?? null,
     });
     return true;
   } catch (err: unknown) {

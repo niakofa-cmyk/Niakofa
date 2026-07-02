@@ -319,12 +319,15 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
       });
     }
 
+    // Use req.authenticatedUserId (not parsed.data.requester_id) so a caller
+    // cannot spoof a different user's membership to bypass the cap check.
+    const authenticatedRequesterId = req.authenticatedUserId!;
     const [membership] = await db
       .select({ role: businessMembersTable.role, spending_cap_cents: businessMembersTable.spending_cap_cents })
       .from(businessMembersTable)
       .where(and(
         eq(businessMembersTable.business_id, businessId),
-        eq(businessMembersTable.user_id, parsed.data.requester_id),
+        eq(businessMembersTable.user_id, authenticatedRequesterId),
         eq(businessMembersTable.status, "active"),
       ))
       .limit(1);
@@ -343,24 +346,27 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
     }
 
     // Per-staff spending cap enforcement: paid business requests (immediate) count
-    // against the staff member's cap. Goodwill posts cost $0 and are always allowed.
+    // against the AUTHENTICATED staff member's cap. Goodwill posts cost $0 and
+    // are always allowed. Using authenticatedRequesterId (not parsed body) prevents
+    // a caller from spoofing a different user's ID to bypass their own cap.
     const isPaid = parsed.data.payment_type === "immediate";
     const newAmountCents = isPaid && parsed.data.pay_it_forward_amount
       ? Math.round(parsed.data.pay_it_forward_amount * 100)
       : 0;
     if (isPaid && membership.spending_cap_cents !== null && membership.spending_cap_cents !== undefined) {
+      // SQL returns sum in dollars; multiply by 100 to convert to cents.
       const [spent] = await db
-        .select({ total: sql<number>`COALESCE(SUM(${requestsTable.pay_it_forward_amount}), 0) * 100` })
+        .select({ total_cents: sql<number>`COALESCE(SUM(${requestsTable.pay_it_forward_amount}), 0) * 100` })
         .from(requestsTable)
         .where(
           and(
             eq(requestsTable.business_id, businessId),
-            eq(requestsTable.requester_id, parsed.data.requester_id),
+            eq(requestsTable.requester_id, authenticatedRequesterId),
             eq(requestsTable.payment_type, "immediate"),
             inArray(requestsTable.status, ["open", "claimed", "en_route", "arrived", "completed", "pending_owner_approval"]),
           )
         );
-      const currentSpentCents = Math.round((spent?.total ?? 0) * 100) / 100;
+      const currentSpentCents = Math.round(spent?.total_cents ?? 0);
       if (currentSpentCents + newAmountCents > membership.spending_cap_cents) {
         return res.status(403).json({
           error: "This request would exceed your business spending cap. Contact the business owner to request a higher limit.",

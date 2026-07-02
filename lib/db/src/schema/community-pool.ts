@@ -29,6 +29,8 @@ export const communityPoolLedgerTable = pgTable("community_pool_ledger", {
   payment_transaction_id: integer("payment_transaction_id"),
   stripe_payment_intent_id: text("stripe_payment_intent_id"),
   notes: text("notes"),
+  // migration 0030: optional link to the government sponsor that funded the pool
+  government_sponsor_id: integer("government_sponsor_id"),
   created_at: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),

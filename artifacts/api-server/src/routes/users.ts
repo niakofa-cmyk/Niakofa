@@ -42,8 +42,15 @@ router.post("/users/login", authLimiter, async (req, res) => {
   // Legacy accounts created before password auth was added have no
   // password_hash at all — distinct from "wrong password" so the client
   // can route them through a password-setup flow instead of a dead end.
+  // Include user_email and user_name so the frontend can pre-populate the
+  // reset form without a separate lookup.
   if (!user.password_hash) {
-    return res.status(403).json({ error_code: "LEGACY_PASSWORD_REQUIRED", user_id: user.id });
+    return res.status(403).json({
+      error_code: "LEGACY_PASSWORD_REQUIRED",
+      user_id: user.id,
+      user_email: user.email,
+      user_name: user.name,
+    });
   }
 
   const passwordMatches = await bcrypt.compare(password, user.password_hash);
@@ -74,7 +81,12 @@ router.post("/users/register", authLimiter, async (req, res) => {
     organization_description?: string;
   };
   const password = body.password;
-  const ALLOWED_ACCOUNT_TYPES = ["individual", "organization"];
+  // "business" and "sponsor" are valid self-reported account types the
+  // frontend presents in the Join form. They require admin review before
+  // the account can be used for their intended purpose (posting on behalf
+  // of a business entity or making pool contributions as a county/gov
+  // sponsor). "organization" is the legacy name for the same concept.
+  const ALLOWED_ACCOUNT_TYPES = ["individual", "organization", "business", "sponsor"];
   const account_type = ALLOWED_ACCOUNT_TYPES.includes(body.account_type ?? "")
     ? (body.account_type as string)
     : "individual";
@@ -99,7 +111,11 @@ router.post("/users/register", authLimiter, async (req, res) => {
   // for or offering help. Organization accounts still require admin review
   // via the new PATCH /admin/accounts/:id/approval endpoint, since vetting a
   // claimed nonprofit/business identity is a real, intentional checkpoint.
-  const approval_status = account_type === "organization" ? "pending" : "approved";
+  // Individual accounts auto-approved (no vetting needed for someone asking
+  // for or offering community help). Organization/business/sponsor accounts
+  // stay pending until an admin explicitly approves them.
+  const REQUIRES_REVIEW = ["organization", "business", "sponsor"];
+  const approval_status = REQUIRES_REVIEW.includes(account_type) ? "pending" : "approved";
 
   const [user] = await db.insert(usersTable).values({
     name, email,
