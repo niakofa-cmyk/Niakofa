@@ -15,6 +15,10 @@ export interface PoolStats {
   total_minimums: number;
   helpers_fronted: number;
   sponsor_count: number;
+  /** Guaranteed minimums queued because the pool ran dry */
+  pending_minimums_count: number;
+  /** Total dollars owed to helpers awaiting pool backfill */
+  pending_minimums_total: number;
 }
 
 export type PoolLedgerEntryEntryType = typeof PoolLedgerEntryEntryType[keyof typeof PoolLedgerEntryEntryType];
@@ -365,6 +369,22 @@ export const HelpRequestCategory = {
   medical: 'medical',
   emergency: 'emergency',
   other: 'other',
+  stock_shelves: 'stock_shelves',
+  event_setup: 'event_setup',
+  delivery_run: 'delivery_run',
+  tech_support: 'tech_support',
+  local_farm: 'local_farm',
+  food_pantry: 'food_pantry',
+  moving_labor: 'moving_labor',
+  pet_care: 'pet_care',
+  childcare: 'childcare',
+  senior_care: 'senior_care',
+  yard_work: 'yard_work',
+  tutoring: 'tutoring',
+  cleaning: 'cleaning',
+  meal_prep: 'meal_prep',
+  paperwork: 'paperwork',
+  business_services: 'business_services',
 } as const;
 
 export type HelpRequestUrgency = typeof HelpRequestUrgency[keyof typeof HelpRequestUrgency];
@@ -456,6 +476,22 @@ export const HelpRequestInputCategory = {
   medical: 'medical',
   emergency: 'emergency',
   other: 'other',
+  stock_shelves: 'stock_shelves',
+  event_setup: 'event_setup',
+  delivery_run: 'delivery_run',
+  tech_support: 'tech_support',
+  local_farm: 'local_farm',
+  food_pantry: 'food_pantry',
+  moving_labor: 'moving_labor',
+  pet_care: 'pet_care',
+  childcare: 'childcare',
+  senior_care: 'senior_care',
+  yard_work: 'yard_work',
+  tutoring: 'tutoring',
+  cleaning: 'cleaning',
+  meal_prep: 'meal_prep',
+  paperwork: 'paperwork',
+  business_services: 'business_services',
 } as const;
 
 export type HelpRequestInputUrgency = typeof HelpRequestInputUrgency[keyof typeof HelpRequestInputUrgency];

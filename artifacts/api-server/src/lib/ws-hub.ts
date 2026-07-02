@@ -40,6 +40,7 @@ export type WsEventType =
   | "payout_sent"
   | "pool_updated"
   | "pool_front_paid"
+  | "pool_low_balance"
   | "presence_update"
   | "connected"
   | "pong"

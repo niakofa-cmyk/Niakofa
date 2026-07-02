@@ -11,6 +11,7 @@ import { startNotificationWorker } from "./workers/notification-worker";
 import { startAnomalyDetectionWorker } from "./workers/anomaly-worker";
 import { startNiaCheckinWorker } from "./workers/nia-checkin-worker";
 import { startNiaPushQueueWorker } from "./workers/nia-push-queue-worker";
+import { startPoolMinimumsWorker } from "./workers/pool-minimums-worker";
 import { processRecurringRequests } from "./routes/recurring";
 import { db, usersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
@@ -82,6 +83,8 @@ server.listen(port, async () => {
   // Nia push queue consumer — drains push_notification_queue written by nia-service
   // ambient-presence and general-checkin workers; delivers via sendPushToUser every 5 min
   startNiaPushQueueWorker();
+  // Community Pool backfill — retries queued guaranteed minimums + low-balance alert
+  startPoolMinimumsWorker();
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────

@@ -1,12 +1,14 @@
 import {
   db,
   communityPoolLedgerTable,
+  poolPendingMinimumsTable,
   systemSettingsTable,
   usersTable,
   transactionsTable,
 } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
+import { broadcast } from "./ws-hub";
 
 /**
  * Community Pool service.
@@ -73,19 +75,22 @@ interface PoolDebitParams {
   requestTitle: string;
 }
 
+/** Outcome of a pool debit attempt — callers must distinguish these. */
+export type PoolPayOutcome = "paid" | "insufficient" | "duplicate" | "error";
+
 /**
  * Atomically debit the pool and credit the helper's benevolence_wallet.
- * Returns true if the payment went through, false if the pool couldn't cover
- * it (or the request was already fronted/minimum'd — unique partial indexes
- * make duplicates impossible).
+ * Returns "paid" on success, "insufficient" when the pool can't cover it,
+ * "duplicate" when this request was already fronted/minimum'd (unique partial
+ * indexes make double-pay impossible), "error" on unexpected failure.
  */
-export async function payHelperFromPool(params: PoolDebitParams): Promise<boolean> {
+export async function payHelperFromPool(params: PoolDebitParams): Promise<PoolPayOutcome> {
   const { entryType, requestId, helperId, requestTitle } = params;
   const amount = roundMoney(params.amount);
-  if (amount <= 0) return false;
+  if (amount <= 0) return "error";
 
   try {
-    return await db.transaction(async (tx) => {
+    return await db.transaction(async (tx): Promise<PoolPayOutcome> => {
       // Serialize pool debits — balance check + debit must be atomic.
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${POOL_LOCK_KEY})`);
 
@@ -96,11 +101,11 @@ export async function payHelperFromPool(params: PoolDebitParams): Promise<boolea
 
       // Compare in whole cents so float representation noise can't flip the check
       if (toCents(balance) < toCents(amount)) {
-        logger.info(
+        logger.warn(
           { request_id: requestId, helper_id: helperId, balance, needed: amount, entry_type: entryType },
-          "Community pool balance insufficient — skipping"
+          "Community pool balance insufficient — payment skipped"
         );
-        return false;
+        return "insufficient";
       }
 
       // Debit the pool. The partial unique indexes on (request_id) for
@@ -135,17 +140,17 @@ export async function payHelperFromPool(params: PoolDebitParams): Promise<boolea
             : `Community Pool thank-you minimum: ${requestTitle}`,
       });
 
-      return true;
+      return "paid";
     });
   } catch (err: unknown) {
-    // Unique-violation = already paid for this request — treat as success=false, no retry needed
+    // Unique-violation = already paid for this request — safe skip, no retry needed
     const code = (err as { code?: string })?.code;
     if (code === "23505") {
       logger.warn({ request_id: requestId, entry_type: entryType }, "Pool entry already exists for request — skipped duplicate");
-      return false;
+      return "duplicate";
     }
     logger.error({ err, request_id: requestId, helper_id: helperId }, "Pool payment failed");
-    return false;
+    return "error";
   }
 }
 
@@ -179,6 +184,154 @@ export async function recordPoolRepayment(params: {
     stripe_payment_intent_id: stripePaymentIntentId ?? null,
     notes: "Requester repaid a pool-fronted pledge — pool replenished",
   });
+}
+
+/**
+ * Queue a guaranteed minimum the pool couldn't cover. The backfill worker
+ * retries these FIFO whenever the pool is replenished — no helper silently
+ * loses their guarantee. Unique index on request_id = queue-once.
+ */
+export async function queuePendingMinimum(params: {
+  requestId: number;
+  helperId: number;
+  amount: number;
+  requestTitle: string;
+}): Promise<void> {
+  const amount = roundMoney(params.amount);
+  if (amount <= 0) return;
+  try {
+    await db
+      .insert(poolPendingMinimumsTable)
+      .values({
+        request_id: params.requestId,
+        helper_id: params.helperId,
+        amount,
+        request_title: params.requestTitle,
+      })
+      .onConflictDoNothing();
+    logger.warn(
+      { request_id: params.requestId, helper_id: params.helperId, amount },
+      "Guaranteed minimum QUEUED — pool balance insufficient, will backfill when replenished"
+    );
+  } catch (err) {
+    logger.error({ err, request_id: params.requestId }, "Failed to queue pending minimum");
+  }
+}
+
+/**
+ * Backfill queued guaranteed minimums (FIFO) while the pool can cover them.
+ * Called after every pool credit (contribution / repayment) and by the
+ * interval worker as a safety net. Returns how many were paid.
+ */
+export async function processPendingMinimums(): Promise<number> {
+  if (!(await isPoolEnabled())) return 0;
+
+  let paidCount = 0;
+  try {
+    const pending = await db
+      .select()
+      .from(poolPendingMinimumsTable)
+      .where(eq(poolPendingMinimumsTable.status, "pending"))
+      .orderBy(asc(poolPendingMinimumsTable.created_at))
+      .limit(50);
+
+    for (const row of pending) {
+      const outcome = await payHelperFromPool({
+        entryType: "guaranteed_minimum",
+        amount: row.amount,
+        requestId: row.request_id,
+        helperId: row.helper_id,
+        requestTitle: row.request_title,
+      });
+
+      if (outcome === "paid" || outcome === "duplicate") {
+        // duplicate = a minimum already exists for this request — mark satisfied
+        await db
+          .update(poolPendingMinimumsTable)
+          .set({ status: "paid", paid_at: new Date() })
+          .where(eq(poolPendingMinimumsTable.id, row.id));
+        if (outcome === "paid") {
+          paidCount++;
+          logger.info(
+            { request_id: row.request_id, helper_id: row.helper_id, amount: row.amount },
+            "Backfilled guaranteed minimum from replenished pool"
+          );
+          // Lazy import avoids a circular dependency (routes/push imports lib modules)
+          const { sendPushToUser } = await import("../routes/push");
+          sendPushToUser(row.helper_id, {
+            title: "💙 Community Pool Thank-You (backfilled)",
+            body: `The pool was replenished — $${row.amount.toFixed(2)} was just added to your Goodwill Fund for: "${row.request_title}".`,
+            requestId: row.request_id,
+            notifType: "wallet" as const,
+          }).catch(() => {});
+        }
+      } else if (outcome === "insufficient") {
+        // FIFO: stop at the first one the pool can't cover
+        break;
+      }
+      // "error": leave pending, move on next cycle
+    }
+
+    if (paidCount > 0) {
+      const balance = await getPoolBalance();
+      broadcast({ type: "pool_updated", payload: { balance } });
+    }
+  } catch (err) {
+    logger.error({ err }, "processPendingMinimums failed");
+  }
+  return paidCount;
+}
+
+// ── Low-balance admin alert ──────────────────────────────────────────────────
+
+const LOW_BALANCE_ALERT_INTERVAL_MS = 6 * 60 * 60 * 1000; // at most once per 6h
+let _lastLowBalanceAlertAt = 0;
+
+export async function getLowBalanceThreshold(): Promise<number> {
+  try {
+    const [row] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "pool_low_balance_threshold"))
+      .limit(1);
+    const parsed = row ? parseFloat(row.value) : NaN;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 25;
+  } catch {
+    return 25;
+  }
+}
+
+/**
+ * If the pool balance is below the alert threshold, warn admins: warn-level
+ * log, `pool_low_balance` WS broadcast, and a push to every is_admin user.
+ * Deduped to once per 6 hours per process.
+ */
+export async function maybeAlertLowBalance(): Promise<void> {
+  try {
+    const [balance, threshold] = await Promise.all([getPoolBalance(), getLowBalanceThreshold()]);
+    if (toCents(balance) >= toCents(threshold)) return;
+    if (Date.now() - _lastLowBalanceAlertAt < LOW_BALANCE_ALERT_INTERVAL_MS) return;
+    _lastLowBalanceAlertAt = Date.now();
+
+    logger.warn({ balance, threshold }, "COMMUNITY POOL LOW BALANCE — guaranteed minimums at risk");
+    broadcast({ type: "pool_low_balance", payload: { balance, threshold } });
+
+    const admins = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(eq(usersTable.is_admin, true));
+    // Lazy import avoids a circular dependency (routes/push imports lib modules)
+    const { sendPushToUser } = await import("../routes/push");
+    for (const admin of admins) {
+      sendPushToUser(admin.id, {
+        title: "⚠️ Community Pool low balance",
+        body: `Pool balance is $${balance.toFixed(2)} (threshold $${threshold.toFixed(2)}). Guaranteed minimums may be queued until the pool is replenished.`,
+        notifType: "wallet" as const,
+      }).catch(() => {});
+    }
+  } catch (err) {
+    logger.error({ err }, "maybeAlertLowBalance failed");
+  }
 }
 
 /** Record a sponsor contribution into the pool. */

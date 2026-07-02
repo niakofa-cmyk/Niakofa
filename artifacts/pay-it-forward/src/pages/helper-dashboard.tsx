@@ -15,7 +15,11 @@ const CATEGORY_LABELS: Record<string, string> = {
   groceries: "🛒 Groceries", transportation: "🚗 Transportation", errands: "📦 Errands",
   home_repair: "🔧 Home Repair", medical: "💊 Medical", emergency: "🚨 Emergency",
   stock_shelves: "📦 Stock", event_setup: "🎪 Event", delivery_run: "🚚 Delivery",
-  tech_support: "💻 Tech", other: "💙 Other",
+  tech_support: "💻 Tech", local_farm: "🌾 Farm", food_pantry: "🥫 Pantry",
+  moving_labor: "📦 Moving", pet_care: "🐾 Pets", childcare: "🧸 Childcare",
+  senior_care: "🧓 Seniors", yard_work: "🌿 Yard", tutoring: "📚 Tutoring",
+  cleaning: "🧹 Cleaning", meal_prep: "🍲 Meals", paperwork: "📄 Paperwork",
+  business_services: "💼 Business", other: "💙 Other",
 };
 
 const URGENCY_COLORS: Record<string, string> = {

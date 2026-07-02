@@ -36,3 +36,26 @@ export const communityPoolLedgerTable = pgTable("community_pool_ledger", {
 
 export type CommunityPoolLedgerEntry = typeof communityPoolLedgerTable.$inferSelect;
 export type NewCommunityPoolLedgerEntry = typeof communityPoolLedgerTable.$inferInsert;
+
+/**
+ * pool_pending_minimums — guaranteed minimums the pool COULDN'T pay because
+ * the balance ran dry. A backfill worker retries these (FIFO) whenever the
+ * pool is replenished, so no helper silently loses their guarantee.
+ *
+ * status: pending | paid | cancelled
+ */
+export const poolPendingMinimumsTable = pgTable("pool_pending_minimums", {
+  id: serial("id").primaryKey(),
+  request_id: integer("request_id").notNull(),
+  helper_id: integer("helper_id").notNull(),
+  amount: real("amount").notNull(),
+  request_title: text("request_title").notNull().default(""),
+  status: text("status").notNull().default("pending"),
+  created_at: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .default(sql`NOW()`),
+  paid_at: timestamp("paid_at", { withTimezone: true }),
+});
+
+export type PoolPendingMinimum = typeof poolPendingMinimumsTable.$inferSelect;
+export type NewPoolPendingMinimum = typeof poolPendingMinimumsTable.$inferInsert;

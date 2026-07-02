@@ -22,19 +22,31 @@ type PaymentType = "immediate" | "pay_it_forward" | "goodwill";
 
 const CATEGORIES = [
   // Community
-  { value: "groceries",      label: "🛒 Groceries",       group: "Community" },
-  { value: "transportation", label: "🚗 Transportation",   group: "Community" },
-  { value: "errands",        label: "📦 Errands",          group: "Community" },
-  { value: "home_repair",    label: "🔧 Home Repair",      group: "Community" },
-  { value: "medical",        label: "💊 Medical",          group: "Community" },
-  { value: "emergency",      label: "🚨 Emergency",        group: "Community" },
+  { value: "groceries",         label: "🛒 Groceries",         group: "Community" },
+  { value: "transportation",    label: "🚗 Transportation",     group: "Community" },
+  { value: "errands",           label: "📦 Errands",            group: "Community" },
+  { value: "home_repair",       label: "🔧 Home Repair",        group: "Community" },
+  { value: "medical",           label: "💊 Medical",            group: "Community" },
+  { value: "emergency",         label: "🚨 Emergency",          group: "Community" },
+  { value: "moving_labor",      label: "📦 Moving & Labor",     group: "Community" },
+  { value: "pet_care",          label: "🐾 Pet Care",           group: "Community" },
+  { value: "childcare",         label: "🧸 Childcare",          group: "Community" },
+  { value: "senior_care",       label: "🧓 Senior Care",        group: "Community" },
+  { value: "yard_work",         label: "🌿 Yard Work",          group: "Community" },
+  { value: "tutoring",          label: "📚 Tutoring",           group: "Community" },
+  { value: "cleaning",          label: "🧹 Cleaning",           group: "Community" },
+  { value: "meal_prep",         label: "🍲 Meal Prep",          group: "Community" },
+  { value: "paperwork",         label: "📄 Paperwork Help",     group: "Community" },
+  { value: "local_farm",        label: "🌾 Local Farm",         group: "Community" },
+  { value: "food_pantry",       label: "🥫 Food Pantry",        group: "Community" },
   // Business
-  { value: "stock_shelves",  label: "📦 Stock Shelves",    group: "Business" },
-  { value: "event_setup",    label: "🎪 Event Setup",      group: "Business" },
-  { value: "delivery",       label: "🚚 Delivery Run",     group: "Business" },
-  { value: "tech_support",   label: "💻 Tech Support",     group: "Business" },
+  { value: "stock_shelves",     label: "📦 Stock Shelves",      group: "Business" },
+  { value: "event_setup",       label: "🎪 Event Setup",        group: "Business" },
+  { value: "delivery_run",      label: "🚚 Delivery Run",       group: "Business" },
+  { value: "tech_support",      label: "💻 Tech Support",       group: "Business" },
+  { value: "business_services", label: "💼 Business Services",  group: "Business" },
   // Catch-all
-  { value: "other",          label: "📋 Other",            group: "Community" },
+  { value: "other",             label: "📋 Other",              group: "Community" },
 ] as const;
 
 type CategoryValue = typeof CATEGORIES[number]["value"];
@@ -44,7 +56,10 @@ const formSchema = z.object({
   description: z.string().optional(),
   category: z.enum([
     "groceries", "transportation", "errands", "home_repair", "medical", "emergency",
-    "stock_shelves", "event_setup", "delivery", "tech_support", "other",
+    "moving_labor", "pet_care", "childcare", "senior_care", "yard_work", "tutoring",
+    "cleaning", "meal_prep", "paperwork", "local_farm", "food_pantry",
+    "stock_shelves", "event_setup", "delivery_run", "tech_support", "business_services",
+    "other",
   ] as [string, ...string[]]),
   urgency: z.enum(["low", "medium", "high", "emergency"]),
   pay_it_forward_amount: z.number().optional(),

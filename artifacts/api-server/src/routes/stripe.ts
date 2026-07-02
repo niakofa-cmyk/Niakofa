@@ -6,7 +6,7 @@ import { db, stripeAccountsTable, paymentTransactionsTable, usersTable, requests
 import { and, eq, sql } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { sendPushToUser } from "./push";
-import { wasRequestFronted, recordPoolContribution, getPoolBalance } from "../lib/community-pool";
+import { wasRequestFronted, recordPoolContribution, getPoolBalance, processPendingMinimums } from "../lib/community-pool";
 import { logger } from "../lib/logger";
 import { paymentLimiter } from "../middlewares/rate-limit";
 
@@ -73,6 +73,8 @@ router.post("/stripe/webhook", async (req, res) => {
             notes: "Sponsor contribution via Stripe",
           });
           if (recorded) {
+            // Pool replenished — backfill any queued guaranteed minimums
+            await processPendingMinimums();
             const balance = await getPoolBalance();
             broadcast({ type: "pool_updated", payload: { balance } });
             logger.info({ amount: contribAmount, user_id: contributorId }, "Community pool contribution recorded");
@@ -170,6 +172,8 @@ router.post("/stripe/webhook", async (req, res) => {
           });
 
           if (fronted) {
+            // Pool replenished — backfill any queued guaranteed minimums
+            await processPendingMinimums();
             const balance = await getPoolBalance();
             broadcast({ type: "pool_updated", payload: { balance } });
             logger.info(

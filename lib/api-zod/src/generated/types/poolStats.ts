@@ -16,4 +16,8 @@ export interface PoolStats {
   total_minimums: number;
   helpers_fronted: number;
   sponsor_count: number;
+  /** Guaranteed minimums queued because the pool ran dry */
+  pending_minimums_count: number;
+  /** Total dollars owed to helpers awaiting pool backfill */
+  pending_minimums_total: number;
 }

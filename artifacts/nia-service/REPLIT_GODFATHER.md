@@ -400,3 +400,21 @@ The biggest product gap from the owner's briefing is now closed — helpers no l
 - **Transparency for the community:** `GET /api/pool/stats` and `GET /api/pool/ledger` are public; the Community page pool tab shows live balance, "Where the Money Goes", a transparency ledger (sponsors first-name-only, helpers anonymous), and a contribute flow ($5/$10/$25/$50 presets, Stripe when configured).
 - Pool logic never blocks task completion — every pool step is wrapped so a pool failure degrades gracefully instead of breaking the request flow.
 - E2E verified in the Replit dev environment: $50 contribution → $12 front (wallet 0→12) → $5 goodwill minimum (→17) → $3 front + $2 top-up (→22), balance 50→28, retry-complete correctly rejected.
+
+### Session: July 2, 2026 — Pool depletion recovery, 23-category taxonomy, legal flags
+
+The Community Pool's open review items are closed: a depleted pool no longer silently drops guaranteed minimums, and the task taxonomy expanded from 13 to 23 categories.
+
+**Pool depletion recovery (migration 0025):**
+- New `pool_pending_minimums` table: when the pool can't cover a helper's guaranteed minimum, the debt is QUEUED instead of dropped (unique on `request_id` — queue-once). `payHelperFromPool` now returns a typed outcome (`paid` / `insufficient` / `duplicate` / `error`) so callers can react correctly.
+- **Backfill everywhere the pool is replenished:** `processPendingMinimums()` pays queued minimums FIFO (stops at first the balance can't cover) and runs after every dev-mode contribution, every Stripe pool contribution, every fronted-pledge repayment, plus a 10-minute interval worker (`pool-minimums-worker.ts`) as safety net. Helpers get a "backfilled" push when their queued minimum lands.
+- **Admin visibility:** `pool_low_balance_threshold` setting (default $25). Below it: warn log, `pool_low_balance` WS broadcast, push to every `is_admin` user (deduped to once per 6h per process). Pool stats now expose `pending_minimums_count` / `pending_minimums_total`, and the Community pool tab shows a yellow "Helpers Waiting on the Pool" banner when anything is queued.
+- E2E verified: drained pool to $2 → completed a goodwill task → $5 minimum queued + low-balance alert fired → $20 contribution → backfill paid the helper automatically (wallet 22→27), queue cleared.
+
+**Task taxonomy 13 → 23 categories:**
+- Added: `moving_labor`, `pet_care`, `childcare`, `senior_care`, `yard_work`, `tutoring`, `cleaning`, `meal_prep`, `paperwork`, `business_services` (via `ALTER TYPE help_request_category ADD VALUE` in migration 0025).
+- Synced everywhere: openapi.yaml enums → codegen (client hooks + Zod), request-new form (also fixed a latent bug: the form was sending `delivery` but the DB enum is `delivery_run`), recurring page, community + helper-dashboard label maps, i18n (English + Spanish).
+
+**Legal/tax flags documented (NOT legal advice — needs a lawyer before scale):**
+- *Lending-law exposure:* the pool "fronting" a helper's payment before the requester repays could be construed as an extension of credit to the requester. Mitigants: no interest, no fees, no repayment obligation enforcement (repayment is voluntary pay-it-forward), no credit reporting. Still: consult a TX-licensed attorney before scaling beyond community pilot.
+- *1099 reporting:* helper payouts through Stripe Connect Express delegate 1099-K/1099-NEC issuance to Stripe at IRS thresholds. Benevolence-wallet credits from the pool (minimums, fronts) do NOT flow through Stripe Connect until cashed out via `/api/stripe/payout` — cumulative pool payments to a single helper approaching $600/yr may create direct 1099-NEC obligations for the platform entity. Track it.

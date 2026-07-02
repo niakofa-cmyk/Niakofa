@@ -3,7 +3,7 @@ import { useNiaStory } from "@/hooks/useNiaStory";
 import { authHeaders } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import LiveLeaderboard from "@/components/LiveLeaderboard";
-import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, MapPin, Award, Wrench, Globe, Mic, MicOff, Loader2, CheckCircle2, RefreshCw, Clock } from "lucide-react";
+import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, MapPin, Award, Wrench, Globe, Mic, MicOff, Loader2, CheckCircle2, RefreshCw, Clock, AlertTriangle } from "lucide-react";
 import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey, useGetPoolStats, getGetPoolStatsQueryKey, useGetPoolLedger, getGetPoolLedgerQueryKey, useContributeToPool } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
@@ -28,6 +28,22 @@ const CATEGORY_LABELS: Record<string, string> = {
   home_repair: "🔧 Home Repair",
   medical: "🏥 Medical",
   emergency: "🚨 Emergency",
+  moving_labor: "📦 Moving & Labor",
+  pet_care: "🐾 Pet Care",
+  childcare: "🧸 Childcare",
+  senior_care: "🧓 Senior Care",
+  yard_work: "🌿 Yard Work",
+  tutoring: "📚 Tutoring",
+  cleaning: "🧹 Cleaning",
+  meal_prep: "🍲 Meal Prep",
+  paperwork: "📄 Paperwork",
+  local_farm: "🌾 Local Farm",
+  food_pantry: "🥫 Food Pantry",
+  stock_shelves: "📦 Stock Shelves",
+  event_setup: "🎪 Event Setup",
+  delivery_run: "🚚 Delivery Run",
+  tech_support: "💻 Tech Support",
+  business_services: "💼 Business Services",
   other: "💙 Other",
 };
 
@@ -613,6 +629,7 @@ export default function CommunityScreen() {
 
   useWebSocket("pool_updated", () => { refetchPoolStats(); refetchPoolLedger(); });
   useWebSocket("pool_front_paid", () => { refetchPoolStats(); refetchPoolLedger(); });
+  useWebSocket("pool_low_balance", () => { refetchPoolStats(); });
 
   const submitContribution = async () => {
     const amt = parseFloat(contributeAmount);
@@ -876,6 +893,21 @@ export default function CommunityScreen() {
                 When a pay-it-forward request completes, the pool pays the helper immediately — no waiting on the requester. When the requester later pays it forward, the money flows back into the pool for the next neighbor.
               </p>
             </div>
+
+            {/* Pending minimums — pool ran dry, helpers waiting on backfill */}
+            {(poolStats?.pending_minimums_count ?? 0) > 0 && (
+              <div className="bg-yellow-500/10 border border-yellow-500/40 rounded-2xl p-4 space-y-1.5">
+                <h3 className="font-black text-sm flex items-center gap-2 text-yellow-400">
+                  <AlertTriangle className="w-4 h-4" /> Helpers Waiting on the Pool
+                </h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  The pool ran low, so <span className="font-bold text-foreground">{poolStats?.pending_minimums_count}</span> guaranteed
+                  thank-you payment{(poolStats?.pending_minimums_count ?? 0) === 1 ? "" : "s"} totaling{" "}
+                  <span className="font-bold text-yellow-400">${(poolStats?.pending_minimums_total ?? 0).toFixed(2)}</span> are queued.
+                  They're paid automatically — oldest first — as soon as the pool is replenished. Every contribution helps.
+                </p>
+              </div>
+            )}
 
             {/* Transparency ledger */}
             {poolLedger && poolLedger.entries.length > 0 && (

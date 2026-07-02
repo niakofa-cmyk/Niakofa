@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, communityPoolLedgerTable, usersTable } from "@workspace/db";
+import { db, communityPoolLedgerTable, poolPendingMinimumsTable, usersTable } from "@workspace/db";
 import { desc, eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { paymentLimiter } from "../middlewares/rate-limit";
@@ -10,6 +10,7 @@ import {
   getGuaranteedMinimum,
   isPoolEnabled,
   recordPoolContribution,
+  processPendingMinimums,
 } from "../lib/community-pool";
 import Stripe from "stripe";
 
@@ -37,9 +38,16 @@ router.get("/pool/stats", async (_req, res) => {
       })
       .from(communityPoolLedgerTable);
 
-    const [enabled, guaranteed_minimum] = await Promise.all([
+    const [enabled, guaranteed_minimum, [pendingTotals]] = await Promise.all([
       isPoolEnabled(),
       getGuaranteedMinimum(),
+      db
+        .select({
+          pending_minimums_count: sql<number>`COUNT(*)::int`,
+          pending_minimums_total: sql<number>`COALESCE(SUM(${poolPendingMinimumsTable.amount}), 0)::float8`,
+        })
+        .from(poolPendingMinimumsTable)
+        .where(eq(poolPendingMinimumsTable.status, "pending")),
     ]);
 
     res.json({
@@ -52,6 +60,8 @@ router.get("/pool/stats", async (_req, res) => {
       total_minimums: totals?.total_minimums ?? 0,
       helpers_fronted: totals?.helpers_fronted ?? 0,
       sponsor_count: totals?.sponsor_count ?? 0,
+      pending_minimums_count: pendingTotals?.pending_minimums_count ?? 0,
+      pending_minimums_total: pendingTotals?.pending_minimums_total ?? 0,
     });
   } catch (err) {
     logger.error({ err }, "Failed to load pool stats");
@@ -140,6 +150,8 @@ router.post("/pool/contribute", requireAuth, paymentLimiter, async (req, res) =>
       userId,
       notes: "Contribution recorded without Stripe (development mode)",
     });
+    // Pool was just replenished — backfill any queued guaranteed minimums
+    await processPendingMinimums();
     const balance = await getPoolBalance();
     broadcast({ type: "pool_updated", payload: { balance } });
     return res.json({ mode: "recorded", balance });

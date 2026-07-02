@@ -23,7 +23,7 @@ import { broadcast, broadcastRequestEvent, sendToUser } from "../lib/ws-hub";
 import { requestCreationLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser, type PushPayload } from "./push";
-import { payHelperFromPool, getGuaranteedMinimum, isPoolEnabled } from "../lib/community-pool";
+import { payHelperFromPool, getGuaranteedMinimum, isPoolEnabled, queuePendingMinimum, maybeAlertLowBalance } from "../lib/community-pool";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { logger } from "../lib/logger";
 import { sendReceipt } from "../lib/mailer";
@@ -484,14 +484,14 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
       let paidFromPool = 0;
 
       if (request.payment_type === "pay_it_forward" && pledge > 0) {
-        const fronted = await payHelperFromPool({
+        const frontOutcome = await payHelperFromPool({
           entryType: "helper_front",
           amount: pledge,
           requestId: request.id,
           helperId,
           requestTitle: request.title,
         });
-        if (fronted) {
+        if (frontOutcome === "paid") {
           paidFromPool = pledge;
           await db.insert(paymentTransactionsTable).values({
             request_id: request.id,
@@ -522,14 +522,14 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
       const minimum = await getGuaranteedMinimum();
       if (minimum > 0 && paidFromPool < minimum) {
         const topUp = Math.round((minimum - paidFromPool) * 100) / 100;
-        const paid = await payHelperFromPool({
+        const minOutcome = await payHelperFromPool({
           entryType: "guaranteed_minimum",
           amount: topUp,
           requestId: request.id,
           helperId,
           requestTitle: request.title,
         });
-        if (paid) {
+        if (minOutcome === "paid") {
           sendPushToUser(helperId, {
             title: "💙 Community Pool Thank-You",
             body: `The Community Pool added $${topUp.toFixed(2)} to your Goodwill Fund for helping with: "${request.title}".`,
@@ -537,8 +537,23 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
             notifType: "wallet" as const,
           }).catch(() => {});
           logger.info({ request_id: request.id, helper_id: helperId, amount: topUp }, "Guaranteed minimum paid from community pool");
+        } else if (minOutcome === "insufficient") {
+          // Pool ran dry — queue the guarantee so the backfill worker pays it
+          // once the pool is replenished. For an un-fronted pay-it-forward
+          // request the pledge itself still arrives via Stripe later, so only
+          // the gap below the floor is owed.
+          const owed = request.payment_type === "pay_it_forward" ? minimum - pledge : topUp;
+          await queuePendingMinimum({
+            requestId: request.id,
+            helperId,
+            amount: owed,
+            requestTitle: request.title,
+          });
         }
       }
+
+      // Warn admins (deduped) whenever completions run against a low pool
+      maybeAlertLowBalance().catch(() => {});
     }
   } catch (err) {
     // Never block completion on pool payment issues
