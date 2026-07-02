@@ -980,6 +980,50 @@ respective files; would have caused duplicate-import TS errors.**
 
 ---
 
+## Session — Business goodwill default, governance, security hardening, nia secrets (July 2, 2026)
+
+**Goal:** Address the two uploaded planning documents: fix the live goodwill-default bug, build the business-account governance gaps, harden security per the audit, and align nia-service internal secrets with the Godfather covenant.
+
+**Verified first:** Business frontend (signup form, "posting as" switcher, staff invite) and core business backend were already built from prior sessions. Reused the existing schema/OpenAPI/codegen order.
+
+**Changes shipped:**
+
+1. **Business goodwill-default bug (#2)** — `artifacts/pay-it-forward/src/pages/request-new.tsx` line ~178: selecting a business in the "posting as" switcher now defaults payment type to `immediate` instead of `goodwill`. Personal posting behavior unchanged; staff can still manually choose goodwill.
+
+2. **Business account governance (#3)** — migration 0028 (`lib/db/migrations/0028_business_governance.sql`) and drizzle schema updates:
+   - Added `business_members.spending_cap_cents` and `business_members.updated_at`.
+   - Added `pending_owner_approval` to the `help_requests.status` enum in OpenAPI; added partial index `help_requests_business_pending_idx`.
+   - OpenAPI contract extended with: `BusinessMember.spending_cap_cents`, `BusinessMemberCapInput`, `BusinessRequest`, `BusinessPendingRequest`, `BusinessRequestApproveAction` schemas; endpoints `GET /businesses/{id}/requests`, `GET /businesses/{id}/pending-requests`, `PATCH /businesses/{id}/requests/{requestId}/approve`, `PATCH /businesses/{id}/members/{memberId}/cap`.
+   - Codegen regenerated clean (`pnpm --filter @workspace/api-spec run codegen`).
+   - Server: `artifacts/api-server/src/routes/businesses.ts` added owner dashboard, pending-approval queue, approve/reject, and per-staff cap endpoints (all owner-scoped).
+   - Server: `artifacts/api-server/src/routes/requests.ts` business guardrail now enforces per-staff spending caps for `immediate` posts and routes non-owner staff posts to `pending_owner_approval` status instead of going live.
+   - Client: `artifacts/pay-it-forward/src/pages/business-apply.tsx` now shows the owner spend dashboard, pending-approval queue with approve/reject, and per-staff spending-cap editor; staff see a read-only spend dashboard.
+   - Client: `artifacts/pay-it-forward/src/pages/request-new.tsx` shows a "Sent to owner approval" toast when a staff business post succeeds.
+
+3. **Security hardening (#6)** —
+   - `artifacts/api-server/src/routes/businesses.ts`: admin business endpoints now use `requireAdmin()` + `adminLimiter` instead of manual `is_admin` checks.
+   - `artifacts/api-server/src/routes/pool.ts`: explicit `generalApiLimiter` on `GET /pool/stats` and `GET /pool/ledger` (public aggregate queries).
+   - `artifacts/api-server/src/routes/stripe.ts`: `POST /stripe/payout` now requires `requestId`, verifies the request exists, that the helper matches the request's assigned helper, that the request is `immediate`+`completed`, and that the payout amount equals the computed 95% post-fee amount. Mismatches return `payout_amount_mismatch`.
+
+4. **Nia service secret hardening (#7)** — aligned both internal routes with the `crisis-resources.ts` fail-fast pattern:
+   - `artifacts/nia-service/src/routes/neighborhoods.ts`: removed `SESSION_SECRET` fallback for `INTERNAL_SECRET`; logs a FATAL error if missing.
+   - `artifacts/nia-service/src/routes/checkin.ts`: removed empty-string fallback for `INTERNAL_SECRET`; rejects if secret missing or header invalid.
+
+5. **Grandfather covenant hygiene (#8)** — `GRANDFATHER_COWORKER.md` updated with a dated self-note committing to push all improvements directly to the repo and clean out stale data each session.
+
+**Not addressed in this session (proposed as follow-up tasks):**
+- County generalization & government onboarding (#5) — multi-county civic seeding + government sponsor flow is a larger schema/contract/client build.
+- Livable-wage payout model — still open design question from the uploaded document; needs product decision before code.
+- `businesses_enabled` system_settings seed — feature flag still needs a one-time DB insert or admin toggle to turn on the business flow in any environment.
+- DB migration application to the Replit dev database — migration 0028 exists but needs to be applied via the documented `run-migrations.mjs` path.
+
+**Lessons:**
+- Named OpenAPI request-body schemas must not collide with orval's auto-generated `{OperationName}Body` type name; use a distinct schema name (`BusinessRequestApproveAction` not `ApproveBusinessRequestBody`).
+- `help_requests` has no `updated_at` column; use `cancelled_at`/`created_at` instead when tracking state changes.
+- The `requestStatus` variable must be declared outside the `if (businessId != null)` block so the insert can use it.
+
+---
+
 ## Session — Forensic v7 bug fixes + pledge-worker email reminders (July 2, 2026)
 
 **Read before this session:** forensic bug report v7, CLAUDE.md, REPLIT_GODFATHER.md, GRANDFATHER_COWORKER.md. Verified each issue against live code before touching anything.
