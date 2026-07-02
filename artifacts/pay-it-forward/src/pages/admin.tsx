@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { getToken } from "@/lib/auth";
+import { useAppContext } from "@/lib/AppContext";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -1496,19 +1497,15 @@ function HelperApplicationsTab() {
 export default function AdminScreen() {
   const [authed, setAuthed] = useState(false);
   const [adminInput, setAdminInput] = useState("");
-  // SECURITY: previously fell back to a hardcoded literal ("niakofa-admin-2026")
-  // baked into the client JS bundle whenever VITE_ADMIN_SECRET wasn't set —
-  // meaning a misconfigured deploy (missing env var) would silently accept
-  // that one fixed string from anyone who inspected the bundle. No fallback
-  // now: if the env var is missing, ADMIN_SECRET is empty and the comparison
-  // below can never match a real (non-empty) input, so the gate fails closed
-  // instead of falling open. Note this gate is a client-side UI convenience
-  // only — actual authorization is enforced server-side by requireAdmin() on
-  // every real API call (see authHeaders/getToken() usage throughout this
-  // file), so bypassing this screen alone grants no real access. The
-  // documented longer-term improvement (a POST /api/admin/verify-secret
-  // endpoint issuing a short-lived admin JWT) is still open — see CLAUDE.md.
-  const ADMIN_SECRET = import.meta.env.VITE_ADMIN_SECRET ?? "";
+
+  // Primary auth: if the logged-in user has is_admin=true (verified by the
+  // server on every API call via requireAdmin()), auto-authenticate them into
+  // the admin session without requiring a separate secret.
+  const { currentUser } = useAppContext();
+  useEffect(() => {
+    if (currentUser?.is_admin) setAuthed(true);
+  }, [currentUser?.is_admin]);
+
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics">("reports");
 
@@ -1561,6 +1558,7 @@ export default function AdminScreen() {
 
   // ── Login screen ─────────────────────────────────────────────────────────
   if (!authed) {
+    const isLoggedInNonAdmin = !!currentUser && !currentUser.is_admin;
     return (
       <div className="fixed inset-0 bg-background flex flex-col items-center justify-center p-6 gap-6"
         style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
@@ -1581,35 +1579,73 @@ export default function AdminScreen() {
           <h1 className="text-2xl font-black">Admin Access</h1>
           <p className="text-sm text-muted-foreground mt-1">Niakofa Admin — secure session</p>
         </motion.div>
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.18 }}
-          className="w-full max-w-sm space-y-3"
-        >
-          <input
-            type="password"
-            placeholder="Admin secret"
-            value={adminInput}
-            onChange={e => setAdminInput(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && adminInput === ADMIN_SECRET) setAuthed(true); }}
-            className="w-full px-5 py-4 rounded-2xl border border-border bg-card text-foreground text-base focus:outline-none focus:ring-2 focus:ring-primary"
-            autoFocus
-            autoComplete="current-password"
-          />
-          <button
-            onClick={() => { if (adminInput === ADMIN_SECRET) setAuthed(true); else toast({ title: "Incorrect secret", variant: "destructive" }); }}
-            style={{ touchAction: "manipulation" }}
-            className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-black text-base active:opacity-80 transition-opacity"
+
+        {isLoggedInNonAdmin ? (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.18 }}
+            className="w-full max-w-sm space-y-3"
           >
-            Enter Admin
-          </button>
-          <button
-            onClick={() => setLocation("/")}
-            style={{ touchAction: "manipulation" }}
-            className="w-full py-3 text-sm text-muted-foreground"
-          >Back to app</button>
-        </motion.div>
+            <div className="bg-destructive/10 border border-destructive/30 rounded-2xl p-4 text-center">
+              <AlertTriangle className="w-6 h-6 text-destructive mx-auto mb-2" />
+              <p className="text-sm font-bold text-destructive">No admin access</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Your account ({currentUser.email}) does not have admin privileges. Contact the app administrator.
+              </p>
+            </div>
+            <button
+              onClick={() => setLocation("/")}
+              style={{ touchAction: "manipulation" }}
+              className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-black text-base active:opacity-80 transition-opacity"
+            >Back to app</button>
+          </motion.div>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.18 }}
+            className="w-full max-w-sm space-y-3"
+          >
+            {!currentUser && (
+              <p className="text-center text-sm text-muted-foreground">
+                Sign in as an admin user to access this page.
+              </p>
+            )}
+            <input
+              type="password"
+              placeholder="Admin secret (if configured)"
+              value={adminInput}
+              onChange={e => setAdminInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") {
+                  const secret = import.meta.env.VITE_ADMIN_SECRET ?? "";
+                  if (secret && adminInput === secret) setAuthed(true);
+                  else toast({ title: "Incorrect secret", variant: "destructive" });
+                }
+              }}
+              className="w-full px-5 py-4 rounded-2xl border border-border bg-card text-foreground text-base focus:outline-none focus:ring-2 focus:ring-primary"
+              autoFocus
+              autoComplete="current-password"
+            />
+            <button
+              onClick={() => {
+                const secret = import.meta.env.VITE_ADMIN_SECRET ?? "";
+                if (secret && adminInput === secret) setAuthed(true);
+                else toast({ title: "Incorrect secret", variant: "destructive" });
+              }}
+              style={{ touchAction: "manipulation" }}
+              className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-black text-base active:opacity-80 transition-opacity"
+            >
+              Enter Admin
+            </button>
+            <button
+              onClick={() => setLocation("/")}
+              style={{ touchAction: "manipulation" }}
+              className="w-full py-3 text-sm text-muted-foreground"
+            >Back to app</button>
+          </motion.div>
+        )}
       </div>
     );
   }
