@@ -18,7 +18,20 @@ import { pino } from "pino";
 const logger = pino({ level: "info" });
 const router = Router();
 
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? process.env.SESSION_SECRET;
+// HIGH-003: INTERNAL_SECRET must be explicitly set — never fall back to SESSION_SECRET.
+// If INTERNAL_SECRET is missing, the route fails closed (500) instead of using the
+// session-signing secret, which would let a compromised session secret bypass
+// internal-service auth. This aligns with crisis-resources.ts.
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET;
+if (!INTERNAL_SECRET) {
+  logger.error(
+    "FATAL: INTERNAL_SECRET is not set on nia-service. " +
+    "Generate-neighborhoods endpoint will reject all requests. " +
+    "Set INTERNAL_SECRET in Railway → nia-service → Variables. " +
+    "It must be DIFFERENT from SESSION_SECRET."
+  );
+}
+
 const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;

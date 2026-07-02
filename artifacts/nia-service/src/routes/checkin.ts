@@ -28,14 +28,26 @@ import { pino } from "pino";
 const logger = pino({ level: "info" });
 const router = Router();
 
+// HIGH-003: INTERNAL_SECRET must be explicitly set — never fall back to an empty string.
+// An empty fallback means a missing header would pass the equality check, bypassing
+// all internal-service auth. If the secret is not configured, the route fails closed.
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET;
+if (!INTERNAL_SECRET) {
+  logger.error(
+    "FATAL: INTERNAL_SECRET is not set on nia-service. " +
+    "Check-in endpoint will reject all requests. " +
+    "Set INTERNAL_SECRET in Railway → nia-service → Variables. " +
+    "It must be DIFFERENT from SESSION_SECRET."
+  );
+}
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" });
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "";
 
 // BUG-15c FIX: Middleware to verify internal service-to-service secret
 function verifyInternalSecret(req: Request, res: Response, next: NextFunction): void {
   const secret = req.headers["x-internal-secret"];
-  if (!INTERNAL_SECRET) {
-    logger.warn("INTERNAL_SECRET not configured — /checkin endpoint will reject all requests");
+  if (!INTERNAL_SECRET || typeof secret !== "string") {
+    logger.warn("INTERNAL_SECRET not configured or missing header — /checkin endpoint rejecting request");
     res.status(500).json({ error: "Internal secret not configured" });
     return;
   }

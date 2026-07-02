@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, communityPoolLedgerTable, poolPendingMinimumsTable, usersTable, requestsTable } from "@workspace/db";
 import { desc, eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
-import { paymentLimiter } from "../middlewares/rate-limit";
+import { paymentLimiter, generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { broadcast } from "../lib/ws-hub";
 import {
@@ -23,8 +23,9 @@ const router = Router();
 
 /**
  * GET /pool/stats — public transparency stats for the Community Pool.
+ * Explicitly rate-limited: this endpoint runs several aggregate SUM queries.
  */
-router.get("/pool/stats", async (_req, res) => {
+router.get("/pool/stats", generalApiLimiter, async (_req, res) => {
   try {
     const [totals] = await db
       .select({
@@ -102,8 +103,9 @@ router.get("/pool/stats", async (_req, res) => {
 /**
  * GET /pool/ledger — recent pool activity (public transparency feed).
  * Sponsor first names shown for contributions; helpers stay anonymous.
+ * Explicitly rate-limited: public ledger feed can be expensive at high limit.
  */
-router.get("/pool/ledger", async (req, res) => {
+router.get("/pool/ledger", generalApiLimiter, async (req, res) => {
   try {
     const limit = Math.min(Math.max(parseInt(String(req.query["limit"] ?? "25")) || 25, 1), 50);
     const rows = await db

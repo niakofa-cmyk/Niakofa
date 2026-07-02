@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
+import { requireAdmin } from "../middlewares/authz";
 import { db, businessesTable, businessMembersTable, usersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { adminLimiter, generalApiLimiter } from "../middlewares/rate-limit";
 
 const router = Router();
 
@@ -291,31 +293,20 @@ router.post("/businesses/:id/members/:memberId/accept", requireAuth, async (req,
 });
 
 // ── Admin: GET /admin/businesses — list all businesses for approval queue ─────
-router.get("/admin/businesses", requireAuth, async (req, res) => {
-  const caller = req.authenticatedUserId!;
-  const [user] = await db
-    .select({ is_admin: usersTable.is_admin })
-    .from(usersTable)
-    .where(eq(usersTable.id, caller))
-    .limit(1);
-  if (!user?.is_admin) return res.status(403).json({ error: "Admin only." });
-
+// Uses shared requireAdmin() middleware + adminLimiter per project rule: every admin
+// endpoint must include the admin rate limiter after requireAdmin().
+router.get("/admin/businesses", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
   const businesses = await db.select().from(businessesTable).orderBy(businessesTable.created_at);
   return res.json(businesses);
 });
 
 // ── Admin: PATCH /admin/businesses/:id/approve — approve or reject ────────────
-router.patch("/admin/businesses/:id/approve", requireAuth, async (req, res) => {
+// Uses shared requireAdmin() middleware + adminLimiter per project rule: every admin
+// endpoint must include the admin rate limiter after requireAdmin().
+router.patch("/admin/businesses/:id/approve", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const caller = req.authenticatedUserId!;
   const businessId = parseInt(req.params.id as string, 10);
   if (isNaN(businessId)) return res.status(400).json({ error: "Invalid id" });
-
-  const [adminUser] = await db
-    .select({ is_admin: usersTable.is_admin })
-    .from(usersTable)
-    .where(eq(usersTable.id, caller))
-    .limit(1);
-  if (!adminUser?.is_admin) return res.status(403).json({ error: "Admin only." });
 
   const { approval_status } = req.body as { approval_status?: string };
   if (approval_status !== "approved" && approval_status !== "rejected") {

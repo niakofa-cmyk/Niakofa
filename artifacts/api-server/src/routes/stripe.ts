@@ -517,6 +517,11 @@ router.get("/stripe/payment-transactions/:userId", requireAuth, requireOwnership
 
 // ── PAYOUT TO HELPER (called after request completion) ─────────────────────
 // BUG FIX: same gap as connect/onboard above — added requireApproved.
+// SECURITY FIX: never trust the client-sent amount. When a requestId is provided,
+// the payout amount must match the authoritative request record (95% of the
+// request's pay_it_forward_amount after the 5% platform fee). Mismatches are
+// rejected with a clear error. requestId is required so every payout has a
+// verifiable source of truth in the DB.
 router.post("/stripe/payout", requireAuth, requireApproved, requireOwnership("helperId"), paymentLimiter, async (req, res) => {
   if (!stripeRequired(res)) return;
 
@@ -528,6 +533,48 @@ router.post("/stripe/payout", requireAuth, requireApproved, requireOwnership("he
   };
 
   if (!helperId || !amount) return res.status(400).json({ error: "helperId and amount required" });
+  if (!requestId) return res.status(400).json({ error: "requestId is required to verify payout amount" });
+
+  // Verify the payout against the authoritative request record.
+  const [request] = await db
+    .select({
+      id: requestsTable.id,
+      helper_id: requestsTable.helper_id,
+      requester_id: requestsTable.requester_id,
+      payment_type: requestsTable.payment_type,
+      pay_it_forward_amount: requestsTable.pay_it_forward_amount,
+      status: requestsTable.status,
+      title: requestsTable.title,
+    })
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.helper_id !== helperId) {
+    return res.status(403).json({ error: "Payout helper does not match request's assigned helper" });
+  }
+  if (request.payment_type !== "immediate") {
+    return res.status(400).json({ error: "Stripe payout is only valid for immediate-pay requests" });
+  }
+  if (request.status !== "completed") {
+    return res.status(400).json({ error: "Request must be completed before payout" });
+  }
+
+  const grossAmount = request.pay_it_forward_amount ?? 0;
+  const amountCents = Math.round(grossAmount * 100);
+  const platformFeeCents = Math.round(amountCents * 0.05); // 5% platform fee
+  const expectedPayoutCents = amountCents - platformFeeCents;
+  const requestedCents = Math.round(amount * 100);
+
+  if (requestedCents !== expectedPayoutCents) {
+    return res.status(400).json({
+      error: "Payout amount does not match the request's verified amount",
+      code: "payout_amount_mismatch",
+      expected_usd: (expectedPayoutCents / 100).toFixed(2),
+      requested_usd: (requestedCents / 100).toFixed(2),
+    });
+  }
 
   const [acct] = await db
     .select()
@@ -544,11 +591,11 @@ router.post("/stripe/payout", requireAuth, requireApproved, requireOwnership("he
 
   // Create a transfer to the helper's connected account
   const transfer = await stripe!.transfers.create({
-    amount: Math.round(amount * 100),
+    amount: requestedCents,
     currency: "usd",
     destination: acct.stripe_account_id,
-    description: description ?? `Niakofa — Request #${requestId}`,
-    metadata: { helperId: helperId.toString(), requestId: requestId?.toString() ?? "" },
+    description: description ?? `Niakofa — ${request.title}`,
+    metadata: { helperId: helperId.toString(), requestId: String(requestId) },
   });
 
   // Update payment transaction state
