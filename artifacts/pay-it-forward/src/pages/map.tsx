@@ -16,7 +16,7 @@ import { TopBar } from "@/components/TopBar";
 import { BottomSheet } from "@/components/BottomSheet";
 import { RequestMarker } from "@/components/RequestMarker";
 import { HelperMarker } from "@/components/HelperMarker";
-import { DispatchIntelligenceCard } from "@/components/DispatchIntelligenceCard";
+import { BestMatchCard } from "@/components/BestMatchCard";
 import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
@@ -336,9 +336,9 @@ export default function MapScreen() {
         <OrientationToggle mode={orientMode} onToggle={() => setOrientMode(orientMode === "heading-up" ? "north-up" : "heading-up")} />
       </Map>
 
-      {/* Dispatch Intelligence — Best Match card */}
+      {/* Best Match card — helper-mode only, shows top open request nearby */}
       {showBestMatch && !mapError && (
-        <DispatchIntelligenceCard
+        <BestMatchCard
           bestMatch={bestMatch}
           onAccept={handleClaim}
           onDismiss={() => setBestMatchDismissed(bestMatch.id)}

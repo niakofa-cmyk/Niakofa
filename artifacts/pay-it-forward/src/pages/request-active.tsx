@@ -148,6 +148,9 @@ export default function ActiveRequestScreen() {
   // still be undefined here on first render, before data loads.
   const isArrived = request?.status === "arrived" || autoArrived;
   const isCompleted = request?.status === "completed";
+  // isHelper drives role-split UI: navigation/voice for helpers,
+  // "tracking your helper" status card for requesters.
+  const isHelper = !!currentUser && !!request && request.helper_id === currentUser.id;
 
   const routeParams = {
     start_lat: myLocation?.lat || 0,
@@ -176,17 +179,25 @@ export default function ActiveRequestScreen() {
     return () => clearInterval(id);
   }, []);
 
-  // Safety timer
+  // Safety timer — role-aware copy
   useEffect(() => {
     if (autoArrived || safetyAlertShown) return;
     if (elapsedSeconds >= SAFETY_TIMER_SECONDS) {
       setSafetyAlertShown(true);
-      toast({
-        title: "⏱️ Still on your way?",
-        description: "You've been en route for 20 minutes. Everything okay? Complete the request or use SOS if needed.",
-      });
+      if (isHelper) {
+        toast({
+          title: "⏱️ Still on your way?",
+          description: "You've been en route for 20 minutes. Everything okay? Complete the request or use SOS if needed.",
+        });
+      } else {
+        toast({
+          title: "⏱️ Your helper has been on the way for 20 min",
+          description: "Everything okay? If your helper hasn't arrived or gone silent, tap SOS for immediate support.",
+          variant: "destructive",
+        });
+      }
     }
-  }, [elapsedSeconds, autoArrived, safetyAlertShown]);
+  }, [elapsedSeconds, autoArrived, safetyAlertShown, isHelper]);
 
   // ETA countdown
   useEffect(() => {
@@ -273,24 +284,26 @@ export default function ActiveRequestScreen() {
     window.speechSynthesis.speak(utt);
   }, []);
 
+  // Voice guidance — helpers only. Requesters aren't driving; TTS on their
+  // phone for a trip they're not taking is confusing and potentially alarming.
   useEffect(() => {
-    if (isArrived || !routeData?.steps) return;
+    if (!isHelper || isArrived || !routeData?.steps) return;
     const step = routeData.steps[currentStepIndex];
     if (!step?.instruction) return;
     if (lastSpokenStepRef.current === currentStepIndex) return;
     lastSpokenStepRef.current = currentStepIndex;
     speakInstruction(step.instruction);
-  }, [currentStepIndex, routeData?.steps, isArrived, speakInstruction]);
+  }, [currentStepIndex, routeData?.steps, isArrived, isHelper, speakInstruction]);
 
-  // Announce arrival
+  // Announce arrival — helpers only
   useEffect(() => {
-    if (isArrived) speakInstruction("You have arrived at your destination.");
-  }, [isArrived, speakInstruction]);
+    if (isHelper && isArrived) speakInstruction("You have arrived at your destination.");
+  }, [isArrived, isHelper, speakInstruction]);
 
-  // Announce off-route
+  // Announce off-route — helpers only
   useEffect(() => {
-    if (isOffRoute) speakInstruction("Off route. Recalculating.");
-  }, [isOffRoute, speakInstruction]);
+    if (isHelper && isOffRoute) speakInstruction("Off route. Recalculating.");
+  }, [isOffRoute, isHelper, speakInstruction]);
 
   // Auto-zoom to route
   useEffect(() => {
@@ -511,8 +524,8 @@ export default function ActiveRequestScreen() {
         </button>
       </motion.div>
 
-      {/* Navigation step overlay — only shown when we have a full route */}
-      {routeData && !isArrived && (
+      {/* Navigation step overlay — helpers only. Requesters get a status card below. */}
+      {isHelper && routeData && !isArrived && (
         <div className="absolute top-0 left-14 right-24 z-20 pointer-events-none">
           <NavigationOverlay
             route={{
@@ -538,8 +551,28 @@ export default function ActiveRequestScreen() {
         </div>
       )}
 
-      {/* Turn arrow HUD — bottom-left lane guidance, hidden on arrival */}
-      {!isArrived && currentStep && (
+      {/* Requester tracking card — shown instead of navigation UI */}
+      {!isHelper && !isArrived && !isCompleted && (
+        <div className="absolute top-16 left-4 right-4 z-20">
+          <div className="rounded-2xl border border-primary/20 bg-card/95 backdrop-blur-xl shadow-xl px-4 py-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">
+              Your Helper is On the Way
+            </p>
+            <p className="text-sm font-semibold text-foreground">
+              {request.helper_name ?? "Your helper"}
+              {routeData?.eta_text ? (
+                <span className="text-muted-foreground font-normal"> · arriving in ~{routeData.eta_text}</span>
+              ) : null}
+            </p>
+            {routeData?.distance_text && (
+              <p className="text-xs text-muted-foreground mt-0.5">{routeData.distance_text} away</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Turn arrow HUD — helpers only, hidden on arrival */}
+      {isHelper && !isArrived && currentStep && (
         <div className="absolute bottom-[22rem] left-4 right-4 z-30">
           <TurnArrowHUD
             maneuverType={currentStep.maneuver_type ?? null}
@@ -552,8 +585,8 @@ export default function ActiveRequestScreen() {
         </div>
       )}
 
-      {/* Orientation toggle — heading-up / north-up, hidden on arrival */}
-      {!isArrived && (
+      {/* Orientation toggle — helpers only (requesters don't navigate) */}
+      {isHelper && !isArrived && (
         <OrientationToggle
           mode={mode}
           onToggle={() => setMode(mode === "north-up" ? "heading-up" : "north-up")}

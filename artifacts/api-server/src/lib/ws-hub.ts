@@ -18,6 +18,7 @@ import { verifyToken } from "../middlewares/auth";
 export type WsEventType =
   | "REQUEST_CREATED"
   | "REQUEST_ACCEPTED"
+  | "REQUEST_CANCELLED"
   | "HELPER_MOVING"
   | "HELPER_ARRIVED"
   | "REQUEST_COMPLETED"

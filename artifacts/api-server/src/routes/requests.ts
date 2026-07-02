@@ -448,6 +448,115 @@ router.post("/requests/:id/arrived", requireAuth, async (req, res) => {
   return res.json(enriched);
 });
 
+// ─── Cancel ───────────────────────────────────────────────────────────────────
+// Two roles, two semantics:
+//
+//  Helper cancels (no-show / drop):
+//    • Sets status back to "open", clears helper_id and all progress timestamps.
+//    • The request re-enters the pool — fair to the requester who still needs help.
+//    • Records cancelled_at for audit; does NOT decrement help_count (was 0 for
+//      this request anyway — help_count is incremented only on completion).
+//    • Cannot cancel after "completed" (guard prevents it).
+//
+//  Requester cancels (withdraw):
+//    • Sets status to "cancelled", records cancelled_at.
+//    • Cannot cancel if already "completed" (guard prevents it).
+//    • CAN cancel even after a helper is "en_route" or "arrived" — rare but valid
+//      (e.g. emergency arose). If a helper is en-route/arrived the requester
+//      should confirm, but that UX gate lives on the client (window.confirm).
+//      Server records the cancellation fairly regardless.
+//
+// Concurrency note: the WHERE clause on each branch is the atomic guard.
+// Two simultaneous cancel calls from different sessions resolve safely —
+// the second UPDATE returns 0 rows → 409.
+router.post("/requests/:id/cancel", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id), 10);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  // Fetch current state to determine caller's role
+  const [existing] = await db
+    .select({
+      id: requestsTable.id,
+      status: requestsTable.status,
+      requester_id: requestsTable.requester_id,
+      helper_id: requestsTable.helper_id,
+    })
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+
+  if (!existing) return res.status(404).json({ error: "Request not found" });
+  if (existing.status === "completed") {
+    return res.status(409).json({ error: "Cannot cancel a completed request." });
+  }
+  if (existing.status === "cancelled") {
+    return res.status(409).json({ error: "Request is already cancelled." });
+  }
+
+  const isHelper   = existing.helper_id === callerId;
+  const isRequester = existing.requester_id === callerId;
+
+  if (!isHelper && !isRequester) {
+    return res.status(403).json({ error: "You are not associated with this request." });
+  }
+
+  let updated;
+
+  if (isHelper) {
+    // Helper releases claim — re-open for a new helper
+    [updated] = await db
+      .update(requestsTable)
+      .set({
+        status: "open",
+        helper_id: null,
+        claimed_at: null,
+        en_route_at: null,
+        arrived_at: null,
+        cancelled_at: new Date(),
+      })
+      .where(
+        and(
+          eq(requestsTable.id, requestId),
+          eq(requestsTable.helper_id, callerId),
+          sql`${requestsTable.status} NOT IN ('completed', 'cancelled')`
+        )
+      )
+      .returning();
+
+    if (!updated) {
+      return res.status(409).json({ error: "Request could not be released — it may have already changed state." });
+    }
+
+    const enriched = { ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
+    broadcastRequestEvent("REQUEST_CREATED", "request_updated", enriched); // re-open → back in the pool
+    logger.info({ request_id: requestId, helper_id: callerId }, "Helper released claim — request re-opened");
+    return res.json({ ...enriched, message: "Claim released. The request is back in the pool for another helper." });
+  }
+
+  // Requester withdraws
+  [updated] = await db
+    .update(requestsTable)
+    .set({ status: "cancelled", cancelled_at: new Date() })
+    .where(
+      and(
+        eq(requestsTable.id, requestId),
+        eq(requestsTable.requester_id, callerId),
+        sql`${requestsTable.status} NOT IN ('completed', 'cancelled')`
+      )
+    )
+    .returning();
+
+  if (!updated) {
+    return res.status(409).json({ error: "Request could not be cancelled — it may have already changed state." });
+  }
+
+  const enriched = { ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
+  broadcastRequestEvent("REQUEST_CANCELLED", "request_updated", enriched);
+  logger.info({ request_id: requestId, requester_id: callerId }, "Requester withdrew request");
+  return res.json({ ...enriched, message: "Request withdrawn." });
+});
+
 router.post("/requests/:id/complete", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = CompleteRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
