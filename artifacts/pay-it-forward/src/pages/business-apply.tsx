@@ -189,14 +189,16 @@ function MemberList({ businessId, isOwner }: { businessId: number; isOwner: bool
 
   useEffect(() => { load(); }, [load]);
 
-  const remove = async (memberId: number) => {
+  // NOTE: DELETE /businesses/:id/members/:memberId expects :memberId to be the
+  // target member's USER id (not the membership row id). Always pass m.user_id here.
+  const remove = async (userId: number) => {
     try {
-      const res = await fetch(`${BASE}/api/businesses/${businessId}/members/${memberId}`, {
+      const res = await fetch(`${BASE}/api/businesses/${businessId}/members/${userId}`, {
         method: "DELETE",
         headers: (getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
       });
       if (!res.ok) throw new Error("Failed");
-      setMembers(prev => prev.filter(m => m.id !== memberId));
+      setMembers(prev => prev.filter(m => m.user_id !== userId));
       toast({ title: "Member removed" });
     } catch {
       toast({ title: "Failed to remove member", variant: "destructive" });
@@ -242,7 +244,7 @@ function MemberList({ businessId, isOwner }: { businessId: number; isOwner: bool
                 </div>
                 {isOwner && m.role !== "owner" && (
                   <button
-                    onClick={() => remove(m.id)}
+                    onClick={() => remove(m.user_id)}
                     className="shrink-0 p-1.5 rounded-lg border border-destructive/30 bg-destructive/10 text-destructive"
                   >
                     <X className="w-3.5 h-3.5" />

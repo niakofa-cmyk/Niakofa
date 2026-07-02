@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
-import { db, businessesTable, businessMembersTable, usersTable, requestsTable } from "@workspace/db";
+import { db, businessesTable, businessMembersTable, usersTable, requestsTable, systemSettingsTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { adminLimiter, generalApiLimiter } from "../middlewares/rate-limit";
@@ -57,8 +57,19 @@ async function requireBusinessMember(
 // The creating user is automatically made the owner. Business goes live only
 // after an admin approves it (approval_status: pending → approved).
 // This reuses the existing admin approval queue pattern from users.approval_status.
-router.post("/businesses", requireAuth, async (req, res) => {
+router.post("/businesses", requireAuth, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
+
+  // Feature flag check — honour the global businesses_enabled killswitch.
+  const [setting] = await db
+    .select({ value: systemSettingsTable.value })
+    .from(systemSettingsTable)
+    .where(eq(systemSettingsTable.key, "businesses_enabled"))
+    .limit(1);
+  if (!setting || setting.value !== "true") {
+    return res.status(503).json({ error: "Business accounts are not available at this time." });
+  }
+
   const { legal_name, display_name, address, phone } = req.body as {
     legal_name?: string;
     display_name?: string;
@@ -102,7 +113,7 @@ router.post("/businesses", requireAuth, async (req, res) => {
 });
 
 // ── GET /businesses/mine — list businesses the caller belongs to ───────────────
-router.get("/businesses/mine", requireAuth, async (req, res) => {
+router.get("/businesses/mine", requireAuth, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const rows = await db
     .select({
@@ -124,8 +135,9 @@ router.get("/businesses/mine", requireAuth, async (req, res) => {
   );
 });
 
-// ── GET /businesses/:id — get a single business (members only or admin) ───────
-router.get("/businesses/:id", requireAuth, async (req, res) => {
+// ── GET /businesses/:id — get a single business (members only OR admin) ───────
+// Admins always bypass the membership guard (needed for admin approval UI).
+router.get("/businesses/:id", requireAuth, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const businessId = parseInt(req.params.id as string, 10);
   if (isNaN(businessId)) return res.status(400).json({ error: "Invalid id" });
@@ -137,14 +149,23 @@ router.get("/businesses/:id", requireAuth, async (req, res) => {
     .limit(1);
   if (!business) return res.status(404).json({ error: "Business not found." });
 
-  const guard = await requireBusinessMember(businessId, userId);
-  if (!guard.ok) return res.status(guard.status).json({ error: guard.error });
+  // Check if caller is an admin — admins can view any business without membership.
+  const [caller] = await db
+    .select({ is_admin: usersTable.is_admin })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+
+  if (!caller?.is_admin) {
+    const guard = await requireBusinessMember(businessId, userId);
+    if (!guard.ok) return res.status(guard.status).json({ error: guard.error });
+  }
 
   return res.json(business);
 });
 
 // ── PATCH /businesses/:id — update business details (owner only) ──────────────
-router.patch("/businesses/:id", requireAuth, async (req, res) => {
+router.patch("/businesses/:id", requireAuth, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const businessId = parseInt(req.params.id as string, 10);
   if (isNaN(businessId)) return res.status(400).json({ error: "Invalid id" });
@@ -169,7 +190,7 @@ router.patch("/businesses/:id", requireAuth, async (req, res) => {
 });
 
 // ── GET /businesses/:id/members — list all members (members only) ─────────────
-router.get("/businesses/:id/members", requireAuth, async (req, res) => {
+router.get("/businesses/:id/members", requireAuth, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const businessId = parseInt(req.params.id as string, 10);
   if (isNaN(businessId)) return res.status(400).json({ error: "Invalid id" });
@@ -198,13 +219,26 @@ router.get("/businesses/:id/members", requireAuth, async (req, res) => {
 
 // ── POST /businesses/:id/members — invite a user by email (owner only) ────────
 // Creates a pending business_members row. The invitee accepts on next login.
-router.post("/businesses/:id/members", requireAuth, async (req, res) => {
+// Requires the business to be approved first — no inviting staff to a pending entity.
+router.post("/businesses/:id/members", requireAuth, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const businessId = parseInt(req.params.id as string, 10);
   if (isNaN(businessId)) return res.status(400).json({ error: "Invalid id" });
 
   const guard = await requireBusinessOwner(businessId, userId);
   if (!guard.ok) return res.status(guard.status).json({ error: guard.error });
+
+  // Ensure the business is approved before staff can be invited.
+  // Owners of a pending business cannot recruit staff until an admin approves.
+  const [business] = await db
+    .select({ approval_status: businessesTable.approval_status })
+    .from(businessesTable)
+    .where(eq(businessesTable.id, businessId))
+    .limit(1);
+  if (!business) return res.status(404).json({ error: "Business not found." });
+  if (business.approval_status !== "approved") {
+    return res.status(403).json({ error: "Business must be approved before inviting members." });
+  }
 
   const { email, role } = req.body as { email?: string; role?: string };
   if (!email?.trim()) return res.status(400).json({ error: "email is required." });
@@ -219,7 +253,8 @@ router.post("/businesses/:id/members", requireAuth, async (req, res) => {
   if (!invitee) return res.status(404).json({ error: "No user found with that email." });
   if (invitee.id === userId) return res.status(400).json({ error: "You are already a member." });
 
-  // Upsert — idempotent if already invited
+  // Upsert — re-activates previously removed members instead of silently no-op'ing.
+  // onConflictDoNothing would prevent re-inviting a user whose membership was revoked.
   const [member] = await db
     .insert(businessMembersTable)
     .values({
@@ -227,19 +262,23 @@ router.post("/businesses/:id/members", requireAuth, async (req, res) => {
       user_id: invitee.id,
       role: memberRole,
       status: "pending",
+      invited_at: new Date(),
     })
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: [businessMembersTable.business_id, businessMembersTable.user_id],
+      set: { role: memberRole, status: "pending", invited_at: new Date(), accepted_at: null },
+    })
     .returning();
 
   logger.info(
     { business_id: businessId, invitee_id: invitee.id, role: memberRole, invited_by: userId },
     "Business member invited",
   );
-  return res.status(201).json(member ?? { already_invited: true });
+  return res.status(201).json(member);
 });
 
 // ── DELETE /businesses/:id/members/:userId — remove a member (owner only) ─────
-router.delete("/businesses/:id/members/:memberId", requireAuth, async (req, res) => {
+router.delete("/businesses/:id/members/:memberId", requireAuth, generalApiLimiter, async (req, res) => {
   const callerId = req.authenticatedUserId!;
   const businessId = parseInt(req.params.id as string, 10);
   const targetUserId = parseInt(req.params.memberId as string, 10);
@@ -266,7 +305,7 @@ router.delete("/businesses/:id/members/:memberId", requireAuth, async (req, res)
 });
 
 // ── POST /businesses/:id/members/:memberId/accept — accept an invite ──────────
-router.post("/businesses/:id/members/:memberId/accept", requireAuth, async (req, res) => {
+router.post("/businesses/:id/members/:memberId/accept", requireAuth, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const businessId = parseInt(req.params.id as string, 10);
   const targetUserId = parseInt(req.params.memberId as string, 10);
@@ -293,7 +332,7 @@ router.post("/businesses/:id/members/:memberId/accept", requireAuth, async (req,
 });
 
 // ── GET /businesses/:id/requests — owner dashboard of all business requests ─────
-router.get("/businesses/:id/requests", requireAuth, async (req, res) => {
+router.get("/businesses/:id/requests", requireAuth, generalApiLimiter, async (req, res) => {
   const callerId = req.authenticatedUserId!;
   const businessId = parseInt(req.params.id as string, 10);
   if (isNaN(businessId)) return res.status(400).json({ error: "Invalid id" });
@@ -321,7 +360,7 @@ router.get("/businesses/:id/requests", requireAuth, async (req, res) => {
 });
 
 // ── GET /businesses/:id/pending-requests — staff posts awaiting owner approval ──
-router.get("/businesses/:id/pending-requests", requireAuth, async (req, res) => {
+router.get("/businesses/:id/pending-requests", requireAuth, generalApiLimiter, async (req, res) => {
   const callerId = req.authenticatedUserId!;
   const businessId = parseInt(req.params.id as string, 10);
   if (isNaN(businessId)) return res.status(400).json({ error: "Invalid id" });
@@ -354,7 +393,7 @@ router.get("/businesses/:id/pending-requests", requireAuth, async (req, res) => 
 });
 
 // ── PATCH /businesses/:id/requests/:requestId/approve — owner approve/reject ─────
-router.patch("/businesses/:id/requests/:requestId/approve", requireAuth, async (req, res) => {
+router.patch("/businesses/:id/requests/:requestId/approve", requireAuth, generalApiLimiter, async (req, res) => {
   const callerId = req.authenticatedUserId!;
   const businessId = parseInt(req.params.id as string, 10);
   const requestId = parseInt(req.params.requestId as string, 10);
@@ -400,7 +439,7 @@ router.patch("/businesses/:id/requests/:requestId/approve", requireAuth, async (
 });
 
 // ── PATCH /businesses/:id/members/:memberId/cap — set staff spending cap ──────
-router.patch("/businesses/:id/members/:memberId/cap", requireAuth, async (req, res) => {
+router.patch("/businesses/:id/members/:memberId/cap", requireAuth, generalApiLimiter, async (req, res) => {
   const callerId = req.authenticatedUserId!;
   const businessId = parseInt(req.params.id as string, 10);
   const targetUserId = parseInt(req.params.memberId as string, 10);

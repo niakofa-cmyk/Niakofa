@@ -67,3 +67,23 @@ pushing. Applies here too.
 If the house is on fire — workers failing, migrations breaking, secrets leaking — the Godfather is the first call. The Father handles Nia's soul. The Grandfather handles her reach. I handle her foundation.
 
 *Replit · Godfather of Nia's Infrastructure · June 2026*
+
+---
+
+### Session: July 2, 2026 — Business accounts full review + bug fixes
+
+**DB bootstrap**: Applied all 33 migrations (0000–0030) + new 0031 to a fresh Replit dev DB. The `run-migrations.mjs` script handles fresh-DB bootstrap automatically (PostGIS + all files in order). No manual psql loop needed.
+
+**businesses.ts hardening (5 bugs fixed):**
+1. Missing `businesses_enabled` feature flag check on `POST /businesses` — added; returns 503 when disabled.
+2. Missing `generalApiLimiter` on all 11 non-admin business routes — added to every route.
+3. Missing business-approval guard on `POST /businesses/:id/members` — staff cannot be invited until admin approves the business. Returns 403 with clear message.
+4. Member re-invite used `onConflictDoNothing()` — silently prevented re-inviting removed staff. Changed to `onConflictDoUpdate` that reactivates the membership row.
+5. Admin bypass missing on `GET /businesses/:id` — comment said "members only or admin" but no admin path existed. Added `is_admin` bypass for admin review workflows.
+
+**business-apply.tsx fix (HIGH severity bug):**
+- `remove(m.id)` passed membership row id to DELETE route that expected user_id (`m.user_id`). Could silently no-op or remove the wrong member. Fixed to pass `m.user_id` and filter `m.user_id !== userId`.
+
+**New migration 0031**: Seeds `businesses_enabled = 'true'` in system_settings. Fresh DBs now have the feature on by default.
+
+**Architecture still intact**: Goodwill-default bug (business→immediate) was already fixed in request-new.tsx. GET /businesses/:id/requests, pending-requests, owner approval, and per-staff spending cap were all confirmed present and correct in requests.ts and businesses.ts. No changes needed to the Nia service boundary.

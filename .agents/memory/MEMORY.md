@@ -37,3 +37,4 @@
 - [Niakofa spending cap auth](niakofa-spending-cap-auth.md) — spending cap check must use req.authenticatedUserId not parsed body; SQL SUM returns dollars, multiply ×100 for cents (don't re-round a value that's already rounded).
 - [Niakofa account types](niakofa-account-types.md) — ALLOWED_ACCOUNT_TYPES = individual/organization/business/sponsor; REQUIRES_REVIEW = organization/business/sponsor → approval_status: pending; individual auto-approved.
 - [Niakofa gov-sponsor pool funding](niakofa-gov-sponsor-fund.md) — POST /gov-sponsors/:id/fund wires recordPoolContribution(+governmentSponsorId) → processPendingMinimums → broadcast pool_updated; admin.tsx OrgsTab shows Fund Pool input only for approved sponsors.
+- [Niakofa business accounts](niakofa-businesses.md) — full business-account feature: schema, security guards, 5 bugs fixed (feature flag, rate limit, invite approval guard, re-invite upsert, member-remove ID mismatch).
