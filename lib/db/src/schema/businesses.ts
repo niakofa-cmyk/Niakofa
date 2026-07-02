@@ -2,6 +2,10 @@ import { pgTable, serial, text, integer, timestamp, index, unique } from "drizzl
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
+// Business governance status values for help_requests.status:
+// - pending_owner_approval: staff posted under business; awaiting owner review
+export type BusinessRequestStatus = "pending_owner_approval";
+
 // businesses — a registered business entity (pending admin approval before use)
 export const businessesTable = pgTable("businesses", {
   id: serial("id").primaryKey(),
@@ -35,8 +39,11 @@ export const businessMembersTable = pgTable("business_members", {
   role: text("role").notNull().default("staff"),
   // status: active | pending | removed
   status: text("status").notNull().default("active"),
+  // Per-member spending cap in cents. NULL means no cap.
+  spending_cap_cents: integer("spending_cap_cents"),
   invited_at: timestamp("invited_at").defaultNow().notNull(),
   accepted_at: timestamp("accepted_at"),
+  updated_at: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   index("business_members_business_id_idx").on(t.business_id),
   index("business_members_user_id_idx").on(t.user_id),

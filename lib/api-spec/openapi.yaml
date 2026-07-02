@@ -267,7 +267,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, cancelled]
+            enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, pending_owner_approval, cancelled]
         - name: lat
           in: query
           schema:
@@ -1369,6 +1369,104 @@ paths:
         "200":
           description: Member removed
 
+  /businesses/{id}/requests:
+    get:
+      operationId: getBusinessRequests
+      tags: [businesses]
+      summary: List all requests posted under a business (members only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of business requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BusinessRequest"
+
+  /businesses/{id}/members/{memberId}/cap:
+    patch:
+      operationId: setBusinessMemberCap
+      tags: [businesses]
+      summary: Set a staff member's spending cap (owner only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BusinessMemberCapInput"
+      responses:
+        "200":
+          description: Updated member with cap
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessMember"
+
+  /businesses/{id}/pending-requests:
+    get:
+      operationId: getBusinessPendingRequests
+      tags: [businesses]
+      summary: List staff requests pending owner approval (owner only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of pending requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BusinessPendingRequest"
+
+  /businesses/{id}/requests/{requestId}/approve:
+    patch:
+      operationId: approveBusinessRequest
+      tags: [businesses]
+      summary: Approve or reject a pending business request (owner only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BusinessRequestApproveAction"
+      responses:
+        "200":
+          description: Request approved or rejected
+
 components:
   schemas:
     PoolStats:
@@ -1864,7 +1962,7 @@ components:
           enum: [low, medium, high, emergency]
         status:
           type: string
-          enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, cancelled]
+          enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, pending_owner_approval, cancelled]
         payment_type:
           type: string
           enum: [immediate, pay_it_forward, goodwill]
@@ -1949,7 +2047,7 @@ components:
       properties:
         status:
           type: string
-          enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, cancelled]
+          enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, pending_owner_approval, cancelled]
         description:
           type: string
         urgency:
@@ -2268,7 +2366,7 @@ components:
 
     BusinessMember:
       type: object
-      required: [id, business_id, user_id, role, status, invited_at]
+      required: [id, business_id, user_id, role, status, invited_at, updated_at]
       properties:
         id:
           type: integer
@@ -2282,11 +2380,17 @@ components:
         status:
           type: string
           enum: [active, pending, removed]
+        spending_cap_cents:
+          type: ["integer", "null"]
+          description: Per-member spending cap in cents. NULL means no cap.
         invited_at:
           type: string
           format: date-time
         accepted_at:
           type: ["string", "null"]
+          format: date-time
+        updated_at:
+          type: string
           format: date-time
         name:
           type: string
@@ -2297,6 +2401,66 @@ components:
         avatar_url:
           type: ["string", "null"]
           description: Only present on GET /businesses/:id/members
+
+    BusinessMemberCapInput:
+      type: object
+      required: [spending_cap_cents]
+      properties:
+        spending_cap_cents:
+          type: integer
+          description: Per-member spending cap in cents. Use 0 to block all paid posts, or a positive value to cap total spend.
+
+    BusinessRequest:
+      type: object
+      required: [id, title, status, payment_type, pay_it_forward_amount, requester_id, requester_name, created_at]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        status:
+          type: string
+        payment_type:
+          type: string
+        pay_it_forward_amount:
+          type: ["number", "null"]
+        requester_id:
+          type: integer
+        requester_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    BusinessPendingRequest:
+      type: object
+      required: [id, title, status, payment_type, pay_it_forward_amount, requester_id, requester_name, created_at]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        status:
+          type: string
+        payment_type:
+          type: string
+        pay_it_forward_amount:
+          type: ["number", "null"]
+        requester_id:
+          type: integer
+        requester_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    BusinessRequestApproveAction:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [approve, reject]
 
     CivicResource:
       type: object

@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
-import { db, businessesTable, businessMembersTable, usersTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { db, businessesTable, businessMembersTable, usersTable, requestsTable } from "@workspace/db";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { adminLimiter, generalApiLimiter } from "../middlewares/rate-limit";
 
@@ -289,6 +289,148 @@ router.post("/businesses/:id/members/:memberId/accept", requireAuth, async (req,
 
   await db.update(usersTable).set({ account_type: "business" }).where(eq(usersTable.id, userId));
   logger.info({ business_id: businessId, user_id: userId }, "Business invite accepted");
+  return res.json(updated);
+});
+
+// ── GET /businesses/:id/requests — owner dashboard of all business requests ─────
+router.get("/businesses/:id/requests", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const businessId = parseInt(req.params.id as string, 10);
+  if (isNaN(businessId)) return res.status(400).json({ error: "Invalid id" });
+
+  const guard = await requireBusinessMember(businessId, callerId);
+  if (!guard.ok) return res.status(guard.status).json({ error: guard.error });
+
+  const rows = await db
+    .select({
+      id: requestsTable.id,
+      title: requestsTable.title,
+      status: requestsTable.status,
+      payment_type: requestsTable.payment_type,
+      pay_it_forward_amount: requestsTable.pay_it_forward_amount,
+      requester_id: requestsTable.requester_id,
+      requester_name: usersTable.name,
+      created_at: requestsTable.created_at,
+    })
+    .from(requestsTable)
+    .leftJoin(usersTable, eq(requestsTable.requester_id, usersTable.id))
+    .where(eq(requestsTable.business_id, businessId))
+    .orderBy(requestsTable.created_at);
+
+  return res.json(rows);
+});
+
+// ── GET /businesses/:id/pending-requests — staff posts awaiting owner approval ──
+router.get("/businesses/:id/pending-requests", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const businessId = parseInt(req.params.id as string, 10);
+  if (isNaN(businessId)) return res.status(400).json({ error: "Invalid id" });
+
+  const guard = await requireBusinessOwner(businessId, callerId);
+  if (!guard.ok) return res.status(guard.status).json({ error: guard.error });
+
+  const rows = await db
+    .select({
+      id: requestsTable.id,
+      title: requestsTable.title,
+      status: requestsTable.status,
+      payment_type: requestsTable.payment_type,
+      pay_it_forward_amount: requestsTable.pay_it_forward_amount,
+      requester_id: requestsTable.requester_id,
+      requester_name: usersTable.name,
+      created_at: requestsTable.created_at,
+    })
+    .from(requestsTable)
+    .leftJoin(usersTable, eq(requestsTable.requester_id, usersTable.id))
+    .where(
+      and(
+        eq(requestsTable.business_id, businessId),
+        eq(requestsTable.status, "pending_owner_approval"),
+      ),
+    )
+    .orderBy(requestsTable.created_at);
+
+  return res.json(rows);
+});
+
+// ── PATCH /businesses/:id/requests/:requestId/approve — owner approve/reject ─────
+router.patch("/businesses/:id/requests/:requestId/approve", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const businessId = parseInt(req.params.id as string, 10);
+  const requestId = parseInt(req.params.requestId as string, 10);
+  if (isNaN(businessId) || isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+
+  const guard = await requireBusinessOwner(businessId, callerId);
+  if (!guard.ok) return res.status(guard.status).json({ error: guard.error });
+
+  const { action } = req.body as { action?: "approve" | "reject" };
+  if (action !== "approve" && action !== "reject") {
+    return res.status(400).json({ error: "action must be 'approve' or 'reject'." });
+  }
+
+  const [request] = await db
+    .select({ id: requestsTable.id, requester_id: requestsTable.requester_id })
+    .from(requestsTable)
+    .where(
+      and(
+        eq(requestsTable.id, requestId),
+        eq(requestsTable.business_id, businessId),
+        eq(requestsTable.status, "pending_owner_approval"),
+      ),
+    )
+    .limit(1);
+
+  if (!request) return res.status(404).json({ error: "Pending request not found." });
+
+  if (action === "reject") {
+    await db
+      .update(requestsTable)
+      .set({ status: "cancelled", cancelled_at: new Date() })
+      .where(eq(requestsTable.id, requestId));
+    logger.info({ request_id: requestId, business_id: businessId, owner_id: callerId }, "Business request rejected by owner");
+    return res.json({ ok: true, action: "rejected" });
+  }
+
+  await db
+    .update(requestsTable)
+    .set({ status: "open" })
+    .where(eq(requestsTable.id, requestId));
+  logger.info({ request_id: requestId, business_id: businessId, owner_id: callerId }, "Business request approved by owner");
+  return res.json({ ok: true, action: "approved" });
+});
+
+// ── PATCH /businesses/:id/members/:memberId/cap — set staff spending cap ──────
+router.patch("/businesses/:id/members/:memberId/cap", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const businessId = parseInt(req.params.id as string, 10);
+  const targetUserId = parseInt(req.params.memberId as string, 10);
+  if (isNaN(businessId) || isNaN(targetUserId)) return res.status(400).json({ error: "Invalid id" });
+
+  const guard = await requireBusinessOwner(businessId, callerId);
+  if (!guard.ok) return res.status(guard.status).json({ error: guard.error });
+  if (targetUserId === callerId) {
+    return res.status(400).json({ error: "Cannot set a spending cap on the owner." });
+  }
+
+  const { spending_cap_cents } = req.body as { spending_cap_cents?: number };
+  if (spending_cap_cents === undefined || spending_cap_cents < 0 || !Number.isInteger(spending_cap_cents)) {
+    return res.status(400).json({ error: "spending_cap_cents must be a non-negative integer (cents)." });
+  }
+
+  const [updated] = await db
+    .update(businessMembersTable)
+    .set({ spending_cap_cents: spending_cap_cents === 0 ? null : spending_cap_cents, updated_at: new Date() })
+    .where(
+      and(
+        eq(businessMembersTable.business_id, businessId),
+        eq(businessMembersTable.user_id, targetUserId),
+        eq(businessMembersTable.status, "active"),
+      ),
+    )
+    .returning();
+
+  if (!updated) return res.status(404).json({ error: "Active member not found." });
+  logger.info({ business_id: businessId, member_id: targetUserId, cap_cents: spending_cap_cents, owner_id: callerId }, "Business member spending cap set");
   return res.json(updated);
 });
 

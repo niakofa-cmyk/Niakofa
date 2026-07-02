@@ -25,7 +25,11 @@ import type {
   Business,
   BusinessInput,
   BusinessMember,
+  BusinessMemberCapInput,
   BusinessMemberInviteInput,
+  BusinessPendingRequest,
+  BusinessRequest,
+  BusinessRequestApproveAction,
   ChangePassword200,
   ChangePasswordInput,
   CivicResourcesResponse,
@@ -4264,5 +4268,305 @@ export const useRemoveBusinessMember = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getRemoveBusinessMemberMutationOptions(options));
+    }
+
+export const getGetBusinessRequestsUrl = (id: number,) => {
+
+
+
+
+  return `/api/businesses/${id}/requests`
+}
+
+/**
+ * @summary List all requests posted under a business (members only)
+ */
+export const getBusinessRequests = async (id: number, options?: RequestInit): Promise<BusinessRequest[]> => {
+
+  return customFetch<BusinessRequest[]>(getGetBusinessRequestsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBusinessRequestsQueryKey = (id: number,) => {
+    return [
+    `/api/businesses/${id}/requests`
+    ] as const;
+    }
+
+
+export const getGetBusinessRequestsQueryOptions = <TData = Awaited<ReturnType<typeof getBusinessRequests>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBusinessRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBusinessRequestsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBusinessRequests>>> = ({ signal }) => getBusinessRequests(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBusinessRequests>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBusinessRequestsQueryResult = NonNullable<Awaited<ReturnType<typeof getBusinessRequests>>>
+export type GetBusinessRequestsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List all requests posted under a business (members only)
+ */
+
+export function useGetBusinessRequests<TData = Awaited<ReturnType<typeof getBusinessRequests>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBusinessRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBusinessRequestsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSetBusinessMemberCapUrl = (id: number,
+    memberId: number,) => {
+
+
+
+
+  return `/api/businesses/${id}/members/${memberId}/cap`
+}
+
+/**
+ * @summary Set a staff member's spending cap (owner only)
+ */
+export const setBusinessMemberCap = async (id: number,
+    memberId: number,
+    businessMemberCapInput: BusinessMemberCapInput, options?: RequestInit): Promise<BusinessMember> => {
+
+  return customFetch<BusinessMember>(getSetBusinessMemberCapUrl(id,memberId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(businessMemberCapInput)
+  }
+);}
+
+
+
+
+export const getSetBusinessMemberCapMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setBusinessMemberCap>>, TError,{id: number;memberId: number;data: BodyType<BusinessMemberCapInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setBusinessMemberCap>>, TError,{id: number;memberId: number;data: BodyType<BusinessMemberCapInput>}, TContext> => {
+
+const mutationKey = ['setBusinessMemberCap'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setBusinessMemberCap>>, {id: number;memberId: number;data: BodyType<BusinessMemberCapInput>}> = (props) => {
+          const {id,memberId,data} = props ?? {};
+
+          return  setBusinessMemberCap(id,memberId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetBusinessMemberCapMutationResult = NonNullable<Awaited<ReturnType<typeof setBusinessMemberCap>>>
+    export type SetBusinessMemberCapMutationBody = BodyType<BusinessMemberCapInput>
+    export type SetBusinessMemberCapMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Set a staff member's spending cap (owner only)
+ */
+export const useSetBusinessMemberCap = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setBusinessMemberCap>>, TError,{id: number;memberId: number;data: BodyType<BusinessMemberCapInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setBusinessMemberCap>>,
+        TError,
+        {id: number;memberId: number;data: BodyType<BusinessMemberCapInput>},
+        TContext
+      > => {
+      return useMutation(getSetBusinessMemberCapMutationOptions(options));
+    }
+
+export const getGetBusinessPendingRequestsUrl = (id: number,) => {
+
+
+
+
+  return `/api/businesses/${id}/pending-requests`
+}
+
+/**
+ * @summary List staff requests pending owner approval (owner only)
+ */
+export const getBusinessPendingRequests = async (id: number, options?: RequestInit): Promise<BusinessPendingRequest[]> => {
+
+  return customFetch<BusinessPendingRequest[]>(getGetBusinessPendingRequestsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBusinessPendingRequestsQueryKey = (id: number,) => {
+    return [
+    `/api/businesses/${id}/pending-requests`
+    ] as const;
+    }
+
+
+export const getGetBusinessPendingRequestsQueryOptions = <TData = Awaited<ReturnType<typeof getBusinessPendingRequests>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBusinessPendingRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBusinessPendingRequestsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBusinessPendingRequests>>> = ({ signal }) => getBusinessPendingRequests(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBusinessPendingRequests>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBusinessPendingRequestsQueryResult = NonNullable<Awaited<ReturnType<typeof getBusinessPendingRequests>>>
+export type GetBusinessPendingRequestsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List staff requests pending owner approval (owner only)
+ */
+
+export function useGetBusinessPendingRequests<TData = Awaited<ReturnType<typeof getBusinessPendingRequests>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBusinessPendingRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBusinessPendingRequestsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getApproveBusinessRequestUrl = (id: number,
+    requestId: number,) => {
+
+
+
+
+  return `/api/businesses/${id}/requests/${requestId}/approve`
+}
+
+/**
+ * @summary Approve or reject a pending business request (owner only)
+ */
+export const approveBusinessRequest = async (id: number,
+    requestId: number,
+    businessRequestApproveAction: BusinessRequestApproveAction, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getApproveBusinessRequestUrl(id,requestId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(businessRequestApproveAction)
+  }
+);}
+
+
+
+
+export const getApproveBusinessRequestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveBusinessRequest>>, TError,{id: number;requestId: number;data: BodyType<BusinessRequestApproveAction>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof approveBusinessRequest>>, TError,{id: number;requestId: number;data: BodyType<BusinessRequestApproveAction>}, TContext> => {
+
+const mutationKey = ['approveBusinessRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof approveBusinessRequest>>, {id: number;requestId: number;data: BodyType<BusinessRequestApproveAction>}> = (props) => {
+          const {id,requestId,data} = props ?? {};
+
+          return  approveBusinessRequest(id,requestId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApproveBusinessRequestMutationResult = NonNullable<Awaited<ReturnType<typeof approveBusinessRequest>>>
+    export type ApproveBusinessRequestMutationBody = BodyType<BusinessRequestApproveAction>
+    export type ApproveBusinessRequestMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Approve or reject a pending business request (owner only)
+ */
+export const useApproveBusinessRequest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveBusinessRequest>>, TError,{id: number;requestId: number;data: BodyType<BusinessRequestApproveAction>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof approveBusinessRequest>>,
+        TError,
+        {id: number;requestId: number;data: BodyType<BusinessRequestApproveAction>},
+        TContext
+      > => {
+      return useMutation(getApproveBusinessRequestMutationOptions(options));
     }
 

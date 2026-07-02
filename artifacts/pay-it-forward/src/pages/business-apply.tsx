@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
-import { ChevronLeft, Building2, CheckCircle2, RefreshCw, UserPlus, X, Mail } from "lucide-react";
+import { ChevronLeft, Building2, CheckCircle2, RefreshCw, UserPlus, X, Mail, DollarSign, ClipboardList, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
+import { useGetBusinessRequests, useGetBusinessPendingRequests, useSetBusinessMemberCap, useApproveBusinessRequest } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -17,6 +19,8 @@ interface Business {
   phone: string | null;
   approval_status: "pending" | "approved" | "rejected";
   created_at: string;
+  member_role?: string;
+  member_status?: string;
 }
 
 interface Member {
@@ -25,6 +29,7 @@ interface Member {
   role: string;
   status: string;
   invited_at: string;
+  spending_cap_cents?: number | null;
   name?: string;
   email?: string;
 }
@@ -115,8 +120,61 @@ function InviteModal({ businessId, onClose, onInvited }: { businessId: number; o
   );
 }
 
+// ── Spending Cap Editor ────────────────────────────────────────────────────────
+function CapEditor({ businessId, member, onSaved }: { businessId: number; member: Member; onSaved: () => void }) {
+  const [cap, setCap] = useState(member.spending_cap_cents === undefined || member.spending_cap_cents === null ? "" : String(member.spending_cap_cents / 100));
+  const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
+
+  const save = async () => {
+    const dollars = cap.trim() === "" ? 0 : parseFloat(cap);
+    if (Number.isNaN(dollars) || dollars < 0) {
+      toast({ title: "Invalid amount", description: "Enter a dollar amount ≥ 0", variant: "destructive" });
+      return;
+    }
+    const cents = Math.round(dollars * 100);
+    setSaving(true);
+    try {
+      const res = await fetch(`${BASE}/api/businesses/${businessId}/members/${member.user_id}/cap`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}) },
+        body: JSON.stringify({ spending_cap_cents: cents }),
+      });
+      const data = await res.json() as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+      await queryClient.invalidateQueries({ queryKey: [`/api/businesses/${businessId}/members`] });
+      onSaved();
+      toast({ title: "Spending cap updated", description: `Cap set to ${dollars.toFixed(2)}` });
+    } catch (err) {
+      toast({ title: "Failed to update cap", description: String(err), variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 mt-2">
+      <div className="relative flex-1">
+        <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+        <Input
+          type="number"
+          min={0}
+          step={0.01}
+          value={cap}
+          onChange={e => setCap(e.target.value)}
+          placeholder="No cap"
+          className="pl-7 h-8 text-xs bg-card border-border"
+        />
+      </div>
+      <Button size="sm" disabled={saving} onClick={save} className="h-8 text-xs font-black uppercase">
+        {saving ? <RefreshCw className="w-3 h-3 animate-spin" /> : "Set"}
+      </Button>
+    </div>
+  );
+}
+
 // ── Member List ────────────────────────────────────────────────────────────────
-function MemberList({ businessId }: { businessId: number }) {
+function MemberList({ businessId, isOwner }: { businessId: number; isOwner: boolean }) {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
@@ -149,12 +207,14 @@ function MemberList({ businessId }: { businessId: number }) {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Team Members</div>
-        <button
-          onClick={() => setShowInvite(true)}
-          className="flex items-center gap-1.5 text-xs font-black text-primary bg-primary/10 border border-primary/30 rounded-full px-3 py-1"
-        >
-          <UserPlus className="w-3 h-3" /> Invite
-        </button>
+        {isOwner && (
+          <button
+            onClick={() => setShowInvite(true)}
+            className="flex items-center gap-1.5 text-xs font-black text-primary bg-primary/10 border border-primary/30 rounded-full px-3 py-1"
+          >
+            <UserPlus className="w-3 h-3" /> Invite
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -166,26 +226,31 @@ function MemberList({ businessId }: { businessId: number }) {
       ) : (
         <div className="space-y-2">
           {members.map(m => (
-            <div key={m.id} className="bg-card border border-border rounded-xl p-3 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-sm font-bold truncate">{m.name ?? `User #${m.user_id}`}</div>
-                <div className="text-[10px] text-muted-foreground truncate">{m.email ?? ""}</div>
-                <div className="flex gap-1.5 mt-0.5">
-                  <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${
-                    m.role === "owner" ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
-                  }`}>{m.role}</span>
-                  <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${
-                    m.status === "active" ? "bg-green-500/20 text-green-600" : "bg-yellow-500/20 text-yellow-600"
-                  }`}>{m.status}</span>
+            <div key={m.id} className="bg-card border border-border rounded-xl p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-bold truncate">{m.name ?? `User #${m.user_id}`}</div>
+                  <div className="text-[10px] text-muted-foreground truncate">{m.email ?? ""}</div>
+                  <div className="flex gap-1.5 mt-0.5">
+                    <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${
+                      m.role === "owner" ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                    }`}>{m.role}</span>
+                    <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${
+                      m.status === "active" ? "bg-green-500/20 text-green-600" : "bg-yellow-500/20 text-yellow-600"
+                    }`}>{m.status}</span>
+                  </div>
                 </div>
+                {isOwner && m.role !== "owner" && (
+                  <button
+                    onClick={() => remove(m.id)}
+                    className="shrink-0 p-1.5 rounded-lg border border-destructive/30 bg-destructive/10 text-destructive"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
-              {m.role !== "owner" && (
-                <button
-                  onClick={() => remove(m.id)}
-                  className="shrink-0 p-1.5 rounded-lg border border-destructive/30 bg-destructive/10 text-destructive"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+              {isOwner && m.role === "staff" && m.status === "active" && (
+                <CapEditor businessId={businessId} member={m} onSaved={load} />
               )}
             </div>
           ))}
@@ -198,6 +263,107 @@ function MemberList({ businessId }: { businessId: number }) {
           onClose={() => setShowInvite(false)}
           onInvited={load}
         />
+      )}
+    </div>
+  );
+}
+
+// ── Business Requests Dashboard ────────────────────────────────────────────────
+function BusinessRequestsDashboard({ businessId, isOwner }: { businessId: number; isOwner: boolean }) {
+  const { data: requests, isLoading } = useGetBusinessRequests(businessId);
+  const total = (requests ?? []).reduce((sum, r) => sum + (r.pay_it_forward_amount ?? 0), 0);
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-black uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+          <ClipboardList className="w-3.5 h-3.5" /> Request Spend
+        </div>
+        <div className="text-xs font-black text-primary">${total.toFixed(2)}</div>
+      </div>
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-muted-foreground text-sm py-4 justify-center">
+          <RefreshCw className="w-4 h-4 animate-spin" /> Loading…
+        </div>
+      ) : (requests ?? []).length === 0 ? (
+        <div className="text-xs text-muted-foreground text-center py-4">No business requests yet</div>
+      ) : (
+        <div className="space-y-2 max-h-64 overflow-y-auto">
+          {(requests ?? []).map(r => (
+            <div key={r.id} className="border border-border rounded-xl p-2.5 text-sm">
+              <div className="font-bold truncate">{r.title}</div>
+              <div className="flex items-center justify-between mt-1">
+                <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${
+                  r.status === "completed" ? "bg-green-500/20 text-green-600" :
+                  r.status === "cancelled" ? "bg-destructive/20 text-destructive" :
+                  r.status === "pending_owner_approval" ? "bg-yellow-500/20 text-yellow-600" :
+                  "bg-blue-500/20 text-blue-500"
+                }`}>{r.status.replace(/_/g, " ")}</span>
+                <span className="text-[10px] text-muted-foreground">${(r.pay_it_forward_amount ?? 0).toFixed(2)}</span>
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">Posted by {r.requester_name ?? `User #${r.requester_id}`}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Pending Approval Queue ─────────────────────────────────────────────────────
+function PendingApprovalQueue({ businessId }: { businessId: number }) {
+  const { data: pending, isLoading, refetch } = useGetBusinessPendingRequests(businessId);
+  const { mutate: decide, isPending } = useApproveBusinessRequest();
+
+  const act = (requestId: number, action: "approve" | "reject") => {
+    decide({ id: businessId, requestId, data: { action } }, {
+      onSuccess: () => {
+        toast({ title: action === "approve" ? "Request approved" : "Request rejected" });
+        refetch();
+      },
+      onError: (err) => toast({ title: "Action failed", description: String(err), variant: "destructive" }),
+    });
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+      <div className="text-xs font-black uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+        <Clock className="w-3.5 h-3.5" /> Pending Owner Approval
+      </div>
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-muted-foreground text-sm py-4 justify-center">
+          <RefreshCw className="w-4 h-4 animate-spin" /> Loading…
+        </div>
+      ) : (pending ?? []).length === 0 ? (
+        <div className="text-xs text-muted-foreground text-center py-4">No pending requests</div>
+      ) : (
+        <div className="space-y-2">
+          {(pending ?? []).map(r => (
+            <div key={r.id} className="border border-border rounded-xl p-3 space-y-2">
+              <div className="text-sm font-bold">{r.title}</div>
+              <div className="text-[10px] text-muted-foreground">Posted by {r.requester_name ?? `User #${r.requester_id}`} • ${(r.pay_it_forward_amount ?? 0).toFixed(2)}</div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  disabled={isPending}
+                  onClick={() => act(r.id, "approve")}
+                  className="h-8 flex-1 text-xs font-black uppercase"
+                >
+                  Approve
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isPending}
+                  onClick={() => act(r.id, "reject")}
+                  className="h-8 flex-1 text-xs font-black uppercase border-destructive text-destructive"
+                >
+                  Reject
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -322,10 +488,30 @@ export default function BusinessApplyScreen() {
               </div>
             </div>
 
-            {/* Staff invite (only for approved businesses) */}
-            {myBusiness.approval_status === "approved" && (
+            {/* Owner dashboard: spend overview + pending approval queue */}
+            {myBusiness.approval_status === "approved" && myBusiness.member_role === "owner" && (
+              <>
+                <BusinessRequestsDashboard businessId={myBusiness.id} isOwner={true} />
+                <PendingApprovalQueue businessId={myBusiness.id} />
+              </>
+            )}
+
+            {/* Member dashboard: read-only spend overview */}
+            {myBusiness.approval_status === "approved" && myBusiness.member_role !== "owner" && (
+              <BusinessRequestsDashboard businessId={myBusiness.id} isOwner={false} />
+            )}
+
+            {/* Staff invite + cap controls (only for owners of approved businesses) */}
+            {myBusiness.approval_status === "approved" && myBusiness.member_role === "owner" && (
               <div className="bg-card border border-border rounded-2xl p-4">
-                <MemberList businessId={myBusiness.id} />
+                <MemberList businessId={myBusiness.id} isOwner={true} />
+              </div>
+            )}
+
+            {/* Member list read-only for non-owners */}
+            {myBusiness.approval_status === "approved" && myBusiness.member_role !== "owner" && (
+              <div className="bg-card border border-border rounded-2xl p-4">
+                <MemberList businessId={myBusiness.id} isOwner={false} />
               </div>
             )}
           </div>

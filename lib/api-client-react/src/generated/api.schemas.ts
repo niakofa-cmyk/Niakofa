@@ -407,6 +407,7 @@ export const HelpRequestStatus = {
   arrived: 'arrived',
   completed: 'completed',
   pay_it_forward_pending: 'pay_it_forward_pending',
+  pending_owner_approval: 'pending_owner_approval',
   cancelled: 'cancelled',
 } as const;
 
@@ -541,6 +542,7 @@ export const HelpRequestUpdateStatus = {
   arrived: 'arrived',
   completed: 'completed',
   pay_it_forward_pending: 'pay_it_forward_pending',
+  pending_owner_approval: 'pending_owner_approval',
   cancelled: 'cancelled',
 } as const;
 
@@ -863,9 +865,15 @@ export interface BusinessMember {
   user_id: number;
   role: BusinessMemberRole;
   status: BusinessMemberStatus;
+  /**
+     * Per-member spending cap in cents. NULL means no cap.
+     * @nullable
+     */
+  spending_cap_cents?: number | null;
   invited_at: string;
   /** @nullable */
   accepted_at?: string | null;
+  updated_at: string;
   /** Only present on GET /businesses/:id/members */
   name?: string;
   /** Only present on GET /businesses/:id/members */
@@ -875,6 +883,47 @@ export interface BusinessMember {
      * @nullable
      */
   avatar_url?: string | null;
+}
+
+export interface BusinessMemberCapInput {
+  /** Per-member spending cap in cents. Use 0 to block all paid posts, or a positive value to cap total spend. */
+  spending_cap_cents: number;
+}
+
+export interface BusinessRequest {
+  id: number;
+  title: string;
+  status: string;
+  payment_type: string;
+  /** @nullable */
+  pay_it_forward_amount: number | null;
+  requester_id: number;
+  requester_name: string;
+  created_at: string;
+}
+
+export interface BusinessPendingRequest {
+  id: number;
+  title: string;
+  status: string;
+  payment_type: string;
+  /** @nullable */
+  pay_it_forward_amount: number | null;
+  requester_id: number;
+  requester_name: string;
+  created_at: string;
+}
+
+export type BusinessRequestApproveActionAction = typeof BusinessRequestApproveActionAction[keyof typeof BusinessRequestApproveActionAction];
+
+
+export const BusinessRequestApproveActionAction = {
+  approve: 'approve',
+  reject: 'reject',
+} as const;
+
+export interface BusinessRequestApproveAction {
+  action: BusinessRequestApproveActionAction;
 }
 
 export interface CivicResource {
@@ -959,6 +1008,7 @@ export const GetRequestsStatus = {
   arrived: 'arrived',
   completed: 'completed',
   pay_it_forward_pending: 'pay_it_forward_pending',
+  pending_owner_approval: 'pending_owner_approval',
   cancelled: 'cancelled',
 } as const;
 

@@ -14,9 +14,15 @@ export interface BusinessMember {
   user_id: number;
   role: BusinessMemberRole;
   status: BusinessMemberStatus;
+  /**
+     * Per-member spending cap in cents. NULL means no cap.
+     * @nullable
+     */
+  spending_cap_cents?: number | null;
   invited_at: Date;
   /** @nullable */
   accepted_at?: Date | null;
+  updated_at: Date;
   /** Only present on GET /businesses/:id/members */
   name?: string;
   /** Only present on GET /businesses/:id/members */

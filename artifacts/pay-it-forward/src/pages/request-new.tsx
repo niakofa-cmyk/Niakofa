@@ -307,6 +307,17 @@ export default function NewRequestScreen() {
     }, {
       onSuccess: async (request) => {
         localStorage.removeItem(DRAFT_KEY);
+
+        // Staff posts under a business go to the owner approval queue first.
+        if (request.status === "pending_owner_approval") {
+          toast({
+            title: "⏳ Sent to owner approval",
+            description: "Your request is pending approval from the business owner before it goes live.",
+          });
+          finishAndNavigate();
+          return;
+        }
+
         toast({ title: "📍 Request posted!", description: "Nearby helpers have been notified in real time." });
 
         // ── Pay Now: create PaymentIntent and show Stripe checkout ──────────

@@ -16,5 +16,6 @@ export const HelpRequestStatus = {
   arrived: 'arrived',
   completed: 'completed',
   pay_it_forward_pending: 'pay_it_forward_pending',
+  pending_owner_approval: 'pending_owner_approval',
   cancelled: 'cancelled',
 } as const;

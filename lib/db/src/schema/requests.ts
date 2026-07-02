@@ -44,6 +44,8 @@ export const requestsTable = pgTable("help_requests", {
   index("help_requests_lat_lng_idx").on(t.lat, t.lng),
   index("help_requests_pledge_status_idx").on(t.pledge_status, t.created_at),
   index("help_requests_business_id_idx").on(t.business_id),
+  // Partial index for business owner-approval queue (migration 0028)
+  index("help_requests_business_pending_idx").on(t.business_id, t.requester_id),
 ]);
 
 export const insertRequestSchema = createInsertSchema(requestsTable).omit({

@@ -179,7 +179,7 @@ export const MakePledgePaymentResponse = zod.object({
   "description": zod.string().nullish(),
   "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support', 'local_farm', 'food_pantry', 'moving_labor', 'pet_care', 'childcare', 'senior_care', 'yard_work', 'tutoring', 'cleaning', 'meal_prep', 'paperwork', 'business_services']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
-  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
+  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'pending_owner_approval', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -282,7 +282,7 @@ export const RegisterUserResponse = zod.object({
  * @summary List all help requests
  */
 export const GetRequestsQueryParams = zod.object({
-  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']).optional(),
+  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'pending_owner_approval', 'cancelled']).optional(),
   "lat": zod.coerce.number().optional(),
   "lng": zod.coerce.number().optional(),
   "radius_miles": zod.coerce.number().optional()
@@ -296,7 +296,7 @@ export const GetRequestsResponseItem = zod.object({
   "description": zod.string().nullish(),
   "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support', 'local_farm', 'food_pantry', 'moving_labor', 'pet_care', 'childcare', 'senior_care', 'yard_work', 'tutoring', 'cleaning', 'meal_prep', 'paperwork', 'business_services']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
-  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
+  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'pending_owner_approval', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -347,7 +347,7 @@ export const CreateRequestResponse = zod.object({
   "description": zod.string().nullish(),
   "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support', 'local_farm', 'food_pantry', 'moving_labor', 'pet_care', 'childcare', 'senior_care', 'yard_work', 'tutoring', 'cleaning', 'meal_prep', 'paperwork', 'business_services']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
-  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
+  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'pending_owner_approval', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -389,7 +389,7 @@ export const GetNearbyRequestsResponseItem = zod.object({
   "description": zod.string().nullish(),
   "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support', 'local_farm', 'food_pantry', 'moving_labor', 'pet_care', 'childcare', 'senior_care', 'yard_work', 'tutoring', 'cleaning', 'meal_prep', 'paperwork', 'business_services']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
-  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
+  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'pending_owner_approval', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -444,7 +444,7 @@ export const GetRequestResponse = zod.object({
   "description": zod.string().nullish(),
   "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support', 'local_farm', 'food_pantry', 'moving_labor', 'pet_care', 'childcare', 'senior_care', 'yard_work', 'tutoring', 'cleaning', 'meal_prep', 'paperwork', 'business_services']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
-  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
+  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'pending_owner_approval', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -475,7 +475,7 @@ export const UpdateRequestParams = zod.object({
 })
 
 export const UpdateRequestBody = zod.object({
-  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']).optional(),
+  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'pending_owner_approval', 'cancelled']).optional(),
   "description": zod.string().optional(),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional()
 })
@@ -488,7 +488,7 @@ export const UpdateRequestResponse = zod.object({
   "description": zod.string().nullish(),
   "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support', 'local_farm', 'food_pantry', 'moving_labor', 'pet_care', 'childcare', 'senior_care', 'yard_work', 'tutoring', 'cleaning', 'meal_prep', 'paperwork', 'business_services']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
-  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
+  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'pending_owner_approval', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -530,7 +530,7 @@ export const ClaimRequestResponse = zod.object({
   "description": zod.string().nullish(),
   "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support', 'local_farm', 'food_pantry', 'moving_labor', 'pet_care', 'childcare', 'senior_care', 'yard_work', 'tutoring', 'cleaning', 'meal_prep', 'paperwork', 'business_services']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
-  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
+  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'pending_owner_approval', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -572,7 +572,7 @@ export const MarkEnRouteResponse = zod.object({
   "description": zod.string().nullish(),
   "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support', 'local_farm', 'food_pantry', 'moving_labor', 'pet_care', 'childcare', 'senior_care', 'yard_work', 'tutoring', 'cleaning', 'meal_prep', 'paperwork', 'business_services']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
-  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
+  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'pending_owner_approval', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -614,7 +614,7 @@ export const MarkArrivedResponse = zod.object({
   "description": zod.string().nullish(),
   "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support', 'local_farm', 'food_pantry', 'moving_labor', 'pet_care', 'childcare', 'senior_care', 'yard_work', 'tutoring', 'cleaning', 'meal_prep', 'paperwork', 'business_services']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
-  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
+  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'pending_owner_approval', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -657,7 +657,7 @@ export const CompleteRequestResponse = zod.object({
   "description": zod.string().nullish(),
   "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support', 'local_farm', 'food_pantry', 'moving_labor', 'pet_care', 'childcare', 'senior_care', 'yard_work', 'tutoring', 'cleaning', 'meal_prep', 'paperwork', 'business_services']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
-  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
+  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'pending_owner_approval', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -760,7 +760,7 @@ export const GetUserOutstandingPledgesResponseItem = zod.object({
   "description": zod.string().nullish(),
   "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support', 'local_farm', 'food_pantry', 'moving_labor', 'pet_care', 'childcare', 'senior_care', 'yard_work', 'tutoring', 'cleaning', 'meal_prep', 'paperwork', 'business_services']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
-  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'cancelled']),
+  "status": zod.enum(['open', 'claimed', 'en_route', 'arrived', 'completed', 'pay_it_forward_pending', 'pending_owner_approval', 'cancelled']),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).describe('immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer'),
   "requester_id": zod.number(),
   "requester_name": zod.string().nullish(),
@@ -1546,8 +1546,10 @@ export const GetBusinessMembersResponseItem = zod.object({
   "user_id": zod.number(),
   "role": zod.enum(['owner', 'staff']),
   "status": zod.enum(['active', 'pending', 'removed']),
+  "spending_cap_cents": zod.number().nullish().describe('Per-member spending cap in cents. NULL means no cap.'),
   "invited_at": zod.coerce.date(),
   "accepted_at": zod.coerce.date().nullish(),
+  "updated_at": zod.coerce.date(),
   "name": zod.string().optional().describe('Only present on GET \/businesses\/:id\/members'),
   "email": zod.string().optional().describe('Only present on GET \/businesses\/:id\/members'),
   "avatar_url": zod.string().nullish().describe('Only present on GET \/businesses\/:id\/members')
@@ -1573,8 +1575,10 @@ export const InviteBusinessMemberResponse = zod.object({
   "user_id": zod.number(),
   "role": zod.enum(['owner', 'staff']),
   "status": zod.enum(['active', 'pending', 'removed']),
+  "spending_cap_cents": zod.number().nullish().describe('Per-member spending cap in cents. NULL means no cap.'),
   "invited_at": zod.coerce.date(),
   "accepted_at": zod.coerce.date().nullish(),
+  "updated_at": zod.coerce.date(),
   "name": zod.string().optional().describe('Only present on GET \/businesses\/:id\/members'),
   "email": zod.string().optional().describe('Only present on GET \/businesses\/:id\/members'),
   "avatar_url": zod.string().nullish().describe('Only present on GET \/businesses\/:id\/members')
@@ -1590,5 +1594,88 @@ export const RemoveBusinessMemberParams = zod.object({
 })
 
 export const RemoveBusinessMemberResponse = zod.unknown()
+
+
+/**
+ * @summary List all requests posted under a business (members only)
+ */
+export const GetBusinessRequestsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetBusinessRequestsResponseItem = zod.object({
+  "id": zod.number(),
+  "title": zod.string(),
+  "status": zod.string(),
+  "payment_type": zod.string(),
+  "pay_it_forward_amount": zod.number().nullable(),
+  "requester_id": zod.number(),
+  "requester_name": zod.string(),
+  "created_at": zod.coerce.date()
+})
+export const GetBusinessRequestsResponse = zod.array(GetBusinessRequestsResponseItem)
+
+
+/**
+ * @summary Set a staff member's spending cap (owner only)
+ */
+export const SetBusinessMemberCapParams = zod.object({
+  "id": zod.coerce.number(),
+  "memberId": zod.coerce.number()
+})
+
+export const SetBusinessMemberCapBody = zod.object({
+  "spending_cap_cents": zod.number().describe('Per-member spending cap in cents. Use 0 to block all paid posts, or a positive value to cap total spend.')
+})
+
+export const SetBusinessMemberCapResponse = zod.object({
+  "id": zod.number(),
+  "business_id": zod.number(),
+  "user_id": zod.number(),
+  "role": zod.enum(['owner', 'staff']),
+  "status": zod.enum(['active', 'pending', 'removed']),
+  "spending_cap_cents": zod.number().nullish().describe('Per-member spending cap in cents. NULL means no cap.'),
+  "invited_at": zod.coerce.date(),
+  "accepted_at": zod.coerce.date().nullish(),
+  "updated_at": zod.coerce.date(),
+  "name": zod.string().optional().describe('Only present on GET \/businesses\/:id\/members'),
+  "email": zod.string().optional().describe('Only present on GET \/businesses\/:id\/members'),
+  "avatar_url": zod.string().nullish().describe('Only present on GET \/businesses\/:id\/members')
+})
+
+
+/**
+ * @summary List staff requests pending owner approval (owner only)
+ */
+export const GetBusinessPendingRequestsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetBusinessPendingRequestsResponseItem = zod.object({
+  "id": zod.number(),
+  "title": zod.string(),
+  "status": zod.string(),
+  "payment_type": zod.string(),
+  "pay_it_forward_amount": zod.number().nullable(),
+  "requester_id": zod.number(),
+  "requester_name": zod.string(),
+  "created_at": zod.coerce.date()
+})
+export const GetBusinessPendingRequestsResponse = zod.array(GetBusinessPendingRequestsResponseItem)
+
+
+/**
+ * @summary Approve or reject a pending business request (owner only)
+ */
+export const ApproveBusinessRequestParams = zod.object({
+  "id": zod.coerce.number(),
+  "requestId": zod.coerce.number()
+})
+
+export const ApproveBusinessRequestBody = zod.object({
+  "action": zod.enum(['approve', 'reject'])
+})
+
+export const ApproveBusinessRequestResponse = zod.unknown()
 
 

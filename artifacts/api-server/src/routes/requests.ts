@@ -287,7 +287,9 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
   //  2. Business must be admin-approved
   //  3. Requester must be an active member of that business
   //  4. payment_type: pay_it_forward is rejected — businesses pay directly
+  //  5. Staff posts are held in pending_owner_approval until the owner approves
   const businessId = (parsed.data as Record<string, unknown>).business_id as number | null | undefined;
+  let requestStatus: "open" | "pending_owner_approval" = "open";
   if (businessId != null) {
     const [flagRow] = await db
       .select({ value: systemSettingsTable.value })
@@ -318,7 +320,7 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
     }
 
     const [membership] = await db
-      .select({ role: businessMembersTable.role })
+      .select({ role: businessMembersTable.role, spending_cap_cents: businessMembersTable.spending_cap_cents })
       .from(businessMembersTable)
       .where(and(
         eq(businessMembersTable.business_id, businessId),
@@ -339,6 +341,38 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
         code: "business_pif_blocked",
       });
     }
+
+    // Per-staff spending cap enforcement: paid business requests (immediate) count
+    // against the staff member's cap. Goodwill posts cost $0 and are always allowed.
+    const isPaid = parsed.data.payment_type === "immediate";
+    const newAmountCents = isPaid && parsed.data.pay_it_forward_amount
+      ? Math.round(parsed.data.pay_it_forward_amount * 100)
+      : 0;
+    if (isPaid && membership.spending_cap_cents !== null && membership.spending_cap_cents !== undefined) {
+      const [spent] = await db
+        .select({ total: sql<number>`COALESCE(SUM(${requestsTable.pay_it_forward_amount}), 0) * 100` })
+        .from(requestsTable)
+        .where(
+          and(
+            eq(requestsTable.business_id, businessId),
+            eq(requestsTable.requester_id, parsed.data.requester_id),
+            eq(requestsTable.payment_type, "immediate"),
+            inArray(requestsTable.status, ["open", "claimed", "en_route", "arrived", "completed", "pending_owner_approval"]),
+          )
+        );
+      const currentSpentCents = Math.round((spent?.total ?? 0) * 100) / 100;
+      if (currentSpentCents + newAmountCents > membership.spending_cap_cents) {
+        return res.status(403).json({
+          error: "This request would exceed your business spending cap. Contact the business owner to request a higher limit.",
+          code: "business_spending_cap_exceeded",
+          spent_cents: currentSpentCents,
+          cap_cents: membership.spending_cap_cents,
+        });
+      }
+    }
+
+    // Owner posts go live immediately; staff posts require owner approval first.
+    requestStatus = membership.role === "owner" ? "open" : "pending_owner_approval";
   }
 
   // Max 5 active requests per user (open / claimed / en_route / arrived)
@@ -365,7 +399,7 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
     category: parsed.data.category ?? "other",
     urgency: parsed.data.urgency ?? "medium",
     payment_type: parsed.data.payment_type ?? "pay_it_forward",
-    status: "open",
+    status: requestStatus,
     requester_id: parsed.data.requester_id,
     lat: parsed.data.lat,
     lng: parsed.data.lng,
