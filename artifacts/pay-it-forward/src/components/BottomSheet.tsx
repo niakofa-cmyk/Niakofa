@@ -2,7 +2,8 @@ import { motion } from "framer-motion";
 import { useLocation } from "wouter";
 import type { HelpRequest } from "@workspace/api-client-react";
 import { Button } from "./ui/button";
-import { MapPin, Clock, ShieldAlert, HeartPulse, ShoppingBag, Car, Hammer, MoreHorizontal, AlertTriangle, Heart, DollarSign, Gift } from "lucide-react";
+import { MapPin, Clock, ShieldAlert, HeartPulse, ShoppingBag, Car, Hammer, MoreHorizontal, AlertTriangle, Heart, DollarSign, Gift, ShieldCheck } from "lucide-react";
+import { isSensitiveCategory } from "@workspace/trust-tiers";
 
 interface BottomSheetProps {
   requests: HelpRequest[];
@@ -144,6 +145,12 @@ export function BottomSheet({ requests, onClaim, isClaiming, dismissedId: _dismi
                 <div className="text-muted-foreground shrink-0">{getCategoryIcon(request.category)}</div>
                 <h5 className="font-semibold text-sm">{request.title}</h5>
               </div>
+              {isSensitiveCategory(request.category) && (
+                <div className="flex items-center gap-1.5 mt-1.5 mb-1.5 text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/25 px-2.5 py-1 rounded-lg">
+                  <ShieldCheck className="w-3 h-3 shrink-0" />
+                  Verified Helper + ID required to claim
+                </div>
+              )}
               {request.description && (
                 <p className="text-sm text-muted-foreground line-clamp-2 pl-6">{request.description}</p>
               )}

@@ -171,10 +171,13 @@ export default function MapScreen() {
           setLocation(`/request/${request.id}`);
         },
         onError: (err: unknown) => {
-          const serverMsg = (err as { data?: { error?: string } | null })?.data?.error;
+          const apiErr = err as { status?: number; data?: { error?: string; sensitive_category?: string } | null };
+          const isSensitiveBlock = apiErr.status === 403 && apiErr.data?.sensitive_category;
           toast({
-            title: "Failed to claim request",
-            ...(serverMsg ? { description: serverMsg } : {}),
+            title: isSensitiveBlock
+              ? "🛡️ Verified Helper Required"
+              : "Failed to claim request",
+            description: apiErr.data?.error ?? "Please try again.",
             variant: "destructive",
           });
         },
@@ -247,7 +250,11 @@ export default function MapScreen() {
             {openRequests.map(r => (
               <button
                 key={r.id}
-                onClick={() => helperModeActive && handleClaim(r)}
+                onClick={() => {
+                  if (!helperModeActive) return;
+                  if (!currentUser) { setLocation("/login"); return; }
+                  handleClaim(r);
+                }}
                 className={`w-full text-left border rounded-xl p-3 transition-colors ${
                   r.urgency === "emergency"
                     ? "bg-destructive/10 border-destructive/40 hover:border-destructive"
@@ -255,7 +262,14 @@ export default function MapScreen() {
                 }`}
               >
                 <div className="font-semibold text-sm">{r.title}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{r.category} · {r.requester_name}</div>
+                <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                  <span className="capitalize">{r.category.replace(/_/g, " ")}</span>
+                  {(r.category === "childcare" || r.category === "senior_care" || r.category === "medical") && (
+                    <span className="text-amber-400">🛡️</span>
+                  )}
+                  <span>·</span>
+                  <span>{r.requester_name}</span>
+                </div>
               </button>
             ))}
           </div>

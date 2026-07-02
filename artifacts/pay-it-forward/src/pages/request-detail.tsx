@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { ChevronLeft, MapPin, Clock, DollarSign, Heart, Gift, AlertTriangle, Share2, Users, CheckCircle2, Navigation2 } from "lucide-react";
+import { ChevronLeft, MapPin, Clock, DollarSign, Heart, Gift, AlertTriangle, Share2, Users, CheckCircle2, Navigation2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
-import { useGetRequest, getGetRequestQueryKey } from "@workspace/api-client-react";
+import { useGetRequest, useClaimRequest, getGetRequestQueryKey, getGetRequestsQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAppContext } from "@/lib/AppContext";
 import { toast } from "@/hooks/use-toast";
+import { isSensitiveCategory } from "@workspace/trust-tiers";
 
 const URGENCY_CONFIG = {
   emergency: { label: "Emergency", color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/30", icon: AlertTriangle },
@@ -30,11 +32,14 @@ export default function RequestDetailScreen() {
   const [, params] = useRoute("/request/:id/view");
   const [, setLocation] = useLocation();
   const { currentUser, helperModeActive } = useAppContext();
+  const queryClient = useQueryClient();
   const requestId = parseInt(params?.id || "0", 10);
 
   const { data: request, isLoading } = useGetRequest(requestId, {
     query: { enabled: !!requestId, queryKey: getGetRequestQueryKey(requestId), refetchInterval: 15000 }
   });
+
+  const claimMutation = useClaimRequest();
 
   const handleShare = async () => {
     const url = window.location.href;
@@ -48,7 +53,28 @@ export default function RequestDetailScreen() {
 
   const handleClaim = () => {
     if (!currentUser) { setLocation("/login"); return; }
-    setLocation(`/request/${requestId}`);
+    if (!request) return;
+    claimMutation.mutate(
+      { id: requestId, data: { helper_id: currentUser.id } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
+          queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
+          setLocation(`/request/${requestId}`);
+        },
+        onError: (err: unknown) => {
+          const apiErr = err as { status?: number; data?: { error?: string; sensitive_category?: string } | null };
+          const isSensitiveBlock = apiErr.status === 403 && apiErr.data?.sensitive_category;
+          toast({
+            title: isSensitiveBlock
+              ? "🛡️ Verified Helper Required"
+              : "Failed to claim request",
+            description: apiErr.data?.error ?? "Please try again.",
+            variant: "destructive",
+          });
+        },
+      }
+    );
   };
 
   if (isLoading) {
@@ -116,10 +142,25 @@ export default function RequestDetailScreen() {
         </div>
 
         {/* Details grid */}
+        {isSensitiveCategory(request.category) && (
+          <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4">
+            <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-amber-400">Verified Helper Required</p>
+              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                This request involves care for a vulnerable person. Only Verified Helpers who have completed identity verification can claim it.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-card border border-border rounded-2xl p-3">
             <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Category</div>
-            <div className="font-black text-sm capitalize">{request.category.replace("_", " ")}</div>
+            <div className="font-black text-sm capitalize flex items-center gap-1.5">
+              {request.category.replace(/_/g, " ")}
+              {isSensitiveCategory(request.category) && <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+            </div>
           </div>
           <div className="bg-card border border-border rounded-2xl p-3">
             <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Payment</div>
