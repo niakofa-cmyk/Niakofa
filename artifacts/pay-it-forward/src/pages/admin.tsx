@@ -721,6 +721,90 @@ function PendingAccountsCard() {
   );
 }
 
+// ── Pending Business Approvals ────────────────────────────────────────────────
+interface PendingBusiness {
+  id: number;
+  legal_name: string;
+  display_name: string;
+  address: string | null;
+  phone: string | null;
+  approval_status: string;
+  created_by_user_id: number;
+  created_at: string;
+  owner_name?: string;
+  owner_email?: string;
+}
+
+function PendingBusinessesCard() {
+  const [pending, setPending] = useState<PendingBusiness[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState<number | null>(null);
+
+  const load = useCallback(() => {
+    const tok = getToken();
+    fetch(`${BASE}/api/admin/businesses`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} })
+      .then(r => r.ok ? r.json() : [])
+      .then((data: PendingBusiness[]) => {
+        if (Array.isArray(data)) setPending(data.filter(b => b.approval_status === "pending"));
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const decide = async (businessId: number, status: "approved" | "rejected") => {
+    setProcessing(businessId);
+    try {
+      const tok = getToken();
+      const res = await fetch(`${BASE}/api/admin/businesses/${businessId}/approve`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ approval_status: status }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setPending(prev => prev.filter(b => b.id !== businessId));
+      toast({ title: status === "approved" ? "Business approved ✅" : "Business rejected" });
+    } catch {
+      toast({ title: "Action failed", variant: "destructive" });
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  if (loading || pending.length === 0) return null;
+
+  return (
+    <div className="bg-blue-500/10 border border-blue-500/30 rounded-2xl p-4 space-y-3">
+      <div className="text-xs font-black uppercase tracking-wider text-blue-600 flex items-center gap-1.5">
+        <Package className="w-3.5 h-3.5" /> Pending Business Applications ({pending.length})
+      </div>
+      {pending.map(b => (
+        <div key={b.id} className="bg-card border border-border rounded-xl p-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-bold truncate">{b.display_name}</div>
+            <div className="text-xs text-muted-foreground truncate">{b.legal_name}</div>
+            {b.address && <div className="text-[10px] text-muted-foreground mt-0.5 truncate">{b.address}</div>}
+            {b.owner_name && <div className="text-[10px] text-primary mt-0.5">Owner: {b.owner_name}</div>}
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={() => decide(b.id, "rejected")}
+              disabled={processing === b.id}
+              className="h-9 px-3 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive text-xs font-black disabled:opacity-50"
+            >Reject</button>
+            <button
+              onClick={() => decide(b.id, "approved")}
+              disabled={processing === b.id}
+              className="h-9 px-3 rounded-lg bg-green-500 text-white text-xs font-black disabled:opacity-50"
+            >Approve</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function UsersTab() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -763,6 +847,7 @@ function UsersTab() {
   return (
     <div className="space-y-3">
       <PendingAccountsCard />
+      <PendingBusinessesCard />
       {/* Search + filter row */}
       <div className="flex gap-2">
         <div className="relative flex-1">

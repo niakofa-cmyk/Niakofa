@@ -23,6 +23,8 @@ tags:
     description: Location-aware civic and community resources
   - name: verification
     description: Identity verification and safety/panic features
+  - name: businesses
+    description: Business account applications and membership management
 
 paths:
   /healthz:
@@ -1223,6 +1225,150 @@ paths:
         "400":
           description: Invalid amount
 
+  /businesses:
+    post:
+      operationId: createBusiness
+      tags: [businesses]
+      summary: Create a business application (starts pending admin approval)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BusinessInput"
+      responses:
+        "201":
+          description: Business created (pending approval)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
+
+  /businesses/mine:
+    get:
+      operationId: getMyBusinesses
+      tags: [businesses]
+      summary: List businesses the authenticated user belongs to
+      responses:
+        "200":
+          description: List of businesses with member role
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Business"
+
+  /businesses/{id}:
+    get:
+      operationId: getBusiness
+      tags: [businesses]
+      summary: Get a business (members only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Business details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
+        "403":
+          description: Not a member
+        "404":
+          description: Not found
+    patch:
+      operationId: updateBusiness
+      tags: [businesses]
+      summary: Update business details (owner only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BusinessInput"
+      responses:
+        "200":
+          description: Updated business
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Business"
+
+  /businesses/{id}/members:
+    get:
+      operationId: getBusinessMembers
+      tags: [businesses]
+      summary: List all members of a business (members only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BusinessMember"
+    post:
+      operationId: inviteBusinessMember
+      tags: [businesses]
+      summary: Invite a user by email (owner only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BusinessMemberInviteInput"
+      responses:
+        "201":
+          description: Member invited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessMember"
+
+  /businesses/{id}/members/{memberId}:
+    delete:
+      operationId: removeBusinessMember
+      tags: [businesses]
+      summary: Remove a member (owner only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Member removed
+
 components:
   schemas:
     PoolStats:
@@ -1793,6 +1939,10 @@ components:
         sensitive_acknowledged:
           type: boolean
           description: Required (must be true) for childcare, senior_care, and medical categories — requester acknowledges Niakofa is not a licensed childcare, homecare, or medical provider.
+        business_id:
+          type: integer
+          nullable: true
+          description: Optional. When set, the request is posted on behalf of this business. Server validates membership and blocks pay_it_forward.
 
     HelpRequestUpdate:
       type: object
@@ -2058,6 +2208,95 @@ components:
               type: ["string", "null"]
             reported_user_name:
               type: ["string", "null"]
+
+    Business:
+      type: object
+      required: [id, legal_name, display_name, approval_status, created_by_user_id, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+        legal_name:
+          type: string
+        display_name:
+          type: string
+        address:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        stripe_customer_id:
+          type: ["string", "null"]
+        approval_status:
+          type: string
+          enum: [pending, approved, rejected]
+        created_by_user_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        member_role:
+          type: string
+          description: Only present on GET /businesses/mine responses
+        member_status:
+          type: string
+          description: Only present on GET /businesses/mine responses
+
+    BusinessInput:
+      type: object
+      required: [legal_name, display_name]
+      properties:
+        legal_name:
+          type: string
+        display_name:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+
+    BusinessMemberInviteInput:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+        role:
+          type: string
+          enum: [owner, staff]
+
+    BusinessMember:
+      type: object
+      required: [id, business_id, user_id, role, status, invited_at]
+      properties:
+        id:
+          type: integer
+        business_id:
+          type: integer
+        user_id:
+          type: integer
+        role:
+          type: string
+          enum: [owner, staff]
+        status:
+          type: string
+          enum: [active, pending, removed]
+        invited_at:
+          type: string
+          format: date-time
+        accepted_at:
+          type: ["string", "null"]
+          format: date-time
+        name:
+          type: string
+          description: Only present on GET /businesses/:id/members
+        email:
+          type: string
+          description: Only present on GET /businesses/:id/members
+        avatar_url:
+          type: ["string", "null"]
+          description: Only present on GET /businesses/:id/members
 
     CivicResource:
       type: object

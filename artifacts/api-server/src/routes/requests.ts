@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
-import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, userSettingsTable } from "@workspace/db";
+import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, userSettingsTable, businessesTable, businessMembersTable, systemSettingsTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -272,6 +272,70 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
     });
   }
 
+  // ── Business account guardrail ─────────────────────────────────────────────
+  // The document is explicit: "the actual guardrail goes in the request-creation
+  // route, not the frontend." Client-side hiding of pay_it_forward is a UX
+  // nicety, not the real control. This is the real control.
+  //
+  // If business_id is present:
+  //  1. Feature flag must be on (businesses_enabled in system_settings)
+  //  2. Business must be admin-approved
+  //  3. Requester must be an active member of that business
+  //  4. payment_type: pay_it_forward is rejected — businesses pay directly
+  const businessId = (parsed.data as Record<string, unknown>).business_id as number | null | undefined;
+  if (businessId != null) {
+    const [flagRow] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "businesses_enabled"))
+      .limit(1);
+    if (!flagRow || flagRow.value !== "true") {
+      return res.status(403).json({
+        error: "Business accounts are not enabled yet. Contact support to enable this feature.",
+        code: "businesses_not_enabled",
+      });
+    }
+
+    const [business] = await db
+      .select({ approval_status: businessesTable.approval_status, display_name: businessesTable.display_name })
+      .from(businessesTable)
+      .where(eq(businessesTable.id, businessId))
+      .limit(1);
+    if (!business) {
+      return res.status(404).json({ error: "Business not found.", code: "business_not_found" });
+    }
+    if (business.approval_status !== "approved") {
+      return res.status(403).json({
+        error: `"${business.display_name}" is still pending admin approval. You cannot post requests for it yet.`,
+        code: "business_not_approved",
+        approval_status: business.approval_status,
+      });
+    }
+
+    const [membership] = await db
+      .select({ role: businessMembersTable.role })
+      .from(businessMembersTable)
+      .where(and(
+        eq(businessMembersTable.business_id, businessId),
+        eq(businessMembersTable.user_id, parsed.data.requester_id),
+        eq(businessMembersTable.status, "active"),
+      ))
+      .limit(1);
+    if (!membership) {
+      return res.status(403).json({
+        error: "You are not an active member of this business.",
+        code: "not_business_member",
+      });
+    }
+
+    if (parsed.data.payment_type === "pay_it_forward") {
+      return res.status(400).json({
+        error: "Business requests cannot use pay-it-forward. Please choose immediate payment or goodwill.",
+        code: "business_pif_blocked",
+      });
+    }
+  }
+
   // Max 5 active requests per user (open / claimed / en_route / arrived)
   const [activeCount] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
@@ -303,6 +367,7 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
     neighborhood: parsed.data.neighborhood ?? null,
     pay_it_forward_amount: parsed.data.pay_it_forward_amount ?? null,
     pledge_amount: parsed.data.pledge_amount ?? null,
+    business_id: businessId ?? null,
   }).returning();
 
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };

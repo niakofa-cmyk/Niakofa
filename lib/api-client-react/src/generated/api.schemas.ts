@@ -527,6 +527,8 @@ export interface HelpRequestInput {
   pledge_amount?: number;
   /** Required (must be true) for childcare, senior_care, and medical categories — requester acknowledges Niakofa is not a licensed childcare, homecare, or medical provider. */
   sensitive_acknowledged?: boolean;
+  /** Optional. When set, the request is posted on behalf of this business. Server validates membership and blocks pay_it_forward. */
+  business_id?: number | null;
 }
 
 export type HelpRequestUpdateStatus = typeof HelpRequestUpdateStatus[keyof typeof HelpRequestUpdateStatus];
@@ -788,6 +790,92 @@ export type ReportDetail = Report & ({
   /** @nullable */
   reported_user_name?: string | null;
 });
+
+export type BusinessApprovalStatus = typeof BusinessApprovalStatus[keyof typeof BusinessApprovalStatus];
+
+
+export const BusinessApprovalStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface Business {
+  id: number;
+  legal_name: string;
+  display_name: string;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  stripe_customer_id?: string | null;
+  approval_status: BusinessApprovalStatus;
+  created_by_user_id: number;
+  created_at: string;
+  updated_at: string;
+  /** Only present on GET /businesses/mine responses */
+  member_role?: string;
+  /** Only present on GET /businesses/mine responses */
+  member_status?: string;
+}
+
+export interface BusinessInput {
+  legal_name: string;
+  display_name: string;
+  address?: string;
+  phone?: string;
+}
+
+export type BusinessMemberInviteInputRole = typeof BusinessMemberInviteInputRole[keyof typeof BusinessMemberInviteInputRole];
+
+
+export const BusinessMemberInviteInputRole = {
+  owner: 'owner',
+  staff: 'staff',
+} as const;
+
+export interface BusinessMemberInviteInput {
+  email: string;
+  role?: BusinessMemberInviteInputRole;
+}
+
+export type BusinessMemberRole = typeof BusinessMemberRole[keyof typeof BusinessMemberRole];
+
+
+export const BusinessMemberRole = {
+  owner: 'owner',
+  staff: 'staff',
+} as const;
+
+export type BusinessMemberStatus = typeof BusinessMemberStatus[keyof typeof BusinessMemberStatus];
+
+
+export const BusinessMemberStatus = {
+  active: 'active',
+  pending: 'pending',
+  removed: 'removed',
+} as const;
+
+export interface BusinessMember {
+  id: number;
+  business_id: number;
+  user_id: number;
+  role: BusinessMemberRole;
+  status: BusinessMemberStatus;
+  invited_at: string;
+  /** @nullable */
+  accepted_at?: string | null;
+  /** Only present on GET /businesses/:id/members */
+  name?: string;
+  /** Only present on GET /businesses/:id/members */
+  email?: string;
+  /**
+     * Only present on GET /businesses/:id/members
+     * @nullable
+     */
+  avatar_url?: string | null;
+}
 
 export interface CivicResource {
   id: number;

@@ -943,3 +943,29 @@ respective files; would have caused duplicate-import TS errors.**
 - `account_type: "business"` was always a ghost column; migration 0027 now gives it real infrastructure but the branching logic (business-specific views, bulk requests, etc.) is a multi-session build per the original plan
 
 **Lesson: before implementing a bug fix, read the actual current source — the cancel endpoint and all notifType fields were already correctly implemented from a prior session. Verifying first saved rework.**
+
+---
+
+## Session — Business accounts Phase 2: OpenAPI contract, guardrail, admin UI, codegen (July 2026)
+
+**Document order followed strictly:** schema (done prior session) → OpenAPI contract → codegen → server guardrail → admin UI → seed.
+
+**Changes shipped:**
+
+1. **`lib/api-spec/openapi.yaml`** — Added Business/BusinessInput/BusinessMember/BusinessMemberInviteInput schemas to `components/schemas`. Added business paths: `POST /businesses`, `GET /businesses/mine`, `GET /businesses/{id}`, `PATCH /businesses/{id}`, `GET /businesses/{id}/members`, `POST /businesses/{id}/members`, `DELETE /businesses/{id}/members/{memberId}`. Extended `HelpRequestInput` with optional `business_id` field. Added `businesses` tag. Extracted inline POST /businesses/{id}/members requestBody into named schema `BusinessMemberInviteInput` (required to avoid orval-generated name collision).
+
+2. **`lib/api-zod/src/index.ts`** — Changed `export * from "./generated/types"` to `export type * from "./generated/types"`. This avoids TS2308 barrel conflict where orval generates both a Zod const and a TypeScript type with the same name (e.g. `InviteBusinessMemberBody`). **Lesson: orval's split mode + separate schemas output creates a value/type naming conflict. Fix: use `export type *` for the types barrel, OR extract inline request bodies into named schemas.**
+
+3. **`artifacts/api-server/src/routes/requests.ts`** — Added business_id guardrail in `POST /requests` (the document's "most important" guardrail). Checks: (a) `businesses_enabled` system_settings flag must be "true", (b) business.approval_status must be "approved", (c) requester must be active business_member, (d) payment_type: "pay_it_forward" is rejected with 400 (code: `business_pif_blocked`). Also passes `business_id` through to the insert. Imported `businessesTable`, `businessMembersTable`, `systemSettingsTable` from @workspace/db.
+
+4. **`artifacts/pay-it-forward/src/pages/admin.tsx`** — Added `PendingBusinessesCard` component alongside `PendingAccountsCard`. Fetches `GET /admin/businesses`, filters for `approval_status: "pending"`, renders approve/reject buttons that call `PATCH /admin/businesses/:id/approve`. Styled in blue to distinguish from the yellow org approval queue.
+
+5. **`scripts/src/seed-businesses.ts`** + **`scripts/package.json`** — New seed script creates two test businesses (one approved, one pending) owned by the first DB user. Idempotent. Run: `pnpm --filter @workspace/scripts run seed-businesses`.
+
+6. **Codegen** — `pnpm --filter @workspace/api-spec run codegen` ran clean (both orval targets + typecheck).
+
+**Still open:**
+- Frontend: business signup form in login.tsx (mirrors org flow), "posting as" switcher in request-new.tsx, staff invite screen
+- `businesses_enabled` system_settings seed (need a one-time DB insert or admin toggle to enable the feature)
+- Pledge write-off admin UI (endpoint exists at PATCH /admin/requests/:id/pledge-status)
+- Bulk request UI for approved businesses

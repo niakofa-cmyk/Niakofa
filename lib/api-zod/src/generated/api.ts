@@ -335,7 +335,8 @@ export const CreateRequestBody = zod.object({
   "neighborhood": zod.string().optional(),
   "pay_it_forward_amount": zod.number().optional(),
   "pledge_amount": zod.number().optional(),
-  "sensitive_acknowledged": zod.boolean().optional().describe('Required (must be true) for childcare, senior_care, and medical categories — requester acknowledges Niakofa is not a licensed childcare, homecare, or medical provider.')
+  "sensitive_acknowledged": zod.boolean().optional().describe('Required (must be true) for childcare, senior_care, and medical categories — requester acknowledges Niakofa is not a licensed childcare, homecare, or medical provider.'),
+  "business_id": zod.number().nullish().describe('Optional. When set, the request is posted on behalf of this business. Server validates membership and blocks pay_it_forward.')
 })
 
 export const createRequestResponsePledgePaidDefault = 0;
@@ -1431,5 +1432,163 @@ export const ContributeToPoolResponse = zod.object({
   "payment_intent_id": zod.string().nullish(),
   "balance": zod.number().nullish()
 })
+
+
+/**
+ * @summary Create a business application (starts pending admin approval)
+ */
+export const CreateBusinessBody = zod.object({
+  "legal_name": zod.string(),
+  "display_name": zod.string(),
+  "address": zod.string().optional(),
+  "phone": zod.string().optional()
+})
+
+export const CreateBusinessResponse = zod.object({
+  "id": zod.number(),
+  "legal_name": zod.string(),
+  "display_name": zod.string(),
+  "address": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "stripe_customer_id": zod.string().nullish(),
+  "approval_status": zod.enum(['pending', 'approved', 'rejected']),
+  "created_by_user_id": zod.number(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date(),
+  "member_role": zod.string().optional().describe('Only present on GET \/businesses\/mine responses'),
+  "member_status": zod.string().optional().describe('Only present on GET \/businesses\/mine responses')
+})
+
+
+/**
+ * @summary List businesses the authenticated user belongs to
+ */
+export const GetMyBusinessesResponseItem = zod.object({
+  "id": zod.number(),
+  "legal_name": zod.string(),
+  "display_name": zod.string(),
+  "address": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "stripe_customer_id": zod.string().nullish(),
+  "approval_status": zod.enum(['pending', 'approved', 'rejected']),
+  "created_by_user_id": zod.number(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date(),
+  "member_role": zod.string().optional().describe('Only present on GET \/businesses\/mine responses'),
+  "member_status": zod.string().optional().describe('Only present on GET \/businesses\/mine responses')
+})
+export const GetMyBusinessesResponse = zod.array(GetMyBusinessesResponseItem)
+
+
+/**
+ * @summary Get a business (members only)
+ */
+export const GetBusinessParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetBusinessResponse = zod.object({
+  "id": zod.number(),
+  "legal_name": zod.string(),
+  "display_name": zod.string(),
+  "address": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "stripe_customer_id": zod.string().nullish(),
+  "approval_status": zod.enum(['pending', 'approved', 'rejected']),
+  "created_by_user_id": zod.number(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date(),
+  "member_role": zod.string().optional().describe('Only present on GET \/businesses\/mine responses'),
+  "member_status": zod.string().optional().describe('Only present on GET \/businesses\/mine responses')
+})
+
+
+/**
+ * @summary Update business details (owner only)
+ */
+export const UpdateBusinessParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateBusinessBody = zod.object({
+  "legal_name": zod.string(),
+  "display_name": zod.string(),
+  "address": zod.string().optional(),
+  "phone": zod.string().optional()
+})
+
+export const UpdateBusinessResponse = zod.object({
+  "id": zod.number(),
+  "legal_name": zod.string(),
+  "display_name": zod.string(),
+  "address": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "stripe_customer_id": zod.string().nullish(),
+  "approval_status": zod.enum(['pending', 'approved', 'rejected']),
+  "created_by_user_id": zod.number(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date(),
+  "member_role": zod.string().optional().describe('Only present on GET \/businesses\/mine responses'),
+  "member_status": zod.string().optional().describe('Only present on GET \/businesses\/mine responses')
+})
+
+
+/**
+ * @summary List all members of a business (members only)
+ */
+export const GetBusinessMembersParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetBusinessMembersResponseItem = zod.object({
+  "id": zod.number(),
+  "business_id": zod.number(),
+  "user_id": zod.number(),
+  "role": zod.enum(['owner', 'staff']),
+  "status": zod.enum(['active', 'pending', 'removed']),
+  "invited_at": zod.coerce.date(),
+  "accepted_at": zod.coerce.date().nullish(),
+  "name": zod.string().optional().describe('Only present on GET \/businesses\/:id\/members'),
+  "email": zod.string().optional().describe('Only present on GET \/businesses\/:id\/members'),
+  "avatar_url": zod.string().nullish().describe('Only present on GET \/businesses\/:id\/members')
+})
+export const GetBusinessMembersResponse = zod.array(GetBusinessMembersResponseItem)
+
+
+/**
+ * @summary Invite a user by email (owner only)
+ */
+export const InviteBusinessMemberParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const InviteBusinessMemberBody = zod.object({
+  "email": zod.string(),
+  "role": zod.enum(['owner', 'staff']).optional()
+})
+
+export const InviteBusinessMemberResponse = zod.object({
+  "id": zod.number(),
+  "business_id": zod.number(),
+  "user_id": zod.number(),
+  "role": zod.enum(['owner', 'staff']),
+  "status": zod.enum(['active', 'pending', 'removed']),
+  "invited_at": zod.coerce.date(),
+  "accepted_at": zod.coerce.date().nullish(),
+  "name": zod.string().optional().describe('Only present on GET \/businesses\/:id\/members'),
+  "email": zod.string().optional().describe('Only present on GET \/businesses\/:id\/members'),
+  "avatar_url": zod.string().nullish().describe('Only present on GET \/businesses\/:id\/members')
+})
+
+
+/**
+ * @summary Remove a member (owner only)
+ */
+export const RemoveBusinessMemberParams = zod.object({
+  "id": zod.coerce.number(),
+  "memberId": zod.coerce.number()
+})
+
+export const RemoveBusinessMemberResponse = zod.unknown()
 
 

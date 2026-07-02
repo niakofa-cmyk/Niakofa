@@ -23,4 +23,6 @@ export interface HelpRequestInput {
   pledge_amount?: number;
   /** Required (must be true) for childcare, senior_care, and medical categories — requester acknowledges Niakofa is not a licensed childcare, homecare, or medical provider. */
   sensitive_acknowledged?: boolean;
+  /** Optional. When set, the request is posted on behalf of this business. Server validates membership and blocks pay_it_forward. */
+  business_id?: number | null;
 }
