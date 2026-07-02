@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minus, Camera, X, ShieldCheck } from "lucide-react";
+import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minus, Camera, X, ShieldCheck, Building2, User } from "lucide-react";
 import { isSensitiveCategory } from "@workspace/trust-tiers";
 import { Button } from "@/components/ui/button";
 import { authHeaders } from "@/lib/auth";
@@ -146,11 +146,36 @@ export default function NewRequestScreen() {
   const isSensitive = isSensitiveCategory(selectedCategory);
   const [sensitiveAcknowledged, setSensitiveAcknowledged] = useState(false);
 
+  // ── Business "posting as" state ────────────────────────────────────────────
+  const [myBusinesses, setMyBusinesses] = useState<{ id: number; display_name: string }[]>([]);
+  const [selectedBusinessId, setSelectedBusinessId] = useState<number | null>(null);
+
   // Reset the acknowledgment whenever the user switches category — consent
   // must be given for the specific sensitive category being posted.
   useEffect(() => {
     setSensitiveAcknowledged(false);
   }, [selectedCategory]);
+
+  // Fetch approved businesses the user belongs to (for "posting as" switcher)
+  useEffect(() => {
+    if (!currentUser) return;
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/businesses/mine`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : [])
+      .then((data: { id: number; display_name: string; approval_status?: string }[]) => {
+        if (Array.isArray(data)) {
+          setMyBusinesses(data.filter(b => !b.approval_status || b.approval_status === "approved"));
+        }
+      })
+      .catch(() => {});
+  }, [currentUser]);
+
+  // When switching to a business, automatically move off pay_it_forward
+  useEffect(() => {
+    if (selectedBusinessId !== null && paymentType === "pay_it_forward") {
+      setPaymentType("goodwill");
+    }
+  }, [selectedBusinessId, paymentType]);
 
   // Offline draft: restore on mount, auto-save on every change, clear on successful submit
   useEffect(() => {
@@ -272,6 +297,8 @@ export default function NewRequestScreen() {
         ...(isSensitive ? { sensitive_acknowledged: true } : {}),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ...(photoDataUrl ? { photo_url: photoDataUrl } as any : {}),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...(selectedBusinessId !== null ? { business_id: selectedBusinessId } as any : {}),
       }
     }, {
       onSuccess: async (request) => {
@@ -620,11 +647,57 @@ export default function NewRequestScreen() {
                 </div>
               </div>
 
+              {/* Posting As Switcher — appears only when user belongs to ≥1 approved business */}
+              {myBusinesses.length > 0 && (
+                <div>
+                  <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">Posting As</div>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedBusinessId(null)}
+                      className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
+                        selectedBusinessId === null
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-card/50 hover:border-border/80"
+                      }`}
+                    >
+                      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+                        <User className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className={`text-xs font-black ${selectedBusinessId === null ? "text-primary" : "text-foreground"}`}>Myself</div>
+                        <div className="text-[10px] text-muted-foreground">Personal request</div>
+                      </div>
+                    </button>
+                    {myBusinesses.map(biz => (
+                      <button
+                        key={biz.id}
+                        type="button"
+                        onClick={() => setSelectedBusinessId(biz.id)}
+                        className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
+                          selectedBusinessId === biz.id
+                            ? "border-blue-500 bg-blue-500/10"
+                            : "border-border bg-card/50 hover:border-border/80"
+                        }`}
+                      >
+                        <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0">
+                          <Building2 className="w-4 h-4 text-blue-500" />
+                        </div>
+                        <div>
+                          <div className={`text-xs font-black ${selectedBusinessId === biz.id ? "text-blue-500" : "text-foreground"}`}>{biz.display_name}</div>
+                          <div className="text-[10px] text-muted-foreground">Business request · pay-it-forward unavailable</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Three-Tier Payment Selector */}
               <div>
                 <div className="uppercase tracking-wider text-xs text-muted-foreground mb-3 font-medium">Assistance Type</div>
                 <div className="grid grid-cols-3 gap-2">
-                  {PAYMENT_OPTIONS.map(opt => (
+                  {(selectedBusinessId !== null ? PAYMENT_OPTIONS.filter(o => o.type !== "pay_it_forward") : PAYMENT_OPTIONS).map(opt => (
                     <button
                       key={opt.type}
                       type="button"

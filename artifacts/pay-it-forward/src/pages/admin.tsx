@@ -292,6 +292,123 @@ function PledgePoolDashboard() {
   );
 }
 
+// ── Pledge Write-Off Card ─────────────────────────────────────────────────────
+// Lets admins resolve stale unpaid pledges (forgive or write off) so they
+// stop dragging down the pool runway number. Endpoint: PATCH /admin/requests/:id/pledge-status
+interface PledgeRequest {
+  id: number;
+  title: string;
+  pledge_amount: number | null;
+  pledge_status: string;
+  status: string;
+  created_at: string;
+  requester_name?: string;
+}
+
+function PledgeWriteOffCard() {
+  const [pledges, setPledges] = useState<PledgeRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState<number | null>(null);
+  const [showAll, setShowAll] = useState(false);
+
+  const load = useCallback(() => {
+    const tok = getToken();
+    fetch(`${BASE}/api/requests?payment_type=pay_it_forward&limit=100`, {
+      headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then((data: PledgeRequest[]) => {
+        if (Array.isArray(data)) {
+          setPledges(data.filter(r =>
+            (r.pledge_amount ?? 0) > 0 &&
+            (!r.pledge_status || r.pledge_status === "active") &&
+            (r.status === "pay_it_forward_pending" || r.status === "completed")
+          ));
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const markStatus = async (requestId: number, pledge_status: "forgiven" | "written_off") => {
+    setProcessing(requestId);
+    try {
+      const tok = getToken();
+      const res = await fetch(`${BASE}/api/admin/requests/${requestId}/pledge-status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ pledge_status }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setPledges(prev => prev.filter(p => p.id !== requestId));
+      toast({ title: pledge_status === "forgiven" ? "Pledge forgiven 🤝" : "Pledge written off 📝" });
+    } catch {
+      toast({ title: "Action failed", variant: "destructive" });
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground text-sm">
+      <RefreshCw className="w-4 h-4 animate-spin" /> Loading pledges…
+    </div>
+  );
+
+  if (pledges.length === 0) return (
+    <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-4 text-center">
+      <CheckCircle2 className="w-6 h-6 text-green-500 mx-auto mb-1" />
+      <div className="text-xs font-bold text-green-600">No outstanding pledges need attention</div>
+    </div>
+  );
+
+  const visible = showAll ? pledges : pledges.slice(0, 5);
+
+  return (
+    <div className="space-y-3">
+      <div className="text-xs font-black uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+        <span className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Outstanding Pledges ({pledges.length})</span>
+        <button onClick={load} className="text-primary text-[10px] flex items-center gap-1"><RefreshCw className="w-3 h-3" /> Refresh</button>
+      </div>
+      <div className="space-y-2">
+        {visible.map(p => (
+          <div key={p.id} className="bg-card border border-border rounded-xl p-3 space-y-2">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-xs font-bold truncate">{p.title}</div>
+                {p.requester_name && <div className="text-[10px] text-muted-foreground">{p.requester_name}</div>}
+                <div className="text-[10px] text-yellow-500 font-bold mt-0.5">
+                  Pledge: ${(p.pledge_amount ?? 0).toFixed(2)} · {p.status}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => markStatus(p.id, "forgiven")}
+                disabled={processing === p.id}
+                className="flex-1 h-8 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-600 text-[11px] font-black disabled:opacity-50"
+              >🤝 Forgive</button>
+              <button
+                onClick={() => markStatus(p.id, "written_off")}
+                disabled={processing === p.id}
+                className="flex-1 h-8 rounded-lg bg-muted border border-border text-muted-foreground text-[11px] font-black disabled:opacity-50"
+              >📝 Write Off</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {pledges.length > 5 && (
+        <button
+          onClick={() => setShowAll(v => !v)}
+          className="w-full text-xs text-primary underline py-1"
+        >{showAll ? "Show less" : `Show all ${pledges.length}`}</button>
+      )}
+    </div>
+  );
+}
+
 // ── Audit Log Table ───────────────────────────────────────────────────────────
 function AuditLogTable() {
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
@@ -1798,7 +1915,13 @@ export default function AdminScreen() {
 
       {/* Tab content */}
       <div className="flex-1 max-w-3xl mx-auto w-full px-4 pt-4 space-y-3">
-        {activeTab === "pledges"   && <PledgePoolDashboard />}
+        {activeTab === "pledges"   && (
+          <div className="space-y-4">
+            <PledgePoolDashboard />
+            <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1 mt-4">Resolve Outstanding Pledges</div>
+            <PledgeWriteOffCard />
+          </div>
+        )}
         {activeTab === "audit"     && <AuditLogTable />}
         {activeTab === "analytics" && <AnalyticsTab />}
         {activeTab === "nia"       && <NiaTab />}

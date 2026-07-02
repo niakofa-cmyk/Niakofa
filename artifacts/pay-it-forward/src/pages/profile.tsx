@@ -1454,6 +1454,28 @@ export default function ProfileScreen() {
               </div>
             </div>
 
+            {/* Business Account */}
+            <div className="bg-card border border-border rounded-2xl overflow-hidden">
+              <div className="p-4 border-b border-border">
+                <div className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-blue-500" /> Business Account
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Post requests on behalf of your organization</p>
+              </div>
+              <div className="divide-y divide-border">
+                <button
+                  onClick={() => setLocation("/business/apply")}
+                  className="w-full flex items-center justify-between p-4 text-sm hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-muted-foreground" />
+                    <span>Apply / Manage Business</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+            </div>
+
             {/* Sign Out */}
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
               <button

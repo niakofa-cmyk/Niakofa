@@ -28,6 +28,7 @@ import HelperDashboardScreen from "@/pages/helper-dashboard";
 import HelperOnboardingScreen from "@/pages/helper-onboarding";
 import PendingApprovalScreen from "@/pages/pending-approval";
 import RecurringScreen from "@/pages/recurring";
+import BusinessApplyScreen from "@/pages/business-apply";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30000, retry: 1 } },
@@ -146,6 +147,7 @@ function AppShell() {
         <Route path="/pending-approval" component={PendingApprovalScreen} />
         <Route path="/recurring" component={RecurringScreen} />
         <Route path="/admin/analytics" component={AdminAnalyticsDashboard} />
+        <Route path="/business/apply" component={BusinessApplyScreen} />
         <Route component={NotFound} />
       </Switch>
       {!isActiveRequest && !isTrackingRequest && !isAdmin && !isLogin && !isOnboarding && !isStripeConnected && <BottomNav />}
