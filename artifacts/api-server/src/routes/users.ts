@@ -178,16 +178,19 @@ router.post(["/users/set-initial-password", "/users/reset-password"], authLimite
     : await db.select().from(usersTable)
         .where(eq(usersTable.email, email.trim().toLowerCase()))
         .limit(1);
-  // Return 403 (not 404) regardless of whether the account exists or the code
-  // is wrong — both cases get the same HTTP status so an attacker cannot
-  // distinguish "no account for this email" from "account exists, bad code".
-  if (!user) return res.status(403).json({ error: "Invalid or expired code. Please request a new one." });
+  // All failure paths (no account, wrong code, expired code) use the SAME
+  // HTTP status (403) and the SAME generic message — an attacker must not be
+  // able to distinguish "no account for this email" from "bad/expired code"
+  // via either the status code or the response body.
+  const RESET_FAIL = { status: 403, body: { error: "Invalid or expired code. Please request a new one." } } as const;
+
+  if (!user) return res.status(RESET_FAIL.status).json(RESET_FAIL.body);
 
   if (!user.password_reset_code || user.password_reset_code !== code.trim()) {
-    return res.status(400).json({ error: "Incorrect code" });
+    return res.status(RESET_FAIL.status).json(RESET_FAIL.body);
   }
   if (!user.password_reset_expires_at || user.password_reset_expires_at.getTime() < Date.now()) {
-    return res.status(400).json({ error: "Code expired — request a new one" });
+    return res.status(RESET_FAIL.status).json(RESET_FAIL.body);
   }
 
   const password_hash = await bcrypt.hash(new_password, 12);
