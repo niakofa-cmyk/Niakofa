@@ -23,6 +23,37 @@ export function getTrustTier(trustScore: number, helpCount: number): TrustTier {
   return "member";
 }
 
+/**
+ * Categories that involve vulnerable people (children, elderly, medical
+ * situations). These carry liability and trust exposure that groceries or
+ * errands don't, so they are gated:
+ *   - Helpers must be at least "verified" tier AND identity-verified (or
+ *     have a passed background check) to claim them.
+ *   - Requesters must explicitly acknowledge that Niakofa is not a licensed
+ *     childcare / homecare / medical provider when creating them.
+ * Shared by api-server (claim/create gates) and pay-it-forward (UI badges,
+ * consent flow) so the two can never drift.
+ */
+export const SENSITIVE_CATEGORIES = ["childcare", "senior_care", "medical"] as const;
+export type SensitiveCategory = (typeof SENSITIVE_CATEGORIES)[number];
+
+export function isSensitiveCategory(category: string | null | undefined): category is SensitiveCategory {
+  return category != null && (SENSITIVE_CATEGORIES as readonly string[]).includes(category);
+}
+
+/** Numeric rank for tier comparisons (member=0 … anchor=4). */
+export const TIER_RANK: Record<TrustTier, number> = {
+  member: 0,
+  verified: 1,
+  trusted: 2,
+  elite: 3,
+  anchor: 4,
+};
+
+export function tierAtLeast(tier: TrustTier, minimum: TrustTier): boolean {
+  return TIER_RANK[tier] >= TIER_RANK[minimum];
+}
+
 export const TIER_LABEL: Record<TrustTier, string> = {
   member: "Member",
   verified: "Verified Helper",

@@ -3,7 +3,8 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minus, Camera, X } from "lucide-react";
+import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minus, Camera, X, ShieldCheck } from "lucide-react";
+import { isSensitiveCategory } from "@workspace/trust-tiers";
 import { Button } from "@/components/ui/button";
 import { authHeaders } from "@/lib/auth";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -141,6 +142,15 @@ export default function NewRequestScreen() {
   });
 
   const urgency = form.watch("urgency");
+  const selectedCategory = form.watch("category");
+  const isSensitive = isSensitiveCategory(selectedCategory);
+  const [sensitiveAcknowledged, setSensitiveAcknowledged] = useState(false);
+
+  // Reset the acknowledgment whenever the user switches category — consent
+  // must be given for the specific sensitive category being posted.
+  useEffect(() => {
+    setSensitiveAcknowledged(false);
+  }, [selectedCategory]);
 
   // Offline draft: restore on mount, auto-save on every change, clear on successful submit
   useEffect(() => {
@@ -219,6 +229,15 @@ export default function NewRequestScreen() {
       return;
     }
 
+    if (isSensitive && !sensitiveAcknowledged) {
+      toast({
+        title: "One more step",
+        description: "Please read and check the care acknowledgment before posting this request.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Append checklist and accessibility needs to description
     const extras: string[] = [];
     const filledItems = checklistItems.filter(i => i.trim());
@@ -250,6 +269,7 @@ export default function NewRequestScreen() {
         neighborhood: userPlace?.city ?? userPlace?.county ?? undefined,
         pay_it_forward_amount: values.pay_it_forward_amount,
         pledge_amount: values.pledge_amount,
+        ...(isSensitive ? { sensitive_acknowledged: true } : {}),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ...(photoDataUrl ? { photo_url: photoDataUrl } as any : {}),
       }
@@ -360,7 +380,9 @@ export default function NewRequestScreen() {
                         <SelectContent>
                           <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-muted-foreground">Community</div>
                           {COMMUNITY_CATS.map(c => (
-                            <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                            <SelectItem key={c.value} value={c.value}>
+                              {c.label}{isSensitiveCategory(c.value) ? " 🛡️" : ""}
+                            </SelectItem>
                           ))}
                           <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-muted-foreground border-t border-border mt-1 pt-2">Business</div>
                           {BUSINESS_CATS.map(c => (
@@ -397,6 +419,32 @@ export default function NewRequestScreen() {
                   )}
                 />
               </div>
+
+              {isSensitive && (
+                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-amber-400">
+                    <ShieldCheck className="w-5 h-5 shrink-0" />
+                    <p className="text-sm font-bold">Extra safeguards apply to this category</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Because this request involves care for a vulnerable person, only <span className="font-semibold text-foreground">Verified Helpers</span> who
+                    have completed identity verification can claim it. It may take a little longer to get matched.
+                  </p>
+                  <label className="flex items-start gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={sensitiveAcknowledged}
+                      onChange={(e) => setSensitiveAcknowledged(e.target.checked)}
+                      className="mt-0.5 w-5 h-5 accent-amber-500 shrink-0"
+                      data-testid="checkbox-sensitive-acknowledge"
+                    />
+                    <span className="text-xs text-muted-foreground leading-relaxed">
+                      I understand that Niakofa is a community mutual-aid network — <span className="font-semibold text-foreground">not a licensed childcare, homecare, or medical provider</span> —
+                      and that I am responsible for vetting the helper (meeting them, checking their profile and reviews) before care begins.
+                    </span>
+                  </label>
+                </div>
+              )}
 
               <FormField
                 control={form.control}

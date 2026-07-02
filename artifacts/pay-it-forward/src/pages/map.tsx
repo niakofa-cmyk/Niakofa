@@ -170,7 +170,14 @@ export default function MapScreen() {
           queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
           setLocation(`/request/${request.id}`);
         },
-        onError: () => toast({ title: "Failed to claim request", variant: "destructive" }),
+        onError: (err: unknown) => {
+          const serverMsg = (err as { data?: { error?: string } | null })?.data?.error;
+          toast({
+            title: "Failed to claim request",
+            ...(serverMsg ? { description: serverMsg } : {}),
+            variant: "destructive",
+          });
+        },
       }
     );
   }, [currentUser, claimMutation, queryClient, setLocation]);

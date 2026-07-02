@@ -25,6 +25,7 @@ import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser, type PushPayload } from "./push";
 import { payHelperFromPool, getGuaranteedMinimum, isPoolEnabled, queuePendingMinimum, maybeAlertLowBalance } from "../lib/community-pool";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
+import { getTrustTier, tierAtLeast, isSensitiveCategory } from "@workspace/trust-tiers";
 import { logger } from "../lib/logger";
 import { sendReceipt } from "../lib/mailer";
 import Stripe from "stripe";
@@ -211,6 +212,19 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
   const parsed = CreateRequestBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
 
+  // Sensitive categories (childcare, senior_care, medical) involve vulnerable
+  // people. The requester must explicitly acknowledge that Niakofa is not a
+  // licensed childcare, homecare, or medical provider before posting one.
+  if (isSensitiveCategory(parsed.data.category) && (parsed.data as { sensitive_acknowledged?: boolean }).sensitive_acknowledged !== true) {
+    return res.status(400).json({
+      error:
+        "This category involves care for vulnerable people. Please confirm you understand that " +
+        "Niakofa is a community mutual-aid network — not a licensed childcare, homecare, or medical provider — " +
+        "and that you are responsible for vetting the helper before they begin.",
+      requires_sensitive_acknowledgment: true,
+    });
+  }
+
   // Max 5 active requests per user (open / claimed / en_route / arrived)
   const [activeCount] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
@@ -328,10 +342,48 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
   // Emergency requests bypass this check by design (consistent with the
   // rest of the urgency-based bypass pattern used elsewhere in this file).
   const [existingFull] = await db
-    .select({ lat: requestsTable.lat, lng: requestsTable.lng, urgency: requestsTable.urgency })
+    .select({ lat: requestsTable.lat, lng: requestsTable.lng, urgency: requestsTable.urgency, category: requestsTable.category })
     .from(requestsTable)
     .where(eq(requestsTable.id, pParsed.data.id))
     .limit(1);
+
+  // Sensitive categories (childcare, senior_care, medical) involve vulnerable
+  // people, so claiming them requires more than signup: the helper must be at
+  // least "verified" trust tier AND have completed identity verification (or a
+  // passed background check). Groceries-level trust is not enough to watch
+  // someone's kids or check on an elderly parent. NO emergency bypass here —
+  // urgency never lowers the bar for who can be alone with a vulnerable person.
+  if (existingFull && isSensitiveCategory(existingFull.category)) {
+    const [helperTrust] = await db
+      .select({
+        trust_score: usersTable.trust_score,
+        help_count: usersTable.help_count,
+        identity_verified: usersTable.identity_verified,
+        background_check_status: usersTable.background_check_status,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, helperId))
+      .limit(1);
+    if (!helperTrust) return res.status(404).json({ error: "Helper not found" });
+
+    const tier = getTrustTier(helperTrust.trust_score ?? 0, helperTrust.help_count ?? 0);
+    const idCleared = helperTrust.identity_verified === true || helperTrust.background_check_status === "passed";
+    if (!tierAtLeast(tier, "verified") || !idCleared) {
+      const missing: string[] = [];
+      if (!tierAtLeast(tier, "verified")) missing.push("reach Verified Helper tier (5 completed helps with good ratings)");
+      if (!idCleared) missing.push("complete identity verification in your Profile");
+      return res.status(403).json({
+        error:
+          "This request involves care for a vulnerable person (childcare, senior care, or medical), " +
+          "so it needs extra trust safeguards. To claim it, you still need to: " + missing.join(", and ") + ". " +
+          "Thank you for keeping our most vulnerable neighbors safe.",
+        sensitive_category: existingFull.category,
+        required_tier: "verified",
+        current_tier: tier,
+        identity_cleared: idCleared,
+      });
+    }
+  }
 
   if (existingFull && existingFull.urgency !== "emergency") {
     const [helperSettings] = await db

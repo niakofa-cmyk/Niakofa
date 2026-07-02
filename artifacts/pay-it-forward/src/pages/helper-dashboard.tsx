@@ -87,7 +87,14 @@ export default function HelperDashboardScreen() {
           toast({ title: "Request claimed!", description: `Heading to "${req.title}"` });
           setLocation(`/request/${req.id}`);
         },
-        onError: () => toast({ title: "Failed to claim", variant: "destructive" }),
+        onError: (err: unknown) => {
+          const serverMsg = (err as { data?: { error?: string } | null })?.data?.error;
+          toast({
+            title: "Failed to claim",
+            ...(serverMsg ? { description: serverMsg } : {}),
+            variant: "destructive",
+          });
+        },
       }
     );
   };

@@ -334,7 +334,8 @@ export const CreateRequestBody = zod.object({
   "lng": zod.number(),
   "neighborhood": zod.string().optional(),
   "pay_it_forward_amount": zod.number().optional(),
-  "pledge_amount": zod.number().optional()
+  "pledge_amount": zod.number().optional(),
+  "sensitive_acknowledged": zod.boolean().optional().describe('Required (must be true) for childcare, senior_care, and medical categories — requester acknowledges Niakofa is not a licensed childcare, homecare, or medical provider.')
 })
 
 export const createRequestResponsePledgePaidDefault = 0;

@@ -150,13 +150,23 @@ export function DispatchIntelligenceCard({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ helper_id: helperId }),
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+          let serverMsg: string | null = null;
+          try {
+            const body = (await res.json()) as { error?: string };
+            serverMsg = body?.error ?? null;
+          } catch {}
+          throw new Error(serverMsg ?? `HTTP ${res.status}`);
+        }
         setAssignedId(helperId);
         onHelperAssigned?.(helperId);
-      } catch {
+      } catch (err) {
         // Rollback optimistic state
         setAssigningId(null);
-        setError("Failed to assign helper — please try again.");
+        const msg = err instanceof Error && err.message && !err.message.startsWith("HTTP ")
+          ? err.message
+          : "Failed to assign helper — please try again.";
+        setError(msg);
       }
     },
     [requestId, assigningId, assignedId, onHelperAssigned]

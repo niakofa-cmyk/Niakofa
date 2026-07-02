@@ -21,4 +21,6 @@ export interface HelpRequestInput {
   neighborhood?: string;
   pay_it_forward_amount?: number;
   pledge_amount?: number;
+  /** Required (must be true) for childcare, senior_care, and medical categories — requester acknowledges Niakofa is not a licensed childcare, homecare, or medical provider. */
+  sensitive_acknowledged?: boolean;
 }

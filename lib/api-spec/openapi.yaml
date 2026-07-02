@@ -1790,6 +1790,9 @@ components:
           type: number
         pledge_amount:
           type: number
+        sensitive_acknowledged:
+          type: boolean
+          description: Required (must be true) for childcare, senior_care, and medical categories — requester acknowledges Niakofa is not a licensed childcare, homecare, or medical provider.
 
     HelpRequestUpdate:
       type: object
