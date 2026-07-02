@@ -319,8 +319,11 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
       notifType: isEmergency ? "emergency" : "nearby_requests",
     };
     // Notify helpers within 15 miles of the request; fall back to all helpers if no nearby ones found
-    sendPushToNearbyHelpers(request.lat, request.lng, 15, payload).catch(() => {
-      sendPushToAllHelpers(payload).catch(() => {});
+    sendPushToNearbyHelpers(request.lat, request.lng, 15, payload).catch((err) => {
+      logger.warn({ err, requestId: request.id }, "push: nearby urgent/emergency delivery failed — falling back to broadcast");
+      sendPushToAllHelpers(payload).catch((err2) => {
+        logger.warn({ err: err2, requestId: request.id }, "push: broadcast fallback also failed — no push sent");
+      });
     });
   } else {
     // For medium/low urgency, notify helpers within 5 miles
@@ -330,7 +333,9 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
       urgency: request.urgency,
       requestId: request.id,
       notifType: "nearby_requests" as const,
-    }).catch(() => {});
+    }).catch((err) => {
+      logger.warn({ err, requestId: request.id }, "push: nearby normal delivery failed — helpers won't get push alert, request still created");
+    });
   }
 
   return res.status(201).json(enriched);
@@ -720,7 +725,9 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
             body: `$${pledge.toFixed(2)} was added to your Goodwill Fund right away for: "${request.title}". No waiting.`,
             requestId: request.id,
             notifType: "wallet" as const,
-          }).catch(() => {});
+          }).catch((err) => {
+            logger.warn({ err, helper_id: helperId, request_id: request.id }, "push: pool-front wallet notification failed — helper still paid");
+          });
           logger.info({ request_id: request.id, helper_id: helperId, amount: pledge }, "Community pool fronted helper payment");
         }
       }
@@ -743,7 +750,9 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
             body: `The Community Pool added $${topUp.toFixed(2)} to your Goodwill Fund for helping with: "${request.title}".`,
             requestId: request.id,
             notifType: "wallet" as const,
-          }).catch(() => {});
+          }).catch((err) => {
+            logger.warn({ err, helper_id: helperId, request_id: request.id }, "push: guaranteed-minimum wallet notification failed — minimum still paid");
+          });
           logger.info({ request_id: request.id, helper_id: helperId, amount: topUp }, "Guaranteed minimum paid from community pool");
         } else if (minOutcome === "insufficient") {
           // Pool ran dry — queue the guarantee so the backfill worker pays it
@@ -1002,6 +1011,45 @@ router.delete("/requests/:id/helpers/leave", requireAuth, async (req, res) => {
   }
 
   return res.json({ ok: true });
+});
+
+// ── Admin: Pledge write-off ───────────────────────────────────────────────────
+// PATCH /admin/requests/:id/pledge-status
+// Marks a pledge as forgiven or written_off so stale unpaid pledges no longer
+// drag down the pool runway number (outstanding_pif_total). Only admins can
+// call this — it is an explicit write-off decision, not something the system
+// does automatically. Write-offs after ~12-18 months of non-payment are the
+// recommended threshold (see CLAUDE.md "Known product gaps").
+router.patch("/admin/requests/:id/pledge-status", requireAuth, async (req, res) => {
+  const adminId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id), 10);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  const [adminUser] = await db
+    .select({ is_admin: usersTable.is_admin })
+    .from(usersTable)
+    .where(eq(usersTable.id, adminId))
+    .limit(1);
+  if (!adminUser?.is_admin) return res.status(403).json({ error: "Admin only." });
+
+  const { pledge_status } = req.body as { pledge_status?: string };
+  if (pledge_status !== "active" && pledge_status !== "forgiven" && pledge_status !== "written_off") {
+    return res.status(400).json({ error: "pledge_status must be 'active', 'forgiven', or 'written_off'." });
+  }
+
+  const [updated] = await db
+    .update(requestsTable)
+    .set({ pledge_status } as Record<string, unknown>)
+    .where(eq(requestsTable.id, requestId))
+    .returning();
+
+  if (!updated) return res.status(404).json({ error: "Request not found." });
+
+  logger.info(
+    { request_id: requestId, pledge_status, admin_id: adminId, pledge_amount: updated.pledge_amount, pledge_paid: updated.pledge_paid },
+    `Admin ${pledge_status === "written_off" ? "wrote off" : pledge_status === "forgiven" ? "forgave" : "restored"} pledge`,
+  );
+  return res.json(updated);
 });
 
 // GET /requests/:id/helpers — list all chain members with basic profile info

@@ -917,3 +917,29 @@ the default `"id"` param name (confirmed from existing routes at lines
 **Lesson: always grep for existing import lists before adding new ones —
 `sql`, `eq`, `DollarSign`, `RefreshCw` were all already imported in their
 respective files; would have caused duplicate-import TS errors.**
+
+---
+
+## Session — Business accounts, pledge write-off, error logging (July 2026)
+
+**Verified first:** `POST /requests/:id/cancel` already existed with full implementation (helper-release-to-open + requester-withdraw paths, concurrency-safe). All notifType fields in requests.ts, recurring.ts, and stripe.ts already present from prior session. These were not re-applied.
+
+**Changes shipped (migrations 0026–0027):**
+
+1. **Migration 0026 (`pledge_status`)** — `pledge_status text NOT NULL DEFAULT 'active'` added to `help_requests`. Values: `active` | `forgiven` | `written_off`. Index on `(pledge_status, created_at)`. Drizzle schema updated in `lib/db/src/schema/requests.ts`. This closes Priority #1 from the July 2026 product review: stale unpaid pledges can now be explicitly marked instead of silently dragging the pool runway number.
+
+2. **Migration 0027 (`businesses`)** — Added `businesses` table (legal_name, display_name, address, phone, stripe_customer_id, approval_status, created_by_user_id) and `business_members` table (business_id, user_id, role owner|staff, status active|pending|removed, UNIQUE on (business_id, user_id)). Added `business_id` nullable FK on `help_requests`. All idempotent (IF NOT EXISTS). Drizzle schema in `lib/db/src/schema/businesses.ts`, exported from schema/index.ts.
+
+3. **`artifacts/api-server/src/routes/businesses.ts`** — New route file wired into `routes/index.ts`. Endpoints: `POST /businesses` (create, creator auto-becomes owner, flips account_type to "business"), `GET /businesses/mine`, `GET /businesses/:id`, `PATCH /businesses/:id`, `GET /businesses/:id/members`, `POST /businesses/:id/members` (invite by email → pending row), `DELETE /businesses/:id/members/:memberId`, `POST /businesses/:id/members/:memberId/accept`, `GET /admin/businesses`, `PATCH /admin/businesses/:id/approve`. Server-side authz: `requireBusinessOwner` / `requireBusinessMember` helpers prevent any client-trust on role. The actual guardrail for `business_id` on request creation (reject pay_it_forward from business accounts) is NOT yet in `requests.ts` — flagged as next step.
+
+4. **`PATCH /admin/requests/:id/pledge-status`** — Admin-only endpoint added to `requests.ts` for marking pledges forgiven or written_off. Logs the action with pledge_amount/pledge_paid for audit trail.
+
+5. **Error logging** — Replaced all silent `.catch(() => {})` blocks in the request-creation push path and community pool payment path with `logger.warn(...)` calls that include context (requestId, helper_id, reason). The catches are still non-fatal (push failure must never block a request creation or a payment), but failures are now visible in logs instead of swallowed silently.
+
+**Known gaps still open after this session:**
+- Business `business_id` validation in `POST /requests` (reject pay_it_forward, verify membership) — was not added; document says this is the most important guardrail
+- Frontend business signup form, "posting as" switcher, staff invite screen — not yet built
+- Pledge write-off UI in admin panel — endpoint exists, no UI yet
+- `account_type: "business"` was always a ghost column; migration 0027 now gives it real infrastructure but the branching logic (business-specific views, bulk requests, etc.) is a multi-session build per the original plan
+
+**Lesson: before implementing a bug fix, read the actual current source — the cancel endpoint and all notifType fields were already correctly implemented from a prior session. Verifying first saved rework.**

@@ -20,6 +20,7 @@ import niaContextRouter from "./nia-context";
 import niaVoiceRouter from "./nia-voice";
 import niaProxyRouter from "./nia-proxy";
 import poolRouter from "./pool";
+import businessesRouter from "./businesses";
 
 const router: IRouter = Router();
 
@@ -44,5 +45,6 @@ router.use(niaContextRouter);
 router.use(niaVoiceRouter);
 router.use(niaProxyRouter);
 router.use(poolRouter);
+router.use(businessesRouter);
 
 export default router;

@@ -31,12 +31,19 @@ export const requestsTable = pgTable("help_requests", {
   nia_checkin_sent_at: timestamp("nia_checkin_sent_at"),
   // Photo upload (migration 0023) — base64 data URL, max ~800px
   photo_url: text("photo_url"),
+  // Pledge write-off path (migration 0026)
+  // active = pledge outstanding; forgiven = waived; written_off = uncollectable after ~12-18 months
+  pledge_status: text("pledge_status").notNull().default("active"),
+  // Business account FK (migration 0027) — null = personal request
+  business_id: integer("business_id"),
 }, (t) => [
   index("help_requests_status_idx").on(t.status),
   index("help_requests_requester_id_idx").on(t.requester_id),
   index("help_requests_helper_id_idx").on(t.helper_id),
   index("help_requests_created_at_idx").on(t.created_at),
   index("help_requests_lat_lng_idx").on(t.lat, t.lng),
+  index("help_requests_pledge_status_idx").on(t.pledge_status, t.created_at),
+  index("help_requests_business_id_idx").on(t.business_id),
 ]);
 
 export const insertRequestSchema = createInsertSchema(requestsTable).omit({
