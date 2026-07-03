@@ -347,7 +347,7 @@ export const CreateRequestBody = zod.object({
   "category": zod.enum(['groceries', 'transportation', 'errands', 'home_repair', 'medical', 'emergency', 'other', 'stock_shelves', 'event_setup', 'delivery_run', 'tech_support', 'local_farm', 'food_pantry', 'moving_labor', 'pet_care', 'childcare', 'senior_care', 'yard_work', 'tutoring', 'cleaning', 'meal_prep', 'paperwork', 'business_services']),
   "urgency": zod.enum(['low', 'medium', 'high', 'emergency']).optional(),
   "payment_type": zod.enum(['immediate', 'pay_it_forward', 'goodwill']).optional(),
-  "requester_id": zod.number(),
+  "requester_id": zod.number().optional(),
   "lat": zod.number(),
   "lng": zod.number(),
   "neighborhood": zod.string().optional(),

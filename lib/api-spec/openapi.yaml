@@ -2038,7 +2038,11 @@ components:
 
     HelpRequestInput:
       type: object
-      required: [title, category, requester_id, lat, lng]
+      # requester_id is intentionally excluded from required — the server always
+      # derives it from the auth token (req.authenticatedUserId). Clients that
+      # send it will have it silently ignored; clients that omit it (the
+      # standard case) work without change.
+      required: [title, category, lat, lng]
       properties:
         title:
           type: string

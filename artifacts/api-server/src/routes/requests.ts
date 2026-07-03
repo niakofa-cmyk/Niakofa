@@ -261,7 +261,11 @@ router.get("/requests", async (req, res) => {
   }));
 });
 
-router.post("/requests", requireAuth, requireOwnership("requester_id"), requestCreationLimiter, async (req, res) => {
+// POST /requests — no requireOwnership middleware here because requester_id
+// is not a URL param; it is derived from the auth token inside the handler.
+// Ownership is enforced at the DB level: requester_id is always set to
+// req.authenticatedUserId regardless of what the client sends.
+router.post("/requests", requireAuth, requestCreationLimiter, async (req, res) => {
   const parsed = CreateRequestBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
 
@@ -435,12 +439,14 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
   }
 
   // Max 5 active requests per user (open / claimed / en_route / arrived)
+  // Use req.authenticatedUserId — not parsed.data.requester_id — so a caller
+  // cannot spoof a different user's ID to bypass their own cap.
   const [activeCount] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
     .from(requestsTable)
     .where(
       and(
-        eq(requestsTable.requester_id, parsed.data.requester_id),
+        eq(requestsTable.requester_id, req.authenticatedUserId!),
         inArray(requestsTable.status, ["open", "claimed", "en_route", "arrived"])
       )
     );
@@ -556,7 +562,9 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
     urgency: parsed.data.urgency ?? "medium",
     payment_type: parsed.data.payment_type ?? "pay_it_forward",
     status: requestStatus,
-    requester_id: parsed.data.requester_id,
+    // Always derive requester_id from the auth token — never from the body.
+    // This prevents a caller from creating requests attributed to other users.
+    requester_id: req.authenticatedUserId!,
     lat: parsed.data.lat,
     lng: parsed.data.lng,
     neighborhood: parsed.data.neighborhood ?? null,

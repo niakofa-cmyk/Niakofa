@@ -6,10 +6,27 @@ import { eq } from "drizzle-orm";
 import "../types/express.d";
 
 /**
+ * Resolves the literal string "me" in a route :id param to the authenticated
+ * user's numeric ID.  Must run AFTER requireAuth (which populates
+ * req.authenticatedUserId).  Apply to any route that should accept both
+ * /users/42/... and /users/me/... forms.
+ *
+ * Usage:  router.get("/users/:id", requireAuth, resolveMeParam, ...)
+ */
+export function resolveMeParam(req: Request, _res: Response, next: NextFunction): void {
+  if (req.params.id === "me" && req.authenticatedUserId) {
+    req.params.id = String(req.authenticatedUserId);
+  }
+  next();
+}
+
+/**
  * Ownership guard — ensures the authenticated user matches the target resource ID.
  *
  * Checks route params first (e.g. /users/:id), then falls back to the request body
  * (e.g. a POST where the owner ID is in the payload).
+ * Treats the literal value "me" as the authenticated user's ID so routes can
+ * accept both /users/42/... and /users/me/... without duplicating handlers.
  */
 export function requireOwnership(paramName: string = "id") {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -20,9 +37,12 @@ export function requireOwnership(paramName: string = "id") {
 
     let targetId: number | undefined;
 
-    // Check params first
+    // Check params first — treat the special value "me" as the authenticated
+    // user so routes like PATCH /users/me/helper-mode and GET /users/me work
+    // without the client needing to know their own numeric ID.
     if (req.params[paramName]) {
-      targetId = parseInt(req.params[paramName] as string);
+      const raw = req.params[paramName] as string;
+      targetId = raw === "me" ? authenticatedUserId : parseInt(raw);
     }
 
     // If not in params, check body (e.g. for SOS or pledge)

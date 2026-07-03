@@ -539,7 +539,7 @@ export interface HelpRequestInput {
   category: HelpRequestInputCategory;
   urgency?: HelpRequestInputUrgency;
   payment_type?: HelpRequestInputPaymentType;
-  requester_id: number;
+  requester_id?: number;
   lat: number;
   lng: number;
   neighborhood?: string;

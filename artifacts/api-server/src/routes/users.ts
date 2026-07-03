@@ -20,13 +20,14 @@ import {
 import { broadcast } from "../lib/ws-hub";
 import { authLimiter, gpsLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { requireAuth, requireApproved } from "../middlewares/auth";
-import { requireOwnership, requireAdmin } from "../middlewares/authz";
+import { requireOwnership, requireAdmin, resolveMeParam } from "../middlewares/authz";
 import { signTokenById } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 import { requestSelect } from "../lib/request-select";
 import { userSelect } from "../lib/user-select";
 
 const router = Router();
+
 
 router.get("/users/register", (_req, res) => {
   res.json({ message: "Use POST /api/users/register" });
@@ -228,7 +229,7 @@ router.post(["/users/set-initial-password", "/users/reset-password"], authLimite
 // POST /users/:id/change-password — authenticated password change.
 // Requires the current password as proof of possession, distinct from the
 // email-code reset flow above (which is for users who've lost access).
-router.post("/users/:id/change-password", requireAuth, requireOwnership(), authLimiter, async (req, res) => {
+router.post("/users/:id/change-password", requireAuth, resolveMeParam, requireOwnership(), authLimiter, async (req, res) => {
   const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
@@ -270,7 +271,7 @@ router.post("/users/:id/change-password", requireAuth, requireOwnership(), authL
   return res.json({ user: safePwUser, token: pwToken });
 });
 
-router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
+router.get("/users/:id", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const parsed = GetUserParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, parsed.data.id)).limit(1);
@@ -279,7 +280,7 @@ router.get("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
   return res.json(safeUser);
 });
 
-router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => {
+router.patch("/users/:id", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const pParsed = UpdateUserParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = UpdateUserBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
@@ -310,7 +311,7 @@ router.patch("/users/:id", requireAuth, requireOwnership(), async (req, res) => 
   return res.json(safeUser);
 });
 
-router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter, async (req, res) => {
+router.patch("/users/:id/location", requireAuth, resolveMeParam, requireOwnership(), gpsLimiter, async (req, res) => {
   const pParsed = UpdateUserLocationParams.safeParse({ id: parseInt(req.params.id as string) });
   const bParsed = UpdateUserLocationBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
@@ -330,7 +331,7 @@ router.patch("/users/:id/location", requireAuth, requireOwnership(), gpsLimiter,
   return res.json(safeUser);
 });
 
-router.patch("/users/:id/helper-mode", requireAuth, requireApproved, requireOwnership(), async (req, res) => {
+router.patch("/users/:id/helper-mode", requireAuth, resolveMeParam, requireApproved, requireOwnership(), async (req, res) => {
   const pParsed = UpdateHelperModeParams.safeParse({ id: parseInt(String(req.params.id)) });
   const bParsed = UpdateHelperModeBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
@@ -428,7 +429,7 @@ router.post("/users/:id/pledge", requireAuth, requireApproved, requireOwnership(
 });
 
 // GET /users/:id/transactions — real activity history
-router.get("/users/:id/transactions", requireAuth, requireOwnership(), async (req, res) => {
+router.get("/users/:id/transactions", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const txns = await db.select().from(transactionsTable)
@@ -468,7 +469,7 @@ router.post("/users/:id/scheduled-payment", requireAuth, requireApproved, requir
 });
 
 // GET /users/:id/scheduled-payment — list future payment intents
-router.get("/users/:id/scheduled-payment", requireAuth, requireOwnership(), async (req, res) => {
+router.get("/users/:id/scheduled-payment", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const parsed = GetScheduledPaymentsParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const rows = await db.select().from(scheduledPaymentsTable)
@@ -493,7 +494,7 @@ router.delete("/users/:id/scheduled-payment/:paymentId", requireAuth, requireOwn
 });
 
 // GET /users/:id/outstanding-pledges — requests with unpaid pledge balance
-router.get("/users/:id/outstanding-pledges", requireAuth, requireOwnership(), async (req, res) => {
+router.get("/users/:id/outstanding-pledges", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const requests = await db.select(requestSelect).from(requestsTable)
@@ -516,7 +517,7 @@ router.get("/users/:id/outstanding-pledges", requireAuth, requireOwnership(), as
 });
 
 // POST /users/:id/avatar — update profile photo (base64 data URL)
-router.post("/users/:id/avatar", requireAuth, requireApproved, requireOwnership(), async (req, res) => {
+router.post("/users/:id/avatar", requireAuth, resolveMeParam, requireApproved, requireOwnership(), async (req, res) => {
   const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const { dataUrl } = req.body as { dataUrl?: string };
@@ -538,7 +539,7 @@ router.post("/users/:id/avatar", requireAuth, requireApproved, requireOwnership(
 });
 
 // GET /users/:id/settings — fetch user notification + privacy prefs (upserts defaults if first visit)
-router.get("/users/:id/settings", requireAuth, requireOwnership(), async (req, res) => {
+router.get("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const [existing] = await db.select().from(userSettingsTable).where(eq(userSettingsTable.user_id, id)).limit(1);
@@ -549,7 +550,7 @@ router.get("/users/:id/settings", requireAuth, requireOwnership(), async (req, r
 });
 
 // PUT /users/:id/settings — persist notification + privacy prefs
-router.put("/users/:id/settings", requireAuth, requireOwnership(), async (req, res) => {
+router.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   const allowed = [
@@ -632,7 +633,7 @@ router.patch("/users/:id/moderation", requireAuth, requireAdmin(), adminLimiter,
 });
 
 // PUT /users/:id/availability
-router.put("/users/:id/availability", requireAuth, requireOwnership(), async (req, res) => {
+router.put("/users/:id/availability", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const userId = parseInt(req.params.id as string);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
   const { windows } = req.body as { windows: Array<{ day_of_week: number; start_min: number; end_min: number }> };
@@ -653,7 +654,7 @@ router.put("/users/:id/availability", requireAuth, requireOwnership(), async (re
 });
 
 // GET /users/:id/availability
-router.get("/users/:id/availability", requireAuth, requireOwnership(), async (req, res) => {
+router.get("/users/:id/availability", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const userId = parseInt(req.params.id as string);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
   const windows = await db
@@ -675,7 +676,7 @@ router.get("/users/:id/availability", requireAuth, requireOwnership(), async (re
 // confirm before discarding its local token, and so token_version keeps
 // incrementing for potential future use, but it provides no actual
 // "log out everywhere" or stolen-token-revocation guarantee today.
-router.post("/users/:id/logout", requireAuth, requireOwnership(), async (req, res) => {
+router.post("/users/:id/logout", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
   await db.update(usersTable)
@@ -811,7 +812,7 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
 // GET /users/:id/sponsor-history — contribution and payment history for a user.
 // Owners only (requireOwnership). Returns up to 50 most recent payment transactions,
 // joined with the request title/category so the UI can render meaningful rows.
-router.get("/users/:id/sponsor-history", requireAuth, requireOwnership(), async (req, res) => {
+router.get("/users/:id/sponsor-history", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const userId = parseInt(String(req.params.id), 10);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
 
