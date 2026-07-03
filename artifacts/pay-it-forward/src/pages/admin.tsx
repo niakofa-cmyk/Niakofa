@@ -9,7 +9,7 @@ import {
   LineChart, FileText, Gavel, Sparkles, RotateCcw, Landmark, Building2,
   SlidersHorizontal, Save, Loader2, Server, LifeBuoy, Cpu, CheckCircle, WifiOff,
   Siren, MapPin, Globe, Fingerprint, Banknote, BadgeCheck, Inbox,
-  ShieldAlert, ThumbsUp, ThumbsDown, Megaphone, Map, Link
+  ShieldAlert, ThumbsUp, ThumbsDown, Megaphone, Map, Link, Navigation2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -3234,6 +3234,106 @@ interface HardshipRequest {
   requester_email: string;
 }
 
+// ── Smart Dispatch Suggest Panel ──────────────────────────────────────────────
+// Calls POST /helpers/auto-assign/:requestId to get an AI-ranked suggestion
+// of the best available helper. This is advisory only — it never writes to DB.
+function DispatchSuggestSection() {
+  const [requestIdInput, setRequestIdInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{
+    helper_id: number | null;
+    helper_name: string;
+    match_score: number;
+    eta_minutes: number;
+    distance_miles: number;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const runSuggest = async () => {
+    const rid = parseInt(requestIdInput.trim());
+    if (isNaN(rid) || rid <= 0) { setError("Enter a valid request ID"); return; }
+    setLoading(true); setResult(null); setError(null);
+    try {
+      const res = await fetch(`${BASE}/api/helpers/auto-assign/${rid}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+      });
+      if (res.ok) {
+        setResult(await res.json());
+      } else {
+        const b = await res.json().catch(() => ({})) as { error?: string };
+        setError(b.error ?? `Server returned ${res.status}`);
+      }
+    } catch { setError("Network error"); } finally { setLoading(false); }
+  };
+
+  const trafficColors: Record<string, string> = {
+    low:      "text-green-400",
+    moderate: "text-yellow-400",
+    heavy:    "text-orange-400",
+    severe:   "text-destructive",
+    unknown:  "text-muted-foreground",
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <Navigation2 className="w-4 h-4 text-primary" />
+        <span className="text-sm font-black uppercase tracking-wider">Smart Dispatch Suggest</span>
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 ml-auto">Advisory Only</span>
+      </div>
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        Finds the highest-scoring available helper for any open request. Ranks by skills match, distance, availability, and urgency. This is read-only — it never assigns automatically.
+      </p>
+      <div className="flex gap-2">
+        <input
+          type="number"
+          min="1"
+          value={requestIdInput}
+          onChange={e => setRequestIdInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") runSuggest(); }}
+          placeholder="Request ID…"
+          className="flex-1 bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+          style={{ fontSize: "16px" }}
+        />
+        <button
+          onClick={runSuggest}
+          disabled={loading}
+          style={{ touchAction: "manipulation" }}
+          className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-black disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1.5"
+        >
+          {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <><Zap className="w-4 h-4" />Suggest</>}
+        </button>
+      </div>
+      {error && (
+        <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-xl px-3 py-2">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+      {result && (
+        <div className="border border-primary/30 rounded-xl p-4 space-y-2 bg-primary/5">
+          <div className="text-[10px] font-black uppercase tracking-wider text-primary mb-1">Top Suggestion</div>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="font-black text-sm">{result.helper_name}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                Helper ID #{result.helper_id} · {result.distance_miles.toFixed(1)} mi · ~{result.eta_minutes} min ETA
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <div className={`text-lg font-black ${result.match_score >= 80 ? "text-green-400" : result.match_score >= 50 ? "text-yellow-400" : "text-muted-foreground"}`}>
+                {result.match_score.toFixed(0)}
+              </div>
+              <div className="text-[9px] text-muted-foreground">Match Score</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SystemTab() {
   const [health, setHealth] = useState<{
     status: string;
@@ -3379,6 +3479,9 @@ function SystemTab() {
           <p className="text-sm text-muted-foreground text-center py-4">Could not load worker health.</p>
         )}
       </div>
+
+      {/* ── Smart Dispatch Suggest ───────────────────────────────────── */}
+      <DispatchSuggestSection />
 
       {/* ── Cashout Queue ────────────────────────────────────────────── */}
       <CashoutSection />

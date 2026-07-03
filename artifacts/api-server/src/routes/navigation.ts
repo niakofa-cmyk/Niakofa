@@ -10,10 +10,10 @@ const ALLOWED_PROFILES = ["driving", "walking", "cycling"] as const;
 type RoutingProfile = (typeof ALLOWED_PROFILES)[number];
 
 // Simple in-process route cache: key → {data, expiresAt}
-// TTL: 3 min for driving (traffic changes), 10 min for walking/cycling
+// TTL: 2 min for driving (short — traffic changes fast), 10 min for walking/cycling
 const routeCache = new Map<string, { data: unknown; expiresAt: number }>();
 const CACHE_TTL_MS: Record<RoutingProfile, number> = {
-  driving: 3 * 60 * 1000,
+  driving: 2 * 60 * 1000,
   walking: 10 * 60 * 1000,
   cycling: 10 * 60 * 1000,
 };
@@ -29,24 +29,57 @@ function getCacheKey(
 }
 
 // Aggregate steps across all legs (handles multi-leg routes: ferry + drive, etc.)
+// voice_instructions[0] is the earliest/longest-range announcement; the LAST entry
+// is the closest-approach instruction — use that as the canonical step announcement.
 function aggregateSteps(
   legs: Array<{
     steps: Array<{
       maneuver: { instruction: string; type: string; modifier?: string };
       distance: number;
       duration: number;
+      voice_instructions?: Array<{ announcement: string; distanceAlongGeometry: number }>;
     }>;
   }>
 ) {
   return legs.flatMap((leg) =>
-    leg.steps.map((step) => ({
-      instruction: step.maneuver.instruction,
-      distance_meters: step.distance,
-      duration_seconds: step.duration,
-      maneuver_type: step.maneuver.type ?? null,
-      maneuver_direction: step.maneuver.modifier ?? null,
-    }))
+    leg.steps.map((step) => {
+      // Prefer the most-specific voice announcement (closest-range entry) if available.
+      const voiceEntries = step.voice_instructions ?? [];
+      const bestAnnouncement = voiceEntries.length > 0
+        ? voiceEntries[voiceEntries.length - 1].announcement
+        : step.maneuver.instruction;
+      return {
+        instruction: step.maneuver.instruction,
+        voice_announcement: bestAnnouncement,
+        distance_meters: step.distance,
+        duration_seconds: step.duration,
+        maneuver_type: step.maneuver.type ?? null,
+        maneuver_direction: step.maneuver.modifier ?? null,
+      };
+    })
   );
+}
+
+// Derive overall traffic severity from the per-segment congestion annotation.
+// Uses congestion.length (total segments) as the denominator so that unknown/
+// null/other segments don't inflate the share of recognized levels. Returns the
+// worst named level that covers >20% of ALL segments; "unknown" if no named
+// levels appear at all.
+function computeTrafficLevel(
+  congestion: string[] | undefined
+): "low" | "moderate" | "heavy" | "severe" | "unknown" {
+  if (!congestion || congestion.length === 0) return "unknown";
+  const total = congestion.length; // denominator = all segments (including unknown/other)
+  const counts: Record<string, number> = { low: 0, moderate: 0, heavy: 0, severe: 0 };
+  for (const c of congestion) {
+    if (c in counts) counts[c]++;
+  }
+  const knownTotal = Object.values(counts).reduce((s, n) => s + n, 0);
+  if (knownTotal === 0) return "unknown";
+  for (const level of ["severe", "heavy", "moderate", "low"] as const) {
+    if (counts[level] / total > 0.2) return level;
+  }
+  return "low";
 }
 
 // Compute bounding box from geometry coordinates for client camera fitting
@@ -113,14 +146,17 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
   res.setHeader("X-Route-Cache", "MISS");
 
   try {
-    const departAt =
+    // Driving profile: traffic-aware routing + congestion/maxspeed annotations +
+    // richer voice instruction text. Language=en for consistent TTS output.
+    const drivingExtras =
       profile === "driving"
-        ? `&depart_at=${new Date().toISOString()}&annotations=congestion`
-        : "";
-    const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${start_lng},${start_lat};${end_lng},${end_lat}?steps=true&geometries=geojson&overview=full${departAt}&access_token=${token}`;
+        ? `&depart_at=${encodeURIComponent(new Date().toISOString())}&annotations=congestion,maxspeed&voice_instructions=true&voice_units=imperial`
+        : "&voice_instructions=true&voice_units=imperial";
+    const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${start_lng},${start_lat};${end_lng},${end_lat}?steps=true&geometries=geojson&overview=full${drivingExtras}&language=en&access_token=${token}`;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    // 12 s — generous enough for slow mobile networks without blocking forever
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
 
@@ -145,10 +181,15 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
         duration: number;
         geometry: { type: string; coordinates: number[][] };
         legs: Array<{
+          annotation?: {
+            congestion?: string[];
+            maxspeed?: Array<{ speed?: number; unit?: string; unknown?: boolean } | null>;
+          };
           steps: Array<{
             maneuver: { instruction: string; type: string; modifier?: string };
             distance: number;
             duration: number;
+            voice_instructions?: Array<{ announcement: string; distanceAlongGeometry: number }>;
           }>;
           distance: number;
           duration: number;
@@ -207,12 +248,21 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
     // BBox for client camera fitting
     const bbox = computeBBox(coords);
 
+    // Aggregate congestion from all legs for the overall traffic summary
+    const allCongestion = route.legs.flatMap(l => l.annotation?.congestion ?? []);
+    const trafficLevel = computeTrafficLevel(allCongestion);
+
+    // ETA with traffic qualifier
+    const trafficSuffix = profile === "driving" && trafficLevel !== "unknown" && trafficLevel !== "low"
+      ? ` (${trafficLevel} traffic)`
+      : "";
+
     const result = {
       geometry: route.geometry,
       distance_meters: route.distance,
       duration_seconds: route.duration,
       steps,
-      eta_text: etaText,
+      eta_text: etaText + trafficSuffix,
       distance_text: distanceText,
       initial_bearing: Math.round(initialBearing),
       speed_mph: Math.round(speedMph),
@@ -222,6 +272,9 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
       bbox,
       profile,
       units: useMetric ? "metric" : "imperial",
+      // Traffic intelligence
+      traffic_level: trafficLevel,
+      congestion_segments: allCongestion.length,
     };
 
     // Cache the result

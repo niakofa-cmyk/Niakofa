@@ -8,7 +8,7 @@ import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { useGetRequest, useGetRoute, useCompleteRequest, useMarkEnRoute, useMarkArrived, getGetRequestQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share2, CheckCircle2, Car, PersonStanding, Bike } from "lucide-react";
+import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share2, CheckCircle2, Car, PersonStanding, Bike, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { NavigationOverlay } from "@/components/NavigationOverlay";
@@ -113,6 +113,7 @@ export default function ActiveRequestScreen() {
   const [safetyAlertShown, setSafetyAlertShown] = useState(false);
   const [shareVisible, setShareVisible] = useState(false);
   const [routingProfile, setRoutingProfile] = useState<"driving" | "walking" | "cycling">("driving");
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
   const mapRef = useRef<MapRef>(null);
   const [showTip, setShowTip] = useState(false);
   const [tipShown, setTipShown] = useState(false);
@@ -276,26 +277,33 @@ export default function ActiveRequestScreen() {
     setCurrentStepIndex(newStep);
   }, [myLocation, routeData, request]);
 
-  // Turn-by-turn voice guidance via Web Speech API
+  // Turn-by-turn voice guidance via Web Speech API.
+  // voiceEnabled is a user-controlled toggle; guards all TTS calls.
   const speakInstruction = useCallback((text: string) => {
-    if (!("speechSynthesis" in window) || !text) return;
+    if (!voiceEnabled || !("speechSynthesis" in window) || !text) return;
     window.speechSynthesis.cancel();
     const utt = new SpeechSynthesisUtterance(text);
-    utt.rate = 1.0;
+    utt.rate = 1.05;   // Slightly faster — more natural for nav
     utt.pitch = 1.0;
     utt.volume = 1.0;
+    // Use a good en-US voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(v => v.lang === "en-US" && !v.localService) ?? voices.find(v => v.lang === "en-US");
+    if (preferred) utt.voice = preferred;
     window.speechSynthesis.speak(utt);
-  }, []);
+  }, [voiceEnabled]);
 
   // Voice guidance — helpers only. Requesters aren't driving; TTS on their
   // phone for a trip they're not taking is confusing and potentially alarming.
+  // Use voice_announcement (richer Mapbox phrasing) when available, else fall
+  // back to the shorter instruction string.
   useEffect(() => {
     if (!isHelper || isArrived || !routeData?.steps) return;
-    const step = routeData.steps[currentStepIndex];
+    const step = routeData.steps[currentStepIndex] as typeof routeData.steps[number] & { voice_announcement?: string };
     if (!step?.instruction) return;
     if (lastSpokenStepRef.current === currentStepIndex) return;
     lastSpokenStepRef.current = currentStepIndex;
-    speakInstruction(step.instruction);
+    speakInstruction(step.voice_announcement ?? step.instruction);
   }, [currentStepIndex, routeData?.steps, isArrived, isHelper, speakInstruction]);
 
   // Announce arrival — helpers only
@@ -598,6 +606,26 @@ export default function ActiveRequestScreen() {
           mode={mode}
           onToggle={() => setMode(mode === "north-up" ? "heading-up" : "north-up")}
         />
+      )}
+
+      {/* Voice guidance toggle — helpers only, sits above the TurnArrowHUD,
+          anchored to top-right so it never overlaps the card at the bottom */}
+      {isHelper && !isArrived && (
+        <button
+          onClick={() => {
+            setVoiceEnabled(v => !v);
+            if (voiceEnabled) window.speechSynthesis?.cancel();
+          }}
+          style={{ touchAction: "manipulation" }}
+          aria-label={voiceEnabled ? "Mute voice guidance" : "Enable voice guidance"}
+          className={`absolute top-[4.5rem] right-4 z-30 w-10 h-10 rounded-full flex items-center justify-center border shadow-lg transition-all active:scale-90 backdrop-blur-sm ${
+            voiceEnabled
+              ? "bg-primary/20 border-primary/40 text-primary"
+              : "bg-card/90 border-border text-muted-foreground"
+          }`}
+        >
+          {voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+        </button>
       )}
 
       {/* Mapbox — onLoad syncs rawMapRef for terrain + orientation hooks */}

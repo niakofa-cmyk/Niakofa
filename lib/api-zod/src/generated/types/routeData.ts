@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { RouteDataGeometry } from './routeDataGeometry';
+import type { RouteDataProfile } from './routeDataProfile';
+import type { RouteDataTrafficLevel } from './routeDataTrafficLevel';
+import type { RouteDataUnits } from './routeDataUnits';
 import type { RouteStep } from './routeStep';
 
 export interface RouteData {
@@ -14,10 +17,21 @@ export interface RouteData {
   distance_meters: number;
   duration_seconds: number;
   steps: RouteStep[];
+  /** Human-readable ETA, e.g. "12 min (moderate traffic)" */
   eta_text?: string;
   distance_text?: string;
   /** Compass bearing (0-359) from start toward first waypoint */
   initial_bearing?: number;
   speed_mph?: number;
+  speed_kph?: number;
   waypoints?: number;
+  legs_count?: number;
+  /** [minLng, minLat, maxLng, maxLat] bounding box for camera fit */
+  bbox?: number[] | null;
+  profile?: RouteDataProfile;
+  units?: RouteDataUnits;
+  /** Dominant congestion level across the route (driving only) */
+  traffic_level?: RouteDataTrafficLevel;
+  /** Total number of annotated congestion segments */
+  congestion_segments?: number;
 }

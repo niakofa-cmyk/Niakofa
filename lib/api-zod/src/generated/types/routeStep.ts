@@ -7,7 +7,10 @@
  */
 
 export interface RouteStep {
+  /** Mapbox maneuver instruction text */
   instruction: string;
+  /** Closest-range voice announcement — richer phrasing than instruction, used for TTS */
+  voice_announcement?: string;
   distance_meters: number;
   duration_seconds: number;
   /** @nullable */

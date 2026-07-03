@@ -2196,6 +2196,7 @@ components:
             $ref: "#/components/schemas/RouteStep"
         eta_text:
           type: string
+          description: Human-readable ETA, e.g. "12 min (moderate traffic)"
         distance_text:
           type: string
         initial_bearing:
@@ -2203,8 +2204,31 @@ components:
           description: Compass bearing (0-359) from start toward first waypoint
         speed_mph:
           type: number
+        speed_kph:
+          type: number
         waypoints:
           type: integer
+        legs_count:
+          type: integer
+        bbox:
+          type: array
+          nullable: true
+          items:
+            type: number
+          description: "[minLng, minLat, maxLng, maxLat] bounding box for camera fit"
+        profile:
+          type: string
+          enum: [driving, walking, cycling]
+        units:
+          type: string
+          enum: [imperial, metric]
+        traffic_level:
+          type: string
+          enum: [low, moderate, heavy, severe, unknown]
+          description: Dominant congestion level across the route (driving only)
+        congestion_segments:
+          type: integer
+          description: Total number of annotated congestion segments
 
     Transaction:
       type: object
@@ -2233,6 +2257,10 @@ components:
       properties:
         instruction:
           type: string
+          description: Mapbox maneuver instruction text
+        voice_announcement:
+          type: string
+          description: Closest-range voice announcement — richer phrasing than instruction, used for TTS
         distance_meters:
           type: number
         duration_seconds:

@@ -846,17 +846,25 @@ export const GetRouteResponse = zod.object({
   "distance_meters": zod.number(),
   "duration_seconds": zod.number(),
   "steps": zod.array(zod.object({
-  "instruction": zod.string(),
+  "instruction": zod.string().describe('Mapbox maneuver instruction text'),
+  "voice_announcement": zod.string().optional().describe('Closest-range voice announcement — richer phrasing than instruction, used for TTS'),
   "distance_meters": zod.number(),
   "duration_seconds": zod.number(),
   "maneuver_type": zod.string().nullish(),
   "maneuver_direction": zod.string().nullish()
 })),
-  "eta_text": zod.string().optional(),
+  "eta_text": zod.string().optional().describe('Human-readable ETA, e.g. \"12 min (moderate traffic)\"'),
   "distance_text": zod.string().optional(),
   "initial_bearing": zod.number().optional().describe('Compass bearing (0-359) from start toward first waypoint'),
   "speed_mph": zod.number().optional(),
-  "waypoints": zod.number().optional()
+  "speed_kph": zod.number().optional(),
+  "waypoints": zod.number().optional(),
+  "legs_count": zod.number().optional(),
+  "bbox": zod.array(zod.number()).nullish().describe('[minLng, minLat, maxLng, maxLat] bounding box for camera fit'),
+  "profile": zod.enum(['driving', 'walking', 'cycling']).optional(),
+  "units": zod.enum(['imperial', 'metric']).optional(),
+  "traffic_level": zod.enum(['low', 'moderate', 'heavy', 'severe', 'unknown']).optional().describe('Dominant congestion level across the route (driving only)'),
+  "congestion_segments": zod.number().optional().describe('Total number of annotated congestion segments')
 })
 
 

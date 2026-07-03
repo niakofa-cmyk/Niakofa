@@ -17,7 +17,7 @@ import { BottomSheet } from "@/components/BottomSheet";
 import { RequestMarker } from "@/components/RequestMarker";
 import { HelperMarker } from "@/components/HelperMarker";
 import { BestMatchCard } from "@/components/BestMatchCard";
-import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2 } from "lucide-react";
+import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2, Car } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { wsIsConnected } from "@/lib/wsClient";
@@ -45,6 +45,7 @@ export default function MapScreen() {
   const [wsConnected, setWsConnected] = useState(() => wsIsConnected());
   const [statsVisible, setStatsVisible] = useState(true);
   const [bestMatchDismissed, setBestMatchDismissed] = useState<number | null>(null);
+  const [showTraffic, setShowTraffic] = useState(true);
   const prevHelperMode = useRef(false);
 
   const onMapError = useCallback((e: unknown) => {
@@ -302,6 +303,30 @@ export default function MapScreen() {
           </Marker>
         )}
 
+        {/* Real-time traffic layer — same data source as the navigation view */}
+        {showTraffic && (
+          <Source id="mapbox-traffic" type="vector" url="mapbox://mapbox.mapbox-traffic-v1">
+            <Layer
+              id="traffic-flow"
+              type="line"
+              source-layer="traffic"
+              paint={{
+                "line-color": [
+                  "match", ["get", "congestion"],
+                  "low",      "#4ade80",
+                  "moderate", "#facc15",
+                  "heavy",    "#f97316",
+                  "severe",   "#ef4444",
+                  "#94a3b8",
+                ],
+                "line-width": 2.5,
+                "line-opacity": 0.55,
+              }}
+              layout={{ "line-cap": "round", "line-join": "round" }}
+            />
+          </Source>
+        )}
+
         {/* Online helpers — animated dots */}
         {displayHelpers.map(h => (
           <Marker key={h.id} longitude={h.lng} latitude={h.lat} anchor="center">
@@ -333,6 +358,21 @@ export default function MapScreen() {
             />
           </Source>
         )}
+
+        {/* Traffic toggle — bottom-left of map */}
+        <button
+          onClick={() => setShowTraffic(t => !t)}
+          style={{ touchAction: "manipulation" }}
+          className={`absolute bottom-24 left-4 z-10 flex items-center gap-1.5 px-3 py-2 rounded-full border text-[10px] font-black backdrop-blur-sm transition-all active:scale-95 ${
+            showTraffic
+              ? "bg-primary/20 border-primary/40 text-primary"
+              : "bg-card/80 border-border text-muted-foreground"
+          }`}
+        >
+          <Car className="w-3 h-3" />
+          <span>Traffic</span>
+        </button>
+
         <OrientationToggle mode={orientMode} onToggle={() => setOrientMode(orientMode === "heading-up" ? "north-up" : "heading-up")} />
       </Map>
 

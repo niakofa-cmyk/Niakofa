@@ -663,8 +663,42 @@ export interface HelperLocation {
  */
 export type RouteDataGeometry = { [key: string]: unknown };
 
+export type RouteDataProfile = typeof RouteDataProfile[keyof typeof RouteDataProfile];
+
+
+export const RouteDataProfile = {
+  driving: 'driving',
+  walking: 'walking',
+  cycling: 'cycling',
+} as const;
+
+export type RouteDataUnits = typeof RouteDataUnits[keyof typeof RouteDataUnits];
+
+
+export const RouteDataUnits = {
+  imperial: 'imperial',
+  metric: 'metric',
+} as const;
+
+/**
+ * Dominant congestion level across the route (driving only)
+ */
+export type RouteDataTrafficLevel = typeof RouteDataTrafficLevel[keyof typeof RouteDataTrafficLevel];
+
+
+export const RouteDataTrafficLevel = {
+  low: 'low',
+  moderate: 'moderate',
+  heavy: 'heavy',
+  severe: 'severe',
+  unknown: 'unknown',
+} as const;
+
 export interface RouteStep {
+  /** Mapbox maneuver instruction text */
   instruction: string;
+  /** Closest-range voice announcement — richer phrasing than instruction, used for TTS */
+  voice_announcement?: string;
   distance_meters: number;
   duration_seconds: number;
   /** @nullable */
@@ -679,12 +713,23 @@ export interface RouteData {
   distance_meters: number;
   duration_seconds: number;
   steps: RouteStep[];
+  /** Human-readable ETA, e.g. "12 min (moderate traffic)" */
   eta_text?: string;
   distance_text?: string;
   /** Compass bearing (0-359) from start toward first waypoint */
   initial_bearing?: number;
   speed_mph?: number;
+  speed_kph?: number;
   waypoints?: number;
+  legs_count?: number;
+  /** [minLng, minLat, maxLng, maxLat] bounding box for camera fit */
+  bbox?: number[] | null;
+  profile?: RouteDataProfile;
+  units?: RouteDataUnits;
+  /** Dominant congestion level across the route (driving only) */
+  traffic_level?: RouteDataTrafficLevel;
+  /** Total number of annotated congestion segments */
+  congestion_segments?: number;
 }
 
 /**

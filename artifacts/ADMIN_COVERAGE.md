@@ -59,6 +59,7 @@
 | `/users` | GET | UsersTab — full user list | ✅ |
 | `/admin/users/:id/background-check` | POST | HelpersTab via BackgroundCheckAdmin | ✅ |
 | `/leaderboard/recalculate` | POST | AnalyticsTab → Recalculate Leaderboard button | ✅ |
+| `/helpers/auto-assign/:requestId` | POST | SystemTab → Smart Dispatch Suggest panel (advisory, read-only) | ✅ |
 | `/gov-sponsors` | POST | N/A (user-level self-signup) | ⚪ |
 | `/admin/gov-sponsors` | GET | OrgsTab — gov sponsor queue | ✅ |
 | `/admin/gov-sponsors/:id/approve` | PATCH | OrgsTab — Approve/Reject sponsor | ✅ |
