@@ -9,6 +9,22 @@
  * Today: IP-based and userId-based limits that are generous but enforceable.
  */
 import { rateLimit } from "express-rate-limit";
+import type { Request } from "express";
+
+/**
+ * In development mode, skip rate limiting for loopback requests (127.0.0.1,
+ * ::1, ::ffff:127.0.0.1). This prevents the dev test cycle — where a
+ * developer may call the login endpoint many times in a few minutes — from
+ * triggering the 10/15-min auth cap and locking out their own console.
+ *
+ * Production (NODE_ENV !== "development") always enforces limits regardless
+ * of IP, so this never affects live deployments.
+ */
+function skipLocalhostInDev(req: Request): boolean {
+  if (process.env.NODE_ENV !== "development") return false;
+  const ip = req.ip ?? "";
+  return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+}
 
 // ── 1. Auth Routes (10 / 15 min) ─────────────────────────────────────────────
 // Protects: login, signup, password reset against brute-force / credential stuffing.
@@ -17,6 +33,7 @@ export const authLimiter = rateLimit({
   limit: 10,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  skip: skipLocalhostInDev,
   message: {
     error:
       "Too many sign-in attempts from this device. Please wait 15 minutes and try again. " +
@@ -33,6 +50,7 @@ export const requestCreationLimiter = rateLimit({
   limit: 10,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  skip: skipLocalhostInDev,
   keyGenerator: (req) => {
     // Key on the authenticated userId set by parseAuth (runs before all routes).
     // Never key on req.body.requester_id — unauthenticated body data can be spoofed
@@ -55,6 +73,7 @@ export const gpsLimiter = rateLimit({
   limit: 1,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  skip: skipLocalhostInDev,
   keyGenerator: (req) =>
     `gps-${req.params?.["id"] ?? "unknown"}-${req.ip ?? ""}`,
   message: {
@@ -72,6 +91,7 @@ export const paymentLimiter = rateLimit({
   limit: 20,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  skip: skipLocalhostInDev,
   message: {
     error:
       "Too many payment requests in a short period. " +
@@ -87,6 +107,7 @@ export const generalApiLimiter = rateLimit({
   limit: 200,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  skip: skipLocalhostInDev,
   message: {
     error:
       "Too many requests from this address. " +
@@ -108,6 +129,7 @@ export const communityPostLimiter = rateLimit({
   limit: 5,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  skip: skipLocalhostInDev,
   keyGenerator: (req) => {
     const r = req as typeof req & { authenticatedUserId?: number };
     return `community-post-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
@@ -123,6 +145,7 @@ export const communityLikeLimiter = rateLimit({
   limit: 60,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  skip: skipLocalhostInDev,
   keyGenerator: (req) => {
     const r = req as typeof req & { authenticatedUserId?: number };
     return `community-like-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
@@ -135,6 +158,7 @@ export const chatLimiter = rateLimit({
   limit: 30,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  skip: skipLocalhostInDev,
   keyGenerator: (req) => {
     const r = req as typeof req & { authenticatedUserId?: number };
     return `chat-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
@@ -151,6 +175,7 @@ export const crisisAwareChatLimiter = rateLimit({
   limit: 20,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  skip: skipLocalhostInDev,
   keyGenerator: (req) => {
     const r = req as typeof req & { authenticatedUserId?: number };
     return `nia-chat-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
@@ -165,6 +190,7 @@ export const niaChatHistoryLimiter = rateLimit({
   limit: 60,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  skip: skipLocalhostInDev,
   keyGenerator: (req) => {
     const r = req as typeof req & { authenticatedUserId?: number };
     return `nia-history-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
@@ -180,6 +206,7 @@ export const adminLimiter = rateLimit({
   limit: 30,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  skip: skipLocalhostInDev,
   message: { error: "Too many admin requests. Please slow down." },
 });
 
@@ -191,6 +218,7 @@ export const voiceLimiter = rateLimit({
   limit: 30,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  skip: skipLocalhostInDev,
   keyGenerator: (req) => {
     const r = req as typeof req & { authenticatedUserId?: number };
     return `voice-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;
@@ -206,6 +234,7 @@ export const navigationLimiter = rateLimit({
   limit: 60,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  skip: skipLocalhostInDev,
   keyGenerator: (req) => {
     const r = req as typeof req & { authenticatedUserId?: number };
     return `nav-${r.authenticatedUserId ?? req.ip ?? "unknown"}`;

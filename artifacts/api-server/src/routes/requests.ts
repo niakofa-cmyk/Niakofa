@@ -1001,13 +1001,14 @@ router.post("/requests/:id/cancel", requireAuth, async (req, res) => {
 router.post("/requests/:id/complete", requireAuth, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = CompleteRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
-  const bParsed = CompleteRequestBody.safeParse(req.body);
-  if (!pParsed.success || !bParsed.success) {
-    return res.status(400).json({ 
-      error: "Invalid request parameters",
-      details: !pParsed.success ? pParsed.error.issues : (bParsed.success ? [] : bParsed.error.issues)
-    });
+  if (!pParsed.success) {
+    return res.status(400).json({ error: "Invalid request id", details: pParsed.error.issues });
   }
+  // Parse the optional body — helper_id is derived from the auth token and
+  // is NEVER required in the body (sending it is accepted for backward compat
+  // but the server always uses req.authenticatedUserId, never the body value).
+  // notes is the only body field the handler actually uses.
+  const bParsed = CompleteRequestBody.safeParse(req.body ?? {});
 
   // Status guard makes completion idempotent: a request can only transition to
   // completed ONCE, so every side effect below (help_count, pool front,

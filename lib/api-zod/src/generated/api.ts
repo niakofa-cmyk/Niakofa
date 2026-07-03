@@ -663,7 +663,9 @@ export const CompleteRequestParams = zod.object({
 })
 
 export const CompleteRequestBody = zod.object({
-  "helper_id": zod.number(),
+  // helper_id is derived server-side from the authenticated token — never
+  // required in the body. Kept optional for backward compat with older clients.
+  "helper_id": zod.number().optional(),
   "notes": zod.string().optional()
 })
 

@@ -2105,7 +2105,9 @@ components:
 
     CompleteInput:
       type: object
-      required: [helper_id]
+      # helper_id is derived from the authenticated token server-side.
+      # It is never required in the request body.  Kept as an optional property
+      # for backward compatibility with older clients that may still send it.
       properties:
         helper_id:
           type: integer
