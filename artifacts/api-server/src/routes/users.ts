@@ -80,6 +80,7 @@ router.post("/users/register", authLimiter, async (req, res) => {
     account_type?: string;
     organization_name?: string;
     organization_description?: string;
+    tos_accepted?: boolean;
   };
   const password = body.password;
   // "business" and "sponsor" are valid self-reported account types the
@@ -101,6 +102,11 @@ router.post("/users/register", authLimiter, async (req, res) => {
   }
   if (password.length < 8) {
     return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+  // Server-side ToS enforcement — the frontend gates this too, but defence-in-depth
+  // prevents bypasses via direct API calls. tos_accepted must be explicitly true.
+  if (body.tos_accepted !== true) {
+    return res.status(400).json({ error: "You must accept the Terms of Service to create an account" });
   }
 
   const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);

@@ -345,6 +345,7 @@ export default function LoginScreen() {
 
   // Terms of service acceptance (required for registration)
   const [tosAccepted, setTosAccepted] = useState(false);
+  const [showTosModal, setShowTosModal] = useState<"tos" | "privacy" | null>(null);
 
   // Password strength computation
   const getPasswordStrength = (pw: string): { level: 0 | 1 | 2 | 3 | 4; label: string; color: string } => {
@@ -1153,8 +1154,20 @@ export default function LoginScreen() {
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed">
                     I agree to Niakofa's{" "}
-                    <span className="text-primary font-semibold">Terms of Service</span> and{" "}
-                    <span className="text-primary font-semibold">Privacy Policy</span>.
+                    <span
+                      role="link"
+                      tabIndex={0}
+                      onClick={e => { e.stopPropagation(); setShowTosModal("tos"); }}
+                      onKeyDown={e => e.key === "Enter" && (e.stopPropagation(), setShowTosModal("tos"))}
+                      className="text-primary font-semibold underline-offset-2 underline cursor-pointer"
+                    >Terms of Service</span>{" "}and{" "}
+                    <span
+                      role="link"
+                      tabIndex={0}
+                      onClick={e => { e.stopPropagation(); setShowTosModal("privacy"); }}
+                      onKeyDown={e => e.key === "Enter" && (e.stopPropagation(), setShowTosModal("privacy"))}
+                      className="text-primary font-semibold underline-offset-2 underline cursor-pointer"
+                    >Privacy Policy</span>.
                     {" "}I understand this is a community mutual-aid platform, not a professional service marketplace.
                   </p>
                 </button>
@@ -1211,6 +1224,103 @@ export default function LoginScreen() {
           Global mutual aid · Building community one act of kindness at a time
         </p>
       </div>
+
+      {/* ── ToS / Privacy modal ─────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showTosModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 z-50 backdrop-blur-sm"
+              onClick={() => setShowTosModal(null)}
+            />
+            <motion.div
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 26, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl flex flex-col"
+              style={{ maxHeight: "82dvh", paddingBottom: "env(safe-area-inset-bottom)" }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border shrink-0">
+                <h2 className="text-base font-black">
+                  {showTosModal === "tos" ? "Terms of Service" : "Privacy Policy"}
+                </h2>
+                <button
+                  onClick={() => setShowTosModal(null)}
+                  className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-muted-foreground text-lg"
+                >×</button>
+              </div>
+              <div className="overflow-y-auto px-6 py-4 space-y-4 text-sm text-muted-foreground leading-relaxed">
+                {showTosModal === "tos" ? (
+                  <>
+                    <p className="text-xs text-muted-foreground">Last updated: July 2026</p>
+                    <section>
+                      <h3 className="font-black text-foreground mb-1">1. What Niakofa Is</h3>
+                      <p>Niakofa is a community mutual-aid platform where neighbors help neighbors. It is <strong>not</strong> a professional service marketplace, employment platform, or emergency service. All help is provided voluntarily by community members.</p>
+                    </section>
+                    <section>
+                      <h3 className="font-black text-foreground mb-1">2. Your Responsibilities</h3>
+                      <p>You are responsible for the accuracy of your profile, the requests you make, and the help you offer. You agree not to use Niakofa for illegal activities, solicitation, or to misrepresent your identity or qualifications.</p>
+                    </section>
+                    <section>
+                      <h3 className="font-black text-foreground mb-1">3. Safety & Liability</h3>
+                      <p>Niakofa does not guarantee the safety, quality, or outcome of any help transaction. By using this platform you acknowledge that all interactions are at your own discretion and risk. Niakofa is not liable for any damages, injuries, or losses arising from community interactions.</p>
+                    </section>
+                    <section>
+                      <h3 className="font-black text-foreground mb-1">4. Community Standards</h3>
+                      <p>All users must treat each other with dignity and respect. Discrimination, harassment, or exploitative behavior will result in immediate account termination. Niakofa reserves the right to moderate, suspend, or remove accounts that violate community standards.</p>
+                    </section>
+                    <section>
+                      <h3 className="font-black text-foreground mb-1">5. Payments & Pay It Forward</h3>
+                      <p>The community pool is funded voluntarily. Guaranteed minimums and tips are facilitated by the platform but Niakofa does not guarantee payment for any service. By accepting payment you agree to Stripe's terms of service.</p>
+                    </section>
+                    <section>
+                      <h3 className="font-black text-foreground mb-1">6. Changes to These Terms</h3>
+                      <p>Niakofa may update these terms at any time. Continued use after notice of changes constitutes acceptance. Contact support@niakofa.app with questions.</p>
+                    </section>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-muted-foreground">Last updated: July 2026</p>
+                    <section>
+                      <h3 className="font-black text-foreground mb-1">1. What We Collect</h3>
+                      <p>We collect your name, email, approximate location (city/GPS), help requests, and interaction history. We do <strong>not</strong> sell your data to advertisers or third parties.</p>
+                    </section>
+                    <section>
+                      <h3 className="font-black text-foreground mb-1">2. How We Use It</h3>
+                      <p>Your data is used to match helpers to requests, power Nia's AI assistance, detect safety issues, and improve the platform. Location data is fuzzed (~100 meters) before being shared with other users.</p>
+                    </section>
+                    <section>
+                      <h3 className="font-black text-foreground mb-1">3. Nia AI</h3>
+                      <p>Nia uses your location, request history, and city context to personalize responses. Conversations are used to improve Nia but are not shared publicly. You can delete your conversation history at any time from your profile.</p>
+                    </section>
+                    <section>
+                      <h3 className="font-black text-foreground mb-1">4. Data Retention</h3>
+                      <p>Your data is retained while your account is active. You may request account deletion at any time by emailing support@niakofa.app. Deleted accounts are purged within 30 days, except where legally required to retain records.</p>
+                    </section>
+                    <section>
+                      <h3 className="font-black text-foreground mb-1">5. Push Notifications</h3>
+                      <p>If you enable push notifications, we store your device subscription token to send you relevant alerts. You can revoke this at any time from your device settings.</p>
+                    </section>
+                    <section>
+                      <h3 className="font-black text-foreground mb-1">6. Contact</h3>
+                      <p>For privacy requests or questions: <strong>privacy@niakofa.app</strong></p>
+                    </section>
+                  </>
+                )}
+              </div>
+              <div className="px-6 py-4 border-t border-border shrink-0">
+                <button
+                  onClick={() => { setTosAccepted(true); setShowTosModal(null); }}
+                  className="w-full h-12 bg-primary text-primary-foreground rounded-2xl font-black text-sm active:opacity-80"
+                >
+                  I Agree — Accept &amp; Close
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

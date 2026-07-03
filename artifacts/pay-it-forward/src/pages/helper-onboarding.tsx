@@ -16,7 +16,7 @@ import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronRight, ChevronLeft, Check, Loader2, Shield,
-  Clock, FileText, Wrench, Star, Calendar,
+  Clock, FileText, Wrench, Star, Calendar, AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
@@ -245,8 +245,7 @@ export default function HelperOnboardingScreen() {
   const [, setLocation] = useLocation();
   const { currentUser } = useAppContext();
 
-  const bgStatus = (currentUser as any)?.background_check_status ?? "not_started";
-
+  // ── All hooks MUST be declared before any conditional return (Rules of Hooks) ──
   const [step, setStep] = useState(0);
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(
     new Set((currentUser as any)?.helper_skills ?? [])
@@ -254,13 +253,6 @@ export default function HelperOnboardingScreen() {
   const [availSlots, setAvailSlots] = useState<AvailabilitySlot[]>([]);
   const [bio, setBio] = useState((currentUser as any)?.helper_bio ?? "");
   const [saving, setSaving] = useState(false);
-
-  const STEPS = [
-    { id: "skills",       label: "Skills",       icon: Wrench },
-    { id: "availability", label: "Availability", icon: Clock },
-    { id: "background",   label: "Background",   icon: Shield },
-    { id: "bio",          label: "Bio",          icon: FileText },
-  ];
 
   const toggleSkill = useCallback((s: string) => {
     setSelectedSkills(prev => {
@@ -276,6 +268,41 @@ export default function HelperOnboardingScreen() {
       return exists >= 0 ? prev.filter((_, i) => i !== exists) : [...prev, slot];
     });
   }, []);
+
+  const bgStatus = (currentUser as any)?.background_check_status ?? "not_started";
+  const helperStatus = (currentUser as any)?.helper_status as string | undefined;
+
+  const STEPS = [
+    { id: "skills",       label: "Skills",       icon: Wrench },
+    { id: "availability", label: "Availability", icon: Clock },
+    { id: "background",   label: "Background",   icon: Shield },
+    { id: "bio",          label: "Bio",          icon: FileText },
+  ];
+
+  // ── Duplicate submission guard (AFTER all hooks) ───────────────────────────
+  // If this user already has a pending or approved helper application,
+  // show a confirmation screen rather than letting them submit again.
+  if (helperStatus === "pending" || helperStatus === "approved") {
+    return (
+      <div className="min-h-[100dvh] bg-background flex flex-col items-center justify-center p-6 text-center gap-4">
+        <div className="w-16 h-16 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
+          <Check className="w-8 h-8 text-primary" />
+        </div>
+        <h1 className="text-xl font-black text-foreground">
+          {helperStatus === "approved" ? "You're already a Helper!" : "Application Submitted"}
+        </h1>
+        <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
+          {helperStatus === "approved"
+            ? "Your helper profile is active. You can update your skills and availability from your profile page."
+            : "Your helper application is under review. We'll notify you once it's approved — usually within 1–2 business days."
+          }
+        </p>
+        <Button onClick={() => setLocation("/profile")} className="font-black">
+          {helperStatus === "approved" ? "View My Profile" : "Back to Profile"}
+        </Button>
+      </div>
+    );
+  }
 
   const handleSubmit = async () => {
     if (!currentUser?.id) return;
@@ -318,7 +345,15 @@ export default function HelperOnboardingScreen() {
     }
   };
 
-  const canAdvance = step === 0 ? selectedSkills.size > 0 : true;
+  // Step validation:
+  //   Step 0 (Skills): require at least one skill
+  //   Step 1 (Availability): soft — warn but allow advancing (can set later)
+  //   Step 2 (Background Check): informational only — always allow advance
+  //   Step 3 (Bio): require at least 20 chars for a meaningful intro
+  const canAdvance =
+    step === 0 ? selectedSkills.size > 0
+    : step === 3 ? bio.trim().length >= 20
+    : true;
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col">
@@ -372,7 +407,33 @@ export default function HelperOnboardingScreen() {
       </div>
 
       {/* Footer CTA */}
-      <div className="px-4 pb-8 pt-4 border-t border-border bg-background">
+      <div className="px-4 pb-8 pt-4 border-t border-border bg-background space-y-3">
+        {/* Contextual validation hints */}
+        {step === 0 && selectedSkills.size === 0 && (
+          <div className="flex items-center gap-2 text-[11px] text-yellow-400">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            Select at least one skill to continue
+          </div>
+        )}
+        {step === 1 && availSlots.length === 0 && (
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            No slots selected — you can add availability later from your profile
+          </div>
+        )}
+        {step === 3 && bio.trim().length > 0 && bio.trim().length < 20 && (
+          <div className="flex items-center gap-2 text-[11px] text-yellow-400">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            Bio needs at least 20 characters — tell the community a bit more about yourself
+          </div>
+        )}
+        {step === 3 && bio.trim().length === 0 && (
+          <div className="flex items-center gap-2 text-[11px] text-yellow-400">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            A short bio helps requesters feel comfortable — required to submit
+          </div>
+        )}
+
         {step < STEPS.length - 1 ? (
           <Button
             onClick={() => setStep(s => s + 1)}
@@ -384,17 +445,18 @@ export default function HelperOnboardingScreen() {
         ) : (
           <Button
             onClick={handleSubmit}
-            disabled={saving || selectedSkills.size === 0}
+            disabled={saving || selectedSkills.size === 0 || !canAdvance}
             className="w-full h-12 rounded-xl font-black text-sm"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Star className="w-4 h-4 mr-2" />}
             {saving ? "Submitting…" : "Submit Helper Application"}
           </Button>
         )}
-        {step < STEPS.length - 1 && (
+        {/* Skip only for non-required steps (not skills step 0, not bio step 3) */}
+        {step > 0 && step < STEPS.length - 1 && (
           <button
             onClick={() => setStep(s => s + 1)}
-            className="w-full text-center text-xs text-muted-foreground mt-3 py-1"
+            className="w-full text-center text-xs text-muted-foreground py-1 active:opacity-70"
           >
             Skip this step
           </button>

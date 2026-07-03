@@ -45,7 +45,9 @@ export function NiaGlobal() {
   const [location] = useLocation();
   const { currentUser, helperModeActive, activeRequestId, userPlace } = useAppContext();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [niaEnabled, setNiaEnabled] = useState<boolean>(true); // optimistic: assume enabled
+  // Start as null (unknown) — prevents a ~200ms flicker where FAB appears then
+  // immediately hides if Nia is disabled. NiaFab renders null for any falsy value.
+  const [niaEnabled, setNiaEnabled] = useState<boolean | null>(null);
   const [initialMessage, setInitialMessage] = useState<string | undefined>(undefined);
 
   // ── Kill-switch polling ──────────────────────────────────────────────────
@@ -108,8 +110,10 @@ export function NiaGlobal() {
         - enabled=true   → renders draggable N orb
         - Only shown on non-login screens (login has its own hero orb)
       */}
+      {/* niaEnabled===null means "loading" — treat same as disabled so FAB
+          doesn't flash briefly before the first status poll returns */}
       <NiaFab
-        enabled={niaEnabled}
+        enabled={niaEnabled === true}
         onClick={() => {
           if (niaEnabled) {
             setInitialMessage(undefined);

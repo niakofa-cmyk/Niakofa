@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useAppContext } from "@/lib/AppContext";
 import { subscribeToPush } from "@/lib/push";
 import { useUpdateUser } from "@workspace/api-client-react";
+import { toast } from "@/hooks/use-toast";
 
 interface Step {
   id: string;
@@ -253,8 +254,13 @@ export default function OnboardingScreen() {
         }
         setCitySaved(true);
       } catch {
-        // Non-fatal: still proceed even if save fails
+        // Save failed — store locally so Nia still has context, but notify user
         try { localStorage.setItem("niakofa_user_city", cityInput.trim()); } catch {}
+        toast({
+          title: "Couldn't save city to your profile",
+          description: "Your city is saved locally for this session. You can update it later in your profile settings.",
+          variant: "destructive",
+        });
       }
     }
 
