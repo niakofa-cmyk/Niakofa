@@ -152,6 +152,14 @@ const ILLEGAL_SERVICE_PATTERNS: RegExp[] = [
   /(iibso|iibi|hel|raadi)\s*(daroogooyinka|qanjidhada|kokayin|hiiruwin|fentaanul)/i,
   /(gaaduudnimo|shaqaalaha galmada|adeegyada jinsiga)/i,
   /(warqad been ah|baasaboor been ah|aqoonsiga been ah|khiyaano)/i,
+
+  // ── Portuguese (pt) — São Paulo, Angola, Mozambique, Cape Verde, diaspora ──
+  // São Paulo has the largest African-descended population outside Africa.
+  // No \b on substance nouns — Portuguese diacritics break ASCII boundaries.
+  /(comprar|vender|obter|encontrar|entregar)\s+(drogas?|maconha|cocaína|heroína|fentanil|comprimidos ilegais)/i,
+  /(prostituição|garota de programa|serviço sexual|escolta sexual)/i,
+  /(documento falso|passaporte falso|identidade falsa|falsificar|contrafação)/i,
+  /(hackear|invadir\s+conta|acesso não autorizado|phishing|golpe digital)/i,
 ];
 
 export interface ModerationResult {
@@ -166,9 +174,16 @@ export function moderatePostText(message: string): ModerationResult {
     return { status: "pending", reason: "too short to evaluate" };
   }
 
+  // Diacritic-free version: mobile users in Portuguese, French, Spanish
+  // communities often skip accent marks (e.g. "nao" for "não", "drogue" typed
+  // as "drogue" is already fine, but "cocaína" → "cocaina"). Match against
+  // BOTH the original and the stripped form so we never miss illegal signals
+  // due to keyboard/autocorrect differences.
+  const accentless = trimmed.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
   // Hard blocks — check before anything else
   for (const pattern of BLOCKED_PATTERNS) {
-    if (pattern.test(trimmed)) {
+    if (pattern.test(trimmed) || pattern.test(accentless)) {
       return { status: "pending", reason: "matched blocked content pattern" };
     }
   }
@@ -227,9 +242,12 @@ export function moderateRequestText(title: string, description: string): Moderat
     return { status: "pending", reason: "too short to evaluate" };
   }
 
+  // Diacritic-free form for same reason as moderatePostText above.
+  const accentless = combined.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
   // Illegal service signals — most important check
   for (const pattern of ILLEGAL_SERVICE_PATTERNS) {
-    if (pattern.test(combined)) {
+    if (pattern.test(combined) || pattern.test(accentless)) {
       return { status: "pending", reason: "possible illegal service request" };
     }
   }

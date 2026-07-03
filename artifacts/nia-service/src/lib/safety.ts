@@ -13,8 +13,16 @@
  */
 
 // ═════════════════════════════════════════════════════════════════════════════
-// CRISIS PATTERNS — Multilingual (English, Spanish, Swahili, Zulu, Twi,
-//                                 Yoruba, Hausa, Amharic, Somali, Pidgin, Luganda)
+// CRISIS PATTERNS — Multilingual
+//
+// Full roster: English, Spanish, French, Portuguese, Haitian Creole, Arabic,
+//              Swahili, Zulu, Twi/Akan, Yoruba, Hausa, Amharic, Somali,
+//              Nigerian Pidgin, Luganda, Igbo, Wolof
+//
+// Every language Nia speaks must have its own crisis floor. A user writing
+// "je veux mourir" (French) or "quero morrer" (Portuguese) or "mwen vle mouri"
+// (Haitian Creole) is in the same crisis as an English speaker — and MUST
+// receive the same immediate escalation.
 // ═════════════════════════════════════════════════════════════════════════════
 //
 // CRITICAL: This file MUST detect crisis language in ALL languages Nia speaks.
@@ -163,6 +171,50 @@ const CRISIS_PATTERNS = [
   // Wolof uses Latin script with apostrophes; \b unreliable on those chars.
   /(dama bëgg nawël|dama bëgg def miin|amul jàmm ci suuf bi|dama metti lool|dama sett xam nga|amul yëgël bu am solo|dama dafa ko dafa)/i,
   /(amul lekk|doomam yi lekk dafa amul|amul woon ci géej|lañ ko dafa)/i,
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ADDITIONAL DIASPORA / GLOBAL LANGUAGE CRISIS PATTERNS — added 2026-07
+  //
+  // These four languages cover major Niakofa user communities not previously
+  // represented in crisis detection:
+  //   • French (fr): Brussels Congolese diaspora, Paris/Marseille West & Central
+  //     African diaspora, Francophone West Africa, Haitian community in Montréal
+  //   • Portuguese (pt): São Paulo (largest African-descended pop. outside Africa),
+  //     Angola, Mozambique, Cape Verde, Lusophone diaspora worldwide
+  //   • Haitian Creole (ht): Port-au-Prince, Miami, NYC (Flatbush/Crown Heights),
+  //     Boston, Montréal
+  //   • Arabic (ar): North Africa (Morocco, Algeria, Tunisia, Egypt), Somali/
+  //     Sudanese/Syrian diaspora, and Arabic-speaking communities globally
+  //
+  // French uses standard Latin with \b. Portuguese same. Haitian Creole uses
+  // apostrophes & vowel-heavy words — no \b. Arabic is non-Latin — no \b.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // ── French (fr) — suicidal ideation, abuse, violence, hunger, homelessness ─
+  /\b(je veux mourir|je veux me suicider|en finir avec tout|mettre fin à ma vie|je ne veux plus vivre|plus rien n'a de sens|je préfère mourir|mourir serait mieux|j'en ai assez de vivre|je vais me tuer|je vais passer à l'acte)\b/i,
+  /\b(on me bat|je suis maltraité|il me frappe|elle me frappe|violence domestique|je suis abusé|on m'a violé|j'ai été violée|trafic humain|on m'a pris mon passeport|je ne peux pas partir|on me retient|je suis séquestré)\b/i,
+  /\b(je n'ai pas mangé|mes enfants n'ont pas mangé|pas de nourriture|je dors dehors|je n'ai pas de logement|je suis à la rue|je suis sans-abri|pas d'endroit pour dormir|expulsé ce soir|à la rue cette nuit)\b/i,
+  /\b(je n'en peux plus|je me sens vide|je suis seul au monde|sans espoir|je suis à bout|je vais craquer|je veux tout arrêter|je n'existe pour personne|personne ne m'aime|personne ne me verrait manquer)\b/i,
+
+  // ── Portuguese (pt) — suicidal ideation, abuse, violence, hunger, homelessness
+  /\b(quero morrer|quero me matar|não quero mais viver|acabar com tudo|tirar minha vida|não tenho motivo para viver|seria melhor sem mim|penso em me machucar|não consigo continuar|desaparecer para sempre|vou me matar)\b/i,
+  /\b(estou sendo agredido|me batem|violência doméstica|me abusam|fui estuprado|fui estuprada|tráfico humano|tomaram meu passaporte|não posso sair|me exploram|estou preso|estou presa)\b/i,
+  /\b(não tenho comida|meus filhos não comeram|não tenho onde dormir|durmo na rua|sem-abrigo|fui despejado|fui despejada|não tenho dinheiro para comer|meus filhos estão com fome|bebê sem leite)\b/i,
+  /\b(sem esperança|não consigo mais|não aguento mais|estou perdido|estou perdida|não sei o que fazer|tudo acabou|não tenho forças|estou sozinho|estou sozinha|ninguém se importa|melhor sem mim)\b/i,
+
+  // ── Haitian Creole (ht) — suicidal ideation, abuse, hunger, homelessness ──
+  // No \b — Creole uses apostrophes and accented vowels.
+  /(mwen vle mouri|mwen vle touye tèt mwen|mwen pa vle viv ankò|tout bagay fini pou mwen|mwen pa gen rezon viv|mwen ta prefere mouri|mwen bouke viv|mwen pral fè sa)/i,
+  /(yo ap bat mwen|mwen ap sibi maltretans|li bat mwen|yo vyole mwen|trafik moun|yo pran paspo mwen|mwen pa ka kite|yo kenbe mwen|yo ap fè m mal)/i,
+  /(mwen pa manje|pitit mwen grangou|mwen pa gen manje|mwen dòmi deyò|mwen pa gen kote pou dòmi|yo chase mwen|mwen san kay|mwen nan lari|mwen ap mouri grangou)/i,
+  /(mwen bouke viv|mwen pèdi espwa|mwen poukont mwen|pesonn pa bezwen mwen|mwen pa ka anplis|mwen pa konn sa pou m fè|mwen pèdi tèt mwen)/i,
+
+  // ── Arabic (ar) — suicidal ideation, abuse, violence, hunger, homelessness ─
+  // No \b — Arabic uses non-Latin script; ASCII boundaries do not apply.
+  /(أريد الموت|أريد أن أنهي حياتي|لا أريد العيش|أريد الانتحار|لا هدف لي في الحياة|الحياة لا معنى لها|أريد أن أختفي|أتمنى لو لم أكن موجوداً|سأقتل نفسي|سأنهي حياتي)/i,
+  /(يضربونني|أتعرض للعنف|العنف الأسري|تم اغتصابي|الاتجار بالبشر|أخذوا جوازي|لا أستطيع المغادرة|يستغلونني|أنا محتجز|أنا محتجزة|يسيئون معاملتي)/i,
+  /(لا يوجد طعام|أطفالي لم يأكلوا|أنا جائع|أنا جائعة|أنام في الشارع|لا مكان للنوم|لا مأوى|تم طردي|لا أملك المال للطعام|أطفالي يتضورون جوعاً)/i,
+  /(لا أمل|لا أستطيع الاستمرار|لا أستطيع التحمل|أنا وحيد|أنا وحيدة|لا أحد يهتم|كل شيء ينهار|أنا ضائع|أنا ضائعة|العالم أفضل بدوني)/i,
 ];
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -214,8 +266,9 @@ const SOFT_DISTRESS_PATTERNS = [
   /\b(nadie con quien hablar|no tengo amigos|totalmente solo|no tengo familia|a nadie le importo|invisible|olvidado|nadie me quiere|me siento solo)\b/i,
 
   // ── Soft distress — African & diaspora languages (added 2026-07) ──────────
-  // Same bilingual requirement applies. Swahili, Zulu, Twi, Yoruba, Hausa,
-  // Amharic, Somali, Nigerian Pidgin, Luganda soft-distress signals.
+  // Full roster matches CRISIS_PATTERNS above: Swahili, Zulu, Twi, Yoruba,
+  // Hausa, Amharic, Somali, Nigerian Pidgin, Luganda, Igbo, Wolof, plus
+  // French, Portuguese, Haitian Creole, Arabic (added for global coverage).
 
   // Swahili (sw) — no \b for same reason as crisis patterns above
   /(nimechoka|niko peke yangu|ninahangaika|sijui la kufanya|ninahitaji msaada|ninaomba msaada|sina pesa|nimepoteza kazi|siwezi kulipa kodi|sina nguvu|nachanganyikiwa)/i,
@@ -249,6 +302,20 @@ const SOFT_DISTRESS_PATTERNS = [
 
   // Wolof (wo) — soft distress
   /(dama metti|dama soxor|amul kanam|dama am solo réer|amul kanam|dama am xam xam bu metti|dama yagg ci suuf)/i,
+
+  // ── French (fr) — soft distress ──────────────────────────────────────────
+  /\b(je souffre|je me sens seul|je me sens seule|je suis épuisé|je suis épuisée|je suis déprimé|je suis déprimée|j'ai peur|j'ai perdu mon travail|je ne peux pas payer le loyer|j'ai besoin d'aide|je lutte|je suis à bout|je craque|je ne sais plus où j'en suis)\b/i,
+
+  // ── Portuguese (pt) — soft distress ──────────────────────────────────────
+  /\b(estou sofrendo|me sinto só|estou exausto|estou exausta|estou deprimido|estou deprimida|tenho medo|perdi meu emprego|não consigo pagar o aluguel|preciso de ajuda|estou lutando|estou a ponto de desmoronar|me sinto perdido|me sinto perdida)\b/i,
+
+  // ── Haitian Creole (ht) — soft distress ──────────────────────────────────
+  // No \b — apostrophes and accented vowels break ASCII word boundaries.
+  /(mwen ap soufri|mwen santi mwen poukont|mwen fatige anpil|mwen deprime|mwen pè|mwen pèdi travay mwen|mwen pa ka peye lwaye|mwen bezwen èd|mwen nan difikilte|mwen bouke)/i,
+
+  // ── Arabic (ar) — soft distress ──────────────────────────────────────────
+  // No \b — non-Latin script.
+  /(أنا أعاني|أشعر بالوحدة|أنا منهك|أنا منهكة|أنا مكتئب|أنا مكتئبة|أنا خائف|أنا خائفة|فقدت عملي|لا أستطيع دفع الإيجار|أحتاج إلى المساعدة|أنا في ضائقة|أنا مرهق|أنا مرهقة)/i,
 ];
 
 export interface SafetyResult {
@@ -271,7 +338,16 @@ export function checkSafety(message: string): SafetyResult {
     .normalize("NFKC")
     .replace(/[\u200B-\u200D\uFEFF\u00AD\u2060]/g, "");
 
-  const isCrisis = CRISIS_PATTERNS.some((p) => p.test(normalized));
+  // Diacritic-free version for matching Latin-script languages (Portuguese,
+  // French, Spanish) where mobile users frequently omit accents (e.g. "nao"
+  // instead of "não", "epuise" instead of "épuisé"). We match against BOTH
+  // the accent-preserving form (correct for Yoruba, Amharic, Twi diacritics)
+  // and the stripped form (catches informal/autocorrected Latin-script input).
+  const accentless = normalized.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  const isCrisis = CRISIS_PATTERNS.some(
+    (p) => p.test(normalized) || p.test(accentless)
+  );
   if (isCrisis) {
     return {
       flagged: true,
@@ -280,17 +356,17 @@ export function checkSafety(message: string): SafetyResult {
         "",
         "Please reach out to one of these right now — they are real people, available 24/7:",
         "",
-        "🆘  Immediate danger → Call 911",
-        "💛  Suicide & Crisis → Call or text **988** (free, 24/7, no judgment)",
-        "💬  Crisis Text Line → Text **HOME** to **741741**",
-        "💜  Domestic Violence → **1-800-799-7233** (SAFE, 24/7)",
-        "🏠  Shelter & Housing → Call or text **211**",
-        "🍽️  Food Emergency → Call **211** or text FOOD to **877-877**",
-        "🧠  Mental Health / Substance Use → **1-800-662-4357** (SAMHSA)",
-        "👶  Child Safety → **1-800-422-4453** (Childhelp)",
-        "🏳️‍🌈  LGBTQ+ Crisis → **1-866-488-7386** or text START to **678-678**",
-        "🎖️  Veterans → **988**, then press 1",
-        "🌍  International → findahelpline.com",
+        "🆘  Immediate danger → Call **112** (most of Europe & Africa) · **999** (UK) · **911** (US/Canada) · or your local emergency number",
+        "💛  Suicide & Crisis (US) → Call or text **988** (free, 24/7, no judgment)",
+        "🌍  Crisis lines worldwide → **findahelpline.com** · **befrienders.org**",
+        "💬  Crisis Text Line (US/Canada) → Text **HOME** to **741741**",
+        "💜  Domestic Violence (US) → **1-800-799-7233** (SAFE, 24/7)",
+        "🏠  Shelter & Housing (US) → Call or text **211**",
+        "🍽️  Food Emergency (US) → Call **211** or text FOOD to **877-877**",
+        "🧠  Mental Health / Substance Use (US) → **1-800-662-4357** (SAMHSA)",
+        "👶  Child Safety (US) → **1-800-422-4453** (Childhelp)",
+        "🏳️‍🌈  LGBTQ+ Crisis (US) → **1-866-488-7386** or text START to **678-678**",
+        "🎖️  Veterans (US) → **988**, then press 1",
         "",
         "Pamoja — together, we carry this. You are not alone.",
         "",
@@ -299,7 +375,9 @@ export function checkSafety(message: string): SafetyResult {
     };
   }
 
-  const isSoftDistress = SOFT_DISTRESS_PATTERNS.some((p) => p.test(normalized));
+  const isSoftDistress = SOFT_DISTRESS_PATTERNS.some(
+    (p) => p.test(normalized) || p.test(accentless)
+  );
   if (isSoftDistress) {
     return { flagged: false, soft: true };
   }

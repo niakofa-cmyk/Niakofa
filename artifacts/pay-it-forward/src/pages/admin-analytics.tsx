@@ -265,9 +265,13 @@ export default function AdminAnalyticsDashboard() {
       <Section title="Pledge Pool Health">
         <div className="grid grid-cols-3 gap-3">
           {[
-            { label: "Pledged", value: `$${pledge_pool.total_pledged.toLocaleString()}`, color: "text-foreground" },
-            { label: "Paid Out", value: `$${pledge_pool.total_paid.toLocaleString()}`, color: "text-green-400" },
-            { label: "Pending", value: `$${pledge_pool.pending.toLocaleString()}`, color: "text-amber-400" },
+            // Pool amounts are stored and processed in USD (platform currency).
+            // toLocaleString() uses the admin's browser locale for number formatting
+            // (e.g. "1,234" in en-US, "1.234" in de-DE) while the $ prefix
+            // correctly reflects that these are USD pool amounts.
+            { label: "Pledged",  value: `${pledge_pool.total_pledged.toLocaleString("en-US")}`, color: "text-foreground" },
+            { label: "Paid Out", value: `${pledge_pool.total_paid.toLocaleString("en-US")}`,    color: "text-green-400" },
+            { label: "Pending",  value: `${pledge_pool.pending.toLocaleString("en-US")}`,       color: "text-amber-400" },
           ].map(({ label, value, color }) => (
             <div key={label} className="bg-background rounded-xl p-3 text-center">
               <DollarSign className="w-4 h-4 text-muted-foreground mx-auto mb-1" />

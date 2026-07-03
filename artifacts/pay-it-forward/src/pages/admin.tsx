@@ -3649,7 +3649,14 @@ function SystemTab() {
     } catch { /* non-fatal */ } finally { setHardshipLoading(false); }
   };
 
-  useEffect(() => { loadHealth(); loadHardship(); }, []);
+  useEffect(() => {
+    loadHealth();
+    loadHardship();
+    // Auto-refresh worker health every 30 s so the admin always sees live
+    // worker status without having to click Refresh manually.
+    const id = setInterval(loadHealth, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const resolveHardship = async (requestId: number, action: "forgiven" | "written_off" | "dismiss") => {
     setResolvingId(requestId);

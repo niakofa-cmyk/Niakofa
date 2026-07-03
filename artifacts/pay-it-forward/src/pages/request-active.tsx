@@ -158,10 +158,13 @@ export default function ActiveRequestScreen() {
   const isHelper = !!currentUser && !!request && request.helper_id === currentUser.id;
 
   const routeParams = {
-    start_lat: myLocation?.lat || 0,
-    start_lng: myLocation?.lng || 0,
-    end_lat: request?.lat || 0,
-    end_lng: request?.lng || 0,
+    // Use ?? (null coalescing) not || so that lat/lng = 0 (equatorial cities
+    // like Kampala UG at 0.3°N, Libreville GA at 0.4°N) are treated as valid
+    // coordinates rather than being replaced with a fallback of 0,0 (Gulf of Guinea).
+    start_lat: myLocation?.lat ?? 0,
+    start_lng: myLocation?.lng ?? 0,
+    end_lat: request?.lat ?? 0,
+    end_lng: request?.lng ?? 0,
     profile: routingProfile,
     // Locale-aware navigation: voice instructions and distance units match the
     // user's locale automatically. Helpers in Lagos get km + Mapbox Hausa TTS;
@@ -459,9 +462,13 @@ export default function ActiveRequestScreen() {
 
   if (requestLoading || !myLocation) {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center text-primary">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4" />
-        <p>Loading route...</p>
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center text-primary gap-3">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-muted-foreground">
+          {requestLoading ? "Loading request…" : "Finding your location…"}
+        </p>
+        {/* myLocation is populated by GPS or IP fallback (AppContext).
+            This state resolves in ≤5 s even without GPS hardware. */}
       </div>
     );
   }

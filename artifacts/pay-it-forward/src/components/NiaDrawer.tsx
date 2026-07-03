@@ -886,7 +886,7 @@ I am Nia. How can I support you today?`,
 
 She'll be back soon. In the meantime, all of Niakofa's community features — the map, requests, helpers, and your wallet — are fully available.
 
-If this is an emergency, please call 911 or text HOME to 741741.`,
+If this is an emergency: call 112 (most countries) · 999 (UK) · 911 (US/Canada). Crisis support worldwide: findahelpline.com`,
               streaming: false,
               timestamp: new Date(),
             };
@@ -910,7 +910,7 @@ If this is an emergency, please call 911 or text HOME to 741741.`,
 
 Your limit resets at ${reset}. Rest well — I'll be here when you return.
 
-🆘 If this is an emergency, call 911. Crisis line: 988.`,
+🆘 Emergency: 112 (global) · 999 (UK) · 911 (US). Crisis support: findahelpline.com · 988 (US).`,
               streaming: false,
               timestamp: new Date(),
             };
@@ -954,7 +954,7 @@ Your limit resets at ${reset}. Rest well — I'll be here when you return.
                 if (last?.role === "nia") {
                   updated[updated.length - 1] = {
                     ...last,
-                    content: event.type === "error" ? "I'm having trouble connecting right now. If this is an emergency, please call 911 or text 988." : last.content,
+                    content: event.type === "error" ? "I'm having trouble connecting right now. If this is an emergency: 112 (global) · 999 (UK) · 911 (US). Crisis support: findahelpline.com" : last.content,
                     streaming: false,
                     lang: userLang,
                   };
@@ -975,7 +975,7 @@ Your limit resets at ${reset}. Rest well — I'll be here when you return.
         const last = updated[updated.length - 1];
         if (last?.role === "nia" && last.streaming) updated[updated.length - 1] = {
           role: "nia",
-          content: "I'm having trouble connecting right now. If this is an emergency, please call 911 or text 988.",
+          content: "I'm having trouble connecting right now. If this is an emergency: 112 (global) · 999 (UK) · 911 (US). Crisis support: findahelpline.com",
           streaming: false,
           timestamp: new Date(),
         };
@@ -1244,7 +1244,7 @@ Your limit resets at ${reset}. Rest well — I'll be here when you return.
                         textAlign: "center", marginTop: 7, lineHeight: 1.5,
                       }}
                     >
-                      Pamoja — together we rise. · Emergency: 911 · Crisis: 988
+                      Pamoja — together we rise. · Emergency: 112 · 999 · 911 · Crisis: findahelpline.com
                     </p>
                   </div>
                 </>

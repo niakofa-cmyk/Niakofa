@@ -982,7 +982,9 @@ export default function NewRequestScreen() {
               </Button>
 
               {!pinLocation && (
-                <p className="text-xs text-yellow-500 text-center">Waiting for GPS to set your location...</p>
+                <p className="text-xs text-yellow-500 text-center">
+                  Tap the map above to pin your location
+                </p>
               )}
             </form>
           </Form>
