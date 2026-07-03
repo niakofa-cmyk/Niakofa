@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Globe,
+  Mic,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
@@ -193,6 +194,86 @@ function LanguageSwitcher(_: { userId: number }) {
           {lang === l.code && <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />}
         </button>
       ))}
+    </div>
+  );
+}
+
+// ── Nia Voice ──────────────────────────────────────────────────────────────────
+
+interface VoiceProfileOption {
+  id: string;
+  name: string;   // API returns 'name' (not 'label')
+  available: boolean;
+}
+
+function NiaVoiceSettings(_: { userId: number }) {
+  const [profiles, setProfiles] = useState<VoiceProfileOption[]>([]);
+  const [selected, setSelected] = useState(
+    () => { try { return localStorage.getItem("nia_voice_profile") ?? "default_en"; } catch { return "default_en"; } }
+  );
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/nia/voice/profiles`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : { profiles: [] }))
+      .then((data: { profiles?: VoiceProfileOption[] }) => setProfiles(data.profiles ?? []))
+      .catch(() => setProfiles([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSelect = (id: string, available: boolean) => {
+    if (!available) {
+      toast({ title: "This voice isn't live yet", description: "We'll let you know when it's ready." });
+      return;
+    }
+    try { localStorage.setItem("nia_voice_profile", id); } catch {}
+    setSelected(id);
+    const name = profiles.find((p) => p.id === id)?.name ?? id;
+    toast({ title: `Nia's voice set to ${name}` });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <h2 className="text-xl font-bold">Nia's Voice</h2>
+      <p className="text-sm text-muted-foreground">
+        Choose the voice Nia speaks with. Voices are real, licensed recordings —
+        not a synthetic accent. Standard English is always available.
+      </p>
+      {profiles.map((p) => (
+        <button
+          key={p.id}
+          onClick={() => handleSelect(p.id, p.available)}
+          className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-colors text-left active:scale-[0.98] ${
+            selected === p.id
+              ? "border-primary bg-primary/10 text-primary"
+              : "border-border bg-card text-foreground hover:border-primary/40"
+          } ${!p.available ? "opacity-50" : ""}`}
+          style={{ touchAction: "manipulation" }}
+        >
+          <Mic className="w-4 h-4 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-sm">{p.name}</div>
+            {!p.available && (
+              <div className="text-[11px] text-muted-foreground mt-0.5">Coming soon</div>
+            )}
+          </div>
+          {selected === p.id && p.available && <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />}
+        </button>
+      ))}
+      {profiles.length === 0 && (
+        <p className="text-sm text-muted-foreground text-center py-4">
+          Voice profiles are not available yet.
+        </p>
+      )}
     </div>
   );
 }
@@ -691,6 +772,12 @@ export default function SettingsPage() {
       title: "Language / Idioma",
       icon: Globe,
       component: LanguageSwitcher,
+    },
+    {
+      id: "nia-voice",
+      title: "Nia's Voice",
+      icon: Mic,
+      component: NiaVoiceSettings,
     },
     {
       id: "delete-account",

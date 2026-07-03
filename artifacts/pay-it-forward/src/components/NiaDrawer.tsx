@@ -724,6 +724,19 @@ export function NiaDrawer({
     speak(preview, lang);
   }, [speak]);
 
+  // Voice wake-word indicator inside the open drawer — NiaFab shows the same
+  // indicator on the collapsed orb; keep listening while the drawer is open
+  // so a hands-free follow-up ("Hey Nia, ...") still works.
+  const { listeningState: drawerListeningState, isSupported: voiceSupported } = useVoiceWakeWord({
+    enabled: open,
+    onWakeWordDetected: (_lang, transcript) => {
+      if (transcript && transcript.trim()) {
+        setInput(transcript.trim());
+        inputRef.current?.focus();
+      }
+    },
+  });
+
   // GPS is managed by AppContext watchPosition — this is kept as a no-op for any remaining call-sites
   const requestLocation = useCallback(() => {}, []);
 
@@ -1085,6 +1098,12 @@ Your limit resets at ${reset}. Rest well — I'll be here when you return.
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {voiceSupported && drawerListeningState !== "idle" && (
+                    <VoiceWakeWordIndicator
+                      state={drawerListeningState}
+                      language={userLang}
+                    />
+                  )}
                   {locationStatus === "granted" && (
                     <div
                       style={{

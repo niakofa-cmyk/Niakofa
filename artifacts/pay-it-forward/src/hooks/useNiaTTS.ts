@@ -16,6 +16,8 @@
 import { useCallback, useRef } from "react";
 import { CulturalLanguage } from "../lib/culturalGreetings";
 
+const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
 const LANG_BCP47: Record<CulturalLanguage, string> = {
   en: "en-US",
   sw: "sw-KE",
@@ -155,7 +157,7 @@ async function tryServerTTS(
 ): Promise<{ stop: () => void } | null> {
   if (!token) return null;
   try {
-    const resp = await fetch("/api/nia/voice/speak", {
+    const resp = await fetch(`${API_BASE}/api/nia/voice/speak`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
