@@ -228,6 +228,137 @@ function Sparkline({ data, color = "#3b82f6", height = 40 }: { data: number[]; c
 }
 
 // ── Pledge Pool Dashboard ───────────────────────────────────────────────────
+// ── Pool Balance Banner ───────────────────────────────────────────────────────
+// Real-time community pool stats shown at the top of the Pledges tab so admins
+// don't have to switch to Analytics to see balance and runway.
+// Fetches /api/pool/stats (public endpoint) and auto-refreshes every 60s.
+interface PoolStats {
+  enabled: boolean;
+  balance: number;
+  runway_days: number | null;
+  inflow_30d: number;
+  outflow_30d: number;
+  guaranteed_minimum: number;
+  minimum_hourly_rate: number;
+  pending_minimums_count: number;
+  pending_minimums_total: number;
+}
+
+function PoolBalanceBanner() {
+  const [stats, setStats] = useState<PoolStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/pool/stats");
+      if (res.ok) {
+        const d = await res.json() as PoolStats;
+        setStats(d);
+        setLastRefresh(new Date());
+      }
+    } catch {
+      // non-fatal — shows stale data or skeleton
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const id = setInterval(() => { void load(); }, 60_000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  const runwayLabel = stats?.runway_days == null
+    ? "∞"
+    : stats.runway_days > 999
+    ? "999+ days"
+    : `${stats.runway_days} day${stats.runway_days !== 1 ? "s" : ""}`;
+
+  const runwayColor = stats == null ? ""
+    : stats.runway_days == null ? "text-green-400"
+    : stats.runway_days < 14 ? "text-destructive"
+    : stats.runway_days < 60 ? "text-yellow-400"
+    : "text-green-400";
+
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      {/* Header row */}
+      <div className="flex items-center justify-between px-4 pt-3 pb-1">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Community Pool</span>
+          {stats && (
+            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
+              stats.enabled
+                ? "bg-green-500/10 text-green-400 border-green-500/30"
+                : "bg-destructive/10 text-destructive border-destructive/30"
+            }`}>
+              {stats.enabled ? "ACTIVE" : "PAUSED"}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={() => { void load(); }}
+          disabled={loading}
+          className="text-muted-foreground active:text-foreground"
+          style={{ touchAction: "manipulation" }}
+          title="Refresh pool stats"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+
+      {/* Main stat grid */}
+      <div className="grid grid-cols-3 divide-x divide-border border-t border-border mt-2">
+        <div className="px-4 py-3 text-center">
+          <div className={`text-xl font-black tabular-nums ${loading ? "animate-pulse text-muted-foreground" : "text-primary"}`}>
+            {stats ? `$${stats.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—"}
+          </div>
+          <div className="text-[10px] text-muted-foreground mt-0.5">Balance</div>
+        </div>
+        <div className="px-4 py-3 text-center">
+          <div className={`text-xl font-black tabular-nums ${loading ? "animate-pulse text-muted-foreground" : runwayColor}`}>
+            {stats ? runwayLabel : "—"}
+          </div>
+          <div className="text-[10px] text-muted-foreground mt-0.5">Runway</div>
+        </div>
+        <div className="px-4 py-3 text-center">
+          <div className={`text-xl font-black tabular-nums ${loading ? "animate-pulse text-muted-foreground" : stats?.pending_minimums_count ? "text-yellow-400" : "text-muted-foreground"}`}>
+            {stats ? stats.pending_minimums_count : "—"}
+          </div>
+          <div className="text-[10px] text-muted-foreground mt-0.5">Queued payouts</div>
+        </div>
+      </div>
+
+      {/* Secondary row */}
+      {stats && (
+        <div className="flex divide-x divide-border border-t border-border">
+          <div className="flex-1 px-4 py-2 flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground">30d inflow</span>
+            <span className="text-[11px] font-bold text-green-400">+${stats.inflow_30d.toFixed(0)}</span>
+          </div>
+          <div className="flex-1 px-4 py-2 flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground">30d outflow</span>
+            <span className="text-[11px] font-bold text-destructive">-${stats.outflow_30d.toFixed(0)}</span>
+          </div>
+          <div className="flex-1 px-4 py-2 flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground">Min rate</span>
+            <span className="text-[11px] font-bold">${stats.minimum_hourly_rate}/hr</span>
+          </div>
+        </div>
+      )}
+
+      {lastRefresh && (
+        <div className="px-4 pb-2 text-[9px] text-muted-foreground/50 text-right">
+          Updated {lastRefresh.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · auto-refreshes every 60s
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PledgePoolDashboard() {
   const [data, setData] = useState<PledgePoolData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2375,6 +2506,7 @@ export default function AdminScreen() {
         {activeTab === "orgs"      && <OrgsTab authed={authed} />}
         {activeTab === "pledges"   && (
           <div className="space-y-4">
+            <PoolBalanceBanner />
             <PledgePoolDashboard />
             <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1 mt-4">Resolve Outstanding Pledges</div>
             <PledgeWriteOffCard />
