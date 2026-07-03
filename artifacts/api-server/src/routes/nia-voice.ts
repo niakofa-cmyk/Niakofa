@@ -29,8 +29,26 @@ import {
   ELEVENLABS_API_KEY,
   ELEVENLABS_BASE,
 } from "../lib/voiceProfiles";
+import { db, systemSettingsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 const router = Router();
+
+// ── Nia kill-switch check (same as nia-proxy.ts) ─────────────────────────────
+// Voice TTS is part of Nia — disabling Nia from the admin panel also gates
+// voice synthesis, so a completely disabled Nia doesn't produce audio.
+async function isNiaEnabled(): Promise<boolean> {
+  try {
+    const [row] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "nia_enabled"))
+      .limit(1);
+    return row?.value !== "false";
+  } catch {
+    return true; // safe default — never accidentally silence Nia on a DB hiccup
+  }
+}
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024; // 10MB — generous for a single voice message
@@ -145,6 +163,12 @@ router.post(
 // Returns audio/mpeg bytes directly (not SSE — this is a one-shot TTS call for
 // a complete Nia response, not a live streaming layer).
 router.post("/nia/voice/speak", requireAuth, voiceLimiter, async (req: Request, res: Response) => {
+  // Respect the global Nia kill-switch — if admin has disabled Nia, voice TTS
+  // is also off. This prevents audio responses from a "disabled" Nia.
+  if (!(await isNiaEnabled())) {
+    return res.status(503).json({ error: "Nia voice is temporarily unavailable." });
+  }
+
   const body = req.body as Record<string, unknown>;
   const text = typeof body.text === "string" ? body.text.trim() : "";
   if (!text) {

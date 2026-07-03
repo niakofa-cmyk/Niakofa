@@ -7,6 +7,7 @@ import { BottomNav } from "@/components/BottomNav";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
 import { useState, useEffect } from "react";
+import { wsSubscribe, type WsEventType } from "@/lib/wsClient";
 
 import MapScreen from "@/pages/map";
 import NewRequestScreen from "@/pages/request-new";
@@ -48,7 +49,7 @@ function NiaGlobal() {
   const [isMap] = useRoute("/");
   const [isStripeConnected] = useRoute("/wallet/connected");
 
-  // Poll /admin/nia-status every 60s — admin kill-switch takes effect without reload
+  // Poll /admin/nia-status every 60s — fallback for when WS is not connected
   useEffect(() => {
     let cancelled = false;
     async function checkNiaStatus() {
@@ -63,6 +64,19 @@ function NiaGlobal() {
     checkNiaStatus();
     const interval = setInterval(checkNiaStatus, 60_000);
     return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  // WS instant kill-switch — no 60s wait when admin flips the toggle
+  useEffect(() => {
+    const unsub = wsSubscribe((event) => {
+      if (
+        event.type === ("nia_status" as WsEventType) &&
+        typeof (event.payload as Record<string, unknown>)?.enabled === "boolean"
+      ) {
+        setNiaEnabled((event.payload as { enabled: boolean }).enabled);
+      }
+    });
+    return unsub;
   }, []);
 
   // Hide on screens where Nia FAB would conflict with layout

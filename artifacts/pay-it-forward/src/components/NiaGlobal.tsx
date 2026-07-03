@@ -37,6 +37,7 @@ import { useLocation } from "wouter";
 import { NiaFab } from "./NiaFab";
 import { NiaDrawer } from "./NiaDrawer";
 import { useAppContext } from "../lib/AppContext";
+import { wsSubscribe, type WsEventType } from "../lib/wsClient";
 
 const NIA_STATUS_POLL_MS = 60_000; // re-check kill-switch every 60s
 
@@ -63,10 +64,26 @@ export function NiaGlobal() {
   useEffect(() => {
     // Check immediately on mount
     checkNiaStatus();
-    // Then poll every 60s
+    // Then poll every 60s as a fallback (WS handles the instant path)
     const id = setInterval(checkNiaStatus, NIA_STATUS_POLL_MS);
     return () => clearInterval(id);
   }, [checkNiaStatus]);
+
+  // ── WS instant kill-switch ─────────────────────────────────────────────────
+  // When admin toggles Nia, the server broadcasts a nia_status event.
+  // We respond immediately — no poll needed — so the FAB and drawer appear/
+  // disappear within milliseconds of the admin flipping the switch.
+  useEffect(() => {
+    const unsub = wsSubscribe((event) => {
+      if (
+        event.type === ("nia_status" as WsEventType) &&
+        typeof (event.payload as Record<string, unknown>)?.enabled === "boolean"
+      ) {
+        setNiaEnabled((event.payload as { enabled: boolean }).enabled);
+      }
+    });
+    return unsub;
+  }, []);
 
   // Close drawer when kill-switch fires while it's open
   useEffect(() => {

@@ -19,6 +19,7 @@ import { useAppContext } from "@/lib/AppContext";
 import { BackgroundCheckAdmin } from "@/components/BackgroundCheckAdmin";
 import { detectUnits } from "@/lib/locale-utils";
 import { AdminLiveBanner } from "@/components/AdminLiveBanner";
+import { wsSubscribe, type WsEventType } from "@/lib/wsClient";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -1534,55 +1535,97 @@ function UsersTab() {
 // ── Nia Tab ───────────────────────────────────────────────────────────────────
 function NiaTab() {
   const [niaEnabled, setNiaEnabled] = useState<boolean | null>(null);
+  const [lastToggledAt, setLastToggledAt] = useState<string | null>(null);
   const [toggling, setToggling] = useState(false);
   const [confirmPending, setConfirmPending] = useState<boolean | null>(null);
+  const [broadcastConfirm, setBroadcastConfirm] = useState<string | null>(null);
   const [memoryStats, setMemoryStats] = useState<{ users: number; entries: number } | null>(null);
   const [costData, setCostData] = useState<NiaCostData | null>(null);
   const [costLoading, setCostLoading] = useState(false);
   const [costAlert, setCostAlert] = useState<{ alert: boolean; threshold: number; todayCost: number; message: string } | null>(null);
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [wsReceived, setWsReceived] = useState<{ enabled: boolean; at: string } | null>(null);
 
+  const hdrs = useCallback(() => {
+    const t = getToken();
+    return t ? { Authorization: `Bearer ${t}` } : {} as Record<string, string>;
+  }, []);
+
+  const loadStatus = useCallback(async (quiet = false) => {
+    try {
+      const r = await fetch(`${BASE}/api/admin/nia-status`, { headers: hdrs() });
+      if (r.ok) {
+        const d = await r.json() as { enabled: boolean; last_toggled_at: string | null };
+        setNiaEnabled(d.enabled);
+        if (d.last_toggled_at) setLastToggledAt(d.last_toggled_at);
+      } else if (!quiet) toast({ title: `Nia status unavailable (${r.status})`, variant: "destructive" });
+    } catch { if (!quiet) toast({ title: "Could not reach server", variant: "destructive" }); }
+  }, [hdrs]);
+
+  // ── Initial load: status + memory + cost alert + cost data ───────────────
   useEffect(() => {
-    const niaTok = getToken();
-    const niaHdrs: Record<string, string> = niaTok ? { Authorization: `Bearer ${niaTok}` } : {};
-    // Load all Nia data in parallel — errors are caught individually so one
-    // failing endpoint doesn't suppress the rest.
-    Promise.all([
-      fetch(`${BASE}/api/admin/nia-status`, { headers: niaHdrs })
-        .then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)))
-        .catch(err => { toast({ title: `Nia status unavailable (${(err as Error).message})`, variant: "destructive" }); return null; }),
-      fetch(`${BASE}/api/admin/nia-memory-stats`, { headers: niaHdrs })
-        .then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch(`${BASE}/api/admin/nia-cost-alert`, { headers: niaHdrs })
-        .then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([status, memory, alert]) => {
-      if (status?.enabled !== undefined) setNiaEnabled(status.enabled);
-      if (memory) setMemoryStats(memory);
-      if (alert) setCostAlert(alert);
-    });
+    loadStatus();
+    fetch(`${BASE}/api/admin/nia-memory-stats`, { headers: hdrs() })
+      .then(r => r.ok ? r.json() : null).then(d => { if (d) setMemoryStats(d); }).catch(() => null);
+    fetch(`${BASE}/api/admin/nia-cost-alert`, { headers: hdrs() })
+      .then(r => r.ok ? r.json() : null).then(d => { if (d) setCostAlert(d); }).catch(() => null);
     setCostLoading(true);
-    fetch(`${BASE}/api/admin/nia-costs?days=7`, { headers: niaHdrs })
+    fetch(`${BASE}/api/admin/nia-costs?days=7`, { headers: hdrs() })
       .then(r => r.ok ? r.json() : null)
       .then((d: NiaCostData | null) => { if (d) setCostData(d); setCostLoading(false); })
-      .catch(() => { setCostLoading(false); });
+      .catch(() => setCostLoading(false));
+  }, [loadStatus, hdrs]);
+
+  // ── 30-second status auto-refresh ────────────────────────────────────────
+  useEffect(() => {
+    const id = setInterval(() => loadStatus(true), 30_000);
+    return () => clearInterval(id);
+  }, [loadStatus]);
+
+  // ── WS instant kill-switch — admin tab sees its own broadcast immediately ─
+  useEffect(() => {
+    const unsub = wsSubscribe((event) => {
+      if (
+        event.type === ("nia_status" as WsEventType) &&
+        typeof (event.payload as Record<string, unknown>)?.enabled === "boolean"
+      ) {
+        const p = event.payload as { enabled: boolean; toggled_at?: string; source?: string };
+        setNiaEnabled(p.enabled);
+        if (p.toggled_at) setLastToggledAt(p.toggled_at);
+        if (p.source === "admin_toggle") {
+          setWsReceived({ enabled: p.enabled, at: new Date().toLocaleTimeString() });
+          setTimeout(() => setWsReceived(null), 8_000);
+        }
+      }
+    });
+    return unsub;
   }, []);
 
   const submitToggle = async (enabled: boolean) => {
     setConfirmPending(null);
     setToggling(true);
+    setBroadcastConfirm(null);
     try {
-      const token = getToken();
       const res = await fetch(`${BASE}/api/admin/nia-toggle`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { "Content-Type": "application/json", ...hdrs() },
         body: JSON.stringify({ enabled }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string };
         throw new Error(err.error ?? "Toggle failed");
       }
-      const data = await res.json() as { enabled: boolean };
+      const data = await res.json() as { enabled: boolean; toggled_at: string };
       setNiaEnabled(data.enabled);
-      toast({ title: data.enabled ? "Nia enabled" : "Nia disabled" });
+      if (data.toggled_at) setLastToggledAt(data.toggled_at);
+      setBroadcastConfirm(
+        data.enabled
+          ? "✅ Nia enabled — WS broadcast sent to all users instantly"
+          : "🔴 Nia disabled — WS broadcast sent to all users instantly"
+      );
+      setTimeout(() => setBroadcastConfirm(null), 7_000);
+      toast({ title: data.enabled ? "✅ Nia enabled" : "🔴 Nia disabled" });
     } catch (err) {
       toast({ title: (err as Error).message ?? "Toggle failed", variant: "destructive" });
     } finally {
@@ -1590,9 +1633,83 @@ function NiaTab() {
     }
   };
 
+  const runNiaTest = async () => {
+    setTestLoading(true);
+    setTestResult(null);
+    try {
+      const r = await fetch(`${BASE}/api/nia/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...hdrs() },
+        body: JSON.stringify({
+          message: "ping — admin test",
+          sessionId: `admin-test-${Date.now()}`,
+        }),
+      });
+      if (r.status === 503) {
+        setTestResult({ ok: false, message: "503 — Nia is disabled (kill-switch is working ✅)" });
+      } else if (r.ok) {
+        // SSE stream — just check first byte
+        const text = await r.text();
+        const hasContent = text.trim().length > 0;
+        setTestResult({ ok: true, message: hasContent ? "✅ Nia responded — chat is live" : "⚠️ Response was empty" });
+      } else {
+        const body = await r.json().catch(() => ({})) as { error?: string };
+        setTestResult({ ok: false, message: `Error ${r.status}: ${body.error ?? "unknown"}` });
+      }
+    } catch {
+      setTestResult({ ok: false, message: "Network error reaching /api/nia/chat" });
+    } finally {
+      setTestLoading(false);
+    }
+  };
+
+  // Format "last toggled" timestamp for display
+  const fmtToggled = (iso: string | null): string => {
+    if (!iso) return "Never";
+    try {
+      const d = new Date(iso);
+      const diffMs = Date.now() - d.getTime();
+      const diffMins = Math.floor(diffMs / 60_000);
+      if (diffMins < 1) return "just now";
+      if (diffMins < 60) return `${diffMins}m ago`;
+      const diffHrs = Math.floor(diffMins / 60);
+      if (diffHrs < 24) return `${diffHrs}h ago`;
+      return d.toLocaleDateString();
+    } catch { return iso; }
+  };
+
   return (
     <div className="space-y-4">
-      {/* Daily cost alert banner — shown only when today's spend exceeds threshold */}
+
+      {/* ── WS instant broadcast confirmation ── */}
+      <AnimatePresence>
+        {broadcastConfirm && (
+          <motion.div
+            key="broadcast-confirm"
+            initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+            className={`flex items-center gap-2.5 rounded-2xl px-4 py-3 text-sm font-bold ${
+              niaEnabled
+                ? "bg-green-500/10 border border-green-500/30 text-green-600 dark:text-green-400"
+                : "bg-destructive/10 border border-destructive/30 text-destructive"
+            }`}
+          >
+            <Zap className="w-4 h-4 shrink-0" />
+            <span className="flex-1">{broadcastConfirm}</span>
+          </motion.div>
+        )}
+        {wsReceived && (
+          <motion.div
+            key="ws-received"
+            initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+            className="flex items-center gap-2 rounded-xl px-3 py-2 bg-primary/10 border border-primary/20 text-[11px] text-primary font-bold"
+          >
+            <Activity className="w-3.5 h-3.5 shrink-0" />
+            WS confirmed {wsReceived.enabled ? "ENABLED" : "DISABLED"} at {wsReceived.at}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Daily cost alert banner ── */}
       {costAlert?.alert && (
         <motion.div
           initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
@@ -1605,15 +1722,14 @@ function NiaTab() {
           </div>
         </motion.div>
       )}
-      {/* Cost within threshold — soft indicator */}
       {costAlert && !costAlert.alert && (
         <div className="flex items-center gap-2 text-[11px] text-green-500 bg-green-500/10 border border-green-500/20 rounded-xl px-3 py-2">
           <CheckCircle className="w-3.5 h-3.5 shrink-0" />
-          <span>Today's AI cost <strong>${costAlert.todayCost.toFixed(3)}</strong> is within the <strong>${costAlert.threshold.toFixed(2)}</strong>/day threshold</span>
+          <span>Today's AI cost <strong>${costAlert.todayCost.toFixed(3)}</strong> within <strong>${costAlert.threshold.toFixed(2)}</strong>/day threshold</span>
         </div>
       )}
 
-      {/* Status card */}
+      {/* ── Main status card ── */}
       <motion.div
         layout
         className={`rounded-2xl border p-5 transition-colors ${
@@ -1621,20 +1737,20 @@ function NiaTab() {
         }`}
       >
         <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
               niaEnabled === false ? "bg-destructive/10" : "bg-primary/10"
             }`}>
               <Bot className={`w-5 h-5 ${niaEnabled === false ? "text-destructive" : "text-primary"}`} />
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <div className="font-black text-sm">Nia AI Status</div>
               <div className="flex items-center gap-1.5 mt-0.5">
                 {niaEnabled === null ? (
                   <span className="text-xs text-muted-foreground">Checking…</span>
                 ) : (
                   <>
-                    <span className={`w-2 h-2 rounded-full inline-block ${
+                    <span className={`w-2 h-2 rounded-full inline-block shrink-0 ${
                       niaEnabled ? "bg-green-500 animate-pulse" : "bg-muted-foreground"
                     }`} />
                     <span className={`text-xs font-bold ${
@@ -1645,26 +1761,107 @@ function NiaTab() {
                   </>
                 )}
               </div>
+              {lastToggledAt && (
+                <div className="text-[10px] text-muted-foreground mt-0.5">
+                  Last changed: {fmtToggled(lastToggledAt)}
+                </div>
+              )}
             </div>
           </div>
-          <button
-            role="switch"
-            aria-checked={niaEnabled ?? false}
-            disabled={niaEnabled === null || toggling}
-            onClick={() => setConfirmPending(!niaEnabled)}
-            style={{ touchAction: "manipulation" }}
-            className={`relative w-14 h-7 rounded-full transition-colors shrink-0 disabled:opacity-40 ${
-              niaEnabled ? "bg-green-500" : "bg-muted"
-            }`}
-          >
-            <span className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-              niaEnabled ? "translate-x-7" : "translate-x-0"
-            }`} />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Manual refresh button */}
+            <button
+              onClick={() => loadStatus()}
+              disabled={toggling}
+              style={{ touchAction: "manipulation" }}
+              className="w-8 h-8 rounded-xl border border-border flex items-center justify-center active:bg-muted disabled:opacity-40"
+              title="Refresh status"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+            </button>
+            {/* Toggle switch */}
+            <button
+              role="switch"
+              aria-checked={niaEnabled ?? false}
+              disabled={niaEnabled === null || toggling}
+              onClick={() => setConfirmPending(!niaEnabled)}
+              style={{ touchAction: "manipulation" }}
+              className={`relative w-14 h-7 rounded-full transition-colors disabled:opacity-40 ${
+                niaEnabled ? "bg-green-500" : "bg-muted"
+              }`}
+            >
+              {toggling ? (
+                <span className="absolute inset-0 flex items-center justify-center">
+                  <RefreshCw className="w-3.5 h-3.5 text-white animate-spin" />
+                </span>
+              ) : (
+                <span className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${
+                  niaEnabled ? "translate-x-7" : "translate-x-0"
+                }`} />
+              )}
+            </button>
+          </div>
         </div>
       </motion.div>
 
-      {/* System info grid */}
+      {/* ── What this toggle controls ── */}
+      <div className="bg-card border border-border rounded-2xl p-4 space-y-2">
+        <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">Toggle affects</div>
+        {[
+          { icon: MessageSquare, label: "Chat", desc: "POST /api/nia/chat → 503 when off", affected: true },
+          { icon: Activity, label: "Voice TTS", desc: "POST /api/nia/voice/speak → 503 when off", affected: true },
+          { icon: Sparkles, label: "Context injection", desc: "GET /api/nia/context still available", affected: false },
+          { icon: Zap, label: "Crisis suggestions", desc: "Crisis resources still served", affected: false },
+          { icon: LifeBuoy, label: "24h check-in AI", desc: "Check-in worker uses direct API", affected: false },
+        ].map(({ icon: Icon, label, desc, affected }) => (
+          <div key={label} className="flex items-center gap-3">
+            <Icon className={`w-3.5 h-3.5 shrink-0 ${affected ? "text-foreground" : "text-muted-foreground"}`} />
+            <div className="flex-1 min-w-0">
+              <span className={`text-[11px] font-bold ${affected ? "text-foreground" : "text-muted-foreground"}`}>{label}</span>
+              <span className="text-[10px] text-muted-foreground ml-2">{desc}</span>
+            </div>
+            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
+              affected
+                ? (niaEnabled === false ? "bg-destructive/10 text-destructive" : "bg-green-500/10 text-green-600 dark:text-green-400")
+                : "bg-muted text-muted-foreground"
+            }`}>
+              {affected ? (niaEnabled === false ? "OFF" : "ON") : "unaffected"}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Test Nia button ── */}
+      <div className="bg-card border border-border rounded-2xl p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Live Test</div>
+          <button
+            onClick={runNiaTest}
+            disabled={testLoading}
+            style={{ touchAction: "manipulation" }}
+            className="flex items-center gap-1.5 text-[11px] font-black px-3 py-1.5 rounded-xl bg-primary/10 text-primary border border-primary/20 active:bg-primary/20 disabled:opacity-50"
+          >
+            {testLoading ? <><RefreshCw className="w-3 h-3 animate-spin" /> Testing…</> : <><Zap className="w-3 h-3" /> Send Test Ping</>}
+          </button>
+        </div>
+        <div className="text-[10px] text-muted-foreground">Sends "ping — admin test" to /api/nia/chat to verify kill-switch is working as expected.</div>
+        <AnimatePresence>
+          {testResult && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+              className={`overflow-hidden rounded-xl px-3 py-2 text-[11px] font-bold ${
+                testResult.ok
+                  ? "bg-green-500/10 border border-green-500/20 text-green-600 dark:text-green-400"
+                  : "bg-muted border border-border text-foreground"
+              }`}
+            >
+              {testResult.message}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* ── System info grid ── */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-card border border-border rounded-2xl p-4">
           <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Persistence</div>
@@ -1673,8 +1870,8 @@ function NiaTab() {
         </div>
         <div className="bg-card border border-border rounded-2xl p-4">
           <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Kill-switch</div>
-          <div className="text-sm font-bold">2 layers</div>
-          <div className="text-[10px] text-muted-foreground">Proxy + nia-service</div>
+          <div className="text-sm font-bold">3 layers</div>
+          <div className="text-[10px] text-muted-foreground">Proxy + Voice + WS push</div>
         </div>
         <div className="bg-card border border-border rounded-2xl p-4">
           <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Memory Users</div>

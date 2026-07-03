@@ -11,6 +11,7 @@ import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter, authLimiter, generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
+import { broadcast } from "../lib/ws-hub";
 
 const router = Router();
 
@@ -371,21 +372,71 @@ async function setNiaEnabled(enabled: boolean): Promise<void> {
 }
 
 // GET /admin/nia-status — public, no auth. Frontend polls this to know
-// whether to show the NiaFab and drawer. Returns { enabled: boolean }.
+// whether to show the NiaFab and drawer.
+// Returns { enabled: boolean, last_toggled_at: string | null }.
 router.get("/admin/nia-status", generalApiLimiter, async (_req, res) => {
-  const enabled = await getNiaEnabled();
-  return res.json({ enabled });
+  try {
+    const [enabledRow, toggledRow] = await Promise.all([
+      db.select({ value: systemSettingsTable.value })
+        .from(systemSettingsTable)
+        .where(eq(systemSettingsTable.key, "nia_enabled"))
+        .limit(1),
+      db.select({ value: systemSettingsTable.value })
+        .from(systemSettingsTable)
+        .where(eq(systemSettingsTable.key, "nia_last_toggled_at"))
+        .limit(1),
+    ]);
+    const enabled = enabledRow[0]?.value !== "false";
+    const last_toggled_at = toggledRow[0]?.value ?? null;
+    return res.json({ enabled, last_toggled_at });
+  } catch {
+    return res.json({ enabled: true, last_toggled_at: null });
+  }
 });
 
 // POST /admin/nia-toggle — admin only. Body: { enabled: boolean }
+// Both DB writes run inside a single transaction so the WS broadcast only
+// fires after a confirmed atomic commit — partial writes never trigger a
+// broadcast with inconsistent state.
 router.post("/admin/nia-toggle", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const { enabled } = req.body as { enabled?: boolean };
   if (typeof enabled !== "boolean") {
     return res.status(400).json({ error: "enabled (boolean) is required" });
   }
-  await setNiaEnabled(enabled);
-  logger.info({ enabled }, "admin: Nia AI toggled");
-  return res.json({ ok: true, enabled });
+  const now = new Date().toISOString();
+  const value = enabled ? "true" : "false";
+
+  try {
+    // Single transaction — both settings rows or neither.
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(systemSettingsTable)
+        .values({ key: "nia_enabled", value })
+        .onConflictDoUpdate({
+          target: systemSettingsTable.key,
+          set: { value, updated_at: new Date() },
+        });
+      await tx
+        .insert(systemSettingsTable)
+        .values({ key: "nia_last_toggled_at", value: now })
+        .onConflictDoUpdate({
+          target: systemSettingsTable.key,
+          set: { value: now, updated_at: new Date() },
+        });
+    });
+  } catch (err) {
+    logger.error({ err, enabled }, "admin: Nia AI toggle DB write failed");
+    return res.status(500).json({ error: "Failed to save Nia setting — toggle not applied" });
+  }
+
+  // Broadcast only after the transaction committed successfully.
+  // Kill-switch fires on all connected clients instantly, no 60s poll wait.
+  broadcast({
+    type: "nia_status",
+    payload: { enabled, source: "admin_toggle", toggled_at: now },
+  });
+  logger.info({ enabled }, "admin: Nia AI toggled — broadcast sent to all clients");
+  return res.json({ ok: true, enabled, toggled_at: now });
 });
 
 // ── AI Cost Monitoring ────────────────────────────────────────────────────────
