@@ -102,6 +102,7 @@ app.use(
 // This MUST come before express.json() so the /stripe/webhook route gets the raw body.
 app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
 app.use("/api/verification/identity/webhook", express.raw({ type: "application/json" }));
+app.use("/api/background-checks/webhook", express.raw({ type: "application/json" }));
 // Voice STT endpoint needs raw audio bytes before express.json() runs
 app.use("/api/nia/voice/transcribe", voiceAudioRawParser);
 

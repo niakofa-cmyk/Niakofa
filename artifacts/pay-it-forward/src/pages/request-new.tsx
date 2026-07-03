@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactElement } from "react";
+import { useState, useEffect, useRef, type ReactElement } from "react";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,6 +16,7 @@ import { useCreateRequest, getGetRequestsQueryKey, getGetNearbyRequestsQueryKey 
 import { useAppContext } from "@/lib/AppContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
+import { WaiverModal, WAIVER_CATEGORIES, CURRENT_TOS_VERSION, type WaiverCategory } from "@/components/WaiverModal";
 import "mapbox-gl/dist/mapbox-gl.css";
 import MapboxMap, { Marker } from "react-map-gl/mapbox";
 
@@ -149,14 +150,27 @@ export default function NewRequestScreen() {
   const isSensitive = isSensitiveCategory(selectedCategory);
   const [sensitiveAcknowledged, setSensitiveAcknowledged] = useState(false);
 
+  // ── Liability/ToS waiver state ─────────────────────────────────────────────
+  // WaiverModal is shown for WAIVER_CATEGORIES (superset of SENSITIVE_CATEGORIES).
+  // pendingMutateRef stores a closure that calls createMutation.mutate() with the
+  // fully-built args; the modal invokes it after the user accepts the agreement.
+  const [showWaiverModal, setShowWaiverModal] = useState(false);
+  const [waiverAccepted, setWaiverAccepted] = useState(false);
+  const [waiverPending, setWaiverPending] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pendingMutateRef = useRef<(() => void) | null>(null);
+  const isWaiverCategory = WAIVER_CATEGORIES.includes(selectedCategory as WaiverCategory);
+
   // ── Business "posting as" state ────────────────────────────────────────────
   const [myBusinesses, setMyBusinesses] = useState<{ id: number; display_name: string }[]>([]);
   const [selectedBusinessId, setSelectedBusinessId] = useState<number | null>(null);
 
-  // Reset the acknowledgment whenever the user switches category — consent
-  // must be given for the specific sensitive category being posted.
+  // Reset acknowledgments whenever the user switches category — consent must
+  // be given for the specific category being posted.
   useEffect(() => {
     setSensitiveAcknowledged(false);
+    setWaiverAccepted(false);
+    pendingMutateRef.current = null;
   }, [selectedCategory]);
 
   // Fetch approved businesses the user belongs to (for "posting as" switcher)
@@ -262,15 +276,6 @@ export default function NewRequestScreen() {
       return;
     }
 
-    if (isSensitive && !sensitiveAcknowledged) {
-      toast({
-        title: "One more step",
-        description: "Please read and check the care acknowledgment before posting this request.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     // Append checklist and accessibility needs to description
     const extras: string[] = [];
     const filledItems = checklistItems.filter(i => i.trim());
@@ -288,7 +293,9 @@ export default function NewRequestScreen() {
     }
     const fullDescription = [values.description, ...extras].filter(Boolean).join("\n\n");
 
-    createMutation.mutate({
+    // Build the mutation call as a closure so it can be deferred through the
+    // WaiverModal without re-running the submit pipeline.
+    const executePost = () => createMutation.mutate({
       data: {
         title: values.title,
         description: fullDescription || undefined,
@@ -303,6 +310,7 @@ export default function NewRequestScreen() {
         pay_it_forward_amount: values.pay_it_forward_amount,
         pledge_amount: values.pledge_amount,
         ...(values.estimated_hours ? { estimated_hours: values.estimated_hours } as Record<string, unknown> : {}),
+        // Always true once waiver is accepted; server validates this for sensitive categories
         ...(isSensitive ? { sensitive_acknowledged: true } : {}),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ...(photoDataUrl ? { photo_url: photoDataUrl } as any : {}),
@@ -369,6 +377,17 @@ export default function NewRequestScreen() {
         toast({ title: "Failed to post request", description: String(err), variant: "destructive" });
       }
     });
+
+    // Waiver categories (childcare, senior_care, medical, home_repair, moving_labor) require
+    // the user to accept the liability / community ToS before the request goes live.
+    // Store the executePost closure in a ref so the WaiverModal can invoke it after acceptance.
+    if (isWaiverCategory && !waiverAccepted) {
+      pendingMutateRef.current = executePost;
+      setShowWaiverModal(true);
+      return;
+    }
+
+    executePost();
   };
 
   return (
@@ -468,7 +487,7 @@ export default function NewRequestScreen() {
               </div>
 
               {isSensitive && (
-                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 space-y-3">
+                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 space-y-2">
                   <div className="flex items-center gap-2 text-amber-400">
                     <ShieldCheck className="w-5 h-5 shrink-0" />
                     <p className="text-sm font-bold">Extra safeguards apply to this category</p>
@@ -477,19 +496,28 @@ export default function NewRequestScreen() {
                     Because this request involves care for a vulnerable person, only <span className="font-semibold text-foreground">Verified Helpers</span> who
                     have completed identity verification can claim it. It may take a little longer to get matched.
                   </p>
-                  <label className="flex items-start gap-3 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={sensitiveAcknowledged}
-                      onChange={(e) => setSensitiveAcknowledged(e.target.checked)}
-                      className="mt-0.5 w-5 h-5 accent-amber-500 shrink-0"
-                      data-testid="checkbox-sensitive-acknowledge"
-                    />
-                    <span className="text-xs text-muted-foreground leading-relaxed">
-                      I understand that Niakofa is a community mutual-aid network — <span className="font-semibold text-foreground">not a licensed childcare, homecare, or medical provider</span> —
-                      and that I am responsible for vetting the helper (meeting them, checking their profile and reviews) before care begins.
-                    </span>
-                  </label>
+                </div>
+              )}
+
+              {/* Waiver notice for all high-risk categories */}
+              {isWaiverCategory && (
+                <div className={`rounded-xl border p-4 space-y-2 ${waiverAccepted ? "border-green-500/40 bg-green-500/10" : "border-primary/40 bg-primary/5"}`}>
+                  <div className={`flex items-center gap-2 ${waiverAccepted ? "text-green-400" : "text-primary"}`}>
+                    <ShieldCheck className="w-4 h-4 shrink-0" />
+                    <p className="text-sm font-bold">
+                      {waiverAccepted ? "Community Agreement Accepted ✓" : "Community Agreement Required"}
+                    </p>
+                  </div>
+                  {waiverAccepted ? (
+                    <p className="text-xs text-green-400/80">
+                      You've reviewed and accepted the liability waiver for this category.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Clicking "Post Request" will open our Community Agreement for you to review.
+                      It covers liability, helper vetting responsibility, and the pay-it-forward gift structure.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -838,6 +866,33 @@ export default function NewRequestScreen() {
           </Form>
         </div>
       </div>
+
+      {/* Liability / Community Agreement Waiver Modal */}
+      {showWaiverModal && isWaiverCategory && (
+        <WaiverModal
+          category={selectedCategory as WaiverCategory}
+          isSubmitting={waiverPending}
+          onAccept={async () => {
+            setWaiverPending(true);
+            try {
+              const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+              // Best-effort server record — a network failure here does NOT block the post
+              await fetch(`${base}/api/users/me/accept-tos`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...authHeaders() },
+                body: JSON.stringify({ version: CURRENT_TOS_VERSION }),
+              }).catch(() => {});
+              setWaiverAccepted(true);
+              setShowWaiverModal(false);
+              pendingMutateRef.current?.();
+              pendingMutateRef.current = null;
+            } finally {
+              setWaiverPending(false);
+            }
+          }}
+          onClose={() => setShowWaiverModal(false)}
+        />
+      )}
 
       {/* Stripe Payment Modal — shown after request is created for immediate payments */}
       {pendingPayment && (

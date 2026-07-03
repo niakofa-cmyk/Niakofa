@@ -22,6 +22,7 @@ import niaProxyRouter from "./nia-proxy";
 import poolRouter from "./pool";
 import businessesRouter from "./businesses";
 import govSponsorsRouter from "./gov-sponsors";
+import backgroundChecksRouter from "./background-checks";
 
 const router: IRouter = Router();
 
@@ -48,5 +49,6 @@ router.use(niaProxyRouter);
 router.use(poolRouter);
 router.use(businessesRouter);
 router.use(govSponsorsRouter);
+router.use(backgroundChecksRouter);
 
 export default router;

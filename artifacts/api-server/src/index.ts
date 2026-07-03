@@ -2,7 +2,7 @@ import http from "http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
-import { startScheduledPaymentReminder, startPifNudgeWorker } from "./lib/scheduler";
+import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker } from "./lib/scheduler";
 import { isRedisConfigured, closeRedis } from "./lib/queue";
 import { startPayoutWorker } from "./workers/payout-worker";
 import { startPledgeWorker } from "./workers/pledge-worker";
@@ -87,6 +87,8 @@ server.listen(port, async () => {
   startNiaPushQueueWorker();
   // Community Pool backfill — retries queued guaranteed minimums + low-balance alert
   startPoolMinimumsWorker();
+  // Pledge default automation — marks 90-day unpaid PIF pledges as defaulted + applies trust hit
+  startPledgeDefaultWorker();
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────

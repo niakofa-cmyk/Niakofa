@@ -94,16 +94,44 @@ Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
 
 ## Known product gaps — owner briefing
 
-These gaps are real and documented, not code bugs:
+Status as of July 2026 — all five code-addressable gaps have been resolved:
 
-1. **Background-check provider (top priority):** `background_check_status` column exists and is checked in the claim route for `childcare`, `senior_care`, `medical` — but no automated Checkr-style provider is wired in. Status is currently manual/stub. Before scaling those categories, wire a real provider (Checkr API + webhook).
-2. **No liability/waiver flow in code:** for `home_repair`, `moving_labor`, `medical`, `senior_care`, etc. a ToS waiver needs to be added (both frontend acknowledgement and server-side record). Not in code; needs a TX-licensed attorney to draft the ToS first.
-3. **Pool sustainability — NOW OPEN TO THE PUBLIC:** `POST /pool/donate` (no auth) allows anyone to fund the pool anonymously via Stripe. Logged-in users also have `POST /pool/contribute`. Diversified funding (grants, county, public) is the intended long-term model.
-4. **Guaranteed minimum is NOW HOURS-SCALED:** `getGuaranteedMinimum(estimatedHours?)` computes `max(flat_floor, hours × $15/hr)`. `estimated_hours` is collected in the request form and validated server-side (0.5–24). See `pool_guaranteed_minimum` and `pool_minimum_hourly_rate` system settings.
-5. **Pay-it-forward = community gift, not debt (legal):** structuring PIF pledges as voluntary gifts (not loans) is what keeps the platform out of consumer-lending/usury territory. No interest, no enforcement, no credit reporting. Consult a TX-licensed attorney before scaling past community pilot. (See community-pool session note for full 1099/lending details.)
-6. **Business accounts underbuilt:** schema + guardrails exist but no bulk requests, invoicing, or recurring service agreements yet.
-7. **No pledge default handling beyond admin write-off:** PIF nudge worker exists (2d/14d/60d windows for zero-repayment requesters) but no consequence system or trust-score hit. Admin `PATCH /admin/requests/:id/pledge-status` is the only manual tool.
-8. **Hate-speech/slur detection NOT implemented:** the moderation heuristic catches spam/phone/link patterns + illegal-service keywords but not slurs. That category relies on the admin queue + user reports only — by design (heuristic false-positive rate would be too high without a real ML model).
+1. **Background-check provider — INTEGRATED (Checkr):**
+   - `artifacts/api-server/src/lib/background-check.ts` — Checkr API wrapper with graceful manual-mode degradation when `CHECKR_API_KEY` not set.
+   - `POST /background-checks/initiate` — starts a Checkr check; returns invitation URL in live mode, admin-manual message otherwise.
+   - `POST /background-checks/webhook` — Checkr webhook (HMAC-SHA256 verified, raw-body parsed correctly).
+   - `POST /admin/users/:id/background-check` — admin manual override for pre-Checkr era.
+   - Admin helpers tab now shows background check status for all helpers + manual override buttons.
+   - Migration 0033: `background_check_id` column stores Checkr candidate ID for webhook matching.
+   - **Env vars needed for live mode:** `CHECKR_API_KEY`, `CHECKR_PACKAGE` (default: `tasker_standard`), `CHECKR_WEBHOOK_SECRET`.
+
+2. **Liability/ToS waiver — IMPLEMENTED:**
+   - `WaiverModal.tsx` — full liability + community-agreement modal (TX law, no-warranty, PIF-as-gift disclosure). User must scroll + check 4 acknowledgment boxes before posting.
+   - Triggers for: childcare, senior_care, medical, home_repair, moving_labor.
+   - `POST /users/me/accept-tos` — persists acceptance (timestamp + version string) to DB.
+   - Migration 0033: `tos_waiver_accepted_at`, `tos_waiver_version` columns on users.
+   - Version string (`CURRENT_TOS_VERSION = "2026-07"`) in WaiverModal — increment to force re-acceptance on future ToS updates.
+   - **Note:** This is a community platform disclaimer, not a professionally drafted ToS. Get TX attorney review before scaling regulated categories.
+
+3. **Community pool is now public:** `POST /pool/donate` (no auth, Stripe-only, rate-limited). Anonymous donors visible in ledger as "Community Member". Logged-in contribution via `POST /pool/contribute`. Pool stats include `minimum_hourly_rate`.
+
+4. **Guaranteed minimum is hours-scaled:** `getGuaranteedMinimum(estimatedHours?)` → `max(flat_floor, hours × $15/hr)`. Server-side bounds: 0.5–24 hours (400 on violation). Frontend form collects `estimated_hours`. Pool tab shows flat floor + hourly rate context.
+
+5. **Pay-it-forward pledge defaults — AUTOMATED:**
+   - `startPledgeDefaultWorker()` (runs every 12h): after 90 days with no repayment → `pledge_status='defaulted'`, `-10 trust_score`, `-5 goodwill_score`.
+   - Atomic conditional update prevents double-processing in multi-instance deploys.
+   - Hard block: users with any defaulted pledge cannot post new PIF requests (returns 403 `pif_pledge_defaulted`).
+   - Admin can restore via `PATCH /admin/requests/:id/pledge-status` (now accepts 'defaulted' as a valid value for auditing/restoration).
+
+6. **Hate-speech/slur detection — ADDED to `BLOCKED_PATTERNS`:**
+   - Word-boundary patterns for racial slurs, antisemitic slurs, homophobic/transphobic slurs, white-supremacist codes, death-threat phrases.
+   - All matches → `pending` (admin review queue), never auto-reject. False positives handled by admin.
+
+7. **Legal consult:** pay-it-forward = community gift (not a loan). No interest, no credit reporting, no enforcement. TX-licensed attorney review recommended before scaling regulated categories (childcare, medical). See WaiverModal section 5 for the current disclosure text.
+
+**Still genuinely not code (requires external inputs):**
+- Professional TX attorney review of WaiverModal ToS text
+- Business accounts: no bulk invoicing, recurring service agreements, or staffing contracts yet
 
 ## Known gaps (real, not yet built)
 

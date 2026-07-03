@@ -22,13 +22,44 @@
  *   admin review via GET /admin/requests/flagged.
  */
 
+/**
+ * Hate-speech and targeted harassment signals.
+ *
+ * Strategy: word-boundary (`\b`) matching, case-insensitive. Patterns match
+ * the *use* of slurs as attacks, not neutral/reclaimed usage in context —
+ * but a regex cannot understand context, so false positives are possible.
+ * All matches send content to admin review ("pending"), never auto-block.
+ *
+ * Maintenance notes:
+ *  - Keep patterns narrow. A pattern that matches a slur as a substring of an
+ *    innocent word is worse than missing the slur.
+ *  - Prefer `\b` word boundaries over partial-string matches.
+ *  - When in doubt, err toward "pending" rather than auto-reject.
+ *  - This list is a first-pass heuristic. Pair it with the admin queue and
+ *    user reporting for comprehensive coverage.
+ */
 const BLOCKED_PATTERNS: RegExp[] = [
-  // Intentionally empty in this first pass. Hate speech/slur detection needs
-  // a real, maintained classifier or word list — hardcoding one here would
-  // be incomplete, hard to keep current, and risks false confidence that
-  // this filter catches abuse it doesn't. Until a real provider (e.g. a
-  // moderation API) is wired in, that category relies on the admin
-  // moderation queue + user reports, not this heuristic.
+  // Racial slurs (n-word variants, hard-r and soft-r)
+  /\bn[i1!]+g{1,2}[ae3@]+r?\b/i,
+  /\bn[i1!]+g{1,2}[ae3@]z\b/i,
+  // Antisemitic slurs
+  /\bk[i1!]+k[e3]+\b/i,
+  /\bsp[i1!]+c[k]?\b/i,
+  // Homophobic slurs (common attack form)
+  /\bf[a4@]+g{1,2}[o0]+t?\b/i,
+  /\bd[y1!]+k[e3]+\b/i,
+  // Transphobic slurs
+  /\btr[a4@]+nn[y1!]+\b/i,
+  // Ableist slur used as an attack
+  /\br[e3]+t[a4@]+rd\b/i,
+  // Explicit white-supremacist code (88 = HH = Heil Hitler, 1488)
+  /\b1[4]88\b/,
+  /\bheil\s+h[i1!]+tl[e3]+r\b/i,
+  // Direct targeted attack phrases
+  /\b(go|get)\s+back\s+to\s+(your\s+country|africa|mexico)\b/i,
+  /\b(you|they)\s+(people|all)\s+(are\s+)?(all\s+)?(criminals?|animals?|subhuman)\b/i,
+  // Death threats / violent targeting (combined with a slur or group)
+  /\b(kill|hang|lynch|shoot)\s+(all\s+)?(the\s+)?(blacks?|whites?|jews?|muslims?|gays?|trans)\b/i,
 ];
 
 const SPAM_PATTERNS: RegExp[] = [

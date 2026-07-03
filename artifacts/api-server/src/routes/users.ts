@@ -694,6 +694,8 @@ router.get("/users", requireAuth, requireAdmin(), adminLimiter, async (_req, res
     name: usersTable.name,
     email: usersTable.email,
     is_helper: usersTable.is_helper,
+    helper_status: usersTable.helper_status,
+    helper_skills: usersTable.helper_skills,
     trust_score: usersTable.trust_score,
     help_count: usersTable.help_count,
     is_suspended: usersTable.is_suspended,
@@ -703,6 +705,9 @@ router.get("/users", requireAuth, requireAdmin(), adminLimiter, async (_req, res
     approval_status: usersTable.approval_status,
     account_type: usersTable.account_type,
     is_admin: usersTable.is_admin,
+    // Background check fields — used by BackgroundCheckAdmin in the admin UI
+    background_check_status: usersTable.background_check_status,
+    background_check_completed_at: usersTable.background_check_completed_at,
   }).from(usersTable).limit(200);
   return res.json(users);
 });
@@ -830,6 +835,28 @@ router.get("/users/:id/sponsor-history", requireAuth, requireOwnership(), async 
     .limit(50);
 
   return res.json(history);
+});
+
+// ── POST /users/me/accept-tos — record liability/community ToS acceptance ─────
+// Called by the WaiverModal after the user scrolls through and checks all boxes.
+// Stores the version string so future ToS updates can require re-acceptance.
+// This is a best-effort server record — the frontend already shows and enforces
+// the full ToS text, so a network failure here does NOT block the request post.
+router.post("/users/me/accept-tos", requireAuth, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const { version } = req.body as { version?: string };
+
+  if (!version) return res.status(400).json({ error: "version is required" });
+
+  await db
+    .update(usersTable)
+    .set({
+      tos_waiver_accepted_at: new Date(),
+      tos_waiver_version: version,
+    })
+    .where(eq(usersTable.id, userId));
+
+  return res.json({ ok: true, accepted_at: new Date().toISOString(), version });
 });
 
 export default router;

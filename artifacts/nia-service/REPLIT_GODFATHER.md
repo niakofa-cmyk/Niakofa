@@ -490,8 +490,39 @@ Three privacy / sustainability features shipped and confirmed running clean.
 - Community page Pool tab: "Support the Community" anonymous donation widget (preset amounts $5/$10/$25/$50, Stripe modal) visible only to non-logged-in users when Stripe is configured. Logged-in contribution flow unchanged.
 
 **Remaining gaps (not code-addressable without external providers/legal):**
-1. Background-check provider — column + gate exist, but no Checkr integration (needs API keys + agreement). Documented.
-2. Liability/ToS waiver — needs a lawyer to draft before code makes sense.
-3. Pledge default automation — PIF nudge worker exists (2d/14d/60d windows); consequence system design is out of scope without product decision.
-4. Legal consult — not code.
-5. Hate-speech/slur detection — by design, admin-queue + user reports only (documented in CLAUDE.md).
+- All five code-addressable gaps resolved in the next session (see July 3 session below).
+
+### Session: July 3, 2026 — Background checks, ToS waiver, hate-speech detection, pledge defaults, admin UI
+
+**All remaining CLAUDE.md code-addressable gaps resolved:**
+
+**Gap 1 — Checkr background check integration (complete):**
+- `artifacts/api-server/src/lib/background-check.ts`: Checkr API wrapper (initiateBackgroundCheck → candidate + invitation URL; processCheckrWebhook → maps clear/consider to passed/failed; adminOverrideBackgroundCheck for pre-Checkr manual era).
+- `artifacts/api-server/src/routes/background-checks.ts`: POST /initiate, POST /webhook (HMAC-SHA256 sig verification with safe timingSafeEqual + length check), POST /admin/users/:id/background-check.
+- `artifacts/pay-it-forward/src/components/BackgroundCheckAdmin.tsx`: admin helpers-tab component — shows all helpers with background check status, filter by status, manual override buttons calling POST /admin/users/:id/background-check.
+- GET /users now returns `background_check_status` + `background_check_completed_at` so admin UI data contract is satisfied.
+- Migration 0033: `background_check_id` + `tos_waiver_accepted_at` + `tos_waiver_version` on users.
+- env vars: CHECKR_API_KEY (live mode), CHECKR_PACKAGE (default: tasker_standard), CHECKR_WEBHOOK_SECRET.
+
+**Gap 2 — Liability/ToS waiver (complete):**
+- `artifacts/pay-it-forward/src/components/WaiverModal.tsx`: full liability agreement — TX law, no-warranty, PIF-as-gift disclosure. User must scroll + check 4 specific acknowledgment boxes before the accept button enables.
+- Triggers for WAIVER_CATEGORIES = childcare, senior_care, medical, home_repair, moving_labor (superset of SENSITIVE_CATEGORIES).
+- executePost closure pattern in request-new.tsx onSubmit: if isWaiverCategory && !waiverAccepted → store closure in pendingMutateRef → show modal → modal onAccept: POST /users/me/accept-tos + invoke ref.
+- POST /users/me/accept-tos: stores tos_waiver_accepted_at + tos_waiver_version (best-effort, non-blocking).
+- CURRENT_TOS_VERSION = "2026-07" — increment when ToS text changes to force re-acceptance.
+
+**Gap 3 — Hate-speech detection (complete):**
+- BLOCKED_PATTERNS in post-moderation.ts: word-boundary regex patterns for racial slurs, antisemitic slurs, homophobic/transphobic slurs, white-supremacist codes (1488, Heil Hitler), death-threat targeting.
+- All matches → pending (admin review), never auto-reject.
+
+**Gap 4 — Pledge default automation (complete):**
+- processPledgeDefaults() in scheduler.ts: runs every 12h; finds completed PIF with pledge_paid=0 AND completed_at < NOW() - 90 days; sets pledge_status='defaulted'; applies -10 trust_score and -5 goodwill_score.
+- Atomic conditional WHERE pledge_status='active' prevents double-processing in multi-instance deploys.
+- startPledgeDefaultWorker() registered in index.ts.
+- requests.ts: hard block (403 pif_pledge_defaulted) for users with any defaulted pledge (stronger than 3-cap).
+- pledge_status 'defaulted' now valid in PATCH /admin/requests/:id/pledge-status for audit/restoration.
+
+**Code quality fixes from architect review:**
+- Webhook body: Buffer.isBuffer check → JSON.parse(rawBuffer.toString("utf8")); timingSafeEqual with length guard.
+- GET /users: added background_check_status, background_check_completed_at, helper_status, helper_skills to select.
+- Pledge default worker: atomic conditional update + skip-on-no-rows guard.

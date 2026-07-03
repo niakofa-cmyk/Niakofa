@@ -13,6 +13,7 @@ import { toast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { getToken } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
+import { BackgroundCheckAdmin } from "@/components/BackgroundCheckAdmin";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -2167,7 +2168,14 @@ export default function AdminScreen() {
         {activeTab === "audit"     && <AuditLogTable />}
         {activeTab === "analytics" && <AnalyticsTab />}
         {activeTab === "nia"       && <NiaTab />}
-        {activeTab === "helpers"   && <HelperApplicationsTab />}
+        {activeTab === "helpers"   && (
+          <div className="space-y-6">
+            <BackgroundCheckAdmin />
+            <div className="border-t border-border pt-4">
+              <HelperApplicationsTab />
+            </div>
+          </div>
+        )}
         {activeTab === "users"     && <UsersTab />}
         {activeTab === "reports"   && <ReportsTab authed={authed} />}
       </div>

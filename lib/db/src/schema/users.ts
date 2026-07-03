@@ -57,6 +57,15 @@ export const usersTable = pgTable("users", {
   // Password reset / legacy-account password setup (migration 0021)
   password_reset_code: text("password_reset_code"),
   password_reset_expires_at: timestamp("password_reset_expires_at", { withTimezone: true }),
+  // Background check provider ID (migration 0033)
+  // Stores the Checkr candidate ID so webhook events can be matched back to this user row.
+  background_check_id: text("background_check_id"),
+  // Liability / ToS waiver (migration 0033)
+  // When non-null the user has accepted the community agreement for high-risk task categories.
+  // tos_waiver_version tracks which version they accepted so future legal updates can
+  // require re-acceptance.
+  tos_waiver_accepted_at: timestamp("tos_waiver_accepted_at", { withTimezone: true }),
+  tos_waiver_version: text("tos_waiver_version"),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

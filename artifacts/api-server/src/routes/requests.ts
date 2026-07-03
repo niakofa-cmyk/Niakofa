@@ -400,12 +400,40 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
     });
   }
 
-  // ── PIF outstanding pledge cap ─────────────────────────────────────────────
+  // ── PIF outstanding pledge cap + defaulted check ───────────────────────────
   // Prevent PIF abuse: someone who repeatedly gets help and never pays forward
   // clogs the pool and takes from helpers who front their time.
-  // Cap: max 3 completed PIF requests with zero repayment and active pledge_status.
-  // The cap does NOT apply to goodwill (no pledge expected) or immediate (already paid).
+  //
+  // Two-tier gate:
+  //   1. Hard block: any defaulted pledge → must resolve before new PIF (no cap)
+  //   2. Soft cap: max 3 active unpaid pledges before a new PIF is blocked
+  //
+  // "Defaulted" = pledge_status set by the pledge-default worker after 90 days
+  // with zero repayment. Admin can restore status via PATCH /admin/requests/:id/pledge-status.
   if (parsed.data.payment_type === "pay_it_forward") {
+    // Hard block: any defaulted pledge
+    const [defaultedPif] = await db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(requestsTable)
+      .where(
+        and(
+          eq(requestsTable.requester_id, req.authenticatedUserId!),
+          eq(requestsTable.payment_type, "pay_it_forward"),
+          eq(requestsTable.pledge_status, "defaulted"),
+        )
+      );
+    if ((defaultedPif?.count ?? 0) > 0) {
+      return res.status(403).json({
+        error:
+          "You have a pay-it-forward pledge that has been marked as defaulted after 90 days without repayment. " +
+          "Please contact an admin to resolve your defaulted pledge before posting new pay-it-forward requests. " +
+          "Even a small partial payment can restore your standing.",
+        code: "pif_pledge_defaulted",
+        defaulted_count: defaultedPif?.count ?? 0,
+      });
+    }
+
+    // Soft cap: max 3 active unpaid pledges
     const [unpaidPif] = await db
       .select({ count: sql<number>`COUNT(*)::int` })
       .from(requestsTable)
@@ -1214,8 +1242,8 @@ router.patch("/admin/requests/:id/pledge-status", requireAuth, requireAdmin(), a
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
 
   const { pledge_status } = req.body as { pledge_status?: string };
-  if (pledge_status !== "active" && pledge_status !== "forgiven" && pledge_status !== "written_off") {
-    return res.status(400).json({ error: "pledge_status must be 'active', 'forgiven', or 'written_off'." });
+  if (pledge_status !== "active" && pledge_status !== "forgiven" && pledge_status !== "written_off" && pledge_status !== "defaulted") {
+    return res.status(400).json({ error: "pledge_status must be 'active', 'forgiven', 'written_off', or 'defaulted'." });
   }
 
   const [updated] = await db
