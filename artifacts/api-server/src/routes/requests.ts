@@ -146,16 +146,75 @@ router.get("/requests/nearby", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "lat and lng are required" });
   const { lat, lng, radius_miles } = parsed.data;
   const radius = radius_miles ?? 5;
-  const requests = await db.select().from(requestsTable).where(eq(requestsTable.status, "open"));
-  const nearby = requests
-    .map(r => ({ ...r, distance_miles: distanceMiles(lat, lng, r.lat, r.lng) }))
-    .filter(r => r.distance_miles <= radius)
-    .sort((a, b) => {
-      const urgencyOrder: Record<string, number> = { emergency: 0, high: 1, medium: 2, low: 3 };
-      const urgencyDiff = (urgencyOrder[a.urgency] ?? 2) - (urgencyOrder[b.urgency] ?? 2);
-      if (urgencyDiff !== 0) return urgencyDiff;
-      return a.distance_miles - b.distance_miles;
-    });
+
+  // PostGIS ST_DWithin: push the radius filter into the DB so we only
+  // transfer matching rows — critical at scale and for global deployments
+  // where a full-table JS Haversine scan over thousands of open requests
+  // would be unacceptably slow. ST_DWithin uses geography (meters on the
+  // spheroid) so it is accurate anywhere on Earth, including equatorial
+  // cities like Kampala (lat ≈ 0) and polar regions.
+  //
+  // Distance is computed once in the SELECT list, reused in ORDER BY via CTE.
+  // The index on (status, lat, lng) or a PostGIS GIST index on the geography
+  // column makes this sub-millisecond even with many rows.
+  // limit: caller can request up to 200 rows; default 100.
+  // This prevents a hard ceiling from silently hiding valid nearby requests in
+  // dense areas while still bounding payload size.
+  const limit = Math.min(
+    req.query.limit ? parseInt(req.query.limit as string, 10) || 100 : 100,
+    200,
+  );
+
+  const radiusMeters = radius * 1609.344;
+
+  // Attempt PostGIS ST_DWithin first for accurate global geo-filtering (all of
+  // Earth, spheroidal distance, indexed when a GIST index exists).
+  // If PostGIS is not available (e.g. extension not installed on a dev DB),
+  // fall back to in-memory Haversine with a warning so the endpoint keeps
+  // working — never throw an opaque 500 to callers.
+  let nearby: (typeof requestsTable.$inferSelect & { distance_miles: number })[];
+  try {
+    const nearbyRows = await db.execute(sql`
+      SELECT
+        hr.*,
+        ST_Distance(
+          ST_MakePoint(${lng}, ${lat})::geography,
+          ST_MakePoint(hr.lng, hr.lat)::geography
+        ) / 1609.344 AS distance_miles
+      FROM help_requests hr
+      WHERE hr.status = 'open'
+        AND ST_DWithin(
+          ST_MakePoint(${lng}, ${lat})::geography,
+          ST_MakePoint(hr.lng, hr.lat)::geography,
+          ${radiusMeters}
+        )
+      ORDER BY
+        CASE hr.urgency
+          WHEN 'emergency' THEN 0
+          WHEN 'high'      THEN 1
+          WHEN 'medium'    THEN 2
+          ELSE                  3
+        END,
+        distance_miles
+      LIMIT ${limit}
+    `);
+    nearby = nearbyRows.rows as (typeof requestsTable.$inferSelect & { distance_miles: number })[];
+  } catch (geoErr) {
+    // PostGIS not available — fall back to Haversine in JS.
+    // This is slower (full table scan) but keeps the endpoint functional.
+    logger.warn({ err: geoErr }, "nearby: PostGIS unavailable, falling back to Haversine");
+    const allOpen = await db.select().from(requestsTable).where(eq(requestsTable.status, "open"));
+    nearby = allOpen
+      .map(r => ({ ...r, distance_miles: distanceMiles(lat, lng, r.lat, r.lng) }))
+      .filter(r => r.distance_miles <= radius)
+      .sort((a, b) => {
+        const urgencyOrder: Record<string, number> = { emergency: 0, high: 1, medium: 2, low: 3 };
+        const urgencyDiff = (urgencyOrder[a.urgency] ?? 2) - (urgencyOrder[b.urgency] ?? 2);
+        if (urgencyDiff !== 0) return urgencyDiff;
+        return a.distance_miles - b.distance_miles;
+      })
+      .slice(0, limit);
+  }
 
   const userIds = [...new Set(nearby.map(r => r.requester_id))];
   const users = userIds.length > 0

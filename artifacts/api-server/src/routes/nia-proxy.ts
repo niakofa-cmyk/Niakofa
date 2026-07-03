@@ -203,7 +203,7 @@ router.post(
         res.write(
           `data: ${JSON.stringify({
             type: "error",
-            message: "Nia is having trouble connecting. If this is an emergency, call 911 or text 988.",
+            message: "Nia is having trouble connecting. In an emergency: 112 (global/Europe/Africa) · 999 (UK) · 911 (US/Canada). Crisis support: findahelpline.com",
           })}\n\n`
         );
         res.end();

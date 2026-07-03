@@ -3253,10 +3253,22 @@ interface GlobalOpsData {
   feature_checks: {
     database: "ok" | "error";
     mapbox_token: boolean;
-    nia_api_key: boolean;
+    nia_ai: boolean;
+    nia_api_key?: boolean;         // legacy alias
+    internal_secret: boolean;
     redis: boolean;
     push_vapid: boolean;
+    stripe: boolean;
+    background_checks: boolean;
     workers_ok: boolean;
+  };
+  // Actionable config status — which secrets are missing
+  config_status?: {
+    critical_missing: string[];
+    optional_missing: string[];
+    fully_configured: boolean;
+    nia_service_url: string;
+    notes: string;
   };
   summary: {
     total_open_requests: number;
@@ -3458,16 +3470,48 @@ function GlobalOpsSection() {
 
           {/* ── Feature Verification ─────────────────────────────────── */}
           {checks && (
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">Feature Verification</div>
+            <div className="space-y-3">
+              <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Feature Verification</div>
+
+              {/* Config health banner — shown when critical secrets are missing */}
+              {data.config_status && (
+                <div className={`flex items-start gap-2 px-3 py-2.5 rounded-xl border text-xs ${
+                  data.config_status.fully_configured
+                    ? "bg-green-400/10 border-green-400/20 text-green-400"
+                    : data.config_status.critical_missing.length > 0
+                    ? "bg-destructive/10 border-destructive/20 text-destructive"
+                    : "bg-yellow-400/10 border-yellow-400/20 text-yellow-400"
+                }`}>
+                  {data.config_status.fully_configured
+                    ? <CheckCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    : <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
+                  <div>
+                    <p className="font-semibold leading-snug">{data.config_status.notes}</p>
+                    {data.config_status.critical_missing.length > 0 && (
+                      <p className="text-[10px] mt-1 opacity-80">
+                        Missing: {data.config_status.critical_missing.join(" · ")}
+                      </p>
+                    )}
+                    {!data.config_status.fully_configured && (
+                      <p className="text-[10px] mt-1 opacity-70">
+                        Add secrets in Replit → Secrets tab, then restart the API Server workflow.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-1.5">
                 {([
-                  ["Database",       checks.database === "ok"],
-                  ["Mapbox (Nav)",   checks.mapbox_token],
-                  ["Nia AI",         checks.nia_api_key],
-                  ["Redis / BullMQ", checks.redis],
-                  ["Push / VAPID",   checks.push_vapid],
-                  ["Workers OK",     checks.workers_ok],
+                  ["Database",          checks.database === "ok"],
+                  ["Map / Navigation",  checks.mapbox_token],
+                  ["Nia AI (Anthropic)", checks.nia_ai ?? checks.nia_api_key ?? false],
+                  ["Internal Secret",   checks.internal_secret],
+                  ["Redis / BullMQ",    checks.redis],
+                  ["Push / VAPID",      checks.push_vapid],
+                  ["Stripe Payments",   checks.stripe],
+                  ["Background Checks", checks.background_checks],
+                  ["Workers OK",        checks.workers_ok],
                 ] as [string, boolean][]).map(([label, ok]) => (
                   <div
                     key={label}

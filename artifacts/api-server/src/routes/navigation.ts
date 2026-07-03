@@ -145,8 +145,19 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
 
   const voiceUnits = useMetric ? "metric" : "imperial";
 
-  const token = process.env.VITE_MAPBOX_TOKEN;
-  if (!token) return res.status(500).json({ error: "Mapbox token not configured" });
+  // Accept both MAPBOX_TOKEN (server-only, preferred) and the VITE_ prefixed
+  // variant so existing Replit env setups that only set VITE_MAPBOX_TOKEN still
+  // work.  Server-side code should never require the VITE_ prefix — that prefix
+  // is a Vite build-time convention that inlines values into the client bundle.
+  //
+  // Using || (not ??) so that an empty-string value (e.g. a placeholder secret
+  // the user forgot to fill in) correctly falls through to the next option
+  // rather than being treated as a valid token.
+  const token = (process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN) || undefined;
+  if (!token) {
+    logger.warn("navigation: Mapbox token not set — set MAPBOX_TOKEN or VITE_MAPBOX_TOKEN");
+    return res.status(503).json({ error: "Navigation service not configured — set MAPBOX_TOKEN in environment secrets" });
+  }
 
   // Cache check — include lang and units in the key so different locales get their own entry
   const cacheKey = `${getCacheKey(start_lat, start_lng, end_lat, end_lng, profile)}:${navLang}:${voiceUnits}`;

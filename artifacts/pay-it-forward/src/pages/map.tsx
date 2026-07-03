@@ -266,16 +266,27 @@ export default function MapScreen() {
         </div>
       )}
 
-      {/* Map fallback */}
+      {/* Map fallback — shown when token missing OR WebGL unavailable */}
       {mapError && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-background z-0 gap-3 px-6 pt-20 pb-28">
           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-2">
             <MapPin className="w-8 h-8 text-primary" />
           </div>
-          <p className="text-base font-bold text-center">Map needs WebGL</p>
-          <p className="text-sm text-muted-foreground text-center max-w-xs">
-            Open in Chrome or Firefox for the full live map. Requests listed below.
-          </p>
+          {mapError.toLowerCase().includes("token") || mapError.toLowerCase().includes("not supplied") || !import.meta.env.VITE_MAPBOX_TOKEN ? (
+            <>
+              <p className="text-base font-bold text-center">Map token not configured</p>
+              <p className="text-sm text-muted-foreground text-center max-w-xs">
+                An admin needs to add <code className="bg-muted px-1 py-0.5 rounded text-xs">VITE_MAPBOX_TOKEN</code> in Replit Secrets → then restart the web workflow. Get a free token at <a href="https://account.mapbox.com" target="_blank" rel="noreferrer" className="text-primary underline">account.mapbox.com</a>.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-base font-bold text-center">Map needs WebGL</p>
+              <p className="text-sm text-muted-foreground text-center max-w-xs">
+                Open in Chrome or Firefox for the full live map. Requests listed below.
+              </p>
+            </>
+          )}
           <div className="w-full max-w-sm space-y-2 mt-2">
             {openRequests.map(r => (
               <button

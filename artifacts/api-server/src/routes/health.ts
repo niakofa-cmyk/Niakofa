@@ -178,6 +178,37 @@ router.get("/admin/global-ops", requireAuth, adminLimiter, async (req, res, next
       const workers    = getWorkerHealth();
       const workersOk  = workers.every(w => w.status === "running" || w.status === "stopped");
 
+      // Mapbox: accept MAPBOX_TOKEN (server preferred) OR VITE_MAPBOX_TOKEN (client/legacy).
+      // Use || (not ??) so empty-string placeholders fall through correctly.
+      const mapboxConfigured = !!(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
+      // Nia AI: Anthropic is the primary engine; check both key names
+      const niaConfigured = !!(process.env.ANTHROPIC_API_KEY ?? process.env.NIA_API_KEY);
+      // Push notifications
+      const pushConfigured = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
+      // Internal service security
+      const internalSecretSet = !!(process.env.INTERNAL_SECRET);
+      // Stripe payments
+      const stripeConfigured = !!(process.env.STRIPE_SECRET_KEY);
+      // Background checks
+      const checkrConfigured = !!(process.env.CHECKR_API_KEY);
+      // Nia service URL (defaults to localhost:3001 in dev)
+      const niaServiceUrl = process.env.NIA_SERVICE_URL ?? "http://localhost:3001 (dev default)";
+
+      // Count configured vs missing critical secrets
+      const criticalSecrets = [
+        { key: "MAPBOX_TOKEN / VITE_MAPBOX_TOKEN", ok: mapboxConfigured },
+        { key: "ANTHROPIC_API_KEY",                ok: niaConfigured },
+        { key: "INTERNAL_SECRET",                  ok: internalSecretSet },
+      ];
+      const optionalSecrets = [
+        { key: "VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY", ok: pushConfigured },
+        { key: "STRIPE_SECRET_KEY",                    ok: stripeConfigured },
+        { key: "CHECKR_API_KEY",                       ok: checkrConfigured },
+        { key: "REDIS_URL",                            ok: isRedisConfigured() },
+      ];
+      const missingCritical = criticalSecrets.filter(s => !s.ok).map(s => s.key);
+      const missingOptional = optionalSecrets.filter(s => !s.ok).map(s => s.key);
+
       res.json({
         gps_health: {
           helpers_online_with_gps: helpersWithGps.length,
@@ -187,12 +218,27 @@ router.get("/admin/global-ops", requireAuth, adminLimiter, async (req, res, next
         regions,
         language_distribution,
         feature_checks: {
-          database:    "ok",
-          mapbox_token: !!(process.env.MAPBOX_TOKEN),
-          nia_api_key:  !!(process.env.OPENAI_API_KEY || process.env.NIA_API_KEY),
-          redis:        isRedisConfigured(),
-          push_vapid:   !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY),
-          workers_ok:   workersOk,
+          database:         "ok",
+          mapbox_token:     mapboxConfigured,
+          nia_ai:           niaConfigured,
+          internal_secret:  internalSecretSet,
+          redis:            isRedisConfigured(),
+          push_vapid:       pushConfigured,
+          stripe:           stripeConfigured,
+          background_checks: checkrConfigured,
+          workers_ok:       workersOk,
+        },
+        // Actionable config status for admin — tells exactly what needs to be set
+        config_status: {
+          critical_missing: missingCritical,
+          optional_missing:  missingOptional,
+          fully_configured:  missingCritical.length === 0,
+          nia_service_url:  niaServiceUrl,
+          notes: missingCritical.length > 0
+            ? `⚠️ ${missingCritical.length} critical secret(s) missing — map, navigation, and/or Nia AI will not function until configured in Replit Secrets.`
+            : optionalSecrets.filter(s => !s.ok).length > 0
+            ? `✅ Core features ready. Optional: ${missingOptional.join(", ")} not configured.`
+            : "✅ All features fully configured.",
         },
         summary: {
           total_open_requests:   openRequestRows.rows.length,

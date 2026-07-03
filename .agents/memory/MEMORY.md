@@ -62,4 +62,5 @@
 - [Niakofa global coverage v2](niakofa-global-coverage-v2.md) — safety.ts FR/PT/HT/AR patterns; diacritic-free ?? matching; nia.ts globally-aware emergency protocol; ?? not || for lat/lng; admin WorkerHealth 30s refresh.
 - [Niakofa seed accounts](niakofa-seed-accounts.md) — 3 verified test accounts in DB (admin/helper/user); auth bugs fixed (POST /requests ownership, "me" alias, resolveMeParam middleware).
 - [Niakofa auth bugs fixed](niakofa-auth-bugs.md) — POST /requests removed requireOwnership("requester_id"); resolveMeParam middleware added; is_crisis belongs on nia_conversations not users; requester_id optional in openapi.yaml.
-- [Niakofa global ops admin](niakofa-global-ops-admin.md) — GET /admin/global-ops: GPS health, region buckets, lang distribution, feature checks; getRegion() evaluation order critical (Europe+ME before Africa or Athens/Riyadh mis-label as Africa).
+- [Niakofa global ops admin](niakofa-global-ops-admin.md) — GET /admin/global-ops: GPS health, region buckets, lang distribution, feature checks + config_status (critical_missing list); getRegion() order critical.
+- [Niakofa secrets required](niakofa-secrets-required.md) — VITE_MAPBOX_TOKEN+MAPBOX_TOKEN+ANTHROPIC_API_KEY+INTERNAL_SECRET are critical; navigation.ts now reads MAPBOX_TOKEN??VITE_MAPBOX_TOKEN server-side.
