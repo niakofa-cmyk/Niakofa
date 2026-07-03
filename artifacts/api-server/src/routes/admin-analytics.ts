@@ -12,6 +12,7 @@ import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter, authLimiter, generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { broadcast } from "../lib/ws-hub";
+import { getSystemSettings, setSystemSetting, setSystemSettings } from "../lib/db-helpers";
 
 const router = Router();
 
@@ -345,49 +346,17 @@ router.get("/admin/suspended", requireAuth, requireAdmin(), adminLimiter, async 
 });
 
 // ── Nia AI toggle ─────────────────────────────────────────────────────────────
-// DB-backed flag — reads from system_settings table so the toggle survives
-// Railway redeploys. Falls back to enabled if no row exists (safe default).
-async function getNiaEnabled(): Promise<boolean> {
-  try {
-    const [row] = await db
-      .select({ value: systemSettingsTable.value })
-      .from(systemSettingsTable)
-      .where(eq(systemSettingsTable.key, "nia_enabled"))
-      .limit(1);
-    return row?.value !== "false";
-  } catch {
-    return true; // safe default
-  }
-}
-
-async function setNiaEnabled(enabled: boolean): Promise<void> {
-  const value = enabled ? "true" : "false";
-  await db
-    .insert(systemSettingsTable)
-    .values({ key: "nia_enabled", value })
-    .onConflictDoUpdate({
-      target: systemSettingsTable.key,
-      set: { value, updated_at: new Date() },
-    });
-}
-
+// ── Nia AI toggle ─────────────────────────────────────────────────────────────
+// ── Nia AI toggle ─────────────────────────────────────────────────────────────
 // GET /admin/nia-status — public, no auth. Frontend polls this to know
 // whether to show the NiaFab and drawer.
 // Returns { enabled: boolean, last_toggled_at: string | null }.
 router.get("/admin/nia-status", generalApiLimiter, async (_req, res) => {
   try {
-    const [enabledRow, toggledRow] = await Promise.all([
-      db.select({ value: systemSettingsTable.value })
-        .from(systemSettingsTable)
-        .where(eq(systemSettingsTable.key, "nia_enabled"))
-        .limit(1),
-      db.select({ value: systemSettingsTable.value })
-        .from(systemSettingsTable)
-        .where(eq(systemSettingsTable.key, "nia_last_toggled_at"))
-        .limit(1),
-    ]);
-    const enabled = enabledRow[0]?.value !== "false";
-    const last_toggled_at = toggledRow[0]?.value ?? null;
+    // Single round-trip: fetch both keys together via getSystemSettings.
+    const settings = await getSystemSettings(["nia_enabled", "nia_last_toggled_at"]);
+    const enabled = settings["nia_enabled"] !== "false";
+    const last_toggled_at = settings["nia_last_toggled_at"] ?? null;
     return res.json({ enabled, last_toggled_at });
   } catch {
     return res.json({ enabled: true, last_toggled_at: null });
@@ -395,34 +364,21 @@ router.get("/admin/nia-status", generalApiLimiter, async (_req, res) => {
 });
 
 // POST /admin/nia-toggle — admin only. Body: { enabled: boolean }
-// Both DB writes run inside a single transaction so the WS broadcast only
-// fires after a confirmed atomic commit — partial writes never trigger a
-// broadcast with inconsistent state.
+// Both DB writes run inside withTransaction so the WS broadcast only fires
+// after a confirmed atomic commit — partial writes never trigger a broadcast
+// with inconsistent state.
 router.post("/admin/nia-toggle", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const { enabled } = req.body as { enabled?: boolean };
   if (typeof enabled !== "boolean") {
     return res.status(400).json({ error: "enabled (boolean) is required" });
   }
   const now = new Date().toISOString();
-  const value = enabled ? "true" : "false";
 
   try {
-    // Single transaction — both settings rows or neither.
-    await db.transaction(async (tx) => {
-      await tx
-        .insert(systemSettingsTable)
-        .values({ key: "nia_enabled", value })
-        .onConflictDoUpdate({
-          target: systemSettingsTable.key,
-          set: { value, updated_at: new Date() },
-        });
-      await tx
-        .insert(systemSettingsTable)
-        .values({ key: "nia_last_toggled_at", value: now })
-        .onConflictDoUpdate({
-          target: systemSettingsTable.key,
-          set: { value: now, updated_at: new Date() },
-        });
+    // setSystemSettings atomically upserts all keys inside a single transaction.
+    await setSystemSettings({
+      nia_enabled: enabled ? "true" : "false",
+      nia_last_toggled_at: now,
     });
   } catch (err) {
     logger.error({ err, enabled }, "admin: Nia AI toggle DB write failed");
@@ -639,28 +595,13 @@ router.post("/admin/bootstrap", authLimiter, async (req, res) => {
 // These three keys drive every payout the pool makes. Putting them behind
 // requireAdmin() means the app can change live values without a redeploy.
 
-async function upsertSetting(key: string, value: string): Promise<void> {
-  await db
-    .insert(systemSettingsTable)
-    .values({ key, value })
-    .onConflictDoUpdate({
-      target: systemSettingsTable.key,
-      set: { value, updated_at: new Date() },
-    });
-}
-
 router.get("/admin/pool-settings", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
   try {
-    const rows = await db
-      .select({ key: systemSettingsTable.key, value: systemSettingsTable.value })
-      .from(systemSettingsTable)
-      .where(
-        sql`${systemSettingsTable.key} IN ('pool_enabled','pool_minimum_hourly_rate','pool_guaranteed_minimum')`
-      );
-
-    const map: Record<string, string> = {};
-    for (const r of rows) map[r.key] = r.value;
-
+    const map = await getSystemSettings([
+      "pool_enabled",
+      "pool_minimum_hourly_rate",
+      "pool_guaranteed_minimum",
+    ]);
     return res.json({
       pool_enabled: map["pool_enabled"] !== "false",
       pool_minimum_hourly_rate: parseFloat(map["pool_minimum_hourly_rate"] ?? "15") || 15,
@@ -701,7 +642,7 @@ router.patch("/admin/pool-settings", requireAuth, requireAdmin(), adminLimiter, 
     return res.status(400).json({ error: "No valid fields provided. Send at least one of: pool_enabled, pool_minimum_hourly_rate, pool_guaranteed_minimum" });
   }
 
-  await Promise.all(updates.map(({ key, value }) => upsertSetting(key, value)));
+  await Promise.all(updates.map(({ key, value }) => setSystemSetting(key, value)));
 
   logger.info({ updates, admin: req.authenticatedUserId }, "admin: pool settings updated");
   return res.json({ ok: true, updated: updates.map((u) => u.key) });

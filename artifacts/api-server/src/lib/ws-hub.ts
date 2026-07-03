@@ -3,11 +3,15 @@
  *
  * Manages all realtime connections with:
  *   - Standardized event types (REQUEST_CREATED, etc.)
+ *   - Typed event payload interfaces for compile-time correctness
  *   - Per-user socket registry for targeted sends
+ *   - Room-based broadcasting (sendToRequestParticipants)
+ *   - Batch multi-user sends (sendToUsers)
  *   - Presence system (ONLINE / OFFLINE / BUSY / AVAILABLE / IN_REQUEST)
  *   - Per-IP connection limits (max 10 sockets per IP)
  *   - Reconnect cooldown (1 new connection / 2s per IP)
  *   - Server-initiated heartbeat (30s ping, 10s timeout to respond)
+ *   - Hub metrics for admin health endpoint
  */
 import { WebSocketServer, WebSocket } from "ws";
 import { IncomingMessage } from "http";
@@ -72,6 +76,126 @@ export interface WsEvent {
   payload: unknown;
 }
 
+// ── Typed Payload Interfaces ──────────────────────────────────────────────────
+// Import these in routes for compile-time correctness on broadcast payloads.
+
+export interface RequestEventPayload {
+  id: number;
+  title: string;
+  status: string;
+  category?: string;
+  urgency?: string;
+  payment_type?: string;
+  requester_id: number;
+  helper_id?: number | null;
+  lat?: number | null;
+  lng?: number | null;
+  neighborhood?: string | null;
+  requester_name?: string | null;
+  requester_avatar?: string | null;
+  helper_name?: string | null;
+  distance_miles?: number | null;
+  estimated_duration_min?: number | null;
+  created_at?: string | Date | null;
+  [key: string]: unknown;
+}
+
+export interface PresenceEventPayload {
+  user_id: number;
+  status: PresenceStatus;
+  identity_verified?: boolean;
+}
+
+export interface PoolEventPayload {
+  balance: number;
+  request_id?: number;
+  amount?: number;
+}
+
+export interface HelperLocationPayload {
+  user_id: number;
+  request_id?: number;
+  lat: number;
+  lng: number;
+  heading?: number | null;
+  speed?: number | null;
+}
+
+export interface NiaStatusPayload {
+  enabled: boolean;
+  last_toggled_at?: string | null;
+}
+
+export interface NiaCostAlertPayload {
+  cost_usd: number;
+  threshold_usd: number;
+  period: string;
+}
+
+export interface HelpChainPayload {
+  request_id: number;
+  helper_id: number;
+}
+
+export interface PledgeEventPayload {
+  user_id: number;
+  request_id: number;
+  amount: number;
+  request_title?: string;
+}
+
+export interface LeaderboardUpdatePayload {
+  user_id: number;
+  help_count?: number;
+  trust_score?: number;
+  goodwill_score?: number;
+  rank?: number;
+}
+
+export interface TrustTierChangePayload {
+  user_id: number;
+  old_tier?: string;
+  new_tier: string;
+  trust_score: number;
+}
+
+export interface CrisisUpdatePayload {
+  active: boolean;
+  level?: string;
+  region?: string;
+  message?: string;
+  [key: string]: unknown;
+}
+
+export interface ReportEventPayload {
+  report_id: number;
+  reporter_id?: number;
+  reported_user_id?: number;
+  reason?: string;
+  reviewed?: boolean;
+}
+
+export interface GratitudeEventPayload {
+  id: number;
+  author_id?: number;
+  content?: string;
+  likes?: number;
+  [key: string]: unknown;
+}
+
+export interface PayoutEventPayload {
+  user_id: number;
+  amount_cents?: number;
+  stripe_transfer_id?: string;
+}
+
+export interface AdminSummaryPayload {
+  pending_accounts?: number;
+  pending_helpers?: number;
+  open_reports?: number;
+  [key: string]: unknown;
+}
+
 // ── Presence System ───────────────────────────────────────────────────────────
 export type PresenceStatus = "ONLINE" | "OFFLINE" | "BUSY" | "AVAILABLE" | "IN_REQUEST";
 
@@ -79,7 +203,7 @@ const presenceMap = new Map<number, PresenceStatus>();
 
 export function setPresence(userId: number, status: PresenceStatus): void {
   presenceMap.set(userId, status);
-  broadcast({ type: "presence_update", payload: { user_id: userId, status } });
+  broadcast({ type: "presence_update", payload: { user_id: userId, status } satisfies PresenceEventPayload });
 }
 
 export function getPresence(userId: number): PresenceStatus {
@@ -89,6 +213,10 @@ export function getPresence(userId: number): PresenceStatus {
 // ── Per-user socket registry ──────────────────────────────────────────────────
 const userSockets = new Map<number, Set<WebSocket>>();
 
+/**
+ * Send an event to all active WebSocket connections for a specific user.
+ * No-ops silently if the user has no open sockets.
+ */
 export function sendToUser(userId: number, event: WsEvent): void {
   const sockets = userSockets.get(userId);
   if (!sockets) return;
@@ -96,6 +224,132 @@ export function sendToUser(userId: number, event: WsEvent): void {
   sockets.forEach((sock) => {
     if (sock.readyState === WebSocket.OPEN) sock.send(msg);
   });
+}
+
+/**
+ * Send an event to multiple users in a single pass.
+ * Deduplicates — if the same userId appears twice, the event is sent once.
+ */
+export function sendToUsers(userIds: number[], event: WsEvent): void {
+  const seen = new Set<number>();
+  const msg = JSON.stringify(event);
+  for (const userId of userIds) {
+    if (seen.has(userId)) continue;
+    seen.add(userId);
+    const sockets = userSockets.get(userId);
+    if (!sockets) continue;
+    sockets.forEach((sock) => {
+      if (sock.readyState === WebSocket.OPEN) sock.send(msg);
+    });
+  }
+}
+
+/**
+ * Canonical helper for request lifecycle events: notifies both the requester
+ * and the assigned helper (when one exists) without requiring callers to
+ * duplicate the null-check.
+ *
+ * Usage in routes replaces:
+ *   sendToUser(request.requester_id, event);
+ *   if (request.helper_id) sendToUser(request.helper_id, event);
+ *
+ * With:
+ *   sendToRequestParticipants(request.requester_id, request.helper_id, event);
+ */
+export function sendToRequestParticipants(
+  requesterId: number,
+  helperId: number | null | undefined,
+  event: WsEvent
+): void {
+  const ids: number[] = [requesterId];
+  if (helperId != null) ids.push(helperId);
+  sendToUsers(ids, event);
+}
+
+// ── Presence / online-status queries ─────────────────────────────────────────
+
+/**
+ * Returns true if the user has at least one open WebSocket connection.
+ * Uses the socket registry (not presenceMap) for a ground-truth answer.
+ */
+export function isUserOnline(userId: number): boolean {
+  const sockets = userSockets.get(userId);
+  if (!sockets || sockets.size === 0) return false;
+  for (const sock of sockets) {
+    if (sock.readyState === WebSocket.OPEN) return true;
+  }
+  return false;
+}
+
+/**
+ * Returns all user IDs that currently have at least one open connection.
+ * Useful for dispatch heuristics ("prefer online helpers") and admin dashboards.
+ */
+export function getConnectedUserIds(): number[] {
+  const ids: number[] = [];
+  for (const [userId, sockets] of userSockets) {
+    for (const sock of sockets) {
+      if (sock.readyState === WebSocket.OPEN) {
+        ids.push(userId);
+        break; // only count each user once
+      }
+    }
+  }
+  return ids;
+}
+
+// ── Hub Metrics ───────────────────────────────────────────────────────────────
+
+export interface HubMetrics {
+  /** Total raw WebSocket connections (one user on two tabs = 2) */
+  total_connections: number;
+  /** Distinct authenticated user IDs with ≥1 open socket */
+  registered_users: number;
+  /** Number of user IDs currently tracked in presence map */
+  presence_tracked: number;
+  /** Presence distribution: how many users are in each status */
+  presence_counts: Record<PresenceStatus, number>;
+  /** User IDs currently online (open socket) */
+  online_user_ids: number[];
+}
+
+/**
+ * Returns live metrics about the WebSocket hub for the admin health endpoint.
+ * All reads are O(n) over the in-memory maps — no DB calls.
+ */
+export function getHubMetrics(): HubMetrics {
+  let totalConnections = 0;
+  const onlineUserIds: number[] = [];
+
+  for (const [userId, sockets] of userSockets) {
+    let hasOpen = false;
+    for (const sock of sockets) {
+      if (sock.readyState === WebSocket.OPEN) {
+        totalConnections++;
+        hasOpen = true;
+      }
+    }
+    if (hasOpen) onlineUserIds.push(userId);
+  }
+
+  const presenceCounts: Record<PresenceStatus, number> = {
+    ONLINE: 0,
+    OFFLINE: 0,
+    BUSY: 0,
+    AVAILABLE: 0,
+    IN_REQUEST: 0,
+  };
+  for (const status of presenceMap.values()) {
+    presenceCounts[status]++;
+  }
+
+  return {
+    total_connections: totalConnections,
+    registered_users: onlineUserIds.length,
+    presence_tracked: presenceMap.size,
+    presence_counts: presenceCounts,
+    online_user_ids: onlineUserIds,
+  };
 }
 
 // ── Connection protection ─────────────────────────────────────────────────────
@@ -196,7 +450,7 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
         }
 
         if ((msg as { type: string }).type === "register") {
-          // SECURITY FIX: verify the Bearer token before trusting the claimed userId.
+          // SECURITY: verify the Bearer token before trusting the claimed userId.
           // Without this, any WebSocket client could register as any userId and receive
           // that user's targeted push events (chat messages, payment confirmations, etc.).
           const { userId, token } = msg.payload as { userId: number; token?: string };
@@ -206,12 +460,20 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
               registeredUserId = userId;
               if (!userSockets.has(userId)) userSockets.set(userId, new Set());
               userSockets.get(userId)!.add(socket);
+              // Mark user online immediately on successful registration
+              if (presenceMap.get(userId) === "OFFLINE" || !presenceMap.has(userId)) {
+                presenceMap.set(userId, "ONLINE");
+                // Broadcast presence without calling setPresence to avoid recursion;
+                // the user is being registered, not yet interacting.
+                broadcast({ type: "presence_update", payload: { user_id: userId, status: "ONLINE" } });
+              }
+              logger.info({ userId, ip }, "WS: user registered to socket");
             } else {
               logger.warn({ ip, claimedUserId: userId }, "WS: register rejected — token mismatch");
               socket.send(JSON.stringify({ type: "error", payload: { message: "Invalid token for this userId" } }));
             }
           } else if (userId && !token) {
-            // Legacy clients without token — log warning, allow for now but don't register
+            // Legacy clients without token — log warning, allow but don't register
             // to targeted delivery (they still get broadcast messages).
             logger.warn({ ip, userId }, "WS: register without token — not registered for targeted delivery");
           }
@@ -219,8 +481,11 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
         }
 
         if ((msg as { type: string }).type === "presence") {
-          const { userId, status } = msg.payload as { userId: number; status: PresenceStatus };
-          if (userId && status) setPresence(userId, status);
+          // SECURITY: ignore client-supplied userId; bind status change to the
+          // server-verified registeredUserId so a socket can only set presence
+          // for the user it authenticated as — not for arbitrary user IDs.
+          const { status } = msg.payload as { userId?: number; status: PresenceStatus };
+          if (registeredUserId !== null && status) setPresence(registeredUserId, status);
           return;
         }
       } catch {
@@ -238,8 +503,8 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
         ipConnectionCount.set(ip, remaining);
       }
       // Clean up reconnect cooldown entry after the window has passed
-      const lastConnect = ipLastConnectTime.get(ip) ?? 0;
-      if (Date.now() - lastConnect > RECONNECT_COOLDOWN_MS * 2) {
+      const lastConnectTs = ipLastConnectTime.get(ip) ?? 0;
+      if (Date.now() - lastConnectTs > RECONNECT_COOLDOWN_MS * 2) {
         ipLastConnectTime.delete(ip);
       }
       socketAlive.delete(socket);
@@ -250,7 +515,8 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
           sockets.delete(socket);
           if (sockets.size === 0) {
             userSockets.delete(registeredUserId);
-            setPresence(registeredUserId, "OFFLINE");
+            presenceMap.set(registeredUserId, "OFFLINE");
+            broadcast({ type: "presence_update", payload: { user_id: registeredUserId, status: "OFFLINE" } });
           }
         }
       }
@@ -281,6 +547,8 @@ export function stopHeartbeat(): void {
   }
 }
 
+// ── Broadcast ─────────────────────────────────────────────────────────────────
+
 export function broadcast(event: WsEvent): void {
   if (!wss) return;
   const msg = JSON.stringify(event);
@@ -294,6 +562,13 @@ export function broadcast(event: WsEvent): void {
   if (sent > 0) logger.info({ type: event.type, clients: sent }, "WS broadcast");
 }
 
+/**
+ * Sends the same request event under both the standardized type and the legacy
+ * type. When they are the same, only a single message is sent.
+ *
+ * Use this for request lifecycle events that older frontend versions may still
+ * listen for under the legacy name (e.g. REQUEST_CREATED + new_request).
+ */
 export function broadcastRequestEvent(
   standardType: WsEventType,
   legacyType: WsEventType,
@@ -306,6 +581,7 @@ export function broadcastRequestEvent(
 }
 
 // ── NIA AI Event Helpers ──────────────────────────────────────────────────────
+
 /**
  * Emit a NIA AI event to a specific user via WebSocket.
  * Used for real-time status updates, typing indicators, and message delivery.
@@ -335,5 +611,9 @@ export function isNiaEventType(type: string): type is WsEventType {
     "nia_status",
     "nia_cost_alert",
   ].includes(type);
-
 }
+
+// Suppress unused-variable warning for HEARTBEAT_TIMEOUT_MS — it documents
+// the intended client-side SLA even though the server enforces it via the
+// alive WeakMap + terminate() call in the heartbeat timer above.
+void (HEARTBEAT_TIMEOUT_MS satisfies number);

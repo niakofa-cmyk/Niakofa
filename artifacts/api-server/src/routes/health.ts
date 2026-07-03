@@ -7,6 +7,8 @@ import { isRedisConfigured } from "../lib/queue";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
+import { getHubMetrics } from "../lib/ws-hub";
+import { getSystemSetting } from "../lib/db-helpers";
 
 // ── Region bucketing ──────────────────────────────────────────────────────────
 // Maps a lat/lng point to one of the platform's target regions.
@@ -90,11 +92,14 @@ router.get("/admin/worker-health", requireAuth, adminLimiter, async (req, res, n
       const workers = getWorkerHealth();
       const critical = areAllCriticalWorkersRunning();
       const redisOk = isRedisConfigured();
+      // Hub metrics are O(n) in-memory reads — no DB call, no async needed.
+      const hub = getHubMetrics();
       res.json({
         status: critical && redisOk ? "ok" : "degraded",
         redis_configured: redisOk,
         process_started_at: PROCESS_STARTED_AT,
         workers,
+        websocket_hub: hub,
       });
     });
   } catch (err) {
@@ -269,14 +274,12 @@ router.get("/status", async (_req, res) => {
   } catch { /* fall through */ }
   checks.push({ name: "database", ok: dbOk, latency_ms: Date.now() - dbStart });
 
-  // 2. Nia AI — check kill-switch setting (no API call, just DB read)
+  // 2. Nia AI — check kill-switch setting via db-helpers (no external API call)
   let niaEnabled = false;
   try {
-    const { rows } = await db.execute(
-      sql`SELECT value FROM system_settings WHERE key = 'nia_enabled' LIMIT 1`
-    );
-    const raw = (rows[0] as { value?: unknown } | undefined)?.value;
-    niaEnabled = dbOk && (raw === "true" || raw === true);
+    const val = await getSystemSetting("nia_enabled");
+    // null means row is missing → treat as enabled (safe default on first boot)
+    niaEnabled = dbOk && val !== "false";
   } catch { /* fall through */ }
   checks.push({ name: "nia_ai", ok: niaEnabled });
 

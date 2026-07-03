@@ -69,3 +69,4 @@
 - [Niakofa Nia AI admin toggle](niakofa-nia-toggle.md) — transactional DB writes + WS broadcast; voice/chat gated; NiaFab null-init prevents flicker; NiaGlobal instant via WS.
 - [Niakofa Wouter location](niakofa-wouter-location.md) — useLocation/Switch fail for auth-bypass routes; use window.location.pathname in AppContent instead.
 - [Niakofa Railway migration hardening](niakofa-railway-migration.md) — RECOVERY_CHECKS safe queries (pg_type join not ::regtype cast); guarded by !isFreshDb; BASELINE_CUTOFF=0017; railpack startCommand must include migrate step.
+- [Niakofa WS hub & DB helpers](niakofa-ws-db-helpers.md) — ws-hub exports sendToRequestParticipants/sendToUsers/isUserOnline/getConnectedUserIds/getHubMetrics + 15 typed payload interfaces; db-helpers exports getUserById/getRequestById/getSystemSetting(s)/setSystemSetting(s)/withTransaction; presence handler binds to registeredUserId not client-supplied userId.

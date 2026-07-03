@@ -19,7 +19,7 @@ import {
   MarkArrivedParams,
   MarkArrivedBody,
 } from "@workspace/api-zod";
-import { broadcast, broadcastRequestEvent, sendToUser } from "../lib/ws-hub";
+import { broadcast, broadcastRequestEvent, sendToUser, sendToRequestParticipants } from "../lib/ws-hub";
 import { requestCreationLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser, type PushPayload } from "./push";
@@ -1374,8 +1374,10 @@ router.post("/requests/:id/helpers/join", requireAuth, async (req, res) => {
     .returning();
 
   // Notify requester and primary helper
-  sendToUser(request.requester_id, { type: "help_chain_joined", payload: { request_id: requestId, helper_id: helperId } });
-  if (request.helper_id) sendToUser(request.helper_id, { type: "help_chain_joined", payload: { request_id: requestId, helper_id: helperId } });
+  sendToRequestParticipants(request.requester_id, request.helper_id, {
+    type: "help_chain_joined",
+    payload: { request_id: requestId, helper_id: helperId },
+  });
 
   return res.status(201).json(row);
 });
@@ -1393,8 +1395,10 @@ router.delete("/requests/:id/helpers/leave", requireAuth, async (req, res) => {
   const [request] = await db.select({ requester_id: requestsTable.requester_id, helper_id: requestsTable.helper_id })
     .from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
   if (request) {
-    sendToUser(request.requester_id, { type: "help_chain_left", payload: { request_id: requestId, helper_id: helperId } });
-    if (request.helper_id) sendToUser(request.helper_id, { type: "help_chain_left", payload: { request_id: requestId, helper_id: helperId } });
+    sendToRequestParticipants(request.requester_id, request.helper_id, {
+      type: "help_chain_left",
+      payload: { request_id: requestId, helper_id: helperId },
+    });
   }
 
   return res.json({ ok: true });
