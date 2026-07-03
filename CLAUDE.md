@@ -100,16 +100,18 @@ Status as of July 2026 — all five code-addressable gaps have been resolved:
    - `artifacts/api-server/src/lib/background-check.ts` — Checkr API wrapper with graceful manual-mode degradation when `CHECKR_API_KEY` not set.
    - `POST /background-checks/initiate` — starts a Checkr check; returns invitation URL in live mode, admin-manual message otherwise.
    - `POST /background-checks/webhook` — Checkr webhook (HMAC-SHA256 verified, raw-body parsed correctly).
+   - **FAIL-CLOSED FIX (July 2026):** Webhook previously skipped signature verification if `CHECKR_WEBHOOK_SECRET` was not configured (`if (CHECKR_WEBHOOK_SECRET) { verify... }`). Now it fails closed: returns 503 immediately if the secret is not set, rather than accepting any unsigned POST. This prevents an unsigned payload from setting `background_check_status = "passed"` — the gate for childcare/senior_care/medical claims.
    - `POST /admin/users/:id/background-check` — admin manual override for pre-Checkr era.
    - Admin helpers tab now shows background check status for all helpers + manual override buttons.
    - Migration 0033: `background_check_id` column stores Checkr candidate ID for webhook matching.
-   - **Env vars needed for live mode:** `CHECKR_API_KEY`, `CHECKR_PACKAGE` (default: `tasker_standard`), `CHECKR_WEBHOOK_SECRET`.
+   - **Env vars needed for live mode:** `CHECKR_API_KEY`, `CHECKR_PACKAGE` (default: `tasker_standard`), `CHECKR_WEBHOOK_SECRET` (required — webhook 503s without it).
 
-2. **Liability/ToS waiver — IMPLEMENTED:**
+2. **Liability/ToS waiver — IMPLEMENTED + SERVER-SIDE GATE ADDED (July 2026):**
    - `WaiverModal.tsx` — full liability + community-agreement modal (TX law, no-warranty, PIF-as-gift disclosure). User must scroll + check 4 acknowledgment boxes before posting.
    - Triggers for: childcare, senior_care, medical, home_repair, moving_labor.
    - `POST /users/me/accept-tos` — persists acceptance (timestamp + version string) to DB.
    - Migration 0033: `tos_waiver_accepted_at`, `tos_waiver_version` columns on users.
+   - **SERVER-SIDE GATE (July 2026):** `POST /requests` now queries `users.tos_waiver_accepted_at` for all 5 waiver-gated categories and returns 400 `requires_tos_waiver` if not set. Previously the waiver was client-side only — a direct API call (Postman, script) could skip it entirely. Now enforced server-side the same way `sensitive_acknowledged` is. Uses `req.authenticatedUserId` to prevent spoofing.
    - Version string (`CURRENT_TOS_VERSION = "2026-07"`) in WaiverModal — increment to force re-acceptance on future ToS updates.
    - **Note:** This is a community platform disclaimer, not a professionally drafted ToS. Get TX attorney review before scaling regulated categories.
 
@@ -132,6 +134,14 @@ Status as of July 2026 — all five code-addressable gaps have been resolved:
 **Still genuinely not code (requires external inputs):**
 - Professional TX attorney review of WaiverModal ToS text
 - Business accounts: no bulk invoicing, recurring service agreements, or staffing contracts yet
+
+8. **BUG-H06 — nia-service /chat INTERNAL_SECRET gate — CLOSED (July 2026):**
+   - `artifacts/nia-service/src/routes/chat.ts` — `/chat`, `/analyze-image`, and `/share-story` now require `x-internal-secret` header matching `INTERNAL_SECRET` env var. Verified using `timingSafeEqual` (constant-time). Fails closed if `INTERNAL_SECRET` is not configured (503).
+   - `artifacts/api-server/src/routes/nia-proxy.ts` — forwards `x-internal-secret: process.env.INTERNAL_SECRET` on all upstream calls to nia-service (`/chat`, `/share-story`).
+   - Previously, any caller who knew the nia-service Railway URL could POST to `/chat` directly, bypassing api-server's auth checks, rate limiting, and input sanitization.
+
+9. **EXCESSIVE_CAPS moderation fix — CLOSED (July 2026):**
+   - `artifacts/api-server/src/lib/post-moderation.ts` — replaced single-token regex `/^[^a-z]*[A-Z]{8,}/` with `isExcessiveCaps()` function: fires when ≥70% of all alphabetic chars are uppercase and total alpha chars ≥ 20. Old regex only caught unbroken 8-char runs; new function catches realistic screaming-caps sentences like "WHAT ARE YOU DOING" with spaces between words.
 
 ## Known gaps (real, not yet built)
 

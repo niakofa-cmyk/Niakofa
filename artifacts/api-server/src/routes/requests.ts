@@ -278,6 +278,36 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
     });
   }
 
+  // ── ToS waiver server-side gate ───────────────────────────────────────────
+  // The liability waiver modal (WaiverModal.tsx) is shown in the frontend for
+  // childcare, senior_care, medical, home_repair, and moving_labor. That is a
+  // UX nicety — not a real control. Anyone hitting the API directly (Postman,
+  // a modified client, a script) can skip the modal entirely. This is the real
+  // gate: we check the DB to confirm the user's tos_waiver_accepted_at is set
+  // before allowing the request to be created. This mirrors exactly how
+  // sensitive_acknowledged works for the care categories above.
+  //
+  // Note: we use req.authenticatedUserId (not parsed.data.requester_id) so a
+  // caller cannot spoof a different user's acceptance record.
+  const WAIVER_GATED_CATEGORIES = ["childcare", "senior_care", "medical", "home_repair", "moving_labor"];
+  if (WAIVER_GATED_CATEGORIES.includes(parsed.data.category)) {
+    const authenticatedUserId = req.authenticatedUserId!;
+    const [requesterRow] = await db
+      .select({ tos_waiver_accepted_at: usersTable.tos_waiver_accepted_at })
+      .from(usersTable)
+      .where(eq(usersTable.id, authenticatedUserId))
+      .limit(1);
+    if (!requesterRow || !requesterRow.tos_waiver_accepted_at) {
+      return res.status(400).json({
+        error:
+          "You must accept the community liability waiver before posting a request in this category. " +
+          "Please complete the waiver in the app before submitting.",
+        requires_tos_waiver: true,
+        category: parsed.data.category,
+      });
+    }
+  }
+
   // ── Business account guardrail ─────────────────────────────────────────────
   // The document is explicit: "the actual guardrail goes in the request-creation
   // route, not the frontend." Client-side hiding of pay_it_forward is a UX

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import Anthropic from "@anthropic-ai/sdk";
+import { timingSafeEqual } from "node:crypto";
 import { checkSafety } from "../lib/safety.js";
 import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit, getActiveRequest, getUserMemory, upsertUserMemory, isNiaEnabled, logNiaCost, getDailyCostSummary } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
@@ -19,7 +20,39 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? "" })
 
 const NIA_TIMEOUT_MS = 60_000;
 
+// ── Internal-secret guard ─────────────────────────────────────────────────────
+// BUG-H06: The nia-service /chat and /analyze-image routes call Anthropic
+// (expensive) and read/write user memory. If nia-service is publicly reachable
+// on Railway, any caller can hit them directly — bypassing api-server's rate
+// limiting, auth checks, and input sanitization. We require an x-internal-secret
+// header on all routes that invoke Anthropic or write to user state. The
+// api-server nia-proxy forwards this header; direct callers won't have it.
+// Fail-closed: if INTERNAL_SECRET is not configured, reject all calls.
+function requireInternalSecret(req: Request, res: Response): boolean {
+  const configuredSecret = process.env.INTERNAL_SECRET ?? "";
+  if (!configuredSecret) {
+    logger.error("INTERNAL_SECRET is not configured — rejecting nia-service call to prevent unauthorized Anthropic access");
+    res.status(503).json({ error: "Service not configured" });
+    return false;
+  }
+  const callerSecret = req.headers["x-internal-secret"];
+  const callerSecretStr = Array.isArray(callerSecret) ? callerSecret[0] : (callerSecret ?? "");
+  const secretBuf = Buffer.from(configuredSecret, "utf8");
+  const callerBuf = Buffer.from(callerSecretStr, "utf8");
+  if (
+    secretBuf.length !== callerBuf.length ||
+    !timingSafeEqual(secretBuf, callerBuf)
+  ) {
+    res.status(403).json({ error: "Forbidden" });
+    return false;
+  }
+  return true;
+}
+
 router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res: Response) => {
+  // BUG-H06: Require internal secret before doing any Anthropic work
+  if (!requireInternalSecret(req, res)) return;
+
   // Defense-in-depth kill-switch check (primary block is in api-server nia-proxy)
   if (!(await isNiaEnabled())) {
     return res.status(503).json({ error: "Nia is temporarily unavailable." });
@@ -256,6 +289,9 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
 // defaults to 100kb — callers must ensure their server allows larger bodies,
 // or this endpoint will 413 before reaching the handler.
 router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Response) => {
+  // BUG-H06: Require internal secret before doing any Anthropic work
+  if (!requireInternalSecret(req, res)) return;
+
   // Defense-in-depth kill-switch check
   if (!(await isNiaEnabled())) {
     return res.status(503).json({ error: "Nia is temporarily unavailable." });
@@ -440,6 +476,9 @@ router.get("/admin/costs/user/:userId", async (req: Request, res: Response) => {
 // Authenticated: user sends raw voice transcript, Nia crafts it into a
 // warm community story and returns the polished text for posting.
 router.post("/share-story", parseOptionalAuth, async (req: Request, res: Response) => {
+  // BUG-H06: Require internal secret before doing any Anthropic work
+  if (!requireInternalSecret(req, res)) return;
+
   const userId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId ?? null;
   const body = req.body as Record<string, unknown>;
   const transcript = typeof body.transcript === "string" ? body.transcript.trim() : "";

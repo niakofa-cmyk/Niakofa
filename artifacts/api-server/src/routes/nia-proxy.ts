@@ -134,6 +134,9 @@ router.post(
             ...(req.headers.authorization
               ? { Authorization: req.headers.authorization }
               : {}),
+            // BUG-H06: Forward internal secret so nia-service can verify the
+            // request came through api-server's auth/rate-limit layer.
+            "x-internal-secret": process.env["INTERNAL_SECRET"] ?? "",
           },
           body: upstreamBody,
           duplex: "half",
@@ -293,6 +296,8 @@ router.post("/nia/share-story", parseAuth, async (req: Request, res: Response) =
       headers: {
         "Content-Type": "application/json",
         ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
+        // BUG-H06: Forward internal secret so nia-service can verify call came through proxy
+        "x-internal-secret": process.env["INTERNAL_SECRET"] ?? "",
       },
       body: JSON.stringify({
         transcript,

@@ -71,7 +71,18 @@ const SPAM_PATTERNS: RegExp[] = [
   /\b(make money|earn \$|passive income|work from home.*easy)\b/i,
 ];
 
-const EXCESSIVE_CAPS = /^[^a-z]*[A-Z]{8,}/;       // long all-caps runs — common in spam/scam posts
+// Detects realistic screaming-caps text by checking the ratio of uppercase
+// letters to total alphabetic characters. The old single-token regex
+// (/^[^a-z]*[A-Z]{8,}/) only fired on unbroken all-caps runs like "SCREAMING"
+// but missed "WHAT ARE YOU DOING" because the spaces break the run.
+// This function fires when ≥70% of all alpha chars are uppercase and there
+// are at least 20 alphabetic characters total.
+function isExcessiveCaps(text: string): boolean {
+  const letters = text.replace(/[^a-zA-Z]/g, "");
+  if (letters.length < 20) return false;
+  const upperCount = (text.match(/[A-Z]/g) ?? []).length;
+  return upperCount / letters.length > 0.7;
+}
 const EXCESSIVE_PUNCTUATION = /[!?]{4,}/;
 
 // ── Positivity fast-track ─────────────────────────────────────────────────────
@@ -136,7 +147,7 @@ export function moderatePostText(message: string): ModerationResult {
     }
   }
 
-  if (EXCESSIVE_CAPS.test(trimmed)) {
+  if (isExcessiveCaps(trimmed)) {
     return { status: "pending", reason: "excessive capitalization" };
   }
 
@@ -204,7 +215,7 @@ export function moderateRequestText(title: string, description: string): Moderat
     }
   }
 
-  if (EXCESSIVE_CAPS.test(combined)) {
+  if (isExcessiveCaps(combined)) {
     return { status: "pending", reason: "excessive capitalization" };
   }
 

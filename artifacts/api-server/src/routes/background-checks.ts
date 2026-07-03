@@ -117,26 +117,33 @@ router.post("/background-checks/webhook", async (req: Request, res: Response) =>
     return res.status(400).json({ error: "Invalid JSON body" });
   }
 
-  // Verify Checkr webhook signature when secret is configured.
+  // Fail-closed: if CHECKR_WEBHOOK_SECRET is not configured, reject the request
+  // outright rather than silently skipping signature verification. This endpoint
+  // sets background_check_status = "passed" which gates access to childcare,
+  // senior_care, and medical requests — a missing secret must never open that gate.
+  if (!CHECKR_WEBHOOK_SECRET) {
+    logger.error("CHECKR_WEBHOOK_SECRET is not configured — rejecting Checkr webhook to prevent unauthorized status changes");
+    return res.status(503).json({ error: "Webhook endpoint not configured" });
+  }
+
+  // Verify Checkr webhook HMAC-SHA256 signature.
   // timingSafeEqual requires buffers of equal length — compare lengths first.
-  if (CHECKR_WEBHOOK_SECRET) {
-    const sigHeader = req.headers["x-checkr-signature"];
-    const signature = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader;
-    if (!signature) {
-      return res.status(401).json({ error: "Missing webhook signature" });
-    }
+  const sigHeader = req.headers["x-checkr-signature"];
+  const signature = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader;
+  if (!signature) {
+    return res.status(401).json({ error: "Missing webhook signature" });
+  }
 
-    const expected = crypto
-      .createHmac("sha256", CHECKR_WEBHOOK_SECRET)
-      .update(rawBuffer)
-      .digest("hex");
+  const expected = crypto
+    .createHmac("sha256", CHECKR_WEBHOOK_SECRET)
+    .update(rawBuffer)
+    .digest("hex");
 
-    const sigBuf = Buffer.from(signature, "utf8");
-    const expBuf = Buffer.from(expected, "utf8");
-    // Must check lengths first — timingSafeEqual throws if lengths differ
-    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
-      return res.status(401).json({ error: "Invalid webhook signature" });
-    }
+  const sigBuf = Buffer.from(signature, "utf8");
+  const expBuf = Buffer.from(expected, "utf8");
+  // Must check lengths first — timingSafeEqual throws if lengths differ
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return res.status(401).json({ error: "Invalid webhook signature" });
   }
 
   try {
