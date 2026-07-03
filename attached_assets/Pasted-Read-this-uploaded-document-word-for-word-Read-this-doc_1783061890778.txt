@@ -1,0 +1,59 @@
+Read this uploaded document word for word. Read this document! Read line by line, Verify each and every issue. Ensure you address each and every issue. And Fix, improve and enhance the code if you can.
+
+update this app in chunks. Read text doc word for word, line by line. Fix, and address each and every issue. . Think carefully before editing. Understand the App and the vision and mission before you edit code. Review the code line by line before you edit code. We are using Mapbox .Understand the Niakafa app and Nia ai separation and connection before editing code. REad the Replit Godfatehermd, read the claudmd
+
+What I verified is actually broken right now
+1. A live, unescaped HTML-injection vulnerability in transactional emails. In mailer.ts, requestTitle, helperName, and requesterName — all user-controlled — are interpolated directly into HTML emails (receipts and tip notifications) with zero escaping. Your memory notes this was fixed in mid-June with an escHtml() helper, but I searched the entire codebase and no such function exists anywhere in current source. The tests even reference escapeHtml/sanitizeHeaderValue functions that were never written. This looks like a regression — worth prioritizing before this goes live for real users.
+2. The test suite doesn't actually run. pnpm test in api-server passes the shell script node_modules/.bin/jest directly to node, which crashes on a syntax error before any test executes. I bypassed that and ran Jest properly — 5 of 6 test files still fail: 4 use jest.mock()/jest.fn() without importing jest from @jest/globals (jest doesn't auto-inject globals in this ESM config), and the mailer test imports functions that don't exist (see #1). Net result: your test suite currently gives zero real signal. The 14-passing number from your last session was almost certainly a different, narrower run — not the full suite.
+3. Frontend fails to typecheck — confirms and extends what your fix/login-account-type-audit branch is chasing:
+* account_type exists on the DB users table but not on the frontend User type, breaking App.tsx and login flow.
+* specialties referenced in helper-dashboard.tsx but missing from User type.
+* city referenced in profile.tsx, missing from User type.
+* login.tsx imports a User type that AppContext doesn't actually export.
+* Several InAppChatProps/RouteData/KindnessImpactRingProps mismatches (props being passed that the component types don't declare) in request-active.tsx, request-track.tsx, wallet.tsx.
+* A CSS-in-JS type error in TurnArrowHUD.tsx.
+None of this is exotic — it's the frontend type layer drifting out of sync with the DB/API layer as fields get added. But it means the app does not currently produce a clean build.
+Gaps against your stated vision worth adding
+* "Almost any legal task" — right now the category enum is a fixed list (23 values). Worth an explicit "Other" category with free-text + admin review, so you're not vision-limited by an enum.
+* Business-side "Pay It Forward" is explicitly blocked (gov-sponsors/business requests can't use pay-it-forward per the OpenAPI notes) — that's probably right for liability reasons, but worth being deliberate that businesses must Pay Now.
+* Legal exposure flagged in your own docs, not yet resolved: pool-fronting money to a helper before the requester repays may look like "extension of credit" under TX lending law, and helpers nearing $600/yr in direct pool credits (as opposed to Stripe Connect payouts) may trigger platform 1099-NEC obligations. This is exactly the mechanism your vision requires, so it's not a reason to change course — but it is a "talk to a lawyer before this scales past a pilot" item, and I'm not able to give you legal advice on it myself.
+* No requester-side reputation system — trust tiers only track helper behavior. If pay-it-forward depends on trusting people to eventually repay, an honest on-time-repayment signal for requesters (separate from helper trust score) seems like a real gap, not just a nice-to-have.
+Recommended next steps, in order
+1. Fix the mailer HTML-injection issue — small, high-severity, quick to patch.
+2. Fix the test runner script and jest-globals import so you get real CI signal again — right now you're flying blind on regressions.
+3. Resolve the User type drift (account_type, specialties, city, the AppContext export) — this is your current branch and it's a contained, well-scoped fix.
+4. Clear the remaining prop-mismatch typecheck errors in the four page components.
+5. Get a lawyer's read on the lending-law/1099 question before wider rollout, since it directly determines how the pool can legally operate at scale.
+ 
+The most important thing in this update isn't code
+Buried in this session's own notes, and worth pulling out because it's the actual blocker right now:
+* The dev database has no tables applied yet — migrations haven't been run (pnpm --filter db run migrate), so everything reviewed across all these sessions has been checked for correctness but not actually exercised against a live database.
+* Required Railway env vars aren't set: SESSION_SECRET, INTERNAL_SECRET, CHECKR_WEBHOOK_SECRET, ADMIN_BOOTSTRAP_SECRET, DATABASE_URL.
+* No admin account exists yet — /admin/bootstrap hasn't been run.
+* The guaranteed minimum and hourly rate still need an actual decision from you, now that there's a real place to set them.
+
+What's left is turning the key: run the migrations, set the secrets, bootstrap an admin, and decide the real dollar amounts.
+
+add a SESSION_SECRET cross-service validator to the admin bootstrap endpoint — so running POST /admin/bootstrap can also verify the secret is set on nia-service via a health-ping and warn if it's missing or mismatched. 
+building out business-account features (bulk requests, invoicing) beyond the current schema.
+
+What I verified is actually broken right now
+1. Frontend fails to typecheck — 19 real errors, not lint nitpicks. Running tsc --noEmit on artifacts/pay-it-forward surfaces genuine drift between components and the data they're given:
+* App.tsx and profile.tsx read user.account_type and user.city — fields that exist in your DB schema but were never added to the frontend User type. This is almost certainly why business-account behavior feels inconsistent (I found a note about this exact issue in your project history — it's still unresolved).
+* helper-dashboard.tsx reads user.specialties, which also isn't on the type.
+* InAppChat is called with helperName/requesterName in two places (request-active.tsx, request-track.tsx) but the component only accepts requestId — those props are silently dropped.
+* KindnessImpactRing is called with livesImpacted/goodwillScore in wallet.tsx, but the component only knows helpCount/trustScore — same silent-drop problem.
+* admin.tsx has 9 separate fetch() calls with a header-typing error (Authorization possibly undefined isn't valid HeadersInit) — a real type hole around your admin auth token handling.
+None of these crash the app outright (JS is forgiving about extra/missing props), but they mean pieces of your UI are quietly not receiving the data they were designed to show.
+2. Your test suite is currently not running — a security-relevant one is failing for a real reason. 4 of 6 test suites fail at startup with ReferenceError: jest is not defined (an ESM/jest config issue). More importantly, mailer.test.ts fails because it imports escapeHtml and sanitizeHeaderValue from lib/mailer.ts — functions that no longer exist in that file. I checked: today's mailer.ts interpolates requestTitle, helperName, requesterName, and admin-composed body/subject text directly into HTML emails with no escaping at all. If a user names their request something like <img src=x onerror=...>, that goes out raw in the receipt email to whoever they transacted with. This reads like a real regression — the escaping helper existed, the tests for it still exist, but the implementation was lost somewhere along the way.
+3. Backend (api-server, nia-service) typechecks clean. The core money/matching logic itself is solid — the bugs above are concentrated in the frontend and email layer.
+Genuine vision gaps (not bugs, just not built yet)
+1. No per-helper "livable wage" tracking over time. The guaranteed minimum is per-task. There's nothing yet that tells a helper "you've earned $X this week" or flags if their effective hourly rate is falling below the floor across multiple short tasks.
+2. Regulatory exposure isn't a code problem, but it's real. Fronting money that gets repaid later, plus paying out to individuals, can brush up against money-transmitter licensing and 1099 reporting depending on your state and volume. Worth a conversation with a lawyer before this scales past a pilot county — I can't advise on it, but it shouldn't sit unaddressed.
+3. Business/individual account distinction is half-wired (see the account_type bug above) — worth deciding what businesses can/can't do differently before it's fully exposed to users.
+My recommendation, in order
+1. Fix the mailer.ts escaping regression first — it's the one item here that's a live safety issue, not just a UX gap.
+2. Get the test suite actually running again (jest ESM config) so regressions like #1 get caught automatically next time.
+3. Reconcile the frontend User type with the real schema (account_type, city, specialties) and fix the three component prop mismatches — these are small, mechanical fixes.
+4. Then decide on the business-account feature and the legal/licensing question before pushing this past a pilot.
+
