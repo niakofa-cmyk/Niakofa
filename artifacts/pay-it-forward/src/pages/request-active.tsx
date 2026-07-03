@@ -27,6 +27,9 @@ import { motion, AnimatePresence } from "framer-motion";
 const ARRIVAL_THRESHOLD_METERS = 80;
 const OFF_ROUTE_THRESHOLD_METERS = 150;
 const SAFETY_TIMER_SECONDS = 1200;
+// Reroute cooldown: 15 s — short enough to catch a missed turn quickly but
+// avoids spamming Mapbox API if GPS jitters briefly off the polyline.
+const OFF_ROUTE_COOLDOWN_MS = 15_000;
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -256,7 +259,7 @@ export default function ActiveRequestScreen() {
       setTimeout(() => {
         offRouteCooldownRef.current = false;
         setIsOffRoute(false);
-      }, 30000);
+      }, OFF_ROUTE_COOLDOWN_MS);
     } else {
       setIsOffRoute(false);
     }

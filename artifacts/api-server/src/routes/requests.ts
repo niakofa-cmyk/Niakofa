@@ -605,20 +605,54 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
   return res.status(201).json(enriched);
 });
 
+// GET /requests/:id
+// Full-precision lat/lng is only returned to:
+//   • the requester (their own request)
+//   • the assigned helper (they need exact coords to navigate)
+//   • admins (moderation / oversight)
+// All other authenticated users get fuzzed coordinates (~100 m jitter),
+// the same privacy protection applied to /requests/nearby.
 router.get("/requests/:id", requireAuth, async (req, res) => {
   const parsed = GetRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
+
+  const authenticatedUserId = req.authenticatedUserId!;
+
   const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, parsed.data.id)).limit(1);
   if (!request) return res.status(404).json({ error: "Not found" });
-  const [requester] = await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url, goodwill_score: usersTable.goodwill_score })
-    .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1);
+
+  // Determine access level in one DB round-trip alongside requester lookup
+  const [requester, authUser] = await Promise.all([
+    db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url, goodwill_score: usersTable.goodwill_score })
+      .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1).then(r => r[0] ?? null),
+    db.select({ is_admin: usersTable.is_admin })
+      .from(usersTable).where(eq(usersTable.id, authenticatedUserId)).limit(1).then(r => r[0] ?? null),
+  ]);
+
+  const isRequester      = request.requester_id === authenticatedUserId;
+  const isAssignedHelper = request.helper_id === authenticatedUserId;
+  const isAdmin          = authUser?.is_admin === true;
+  const hasFullAccess    = isRequester || isAssignedHelper || isAdmin;
+
+  // Fuzz coordinates for users who have no operational need for full precision
+  let lat = request.lat;
+  let lng = request.lng;
+  if (!hasFullAccess && lat !== null && lng !== null) {
+    // ±0.0009° ≈ ±100 m — same jitter as /requests/nearby
+    lat = lat + (Math.random() - 0.5) * 0.0018;
+    lng = lng + (Math.random() - 0.5) * 0.0018;
+  }
+
   let helperName = null;
   if (request.helper_id) {
     const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, request.helper_id)).limit(1);
     helperName = helper?.name ?? null;
   }
+
   return res.json({
     ...request,
+    lat,
+    lng,
     requester_name: requester?.name ?? null,
     requester_avatar: requester?.avatar_url ?? null,
     requester_goodwill_score: requester?.goodwill_score ?? 100,

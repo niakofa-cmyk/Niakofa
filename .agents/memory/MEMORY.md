@@ -53,3 +53,5 @@
 - [Niakofa worker registry](niakofa-worker-registry.md) — worker-registry.ts tracks all BullMQ/cron workers; GET /api/admin/worker-health surfaces status; wire registerWorker+workerStarted/Fail/NoRedis in index.ts for each worker.
 - [Niakofa hardship system](niakofa-hardship-system.md) — hardship_requested_at+hardship_note columns; POST /requests/:id/hardship (active/defaulted only); DELETE /admin/.../hardship to dismiss; admin System tab reviews queue.
 - [Niakofa health route prefix](niakofa-health-route-prefix.md) — health.ts uses bare "/admin/worker-health" (no /api prefix); routes mounted at /api in app, so full path is /api/admin/worker-health. Double-prefix /api/admin/... in health.ts causes silent 404.
+- [Niakofa admin coverage doc](niakofa-admin-coverage.md) — artifacts/ADMIN_COVERAGE.md is the living checklist; every requireAdmin() route needs a row + admin UI; GPS health table lives there too.
+- [Niakofa GPS privacy](niakofa-gps-privacy.md) — GET /requests/:id returns fuzzed lat/lng (~100m) to any authenticated user who is NOT the requester, assigned helper, or admin; full precision requires explicit parallel DB check for is_admin.

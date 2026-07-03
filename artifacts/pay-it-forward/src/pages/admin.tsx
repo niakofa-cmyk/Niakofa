@@ -279,6 +279,52 @@ function AnalyticsTab() {
           <div className="text-xs text-muted-foreground/60 mt-1">/api/admin/stats endpoint not responding</div>
         </div>
       )}
+
+      {/* Leaderboard recalculate */}
+      <LeaderboardRecalculateCard />
+    </div>
+  );
+}
+
+// ── Leaderboard Recalculate Control ──────────────────────────────────────────
+function LeaderboardRecalculateCard() {
+  const [running, setRunning] = useState(false);
+  const [lastRun, setLastRun] = useState<string | null>(null);
+
+  const recalculate = async () => {
+    setRunning(true);
+    try {
+      const res = await fetch(`${BASE}/api/leaderboard/recalculate`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+      });
+      if (res.ok) {
+        setLastRun(new Date().toLocaleTimeString());
+        toast({ title: "Leaderboard recalculated ✓" });
+      } else {
+        const b = await res.json().catch(() => ({})) as { error?: string };
+        toast({ title: b.error ?? "Recalculation failed", variant: "destructive" });
+      }
+    } catch { toast({ title: "Network error", variant: "destructive" }); }
+    finally { setRunning(false); }
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <RotateCcw className="w-4 h-4 text-primary" />
+        <span className="text-xs font-black uppercase tracking-wider">Leaderboard</span>
+        {lastRun && <span className="text-[10px] text-green-400 ml-auto">Last run: {lastRun}</span>}
+      </div>
+      <p className="text-xs text-muted-foreground">Manually trigger a full trust-score and leaderboard recomputation. Runs automatically on a schedule but can be forced here after bulk moderation actions.</p>
+      <button
+        onClick={recalculate}
+        disabled={running}
+        style={{ touchAction: "manipulation" }}
+        className="w-full h-10 rounded-xl border border-primary/40 bg-primary/10 text-primary text-sm font-black disabled:opacity-50 active:scale-95 transition-all flex items-center justify-center gap-2"
+      >
+        {running ? <><RefreshCw className="w-4 h-4 animate-spin" /> Recalculating…</> : <><RotateCcw className="w-4 h-4" /> Recalculate Now</>}
+      </button>
     </div>
   );
 }
@@ -999,6 +1045,69 @@ function ReportDetailSheet({ report, onClose, onReviewed }: {
   );
 }
 
+// ── Hard-Delete User Button ───────────────────────────────────────────────────
+// Calls DELETE /users/:id — permanent. Requires typing the user's name in full.
+function HardDeleteUserButton({ userId, userName, onDeleted }: {
+  userId: number; userName: string; onDeleted: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  const doDelete = async () => {
+    if (confirm.trim().toLowerCase() !== userName.toLowerCase()) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`${BASE}/api/users/${userId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+      });
+      if (res.ok) {
+        toast({ title: `${userName} permanently deleted` });
+        onDeleted();
+      } else {
+        const b = await res.json().catch(() => ({})) as { error?: string };
+        toast({ title: b.error ?? "Delete failed", variant: "destructive" });
+      }
+    } catch { toast({ title: "Network error", variant: "destructive" }); }
+    finally { setDeleting(false); }
+  };
+
+  if (!expanded) {
+    return (
+      <button onClick={() => setExpanded(true)} style={{ touchAction: "manipulation" }}
+        className="w-full flex items-center gap-3 p-4 bg-muted/40 border border-border rounded-2xl active:scale-[0.98] transition-all">
+        <X className="w-5 h-5 text-muted-foreground" />
+        <div className="text-left">
+          <div className="font-black text-sm text-muted-foreground">Hard Delete Account</div>
+          <div className="text-xs text-muted-foreground/60">Permanent — all data removed</div>
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <div className="border border-destructive/40 rounded-2xl p-4 space-y-3 bg-destructive/5">
+      <div className="text-xs text-destructive font-bold leading-relaxed">
+        ⚠️ Permanently deletes all data for <strong>{userName}</strong> — requests, wallet, transactions, history. Cannot be undone.
+      </div>
+      <div className="text-xs text-muted-foreground">Type the user's name to confirm:</div>
+      <input type="text" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder={userName}
+        className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-destructive"
+        style={{ fontSize: "16px" }} autoFocus />
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={() => { setExpanded(false); setConfirm(""); }}
+          className="h-10 rounded-xl border border-border text-sm text-muted-foreground font-bold">Cancel</button>
+        <button onClick={doDelete}
+          disabled={confirm.trim().toLowerCase() !== userName.toLowerCase() || deleting}
+          className="h-10 rounded-xl bg-destructive text-white text-sm font-black disabled:opacity-40 active:scale-95 transition-all">
+          {deleting ? <RefreshCw className="w-4 h-4 animate-spin mx-auto" /> : "Delete Forever"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Users Tab ─────────────────────────────────────────────────────────────────
 // ── Pending Account Approvals ─────────────────────────────────────────────────
 // BUG-CRIT-01: individual accounts now auto-approve at registration (see
@@ -1348,6 +1457,10 @@ function UsersTab() {
                     <div className="text-xs text-muted-foreground">Remove from platform permanently</div>
                   </div>
                 </button>
+                <HardDeleteUserButton userId={actionUser.id} userName={actionUser.name} onDeleted={() => {
+                  setActionUser(null);
+                  setUsers(prev => prev.filter(u => u.id !== actionUser.id));
+                }} />
                 <button
                   onClick={() => setActionUser(null)}
                   style={{ touchAction: "manipulation" }}
@@ -1424,18 +1537,26 @@ function NiaTab() {
   const [memoryStats, setMemoryStats] = useState<{ users: number; entries: number } | null>(null);
   const [costData, setCostData] = useState<NiaCostData | null>(null);
   const [costLoading, setCostLoading] = useState(false);
+  const [costAlert, setCostAlert] = useState<{ alert: boolean; threshold: number; todayCost: number; message: string } | null>(null);
 
   useEffect(() => {
     const niaTok = getToken();
     const niaHdrs: Record<string, string> = niaTok ? { Authorization: `Bearer ${niaTok}` } : {};
-    fetch(`${BASE}/api/admin/nia-status`, { headers: niaHdrs })
-      .then(r => r.json())
-      .then((d: { enabled: boolean }) => setNiaEnabled(d.enabled))
-      .catch(() => toast({ title: "Could not fetch Nia status", variant: "destructive" }));
-    fetch(`${BASE}/api/admin/nia-memory-stats`, { headers: niaHdrs })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setMemoryStats(d); })
-      .catch(() => {});
+    // Load all Nia data in parallel — errors are caught individually so one
+    // failing endpoint doesn't suppress the rest.
+    Promise.all([
+      fetch(`${BASE}/api/admin/nia-status`, { headers: niaHdrs })
+        .then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)))
+        .catch(err => { toast({ title: `Nia status unavailable (${(err as Error).message})`, variant: "destructive" }); return null; }),
+      fetch(`${BASE}/api/admin/nia-memory-stats`, { headers: niaHdrs })
+        .then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${BASE}/api/admin/nia-cost-alert`, { headers: niaHdrs })
+        .then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([status, memory, alert]) => {
+      if (status?.enabled !== undefined) setNiaEnabled(status.enabled);
+      if (memory) setMemoryStats(memory);
+      if (alert) setCostAlert(alert);
+    });
     setCostLoading(true);
     fetch(`${BASE}/api/admin/nia-costs?days=7`, { headers: niaHdrs })
       .then(r => r.ok ? r.json() : null)
@@ -1469,6 +1590,27 @@ function NiaTab() {
 
   return (
     <div className="space-y-4">
+      {/* Daily cost alert banner — shown only when today's spend exceeds threshold */}
+      {costAlert?.alert && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+          className="flex items-start gap-3 bg-destructive/10 border border-destructive/30 rounded-2xl px-4 py-3"
+        >
+          <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-black text-destructive">AI Cost Alert</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{costAlert.message}</div>
+          </div>
+        </motion.div>
+      )}
+      {/* Cost within threshold — soft indicator */}
+      {costAlert && !costAlert.alert && (
+        <div className="flex items-center gap-2 text-[11px] text-green-500 bg-green-500/10 border border-green-500/20 rounded-xl px-3 py-2">
+          <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>Today's AI cost <strong>${costAlert.todayCost.toFixed(3)}</strong> is within the <strong>${costAlert.threshold.toFixed(2)}</strong>/day threshold</span>
+        </div>
+      )}
+
       {/* Status card */}
       <motion.div
         layout
