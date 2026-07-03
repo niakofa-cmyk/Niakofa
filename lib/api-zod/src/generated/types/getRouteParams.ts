@@ -5,10 +5,24 @@
  * Niakofa - Map-First Community Help Platform
  * OpenAPI spec version: 0.1.0
  */
+import type { GetRouteProfile } from './getRouteProfile';
+import type { GetRouteUnits } from './getRouteUnits';
 
 export type GetRouteParams = {
 start_lat: number;
 start_lng: number;
 end_lat: number;
 end_lng: number;
+/**
+ * Routing profile
+ */
+profile?: GetRouteProfile;
+/**
+ * BCP-47 language code for navigation voice instructions (e.g. "en", "fr", "sw"). Defaults to "en".
+ */
+lang?: string;
+/**
+ * Distance and voice units. Pass "metric" for km-based navigation.
+ */
+units?: GetRouteUnits;
 };

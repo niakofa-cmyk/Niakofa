@@ -144,37 +144,53 @@ function LanguageSwitcher(_: { userId: number }) {
   const [lang, setLang] = useState(i18n.language ?? "en");
 
   const languages = [
-    { code: "en", label: "English", flag: "🇺🇸" },
-    { code: "es", label: "Español", flag: "🇲🇽" },
+    { code: "en", label: "English",          native: "English",         flag: "🇺🇸", region: "US / Global" },
+    { code: "es", label: "Español",           native: "Español",         flag: "🇲🇽", region: "América Latina · España" },
+    { code: "fr", label: "Français",          native: "Français",        flag: "🇫🇷", region: "Afrique · France · Haïti" },
+    { code: "pt", label: "Português",         native: "Português",       flag: "🇧🇷", region: "Brasil · Angola · Moçambique" },
+    { code: "sw", label: "Kiswahili",         native: "Kiswahili",       flag: "🇰🇪", region: "Afrika Mashariki" },
+    { code: "so", label: "Somali",            native: "Af Soomaali",     flag: "🇸🇴", region: "Minnesota · Mogadishu" },
+    { code: "am", label: "Amharic",           native: "አማርኛ",            flag: "🇪🇹", region: "Ethiopia · D.C. · Dallas" },
+    { code: "yo", label: "Yoruba",            native: "Yorùbá",          flag: "🇳🇬", region: "Nàìjíríà · Èkó" },
+    { code: "ha", label: "Hausa",             native: "Hausa",           flag: "🇳🇬", region: "Arewacin Najeriya · Nijar" },
+    { code: "ig", label: "Igbo",              native: "Asụsụ Igbo",      flag: "🇳🇬", region: "Igboland · Diaspora" },
+    { code: "tw", label: "Twi (Akan)",        native: "Twi",             flag: "🇬🇭", region: "Ghana · London · New York" },
+    { code: "wo", label: "Wolof",             native: "Wolof",           flag: "🇸🇳", region: "Senegaal · Gàmbia · Paris" },
+    { code: "ht", label: "Kreyòl Ayisyen",   native: "Kreyòl Ayisyen",  flag: "🇭🇹", region: "Ayiti · Miami · Nòw Yòk" },
+    { code: "ar", label: "Arabic",            native: "العربية",          flag: "🌍", region: "Arabworld · Diaspora" },
+    { code: "zu", label: "Zulu",              native: "isiZulu",         flag: "🇿🇦", region: "South Africa" },
   ];
 
   const handleChange = (code: string) => {
     i18n.changeLanguage(code);
     localStorage.setItem("niakofa_lang", code);
     setLang(code);
-    toast({ title: code === "es" ? "Idioma cambiado a Español" : "Language changed to English" });
+    const selected = languages.find(l => l.code === code);
+    toast({ title: `Language changed to ${selected?.label ?? code}` });
   };
 
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Choose your preferred language for the Niakofa app.
+        Choose your preferred language. Nia will respond in your language too.
       </p>
       {languages.map(l => (
         <button
           key={l.code}
           onClick={() => handleChange(l.code)}
-          className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-colors text-left ${
+          className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-colors text-left active:scale-[0.98] ${
             lang === l.code
               ? "border-primary bg-primary/10 text-primary"
               : "border-border bg-card text-foreground hover:border-primary/40"
           }`}
+          style={{ touchAction: "manipulation" }}
         >
-          <span className="text-2xl">{l.flag}</span>
-          <div className="flex-1">
-            <div className="font-semibold text-sm">{l.label}</div>
+          <span className="text-2xl w-8 shrink-0">{l.flag}</span>
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-sm">{l.native}</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5 truncate">{l.region}</div>
           </div>
-          {lang === l.code && <CheckCircle2 className="w-4 h-4 text-primary" />}
+          {lang === l.code && <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />}
         </button>
       ))}
     </div>

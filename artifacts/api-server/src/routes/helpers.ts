@@ -101,8 +101,13 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, requireAdmin(), asyn
   if (!request) return res.status(404).json({ error: "Request not found" });
   if (request.status !== "open") return res.status(409).json({ error: "Request is not open" });
 
-  const latDelta = 5 / 69;
-  const lngDelta = 5 / (69 * Math.cos(request.lat * Math.PI / 180));
+  // Configurable radius — default 10 mi, max 50 mi.
+  // Larger defaults help sparse rural areas (rural Africa, tribal lands, Appalachia)
+  // find helpers beyond the old hardcoded 5-mile cap.
+  const rawRadius = parseFloat((req.query.radius_miles as string | undefined) ?? "10");
+  const radius = Math.min(50, Math.max(1, isNaN(rawRadius) ? 10 : rawRadius));
+  const latDelta = radius / 69;
+  const lngDelta = radius / (69 * Math.cos(request.lat * Math.PI / 180));
 
   const helpers = await db.select().from(usersTable).where(
     and(
@@ -115,7 +120,8 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, requireAdmin(), asyn
   if (helpers.length === 0) return res.status(404).json({ error: "No helpers available nearby" });
 
   // Fetch availability windows for all candidate helpers in one query
-  const helperIds = helpers.filter(h => h.lat && h.lng).map(h => h.id);
+  // Use null-checks, not truthy: lat/lng of 0 is valid at the equator/prime meridian
+  const helperIds = helpers.filter(h => h.lat != null && h.lng != null).map(h => h.id);
   const allWindows = helperIds.length > 0
     ? await db.select().from(helperAvailabilityTable).where(inArray(helperAvailabilityTable.user_id, helperIds))
     : [];
@@ -126,7 +132,7 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, requireAdmin(), asyn
 
   const now = new Date();
   const scored = helpers
-    .filter(h => h.lat && h.lng)
+    .filter(h => h.lat != null && h.lng != null)
     .map(h => {
       const dist = distanceMiles(request.lat, request.lng, h.lat!, h.lng!);
       const { score } = computeMatchScore(

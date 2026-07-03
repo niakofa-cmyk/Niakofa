@@ -832,11 +832,17 @@ export const GetOnlineHelpersResponse = zod.array(GetOnlineHelpersResponseItem)
 /**
  * @summary Get driving route between two coordinates
  */
+export const getRouteQueryProfileDefault = `driving`;
+export const getRouteQueryUnitsDefault = `imperial`;
+
 export const GetRouteQueryParams = zod.object({
   "start_lat": zod.coerce.number(),
   "start_lng": zod.coerce.number(),
   "end_lat": zod.coerce.number(),
-  "end_lng": zod.coerce.number()
+  "end_lng": zod.coerce.number(),
+  "profile": zod.enum(['driving', 'walking', 'cycling']).default(getRouteQueryProfileDefault).describe('Routing profile'),
+  "lang": zod.coerce.string().optional().describe('BCP-47 language code for navigation voice instructions (e.g. \"en\", \"fr\", \"sw\"). Defaults to \"en\".'),
+  "units": zod.enum(['imperial', 'metric']).default(getRouteQueryUnitsDefault).describe('Distance and voice units. Pass \"metric\" for km-based navigation.')
 })
 
 export const GetRouteResponse = zod.object({

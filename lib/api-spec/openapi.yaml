@@ -634,6 +634,28 @@ paths:
           required: true
           schema:
             type: number
+        - name: profile
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [driving, walking, cycling]
+            default: driving
+          description: Routing profile
+        - name: lang
+          in: query
+          required: false
+          schema:
+            type: string
+          description: BCP-47 language code for navigation voice instructions (e.g. "en", "fr", "sw"). Defaults to "en".
+        - name: units
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [imperial, metric]
+            default: imperial
+          description: Distance and voice units. Pass "metric" for km-based navigation.
       responses:
         "200":
           description: Route data with turn-by-turn steps

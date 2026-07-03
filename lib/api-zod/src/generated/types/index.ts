@@ -44,6 +44,8 @@ export * from './getReportsStatus';
 export * from './getRequestsParams';
 export * from './getRequestsStatus';
 export * from './getRouteParams';
+export * from './getRouteProfile';
+export * from './getRouteUnits';
 export * from './healthStatus';
 export * from './helperApplicationUpdate';
 export * from './helperApplicationUpdateStatus';

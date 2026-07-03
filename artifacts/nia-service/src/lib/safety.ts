@@ -150,6 +150,19 @@ const CRISIS_PATTERNS = [
 
   // ── Luganda (lg) — suicidal ideation, hopelessness ────────────────────────
   /(njagala okuffa|sirina maanyi|ngenda okujitta|sirina kwegenda|bajjiddwa|sirina kulya|sirina gy'omanira|bampa nnyo|njagala obuyambi|tewali tukwatako)/i,
+
+  // ── Igbo (ig) — suicidal ideation, suffering, hunger ─────────────────────
+  // Spoken in SE Nigeria and Igbo diaspora worldwide (New York, London, Houston).
+  // No \b — Igbo uses dotted characters (ị, ọ, ụ) that break ASCII word boundaries.
+  // Phrases verified with common Igbo translations; flag for native-speaker review.
+  /(achọrọ m ịnwụ|achọrọ m ikpochie onwe m|ọ dịghị olileanya|ọ na-ata m ahụhụ|ọ dịghị ihe ọ bụla|adịghị m mma|adịghị m ike|achọrọ m enyemaka ugbu a)/i,
+  /(enweghị m nri|ụmụ m eri nri|enweghị m ebe obibi|a na-eme m ihe ọjọọ)/i,
+
+  // ── Wolof (wo) — suicidal ideation, suffering, violence ───────────────────
+  // Spoken in Senegal, Gambia, and Senegalese diaspora (Paris, New York, Dakar).
+  // Wolof uses Latin script with apostrophes; \b unreliable on those chars.
+  /(dama bëgg nawël|dama bëgg def miin|amul jàmm ci suuf bi|dama metti lool|dama sett xam nga|amul yëgël bu am solo|dama dafa ko dafa)/i,
+  /(amul lekk|doomam yi lekk dafa amul|amul woon ci géej|lañ ko dafa)/i,
 ];
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -230,6 +243,12 @@ const SOFT_DISTRESS_PATTERNS = [
 
   // Luganda (lg)
   /(nkooye|sijja kola kitalo|nsinga buyambi|sirina ssente|naggya omulimu|sinnonya kwegatta|ndi bwekasi|nzijukiza|sirina gyetaagisa|bampitirirako)/i,
+
+  // Igbo (ig) — soft distress
+  /(nime ahụhụ|a dịghị m mma|m na-achọ enyemaka|enweghị m ego|enweghị m ọrụ|ihe niile adịghị mma|m dị mwute|m nwere nsogbu)/i,
+
+  // Wolof (wo) — soft distress
+  /(dama metti|dama soxor|amul kanam|dama am solo réer|amul kanam|dama am xam xam bu metti|dama yagg ci suuf)/i,
 ];
 
 export interface SafetyResult {

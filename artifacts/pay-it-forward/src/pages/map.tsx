@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import Map, { Marker, Source, Layer } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useAppContext } from "@/lib/AppContext";
+import { getIpLocation, detectMapLanguage, localizeMapLabels } from "@/lib/locale-utils";
 import {
   useGetNearbyRequests, useGetOnlineHelpers, useClaimRequest,
   useGetRequestStats, useGetRoute,
@@ -47,6 +48,26 @@ export default function MapScreen() {
   const [bestMatchDismissed, setBestMatchDismissed] = useState<number | null>(null);
   const [showTraffic, setShowTraffic] = useState(true);
   const prevHelperMode = useRef(false);
+
+  // IP-based fallback location when GPS is unavailable.
+  // Covers global users (Africa, diaspora hubs, rural areas) where the old
+  // Fort Worth hardcoded default was useless.
+  const [ipFallback, setIpFallback] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
+  useEffect(() => {
+    if (myLocation) return; // GPS available — no need for IP
+    getIpLocation().then(loc => {
+      if (!loc) return;
+      const fb = { lat: loc.lat, lng: loc.lng, zoom: loc.zoom ?? 11 };
+      setIpFallback(fb);
+      // initialViewState is only read at mount time, so if the async IP lookup
+      // resolves after the map has already rendered at (0,0), we must also
+      // explicitly move the camera. mapRef may not be set yet if the map hasn't
+      // mounted — the check guards against that.
+      if (mapRef.current && !myLocation) {
+        mapRef.current.jumpTo({ center: [fb.lng, fb.lat], zoom: fb.zoom });
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onMapError = useCallback((e: unknown) => {
     const msg = (e as { error?: { message?: string } })?.error?.message ?? "Map failed to load";
@@ -161,6 +182,14 @@ export default function MapScreen() {
   useTerrain(mapRef);
   const deviceHeading = useDeviceHeading();
   const { mode: orientMode, setMode: setOrientMode, applyHeading } = useMapOrientation(mapRef);
+
+  // Apply localized map labels after map loads — runs once, safe to omit stable deps
+  const handleMapLoad = useCallback(() => {
+    const lang = detectMapLanguage();
+    if (lang !== "en" && mapRef.current) {
+      localizeMapLabels(mapRef.current, lang);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (deviceHeading !== null) applyHeading(deviceHeading); }, [deviceHeading, applyHeading]);
   const handleClaim = useCallback((request: HelpRequest) => {
     if (!currentUser) return;
@@ -284,12 +313,13 @@ export default function MapScreen() {
         attributionControl={false}
         onError={onMapError}
         initialViewState={{
-          longitude: myLocation?.lng ?? -97.33,
-          latitude: myLocation?.lat ?? 32.75,
-          zoom: 13.5,
+          longitude: myLocation?.lng ?? ipFallback?.lng ?? 0,
+          latitude: myLocation?.lat ?? ipFallback?.lat ?? 0,
+          zoom: myLocation ? 13.5 : ipFallback ? ipFallback.zoom : 2,
           pitch: 45,
           bearing: 0,
         }}
+        onLoad={handleMapLoad}
         ref={(ref) => { if (ref) (mapRef as React.MutableRefObject<mapboxgl.Map | null>).current = ref.getMap(); }}
       >
         {/* My location dot with accuracy ring */}

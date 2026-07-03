@@ -63,8 +63,11 @@ const BLOCKED_PATTERNS: RegExp[] = [
 ];
 
 const SPAM_PATTERNS: RegExp[] = [
-  /\b(https?:\/\/|www\.)\S+/i,                 // raw links — resource posts should use the dedicated url field, not inline links in free text
-  /\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/,          // phone numbers in free text — push users toward the app's own contact flow instead
+  /\b(https?:\/\/|www\.)\S+/i,                 // raw links
+  // Phone numbers — international coverage (was US NANP only)
+  /\+\d{1,3}[\s.\-()]?\d{1,4}[\s.\-()]?\d{3,4}[\s.\-()]?\d{3,4}/,  // E.164 with country code (+234 090 1234 5678)
+  /\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b/,           // US NANP formatted (555-555-5555)
+  /\b0\d{2}[\s.\-]?\d{3,4}[\s.\-]?\d{4}\b/,   // African/European 0xx-prefixed (0234-567-8901)
   /\$\d+.*\bnow\b.*\bclick\b/i,                  // classic spam phrasing
   /\b(crypto|bitcoin|forex|mlm|pyramid scheme)\b/i,
   /\b(buy now|limited time|act fast|dm me|text me|cash app|venmo me)\b/i,
@@ -101,24 +104,54 @@ const POSITIVE_PATTERNS: RegExp[] = [
 ];
 
 // ── Request-specific illegal/unsafe service patterns ─────────────────────────
-// These detect signals that someone may be using the free-text category "other"
-// to request illegal goods or services. Positive matches always → "pending".
-// Patterns are intentionally narrow to avoid false-positives on legitimate
-// requests (e.g. "prescription pickup" → medical category, not flagged here).
+// English + multilingual coverage: French, Swahili, Arabic, Yoruba, Somali.
+// Patterns are narrow — focus on highest-risk illegal services only.
+// Emergency requests bypass this check entirely (life safety > screening).
 const ILLEGAL_SERVICE_PATTERNS: RegExp[] = [
+  // ── English ────────────────────────────────────────────────────────────────
   // Controlled substances
   /\b(buy|sell|get|find|deliver|score)\s+(me\s+)?(drugs?|weed|marijuana|cocaine|heroin|meth|fentanyl|pills)\b/i,
   /\b(controlled\s+substance|illegal\s+substance)\b/i,
   // Weapons (not lawful transfers — the "buy" intent is the signal)
   /\b(buy|sell|get)\s+(me\s+)?(unlicensed\s+)?(gun|firearm|ammo|ammunition|weapon)\b/i,
-  // Solicitation / trafficking signals — requires intent context to avoid
-  // false-positives on benign requests like "escort my mother to an appointment"
+  // Solicitation / trafficking signals
   /\b(hire|book|find|get|need)\s+(an?\s+)?(escort|sex\s+worker|prostitut)\b/i,
   /\b(prostitut|sex\s+work|adult\s+service|happy\s+ending)\b/i,
   // Fraud / document forgery
   /\b(fake\s+(id|passport|license|document)|forge|counterfeit)\b/i,
   // Hacking / unauthorized access
   /\b(hack\s+(into|an?|my)|crack\s+(password|account)|ddos|phishing)\b/i,
+
+  // ── French (fr) — West/Central African diaspora, Paris, Brussels, Haiti ───
+  /(acheter|vendre|obtenir|trouver|livrer)\s+(des?\s+)?(drogue[s]?|marijuana|cocaïne|héroïne|fentanyl|comprimés illégaux)/i,
+  /(prostitution|escorte sexuelle|travailleur.{0,5}du sexe|service sexuel)/i,
+  /(faux\s+(papiers|passeport|carte d.identité|document)|falsifi|contrefaçon)/i,
+  /(pirater|accès non autorisé|hameçonnage)/i,
+
+  // ── Swahili (sw) — East African diaspora, Nairobi, Dar es Salaam, Kampala ─
+  // No \b boundaries — Swahili uses diacritics
+  /(nunua|uza|pata|tafuta|peleka)\s+(dawa za kulevya|bangi|kokeni|heroini|fentanili)/i,
+  /(ukahaba|biashara ya ngono|huduma za ngono)/i,
+  /(hati za uongo|pasipoti ya bangi|hati bandia)/i,
+  /(kuingia bila ruhusa|ku-hack|udanganyifu wa mtandao)/i,
+
+  // ── Arabic (ar) — Somali/Sudanese/North African diaspora ──────────────────
+  // Arabic RTL — phrase matching without word boundaries
+  /(أشتري|أبيع|أجد|أوصل|يبيع|يشتري)\s*(المخدرات|الحشيش|الكوكايين|الهيروين|الفنتانيل)/i,
+  /(دعارة|عاهرة|خدمات جنسية)/i,
+  /(وثائق مزورة|جواز سفر مزور|هوية مزورة)/i,
+  /(اختراق|قرصنة|تصيد احتيالي)/i,
+
+  // ── Yoruba (yo) — Nigerian diaspora, Lagos ────────────────────────────────
+  // Yoruba uses heavy diacritics — no \b
+  /(ra|ta|rí|gbé)\s*(oògùn olóró|marijuana|kokeeni|hírọọn)/i,
+  /(panṣaga|iṣẹ́ ìbálòpọ̀|asẹwó)/i,
+  /(ìwé ìdánimọ̀ irọ́|ìwé ìrìnnà irọ́|jibiti|ìjẹ́bùú)/i,
+
+  // ── Somali (so) — Minneapolis, Columbus, D.C. ─────────────────────────────
+  /(iibso|iibi|hel|raadi)\s*(daroogooyinka|qanjidhada|kokayin|hiiruwin|fentaanul)/i,
+  /(gaaduudnimo|shaqaalaha galmada|adeegyada jinsiga)/i,
+  /(warqad been ah|baasaboor been ah|aqoonsiga been ah|khiyaano)/i,
 ];
 
 export interface ModerationResult {

@@ -3239,6 +3239,7 @@ interface HardshipRequest {
 // of the best available helper. This is advisory only — it never writes to DB.
 function DispatchSuggestSection() {
   const [requestIdInput, setRequestIdInput] = useState("");
+  const [radiusInput, setRadiusInput] = useState("10");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{
     helper_id: number | null;
@@ -3252,9 +3253,11 @@ function DispatchSuggestSection() {
   const runSuggest = async () => {
     const rid = parseInt(requestIdInput.trim());
     if (isNaN(rid) || rid <= 0) { setError("Enter a valid request ID"); return; }
+    const rawRadius = parseFloat(radiusInput);
+    const radius = Math.min(50, Math.max(1, isNaN(rawRadius) ? 10 : rawRadius));
     setLoading(true); setResult(null); setError(null);
     try {
-      const res = await fetch(`${BASE}/api/helpers/auto-assign/${rid}`, {
+      const res = await fetch(`${BASE}/api/helpers/auto-assign/${rid}?radius_miles=${radius}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${getToken() ?? ""}` },
       });
@@ -3296,6 +3299,19 @@ function DispatchSuggestSection() {
           className="flex-1 bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
           style={{ fontSize: "16px" }}
         />
+        <div className="flex items-center gap-1 bg-background border border-border rounded-xl px-2">
+          <span className="text-[10px] text-muted-foreground font-semibold whitespace-nowrap">radius</span>
+          <input
+            type="number"
+            min="1"
+            max="50"
+            value={radiusInput}
+            onChange={e => setRadiusInput(e.target.value)}
+            className="w-12 bg-transparent text-sm text-center focus:outline-none"
+            style={{ fontSize: "16px" }}
+          />
+          <span className="text-[10px] text-muted-foreground">mi</span>
+        </div>
         <button
           onClick={runSuggest}
           disabled={loading}

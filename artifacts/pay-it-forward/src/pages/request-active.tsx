@@ -6,6 +6,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type mapboxgl from "mapbox-gl";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
+import { detectVoiceLocale, pickBestVoice, detectUnits, detectMapLanguage } from "@/lib/locale-utils";
 import { useGetRequest, useGetRoute, useCompleteRequest, useMarkEnRoute, useMarkArrived, getGetRequestQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share2, CheckCircle2, Car, PersonStanding, Bike, Volume2, VolumeX } from "lucide-react";
@@ -162,6 +163,11 @@ export default function ActiveRequestScreen() {
     end_lat: request?.lat || 0,
     end_lng: request?.lng || 0,
     profile: routingProfile,
+    // Locale-aware navigation: voice instructions and distance units match the
+    // user's locale automatically. Helpers in Lagos get km + Mapbox Hausa TTS;
+    // helpers in London get miles + English voice.
+    lang: detectMapLanguage(),
+    units: detectUnits(),
   };
   const { data: routeData } = useGetRoute(routeParams, {
     query: {
@@ -279,6 +285,9 @@ export default function ActiveRequestScreen() {
 
   // Turn-by-turn voice guidance via Web Speech API.
   // voiceEnabled is a user-controlled toggle; guards all TTS calls.
+  // Voice selection: locale-aware — picks a voice matching the user's browser locale,
+  // so a Swahili or French user hears instructions in their language (when the
+  // browser supports it) rather than always receiving en-US TTS.
   const speakInstruction = useCallback((text: string) => {
     if (!voiceEnabled || !("speechSynthesis" in window) || !text) return;
     window.speechSynthesis.cancel();
@@ -286,10 +295,10 @@ export default function ActiveRequestScreen() {
     utt.rate = 1.05;   // Slightly faster — more natural for nav
     utt.pitch = 1.0;
     utt.volume = 1.0;
-    // Use a good en-US voice if available
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find(v => v.lang === "en-US" && !v.localService) ?? voices.find(v => v.lang === "en-US");
+    const locale = detectVoiceLocale();
+    const preferred = pickBestVoice(locale);
     if (preferred) utt.voice = preferred;
+    utt.lang = locale;
     window.speechSynthesis.speak(utt);
   }, [voiceEnabled]);
 

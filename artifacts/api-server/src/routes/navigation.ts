@@ -127,17 +127,29 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
       ? (rawProfile as RoutingProfile)
       : "driving";
 
-  // Optional: prefer metric units (km) for walking/cycling if ?units=metric
+  // Metric vs Imperial: explicit ?units=metric param, or auto for cycling/walking.
+  // Driving defaults to metric for non-US/UK/Myanmar locales — the frontend passes
+  // ?units=metric when detectUnits() returns "metric" in locale-utils.ts.
   const useMetric =
     (req.query.units as string | undefined) === "metric" ||
     profile === "cycling" ||
     profile === "walking";
 
+  // Navigation language — Mapbox Directions supports a subset of BCP-47 codes.
+  // Frontend passes ?lang=<code> from detectMapLanguage(). Unknown codes fall back to "en".
+  const MAPBOX_NAV_LANGS = new Set([
+    "ar", "de", "en", "es", "fr", "it", "ja", "ko", "nl", "pt", "ru", "sw", "vi", "zh",
+  ]);
+  const rawLang = ((req.query.lang as string | undefined) ?? "en").toLowerCase().split("-")[0];
+  const navLang = MAPBOX_NAV_LANGS.has(rawLang) ? rawLang : "en";
+
+  const voiceUnits = useMetric ? "metric" : "imperial";
+
   const token = process.env.VITE_MAPBOX_TOKEN;
   if (!token) return res.status(500).json({ error: "Mapbox token not configured" });
 
-  // Cache check
-  const cacheKey = getCacheKey(start_lat, start_lng, end_lat, end_lng, profile);
+  // Cache check — include lang and units in the key so different locales get their own entry
+  const cacheKey = `${getCacheKey(start_lat, start_lng, end_lat, end_lng, profile)}:${navLang}:${voiceUnits}`;
   const cached = routeCache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) {
     res.setHeader("X-Route-Cache", "HIT");
@@ -147,12 +159,12 @@ router.get("/navigation/route", requireAuth, navigationLimiter, async (req, res)
 
   try {
     // Driving profile: traffic-aware routing + congestion/maxspeed annotations +
-    // richer voice instruction text. Language=en for consistent TTS output.
+    // richer voice instruction text. Language and units are locale-aware.
     const drivingExtras =
       profile === "driving"
-        ? `&depart_at=${encodeURIComponent(new Date().toISOString())}&annotations=congestion,maxspeed&voice_instructions=true&voice_units=imperial`
-        : "&voice_instructions=true&voice_units=imperial";
-    const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${start_lng},${start_lat};${end_lng},${end_lat}?steps=true&geometries=geojson&overview=full${drivingExtras}&language=en&access_token=${token}`;
+        ? `&depart_at=${encodeURIComponent(new Date().toISOString())}&annotations=congestion,maxspeed&voice_instructions=true&voice_units=${voiceUnits}`
+        : `&voice_instructions=true&voice_units=${voiceUnits}`;
+    const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${start_lng},${start_lat};${end_lng},${end_lat}?steps=true&geometries=geojson&overview=full${drivingExtras}&language=${navLang}&access_token=${token}`;
 
     const controller = new AbortController();
     // 12 s — generous enough for slow mobile networks without blocking forever

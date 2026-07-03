@@ -1093,7 +1093,36 @@ start_lat: number;
 start_lng: number;
 end_lat: number;
 end_lng: number;
+/**
+ * Routing profile
+ */
+profile?: GetRouteProfile;
+/**
+ * BCP-47 language code for navigation voice instructions (e.g. "en", "fr", "sw"). Defaults to "en".
+ */
+lang?: string;
+/**
+ * Distance and voice units. Pass "metric" for km-based navigation.
+ */
+units?: GetRouteUnits;
 };
+
+export type GetRouteProfile = typeof GetRouteProfile[keyof typeof GetRouteProfile];
+
+
+export const GetRouteProfile = {
+  driving: 'driving',
+  walking: 'walking',
+  cycling: 'cycling',
+} as const;
+
+export type GetRouteUnits = typeof GetRouteUnits[keyof typeof GetRouteUnits];
+
+
+export const GetRouteUnits = {
+  imperial: 'imperial',
+  metric: 'metric',
+} as const;
 
 export type GetCivicResourcesParams = {
 lat: number;
