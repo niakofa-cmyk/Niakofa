@@ -7,7 +7,9 @@ import {
   BarChart2, TrendingUp, Activity, Zap, MessageSquare, Package,
   ChevronDown, ChevronUp, CheckSquare, Square, HandHeart, DollarSign,
   LineChart, FileText, Gavel, Sparkles, RotateCcw, Landmark, Building2,
-  SlidersHorizontal, Save, Loader2, Server, LifeBuoy, Cpu, CheckCircle, WifiOff
+  SlidersHorizontal, Save, Loader2, Server, LifeBuoy, Cpu, CheckCircle, WifiOff,
+  Siren, MapPin, Globe, Fingerprint, Banknote, BadgeCheck, Inbox,
+  ShieldAlert, ThumbsUp, ThumbsDown, Megaphone, Map, Link
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -82,6 +84,78 @@ function fmtDate(iso: string) {
 }
 
 // ── New interfaces for admin enhancements ─────────────────────────────────────
+
+interface FlaggedRequest {
+  id: number;
+  title: string;
+  description: string | null;
+  category: string | null;
+  urgency: string | null;
+  status: string;
+  moderation_status: string;
+  moderation_reason: string | null;
+  requester_id: number;
+  requester_name: string | null;
+  requester_email: string | null;
+  created_at: string;
+}
+
+interface GratitudePost {
+  id: number;
+  request_id: number | null;
+  author_id: number;
+  author_name: string;
+  content: string;
+  moderation_status: string;
+  moderation_reason: string | null;
+  created_at: string;
+}
+
+interface CivicSuggestion {
+  id: number;
+  name: string;
+  category: string | null;
+  description: string | null;
+  phone: string | null;
+  website: string | null;
+  status: string;
+  admin_notes: string | null;
+  created_at: string;
+}
+
+interface Neighborhood {
+  id: number;
+  city_key: string;
+  neighborhood_id: string;
+  name: string;
+  emoji: string | null;
+  description: string | null;
+  verified: boolean;
+  created_at: string;
+}
+
+interface RegionCrisisResource {
+  id: number;
+  region_display: string;
+  state_code: string | null;
+  resources: { label: string; phone?: string; url?: string }[];
+  verified: boolean;
+  notes: string | null;
+  created_at: string;
+}
+
+interface AdminCashout {
+  id: number;
+  user_id: number;
+  user_name: string | null;
+  user_email: string | null;
+  amount: number;
+  state: string;
+  stripe_transfer_id: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
 interface AuditLogEntry {
   id: number;
   user_id: number;
@@ -543,6 +617,12 @@ function PledgeWriteOffCard() {
 }
 
 // ── Audit Log Table ───────────────────────────────────────────────────────────
+// Synthesises a unified audit timeline from multiple admin-accessible endpoints:
+//   • Resolved user reports   → shows who was warned/banned and by whom
+//   • Moderated requests      → flagged request approvals/rejections
+// This is the best available audit trail given there is no dedicated audit_log
+// table. If a future migration adds one, replace the fetches below with a single
+// GET /api/admin/audit-log call.
 function AuditLogTable() {
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -550,23 +630,46 @@ function AuditLogTable() {
 
   useEffect(() => {
     const tok = getToken();
-    // For now, fetch from a mock endpoint or use moderation actions from users
-    fetch(`${BASE}/api/admin/accounts?limit=50`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} })
-      .then(r => r.ok ? r.json() : [])
-      .then((users: any[]) => {
-        // Generate audit entries from user moderation state
-        const auditEntries: AuditLogEntry[] = users
-          .filter((u: any) => u.is_suspended || u.trust_score <= -1)
+    const headers: Record<string, string> = tok ? { Authorization: `Bearer ${tok}` } : {};
+    Promise.all([
+      fetch(`${BASE}/api/reports`, { headers }).then(r => r.ok ? r.json() : []),
+      fetch(`${BASE}/api/admin/accounts?limit=100`, { headers }).then(r => r.ok ? r.json() : []),
+    ])
+      .then(([reports, users]: [any[], any[]]) => {
+        const reportEntries: AuditLogEntry[] = (reports as any[])
+          .filter((r: any) => r.status !== "pending" && r.reviewed_at)
+          .map((r: any) => ({
+            id: r.id,
+            user_id: r.reviewed_by ?? 0,
+            action: r.status === "resolved_banned" ? "BANNED" :
+                    r.status === "resolved_warned" ? "WARNED" :
+                    r.status === "resolved_dismissed" ? "DISMISSED" :
+                    r.status === "under_review" ? "REVIEWING" : r.status.toUpperCase(),
+            target_user_id: r.reported_user_id,
+            details: r.admin_notes || `Report type: ${TYPE_LABELS[r.type] ?? r.type}`,
+            created_at: r.reviewed_at ?? r.created_at,
+            admin_name: "Admin",
+          }));
+
+        const userEntries: AuditLogEntry[] = (users as any[])
+          .filter((u: any) => u.is_suspended || (u.trust_score !== null && u.trust_score <= -1))
           .map((u: any, i: number) => ({
-            id: i + 1,
-            user_id: u.id,
-            action: u.trust_score <= -1 ? "BANNED" : "SUSPENDED",
+            id: 10000 + i,
+            user_id: 0,
+            action: u.trust_score !== null && u.trust_score <= -1 ? "BANNED" : "SUSPENDED",
             target_user_id: u.id,
-            details: u.suspended_reason || "Account moderation action",
-            created_at: u.suspended_at || u.created_at,
+            details: u.suspended_reason || `Account moderation — ${u.name}`,
+            created_at: u.suspended_at ?? u.created_at,
             admin_name: "System",
           }));
-        setEntries(auditEntries);
+
+        // Merge, deduplicate by id, sort newest first
+        const seen = new Set<number>();
+        const merged = [...reportEntries, ...userEntries]
+          .filter(e => { if (seen.has(e.id)) return false; seen.add(e.id); return true; })
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+        setEntries(merged);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -1567,7 +1670,183 @@ function NiaTab() {
 }
 
 // ── Reports Tab ───────────────────────────────────────────────────────────────
-function ReportsTab({ authed }: { authed: boolean }) {
+// ── Flagged Help Requests — content moderation ────────────────────────────────
+function FlaggedRequestsSection() {
+  const [items, setItems] = useState<FlaggedRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(`${BASE}/api/admin/requests/flagged`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+      if (res.ok) setItems(await res.json());
+      else { const b = await res.json().catch(() => ({})) as {error?:string}; setLoadError(b.error ?? `Error ${res.status}`); }
+    } catch { setLoadError("Could not reach server"); } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const decide = async (id: number, action: "approve" | "reject") => {
+    setProcessing(id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/requests/${id}/moderate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` },
+        body: JSON.stringify({ action }),
+      });
+      if (res.ok) {
+        toast({ title: action === "approve" ? "Request approved — now visible" : "Request rejected and cancelled" });
+        setItems(prev => prev.filter(r => r.id !== id));
+      } else {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        toast({ title: body.error ?? "Action failed", variant: "destructive" });
+      }
+    } catch { toast({ title: "Network error", variant: "destructive" }); }
+    finally { setProcessing(null); }
+  };
+
+  if (loading) return <div className="flex justify-center py-10"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
+  if (loadError) return <div className="flex items-center gap-2 text-sm text-destructive py-6 justify-center"><AlertCircle className="w-4 h-4 shrink-0" />{loadError}<button onClick={load} className="ml-2 underline text-xs">Retry</button></div>;
+
+  if (items.length === 0) return (
+    <div className="text-center py-14">
+      <ShieldAlert className="w-10 h-10 mx-auto mb-3 text-green-400/40" />
+      <div className="font-bold text-sm text-muted-foreground">No flagged requests</div>
+      <div className="text-xs text-muted-foreground/60 mt-1">All help requests passed automated moderation</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl px-4 py-3">
+        <AlertTriangle className="w-4 h-4 text-yellow-500 shrink-0" />
+        <span className="text-sm font-bold text-yellow-600 dark:text-yellow-400">{items.length} request{items.length !== 1 ? "s" : ""} flagged by automated moderation</span>
+        <button onClick={load} className="ml-auto w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><RefreshCw className="w-3 h-3" /></button>
+      </div>
+      {items.map(item => (
+        <div key={item.id} className="bg-card border border-yellow-500/20 rounded-2xl p-4 space-y-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <div className="font-bold text-sm">{item.title}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{item.requester_name} · {item.requester_email}</div>
+              {item.category && <div className="text-[10px] text-muted-foreground mt-0.5">Category: {item.category}</div>}
+              {item.moderation_reason && (
+                <div className="mt-1.5 flex items-start gap-1.5 bg-yellow-500/10 rounded-xl px-2.5 py-1.5">
+                  <AlertTriangle className="w-3 h-3 text-yellow-500 mt-0.5 shrink-0" />
+                  <span className="text-[11px] text-yellow-600 dark:text-yellow-400 leading-relaxed">{item.moderation_reason}</span>
+                </div>
+              )}
+              {item.description && <p className="text-xs text-muted-foreground mt-2 line-clamp-3 leading-relaxed">{item.description}</p>}
+            </div>
+            <span className="text-[10px] text-muted-foreground shrink-0">{fmtDate(item.created_at)}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => decide(item.id, "reject")}
+              disabled={processing === item.id}
+              className="h-9 rounded-xl border border-destructive/40 bg-destructive/10 text-destructive text-xs font-black disabled:opacity-50 active:scale-95 transition-all"
+            >{processing === item.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin mx-auto" /> : "✕ Reject"}</button>
+            <button
+              onClick={() => decide(item.id, "approve")}
+              disabled={processing === item.id}
+              className="h-9 rounded-xl bg-green-500 text-white text-xs font-black disabled:opacity-50 active:scale-95 transition-all"
+            >{processing === item.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin mx-auto" /> : "✓ Approve"}</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Post Moderation — gratitude posts pending review ──────────────────────────
+function PostModerationSection() {
+  const [posts, setPosts] = useState<GratitudePost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(`${BASE}/api/admin/moderation-queue`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+      if (res.ok) setPosts(await res.json());
+      else { const b = await res.json().catch(() => ({})) as {error?:string}; setLoadError(b.error ?? `Error ${res.status}`); }
+    } catch { setLoadError("Could not reach server"); } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const decide = async (id: number, decision: "approve" | "reject") => {
+    setProcessing(id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/moderation-queue/${id}/decide`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` },
+        body: JSON.stringify({ decision }),
+      });
+      if (res.ok) {
+        toast({ title: decision === "approve" ? "Post approved — now live" : "Post rejected and removed" });
+        setPosts(prev => prev.filter(p => p.id !== id));
+      } else {
+        toast({ title: "Action failed", variant: "destructive" });
+      }
+    } catch { toast({ title: "Network error", variant: "destructive" }); }
+    finally { setProcessing(null); }
+  };
+
+  if (loading) return <div className="flex justify-center py-10"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
+  if (loadError) return <div className="flex items-center gap-2 text-sm text-destructive py-6 justify-center"><AlertCircle className="w-4 h-4 shrink-0" />{loadError}<button onClick={load} className="ml-2 underline text-xs">Retry</button></div>;
+
+  if (posts.length === 0) return (
+    <div className="text-center py-14">
+      <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-green-400/40" />
+      <div className="font-bold text-sm text-muted-foreground">No posts pending review</div>
+      <div className="text-xs text-muted-foreground/60 mt-1">Community feed is fully moderated</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-2xl px-4 py-3">
+        <Megaphone className="w-4 h-4 text-primary shrink-0" />
+        <span className="text-sm font-bold text-primary">{posts.length} gratitude post{posts.length !== 1 ? "s" : ""} awaiting review</span>
+        <button onClick={load} className="ml-auto w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><RefreshCw className="w-3 h-3" /></button>
+      </div>
+      {posts.map(post => (
+        <div key={post.id} className="bg-card border border-border rounded-2xl p-4 space-y-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <div className="font-bold text-sm">{post.author_name}</div>
+              {post.moderation_reason && (
+                <div className="mt-1 text-[10px] text-yellow-500 bg-yellow-500/10 rounded-lg px-2 py-1">Flag: {post.moderation_reason}</div>
+              )}
+              <p className="text-sm text-foreground mt-2 leading-relaxed">{post.content}</p>
+            </div>
+            <span className="text-[10px] text-muted-foreground shrink-0">{fmtDate(post.created_at)}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => decide(post.id, "reject")}
+              disabled={processing === post.id}
+              className="h-9 rounded-xl border border-destructive/40 bg-destructive/10 text-destructive text-xs font-black disabled:opacity-50 active:scale-95 transition-all"
+            >{processing === post.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin mx-auto" /> : "Remove Post"}</button>
+            <button
+              onClick={() => decide(post.id, "approve")}
+              disabled={processing === post.id}
+              className="h-9 rounded-xl bg-green-500 text-white text-xs font-black disabled:opacity-50 active:scale-95 transition-all"
+            >{processing === post.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin mx-auto" /> : "Publish ✓"}</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function UserReportsSection({ authed }: { authed: boolean }) {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -1592,7 +1871,6 @@ function ReportsTab({ authed }: { authed: boolean }) {
 
   return (
     <>
-      {/* Pending badge summary */}
       {pendingCount > 0 && (
         <div className="flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl px-4 py-3">
           <AlertCircle className="w-4 h-4 text-yellow-500 shrink-0" />
@@ -1601,48 +1879,28 @@ function ReportsTab({ authed }: { authed: boolean }) {
             className="ml-auto text-[10px] font-black bg-yellow-500 text-black px-2.5 py-1 rounded-full">View</button>
         </div>
       )}
-
-      {/* Status filter chips */}
       <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1 -mx-4 px-4">
         {STATUS_FILTERS.map(s => {
           const meta = STATUS_LABELS[s];
           const isActive = statusFilter === s;
           return (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              style={{ touchAction: "manipulation" }}
-              className={`shrink-0 text-[11px] font-bold px-3 py-2 rounded-full border transition-all ${
-                isActive
-                  ? s === "all" ? "bg-primary text-primary-foreground border-primary" : (meta?.color ?? "bg-primary text-primary-foreground border-primary")
-                  : "bg-card border-border text-muted-foreground"
-              }`}
-            >
+            <button key={s} onClick={() => setStatusFilter(s)} style={{ touchAction: "manipulation" }}
+              className={`shrink-0 text-[11px] font-bold px-3 py-2 rounded-full border transition-all ${isActive ? s === "all" ? "bg-primary text-primary-foreground border-primary" : (meta?.color ?? "bg-primary text-primary-foreground border-primary") : "bg-card border-border text-muted-foreground"}`}>
               {s === "all" ? "All" : meta?.label ?? s}
             </button>
           );
         })}
       </div>
-
       {loading && <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground"><RefreshCw className="w-5 h-5 animate-spin" /><span className="text-sm">Loading…</span></div>}
-
       {!loading && filtered.length === 0 && (
-        <div className="text-center py-16">
-          <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-green-400/40" />
-          <div className="font-bold text-sm text-muted-foreground">{statusFilter === "all" ? "No reports yet" : "Queue is clear"}</div>
-        </div>
+        <div className="text-center py-16"><CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-green-400/40" /><div className="font-bold text-sm text-muted-foreground">{statusFilter === "all" ? "No reports yet" : "Queue is clear"}</div></div>
       )}
-
       {!loading && filtered.map(report => {
         const statusMeta = STATUS_LABELS[report.status] ?? { label: report.status, color: "bg-muted text-muted-foreground border-border" };
         return (
-          <motion.button
-            key={report.id} layout
-            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-            onClick={() => setSelectedReport(report)}
-            style={{ touchAction: "manipulation" }}
-            className="w-full text-left bg-card border border-border rounded-2xl p-4 active:border-primary/40 transition-all"
-          >
+          <motion.button key={report.id} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+            onClick={() => setSelectedReport(report)} style={{ touchAction: "manipulation" }}
+            className="w-full text-left bg-card border border-border rounded-2xl p-4 active:border-primary/40 transition-all">
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1.5 flex-wrap">
@@ -1663,15 +1921,36 @@ function ReportsTab({ authed }: { authed: boolean }) {
           </motion.button>
         );
       })}
-
-      {selectedReport && (
-        <ReportDetailSheet
-          report={selectedReport}
-          onClose={() => setSelectedReport(null)}
-          onReviewed={handleReviewed}
-        />
-      )}
+      {selectedReport && <ReportDetailSheet report={selectedReport} onClose={() => setSelectedReport(null)} onReviewed={handleReviewed} />}
     </>
+  );
+}
+
+// ── Reports Tab — 3-section moderation hub ────────────────────────────────────
+function ReportsTab({ authed }: { authed: boolean }) {
+  const [section, setSection] = useState<"user-reports" | "flagged" | "posts">("user-reports");
+
+  const SECTIONS = [
+    { key: "user-reports", label: "User Reports", icon: Flag },
+    { key: "flagged",      label: "Flagged Requests", icon: ShieldAlert },
+    { key: "posts",        label: "Post Moderation", icon: Megaphone },
+  ] as const;
+
+  return (
+    <div className="space-y-4">
+      {/* Section sub-nav */}
+      <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1 -mx-4 px-4">
+        {SECTIONS.map(({ key, label, icon: Icon }) => (
+          <button key={key} onClick={() => setSection(key)} style={{ touchAction: "manipulation" }}
+            className={`shrink-0 flex items-center gap-1.5 text-[11px] font-bold px-3.5 py-2 rounded-full border transition-all ${section === key ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border text-muted-foreground"}`}>
+            <Icon className="w-3.5 h-3.5" />{label}
+          </button>
+        ))}
+      </div>
+      {section === "user-reports" && <UserReportsSection authed={authed} />}
+      {section === "flagged"      && <FlaggedRequestsSection />}
+      {section === "posts"        && <PostModerationSection />}
+    </div>
   );
 }
 
@@ -2071,6 +2350,224 @@ function OrgsTab({ authed }: { authed: boolean }) {
   );
 }
 
+// ── Crisis Mode Control ───────────────────────────────────────────────────────
+function CrisisModeSection() {
+  const [crisisStatus, setCrisisStatus] = useState<{
+    active: boolean; level?: string; message?: string; activatedAt?: string;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [acting, setActing] = useState(false);
+  const [showActivate, setShowActivate] = useState(false);
+  const [level, setLevel] = useState<"info" | "warning" | "critical">("warning");
+  const [message, setMessage] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE}/api/crisis/status`);
+      if (res.ok) setCrisisStatus(await res.json());
+    } catch { /* non-critical */ } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const activate = async () => {
+    setActing(true);
+    try {
+      const res = await fetch(`${BASE}/api/crisis/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` },
+        body: JSON.stringify({ level, message: message.trim() || undefined }),
+      });
+      if (res.ok) {
+        setCrisisStatus(await res.json());
+        toast({ title: `⚠️ Crisis mode activated (${level})` });
+        setShowActivate(false);
+        setMessage("");
+      } else {
+        const b = await res.json().catch(() => ({})) as { error?: string };
+        toast({ title: b.error ?? "Failed to activate", variant: "destructive" });
+      }
+    } catch { toast({ title: "Network error", variant: "destructive" }); }
+    finally { setActing(false); }
+  };
+
+  const deactivate = async () => {
+    setActing(true);
+    try {
+      const res = await fetch(`${BASE}/api/crisis/deactivate`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+      });
+      if (res.ok) {
+        setCrisisStatus(await res.json());
+        toast({ title: "Crisis mode deactivated" });
+      } else {
+        toast({ title: "Failed to deactivate", variant: "destructive" });
+      }
+    } catch { toast({ title: "Network error", variant: "destructive" }); }
+    finally { setActing(false); }
+  };
+
+  const levelColor = (l?: string) => ({
+    info: "text-blue-400 bg-blue-400/10 border-blue-400/30",
+    warning: "text-yellow-400 bg-yellow-400/10 border-yellow-400/30",
+    critical: "text-destructive bg-destructive/10 border-destructive/30",
+  }[l ?? "warning"] ?? "text-muted-foreground bg-muted border-border");
+
+  if (loading) return <div className="flex justify-center py-6"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Siren className="w-4 h-4 text-destructive" />
+          <span className="text-sm font-black uppercase tracking-wider">Crisis Mode</span>
+        </div>
+        <div className={`flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1 rounded-full border ${crisisStatus?.active ? levelColor(crisisStatus.level) : "text-green-400 bg-green-400/10 border-green-400/30"}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${crisisStatus?.active ? "bg-current animate-pulse" : "bg-green-400"}`} />
+          {crisisStatus?.active ? `ACTIVE — ${(crisisStatus.level ?? "warning").toUpperCase()}` : "INACTIVE"}
+        </div>
+      </div>
+
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        Activating crisis mode broadcasts an emergency banner to all users, surfaces crisis resource links, and triggers priority dispatch for nearby helpers. Use only for real community emergencies.
+      </p>
+
+      {crisisStatus?.active && (
+        <div className={`rounded-xl border p-3 space-y-1 ${levelColor(crisisStatus.level)}`}>
+          {crisisStatus.message && <p className="text-sm font-semibold leading-relaxed">{crisisStatus.message}</p>}
+          {crisisStatus.activatedAt && <p className="text-[10px] opacity-70">Activated: {new Date(crisisStatus.activatedAt).toLocaleString()}</p>}
+        </div>
+      )}
+
+      {crisisStatus?.active ? (
+        <button onClick={deactivate} disabled={acting}
+          className="w-full h-11 rounded-xl bg-green-500 text-white text-sm font-black disabled:opacity-50 active:scale-95 transition-all flex items-center justify-center gap-2">
+          {acting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+          Deactivate Crisis Mode
+        </button>
+      ) : (
+        <>
+          {!showActivate ? (
+            <button onClick={() => setShowActivate(true)}
+              className="w-full h-11 rounded-xl border border-destructive/50 bg-destructive/10 text-destructive text-sm font-black active:scale-95 transition-all flex items-center justify-center gap-2">
+              <Siren className="w-4 h-4" /> Activate Crisis Mode
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Severity Level</div>
+              <div className="grid grid-cols-3 gap-2">
+                {(["info", "warning", "critical"] as const).map(l => (
+                  <button key={l} onClick={() => setLevel(l)}
+                    className={`h-9 rounded-xl border text-xs font-black capitalize transition-all ${level === l ? levelColor(l) : "border-border text-muted-foreground"}`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <textarea value={message} onChange={e => setMessage(e.target.value)}
+                placeholder="Optional custom message shown to users…"
+                rows={2}
+                className="w-full text-sm bg-background border border-border rounded-xl p-3 resize-none focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground"
+                maxLength={400}
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setShowActivate(false)}
+                  className="h-10 rounded-xl border border-border text-sm text-muted-foreground font-bold">Cancel</button>
+                <button onClick={activate} disabled={acting}
+                  className="h-10 rounded-xl bg-destructive text-white text-sm font-black disabled:opacity-50 active:scale-95">
+                  {acting ? <RefreshCw className="w-4 h-4 animate-spin mx-auto" /> : "⚠️ Activate"}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Civic Suggestions Review ──────────────────────────────────────────────────
+function CivicSuggestionsSection() {
+  const [items, setItems] = useState<CivicSuggestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(`${BASE}/api/admin/civic-suggestions?status=pending`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+      if (res.ok) setItems(await res.json());
+      else { const b = await res.json().catch(() => ({})) as {error?:string}; setLoadError(b.error ?? `Error ${res.status}`); }
+    } catch { setLoadError("Could not reach server"); } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const decide = async (id: number, status: "approved" | "dismissed") => {
+    setProcessing(id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/civic-suggestions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        toast({ title: status === "approved" ? "Resource approved — added to directory" : "Suggestion dismissed" });
+        setItems(prev => prev.filter(i => i.id !== id));
+      } else { toast({ title: "Action failed", variant: "destructive" }); }
+    } catch { toast({ title: "Network error", variant: "destructive" }); }
+    finally { setProcessing(null); }
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Globe className="w-4 h-4 text-primary" />
+          <span className="text-sm font-black uppercase tracking-wider">Civic Resource Suggestions</span>
+          {items.length > 0 && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-yellow-400/10 text-yellow-400 border border-yellow-400/20">{items.length}</span>}
+        </div>
+        <button onClick={load} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><RefreshCw className="w-3.5 h-3.5" /></button>
+      </div>
+      <p className="text-xs text-muted-foreground">Community-submitted links to local food banks, shelters, clinics, and services. Approve to add to the civic directory; dismiss if not relevant.</p>
+      {loading ? (
+        <div className="flex justify-center py-4"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+      ) : loadError ? (
+        <div className="flex items-center gap-2 text-sm text-destructive py-4 justify-center"><AlertCircle className="w-4 h-4" />{loadError}<button onClick={load} className="ml-2 underline text-xs">Retry</button></div>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-3">No pending suggestions.</p>
+      ) : (
+        <div className="space-y-3">
+          {items.map(item => (
+            <div key={item.id} className="border border-border rounded-xl p-3 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm">{item.name}</div>
+                  {item.category && <div className="text-[10px] text-muted-foreground">{item.category}</div>}
+                  {item.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{item.description}</p>}
+                  <div className="flex gap-3 mt-1 text-[10px] text-muted-foreground">
+                    {item.phone && <span className="flex items-center gap-1">📞 {item.phone}</span>}
+                    {item.website && <span className="flex items-center gap-1"><Link className="w-3 h-3" />{item.website}</span>}
+                  </div>
+                </div>
+                <span className="text-[10px] text-muted-foreground shrink-0">{fmtDate(item.created_at)}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => decide(item.id, "dismissed")} disabled={processing === item.id}
+                  className="h-8 rounded-lg border border-border text-[11px] font-black text-muted-foreground disabled:opacity-50 active:scale-95">Dismiss</button>
+                <button onClick={() => decide(item.id, "approved")} disabled={processing === item.id}
+                  className="h-8 rounded-lg bg-green-500 text-white text-[11px] font-black disabled:opacity-50 active:scale-95">Approve ✓</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Settings Tab — Community Pool wage floors and feature toggles ─────────────
 function SettingsTab() {
   const [loading, setLoading] = useState(true);
@@ -2280,6 +2777,294 @@ function SettingsTab() {
           <code className="bg-muted px-1 py-0.5 rounded text-[10px]">requests.ts</code>.
         </p>
       </div>
+
+      {/* ── Crisis Mode ─────────────────────────────────────────────────────── */}
+      <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1 pt-2">Emergency Controls</div>
+      <CrisisModeSection />
+
+      {/* ── Civic Suggestions ───────────────────────────────────────────────── */}
+      <CivicSuggestionsSection />
+    </div>
+  );
+}
+
+// ── Neighborhoods Management ──────────────────────────────────────────────────
+function NeighborhoodsSection() {
+  const [items, setItems] = useState<Neighborhood[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(`${BASE}/api/admin/city-neighborhoods`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+      if (res.ok) setItems(await res.json());
+      else { const b = await res.json().catch(() => ({})) as {error?:string}; setLoadError(b.error ?? `Error ${res.status}`); }
+    } catch { setLoadError("Could not reach server"); } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggleVerify = async (item: Neighborhood) => {
+    setProcessing(item.id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/city-neighborhoods/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` },
+        body: JSON.stringify({ verified: !item.verified }),
+      });
+      if (res.ok) {
+        toast({ title: item.verified ? "Neighborhood unverified" : "Neighborhood verified ✓" });
+        setItems(prev => prev.map(n => n.id === item.id ? { ...n, verified: !n.verified } : n));
+      } else { toast({ title: "Failed", variant: "destructive" }); }
+    } catch { toast({ title: "Network error", variant: "destructive" }); }
+    finally { setProcessing(null); }
+  };
+
+  const deleteItem = async (id: number) => {
+    setProcessing(id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/city-neighborhoods/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+      });
+      if (res.ok) {
+        toast({ title: "Neighborhood removed" });
+        setItems(prev => prev.filter(n => n.id !== id));
+      } else { toast({ title: "Delete failed", variant: "destructive" }); }
+    } catch { toast({ title: "Network error", variant: "destructive" }); }
+    finally { setProcessing(null); }
+  };
+
+  const unverified = items.filter(n => !n.verified);
+  const verified = items.filter(n => n.verified);
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Map className="w-4 h-4 text-primary" />
+          <span className="text-sm font-black uppercase tracking-wider">Neighborhoods</span>
+          {unverified.length > 0 && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-yellow-400/10 text-yellow-400 border border-yellow-400/20">{unverified.length} pending</span>}
+        </div>
+        <button onClick={load} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><RefreshCw className="w-3.5 h-3.5" /></button>
+      </div>
+      <p className="text-xs text-muted-foreground">Geo-fenced neighborhood zones that appear in request matching and community feeds. Verify to make them available to users.</p>
+      {loading ? (
+        <div className="flex justify-center py-4"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+      ) : loadError ? (
+        <div className="flex items-center gap-2 text-sm text-destructive py-4 justify-center"><AlertCircle className="w-4 h-4" />{loadError}<button onClick={load} className="ml-2 underline text-xs">Retry</button></div>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-3">No neighborhoods configured.</p>
+      ) : (
+        <div className="space-y-2">
+          {[...unverified, ...verified].map(n => (
+            <div key={n.id} className={`flex items-center gap-3 py-2.5 px-3 rounded-xl border ${n.verified ? "border-green-500/20 bg-green-500/5" : "border-yellow-500/20 bg-yellow-500/5"}`}>
+              <span className="text-lg shrink-0">{n.emoji ?? "📍"}</span>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm truncate">{n.name}</div>
+                <div className="text-[10px] text-muted-foreground">{n.city_key}</div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button onClick={() => toggleVerify(n)} disabled={processing === n.id}
+                  className={`text-[10px] font-black px-2.5 py-1 rounded-lg border transition-all disabled:opacity-50 ${n.verified ? "border-green-500/30 text-green-400 bg-green-500/10" : "border-border text-muted-foreground hover:border-green-500/30 hover:text-green-400"}`}>
+                  {processing === n.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : n.verified ? "✓ Verified" : "Verify"}
+                </button>
+                <button onClick={() => deleteItem(n.id)} disabled={processing === n.id}
+                  className="w-7 h-7 rounded-lg border border-destructive/30 text-destructive flex items-center justify-center hover:bg-destructive/10 disabled:opacity-50 transition-colors">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Region Crisis Resources ───────────────────────────────────────────────────
+function RegionCrisisSection() {
+  const [items, setItems] = useState<RegionCrisisResource[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(`${BASE}/api/admin/region-crisis-resources`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+      if (res.ok) setItems(await res.json());
+      else { const b = await res.json().catch(() => ({})) as {error?:string}; setLoadError(b.error ?? `Error ${res.status}`); }
+    } catch { setLoadError("Could not reach server"); } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggleVerify = async (item: RegionCrisisResource) => {
+    setProcessing(item.id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/region-crisis-resources/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` },
+        body: JSON.stringify({ verified: !item.verified }),
+      });
+      if (res.ok) {
+        toast({ title: item.verified ? "Region unverified" : "Region crisis resources verified ✓" });
+        setItems(prev => prev.map(r => r.id === item.id ? { ...r, verified: !r.verified } : r));
+      } else { toast({ title: "Failed", variant: "destructive" }); }
+    } catch { toast({ title: "Network error", variant: "destructive" }); }
+    finally { setProcessing(null); }
+  };
+
+  const deleteItem = async (id: number) => {
+    setProcessing(id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/region-crisis-resources/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+      });
+      if (res.ok) {
+        toast({ title: "Region removed" });
+        setItems(prev => prev.filter(r => r.id !== id));
+      } else { toast({ title: "Delete failed", variant: "destructive" }); }
+    } catch { toast({ title: "Network error", variant: "destructive" }); }
+    finally { setProcessing(null); }
+  };
+
+  const unverified = items.filter(r => !r.verified);
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <MapPin className="w-4 h-4 text-destructive" />
+          <span className="text-sm font-black uppercase tracking-wider">Region Crisis Resources</span>
+          {unverified.length > 0 && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-yellow-400/10 text-yellow-400 border border-yellow-400/20">{unverified.length} unverified</span>}
+        </div>
+        <button onClick={load} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><RefreshCw className="w-3.5 h-3.5" /></button>
+      </div>
+      <p className="text-xs text-muted-foreground">Emergency service hotlines and resources per region. Verify entries to surface them during crisis mode activation.</p>
+      {loading ? (
+        <div className="flex justify-center py-4"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+      ) : loadError ? (
+        <div className="flex items-center gap-2 text-sm text-destructive py-4 justify-center"><AlertCircle className="w-4 h-4" />{loadError}<button onClick={load} className="ml-2 underline text-xs">Retry</button></div>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-3">No region crisis resources configured.</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map(item => (
+            <div key={item.id} className={`rounded-xl border p-3 space-y-2 ${item.verified ? "border-green-500/20" : "border-yellow-500/20"}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm">{item.region_display}</div>
+                  {item.state_code && <div className="text-[10px] text-muted-foreground">{item.state_code}</div>}
+                  <div className="text-[10px] text-muted-foreground mt-1">{item.resources.length} resource{item.resources.length !== 1 ? "s" : ""}: {item.resources.map(r => r.label).join(", ")}</div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button onClick={() => toggleVerify(item)} disabled={processing === item.id}
+                    className={`text-[10px] font-black px-2 py-1 rounded-lg border transition-all disabled:opacity-50 ${item.verified ? "border-green-500/30 text-green-400" : "border-border text-muted-foreground"}`}>
+                    {item.verified ? "✓" : "Verify"}
+                  </button>
+                  <button onClick={() => deleteItem(item.id)} disabled={processing === item.id}
+                    className="w-7 h-7 rounded-lg border border-destructive/30 text-destructive flex items-center justify-center hover:bg-destructive/10 disabled:opacity-50">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Cashout Queue — admin overview of all payout attempts ─────────────────────
+function CashoutSection() {
+  const [cashouts, setCashouts] = useState<AdminCashout[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<string>("all");
+
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(`${BASE}/api/admin/cashouts`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+      if (res.ok) setCashouts(await res.json());
+      else { const b = await res.json().catch(() => ({})) as {error?:string}; setLoadError(b.error ?? `Error ${res.status}`); }
+    } catch { setLoadError("Could not reach server"); } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const STATE_COLORS: Record<string, string> = {
+    pending:                  "text-yellow-400 bg-yellow-400/10 border-yellow-400/20",
+    failed:                   "text-destructive bg-destructive/10 border-destructive/20",
+    completed:                "text-green-400 bg-green-400/10 border-green-400/20",
+    reversed:                 "text-orange-400 bg-orange-400/10 border-orange-400/20",
+    permanently_failed:       "text-destructive bg-destructive/10 border-destructive/30",
+    reconciliation_required:  "text-purple-400 bg-purple-400/10 border-purple-400/20",
+  };
+
+  const STATES = ["all", "pending", "failed", "reconciliation_required", "permanently_failed", "completed", "reversed"];
+  const filtered = filter === "all" ? cashouts : cashouts.filter(c => c.state === filter);
+  const actionRequired = cashouts.filter(c => ["pending", "failed", "reconciliation_required", "permanently_failed"].includes(c.state)).length;
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Banknote className="w-4 h-4 text-primary" />
+          <span className="text-sm font-black uppercase tracking-wider">Cashout Queue</span>
+          {actionRequired > 0 && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/20">{actionRequired} action needed</span>}
+        </div>
+        <button onClick={load} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><RefreshCw className="w-3.5 h-3.5" /></button>
+      </div>
+      <p className="text-xs text-muted-foreground">All helper cashout attempts. Stuck rows ("pending" older than 10min, "reconciliation_required") may need manual Stripe verification.</p>
+      {/* State filter pills */}
+      <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-1 -mx-1 px-1">
+        {STATES.map(s => (
+          <button key={s} onClick={() => setFilter(s)}
+            className={`shrink-0 text-[10px] font-black px-2.5 py-1 rounded-full border transition-all capitalize ${filter === s ? (STATE_COLORS[s] ?? "bg-primary text-primary-foreground border-primary") : "border-border text-muted-foreground"}`}>
+            {s === "all" ? "All" : s.replace(/_/g, " ")}
+          </button>
+        ))}
+      </div>
+      {loading ? (
+        <div className="flex justify-center py-4"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+      ) : loadError ? (
+        <div className="flex items-center gap-2 text-sm text-destructive py-4 justify-center"><AlertCircle className="w-4 h-4" />{loadError}<button onClick={load} className="ml-2 underline text-xs">Retry</button></div>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-3">{filter === "all" ? "No cashout records yet." : `No ${filter.replace(/_/g, " ")} cashouts.`}</p>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map(c => (
+            <div key={c.id} className="flex items-center gap-3 py-2.5 px-3 rounded-xl border border-border">
+              <div className={`text-[10px] font-black px-2 py-0.5 rounded-full border shrink-0 ${STATE_COLORS[c.state] ?? "border-border text-muted-foreground"}`}>
+                {c.state.replace(/_/g, " ")}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold">{c.user_name ?? `User #${c.user_id}`}</div>
+                <div className="text-[10px] text-muted-foreground">{c.user_email}</div>
+                {c.notes && <div className="text-[10px] text-yellow-400 mt-0.5">{c.notes}</div>}
+              </div>
+              <div className="text-right shrink-0">
+                <div className="font-black text-sm">${c.amount.toFixed(2)}</div>
+                <div className="text-[10px] text-muted-foreground">{fmtDate(c.created_at)}</div>
+                {c.stripe_transfer_id && (
+                  <div className="text-[9px] text-primary truncate max-w-[80px]">{c.stripe_transfer_id}</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2319,12 +3104,21 @@ function SystemTab() {
   const [hardshipLoading, setHardshipLoading] = useState(true);
   const [resolvingId, setResolvingId] = useState<number | null>(null);
 
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const [hardshipError, setHardshipError] = useState<string | null>(null);
+
   const loadHealth = async () => {
     setHealthLoading(true);
+    setHealthError(null);
     try {
       const res = await fetch(`${BASE}/api/admin/worker-health`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
-      if (res.ok) setHealth(await res.json());
-    } catch { /* non-fatal */ } finally { setHealthLoading(false); }
+      if (res.ok) {
+        setHealth(await res.json());
+      } else {
+        const b = await res.json().catch(() => ({})) as { error?: string };
+        setHealthError(b.error ?? `Server returned ${res.status}`);
+      }
+    } catch { setHealthError("Could not reach server"); } finally { setHealthLoading(false); }
   };
 
   const loadHardship = async () => {
@@ -2443,6 +3237,15 @@ function SystemTab() {
           <p className="text-sm text-muted-foreground text-center py-4">Could not load worker health.</p>
         )}
       </div>
+
+      {/* ── Cashout Queue ────────────────────────────────────────────── */}
+      <CashoutSection />
+
+      {/* ── Neighborhoods ────────────────────────────────────────────── */}
+      <NeighborhoodsSection />
+
+      {/* ── Region Crisis Resources ───────────────────────────────────── */}
+      <RegionCrisisSection />
 
       {/* Hardship Request Queue */}
       <div className="bg-card border border-border rounded-2xl p-5 space-y-4">

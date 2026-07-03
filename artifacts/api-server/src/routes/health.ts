@@ -37,7 +37,7 @@ router.get("/version", (_req, res) => {
 // ── Worker health — admin-only ────────────────────────────────────────────────
 // Returns the status of every registered background worker so the admin panel
 // can surface a banner if Redis drops and critical workers stop running.
-router.get("/api/admin/worker-health", requireAuth, adminLimiter, async (req, res, next) => {
+router.get("/admin/worker-health", requireAuth, adminLimiter, async (req, res, next) => {
   try {
     await requireAdmin()(req, res, async () => {
       const workers = getWorkerHealth();

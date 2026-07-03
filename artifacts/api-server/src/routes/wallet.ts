@@ -310,6 +310,37 @@ router.post(
   }
 );
 
+// ── GET /admin/cashouts — admin overview of all cashout records ───────────────
+// Returns latest 100 cashout records joined with user info for the admin panel.
+// Ordered by most-recent first so stuck/failed rows surface immediately.
+import { requireAdmin } from "../middlewares/authz";
+import { adminLimiter } from "../middlewares/rate-limit";
+import { desc } from "drizzle-orm";
+
+router.get("/admin/cashouts", requireAuth, adminLimiter, async (req: Request, res: Response) => {
+  await requireAdmin()(req, res, async () => {
+    const rows = await db
+      .select({
+        id: walletCashoutsTable.id,
+        user_id: walletCashoutsTable.user_id,
+        user_name: usersTable.name,
+        user_email: usersTable.email,
+        amount: walletCashoutsTable.amount,
+        state: walletCashoutsTable.state,
+        stripe_transfer_id: walletCashoutsTable.stripe_transfer_id,
+        stripe_account_id: walletCashoutsTable.stripe_account_id,
+        notes: walletCashoutsTable.notes,
+        created_at: walletCashoutsTable.created_at,
+        updated_at: walletCashoutsTable.updated_at,
+      })
+      .from(walletCashoutsTable)
+      .leftJoin(usersTable, eq(usersTable.id, walletCashoutsTable.user_id))
+      .orderBy(desc(walletCashoutsTable.created_at))
+      .limit(100);
+    return res.json(rows);
+  });
+});
+
 // ── GET /wallet/cashout/history ───────────────────────────────────────────────
 router.get("/wallet/cashout/history", requireAuth, requireApproved, async (req: Request, res: Response) => {
   const userId = req.authenticatedUserId!;
