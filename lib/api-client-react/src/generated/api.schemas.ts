@@ -73,6 +73,19 @@ export interface HealthStatus {
   status: string;
 }
 
+/**
+ * @nullable
+ */
+export type UserAccountType = typeof UserAccountType[keyof typeof UserAccountType] | null;
+
+
+export const UserAccountType = {
+  individual: 'individual',
+  organization: 'organization',
+  business: 'business',
+  sponsor: 'sponsor',
+} as const;
+
 export interface User {
   id: number;
   name: string;
@@ -97,6 +110,12 @@ export interface User {
   /** RBAC admin flag — see requireAdmin() middleware */
   is_admin?: boolean;
   created_at?: string;
+  /** @nullable */
+  account_type?: UserAccountType;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  specialties?: string[] | null;
 }
 
 export interface UserUpdate {

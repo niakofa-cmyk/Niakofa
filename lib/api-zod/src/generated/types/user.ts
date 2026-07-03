@@ -5,6 +5,7 @@
  * Niakofa - Map-First Community Help Platform
  * OpenAPI spec version: 0.1.0
  */
+import type { UserAccountType } from './userAccountType';
 
 export interface User {
   id: number;
@@ -30,4 +31,10 @@ export interface User {
   /** RBAC admin flag — see requireAdmin() middleware */
   is_admin?: boolean;
   created_at?: string;
+  /** @nullable */
+  account_type?: UserAccountType;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  specialties?: string[] | null;
 }

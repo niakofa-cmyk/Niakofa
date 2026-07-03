@@ -38,7 +38,10 @@ export const GetUserResponse = zod.object({
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
   "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
-  "created_at": zod.string().optional()
+  "created_at": zod.string().optional(),
+  "account_type": zod.union([zod.literal('individual'),zod.literal('organization'),zod.literal('business'),zod.literal('sponsor'),zod.literal(null)]).nullish(),
+  "city": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish()
 })
 
 
@@ -75,7 +78,10 @@ export const UpdateUserResponse = zod.object({
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
   "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
-  "created_at": zod.string().optional()
+  "created_at": zod.string().optional(),
+  "account_type": zod.union([zod.literal('individual'),zod.literal('organization'),zod.literal('business'),zod.literal('sponsor'),zod.literal(null)]).nullish(),
+  "city": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish()
 })
 
 
@@ -121,7 +127,10 @@ export const UpdateUserLocationResponse = zod.object({
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
   "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
-  "created_at": zod.string().optional()
+  "created_at": zod.string().optional(),
+  "account_type": zod.union([zod.literal('individual'),zod.literal('organization'),zod.literal('business'),zod.literal('sponsor'),zod.literal(null)]).nullish(),
+  "city": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish()
 })
 
 
@@ -151,7 +160,10 @@ export const UpdateHelperModeResponse = zod.object({
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
   "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
-  "created_at": zod.string().optional()
+  "created_at": zod.string().optional(),
+  "account_type": zod.union([zod.literal('individual'),zod.literal('organization'),zod.literal('business'),zod.literal('sponsor'),zod.literal(null)]).nullish(),
+  "city": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish()
 })
 
 
@@ -234,7 +246,10 @@ export const ChangePasswordResponse = zod.object({
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
   "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
-  "created_at": zod.string().optional()
+  "created_at": zod.string().optional(),
+  "account_type": zod.union([zod.literal('individual'),zod.literal('organization'),zod.literal('business'),zod.literal('sponsor'),zod.literal(null)]).nullish(),
+  "city": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish()
 }),
   "token": zod.string()
 })
@@ -274,7 +289,10 @@ export const RegisterUserResponse = zod.object({
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
   "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
-  "created_at": zod.string().optional()
+  "created_at": zod.string().optional(),
+  "account_type": zod.union([zod.literal('individual'),zod.literal('organization'),zod.literal('business'),zod.literal('sponsor'),zod.literal(null)]).nullish(),
+  "city": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish()
 })
 
 
@@ -1030,7 +1048,10 @@ export const LoginUserResponse = zod.object({
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
   "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
-  "created_at": zod.string().optional()
+  "created_at": zod.string().optional(),
+  "account_type": zod.union([zod.literal('individual'),zod.literal('organization'),zod.literal('business'),zod.literal('sponsor'),zod.literal(null)]).nullish(),
+  "city": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish()
 }),
   "token": zod.string()
 })
@@ -1079,7 +1100,10 @@ export const SetInitialPasswordResponse = zod.object({
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
   "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
-  "created_at": zod.string().optional()
+  "created_at": zod.string().optional(),
+  "account_type": zod.union([zod.literal('individual'),zod.literal('organization'),zod.literal('business'),zod.literal('sponsor'),zod.literal(null)]).nullish(),
+  "city": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish()
 }),
   "token": zod.string()
 })
@@ -1125,7 +1149,10 @@ export const UpdateUserAvatarResponse = zod.object({
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
   "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
-  "created_at": zod.string().optional()
+  "created_at": zod.string().optional(),
+  "account_type": zod.union([zod.literal('individual'),zod.literal('organization'),zod.literal('business'),zod.literal('sponsor'),zod.literal(null)]).nullish(),
+  "city": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish()
 })
 
 
@@ -1366,7 +1393,10 @@ export const UpdateHelperApplicationResponse = zod.object({
   "benevolence_wallet": zod.number().describe('Accumulated helper earnings and contributions'),
   "goodwill_score": zod.number().describe('Community reputation score'),
   "is_admin": zod.boolean().optional().describe('RBAC admin flag — see requireAdmin() middleware'),
-  "created_at": zod.string().optional()
+  "created_at": zod.string().optional(),
+  "account_type": zod.union([zod.literal('individual'),zod.literal('organization'),zod.literal('business'),zod.literal('sponsor'),zod.literal(null)]).nullish(),
+  "city": zod.string().nullish(),
+  "specialties": zod.array(zod.string()).nullish()
 })
 
 

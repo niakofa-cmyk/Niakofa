@@ -530,12 +530,16 @@ export default function ActiveRequestScreen() {
           <NavigationOverlay
             route={{
               geometry: routeData.geometry as { coordinates: number[][] },
-              steps: routeData.steps ?? [],
+              steps: (routeData.steps ?? []).map(s => ({
+                ...s,
+                maneuver_type: s.maneuver_type ?? null,
+                maneuver_direction: s.maneuver_direction ?? null,
+              })),
               distance_meters: routeData.distance_meters ?? 0,
               duration_seconds: routeData.duration_seconds ?? 0,
               eta_text: routeData.eta_text ?? "",
               distance_text: routeData.distance_text ?? "",
-              profile: routeData.profile ?? routingProfile,
+              profile: routingProfile,
             }}
             destination={{
               lat: request.lat,
@@ -795,13 +799,22 @@ export default function ActiveRequestScreen() {
           </button>
         )}
 
-        <div className="mt-4">
-          <InAppChat
-            requestId={requestId}
-            helperName={request.helper_name ?? "Helper"}
-            requesterName={request.requester_name ?? "Requester"}
-          />
-        </div>
+        {currentUser && (
+          <div className="mt-4">
+            <InAppChat
+              requestId={requestId}
+              currentUserId={currentUser.id}
+              currentUserName={currentUser.name ?? "You"}
+              remoteUserName={
+                request.helper_id === currentUser.id
+                  ? request.requester_name ?? "Requester"
+                  : request.helper_name ?? "Helper"
+              }
+              wsUrl={`${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`}
+              authToken={getToken() ?? ""}
+            />
+          </div>
+        )}
       </div>
 
       {showTip && request.helper_name && (

@@ -101,6 +101,7 @@ export * from './updatePanicContacts200';
 export * from './updatePanicContactsInput';
 export * from './updateUserAvatarInput';
 export * from './user';
+export * from './userAccountType';
 export * from './userRegistration';
 export * from './userSettings';
 export * from './userSettingsPreferredLanguage';

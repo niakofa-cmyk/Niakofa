@@ -18,7 +18,7 @@
  *  - Compact speed display when GPS heading available
  */
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -204,6 +204,15 @@ export function TurnArrowHUD({
 
   const distLabel = formatDist(distanceMeters);
 
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setPrefersReducedMotion(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
   return (
     <div
       className="flex items-center gap-3 bg-card/95 backdrop-blur-md border border-border rounded-2xl px-4 py-3 shadow-xl"
@@ -225,11 +234,7 @@ export function TurnArrowHUD({
           className="text-primary"
           style={{
             transform: `rotate(${arrow.rotate}deg)`,
-            transition: "transform 300ms ease",
-            // Respect reduced motion preference
-            "@media (prefers-reduced-motion: reduce)": {
-              transition: "none",
-            } as React.CSSProperties,
+            transition: prefersReducedMotion ? "none" : "transform 300ms ease",
           }}
         >
           <path d={arrow.path} />

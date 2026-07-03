@@ -43,3 +43,5 @@
 - [Niakofa account types](niakofa-account-types.md) — ALLOWED_ACCOUNT_TYPES = individual/organization/business/sponsor; REQUIRES_REVIEW = organization/business/sponsor → approval_status: pending; individual auto-approved.
 - [Niakofa gov-sponsor pool funding](niakofa-gov-sponsor-fund.md) — POST /gov-sponsors/:id/fund wires recordPoolContribution(+governmentSponsorId) → processPendingMinimums → broadcast pool_updated; admin.tsx OrgsTab shows Fund Pool input only for approved sponsors.
 - [Niakofa business accounts](niakofa-businesses.md) — full business-account feature: schema, security guards, 5 bugs fixed (feature flag, rate limit, invite approval guard, re-invite upsert, member-remove ID mismatch).
+- [Niakofa Jest ESM](niakofa-jest-esm.md) — jest.config must be .mjs not .ts; run via jest/bin/jest.js; @jest/globals needed at runtime; jest.mock() factories don't produce real mocks under vm-modules ESM, use jest.unstable_mockModule instead.
+- [Niakofa build script scope](niakofa-build-scope.md) — root `pnpm run build` must exclude mockup-sandbox (needs BASE_PATH env not set in prod) via pnpm -r --filter "!@workspace/mockup-sandbox".

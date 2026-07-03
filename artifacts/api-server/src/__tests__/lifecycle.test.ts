@@ -8,6 +8,7 @@
  *
  * DB interactions are mocked so no real Postgres connection is needed.
  */
+import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals";
 import request from "supertest";
 import express, { Express } from "express";
 import { signTokenById } from "../middlewares/auth.js";
@@ -98,7 +99,7 @@ jest.mock("../lib/queue.js", () => ({
   enqueuePayoutRetry: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("./push.js", () => ({
+jest.mock("../routes/push.js", () => ({
   sendPushToNearbyHelpers: jest.fn().mockResolvedValue(undefined),
   sendPushToAllHelpers: jest.fn().mockResolvedValue(undefined),
 }));

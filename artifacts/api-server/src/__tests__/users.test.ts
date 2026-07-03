@@ -11,6 +11,7 @@
  *
  * DB interactions are mocked so no real Postgres connection is needed.
  */
+import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals";
 import request from "supertest";
 import express, { Express } from "express";
 

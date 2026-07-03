@@ -158,7 +158,7 @@ function AnalyticsTab() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`${BASE}/api/admin/stats`, { headers: (() => { const t = getToken(); return t ? { Authorization: `Bearer ${t}` } : {}; })() }).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${BASE}/api/admin/stats`, { headers: (() => { const t = getToken(); const h: Record<string, string> = t ? { Authorization: `Bearer ${t}` } : {}; return h; })() }).then(r => r.ok ? r.json() : null).catch(() => null),
     ]).then(([statsData]) => {
       if (statsData) setStats(statsData);
       setLoading(false);
@@ -1324,7 +1324,7 @@ function NiaTab() {
 
   useEffect(() => {
     const niaTok = getToken();
-    const niaHdrs = niaTok ? { Authorization: `Bearer ${niaTok}` } : {};
+    const niaHdrs: Record<string, string> = niaTok ? { Authorization: `Bearer ${niaTok}` } : {};
     fetch(`${BASE}/api/admin/nia-status`, { headers: niaHdrs })
       .then(r => r.json())
       .then((d: { enabled: boolean }) => setNiaEnabled(d.enabled))
@@ -1845,7 +1845,10 @@ function OrgsTab({ authed }: { authed: boolean }) {
   const [fundingId, setFundingId] = useState<number | null>(null);
   const [fundAmount, setFundAmount] = useState("");
 
-  const authHeaders = () => getToken() ? { Authorization: `Bearer ${getToken()}` } : {};
+  const authHeaders = (): Record<string, string> => {
+    const t = getToken();
+    return t ? { Authorization: `Bearer ${t}` } : {};
+  };
 
   const load = useCallback(async () => {
     setLoading(true);

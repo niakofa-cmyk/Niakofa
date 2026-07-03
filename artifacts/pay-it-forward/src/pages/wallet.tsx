@@ -330,9 +330,8 @@ export default function WalletScreen() {
         {/* Emotional Wallet — KindnessImpactRing */}
         <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-3xl p-6 shadow-[0_0_40px_rgba(0,212,255,0.1)] flex flex-col items-center gap-4">
           <KindnessImpactRing
-            livesImpacted={livesImpacted}
             helpCount={helpCount}
-            goodwillScore={goodwill}
+            trustScore={goodwill}
             size={160}
           />
           <div className="text-center">

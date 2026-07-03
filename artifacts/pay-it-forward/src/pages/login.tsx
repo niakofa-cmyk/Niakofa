@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
-import type { User as AppUser } from "@/lib/AppContext";
+import type { User as AppUser } from "@workspace/api-client-react";
 
 type ApiAuthResponse = Partial<AppUser> & {
   error?: string;

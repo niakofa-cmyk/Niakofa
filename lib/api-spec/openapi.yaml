@@ -1602,6 +1602,15 @@ components:
           description: RBAC admin flag — see requireAdmin() middleware
         created_at:
           type: string
+        account_type:
+          type: ["string", "null"]
+          enum: [individual, organization, business, sponsor, null]
+        city:
+          type: ["string", "null"]
+        specialties:
+          type: ["array", "null"]
+          items:
+            type: string
 
     UserUpdate:
       type: object

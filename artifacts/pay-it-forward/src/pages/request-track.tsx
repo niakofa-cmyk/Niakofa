@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { toast } from "@/hooks/use-toast";
 import { InAppChat } from "@/components/InAppChat";
+import { getToken } from "@/lib/auth";
 
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -409,8 +410,11 @@ export default function RequesterTrackingScreen() {
               >
                 <InAppChat
                   requestId={requestId}
-                  helperName={request.helper_name ?? "Helper"}
-                  requesterName={currentUser?.name ?? "You"}
+                  currentUserId={currentUser?.id ?? 0}
+                  currentUserName={currentUser?.name ?? "You"}
+                  remoteUserName={request.helper_name ?? "Helper"}
+                  wsUrl={`${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`}
+                  authToken={getToken() ?? ""}
                 />
               </motion.div>
             )}
