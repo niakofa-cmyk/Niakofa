@@ -7,7 +7,7 @@ import {
   BarChart2, TrendingUp, Activity, Zap, MessageSquare, Package,
   ChevronDown, ChevronUp, CheckSquare, Square, HandHeart, DollarSign,
   LineChart, FileText, Gavel, Sparkles, RotateCcw, Landmark, Building2,
-  SlidersHorizontal, Save, Loader2
+  SlidersHorizontal, Save, Loader2, Server, LifeBuoy, Cpu, CheckCircle, WifiOff
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -2284,6 +2284,256 @@ function SettingsTab() {
   );
 }
 
+// ── System Tab — worker health + hardship queue ───────────────────────────────
+interface WorkerEntry {
+  name: string;
+  label: string;
+  status: "running" | "stopped" | "no_redis" | "error";
+  redisRequired: boolean;
+  startedAt?: string;
+  errorMessage?: string;
+}
+
+interface HardshipRequest {
+  id: number;
+  title: string;
+  pledge_amount: number | null;
+  pledge_paid: number | null;
+  pledge_status: string;
+  hardship_note: string | null;
+  hardship_requested_at: string | null;
+  requester_id: number;
+  requester_name: string;
+  requester_email: string;
+}
+
+function SystemTab() {
+  const [health, setHealth] = useState<{
+    status: string;
+    redis_configured: boolean;
+    process_started_at: string;
+    workers: WorkerEntry[];
+  } | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+  const [hardship, setHardship] = useState<HardshipRequest[]>([]);
+  const [hardshipLoading, setHardshipLoading] = useState(true);
+  const [resolvingId, setResolvingId] = useState<number | null>(null);
+
+  const loadHealth = async () => {
+    setHealthLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/worker-health`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+      if (res.ok) setHealth(await res.json());
+    } catch { /* non-fatal */ } finally { setHealthLoading(false); }
+  };
+
+  const loadHardship = async () => {
+    setHardshipLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/hardship-requests`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+      if (res.ok) setHardship(await res.json());
+    } catch { /* non-fatal */ } finally { setHardshipLoading(false); }
+  };
+
+  useEffect(() => { loadHealth(); loadHardship(); }, []);
+
+  const resolveHardship = async (requestId: number, action: "forgiven" | "written_off" | "dismiss") => {
+    setResolvingId(requestId);
+    try {
+      let res: Response;
+      if (action === "dismiss") {
+        // Clears hardship_requested_at — removes from queue, pledge status unchanged
+        res = await fetch(`${BASE}/api/admin/requests/${requestId}/hardship`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+        });
+      } else {
+        res = await fetch(`${BASE}/api/admin/requests/${requestId}/pledge-status`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken() ?? ""}` },
+          body: JSON.stringify({ pledge_status: action }),
+        });
+      }
+      if (res.ok) {
+        const label = action === "forgiven" ? "Pledge forgiven" : action === "written_off" ? "Pledge written off" : "Hardship dismissed — pledge kept active";
+        toast({ title: label });
+        loadHardship();
+      } else {
+        toast({ title: "Failed to update — please try again", variant: "destructive" });
+      }
+    } catch { toast({ title: "Network error", variant: "destructive" }); }
+    finally { setResolvingId(null); }
+  };
+
+  const statusColor = (s: WorkerEntry["status"]) => ({
+    running:  "text-green-400 bg-green-400/10 border-green-400/20",
+    stopped:  "text-muted-foreground bg-muted border-border",
+    no_redis: "text-yellow-400 bg-yellow-400/10 border-yellow-400/20",
+    error:    "text-destructive bg-destructive/10 border-destructive/20",
+  }[s]);
+
+  const statusIcon = (s: WorkerEntry["status"]) => ({
+    running:  <CheckCircle className="w-3.5 h-3.5 text-green-400" />,
+    stopped:  <Clock className="w-3.5 h-3.5 text-muted-foreground" />,
+    no_redis: <WifiOff className="w-3.5 h-3.5 text-yellow-400" />,
+    error:    <AlertCircle className="w-3.5 h-3.5 text-destructive" />,
+  }[s]);
+
+  return (
+    <div className="space-y-5">
+
+      {/* Worker Health */}
+      <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-primary" />
+            <span className="text-sm font-black uppercase tracking-wider">Worker Health</span>
+          </div>
+          <div className="flex items-center gap-3">
+            {health && (
+              <span className={`text-[10px] font-black px-2 py-1 rounded-full border ${
+                health.status === "ok"
+                  ? "text-green-400 bg-green-400/10 border-green-400/20"
+                  : "text-destructive bg-destructive/10 border-destructive/20"
+              }`}>
+                {health.status === "ok" ? "All Systems OK" : "Degraded"}
+              </span>
+            )}
+            <button onClick={loadHealth} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted transition-colors">
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {health && (
+          <div className={`flex items-center gap-2 text-xs rounded-xl px-3 py-2 border ${
+            health.redis_configured
+              ? "text-green-400 bg-green-400/10 border-green-400/20"
+              : "text-yellow-400 bg-yellow-400/10 border-yellow-400/20"
+          }`}>
+            <Server className="w-3.5 h-3.5 shrink-0" />
+            <span><span className="font-black">Redis:</span> {health.redis_configured ? "Connected — BullMQ workers active" : "Not configured — BullMQ workers disabled, using legacy scheduler"}</span>
+          </div>
+        )}
+
+        {healthLoading ? (
+          <div className="flex items-center justify-center py-6 text-muted-foreground">
+            <Loader2 className="w-5 h-5 animate-spin" />
+          </div>
+        ) : health ? (
+          <div className="space-y-1.5">
+            {health.workers.map((w) => (
+              <div key={w.name} className="flex items-center gap-3 py-2 border-b border-border last:border-0">
+                <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-black shrink-0 ${statusColor(w.status)}`}>
+                  {statusIcon(w.status)}
+                  <span className="capitalize">{w.status === "no_redis" ? "No Redis" : w.status}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold">{w.label}</div>
+                  {w.errorMessage && <div className="text-[10px] text-destructive truncate">{w.errorMessage}</div>}
+                  {w.startedAt && <div className="text-[10px] text-muted-foreground">{new Date(w.startedAt).toLocaleTimeString()}</div>}
+                </div>
+                {w.redisRequired && (
+                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground border border-border rounded px-1.5 py-0.5 shrink-0">Redis</span>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground text-center py-4">Could not load worker health.</p>
+        )}
+      </div>
+
+      {/* Hardship Request Queue */}
+      <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <LifeBuoy className="w-4 h-4 text-primary" />
+            <span className="text-sm font-black uppercase tracking-wider">Hardship Requests</span>
+            {hardship.length > 0 && (
+              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-yellow-400/10 text-yellow-400 border border-yellow-400/20">{hardship.length}</span>
+            )}
+          </div>
+          <button onClick={loadHardship} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted transition-colors">
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Requesters who submitted a "I can't pay right now" hardship request. Review their situation and choose to forgive or write off the pledge. Forgiven = waived with care; written off = uncollectable after extended non-payment.
+        </p>
+
+        {hardshipLoading ? (
+          <div className="flex items-center justify-center py-6 text-muted-foreground">
+            <Loader2 className="w-5 h-5 animate-spin" />
+          </div>
+        ) : hardship.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">No pending hardship requests.</p>
+        ) : (
+          <div className="space-y-3">
+            {hardship.map((h) => {
+              const outstanding = (h.pledge_amount ?? 0) - (h.pledge_paid ?? 0);
+              return (
+                <div key={h.id} className="border border-yellow-500/30 rounded-xl p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm truncate">{h.title}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {h.requester_name} · {h.requester_email}
+                      </div>
+                      <div className="text-xs mt-1">
+                        <span className="text-yellow-400 font-bold">${outstanding.toFixed(2)} outstanding</span>
+                        {h.pledge_paid && h.pledge_paid > 0 && (
+                          <span className="text-green-400 ml-2">· ${h.pledge_paid.toFixed(2)} paid</span>
+                        )}
+                        <span className={`ml-2 font-bold ${h.pledge_status === "defaulted" ? "text-destructive" : "text-muted-foreground"}`}>
+                          · {h.pledge_status}
+                        </span>
+                      </div>
+                      {h.hardship_requested_at && (
+                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                          Filed: {new Date(h.hardship_requested_at).toLocaleDateString()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {h.hardship_note && (
+                    <div className="bg-muted rounded-xl p-3 text-xs text-muted-foreground italic leading-relaxed">
+                      "{h.hardship_note}"
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => resolveHardship(h.id, "forgiven")}
+                      disabled={resolvingId === h.id}
+                      className="flex-1 py-2 text-xs font-black rounded-xl bg-green-500/10 border border-green-500/30 text-green-400 hover:border-green-500/60 transition-all disabled:opacity-50 active:scale-95"
+                    >
+                      {resolvingId === h.id ? <Loader2 className="w-3.5 h-3.5 animate-spin mx-auto" /> : "Forgive"}
+                    </button>
+                    <button
+                      onClick={() => resolveHardship(h.id, "written_off")}
+                      disabled={resolvingId === h.id}
+                      className="flex-1 py-2 text-xs font-black rounded-xl bg-muted border border-border text-muted-foreground hover:border-border/80 transition-all disabled:opacity-50 active:scale-95"
+                    >
+                      Write Off
+                    </button>
+                    <button
+                      onClick={() => resolveHardship(h.id, "dismiss")}
+                      disabled={resolvingId === h.id}
+                      className="flex-1 py-2 text-xs font-black rounded-xl bg-muted border border-border text-muted-foreground hover:border-border/80 transition-all disabled:opacity-50 active:scale-95"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Admin Screen ─────────────────────────────────────────────────────────
 export default function AdminScreen() {
   const [authed, setAuthed] = useState(false);
@@ -2298,7 +2548,7 @@ export default function AdminScreen() {
   }, [currentUser?.is_admin]);
 
   const [, setLocation] = useLocation();
-  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics" | "orgs" | "settings">("reports");
+  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics" | "orgs" | "settings" | "system">("reports");
 
   // ── Session timer ─────────────────────────────────────────────────────────
   const [sessionSecondsLeft, setSessionSecondsLeft] = useState(SESSION_DURATION_MS / 1000);
@@ -2451,6 +2701,7 @@ export default function AdminScreen() {
     { key: "nia",       label: "Nia AI",    icon: Bot },
     { key: "analytics", label: "Stats",     icon: BarChart2 },
     { key: "settings",  label: "Settings",  icon: SlidersHorizontal },
+    { key: "system",    label: "System",    icon: Server },
   ] as const;
 
   return (
@@ -2529,6 +2780,7 @@ export default function AdminScreen() {
         {activeTab === "users"     && <UsersTab />}
         {activeTab === "reports"   && <ReportsTab authed={authed} />}
         {activeTab === "settings"  && <SettingsTab />}
+        {activeTab === "system"    && <SystemTab />}
       </div>
 
       {/* ── Bottom tab bar (mobile-native) ───────────────────────────────── */}

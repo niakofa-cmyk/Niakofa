@@ -2,6 +2,11 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { getWorkerHealth, areAllCriticalWorkersRunning } from "../lib/worker-registry";
+import { isRedisConfigured } from "../lib/queue";
+import { requireAuth } from "../middlewares/auth";
+import { requireAdmin } from "../middlewares/authz";
+import { adminLimiter } from "../middlewares/rate-limit";
 
 const router: IRouter = Router();
 
@@ -27,6 +32,27 @@ router.get("/healthz", async (_req, res) => {
 
 router.get("/version", (_req, res) => {
   res.json({ version: "chat-v2", commit: GIT_COMMIT, started_at: PROCESS_STARTED_AT });
+});
+
+// ── Worker health — admin-only ────────────────────────────────────────────────
+// Returns the status of every registered background worker so the admin panel
+// can surface a banner if Redis drops and critical workers stop running.
+router.get("/api/admin/worker-health", requireAuth, adminLimiter, async (req, res, next) => {
+  try {
+    await requireAdmin()(req, res, async () => {
+      const workers = getWorkerHealth();
+      const critical = areAllCriticalWorkersRunning();
+      const redisOk = isRedisConfigured();
+      res.json({
+        status: critical && redisOk ? "ok" : "degraded",
+        redis_configured: redisOk,
+        process_started_at: PROCESS_STARTED_AT,
+        workers,
+      });
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

@@ -44,6 +44,13 @@ export const requestsTable = pgTable("help_requests", {
   // Optional requester-supplied effort estimate. Used for livable-wage scaling
   // when the guaranteed minimum is tied to task duration rather than a flat floor.
   estimated_hours: real("estimated_hours"),
+  // Hardship / forgiveness self-service (migration 0040)
+  // Requesters who cannot pay back their PIF pledge can submit a hardship request
+  // explaining their situation. Admins review via GET /api/admin/hardship-requests
+  // and decide whether to set pledge_status = 'forgiven' or 'written_off'.
+  // This replaces the "contact an admin" mental model with a proper self-serve flow.
+  hardship_requested_at: timestamp("hardship_requested_at"),
+  hardship_note: text("hardship_note"),
 }, (t) => [
   index("help_requests_status_idx").on(t.status),
   index("help_requests_requester_id_idx").on(t.requester_id),

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Wallet, TrendingUp, Heart, DollarSign, Gift, Clock, X, ArrowUpRight, ArrowDownLeft, Loader2, Calendar, CheckCircle, CreditCard, ExternalLink, Play, BanknoteIcon } from "lucide-react";
+import { Wallet, TrendingUp, Heart, DollarSign, Gift, Clock, X, ArrowUpRight, ArrowDownLeft, Loader2, Calendar, CheckCircle, CreditCard, ExternalLink, Play, BanknoteIcon, LifeBuoy, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAppContext } from "@/lib/AppContext";
@@ -100,6 +100,39 @@ export default function WalletScreen() {
     },
     onError: () => toast({ title: "Could not cancel — please try again", variant: "destructive" }),
   });
+
+  // Hardship / forgiveness self-service
+  const [hardshipRequestId, setHardshipRequestId] = useState<number | null>(null);
+  const [hardshipNote, setHardshipNote] = useState("");
+  const [hardshipLoading, setHardshipLoading] = useState(false);
+  const submitHardship = async () => {
+    if (!hardshipRequestId || !userId) return;
+    setHardshipLoading(true);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const res = await fetch(`${base}/api/requests/${hardshipRequestId}/hardship`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ note: hardshipNote.trim() || undefined }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        toast({ title: body?.error ?? "Could not submit request", variant: "destructive" });
+        return;
+      }
+      toast({
+        title: "Hardship request submitted",
+        description: "No pressure — an admin will review your situation with care.",
+      });
+      setHardshipRequestId(null);
+      setHardshipNote("");
+      queryClient.invalidateQueries({ queryKey: getGetUserOutstandingPledgesQueryKey(userId) });
+    } catch {
+      toast({ title: "Network error — please try again", variant: "destructive" });
+    } finally {
+      setHardshipLoading(false);
+    }
+  };
 
   // Stripe Connect status (helpers only)
   const [stripeStatus, setStripeStatus] = useState<{
@@ -367,10 +400,10 @@ export default function WalletScreen() {
       },
       {
         onSuccess: () => {
-          // Honest copy: no cron/auto-reminder exists yet — don't over-promise
+          // pledge-worker runs daily at 9am — sends push+email reminders when payment is overdue
           toast({
             title: "Payment Scheduled",
-            description: `$${amount.toFixed(2)} saved for ${date.toLocaleDateString("en-US", { month: "long", day: "numeric" })}. You can find it under Upcoming Payments anytime.`,
+            description: `${amount.toFixed(2)} set aside for ${date.toLocaleDateString("en-US", { month: "long", day: "numeric" })}. We'll remind you when it's due — no pressure.`,
           });
           queryClient.invalidateQueries({ queryKey: getGetScheduledPaymentsQueryKey(userId) });
         },
@@ -577,29 +610,97 @@ export default function WalletScreen() {
           </div>
         )}
 
-        {/* Outstanding Pledges — with scheduler CTA */}
+        {/* Outstanding Pledges — with scheduler CTA + hardship self-service */}
         {outstandingPledges.length > 0 && (
           <div>
             <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
               <Clock className="w-4 h-4" /> Outstanding Pledges
             </h2>
+
+            {/* Hardship submission modal — inline */}
+            <AnimatePresence>
+              {hardshipRequestId !== null && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+                  className="mb-3 bg-card border border-primary/30 rounded-2xl p-4 space-y-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <LifeBuoy className="w-4 h-4 text-primary shrink-0" />
+                    <span className="text-sm font-black">Request Hardship Waiver</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    No judgment here. If life got in the way and you can't pay this back right now, let us know. An admin will review your situation with care — this is a community, not a collections agency.
+                  </p>
+                  <textarea
+                    value={hardshipNote}
+                    onChange={e => setHardshipNote(e.target.value)}
+                    placeholder="Optional: share what's going on (e.g. lost my job, medical expenses, etc.)"
+                    rows={3}
+                    className="w-full text-sm bg-background border border-border rounded-xl p-3 resize-none focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground"
+                    maxLength={1000}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={submitHardship}
+                      disabled={hardshipLoading}
+                      className="flex-1 h-10 bg-primary text-primary-foreground text-sm font-black rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50 active:scale-95 transition-all"
+                    >
+                      {hardshipLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LifeBuoy className="w-3.5 h-3.5" />}
+                      Submit Request
+                    </button>
+                    <button
+                      onClick={() => { setHardshipRequestId(null); setHardshipNote(""); }}
+                      className="w-10 h-10 border border-border rounded-xl flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <div className="space-y-2">
               {outstandingPledges.map(r => {
                 const outstanding = (r.pledge_amount ?? 0) - (r.pledge_paid ?? 0);
+                const alreadyHardship = !!(r as typeof r & { hardship_requested_at?: string | null }).hardship_requested_at;
                 return (
-                  <div key={r.id} className="bg-card border border-yellow-500/30 rounded-xl p-3.5 flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm truncate">{r.title}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        Outstanding: <span className="text-yellow-400 font-bold">${outstanding.toFixed(2)}</span>
+                  <div key={r.id} className="bg-card border border-yellow-500/30 rounded-xl p-3.5 space-y-2">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm truncate">{r.title}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          Outstanding: <span className="text-yellow-400 font-bold">${outstanding.toFixed(2)}</span>
+                          {(r.pledge_paid ?? 0) > 0 && (
+                            <span className="ml-2 text-green-400">· ${(r.pledge_paid ?? 0).toFixed(2)} paid</span>
+                          )}
+                        </div>
+                        {/* Daily reminders are live — pledge-worker sends push+email at 9am for overdue pledges */}
+                        <div className="text-[10px] text-muted-foreground mt-1">
+                          We'll remind you gently — pay whatever you can, whenever you can.
+                        </div>
                       </div>
+                      <button
+                        onClick={() => { setSchedulerRequest(r); setSchedulerOpen(true); }}
+                        className="text-[10px] font-black text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2.5 py-1.5 rounded-lg hover:border-purple-500/60 transition-all flex items-center gap-1 shrink-0"
+                      >
+                        <Calendar className="w-3 h-3" /> Schedule
+                      </button>
                     </div>
-                    <button
-                      onClick={() => { setSchedulerRequest(r); setSchedulerOpen(true); }}
-                      className="text-[10px] font-black text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2.5 py-1.5 rounded-lg hover:border-purple-500/60 transition-all flex items-center gap-1 shrink-0"
-                    >
-                      <Calendar className="w-3 h-3" /> Schedule
-                    </button>
+                    {/* Hardship self-service — only shown if not already filed */}
+                    {alreadyHardship ? (
+                      <div className="flex items-center gap-1.5 text-[10px] text-primary bg-primary/10 border border-primary/20 rounded-lg px-2.5 py-1.5">
+                        <CheckCircle className="w-3 h-3" />
+                        Hardship request submitted — pending admin review
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setHardshipRequestId(hardshipRequestId === r.id ? null : r.id)}
+                        className="w-full flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground hover:text-primary border border-border hover:border-primary/30 rounded-lg px-2.5 py-1.5 transition-all"
+                      >
+                        <LifeBuoy className="w-3 h-3" />
+                        Can't pay right now? Request a hardship waiver
+                      </button>
+                    )}
                   </div>
                 );
               })}

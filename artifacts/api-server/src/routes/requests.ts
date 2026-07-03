@@ -1423,6 +1423,103 @@ router.post("/admin/requests/:id/moderate", requireAuth, requireAdmin(), adminLi
   return res.json(updated);
 });
 
+// ── Hardship / Forgiveness Request — requester self-service ──────────────────
+// POST /requests/:id/hardship
+// Lets a requester proactively say "I can't pay this right now." Creates an
+// admin-visible queue item. Replaces the "awkward silent non-payment" model
+// with a transparent self-serve forgiveness request.
+//
+// Rules:
+//   - Only the original requester can submit
+//   - Only on active or defaulted pledges (forgiven/written_off don't need it)
+//   - One submission per request (hardship_requested_at not null = already filed)
+router.post("/requests/:id/hardship", requireAuth, requestCreationLimiter, async (req, res) => {
+  const requesterId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id), 10);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+
+  const [request] = await db
+    .select()
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.requester_id !== requesterId) return res.status(403).json({ error: "Forbidden" });
+  if (!request.pledge_amount || request.pledge_amount <= 0) {
+    return res.status(400).json({ error: "This request has no outstanding pledge." });
+  }
+  // Only allow on active or defaulted pledges — not on already-resolved ones
+  if (request.pledge_status !== "active" && request.pledge_status !== "defaulted") {
+    return res.status(409).json({ error: "This pledge has already been resolved." });
+  }
+  const alreadyFiled = (request as typeof request & { hardship_requested_at?: string | null }).hardship_requested_at;
+  if (alreadyFiled) {
+    return res.status(409).json({ error: "A hardship request has already been submitted for this pledge. An admin will review it." });
+  }
+
+  const { note } = req.body as { note?: string };
+  const safeNote = typeof note === "string" ? note.trim().slice(0, 1000) : null;
+
+  await db
+    .update(requestsTable)
+    .set({ hardship_requested_at: new Date(), hardship_note: safeNote } as Record<string, unknown>)
+    .where(eq(requestsTable.id, requestId));
+
+  logger.info(
+    { request_id: requestId, requester_id: requesterId },
+    "requester filed hardship request — pending admin review",
+  );
+
+  return res.status(200).json({ success: true, message: "Your hardship request has been submitted. No pressure — an admin will review it with care." });
+});
+
+// ── Admin: Dismiss (clear) a hardship request without changing pledge_status ──
+// DELETE /admin/requests/:id/hardship
+// Called when admin reviews but wants to keep the pledge active (no forgiveness
+// yet), or just clear a stale queue entry. Clears hardship_requested_at and
+// hardship_note so the item no longer appears in the admin queue.
+router.delete("/admin/requests/:id/hardship", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const adminId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id), 10);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  const [updated] = await db
+    .update(requestsTable)
+    .set({ hardship_requested_at: null, hardship_note: null } as Record<string, unknown>)
+    .where(eq(requestsTable.id, requestId))
+    .returning({ id: requestsTable.id, pledge_status: requestsTable.pledge_status });
+
+  if (!updated) return res.status(404).json({ error: "Request not found" });
+
+  logger.info({ request_id: requestId, admin_id: adminId }, "Admin dismissed hardship request (cleared from queue, pledge_status unchanged)");
+  return res.json({ success: true });
+});
+
+// ── Admin: List pending hardship requests ─────────────────────────────────────
+// GET /admin/hardship-requests
+router.get("/admin/hardship-requests", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const rows = await db
+    .select({
+      id: requestsTable.id,
+      title: requestsTable.title,
+      pledge_amount: requestsTable.pledge_amount,
+      pledge_paid: requestsTable.pledge_paid,
+      pledge_status: requestsTable.pledge_status,
+      hardship_note: requestsTable.hardship_note,
+      hardship_requested_at: requestsTable.hardship_requested_at,
+      requester_id: requestsTable.requester_id,
+      requester_name: usersTable.name,
+      requester_email: usersTable.email,
+    })
+    .from(requestsTable)
+    .innerJoin(usersTable, eq(usersTable.id, requestsTable.requester_id))
+    .where(sql`${requestsTable.hardship_requested_at} IS NOT NULL AND ${requestsTable.pledge_status} NOT IN ('forgiven', 'written_off')`)
+    .orderBy(requestsTable.hardship_requested_at);
+
+  return res.json(rows);
+});
+
 // GET /requests/:id/helpers — list all chain members with basic profile info
 router.get("/requests/:id/helpers", requireAuth, async (req, res) => {
   const requestId = parseInt(req.params.id as string);

@@ -50,3 +50,5 @@
 - [Niakofa build script scope](niakofa-build-scope.md) — root pnpm run build must exclude mockup-sandbox via pnpm -r --filter "!@workspace/mockup-sandbox".
 - [Niakofa WS event type parity](niakofa-ws-events.md) — wsClient.ts WsEventType must mirror ws-hub.ts exactly; missing types cause silent handler failures.
 - [Niakofa admin rate limiting](niakofa-admin-rate-limit.md) — civic/reports/crisis/neighborhoods/region-crisis routes were missing adminLimiter; pattern: requireAuth, requireAdmin(), adminLimiter on every admin route.
+- [Niakofa worker registry](niakofa-worker-registry.md) — worker-registry.ts tracks all BullMQ/cron workers; GET /api/admin/worker-health surfaces status; wire registerWorker+workerStarted/Fail/NoRedis in index.ts for each worker.
+- [Niakofa hardship system](niakofa-hardship-system.md) — hardship_requested_at+hardship_note columns; POST /requests/:id/hardship (active/defaulted only); DELETE /admin/.../hardship to dismiss; admin System tab reviews queue.

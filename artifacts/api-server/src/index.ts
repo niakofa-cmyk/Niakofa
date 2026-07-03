@@ -4,6 +4,12 @@ import { logger } from "./lib/logger";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
 import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker, startCashoutReconciliation } from "./lib/scheduler";
 import { isRedisConfigured, closeRedis } from "./lib/queue";
+import {
+  workerStarted,
+  workerNoRedis,
+  workerFailed,
+  registerWorker,
+} from "./lib/worker-registry";
 import { startPayoutWorker } from "./workers/payout-worker";
 import { startCashoutWorker } from "./workers/cashout-worker";
 import { startPledgeWorker } from "./workers/pledge-worker";
@@ -59,41 +65,65 @@ server.listen(port, async () => {
     );
   }
 
+  // Register all workers in the health registry before starting them.
+  // Any worker that fails to start (or is skipped due to missing Redis) will
+  // show as "stopped" / "no_redis" / "error" in GET /api/admin/worker-health.
+  registerWorker("payout-worker",       "Payout Worker",          true);
+  registerWorker("cashout-worker",      "Cashout Worker",         true);
+  registerWorker("notification-worker", "Notification Worker",    true);
+  registerWorker("pledge-worker",       "Pledge Reconciliation",  true);
+  registerWorker("cleanup-worker",      "Cleanup Worker",         true);
+  registerWorker("pif-nudge",           "PIF Nudge Scheduler",    false);
+  registerWorker("anomaly-worker",      "Anomaly Detection",      false);
+  registerWorker("nia-checkin",         "Nia 24h Check-in",       false);
+  registerWorker("nia-push-queue",      "Nia Push Queue",         false);
+  registerWorker("pool-minimums",       "Pool Minimums",          false);
+  registerWorker("pledge-defaults",     "Pledge Default Sweeper", false);
+  registerWorker("cashout-recon",       "Cashout Reconciliation", false);
+  registerWorker("recurring-requests",  "Recurring Requests",     false);
+
   if (isRedisConfigured()) {
     logger.info("redis: configured — starting BullMQ workers");
-    startPayoutWorker();
-    startCashoutWorker();
-    startNotificationWorker();
-    await startPledgeWorker().catch((err: unknown) =>
-      logger.error({ err }, "pledge-worker: failed to start")
-    );
-    await startCleanupWorker().catch((err: unknown) =>
-      logger.error({ err }, "cleanup-worker: failed to start")
-    );
+    startPayoutWorker(); workerStarted("payout-worker", "Payout Worker", true);
+    startCashoutWorker(); workerStarted("cashout-worker", "Cashout Worker", true);
+    startNotificationWorker(); workerStarted("notification-worker", "Notification Worker", true);
+    await startPledgeWorker().then(() => workerStarted("pledge-worker", "Pledge Reconciliation", true)).catch((err: unknown) => {
+      logger.error({ err }, "pledge-worker: failed to start");
+      workerFailed("pledge-worker", "Pledge Reconciliation", err);
+    });
+    await startCleanupWorker().then(() => workerStarted("cleanup-worker", "Cleanup Worker", true)).catch((err: unknown) => {
+      logger.error({ err }, "cleanup-worker: failed to start");
+      workerFailed("cleanup-worker", "Cleanup Worker", err);
+    });
     logger.info("bullmq: all workers started");
   } else {
     logger.warn(
       "redis: REDIS_URL not set — BullMQ workers disabled. " +
       "Falling back to legacy scheduler for payment reminders."
     );
+    workerNoRedis("payout-worker",       "Payout Worker");
+    workerNoRedis("cashout-worker",      "Cashout Worker");
+    workerNoRedis("notification-worker", "Notification Worker");
+    workerNoRedis("pledge-worker",       "Pledge Reconciliation");
+    workerNoRedis("cleanup-worker",      "Cleanup Worker");
     startScheduledPaymentReminder();
   }
 
   // PIF repayment nudges — runs regardless of Redis (setInterval-based)
-  startPifNudgeWorker();
+  startPifNudgeWorker(); workerStarted("pif-nudge", "PIF Nudge Scheduler", false);
   // Anomaly detection runs regardless of Redis
-  startAnomalyDetectionWorker();
+  startAnomalyDetectionWorker(); workerStarted("anomaly-worker", "Anomaly Detection", false);
   // 24h check-in worker — Nia follows up after every completed request
-  startNiaCheckinWorker();
+  startNiaCheckinWorker(); workerStarted("nia-checkin", "Nia 24h Check-in", false);
   // Nia push queue consumer — drains push_notification_queue written by nia-service
   // ambient-presence and general-checkin workers; delivers via sendPushToUser every 5 min
-  startNiaPushQueueWorker();
+  startNiaPushQueueWorker(); workerStarted("nia-push-queue", "Nia Push Queue", false);
   // Community Pool backfill — retries queued guaranteed minimums + low-balance alert
-  startPoolMinimumsWorker();
+  startPoolMinimumsWorker(); workerStarted("pool-minimums", "Pool Minimums", false);
   // Pledge default automation — marks 90-day unpaid PIF pledges as defaulted + applies trust hit
-  startPledgeDefaultWorker();
+  startPledgeDefaultWorker(); workerStarted("pledge-defaults", "Pledge Default Sweeper", false);
   // Cashout reconciliation — refunds stale pending/failed cashouts with no Stripe transfer
-  startCashoutReconciliation();
+  startCashoutReconciliation(); workerStarted("cashout-recon", "Cashout Reconciliation", false);
   // Recurring requests — fire any due recurring requests every hour
   processRecurringRequests().catch((err: unknown) =>
     logger.error({ err }, "recurring-worker: initial run failed — non-fatal")
@@ -103,6 +133,7 @@ server.listen(port, async () => {
       logger.error({ err }, "recurring-worker: scheduled run failed")
     );
   }, RECURRING_INTERVAL_MS);
+  workerStarted("recurring-requests", "Recurring Requests", false);
   logger.info({ intervalMs: RECURRING_INTERVAL_MS }, "recurring-worker: started");
 });
 

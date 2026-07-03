@@ -180,7 +180,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
 
     const stream = await anthropic.messages.stream(
       {
-        model: "claude-sonnet-4-5",
+        model: "claude-sonnet-4-5", // claude-sonnet-4-5 → keeping pinned version for stability
         max_tokens: 1024,
         system:
           memoryPrefix +

@@ -1,0 +1,35 @@
+Real issues I found
+1. Stale/inconsistent copy in the wallet UI. In wallet.tsx, scheduling a payment shows: "Honest copy: no cron/auto-reminder exists yet — don't over-promise." But pledge-worker.ts already implements exactly that — a daily 9am job that sends push + email reminders for overdue scheduled payments. Either the frontend comment is outdated (fix the copy, since the feature now exists), or the worker isn't actually reaching users in practice and the comment is right (in which case verify the worker's actually running). Worth a 10-minute check to see which is true — right now the code is telling two different stories.
+2. Silent dependency on Redis for every money-moving worker. pledge-worker, payout-worker, cashout-worker, and pool-minimums-worker all check for Redis at startup and just log a warning and don't start if it's missing — no alert, no crash, nothing user-facing. For most apps that's fine "graceful degradation." For yours, if Redis silently drops in production, Pay-It-Forward reminders stop, helpers stop getting reconciled minimum-wage top-ups, and cashout retries stop — while the app looks completely healthy. I'd add a startup health-check endpoint that reports worker status, and an admin-panel banner if any critical worker isn't running.
+3. Nia's model choices are a mix of generations. chat.ts and several nia-service routes call claude-sonnet-4-5, which still works but is now two generations behind — claude-sonnet-5 is the current recommended model (better agentic/reasoning performance, and it's at introductory pricing through August 2026). checkin.ts in api-server calls claude-opus-4-6, also valid but older than the current claude-opus-4-8 flagship. Not bugs, but free quality upgrades sitting on the table — worth a coordinated model-string bump across nia-service.
+4. Two open items already flagged in your own prior audit (AUDIT_SUMMARY_2026-06-28.md) that I confirmed are still relevant: push notifications aren't consistently tagged with notifType, which breaks per-user notification preferences, and there's duplicate check-in logic between api-server and nia-service (architectural redundancy, not a bug, but worth consolidating before it drifts).
+
+Fix and improve and enhance What’s missing and What I'd add to actually finish the vision
+* A hardship/forgiveness request helpers or requesters can submit themselves (right now pledge_status = forgiven/written_off is admin-only — for "pay whenever you can, no pressure," letting a requester proactively say "I can't pay this" reduces awkward silent non-payment).
+* Surface the guaranteed-minimum-wage math to helpers before they claim a job ("you'll earn at least $X for this") — right now it's a backend guarantee, not a frontend promise, so helpers can't see the thing that's supposed to make this feel like a livable wage.
+* A worker health dashboard in /admin given the Redis-dependency risk above.
+
+
+(Fix the wallet.tsx copy inconsistency, wire up a worker-health check, or bump the Nia model strings)
+
+
+Verify and Review the entire Niakofa Repo. Verify and review your work, Review this entire session and improve and enhance the code if you can. Review, and Verify your previous work code is accurate and built end to end, Ensure and verify all improvements and enhancements have been pushed to repo. Verify and insure Nia Ai entire workflow thoroughly end to end! Then Verify and ensure the Niakofa app entire Workflow thoroughly end to end!
+
+Gaps worth closing next, based on what's actually missing rather than re-litigating old audits:
+1. No visible "livable wage" floor — payout logic exists, but I didn't find a minimum-per-task or hourly-equivalent guarantee anywhere. If "helpers get paid a livable wage" is core to the pitch, that needs an explicit rule (e.g., minimum payout per accepted task, subsidized by the pool when a requester can't cover it).
+2. No aging/reminder system for pay-it-forward balances — nothing that nudges a requester at 2 days/2 weeks/2 months to pay what they can. Worth a reminder worker tied to scheduled_payments.
+3. No partial-payment support visible in scheduled-payments — schema has one amount/scheduled_date per row, not "pay whatever you can, whenever." Consider allowing multiple partial contributions against one balance instead of a single fixed scheduled amount.
+4. Push notification tagging — flagged in your own AUDIT_SUMMARY_2026-06-28.md (BUG-15d) as still unresolved; affects helpers actually getting notified when nearby requests appear, which undercuts the "get paid just by waking up and helping" promise.
+
+build the partial-payment/reminder flow And the livable-wage floor next!
+
+Fix and Verify : 90-day pledge-default window vs. your "even 2 years later" promise — still a real mismatch between the messaging and the enforcement. And
+1. No requester-side trust/reputation field — documented in the code itself as a known limitation.
+2. Guaranteed-minimum wage only covers pay-it-forward/goodwill, not immediate-pay jobs — asymmetric protection.
+3. Sensitive-category gating only covers childcare/senior_care/medical — if "almost any legal task" is meant literally, this needs to expand.
+4. Crisis resource suggestions require manual admin verification per region — coverage gaps possible in unreviewed counties.
+5. PR #1 is still sitting open and unmerged — worth deciding whether to merge it, since it's an auth-correctness fix (business/sponsor registrations).
+
+
+
+
