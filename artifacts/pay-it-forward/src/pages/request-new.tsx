@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type ReactElement } from "react";
+import { getIpLocation } from "@/lib/locale-utils";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -136,6 +137,9 @@ export default function NewRequestScreen() {
   const [pinLocation, setPinLocation] = useState<{ lat: number; lng: number } | null>(
     myLocation ? { lat: myLocation.lat, lng: myLocation.lng } : null
   );
+  // IP-based map center — shown when GPS is unavailable so the user can see the
+  // map and drag the pin to their actual location instead of seeing "Waiting for GPS".
+  const [ipMapCenter, setIpMapCenter] = useState<{ lat: number; lng: number } | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -235,6 +239,18 @@ export default function NewRequestScreen() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myLocation]);
+
+  // IP geolocation fallback — runs once on mount when GPS is not yet available.
+  // Gives the map a meaningful center (e.g., Lagos, London, Nairobi) instead of
+  // showing a blank "Waiting for GPS…" screen that blocks international users.
+  useEffect(() => {
+    if (myLocation || pinLocation) return; // GPS already provided a location
+    getIpLocation().then(loc => {
+      if (!loc || pinLocation || myLocation) return; // GPS arrived while we fetched
+      setIpMapCenter({ lat: loc.lat, lng: loc.lng });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const finishAndNavigate = () => {
     queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
@@ -761,32 +777,59 @@ export default function NewRequestScreen() {
                   <span className="ml-1 text-[10px] text-muted-foreground/60 normal-case font-normal tracking-normal">Tap or drag pin to adjust</span>
                 </div>
                 <div className="relative rounded-xl overflow-hidden border border-border bg-card" style={{ height: 180 }}>
-                  {webGLSupported && pinLocation ? (
+                  {webGLSupported && (pinLocation ?? ipMapCenter) ? (
+                    // Show the map centered on GPS pin OR IP approximation.
+                    // When only ipMapCenter is available, user must tap to place the pin.
                     <MapboxMap
                       mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
-                      initialViewState={{ longitude: pinLocation.lng, latitude: pinLocation.lat, zoom: 14 }}
+                      initialViewState={{
+                        longitude: (pinLocation ?? ipMapCenter!).lng,
+                        latitude:  (pinLocation ?? ipMapCenter!).lat,
+                        // Wider zoom for IP approximation (city-level), tight for GPS
+                        zoom: pinLocation ? 14 : 11,
+                      }}
                       style={{ width: "100%", height: "100%" }}
                       mapStyle="mapbox://styles/mapbox/dark-v11"
                       attributionControl={false}
                       onClick={(e) => setPinLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng })}
                     >
-                      <Marker
-                        longitude={pinLocation.lng}
-                        latitude={pinLocation.lat}
-                        anchor="bottom"
-                        draggable
-                        onDragEnd={(e) => setPinLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng })}
-                      >
-                        <div className="text-2xl drop-shadow-lg select-none">📍</div>
-                      </Marker>
+                      {pinLocation ? (
+                        <Marker
+                          longitude={pinLocation.lng}
+                          latitude={pinLocation.lat}
+                          anchor="bottom"
+                          draggable
+                          onDragEnd={(e) => setPinLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng })}
+                        >
+                          <div className="text-2xl drop-shadow-lg select-none">📍</div>
+                        </Marker>
+                      ) : (
+                        // No pin yet — overlay a prompt so the user knows to tap
+                        <div
+                          className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                          style={{ background: "rgba(0,0,0,0.35)" }}
+                        >
+                          <span className="text-white text-xs font-semibold px-3 py-1.5 rounded-full"
+                            style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}>
+                            📍 Tap map to place your location
+                          </span>
+                        </div>
+                      )}
                     </MapboxMap>
+                  ) : webGLSupported ? (
+                    // WebGL available but IP lookup still in flight
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                      <MapPin className="w-8 h-8 text-primary animate-pulse" />
+                      <span className="text-xs">Locating you…</span>
+                    </div>
                   ) : (
+                    // No WebGL — fall back to coordinate display
                     <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
                       <MapPin className="w-8 h-8 text-primary" />
                       <span className="text-xs">
                         {pinLocation
                           ? `${pinLocation.lat.toFixed(5)}, ${pinLocation.lng.toFixed(5)}`
-                          : "Waiting for GPS…"}
+                          : "Enable location or tap to set manually"}
                       </span>
                     </div>
                   )}

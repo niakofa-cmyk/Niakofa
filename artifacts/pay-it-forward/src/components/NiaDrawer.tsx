@@ -58,14 +58,71 @@ function getWelcomePhrases(): string[] {
 }
 const WELCOME_PHRASES = getWelcomePhrases();
 
-const QUICK_PROMPTS = [
-  { label: "🍽️ Find food near me", text: "Where can I find food assistance near me today?" },
-  { label: "🏠 Need shelter", text: "I need emergency shelter. Can you help me find a place tonight?" },
-  { label: "💙 I'm struggling", text: "I'm really struggling right now and don't know where to turn." },
-  { label: "📋 Benefits help", text: "Help me find out what benefits I might qualify for." },
-  { label: "🤝 Want to help", text: "I want to help someone in my neighborhood. What requests are open near me?" },
-  { label: "🗺️ What's nearby?", text: "What's happening in my community right now?" },
-];
+const QUICK_PROMPTS_BY_LANG: Partial<Record<CulturalLanguage, { label: string; text: string }[]>> = {
+  en: [
+    { label: "🍽️ Find food near me",  text: "Where can I find food assistance near me today?" },
+    { label: "🏠 Need shelter",        text: "I need emergency shelter. Can you help me find a place tonight?" },
+    { label: "💙 I'm struggling",      text: "I'm really struggling right now and don't know where to turn." },
+    { label: "📋 Benefits help",       text: "Help me find out what benefits I might qualify for." },
+    { label: "🤝 Want to help",        text: "I want to help someone in my neighborhood. What requests are open near me?" },
+    { label: "🗺️ What's nearby?",     text: "What's happening in my community right now?" },
+  ],
+  sw: [
+    { label: "🍽️ Tafuta chakula",     text: "Ninaomba msaada wa kupata chakula karibu nawe leo?" },
+    { label: "🏠 Nahitaji makao",      text: "Ninahitaji makao ya dharura usiku huu. Unaweza kunisaidia?" },
+    { label: "💙 Ninahangaika",        text: "Ninahangaika sana na sijui nikuambie nini. Ninahitaji msaada." },
+    { label: "📋 Msaada wa faida",     text: "Nisaidie kupata faida ambazo ninahitimu nazo." },
+    { label: "🤝 Nataka kusaidia",     text: "Nataka kusaidia mtu katika mtaa wangu. Ni ombi gani ziko wazi karibu nawe?" },
+    { label: "🗺️ Karibu nawe?",       text: "Kinachoendelea katika jamii yangu sasa?" },
+  ],
+  yo: [
+    { label: "🍽️ Ẹ wa ounjẹ",        text: "Níbo ni mo lè rí àwọn ohun ìjẹun nítòsí mi ní òní?" },
+    { label: "🏠 Mo nilo ile alẹ",     text: "Mo nilo ibugbe pajawiri oru yi. Ẹ jọwọ ràn mi lọwọ." },
+    { label: "💙 Mo n ṣàníyàn",       text: "Mo n ṣàníyàn gan-an, mi ò mọ ibiti mo lo. Mo nilo iranlọwọ." },
+    { label: "📋 Iranlọwọ àfoyemọ",   text: "Ẹ ràn mi lọwọ láti mọ àwọn àfoyemọ ti mo lè jẹ." },
+    { label: "🤝 Mo fẹ saidia",       text: "Mo fẹ ràn ẹnikan lọwọ ní àdúgbò mi. Kí ni àwọn ìbéèrè ti ò ní ẹnìkan?" },
+    { label: "🗺️ Kí ló kù?",         text: "Kí ni n ṣẹlẹ nínú àwùjọ mi?" },
+  ],
+  ha: [
+    { label: "🍽️ Nemo abinci",        text: "Ina zan samu taimako na abinci kusa da ni yau?" },
+    { label: "🏠 Bukatan matsuguni",   text: "Ina bukatan matsuguni na gaggawa. Za ka iya taimaka mini?" },
+    { label: "💙 Ina fama",           text: "Ina fama ƙwarai kuma ban san inda zan juya ba. Ina bukatan taimako." },
+    { label: "📋 Taimako fa'idodi",    text: "Taimaka mini samun fa'idodin da zan iya samu." },
+    { label: "🤝 Na son taimakawa",   text: "Na son taimaka wa wani a unguwa ta. Wanne buƙatun suna buɗe?" },
+    { label: "🗺️ Kusa da ni?",        text: "Menene ke faruwa a cikin al'ummata yanzu?" },
+  ],
+  am: [
+    { label: "🍽️ Migib aterkab",      text: "Megnaw le migib aterkabi ena masaderia yemigeኝ?" },
+    { label: "🏠 Mekeber yehilal",     text: "Zelelelit megenatcha yehilal. Teyazenilign?" },
+    { label: "💙 Bezi neger yelone",   text: "Bezi gen neger yemitelent. Etiyopian yemetilalut yewushegnal." },
+    { label: "📋 Tetekema aterkab",    text: "Yemiyabalut gudoch masaderia?" },
+    { label: "🤝 Mekaket feligo",      text: "Beqerbegna masaderia letewun feligo allo. Yet felegibet ale?" },
+    { label: "🗺️ Qerbegna yemilew?",  text: "Beqerbegna sefere masaderia yemeno yalew manenu?" },
+  ],
+  so: [
+    { label: "🍽️ Raadi cunto",        text: "Xaga ayaan raadin karaa caawimaad cunto ah maanta?" },
+    { label: "🏠 Xero baahan",         text: "Xero degdeg ah baahan nahay caawa. Ma i caawin kartaa?" },
+    { label: "💙 Dhibaato qabaa",      text: "Dhibaato aad ah baan qabaa mana garanayso. Caawimaad baahan ahay." },
+    { label: "📋 Faa'iidooyinka",      text: "Caawimaad igu so qaad si aan u ogaado faa'iidooyinka xaq u leh." },
+    { label: "🤝 Caawin doonaa",       text: "Qof ku nool xaafaddayda caawin doonaa. Codsiyadee furan yihiin?" },
+    { label: "🗺️ Maxaa ku dhow?",     text: "Maxaa ku socda bulshayda hadda?" },
+  ],
+  pcm: [
+    { label: "🍽️ Find chop",          text: "Where I fit find food help near me today?" },
+    { label: "🏠 I need place",        text: "I need place to sleep tonight. You fit help me?" },
+    { label: "💙 E hard for me",       text: "Things hard for me right now and I no know where to turn. I need help." },
+    { label: "📋 Benefits wahala",     text: "Help me find out wetin I qualify for." },
+    { label: "🤝 I wan help",          text: "I wan help somebody for my area. Which request dey open near me?" },
+    { label: "🗺️ Wetin dey near?",    text: "Wetin dey happen for my community now?" },
+  ],
+};
+
+// English prompts are the fallback for all other languages
+const QUICK_PROMPTS_EN = QUICK_PROMPTS_BY_LANG.en!;
+
+function getQuickPrompts(lang: CulturalLanguage) {
+  return QUICK_PROMPTS_BY_LANG[lang] ?? QUICK_PROMPTS_EN;
+}
 
 function getSessionId(): string {
   let id = localStorage.getItem("nia_session_id");
@@ -458,8 +515,35 @@ function MessageBubble({ msg }: { msg: Message }) {
   );
 }
 
-function CrisisStrip() {
+// Global emergency numbers by region/country so any user worldwide can get help.
+// The "Call 911" hardcode was US-only — 112 works in EU, Africa, and most countries globally.
+const CRISIS_RESOURCES_GLOBAL = [
+  // Universal first — works in most countries worldwide
+  ["🚨", "Emergency services",    "Call 112 (global) or 999 (UK)"],
+  ["🚨", "Emergency (US/Canada)", "Call 911"],
+  ["💛", "Suicide & crisis (US)", "Call/text 988"],
+  ["💬", "Crisis text (US)",      "Text HOME to 741741"],
+  ["💜", "Domestic violence (US)","1-800-799-7233"],
+  ["🏠", "Shelter (US)",          "Call/text 211"],
+  ["🍽️", "Food (US)",            "Text FOOD to 877-877"],
+  ["🏳️‍🌈", "LGBTQ+ crisis (US)", "1-866-488-7386"],
+  ["🎖️", "Veterans (US)",        "988 then press 1"],
+] as const;
+
+// Titles in key languages so the strip title itself is understood globally
+const CRISIS_TITLES: Partial<Record<CulturalLanguage, string>> = {
+  en:  "🆘 Emergency resources — always available",
+  sw:  "🆘 Rasilimali za dharura — zinapatikana daima",
+  yo:  "🆘 Awọn ohun elo ipajawiri — nigbagbogbo wa",
+  ha:  "🆘 Kayan gaggawa — koyaushe suna akwai",
+  am:  "🆘 Yedergedagena masaderiya — lemeziya yemitawuq",
+  so:  "🆘 Khayraadka xaaladaha degdeg — had iyo jeer diyaar",
+  pcm: "🆘 Emergency help — always dey",
+};
+
+function CrisisStrip({ lang = "en" }: { lang?: CulturalLanguage }) {
   const [expanded, setExpanded] = useState(false);
+  const title = CRISIS_TITLES[lang] ?? CRISIS_TITLES.en!;
   return (
     <div
       style={{
@@ -483,12 +567,11 @@ function CrisisStrip() {
           border: "none",
           cursor: "pointer",
           gap: 8,
-          // MOBILE FIX: prevents 300ms tap delay
           touchAction: "manipulation",
         }}
       >
         <span style={{ fontSize: 11.5, fontWeight: 600, color: "#993C1D", letterSpacing: "0.02em" }}>
-          🆘 Emergency resources — always available
+          {title}
         </span>
         <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
           <ChevronDown size={14} color="#993C1D" />
@@ -504,16 +587,7 @@ function CrisisStrip() {
             style={{ overflow: "hidden" }}
           >
             <div style={{ padding: "0 12px 10px", display: "flex", flexDirection: "column", gap: 5 }}>
-              {[
-                ["🚨", "Immediate danger", "Call 911"],
-                ["💛", "Suicide & crisis", "Call/text 988"],
-                ["💬", "Crisis text line", "Text HOME to 741741"],
-                ["💜", "Domestic violence", "1-800-799-7233"],
-                ["🏠", "Shelter & housing", "Call/text 211"],
-                ["🍽️", "Food emergency", "Text FOOD to 877-877"],
-                ["🏳️‍🌈", "LGBTQ+ crisis", "1-866-488-7386"],
-                ["🎖️", "Veterans", "988 then press 1"],
-              ].map(([icon, label, action]) => (
+              {CRISIS_RESOURCES_GLOBAL.map(([icon, label, action]) => (
                 <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
                   <span>{icon}</span>
                   <span style={{ color: "#712B13", flex: 1 }}>{label}</span>
@@ -577,10 +651,11 @@ function LiveContextBadge({ context }: { context: NiaContext | null }) {
   );
 }
 
-function QuickPrompts({ onSelect }: { onSelect: (text: string) => void }) {
+function QuickPrompts({ lang = "en", onSelect }: { lang?: CulturalLanguage; onSelect: (text: string) => void }) {
+  const prompts = getQuickPrompts(lang);
   return (
     <div style={{ padding: "12px 12px 4px", display: "flex", flexWrap: "wrap", gap: 7 }}>
-      {QUICK_PROMPTS.map(({ label, text }) => (
+      {prompts.map(({ label, text }) => (
         <button
           key={label}
           onClick={() => onSelect(text)}
@@ -1078,7 +1153,7 @@ Your limit resets at ${reset}. Rest well — I'll be here when you return.
               ) : (
                 <>
                   <div style={{ paddingTop: 10, flexShrink: 0 }}>
-                    <CrisisStrip />
+                    <CrisisStrip lang={userLang} />
                   </div>
                   <LiveContextBadge context={liveContext} />
                   <AnimatePresence mode="wait">
@@ -1089,7 +1164,7 @@ Your limit resets at ${reset}. Rest well — I'll be here when you return.
                         exit={{ opacity: 0, height: 0 }}
                         style={{ flexShrink: 0, overflow: "hidden" }}
                       >
-                        <QuickPrompts onSelect={(text) => sendMessage(text)} />
+                        <QuickPrompts lang={userLang} onSelect={(text) => sendMessage(text)} />
                       </motion.div>
                     )}
                   </AnimatePresence>

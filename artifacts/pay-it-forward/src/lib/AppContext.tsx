@@ -6,6 +6,7 @@ import { useWebSocket } from "./useWebSocket";
 import { wsStart, wsRegister, wsUnregister } from "./wsClient";
 import { GratitudeModal } from "../components/GratitudeModal";
 import { clearToken } from "./auth";
+import { getIpLocation } from "./locale-utils";
 
 interface Location {
   lat: number;
@@ -77,7 +78,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
 
   const [helperModeActive, setHelperModeActiveState] = useState(false);
-  const [myLocation, setMyLocation] = useState<Location | null>({ lat: 32.75, lng: -97.33 });
+  // Start null — GPS or IP fallback populates this once the useEffect below runs.
+  // Never hardcode a US default: a user in Lagos or London must not have their
+  // location silently pinned to Fort Worth when GPS is unavailable.
+  const [myLocation, setMyLocation] = useState<Location | null>(null);
   const [gratitudePrompt, setGratitudePrompt] = useState<{
     requestId: number;
     requestTitle: string;
@@ -91,7 +95,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [userPlace, setUserPlace] = useState<UserPlace | null>(null);
 
   // ── All useRef calls ─────────────────────────────────────────────────────
-  const locationRef = useRef<Location | null>({ lat: 32.75, lng: -97.33 });
+  const locationRef = useRef<Location | null>(null);
   const prevBroadcastRef = useRef<Location | null>(null);
   const prevLocationRef = useRef<Location | null>(null);
   const smoothedRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -154,9 +158,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [currentUser, location, setLocation]);
 
-  // GPS watchPosition — high-accuracy continuous stream
+  // GPS watchPosition — high-accuracy continuous stream.
+  // Falls back to IP geolocation (ipapi.co, 24h cache) when:
+  //   • The browser has no GPS hardware at all
+  //   • The user denies the permission prompt
+  //   • watchPosition fires any error and we have no location yet
+  // This ensures a user in Lagos, Nairobi, or London isn't silently placed at
+  // Fort Worth when GPS is unavailable.
   useEffect(() => {
-    if (!navigator.geolocation) return;
+    // Shared IP fallback — called on any path that lacks a GPS fix
+    const tryIpFallback = () => {
+      if (locationRef.current) return; // GPS already gave us a fix — skip
+      getIpLocation().then(loc => {
+        if (!loc || locationRef.current) return; // double-check after async
+        const ipLoc: Location = { lat: loc.lat, lng: loc.lng };
+        locationRef.current = ipLoc;
+        setMyLocation(ipLoc);
+      });
+    };
+
+    if (!navigator.geolocation) {
+      tryIpFallback(); // no GPS hardware — fall back immediately
+      return;
+    }
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
@@ -201,7 +225,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         locationRef.current = newLoc;
         setMyLocation(newLoc);
       },
-      () => {},
+      (_err) => {
+        // Any GPS error (PERMISSION_DENIED, TIMEOUT, POSITION_UNAVAILABLE) →
+        // fall back to IP if we haven't gotten a fix yet.
+        tryIpFallback();
+      },
       {
         enableHighAccuracy: true,
         timeout: 8000,

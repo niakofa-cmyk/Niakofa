@@ -139,19 +139,63 @@ export const CULTURAL_PROFILES: Record<CulturalLanguage, CulturalProfile> = {
   },
 };
 
-// Detect language from browser/system settings
-export function detectUserLanguage(): CulturalLanguage {
-  const browserLang = navigator.language?.toLowerCase() || "en";
+// App language → CulturalLanguage mapping.
+// ALL 15 i18n language codes must be listed so the "stored preference first"
+// priority is always respected. Codes without a dedicated cultural voice profile
+// fall back to "en" explicitly — this prevents them from leaking through to the
+// browser-locale check and unexpectedly inheriting a different language.
+// ig (Igbo) → pcm (Nigerian Pidgin) is the closest available voice profile.
+const APP_LANG_TO_CULTURAL: Record<string, CulturalLanguage> = {
+  // Direct 1:1 cultural profiles
+  en:  "en",
+  sw:  "sw",
+  zu:  "zu",
+  tw:  "tw",
+  yo:  "yo",
+  ha:  "ha",
+  am:  "am",
+  so:  "so",
+  lg:  "lg",
+  // Closest available profile (not a perfect match)
+  ig:  "pcm",  // Igbo → Nigerian Pidgin profile
+  // No dedicated cultural voice profile → English fallback
+  // These users chose their language in settings; Nia's API responds in that
+  // language, but the greeting/TTS profile uses English as the base voice.
+  es:  "en",
+  fr:  "en",
+  pt:  "en",
+  wo:  "en",
+  ht:  "en",
+  ar:  "en",
+};
 
-  if (browserLang.startsWith("sw")) return "sw";
-  if (browserLang.startsWith("zu")) return "zu";
+/**
+ * Detect the best CulturalLanguage for the current user.
+ * Priority:
+ *  1. Stored app language preference (niakofa_lang in localStorage)
+ *  2. Browser locale (navigator.language)
+ *  3. "en" fallback
+ */
+export function detectUserLanguage(): CulturalLanguage {
+  // 1. Stored app preference (set by LanguageSwitcher in settings)
+  try {
+    const stored = localStorage.getItem("niakofa_lang");
+    if (stored && APP_LANG_TO_CULTURAL[stored] !== undefined) {
+      return APP_LANG_TO_CULTURAL[stored]!;
+    }
+  } catch {}
+
+  // 2. Browser locale
+  const browserLang = navigator.language?.toLowerCase() || "en";
+  if (browserLang.startsWith("sw"))  return "sw";
+  if (browserLang.startsWith("zu"))  return "zu";
   if (browserLang.startsWith("tw") || browserLang.startsWith("ak")) return "tw";
-  if (browserLang.startsWith("yo")) return "yo";
-  if (browserLang.startsWith("ha")) return "ha";
-  if (browserLang.startsWith("am")) return "am";
-  if (browserLang.startsWith("so")) return "so";
+  if (browserLang.startsWith("yo"))  return "yo";
+  if (browserLang.startsWith("ha"))  return "ha";
+  if (browserLang.startsWith("am"))  return "am";
+  if (browserLang.startsWith("so"))  return "so";
   if (browserLang.startsWith("pcm")) return "pcm";
-  if (browserLang.startsWith("lg")) return "lg";
+  if (browserLang.startsWith("lg"))  return "lg";
 
   return "en";
 }
