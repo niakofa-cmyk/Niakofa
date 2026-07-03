@@ -64,3 +64,4 @@
 - [Niakofa auth bugs fixed](niakofa-auth-bugs.md) — POST /requests removed requireOwnership("requester_id"); resolveMeParam middleware added; is_crisis belongs on nia_conversations not users; requester_id optional in openapi.yaml.
 - [Niakofa global ops admin](niakofa-global-ops-admin.md) — GET /admin/global-ops: GPS health, region buckets, lang distribution, feature checks + config_status (critical_missing list); getRegion() order critical.
 - [Niakofa secrets required](niakofa-secrets-required.md) — VITE_MAPBOX_TOKEN+MAPBOX_TOKEN+ANTHROPIC_API_KEY+INTERNAL_SECRET are critical; navigation.ts now reads MAPBOX_TOKEN??VITE_MAPBOX_TOKEN server-side.
+- [Niakofa voice profiles](niakofa-voice-profiles.md) — ElevenLabs/OpenAI TTS routing; 8 community voices; profile available=false = pending license not broken.

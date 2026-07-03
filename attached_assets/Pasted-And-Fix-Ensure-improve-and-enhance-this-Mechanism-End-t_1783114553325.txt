@@ -1,0 +1,11 @@
+And Fix, Ensure, improve and enhance this Mechanism End to End.
+Nia's current TTS is OpenAI's stock voice engine (one synthetic "neutral American" voice — nova), plus a browser Web Speech fallback. Neither can produce an authentic African American or African-regional voice by shifting pitch/rate — that's a caricature, not a real accent/dialect.
+The only honest path is a real voice: a licensed regional TTS voice, or a custom voice model built from a consenting, paid voice actor from that speech community (AAVE, Nigerian English, Jamaican English, etc.), served through a provider like ElevenLabs that supports this.
+What I built
+* api-server/src/lib/voiceProfiles.ts — a profile registry (aave_warm, nigerian_en, jamaican_en, south_african_en, ghanaian_en, kenyan_en, default_en). Each profile only goes live once a real licensed ELEVENLABS_VOICE_* env var + ELEVENLABS_API_KEY are set — otherwise it silently falls back to the current OpenAI voice, never to a faked accent.
+* api-server/src/routes/nia-voice.ts — POST /nia/voice/speak now accepts voiceProfile and routes to ElevenLabs (licensed voice) or OpenAI (default) accordingly. Added GET /nia/voice/profiles so a settings screen can list them (with available: true/false).
+* pay-it-forward/src/hooks/useNiaTTS.ts — now calls the server voice endpoint first (playing real audio, honoring the user's saved nia_voice_profile), and only drops to browser speechSynthesis if the server call fails or no voice is licensed yet.
+What's left (not something code can do for you)
+1. License or record real voices — either contract voice actors from each community for ElevenLabs Professional Voice Cloning, or license ElevenLabs' existing regional voices where available.
+2. Set the env vars once each voice exists (ELEVENLABS_VOICE_AAVE_WARM, etc.) — nothing else needs to change.
+3. Add a picker in account settings hitting GET /nia/voice/profiles so users choose their own Nia voice, rather than it being auto-assigned by inferred ethnicity — that keeps it a choice, not a stereotype the app imposes.

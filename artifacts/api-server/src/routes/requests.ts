@@ -1004,11 +1004,20 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
   if (!pParsed.success) {
     return res.status(400).json({ error: "Invalid request id", details: pParsed.error.issues });
   }
-  // Parse the optional body — helper_id is derived from the auth token and
+  // Parse the optional body. helper_id is derived from the auth token and
   // is NEVER required in the body (sending it is accepted for backward compat
   // but the server always uses req.authenticatedUserId, never the body value).
-  // notes is the only body field the handler actually uses.
+  // notes is the only body field the handler may use in future.
+  // We accept an empty body or missing body gracefully.
   const bParsed = CompleteRequestBody.safeParse(req.body ?? {});
+  if (!bParsed.success) {
+    // Body is entirely optional — only reject if something was sent AND invalid
+    // (e.g. notes is not a string). An empty / missing body always passes.
+    const hasBody = req.body && Object.keys(req.body).length > 0;
+    if (hasBody) {
+      return res.status(400).json({ error: "Invalid request body", details: bParsed.error.issues });
+    }
+  }
 
   // Status guard makes completion idempotent: a request can only transition to
   // completed ONCE, so every side effect below (help_count, pool front,
