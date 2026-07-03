@@ -51,7 +51,7 @@ async function fireCrisisFollowup(
 ): Promise<void> {
   const response = await client.messages.create({
     // Haiku is sufficient and fast for a short, warm follow-up message.
-    model: "claude-haiku-4-5",
+    model: "claude-haiku-4-5-20251001",
     max_tokens: 200,
     system: CRISIS_FOLLOWUP_DIRECTIVE + NIA_SYSTEM_PROMPT,
     messages: [{ role: "user", content: CRISIS_FOLLOWUP_OPENING_PROMPT }],

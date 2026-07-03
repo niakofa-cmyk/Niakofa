@@ -27,3 +27,4 @@ export * from "./system-settings";
 export * from "./community-pool";
 export * from "./businesses";
 export * from "./government-sponsors";
+export * from "./wallet-cashouts";
