@@ -8,6 +8,53 @@ import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
 
+// ── Region bucketing ──────────────────────────────────────────────────────────
+// Maps a lat/lng point to one of the platform's target regions.
+//
+// EVALUATION ORDER MATTERS — these boxes overlap and must be checked from most
+// specific / northerly to most general to avoid mis-classification:
+//
+//  1. Caribbean   — checked before N. America (same longitude band)
+//  2. Europe      — lat 37–72, lng -10–40; MUST come before Africa whose box
+//                   extends to lat 38, overlapping southern Europe
+//  3. Middle East — lat 12–42, lng 34–65; MUST come before Africa which also
+//                   covers these coordinates (e.g. Egypt / Horn of Africa top)
+//  4. Africa      — after Europe & Middle East so only truly African points land here
+//  5–8. Rest of world in decreasing likelihood for our user base
+//
+// Verified boundary city samples:
+//   Athens GR (37.9N, 23.7E)  → Europe  ✓
+//   Riyadh SA (24.7N, 46.7E)  → Middle East ✓
+//   Cairo EG  (30.0N, 31.2E)  → Africa (lng 31.2 < 34, misses ME box) ✓
+//   Nairobi KE (-1.3S, 36.8E) → Africa (lat -1 < 12, misses ME box) ✓
+//   Lagos NG   (6.5N,  3.4E)  → Africa ✓
+//   Kingston JM (18.0N,-76.8W) → Caribbean ✓
+function getRegion(lat: number, lng: number): string {
+  // 1. Caribbean (before North America — overlapping longitude band)
+  if (lat >= 10 && lat <= 26  && lng >= -86  && lng <= -58) return "Caribbean";
+  // 2. Europe (before Africa — southern Europe overlaps Africa's lat range)
+  if (lat >= 37 && lat <= 72  && lng >= -10  && lng <= 40)  return "Europe";
+  // 3. Middle East (before Africa — Arabia/Levant/Iran overlap Africa box)
+  //    lng starts at 34 so Egypt/Sudan (lng ~31–33) stays in Africa
+  if (lat >= 12 && lat <= 42  && lng >= 34   && lng <= 65)  return "Middle East";
+  // 4. Africa (now only truly African points remain)
+  if (lat >= -35 && lat <= 38 && lng >= -18  && lng <= 52)  return "Africa";
+  // 5. North America
+  if (lat >= 7  && lat <= 72  && lng >= -168 && lng <= -52) return "North America";
+  // 6. South America
+  if (lat >= -56 && lat <= 12 && lng >= -82  && lng <= -34) return "South America";
+  // 7. Asia
+  if (lat >= -10 && lat <= 55 && lng >= 60   && lng <= 145) return "Asia";
+  // 8. Oceania
+  if (lat >= -50 && lat <= -10 && lng >= 110 && lng <= 180) return "Oceania";
+  return "Other";
+}
+
+const REGION_ORDER = [
+  "Africa", "North America", "Europe", "Caribbean",
+  "South America", "Middle East", "Asia", "Oceania", "Other",
+];
+
 const router: IRouter = Router();
 
 // "built" and "commit" used to be hardcoded literals that never changed —
@@ -48,6 +95,111 @@ router.get("/admin/worker-health", requireAuth, adminLimiter, async (req, res, n
         redis_configured: redisOk,
         process_started_at: PROCESS_STARTED_AT,
         workers,
+      });
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Global Ops snapshot — admin-only ─────────────────────────────────────────
+// One-stop dashboard feed: GPS health, regional coverage, language distribution,
+// and live feature-flag verification. Auto-polled every 60s by the admin panel.
+router.get("/admin/global-ops", requireAuth, adminLimiter, async (req, res, next) => {
+  try {
+    await requireAdmin()(req, res, async () => {
+      // Run all DB queries in parallel to keep latency low
+      const [onlineHelperRows, openRequestRows, completedRows, langRows] = await Promise.all([
+        db.execute(sql`SELECT lat, lng FROM users WHERE helper_status = 'online'`),
+        db.execute(sql`SELECT lat, lng FROM help_requests WHERE status = 'open'`),
+        db.execute(sql`
+          SELECT lat, lng FROM help_requests
+          WHERE status = 'completed'
+            AND completed_at > NOW() - INTERVAL '7 days'
+        `),
+        db.execute(sql`
+          SELECT COALESCE(voice_language, 'en') AS lang, COUNT(*)::int AS count
+          FROM help_requests
+          WHERE created_at > NOW() - INTERVAL '7 days'
+          GROUP BY voice_language
+          ORDER BY count DESC
+          LIMIT 10
+        `),
+      ]);
+
+      type Row = { lat: number | null; lng: number | null };
+      type LangRow = { lang: string; count: number };
+
+      // GPS health — helpers online WITH vs WITHOUT coordinates
+      const helpersWithGps  = (onlineHelperRows.rows as Row[]).filter(h => h.lat != null && h.lng != null);
+      const helpersNoGps    = onlineHelperRows.rows.length - helpersWithGps.length;
+
+      // Region buckets
+      const helperRegions:    Record<string, number> = {};
+      const requestRegions:   Record<string, number> = {};
+      const completedRegions: Record<string, number> = {};
+
+      for (const h of helpersWithGps) {
+        const r = getRegion(h.lat!, h.lng!);
+        helperRegions[r] = (helperRegions[r] ?? 0) + 1;
+      }
+      for (const r of (openRequestRows.rows as Row[])) {
+        if (r.lat == null || r.lng == null) continue;
+        const reg = getRegion(r.lat, r.lng);
+        requestRegions[reg] = (requestRegions[reg] ?? 0) + 1;
+      }
+      for (const r of (completedRows.rows as Row[])) {
+        if (r.lat == null || r.lng == null) continue;
+        const reg = getRegion(r.lat, r.lng);
+        completedRegions[reg] = (completedRegions[reg] ?? 0) + 1;
+      }
+
+      const activeSet = new Set([
+        ...Object.keys(helperRegions),
+        ...Object.keys(requestRegions),
+        ...Object.keys(completedRegions),
+      ]);
+      const regions = REGION_ORDER
+        .filter(r => activeSet.has(r))
+        .map(r => ({
+          region:              r,
+          helpers_online:      helperRegions[r]    ?? 0,
+          open_requests:       requestRegions[r]   ?? 0,
+          recent_completions:  completedRegions[r] ?? 0,
+        }));
+
+      // Language distribution (last 7 days of requests)
+      const language_distribution = (langRows.rows as LangRow[]).map(row => ({
+        lang:  row.lang ?? "en",
+        count: Number(row.count),
+      }));
+
+      // Feature-flag verification — no calls to external APIs; just env presence
+      const workers    = getWorkerHealth();
+      const workersOk  = workers.every(w => w.status === "running" || w.status === "stopped");
+
+      res.json({
+        gps_health: {
+          helpers_online_with_gps: helpersWithGps.length,
+          helpers_online_no_gps:   helpersNoGps,
+          total_online_helpers:    onlineHelperRows.rows.length,
+        },
+        regions,
+        language_distribution,
+        feature_checks: {
+          database:    "ok",
+          mapbox_token: !!(process.env.MAPBOX_TOKEN),
+          nia_api_key:  !!(process.env.OPENAI_API_KEY || process.env.NIA_API_KEY),
+          redis:        isRedisConfigured(),
+          push_vapid:   !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY),
+          workers_ok:   workersOk,
+        },
+        summary: {
+          total_open_requests:   openRequestRows.rows.length,
+          total_online_helpers:  onlineHelperRows.rows.length,
+          regions_active:        regions.filter(r => r.helpers_online > 0 || r.open_requests > 0).length,
+          last_updated:          new Date().toISOString(),
+        },
       });
     });
   } catch (err) {

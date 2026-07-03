@@ -17,6 +17,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { getToken } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import { BackgroundCheckAdmin } from "@/components/BackgroundCheckAdmin";
+import { detectUnits } from "@/lib/locale-utils";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -3234,6 +3235,263 @@ interface HardshipRequest {
   requester_email: string;
 }
 
+// ── Global Ops ───────────────────────────────────────────────────────────────
+
+interface GlobalOpsData {
+  gps_health: {
+    helpers_online_with_gps: number;
+    helpers_online_no_gps: number;
+    total_online_helpers: number;
+  };
+  regions: Array<{
+    region: string;
+    helpers_online: number;
+    open_requests: number;
+    recent_completions: number;
+  }>;
+  language_distribution: Array<{ lang: string; count: number }>;
+  feature_checks: {
+    database: "ok" | "error";
+    mapbox_token: boolean;
+    nia_api_key: boolean;
+    redis: boolean;
+    push_vapid: boolean;
+    workers_ok: boolean;
+  };
+  summary: {
+    total_open_requests: number;
+    total_online_helpers: number;
+    regions_active: number;
+    last_updated: string;
+  };
+}
+
+const REGION_ICONS: Record<string, string> = {
+  "Africa": "🌍",
+  "North America": "🌎",
+  "Europe": "🏛️",
+  "Caribbean": "🌴",
+  "South America": "🌎",
+  "Middle East": "🕌",
+  "Asia": "🌏",
+  "Oceania": "🏝️",
+  "Other": "🌐",
+};
+
+const LANG_NAMES: Record<string, string> = {
+  en: "English", es: "Spanish", fr: "French", pt: "Portuguese",
+  sw: "Swahili", so: "Somali",  am: "Amharic", yo: "Yoruba",
+  ha: "Hausa",   ig: "Igbo",    tw: "Twi",     wo: "Wolof",
+  ht: "Haitian Creole", ar: "Arabic", zu: "Zulu",
+};
+
+/**
+ * GlobalOpsSection — Real-time global coverage snapshot for the admin.
+ *
+ * Shows GPS signal health, region-by-region helper / request counts, top
+ * languages in use, and automated feature-flag checks. Auto-refreshes every
+ * 60 seconds so the admin always has a current picture without a manual poll.
+ */
+function GlobalOpsSection() {
+  const [data, setData] = useState<GlobalOpsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch(`${BASE}/api/admin/global-ops`, {
+        headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+      });
+      if (res.ok) {
+        setData(await res.json());
+        setLastRefresh(new Date());
+      } else {
+        const b = await res.json().catch(() => ({})) as { error?: string };
+        setError(b.error ?? `Server returned ${res.status}`);
+      }
+    } catch { setError("Network error"); } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 60_000); // auto-refresh every 60 s
+    return () => clearInterval(id);
+  }, [load]);
+
+  const checks = data?.feature_checks;
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 space-y-5">
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Globe className="w-4 h-4 text-primary" />
+          <span className="text-sm font-black uppercase tracking-wider">Global Ops</span>
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">Live · 60s refresh</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {lastRefresh && (
+            <span className="text-[10px] text-muted-foreground hidden sm:block">
+              Updated {lastRefresh.toLocaleTimeString()}
+            </span>
+          )}
+          <button
+            onClick={load}
+            disabled={loading}
+            className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-xl px-3 py-2">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {loading && !data && (
+        <div className="flex items-center justify-center py-8 text-muted-foreground">
+          <Loader2 className="w-5 h-5 animate-spin" />
+        </div>
+      )}
+
+      {data && (
+        <>
+          {/* ── Summary numbers ─────────────────────────────────────── */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-muted/40 rounded-xl p-3 text-center">
+              <div className="text-xl font-black text-primary">{data.summary.total_online_helpers}</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Online<br/>Helpers</div>
+            </div>
+            <div className="bg-muted/40 rounded-xl p-3 text-center">
+              <div className="text-xl font-black text-yellow-400">{data.summary.total_open_requests}</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Open<br/>Requests</div>
+            </div>
+            <div className="bg-muted/40 rounded-xl p-3 text-center">
+              <div className="text-xl font-black text-green-400">{data.summary.regions_active}</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Regions<br/>Active</div>
+            </div>
+          </div>
+
+          {/* ── GPS Signal Health ────────────────────────────────────── */}
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">GPS Signal Health</div>
+            <div className="flex items-center gap-3">
+              {/* Visual bar */}
+              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                {data.gps_health.total_online_helpers > 0 ? (
+                  <div
+                    className="h-full bg-green-400 rounded-full transition-all"
+                    style={{
+                      width: `${Math.round((data.gps_health.helpers_online_with_gps / data.gps_health.total_online_helpers) * 100)}%`,
+                    }}
+                  />
+                ) : (
+                  <div className="h-full bg-muted-foreground/20 rounded-full w-full" />
+                )}
+              </div>
+              <div className="text-xs font-black shrink-0">
+                {data.gps_health.total_online_helpers > 0
+                  ? `${Math.round((data.gps_health.helpers_online_with_gps / data.gps_health.total_online_helpers) * 100)}%`
+                  : "—"}
+              </div>
+            </div>
+            <div className="flex gap-4 mt-1.5 text-[10px] text-muted-foreground">
+              <span><span className="text-green-400 font-bold">{data.gps_health.helpers_online_with_gps}</span> with GPS</span>
+              <span><span className="text-yellow-400 font-bold">{data.gps_health.helpers_online_no_gps}</span> IP-only</span>
+            </div>
+          </div>
+
+          {/* ── Regional Coverage ────────────────────────────────────── */}
+          {data.regions.length > 0 ? (
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">Coverage by Region</div>
+              <div className="divide-y divide-border">
+                {data.regions.map(r => (
+                  <div key={r.region} className="flex items-center gap-3 py-2">
+                    <span className="text-base w-6 text-center shrink-0">{REGION_ICONS[r.region] ?? "🌐"}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-semibold">{r.region}</div>
+                    </div>
+                    <div className="flex gap-3 text-[11px] shrink-0">
+                      <span className="text-primary font-bold" title="Online helpers">{r.helpers_online} 🧑</span>
+                      <span className="text-yellow-400 font-bold" title="Open requests">{r.open_requests} 📋</span>
+                      <span className="text-green-400 font-bold" title="Completed last 7 days">{r.recent_completions} ✓</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-4 mt-1.5 text-[9px] text-muted-foreground">
+                <span>🧑 helpers online</span>
+                <span>📋 open requests</span>
+                <span>✓ completed 7d</span>
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground text-center py-3 border border-dashed border-border rounded-xl">
+              No active regions — no helpers online or open requests at the moment.
+            </div>
+          )}
+
+          {/* ── Language Distribution ────────────────────────────────── */}
+          {data.language_distribution.length > 0 && (
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">Languages in Use (7 days)</div>
+              <div className="flex flex-wrap gap-1.5">
+                {data.language_distribution.map(({ lang, count }) => (
+                  <span
+                    key={lang}
+                    className="text-[10px] font-semibold px-2 py-1 rounded-full bg-primary/10 text-primary border border-primary/20"
+                  >
+                    {LANG_NAMES[lang] ?? lang} · {count}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Feature Verification ─────────────────────────────────── */}
+          {checks && (
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">Feature Verification</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {([
+                  ["Database",       checks.database === "ok"],
+                  ["Mapbox (Nav)",   checks.mapbox_token],
+                  ["Nia AI",         checks.nia_api_key],
+                  ["Redis / BullMQ", checks.redis],
+                  ["Push / VAPID",   checks.push_vapid],
+                  ["Workers OK",     checks.workers_ok],
+                ] as [string, boolean][]).map(([label, ok]) => (
+                  <div
+                    key={label}
+                    className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-[11px] font-semibold ${
+                      ok
+                        ? "text-green-400 bg-green-400/10 border-green-400/20"
+                        : "text-destructive bg-destructive/10 border-destructive/20"
+                    }`}
+                  >
+                    {ok
+                      ? <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                      : <AlertCircle className="w-3.5 h-3.5 shrink-0" />}
+                    {label}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Smart Dispatch Suggest Panel ──────────────────────────────────────────────
 // Calls POST /helpers/auto-assign/:requestId to get an AI-ranked suggestion
 // of the best available helper. This is advisory only — it never writes to DB.
@@ -3334,7 +3592,11 @@ function DispatchSuggestSection() {
             <div>
               <div className="font-black text-sm">{result.helper_name}</div>
               <div className="text-xs text-muted-foreground mt-0.5">
-                Helper ID #{result.helper_id} · {result.distance_miles.toFixed(1)} mi · ~{result.eta_minutes} min ETA
+                Helper ID #{result.helper_id} · {
+                  detectUnits() === "metric"
+                    ? `${(result.distance_miles * 1.60934).toFixed(1)} km`
+                    : `${result.distance_miles.toFixed(1)} mi`
+                } · ~{result.eta_minutes} min ETA
               </div>
             </div>
             <div className="text-right shrink-0">
@@ -3495,6 +3757,9 @@ function SystemTab() {
           <p className="text-sm text-muted-foreground text-center py-4">Could not load worker health.</p>
         )}
       </div>
+
+      {/* ── Global Ops (coverage, GPS, languages, feature checks) ──── */}
+      <GlobalOpsSection />
 
       {/* ── Smart Dispatch Suggest ───────────────────────────────────── */}
       <DispatchSuggestSection />
