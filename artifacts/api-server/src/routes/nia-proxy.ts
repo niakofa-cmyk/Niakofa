@@ -278,6 +278,74 @@ router.delete("/nia/memory", parseAuth, async (req: Request, res: Response) => {
   }
 });
 
+// ── POST /api/nia/analyze-image ──────────────────────────────────────────────
+// Proxies to the nia-service /analyze-image endpoint.
+// Body: { imageBase64: string (data URL or raw base64), mediaType?: string, question?: string }
+// Returns: { analysis: string }
+//
+// This is the "snap a photo of what needs fixing, Nia will describe it" feature
+// wired into the request-creation flow (request-new.tsx).
+// Auth is optional — anonymous users may also analyze images.
+router.post(
+  "/nia/analyze-image",
+  parseAuth,
+  crisisAwareChatLimiter,
+  async (req: Request, res: Response) => {
+    if (!(await isNiaEnabled())) {
+      return res.status(503).json({ error: "Nia is temporarily unavailable." });
+    }
+
+    const body = req.body as Record<string, unknown>;
+    const imageBase64 = typeof body.imageBase64 === "string" ? body.imageBase64 : "";
+    if (!imageBase64) {
+      return res.status(400).json({ error: "imageBase64 is required" });
+    }
+
+    // Size guard: base64 is ~4/3 the raw bytes; 6.8MB base64 ≈ 5MB raw
+    const rawBase64 = imageBase64.replace(/^data:[^;]+;base64,/, "");
+    if (rawBase64.length > 6_800_000) {
+      return res.status(413).json({ error: "Image too large — please use an image under 5MB" });
+    }
+
+    const upstreamBody = JSON.stringify({
+      imageBase64,
+      mediaType: typeof body.mediaType === "string" ? body.mediaType : undefined,
+      question: typeof body.question === "string" ? body.question.slice(0, 500) : undefined,
+    });
+
+    try {
+      const abortCtrl = new AbortController();
+      const abortTimer = setTimeout(() => abortCtrl.abort(), 30_000);
+      let upstream: globalThis.Response;
+      try {
+        upstream = await fetch(`${getNiaUrl()}/analyze-image`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-secret": process.env["INTERNAL_SECRET"] ?? "",
+            ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
+          },
+          body: upstreamBody,
+          signal: abortCtrl.signal,
+        });
+      } finally {
+        clearTimeout(abortTimer);
+      }
+
+      if (!upstream.ok) {
+        const errBody = await upstream.json().catch(() => ({}));
+        return res.status(upstream.status).json(errBody);
+      }
+
+      const result = await upstream.json();
+      return res.json(result);
+    } catch (err) {
+      logger.error({ err }, "nia-proxy: analyze-image upstream fetch failed");
+      return res.status(503).json({ error: "Nia image analysis is unavailable right now." });
+    }
+  }
+);
+
 // ── POST /api/nia/share-story ─────────────────────────────────────────────────
 router.post("/nia/share-story", parseAuth, async (req: Request, res: Response) => {
   if (!(await isNiaEnabled())) return res.status(503).json({ error: "Nia is temporarily unavailable." });

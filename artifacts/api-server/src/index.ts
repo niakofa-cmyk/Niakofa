@@ -2,9 +2,10 @@ import http from "http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
-import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker } from "./lib/scheduler";
+import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker, startCashoutReconciliation } from "./lib/scheduler";
 import { isRedisConfigured, closeRedis } from "./lib/queue";
 import { startPayoutWorker } from "./workers/payout-worker";
+import { startCashoutWorker } from "./workers/cashout-worker";
 import { startPledgeWorker } from "./workers/pledge-worker";
 import { startCleanupWorker } from "./workers/cleanup-worker";
 import { startNotificationWorker } from "./workers/notification-worker";
@@ -60,6 +61,7 @@ server.listen(port, async () => {
   if (isRedisConfigured()) {
     logger.info("redis: configured — starting BullMQ workers");
     startPayoutWorker();
+    startCashoutWorker();
     startNotificationWorker();
     await startPledgeWorker().catch((err: unknown) =>
       logger.error({ err }, "pledge-worker: failed to start")
@@ -89,6 +91,8 @@ server.listen(port, async () => {
   startPoolMinimumsWorker();
   // Pledge default automation — marks 90-day unpaid PIF pledges as defaulted + applies trust hit
   startPledgeDefaultWorker();
+  // Cashout reconciliation — refunds stale pending/failed cashouts with no Stripe transfer
+  startCashoutReconciliation();
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────

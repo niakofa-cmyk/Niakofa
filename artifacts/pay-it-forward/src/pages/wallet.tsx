@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Wallet, TrendingUp, Heart, DollarSign, Gift, Clock, X, ArrowUpRight, ArrowDownLeft, Loader2, Calendar, CheckCircle, CreditCard, ExternalLink, Play } from "lucide-react";
+import { Wallet, TrendingUp, Heart, DollarSign, Gift, Clock, X, ArrowUpRight, ArrowDownLeft, Loader2, Calendar, CheckCircle, CreditCard, ExternalLink, Play, BanknoteIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAppContext } from "@/lib/AppContext";
@@ -109,6 +109,11 @@ export default function WalletScreen() {
   } | null>(null);
   const [stripeOnboarding, setStripeOnboarding] = useState(false);
 
+  // Cashout state
+  const [cashoutOpen, setCashoutOpen] = useState(false);
+  const [cashoutAmount, setCashoutAmount] = useState("");
+  const [cashoutLoading, setCashoutLoading] = useState(false);
+
   useEffect(() => {
     if (!currentUser?.is_helper || !userId) return;
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -117,6 +122,63 @@ export default function WalletScreen() {
       .then(setStripeStatus)
       .catch(() => setStripeStatus({ connected: false }));
   }, [userId, currentUser?.is_helper]);
+
+  const handleCashout = async () => {
+    const amt = parseFloat(cashoutAmount);
+    if (!currentUser || !amt || amt <= 0) {
+      toast({ title: "Enter a valid amount", variant: "destructive" });
+      return;
+    }
+    if (amt > wallet) {
+      toast({ title: "Amount exceeds your Goodwill Fund balance", variant: "destructive" });
+      return;
+    }
+    if (amt < 1) {
+      toast({ title: "Minimum cashout is $1.00", variant: "destructive" });
+      return;
+    }
+    setCashoutLoading(true);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const res = await fetch(`${base}/api/wallet/cashout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ amount: amt }),
+      });
+      const data = await res.json() as {
+        success?: boolean; transferId?: string; newBalance?: number;
+        error?: string; code?: string; warning?: string;
+      };
+      if (!res.ok) {
+        toast({
+          title: data.code === "payouts_not_enabled"
+            ? "Bank account not set up yet"
+            : data.code === "no_stripe_account"
+              ? "Connect your bank account first"
+              : "Cashout failed",
+          description: data.error ?? "Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (data.warning) {
+        toast({ title: "Transfer sent (balance sync pending)", description: data.warning });
+      } else {
+        toast({
+          title: `✅ ${amt.toFixed(2)} is on its way!`,
+          description: `Transfer ID: ${data.transferId ?? "—"}. Arrives in 1–3 business days.`,
+        });
+      }
+      setCashoutOpen(false);
+      setCashoutAmount("");
+      // Refresh transactions
+      queryClient.invalidateQueries({ queryKey: getGetUserTransactionsQueryKey(userId) });
+    } catch {
+      toast({ title: "Network error — please try again", variant: "destructive" });
+    } finally {
+      setCashoutLoading(false);
+    }
+  };
 
   const handleStripeOnboard = async () => {
     if (!currentUser) return;
@@ -353,6 +415,17 @@ export default function WalletScreen() {
               <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Goodwill</div>
             </div>
           </div>
+
+          {/* Cash Out button — only shown when helper has payouts_enabled */}
+          {currentUser?.is_helper && stripeStatus?.payoutsEnabled && wallet > 0 && (
+            <button
+              onClick={() => setCashoutOpen(true)}
+              className="w-full h-11 bg-green-500/10 border border-green-500/40 hover:border-green-500/70 rounded-2xl flex items-center justify-center gap-2 text-sm font-black text-green-400 transition-all active:scale-95"
+            >
+              <BanknoteIcon className="w-4 h-4" />
+              Cash Out Goodwill Fund
+            </button>
+          )}
         </div>
 
         {/* Community Badge */}
@@ -849,6 +922,95 @@ export default function WalletScreen() {
         onSchedule={handleSchedule}
         isScheduling={scheduleMutation.isPending}
       />
+
+      {/* Cash Out Drawer — real Stripe transfer from benevolence_wallet to bank */}
+      <AnimatePresence>
+        {cashoutOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 z-50 backdrop-blur-sm"
+              onClick={() => { setCashoutOpen(false); setCashoutAmount(""); }}
+            />
+            <motion.div
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 26, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl p-6 pb-safe space-y-4 max-h-[90dvh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <BanknoteIcon className="w-5 h-5 text-green-400" />
+                  <h3 className="font-black text-lg">Cash Out</h3>
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => { setCashoutOpen(false); setCashoutAmount(""); }} className="rounded-full">
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+
+              <div className="bg-green-500/10 border border-green-500/20 rounded-2xl p-4 space-y-1">
+                <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Available Balance</div>
+                <div className="text-3xl font-black text-green-400">${wallet.toFixed(2)}</div>
+                <div className="text-[10px] text-muted-foreground">Pay-it-forward, pool, and sponsor earnings</div>
+              </div>
+
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Enter how much you'd like to transfer to your connected bank account. Minimum $1.00. Stripe transfers typically arrive in 1–3 business days.
+              </p>
+
+              <div className="space-y-2">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="1"
+                  max={wallet}
+                  placeholder="Amount ($)"
+                  value={cashoutAmount}
+                  onChange={e => setCashoutAmount(e.target.value)}
+                  className="bg-background border-border text-base"
+                />
+                <div className="flex gap-2">
+                  {[5, 10, 25, 50].filter(v => v <= wallet).map(v => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setCashoutAmount(String(v))}
+                      className="flex-1 py-1.5 text-xs font-bold rounded-lg bg-muted hover:bg-primary/10 hover:text-primary border border-border transition-all"
+                    >
+                      ${v}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setCashoutAmount(wallet.toFixed(2))}
+                    className="flex-1 py-1.5 text-xs font-bold rounded-lg bg-muted hover:bg-primary/10 hover:text-primary border border-border transition-all"
+                  >
+                    All
+                  </button>
+                </div>
+              </div>
+
+              <Button
+                className="w-full h-12 font-black bg-green-500 hover:bg-green-600 text-white"
+                onClick={handleCashout}
+                disabled={cashoutLoading || !cashoutAmount || parseFloat(cashoutAmount) <= 0}
+              >
+                {cashoutLoading ? (
+                  <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Sending to bank…</span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <BanknoteIcon className="w-4 h-4" />
+                    Transfer ${cashoutAmount || "0.00"} to Bank
+                  </span>
+                )}
+              </Button>
+
+              <p className="text-[10px] text-muted-foreground text-center">
+                Secured by Stripe Connect · 5% platform fee retained
+              </p>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

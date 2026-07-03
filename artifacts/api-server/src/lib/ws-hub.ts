@@ -58,7 +58,10 @@ export type WsEventType =
   | "nia_memory_update"
   | "nia_typing"
   | "nia_status"
-  | "nia_cost_alert";
+  | "nia_cost_alert"
+  // Wallet cashout events — benevolence_wallet → Stripe transfer
+  | "wallet_cashout"
+  | "wallet_cashout_reversed";
 
 export interface WsEvent {
   type: WsEventType;

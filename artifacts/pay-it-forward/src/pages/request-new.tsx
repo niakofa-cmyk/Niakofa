@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minus, Camera, X, ShieldCheck, Building2, User } from "lucide-react";
+import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minus, Camera, X, ShieldCheck, Building2, User, Sparkles, Loader2 } from "lucide-react";
 import { isSensitiveCategory } from "@workspace/trust-tiers";
 import { Button } from "@/components/ui/button";
 import { authHeaders } from "@/lib/auth";
@@ -131,6 +131,8 @@ export default function NewRequestScreen() {
   const [accessibilityNeeds, setAccessibilityNeeds] = useState<string[]>([]);
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [niaAnalysis, setNiaAnalysis] = useState<string | null>(null);
+  const [niaAnalyzing, setNiaAnalyzing] = useState(false);
   const [pinLocation, setPinLocation] = useState<{ lat: number; lng: number } | null>(
     myLocation ? { lat: myLocation.lat, lng: myLocation.lng } : null
   );
@@ -240,6 +242,37 @@ export default function NewRequestScreen() {
       queryClient.invalidateQueries({ queryKey: getGetNearbyRequestsQueryKey({ lat: myLocation.lat, lng: myLocation.lng }) });
     }
     setLocation("/");
+  };
+
+  const handleNiaAnalyzeImage = async () => {
+    if (!photoDataUrl) return;
+    setNiaAnalyzing(true);
+    setNiaAnalysis(null);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const res = await fetch(`${base}/api/nia/analyze-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          imageBase64: photoDataUrl,
+          question: "Describe what you see and summarize what kind of help is needed in 1–2 sentences, so a nearby helper can quickly understand the task.",
+        }),
+      });
+      if (!res.ok) {
+        toast({ title: "Nia couldn't analyze the image — try again", variant: "destructive" });
+        return;
+      }
+      const data = await res.json() as { analysis?: string; error?: string };
+      if (data.analysis) {
+        setNiaAnalysis(data.analysis);
+      } else {
+        toast({ title: "No analysis returned", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not reach Nia — check your connection", variant: "destructive" });
+    } finally {
+      setNiaAnalyzing(false);
+    }
   };
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -648,15 +681,61 @@ export default function NewRequestScreen() {
                   Add a Photo <span className="ml-1 text-[10px] text-muted-foreground/60 normal-case font-normal tracking-normal">(optional — helps your helper)</span>
                 </div>
                 {photoDataUrl ? (
-                  <div className="relative rounded-xl overflow-hidden border border-border">
-                    <img src={photoDataUrl} alt="Request photo" className="w-full max-h-48 object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => setPhotoDataUrl(null)}
-                      className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-all"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                  <div className="space-y-2">
+                    <div className="relative rounded-xl overflow-hidden border border-border">
+                      <img src={photoDataUrl} alt="Request photo" className="w-full max-h-48 object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => { setPhotoDataUrl(null); setNiaAnalysis(null); }}
+                        className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-all"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    {/* Nia image analysis — "snap a photo, Nia describes it" */}
+                    {!niaAnalysis && (
+                      <button
+                        type="button"
+                        onClick={handleNiaAnalyzeImage}
+                        disabled={niaAnalyzing}
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded-xl bg-primary/10 border border-primary/30 hover:border-primary/60 text-primary text-xs font-bold transition-all active:scale-95"
+                      >
+                        {niaAnalyzing ? (
+                          <><Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" /> Nia is analyzing…</>
+                        ) : (
+                          <><Sparkles className="w-3.5 h-3.5 shrink-0" /> Let Nia describe this to helpers</>
+                        )}
+                      </button>
+                    )}
+                    {niaAnalysis && (
+                      <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-primary">
+                            <Sparkles className="w-3 h-3" /> Nia's Summary
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const cur = form.getValues("description") ?? "";
+                              form.setValue("description", cur ? `${cur}\n\n${niaAnalysis}` : niaAnalysis);
+                              setNiaAnalysis(null);
+                              toast({ title: "Nia's description added to details ✓" });
+                            }}
+                            className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-md hover:bg-primary/20 transition-all"
+                          >
+                            Add to details
+                          </button>
+                        </div>
+                        <p className="text-xs text-foreground/80 leading-relaxed">{niaAnalysis}</p>
+                        <button
+                          type="button"
+                          onClick={() => setNiaAnalysis(null)}
+                          className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <label className="flex flex-col items-center justify-center gap-2 w-full h-24 rounded-xl border-2 border-dashed border-border hover:border-primary/50 cursor-pointer transition-colors bg-card">

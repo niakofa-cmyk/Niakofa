@@ -8,10 +8,13 @@
  * Users still control fulfillment via the "Pay Now" button, but they get
  * a nudge when their target date arrives.
  */
-import { db, scheduledPaymentsTable } from "@workspace/db";
-import { eq, and, lte } from "drizzle-orm";
+import { db, scheduledPaymentsTable, walletCashoutsTable, usersTable, transactionsTable } from "@workspace/db";
+import { eq, and, lte, sql } from "drizzle-orm";
+import Stripe from "stripe";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "./logger";
+import { isAmbiguousStripeError } from "./stripe-errors";
+import { buildCashoutTransferParams, cashoutIdempotencyKey } from "./stripe-cashout";
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
@@ -272,5 +275,262 @@ export function startScheduledPaymentReminder(): () => void {
   return () => {
     clearInterval(interval);
     logger.info("scheduler: scheduled payment reminder worker stopped");
+  };
+}
+
+// ── Cashout Reconciliation Cron ───────────────────────────────────────────────
+// Runs every 10 minutes. Scans wallet_cashouts for stuck rows.
+//
+// CRITICAL INVARIANT: we NEVER auto-refund based solely on stripe_transfer_id
+// IS NULL. A NULL means "we didn't record the transfer ID", not "Stripe didn't
+// send the money". The server could crash between the Stripe API call succeeding
+// and the DB write recording the transfer ID.
+//
+// Instead, for every stale row we perform an authoritative Stripe probe:
+//   1. Attempt stripe.transfers.create with the SAME idempotency key (`cashout-${id}`).
+//      Stripe deduplicates by key and returns the original response:
+//        • Returns transfer object → Stripe DID process it → record + mark 'completed'.
+//        • Returns definitive error → Stripe definitively rejected → safe to refund.
+//        • Returns ambiguous error (timeout/connection) → mark 'reconciliation_required'.
+//   2. If stripe_account_id is missing (schema gap) → can't probe → mark 'reconciliation_required'.
+//
+// 'reconciliation_required' rows are never auto-refunded — they require operator review.
+
+const TEN_MINUTES_MS = 10 * 60 * 1000;
+const STALE_FAILED_HOURS = 24;   // 'failed' rows older than this get probed
+const STALE_PENDING_HOURS = 2;   // 'pending' rows older than this get probed
+
+async function reconcileOneCashoutRow(
+  row: typeof walletCashoutsTable.$inferSelect,
+  stripe: Stripe
+): Promise<void> {
+  const { id: cashout_id, user_id, amount, stripe_account_id, state } = row;
+  const amountCents = Math.round(amount * 100);
+
+  // Cannot probe without a destination — escalate for operator review
+  if (!stripe_account_id) {
+    logger.error(
+      { cashout_id, state },
+      "cashout-reconciliation: missing stripe_account_id — marking reconciliation_required"
+    );
+    await db
+      .update(walletCashoutsTable)
+      .set({ state: "reconciliation_required", notes: "Missing stripe_account_id — manual review required", updated_at: new Date() })
+      .where(sql`${walletCashoutsTable.id} = ${cashout_id} AND ${walletCashoutsTable.state} IN ('pending', 'failed')`);
+    return;
+  }
+
+  let transfer: Stripe.Transfer;
+  try {
+    // Re-issue with same idempotency key — Stripe returns the original transfer
+    // if one was created, or creates a new one if it never ran. Either way, if
+    // this call succeeds, money IS going to the helper.
+    transfer = await stripe.transfers.create(
+      buildCashoutTransferParams({
+        cashout_id,
+        user_id,
+        stripe_account_id,
+        amount_cents: amountCents,
+      }),
+      { idempotencyKey: cashoutIdempotencyKey(cashout_id) }
+    );
+  } catch (stripeErr: unknown) {
+    if (isAmbiguousStripeError(stripeErr)) {
+      // Network/timeout — cannot determine outcome. Do NOT refund.
+      logger.warn(
+        { cashout_id, stripeErr },
+        "cashout-reconciliation: ambiguous Stripe error during probe — marking reconciliation_required, NO auto-refund"
+      );
+      await db
+        .update(walletCashoutsTable)
+        .set({
+          state: "reconciliation_required",
+          notes: `Ambiguous Stripe probe: ${stripeErr instanceof Error ? stripeErr.message : String(stripeErr)}`,
+          updated_at: new Date(),
+        })
+        .where(sql`${walletCashoutsTable.id} = ${cashout_id} AND ${walletCashoutsTable.state} IN ('pending', 'failed')`);
+      return;
+    }
+
+    // Definitive Stripe rejection (bad destination, invalid account, etc.) — safe to refund.
+    logger.warn(
+      { cashout_id, stripeErr },
+      "cashout-reconciliation: Stripe definitively rejected — refunding wallet"
+    );
+    try {
+      await db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(walletCashoutsTable)
+          .set({
+            state: "permanently_failed",
+            notes: `Cron: Stripe definitively rejected — ${stripeErr instanceof Error ? stripeErr.message : String(stripeErr)}`,
+            updated_at: new Date(),
+          })
+          .where(
+            // State guard: only act on rows we expect; concurrent updates will
+            // produce 0 rows and skip the balance change.
+            sql`${walletCashoutsTable.id} = ${cashout_id}
+              AND ${walletCashoutsTable.state} IN ('pending', 'failed')
+              AND ${walletCashoutsTable.stripe_transfer_id} IS NULL`
+          )
+          .returning({ id: walletCashoutsTable.id });
+        if (!updated) return; // Another path already resolved this row
+
+        await tx
+          .update(usersTable)
+          .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${amount}` })
+          .where(eq(usersTable.id, user_id));
+
+        await tx.insert(transactionsTable).values({
+          user_id,
+          type: "goodwill" as const,
+          amount,
+          description: `Cashout refunded by reconciliation cron (Stripe definitively rejected)`,
+        });
+      });
+    } catch (refundErr) {
+      logger.error({ refundErr, cashout_id }, "cashout-reconciliation: refund DB write failed — MANUAL RECONCILIATION REQUIRED");
+    }
+    return;
+  }
+
+  // ── Stripe returned a transfer → money is in flight or already sent ─────────
+  // Record the transfer ID and mark completed. No balance change (wallet was
+  // already decremented in Phase 1).
+  logger.info(
+    { cashout_id, transfer_id: transfer.id },
+    "cashout-reconciliation: Stripe probe confirmed transfer — marking completed"
+  );
+  try {
+    await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(walletCashoutsTable)
+        .set({
+          state: "completed",
+          stripe_transfer_id: transfer.id,
+          notes: "Reconciled by cron — transfer confirmed via idempotency-key probe",
+          updated_at: new Date(),
+        })
+        .where(sql`${walletCashoutsTable.id} = ${cashout_id} AND ${walletCashoutsTable.state} IN ('pending', 'failed')`)
+        .returning({ id: walletCashoutsTable.id });
+      if (!updated) return;
+
+      // Write ledger entry for audit trail (balance was already decremented)
+      await tx.insert(transactionsTable).values({
+        user_id,
+        type: "payout_sent" as const,
+        amount: -amount,
+        description: `[Cron-reconciled] Goodwill Fund cashout via Stripe (${transfer.id})`,
+      });
+    });
+  } catch (dbErr) {
+    logger.error(
+      { dbErr, cashout_id, transfer_id: transfer.id },
+      "cashout-reconciliation: DB update failed after confirmed transfer — transfer DID go through; manual row fix needed"
+    );
+  }
+}
+
+async function processCashoutReconciliation(): Promise<void> {
+  const STRIPE_SECRET_KEY = process.env["STRIPE_SECRET_KEY"];
+  if (!STRIPE_SECRET_KEY) {
+    logger.debug("cashout-reconciliation: STRIPE_SECRET_KEY not configured — skipping run");
+    return;
+  }
+  const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion });
+
+  const now = new Date();
+
+  // ── 1. Stale 'failed' rows ──────────────────────────────────────────────────
+  const staleFailedCutoff = new Date(now.getTime() - STALE_FAILED_HOURS * 60 * 60 * 1000);
+  let staleFailed: (typeof walletCashoutsTable.$inferSelect)[] = [];
+  try {
+    staleFailed = await db
+      .select()
+      .from(walletCashoutsTable)
+      .where(
+        sql`${walletCashoutsTable.state} = 'failed'
+          AND ${walletCashoutsTable.created_at} < ${staleFailedCutoff}
+          AND ${walletCashoutsTable.stripe_transfer_id} IS NULL`
+      )
+      .limit(20);
+  } catch (err) {
+    logger.error({ err }, "cashout-reconciliation: query failed — skipping");
+    return;
+  }
+
+  for (const row of staleFailed) {
+    logger.warn(
+      { cashout_id: row.id, user_id: row.user_id, age_hours: STALE_FAILED_HOURS },
+      "cashout-reconciliation: stale failed row — probing Stripe"
+    );
+    await reconcileOneCashoutRow(row, stripe).catch((err: unknown) =>
+      logger.error({ err, cashout_id: row.id }, "cashout-reconciliation: reconcileOneCashoutRow threw unexpectedly")
+    );
+  }
+
+  // ── 2. Stale 'pending' rows ─────────────────────────────────────────────────
+  const stalePendingCutoff = new Date(now.getTime() - STALE_PENDING_HOURS * 60 * 60 * 1000);
+  let stalePending: (typeof walletCashoutsTable.$inferSelect)[] = [];
+  try {
+    stalePending = await db
+      .select()
+      .from(walletCashoutsTable)
+      .where(
+        sql`${walletCashoutsTable.state} = 'pending'
+          AND ${walletCashoutsTable.created_at} < ${stalePendingCutoff}
+          AND ${walletCashoutsTable.stripe_transfer_id} IS NULL`
+      )
+      .limit(20);
+  } catch (err) {
+    logger.error({ err }, "cashout-reconciliation: pending query failed — skipping");
+    return;
+  }
+
+  for (const row of stalePending) {
+    logger.warn(
+      { cashout_id: row.id, user_id: row.user_id, age_hours: STALE_PENDING_HOURS },
+      "cashout-reconciliation: stale pending row — probing Stripe"
+    );
+    await reconcileOneCashoutRow(row, stripe).catch((err: unknown) =>
+      logger.error({ err, cashout_id: row.id }, "cashout-reconciliation: reconcileOneCashoutRow threw unexpectedly")
+    );
+  }
+
+  // ── 3. Alert on 'reconciliation_required' rows ──────────────────────────────
+  // These are never auto-resolved. Log every run so operators can see them.
+  let reconRequired: (typeof walletCashoutsTable.$inferSelect)[] = [];
+  try {
+    reconRequired = await db
+      .select()
+      .from(walletCashoutsTable)
+      .where(sql`${walletCashoutsTable.state} = 'reconciliation_required'`)
+      .limit(50);
+  } catch { /* non-fatal */ }
+
+  if (reconRequired.length > 0) {
+    logger.warn(
+      { count: reconRequired.length, ids: reconRequired.map(r => r.id) },
+      "cashout-reconciliation: OPERATOR ACTION REQUIRED — rows in reconciliation_required state (ambiguous Stripe outcome — verify via Stripe dashboard before refunding)"
+    );
+  }
+}
+
+/** Start the cashout reconciliation cron. Runs every 10 minutes. Returns a cleanup function. */
+export function startCashoutReconciliation(): () => void {
+  processCashoutReconciliation().catch((err: unknown) =>
+    logger.error({ err }, "cashout-reconciliation: startup run failed")
+  );
+  const interval = setInterval(() => {
+    processCashoutReconciliation().catch((err: unknown) =>
+      logger.error({ err }, "cashout-reconciliation: scheduled run failed")
+    );
+  }, TEN_MINUTES_MS);
+
+  logger.info({ intervalMs: TEN_MINUTES_MS }, "cashout-reconciliation: cron started");
+
+  return () => {
+    clearInterval(interval);
+    logger.info("cashout-reconciliation: cron stopped");
   };
 }

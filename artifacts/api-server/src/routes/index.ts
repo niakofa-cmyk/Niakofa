@@ -23,6 +23,7 @@ import poolRouter from "./pool";
 import businessesRouter from "./businesses";
 import govSponsorsRouter from "./gov-sponsors";
 import backgroundChecksRouter from "./background-checks";
+import walletRouter from "./wallet";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use(poolRouter);
 router.use(businessesRouter);
 router.use(govSponsorsRouter);
 router.use(backgroundChecksRouter);
+router.use(walletRouter);
 
 export default router;

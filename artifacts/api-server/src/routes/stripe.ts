@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireAuth, requireApproved } from "../middlewares/auth";
 import { requireOwnership } from "../middlewares/authz";
 import Stripe from "stripe";
-import { db, stripeAccountsTable, paymentTransactionsTable, usersTable, requestsTable, transactionsTable, communityPoolLedgerTable } from "@workspace/db";
+import { db, stripeAccountsTable, paymentTransactionsTable, usersTable, requestsTable, transactionsTable, communityPoolLedgerTable, walletCashoutsTable } from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
 import { broadcast } from "../lib/ws-hub";
 import { sendPushToUser } from "./push";
@@ -237,6 +237,7 @@ router.post("/stripe/webhook", async (req, res) => {
       case "transfer.created": {
         const transfer = event.data.object as Stripe.Transfer;
         if (transfer.destination) {
+          // Sync paymentTransactionsTable for immediate-pay transfers
           await db
             .update(paymentTransactionsTable)
             .set({
@@ -245,6 +246,105 @@ router.post("/stripe/webhook", async (req, res) => {
               updated_at: new Date(),
             })
             .where(eq(paymentTransactionsTable.stripe_transfer_id, transfer.id));
+
+          // NOTE: wallet_cashouts state transitions are handled exclusively by
+          // the POST /wallet/cashout route (Phase 3) and cashout-worker.ts.
+          // We deliberately do NOT mutate wallet_cashouts here to avoid racing
+          // with those paths, which could cause duplicate ledger entries or
+          // missed wallet decrements. Only record the transfer_id for audit.
+          if (transfer.metadata?.["source"] === "benevolence_wallet" && transfer.metadata?.["cashout_id"]) {
+            await db
+              .update(walletCashoutsTable)
+              .set({ stripe_transfer_id: transfer.id, updated_at: new Date() })
+              .where(eq(walletCashoutsTable.id, parseInt(transfer.metadata["cashout_id"])));
+          }
+        }
+        break;
+      }
+
+      case "transfer.reversed": {
+        // A Stripe-side reversal (e.g. insufficient platform balance, fraud) —
+        // mark the cashout row as reversed and refund the helper's wallet.
+        // Guard: WHERE state='completed' makes this idempotent — duplicate
+        // webhook deliveries find state already 'reversed' → 0 rows → skip all
+        // downstream effects.
+        const transfer = event.data.object as Stripe.Transfer;
+        if (transfer.metadata?.["source"] === "benevolence_wallet" && transfer.metadata?.["cashout_id"]) {
+          const cashoutId = parseInt(transfer.metadata["cashout_id"]);
+          const amountDollars = transfer.amount_reversed / 100;
+
+          // user_id from metadata — fall back to DB lookup if missing or zero.
+          // Transfers created by the reconciliation cron (older versions) or cases
+          // where Stripe truncated metadata may omit user_id. Without it the wallet
+          // can never be restored on reversal.
+          let userId = parseInt(transfer.metadata["user_id"] ?? "0") || 0;
+          if (!userId && cashoutId) {
+            try {
+              const [cashoutRow] = await db
+                .select({ user_id: walletCashoutsTable.user_id })
+                .from(walletCashoutsTable)
+                .where(eq(walletCashoutsTable.id, cashoutId))
+                .limit(1);
+              userId = cashoutRow?.user_id ?? 0;
+            } catch (lookupErr) {
+              logger.error({ lookupErr, cashout_id: cashoutId }, "stripe webhook: transfer.reversed user_id lookup failed");
+            }
+          }
+
+          if (cashoutId && userId && amountDollars > 0) {
+            let stateTransitionSucceeded = false;
+
+            await db.transaction(async (tx) => {
+              // Idempotency guard: only apply if row is still in 'completed' state.
+              // Duplicate webhook deliveries will find 'reversed' → return 0 rows → skip.
+              const [updated] = await tx
+                .update(walletCashoutsTable)
+                .set({ state: "reversed", updated_at: new Date(), notes: "Reversed by Stripe" })
+                .where(and(
+                  eq(walletCashoutsTable.id, cashoutId),
+                  sql`${walletCashoutsTable.state} = 'completed'`
+                ))
+                .returning({ id: walletCashoutsTable.id });
+
+              if (!updated) {
+                // Already reversed or not in expected state — safe no-op
+                logger.info(
+                  { cashout_id: cashoutId, transfer_id: transfer.id },
+                  "stripe webhook: transfer.reversed — cashout already reversed or not completed, skipping"
+                );
+                return;
+              }
+
+              stateTransitionSucceeded = true;
+
+              // Refund the wallet only when the state transition succeeded
+              await tx
+                .update(usersTable)
+                .set({
+                  benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${amountDollars}`,
+                })
+                .where(eq(usersTable.id, userId));
+
+              await tx.insert(transactionsTable).values({
+                user_id: userId,
+                type: "goodwill" as const,
+                amount: amountDollars,
+                description: `Cashout reversed by Stripe — balance restored (transfer ${transfer.id})`,
+              });
+            });
+
+            if (stateTransitionSucceeded) {
+              broadcast({
+                type: "wallet_cashout_reversed",
+                payload: { user_id: userId, cashout_id: cashoutId, amount: amountDollars },
+              });
+
+              logger.warn(
+                { cashout_id: cashoutId, user_id: userId, transfer_id: transfer.id, amount: amountDollars },
+                "stripe webhook: cashout transfer reversed — wallet balance restored"
+              );
+            }
+          }
         }
         break;
       }

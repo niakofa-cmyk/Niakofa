@@ -526,3 +526,41 @@ Three privacy / sustainability features shipped and confirmed running clean.
 - Webhook body: Buffer.isBuffer check → JSON.parse(rawBuffer.toString("utf8")); timingSafeEqual with length guard.
 - GET /users: added background_check_status, background_check_completed_at, helper_status, helper_skills to select.
 - Pledge default worker: atomic conditional update + skip-on-no-rows guard.
+
+### Session: July 3, 2026 (continued) — Cashout system completion + Nia image analysis wiring
+
+**Three audit gaps resolved:**
+
+**Gap 1 — benevolence_wallet cashout dead end (fully complete):**
+- `POST /wallet/cashout` route (routes/wallet.ts): 3-phase atomic flow.
+  - Phase 1 (DB transaction): `SELECT...FOR UPDATE` row lock → validate balance + approved status → decrement wallet → insert `pending` cashout row.
+  - Phase 2 (outside tx): `stripe.transfers.create` with idempotency key `cashout-${id}`.
+  - Phase 3 (DB tx): state guard `WHERE state='pending'` → mark `completed` → ledger entry (no balance change, already decremented in Phase 1).
+- `GET /wallet/cashout/history` route: paginated cashout history with state labels.
+- `wallet.tsx`: Cash Out drawer — balance display, quick-amount chips ($25/$50/$100/custom), 3-state UI (idle → submitting → success/error), invalidates TanStack Query cache on success.
+
+**Gap 2 — cashout-worker.ts (complete):**
+- BullMQ retry worker (5 attempts: 5/10/20/40/80 min backoff).
+- On all retries: re-attempts Stripe transfer with same idempotency key (Stripe deduplicates).
+- On final failure: Stripe idempotency reconciliation first → if transfer absent, refund wallet + mark `permanently_failed`. If ambiguous error → mark `reconciliation_required` (no auto-refund).
+- Shared `isAmbiguousStripeError()` moved to `lib/stripe-errors.ts` (imported by both worker and scheduler).
+
+**Gap 3 — /analyze-image proxy wired (complete):**
+- `POST /api/nia/analyze-image` added to nia-proxy.ts: proxies to nia-service with INTERNAL_SECRET header.
+- Size guard: 6.8MB base64 (~5MB raw). Express global limit already 10mb.
+- `request-new.tsx`: "Let Nia describe it" button after photo capture → analysis banner → "Add to details" appends text to description field.
+
+**Cashout reconciliation cron (new):**
+- `processCashoutReconciliation()` + `startCashoutReconciliation()` in scheduler.ts (runs every 10 min).
+- For stale `pending` (>2h) and `failed` (>24h) rows with no `stripe_transfer_id`:
+  - Does NOT auto-refund based on IS NULL alone (server could crash between Stripe call succeeding and DB write).
+  - Performs authoritative Stripe probe: re-issue `stripe.transfers.create` with same idempotency key.
+  - Transfer returned → record + mark `completed` (no balance change).
+  - Definitive rejection → refund wallet + mark `permanently_failed`.
+  - Ambiguous error → mark `reconciliation_required` (operator review required).
+- `reconciliation_required` rows: logged every cron run, never auto-refunded.
+- Migration 0035: composite index `(state, created_at)` for cron performance + idempotent FK add via DO block.
+- Dev DB: all 38 migrations applied via `pnpm --filter @workspace/db run migrate`.
+
+**WS events added:**
+- `wallet_cashout` and `wallet_cashout_reversed` added to `WsEventType` in ws-hub.ts.

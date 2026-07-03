@@ -52,6 +52,7 @@ export const QUEUE = {
   PLEDGE_RECONCILIATION: "niakofa-pledge-reconciliation",
   REQUEST_CLEANUP:       "niakofa-request-cleanup",
   NOTIFICATIONS:         "niakofa-notifications",
+  WALLET_CASHOUTS:       "niakofa-wallet-cashouts",
 } as const;
 
 // ── Default job options ───────────────────────────────────────────────────────
@@ -75,6 +76,11 @@ export function createQueue(name: string, defaults?: JobsOptions): Queue | null 
 export const payoutQueue        = createQueue(QUEUE.PAYOUTS, {
   attempts: 5,
   backoff: { type: "exponential", delay: 5 * 60 * 1000 }, // 5min → 10min → 20min → 40min → 80min
+});
+
+export const cashoutQueue       = createQueue(QUEUE.WALLET_CASHOUTS, {
+  attempts: 5,
+  backoff: { type: "exponential", delay: 5 * 60 * 1000 }, // same schedule as payout retries
 });
 
 export const pledgeQueue        = createQueue(QUEUE.PLEDGE_RECONCILIATION);
@@ -104,6 +110,26 @@ export async function enqueuePayoutRetry(data: PayoutJobData): Promise<boolean> 
     jobId: `payout-${data.request_id}-${Date.now()}`,
   });
   logger.info({ request_id: data.request_id }, "payout retry enqueued");
+  return true;
+}
+
+// ── Convenience: enqueue a cashout retry ─────────────────────────────────────
+export interface CashoutJobData {
+  cashout_id:        number;
+  user_id:           number;
+  amount_cents:      number;
+  stripe_account_id: string;
+}
+
+export async function enqueueCashoutRetry(data: CashoutJobData): Promise<boolean> {
+  if (!cashoutQueue) {
+    logger.warn({ cashout_id: data.cashout_id }, "redis unavailable — cashout retry not queued");
+    return false;
+  }
+  await cashoutQueue.add("retry-cashout", data, {
+    jobId: `cashout-${data.cashout_id}-${Date.now()}`,
+  });
+  logger.info({ cashout_id: data.cashout_id }, "cashout retry enqueued");
   return true;
 }
 

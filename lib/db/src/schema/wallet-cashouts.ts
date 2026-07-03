@@ -12,7 +12,13 @@ export const walletCashoutsTable = pgTable("wallet_cashouts", {
   user_id: integer("user_id").notNull(),
   amount: real("amount").notNull(),
 
-  // pending -> completed | failed | reversed
+  // State machine (enforced by application logic, not DB constraint):
+  //   pending              → Phase 1 complete: wallet debited, Stripe not yet called
+  //   failed               → Stripe transfer failed; retry queued; wallet still debited
+  //   completed            → Stripe transfer confirmed; ledger entry written
+  //   reversed             → Stripe reversed the transfer; wallet balance restored
+  //   permanently_failed   → all retries exhausted, no Stripe transfer found; wallet refunded
+  //   reconciliation_required → ambiguous Stripe outcome (timeout); operator must verify
   state: text("state").notNull().default("pending"),
 
   stripe_account_id: text("stripe_account_id"),
