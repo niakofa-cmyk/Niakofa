@@ -656,4 +656,49 @@ router.patch("/admin/pool-settings", requireAuth, requireAdmin(), adminLimiter, 
   return res.json({ ok: true, updated: updates.map((u) => u.key) });
 });
 
+// ── GET /admin/pending-summary ────────────────────────────────────────────────
+// Real-time counts of items requiring admin action. Polled by AdminLiveBanner
+// every 30 s (and pushed over WS on change) so admins always know what needs
+// attention without manually navigating each tab.
+router.get("/admin/pending-summary", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const [accts, helpers, hardships, reports] = await Promise.all([
+    // Non-individual accounts awaiting approval (business, sponsor, organization)
+    db.select({ count: sql<number>`count(*)::int` })
+      .from(usersTable)
+      .where(and(
+        eq(usersTable.approval_status, "pending"),
+        sql`${usersTable.account_type} != 'individual'`,
+      )),
+    // Helper applications pending review
+    db.select({ count: sql<number>`count(*)::int` })
+      .from(usersTable)
+      .where(eq(usersTable.helper_status, "pending")),
+    // Hardship waiver requests — use raw SQL so this gracefully returns 0 if
+    // the column doesn't exist yet (avoids crashing the whole summary).
+    db.execute(sql`
+      SELECT COUNT(*)::int AS count FROM users
+      WHERE hardship_requested_at IS NOT NULL
+        AND (hardship_dismissed_at IS NULL)
+    `).catch(() => ({ rows: [{ count: 0 }] })),
+    // Unreviewed community reports (placeholder — returns 0 if table absent)
+    db.execute(sql`SELECT 0::int AS count`).catch(() => ({ rows: [{ count: 0 }] })),
+  ]);
+
+  const pending_accounts = accts[0]?.count ?? 0;
+  const pending_helper_apps = helpers[0]?.count ?? 0;
+  // drizzle.execute returns { rows: [...] } shape
+  const pending_hardships = Number((hardships as unknown as { rows: { count: number }[] }).rows?.[0]?.count ?? 0);
+  const pending_reports_count = Number((reports as unknown as { rows: { count: number }[] }).rows?.[0]?.count ?? 0);
+  const total_action_items = pending_accounts + pending_helper_apps + pending_hardships + pending_reports_count;
+
+  return res.json({
+    pending_accounts,
+    pending_helper_apps,
+    pending_hardships,
+    pending_reports: pending_reports_count,
+    total_action_items,
+    refreshed_at: new Date().toISOString(),
+  });
+});
+
 export default router;

@@ -92,13 +92,25 @@ router.post("/users/register", authLimiter, async (req, res) => {
     ? (body.account_type as string)
     : "individual";
 
+  // Password strength validated FIRST — before any DB queries or expensive
+  // bcrypt work — so invalid passwords are rejected cheaply. This prevents a
+  // bcrypt CPU-amplification attack where an abuser sends thousands of
+  // registrations with bad passwords, each triggering an expensive hash.
+  if (!password) {
+    return res.status(400).json({ error: "Password is required" });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+
   const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
   if (existing.length > 0) {
     // BUG-C01: Never return an existing user row to an arbitrary registrant — leaks PII.
     return res.status(409).json({ error: "An account with that email already exists. Please sign in instead." });
   }
 
-  const password_hash = password ? await bcrypt.hash(password, 12) : null;
+  // bcrypt hash is AFTER validation so we only pay the cost for valid attempts.
+  const password_hash = await bcrypt.hash(password, 12);
 
   // BUG-CRIT-01 (continued): approval_status defaults to "pending" at the DB
   // level for every row, and — until this fix — NOTHING in the codebase ever
@@ -125,12 +137,48 @@ router.post("/users/register", authLimiter, async (req, res) => {
     is_helper: is_helper ?? false,
     neighborhood: neighborhood ?? null,
     account_type,
-    organization_name: account_type === "organization" ? (body.organization_name ?? null) : null,
-    organization_description: account_type === "organization" ? (body.organization_description ?? null) : null,
+    organization_name: ["organization", "business", "sponsor"].includes(account_type) ? (body.organization_name ?? null) : null,
+    organization_description: ["organization", "business", "sponsor"].includes(account_type) ? (body.organization_description ?? null) : null,
     approval_status,
   }).returning();
   const token = signTokenById(user.id, user.token_version);
   const { password_hash: _ph, ...safeUser } = user;
+
+  // ── Post-registration side-effects (non-blocking) ─────────────────────────
+  // Notify admin in real-time when a non-individual account or helper
+  // application is created — they need to review/approve it.
+  const needsAdminReview = REQUIRES_REVIEW.includes(account_type) || !!(is_helper);
+  if (needsAdminReview) {
+    const eventType = is_helper ? "new_helper_application" : "new_account_pending";
+    broadcast({
+      type: eventType,
+      payload: {
+        user_id: user.id,
+        name: user.name,
+        email: user.email,
+        account_type,
+        is_helper: user.is_helper,
+        created_at: user.created_at,
+      },
+    });
+  }
+
+  // Send welcome email (non-blocking — failures must never break registration)
+  import("../lib/mailer.js").then(({ sendAlertEmail }) => {
+    const subject = approval_status === "pending"
+      ? `Welcome to Niakofa, ${user.name}! Your application is under review`
+      : `Welcome to Niakofa, ${user.name}! You're all set 💙`;
+    const pendingNote = approval_status === "pending"
+      ? `\n\nYour ${account_type} account is currently under admin review. We'll let you know once it's approved.`
+      : "";
+    sendAlertEmail({
+      to: user.email,
+      subject,
+      title: "Welcome to Niakofa",
+      body: `Hi ${user.name},\n\nThank you for joining Niakofa — a community where neighbors help neighbors and everyone pays it forward.\n\nYou can now sign in at any time to request help, offer your skills, and connect with your community.${pendingNote}\n\nWith community love,\nThe Niakofa Team`,
+    }).catch(() => {}); // swallow — mailer may not be configured in dev
+  }).catch(() => {});
+
   return res.status(201).json({ user: safeUser, token });
 });
 
@@ -806,6 +854,21 @@ router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
 
   if (!updated) return res.status(404).json({ error: "User not found" });
   const { password_hash, ...safe } = updated;
+
+  // Notify admin in real time that a new helper application needs review.
+  // (The register-time is_helper=true path also broadcasts this, but most
+  // users submit their full application through this PATCH after registration.)
+  broadcast({
+    type: "new_helper_application",
+    payload: {
+      user_id: updated.id,
+      name: updated.name,
+      email: updated.email,
+      helper_skills: updated.helper_skills,
+      created_at: new Date().toISOString(),
+    },
+  });
+
   return res.json(safe);
 });
 

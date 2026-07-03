@@ -18,6 +18,7 @@ import { getToken } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
 import { BackgroundCheckAdmin } from "@/components/BackgroundCheckAdmin";
 import { detectUnits } from "@/lib/locale-utils";
+import { AdminLiveBanner } from "@/components/AdminLiveBanner";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -4134,6 +4135,9 @@ export default function AdminScreen() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Admin Live Banner — real-time pending-review counts */}
+      <AdminLiveBanner onNavigate={(tab) => setActiveTab(tab as typeof activeTab)} />
 
       {/* Tab content */}
       <div className="flex-1 max-w-3xl mx-auto w-full px-4 pt-4 space-y-3">

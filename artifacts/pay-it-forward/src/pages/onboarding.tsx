@@ -60,20 +60,131 @@ const STEPS: Step[] = [
   },
 ];
 
-// US cities list for autocomplete suggestions
-const US_CITY_SUGGESTIONS = [
-  "Atlanta, GA", "Austin, TX", "Baltimore, MD", "Boston, MA",
-  "Charlotte, NC", "Chicago, IL", "Cleveland, OH", "Columbus, OH",
-  "Dallas, TX", "Denver, CO", "Detroit, MI", "El Paso, TX",
-  "Fort Worth, TX", "Houston, TX", "Indianapolis, IN", "Jacksonville, FL",
-  "Kansas City, MO", "Las Vegas, NV", "Los Angeles, CA", "Louisville, KY",
-  "Memphis, TN", "Miami, FL", "Milwaukee, WI", "Minneapolis, MN",
-  "Nashville, TN", "New Orleans, LA", "New York City, NY", "Oakland, CA",
-  "Oklahoma City, OK", "Omaha, NE", "Philadelphia, PA", "Phoenix, AZ",
-  "Portland, OR", "Raleigh, NC", "Sacramento, CA", "San Antonio, TX",
-  "San Diego, CA", "San Francisco, CA", "San Jose, CA", "Seattle, WA",
-  "St. Louis, MO", "Tampa, FL", "Tucson, AZ", "Tulsa, OK",
-  "Virginia Beach, VA", "Washington, DC", "Wichita, KS",
+// Global city suggestions — sorted by community priority (African cities, diaspora
+// hubs, and underserved US communities first, then broader global coverage).
+// This is a living list — add cities as Niakofa expands to new regions.
+const GLOBAL_CITY_SUGGESTIONS = [
+  // ── West Africa ───────────────────────────────────────────────────────────
+  "Lagos, Nigeria", "Abuja, Nigeria", "Kano, Nigeria", "Ibadan, Nigeria",
+  "Accra, Ghana", "Kumasi, Ghana", "Tamale, Ghana",
+  "Dakar, Senegal", "Abidjan, Côte d'Ivoire", "Yamoussoukro, Côte d'Ivoire",
+  "Conakry, Guinea", "Freetown, Sierra Leone", "Monrovia, Liberia",
+  "Banjul, Gambia", "Bissau, Guinea-Bissau", "Bamako, Mali",
+  "Ouagadougou, Burkina Faso", "Niamey, Niger", "Cotonou, Benin",
+  "Lomé, Togo", "Nouakchott, Mauritania", "Praia, Cape Verde",
+  // ── East Africa ───────────────────────────────────────────────────────────
+  "Nairobi, Kenya", "Mombasa, Kenya", "Kisumu, Kenya", "Nakuru, Kenya",
+  "Kampala, Uganda", "Gulu, Uganda", "Mbarara, Uganda",
+  "Dar es Salaam, Tanzania", "Arusha, Tanzania", "Dodoma, Tanzania",
+  "Addis Ababa, Ethiopia", "Gondar, Ethiopia", "Mekelle, Ethiopia",
+  "Kigali, Rwanda", "Gitega, Burundi", "Bujumbura, Burundi",
+  "Mogadishu, Somalia", "Hargeisa, Somaliland",
+  "Juba, South Sudan", "Khartoum, Sudan",
+  "Djibouti City, Djibouti", "Asmara, Eritrea",
+  // ── Central Africa ────────────────────────────────────────────────────────
+  "Kinshasa, DRC", "Lubumbashi, DRC", "Goma, DRC", "Bukavu, DRC",
+  "Brazzaville, Congo", "Douala, Cameroon", "Yaoundé, Cameroon",
+  "Bangui, Central African Republic", "N'Djamena, Chad",
+  "Libreville, Gabon", "Malabo, Equatorial Guinea",
+  // ── Southern Africa ───────────────────────────────────────────────────────
+  "Johannesburg, South Africa", "Cape Town, South Africa", "Durban, South Africa",
+  "Pretoria, South Africa", "Soweto, South Africa",
+  "Harare, Zimbabwe", "Bulawayo, Zimbabwe",
+  "Lusaka, Zambia", "Lilongwe, Malawi", "Blantyre, Malawi",
+  "Maputo, Mozambique", "Beira, Mozambique",
+  "Gaborone, Botswana", "Windhoek, Namibia",
+  "Mbabane, Eswatini", "Maseru, Lesotho",
+  "Antananarivo, Madagascar", "Port Louis, Mauritius",
+  // ── North Africa ──────────────────────────────────────────────────────────
+  "Cairo, Egypt", "Alexandria, Egypt", "Casablanca, Morocco",
+  "Marrakech, Morocco", "Tunis, Tunisia", "Algiers, Algeria",
+  "Tripoli, Libya", "Benghazi, Libya",
+  // ── Caribbean (diaspora priority) ─────────────────────────────────────────
+  "Port-au-Prince, Haiti", "Cap-Haïtien, Haiti", "Gonaïves, Haiti",
+  "Kingston, Jamaica", "Montego Bay, Jamaica", "Spanish Town, Jamaica",
+  "Santo Domingo, Dominican Republic", "Santiago, Dominican Republic",
+  "San Juan, Puerto Rico", "Bridgetown, Barbados",
+  "Port of Spain, Trinidad and Tobago", "Nassau, Bahamas",
+  "Georgetown, Guyana", "Paramaribo, Suriname",
+  "Havana, Cuba", "Santiago de Cuba, Cuba",
+  // ── Central America ───────────────────────────────────────────────────────
+  "Guatemala City, Guatemala", "San Salvador, El Salvador",
+  "Tegucigalpa, Honduras", "San Pedro Sula, Honduras",
+  "Managua, Nicaragua", "San José, Costa Rica", "Panama City, Panama",
+  // ── South America ─────────────────────────────────────────────────────────
+  "São Paulo, Brazil", "Rio de Janeiro, Brazil", "Salvador, Brazil",
+  "Fortaleza, Brazil", "Recife, Brazil", "Manaus, Brazil",
+  "Bogotá, Colombia", "Medellín, Colombia", "Cali, Colombia",
+  "Lima, Peru", "Caracas, Venezuela", "Quito, Ecuador",
+  "La Paz, Bolivia", "Asunción, Paraguay", "Montevideo, Uruguay",
+  "Buenos Aires, Argentina", "Santiago, Chile",
+  // ── US — underserved community hubs (Black, immigrant, low-income) ────────
+  "Atlanta, GA", "Decatur, GA", "Stone Mountain, GA",
+  "Fort Worth, TX", "Dallas, TX", "Houston, TX", "San Antonio, TX",
+  "Austin, TX", "El Paso, TX", "Laredo, TX",
+  "Chicago, IL", "Harvey, IL", "Robbins, IL",
+  "Detroit, MI", "Flint, MI", "Saginaw, MI",
+  "Memphis, TN", "Nashville, TN", "Knoxville, TN",
+  "New Orleans, LA", "Baton Rouge, LA", "Shreveport, LA",
+  "Baltimore, MD", "Prince George's County, MD",
+  "Washington, DC", "Anacostia, DC",
+  "Philadelphia, PA", "Camden, NJ", "Trenton, NJ",
+  "New York City, NY", "Bronx, NY", "Brooklyn, NY", "Harlem, NY",
+  "Newark, NJ", "Jersey City, NJ",
+  "Miami, FL", "Jacksonville, FL", "Tampa, FL", "Orlando, FL",
+  "Birmingham, AL", "Selma, AL", "Montgomery, AL",
+  "Jackson, MS", "Greenville, MS",
+  "Richmond, VA", "Norfolk, VA", "Newport News, VA",
+  "Charlotte, NC", "Durham, NC", "Raleigh, NC", "Greensboro, NC",
+  "Columbia, SC", "Charleston, SC",
+  "Little Rock, AR", "Pine Bluff, AR",
+  "Cleveland, OH", "Cincinnati, OH", "Columbus, OH",
+  "Indianapolis, IN", "Gary, IN",
+  "Kansas City, MO", "St. Louis, MO", "East St. Louis, IL",
+  "Minneapolis, MN", "Saint Paul, MN", "Brooklyn Center, MN",
+  "Milwaukee, WI", "Racine, WI",
+  "Denver, CO", "Aurora, CO",
+  "Phoenix, AZ", "Tucson, AZ", "Yuma, AZ",
+  "Los Angeles, CA", "Compton, CA", "Watts, CA", "South Central, CA",
+  "Oakland, CA", "Richmond, CA", "East Palo Alto, CA",
+  "San Francisco, CA", "San Jose, CA", "Sacramento, CA",
+  "San Diego, CA", "National City, CA",
+  "Fresno, CA", "Bakersfield, CA", "Stockton, CA",
+  "Portland, OR", "Salem, OR",
+  "Seattle, WA", "Tacoma, WA", "Spokane, WA",
+  "Albuquerque, NM", "Las Cruces, NM",
+  "Las Vegas, NV", "North Las Vegas, NV",
+  "Omaha, NE", "Lincoln, NE",
+  "Wichita, KS", "Topeka, KS",
+  "Louisville, KY", "Lexington, KY",
+  "Anchorage, AK", "Honolulu, HI",
+  // ── UK / Europe diaspora ─────────────────────────────────────────────────
+  "London, UK", "Birmingham, UK", "Manchester, UK", "Leeds, UK",
+  "Bristol, UK", "Leicester, UK", "Nottingham, UK",
+  "Paris, France", "Lyon, France", "Marseille, France",
+  "Brussels, Belgium", "Antwerp, Belgium",
+  "Amsterdam, Netherlands", "Rotterdam, Netherlands",
+  "Lisbon, Portugal", "Porto, Portugal",
+  "Madrid, Spain", "Barcelona, Spain",
+  "Rome, Italy", "Milan, Italy",
+  "Berlin, Germany", "Hamburg, Germany", "Frankfurt, Germany",
+  // ── Middle East / Arab World ──────────────────────────────────────────────
+  "Dubai, UAE", "Abu Dhabi, UAE", "Sharjah, UAE",
+  "Riyadh, Saudi Arabia", "Jeddah, Saudi Arabia",
+  "Amman, Jordan", "Beirut, Lebanon", "Baghdad, Iraq",
+  "Istanbul, Turkey", "Ankara, Turkey",
+  // ── Asia / South Asia ────────────────────────────────────────────────────
+  "Mumbai, India", "Delhi, India", "Chennai, India", "Kolkata, India",
+  "Karachi, Pakistan", "Lahore, Pakistan", "Islamabad, Pakistan",
+  "Dhaka, Bangladesh", "Kathmandu, Nepal",
+  "Colombo, Sri Lanka", "Manila, Philippines",
+  // ── Canada diaspora hubs ──────────────────────────────────────────────────
+  "Toronto, Canada", "Brampton, Canada", "Mississauga, Canada",
+  "Ottawa, Canada", "Montreal, Canada", "Calgary, Canada",
+  "Vancouver, Canada", "Edmonton, Canada",
+  // ── Oceania ───────────────────────────────────────────────────────────────
+  "Sydney, Australia", "Melbourne, Australia", "Brisbane, Australia",
+  "Auckland, New Zealand",
 ];
 
 export default function OnboardingScreen() {
@@ -96,9 +207,10 @@ export default function OnboardingScreen() {
   const handleCityInput = (val: string) => {
     setCityInput(val);
     if (val.length >= 2) {
-      const matches = US_CITY_SUGGESTIONS.filter(c =>
-        c.toLowerCase().startsWith(val.toLowerCase())
-      ).slice(0, 5);
+      const lower = val.toLowerCase();
+      const matches = GLOBAL_CITY_SUGGESTIONS.filter(c =>
+        c.toLowerCase().includes(lower)
+      ).slice(0, 7);
       setCitySuggestions(matches);
     } else {
       setCitySuggestions([]);

@@ -52,6 +52,10 @@ export type WsEventType =
   // Wallet cashout events
   | "wallet_cashout"
   | "wallet_cashout_reversed"
+  // Admin real-time notifications
+  | "new_account_pending"
+  | "new_helper_application"
+  | "admin_summary_update"
   | "connected"
   | "pong"
   | "ping";

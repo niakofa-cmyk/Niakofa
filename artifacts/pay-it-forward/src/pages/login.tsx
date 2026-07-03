@@ -305,6 +305,12 @@ export default function LoginScreen() {
   const [, setLocation] = useLocation();
   const { setCurrentUser } = useAppContext();
   const [mode, setMode] = useState<Mode>("login");
+  // Reset ToS acceptance when switching between login and register modes so
+  // a user can't accidentally carry over a stale checkbox state.
+  const handleModeSwitch = (m: Mode) => {
+    setMode(m);
+    if (m === "login") setTosAccepted(false);
+  };
 
   // ENH-003: show a clear message when we landed here because a 401
   // bounced the user out of an expired session, instead of leaving them
@@ -336,6 +342,24 @@ export default function LoginScreen() {
   const [vehicle, setVehicle] = useState("");
   const [bio, setBio] = useState("");
   const [socialLinks, setSocialLinks] = useState("");
+
+  // Terms of service acceptance (required for registration)
+  const [tosAccepted, setTosAccepted] = useState(false);
+
+  // Password strength computation
+  const getPasswordStrength = (pw: string): { level: 0 | 1 | 2 | 3 | 4; label: string; color: string } => {
+    if (!pw) return { level: 0, label: "", color: "" };
+    const hasUpper = /[A-Z]/.test(pw);
+    const hasLower = /[a-z]/.test(pw);
+    const hasNum = /[0-9]/.test(pw);
+    const hasSpecial = /[^A-Za-z0-9]/.test(pw);
+    const variety = [hasUpper, hasLower, hasNum, hasSpecial].filter(Boolean).length;
+    if (pw.length < 8) return { level: 1, label: "Too short", color: "bg-red-500" };
+    if (pw.length >= 8 && variety <= 1) return { level: 2, label: "Weak", color: "bg-orange-500" };
+    if (pw.length >= 8 && variety === 2) return { level: 3, label: "Fair", color: "bg-yellow-400" };
+    if (pw.length >= 10 && variety >= 3) return { level: 4, label: "Strong", color: "bg-green-500" };
+    return { level: 3, label: "Fair", color: "bg-yellow-400" };
+  };
 
   // Legacy account set-password flow
   const [pendingLegacyUser, setPendingLegacyUser] = useState<{ id: number; email: string; name: string } | null>(null);
@@ -386,6 +410,14 @@ export default function LoginScreen() {
     }
     if (mode === "register" && (accountType === "business" || accountType === "sponsor") && !organizationName.trim()) {
       toast({ title: `Please enter your ${accountType} name`, variant: "destructive" });
+      return;
+    }
+    if (mode === "register" && password.length < 8) {
+      toast({ title: "Password must be at least 8 characters", variant: "destructive" });
+      return;
+    }
+    if (mode === "register" && !tosAccepted) {
+      toast({ title: "Please accept the Terms of Service to continue", variant: "destructive" });
       return;
     }
     setLoading(true);
@@ -887,7 +919,7 @@ export default function LoginScreen() {
           {(["login", "register"] as Mode[]).map(m => (
             <button
               key={m}
-              onClick={() => setMode(m)}
+              onClick={() => handleModeSwitch(m)}
               className={`flex-1 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider transition-all ${
                 mode === m ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
               }`}
@@ -974,7 +1006,7 @@ export default function LoginScreen() {
             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type={showPass ? "text" : "password"}
-              placeholder="Password"
+              placeholder={mode === "register" ? "Password (min 8 characters)" : "Password"}
               value={password}
               onChange={e => setPassword(e.target.value)}
               onKeyDown={e => e.key === "Enter" && !isHelper && handleSubmit()}
@@ -985,6 +1017,43 @@ export default function LoginScreen() {
               {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+
+          {/* Password strength meter — only shown during registration */}
+          <AnimatePresence>
+            {mode === "register" && password.length > 0 && (() => {
+              const strength = getPasswordStrength(password);
+              return (
+                <motion.div
+                  key="strength"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="overflow-hidden -mt-1"
+                >
+                  <div className="flex gap-1 mb-1">
+                    {[1, 2, 3, 4].map(n => (
+                      <div
+                        key={n}
+                        className={`h-1 flex-1 rounded-full transition-all duration-300 ${
+                          n <= strength.level ? strength.color : "bg-muted"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  {strength.label && (
+                    <p className={`text-[11px] px-1 font-medium ${
+                      strength.level <= 2 ? "text-red-400" :
+                      strength.level === 3 ? "text-yellow-400" : "text-green-400"
+                    }`}>
+                      {strength.label} password
+                      {strength.level <= 2 && " — try adding numbers or symbols"}
+                    </p>
+                  )}
+                </motion.div>
+              );
+            })()}
+          </AnimatePresence>
 
           {mode === "login" && (
             <button
@@ -1055,6 +1124,44 @@ export default function LoginScreen() {
             </div>
           )}
 
+          {/* Terms of Service — required for all new accounts */}
+          <AnimatePresence>
+            {mode === "register" && (
+              <motion.div
+                key="tos"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <button
+                  type="button"
+                  onClick={() => setTosAccepted(p => !p)}
+                  className={`w-full flex items-start gap-3 p-3.5 rounded-2xl border-2 transition-all text-left ${
+                    tosAccepted ? "border-primary/50 bg-primary/5" : "border-border bg-card"
+                  }`}
+                >
+                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${
+                    tosAccepted ? "bg-primary border-primary" : "border-border bg-background"
+                  }`}>
+                    {tosAccepted && (
+                      <svg className="w-3 h-3 text-primary-foreground" viewBox="0 0 12 12" fill="none">
+                        <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    I agree to Niakofa's{" "}
+                    <span className="text-primary font-semibold">Terms of Service</span> and{" "}
+                    <span className="text-primary font-semibold">Privacy Policy</span>.
+                    {" "}I understand this is a community mutual-aid platform, not a professional service marketplace.
+                  </p>
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <Button
             className="w-full h-13 font-black text-base mt-2"
             onClick={handleSubmit}
@@ -1062,6 +1169,8 @@ export default function LoginScreen() {
               loading ||
               !email.trim() ||
               (mode === "register" && !name.trim()) ||
+              (mode === "register" && password.length < 8) ||
+              (mode === "register" && !tosAccepted) ||
               (mode === "register" && isHelper && selectedSkills.length === 0)
             }
           >
