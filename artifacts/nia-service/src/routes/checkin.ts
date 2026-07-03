@@ -104,7 +104,7 @@ Generate a warm, genuine 1-2 sentence check-in message. Ask how it went. Be brie
 No markdown, no emoji, just human warmth.`;
 
     const message = await anthropic.messages.create({
-      model: "claude-opus-4-6",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 150,
       system: NIA_SYSTEM_PROMPT,
       messages: [{ role: "user", content: userPrompt }],

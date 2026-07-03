@@ -473,7 +473,7 @@ export default function LoginScreen() {
         if (!res.ok && res.status === 403 && data.error_code === "LEGACY_PASSWORD_REQUIRED" && data.user_id && data.user_email && data.user_name) {
           setPendingLegacyUser({ id: data.user_id, email: data.user_email, name: data.user_name });
           // Fire the emailed verification code immediately — no extra tap needed
-          fetch("/api/users/request-password-reset", {
+          fetch("/api/users/forgot-password", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email: data.user_email }),

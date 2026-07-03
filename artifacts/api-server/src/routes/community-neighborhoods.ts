@@ -13,6 +13,7 @@ import { db, cityNeighborhoodsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
+import { adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -108,7 +109,7 @@ router.get("/community/neighborhoods", requireAuth, async (req, res) => {
 
 // ── Admin review ────────────────────────────────────────────────────────────
 
-router.get("/admin/city-neighborhoods", requireAuth, requireAdmin(), async (req, res) => {
+router.get("/admin/city-neighborhoods", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const verifiedParam = req.query.verified as string | undefined;
   const rows = verifiedParam !== undefined
     ? await db.select().from(cityNeighborhoodsTable).where(eq(cityNeighborhoodsTable.verified, verifiedParam === "true"))
@@ -116,7 +117,7 @@ router.get("/admin/city-neighborhoods", requireAuth, requireAdmin(), async (req,
   return res.json(rows);
 });
 
-router.patch("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), async (req, res) => {
+router.patch("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
@@ -139,7 +140,7 @@ router.patch("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), async
   return res.json(updated);
 });
 
-router.delete("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), async (req, res) => {
+router.delete("/admin/city-neighborhoods/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   await db.delete(cityNeighborhoodsTable).where(eq(cityNeighborhoodsTable.id, id));

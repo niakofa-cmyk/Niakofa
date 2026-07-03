@@ -3,6 +3,7 @@ import { db, civicResourcesTable, civicSuggestionsTable } from "@workspace/db";
 import { eq, and, or, isNull } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
+import { adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { cacheGet, cacheSet } from "../lib/cache";
 
@@ -220,7 +221,7 @@ router.post("/civic/suggestions", async (req, res) => {
 const validStatuses = ["pending", "approved", "dismissed"] as const;
 
 // GET /admin/civic-suggestions — review queue, mirrors region-crisis-resources pagination pattern
-router.get("/admin/civic-suggestions", requireAuth, requireAdmin(), async (req, res) => {
+router.get("/admin/civic-suggestions", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const statusParam = req.query.status as string | undefined;
   const limitRaw = parseInt(req.query.limit as string ?? "50", 10);
   const offsetRaw = parseInt(req.query.offset as string ?? "0", 10);
@@ -240,7 +241,7 @@ router.get("/admin/civic-suggestions", requireAuth, requireAdmin(), async (req, 
 });
 
 // PATCH /admin/civic-suggestions/:id — approve/dismiss a suggestion
-router.patch("/admin/civic-suggestions/:id", requireAuth, requireAdmin(), async (req, res) => {
+router.patch("/admin/civic-suggestions/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(req.params.id as string, 10);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 

@@ -207,7 +207,7 @@ router.post("/pool/contribute", requireAuth, paymentLimiter, async (req, res) =>
  * The Stripe webhook at /stripe/webhook already handles pool_contribution=true
  * and gracefully accepts a null user_id, so no webhook changes are needed.
  */
-router.post("/pool/donate", generalApiLimiter, async (req, res) => {
+router.post("/pool/donate", paymentLimiter, async (req, res) => {
   const amount = typeof req.body?.amount === "number" ? req.body.amount : NaN;
 
   if (!Number.isFinite(amount) || amount < 1 || amount > 10000) {

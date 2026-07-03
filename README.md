@@ -34,6 +34,24 @@ pnpm --filter @workspace/pay-it-forward run dev
 | `VAPID_PUBLIC_KEY` | Web Push VAPID public key |
 | `VAPID_PRIVATE_KEY` | Web Push VAPID private key |
 | `REDIS_URL` | *(Optional)* Redis for BullMQ background workers |
+| `INTERNAL_SECRET` | Shared secret for api-server ↔ nia-service internal calls (`x-internal-secret` header) |
+| `NIA_SERVICE_URL` | URL of the Nia AI service (default: `http://localhost:3001`) |
+| `ALLOWED_ORIGIN` | Comma-separated CORS allowed origins for production (e.g. `https://app.niakofa.com`) |
+| `SERVE_FRONTEND` | Set to `true` to have Express serve the React SPA (Railway production mode) |
+| `CHECKR_API_KEY` | Checkr background check API key |
+| `CHECKR_PACKAGE` | Checkr screening package slug (e.g. `tasker_standard`) |
+| `CHECKR_WEBHOOK_SECRET` | Checkr webhook HMAC signing secret |
+| `SMTP_HOST` | SMTP server hostname for transactional email |
+| `SMTP_PORT` | SMTP server port (default 587) |
+| `SMTP_USER` | SMTP username |
+| `SMTP_PASS` | SMTP password |
+| `TWILIO_ACCOUNT_SID` | Twilio Account SID for SMS multi-modal fallback |
+| `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
+| `TWILIO_PHONE_NUMBER` | Twilio sending phone number |
+| `STRIPE_IDENTITY_WEBHOOK_SECRET` | Stripe Identity webhook signing secret (separate from main webhook) |
+| `ANTHROPIC_API_KEY` | Anthropic API key for Nia AI (Claude models) |
+| `ADMIN_BOOTSTRAP_SECRET` | One-time secret to bootstrap the first admin account |
+| `NIA_DAILY_COST_THRESHOLD` | Anthropic daily spend alert threshold in USD (default: 10) |
 
 See `.env.railway.example` for the full reference.
 

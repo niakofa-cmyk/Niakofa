@@ -3,6 +3,7 @@ import { db, regionCrisisResourcesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
+import { adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -36,7 +37,7 @@ const NIA_SERVICE_URL = process.env["NIA_SERVICE_URL"] ?? "http://localhost:3001
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? process.env.SESSION_SECRET;
 
 // Admin: ask Nia to suggest crisis resources for a pending region
-router.post("/admin/region-crisis-resources/:id/suggest", requireAuth, requireAdmin(), async (req, res) => {
+router.post("/admin/region-crisis-resources/:id/suggest", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
@@ -115,7 +116,7 @@ router.get("/crisis/resources", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/admin/region-crisis-resources", requireAuth, requireAdmin(), async (req, res) => {
+router.get("/admin/region-crisis-resources", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   // BUG-4-H08: Add pagination — without LIMIT this endpoint was an unbounded
   // full-table scan. Default page size 50, max 200 to protect against DoS.
   const verifiedParam = req.query.verified as string | undefined;
@@ -132,7 +133,7 @@ router.get("/admin/region-crisis-resources", requireAuth, requireAdmin(), async 
   return res.json(rows.map((r: (typeof rows)[number]) => ({ ...r, resources: parseResources(r.resources) })));
 });
 
-router.patch("/admin/region-crisis-resources/:id", requireAuth, requireAdmin(), async (req, res) => {
+router.patch("/admin/region-crisis-resources/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
@@ -174,7 +175,7 @@ router.patch("/admin/region-crisis-resources/:id", requireAuth, requireAdmin(), 
   return res.json({ ...updated, resources: parseResources(updated.resources) });
 });
 
-router.delete("/admin/region-crisis-resources/:id", requireAuth, requireAdmin(), async (req, res) => {
+router.delete("/admin/region-crisis-resources/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
   await db.delete(regionCrisisResourcesTable).where(eq(regionCrisisResourcesTable.id, id));

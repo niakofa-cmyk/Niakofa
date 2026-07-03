@@ -1,4 +1,5 @@
-import { pgTable, serial, integer, real, text, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, real, text, timestamp, index, foreignKey } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
 
 // Wallet cash-out requests — the missing "last mile" for the benevolence_wallet.
 //
@@ -29,6 +30,8 @@ export const walletCashoutsTable = pgTable("wallet_cashouts", {
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   index("wallet_cashouts_user_id_idx").on(t.user_id),
+  index("wallet_cashouts_state_created_idx").on(t.state, t.created_at),
+  foreignKey({ columns: [t.user_id], foreignColumns: [usersTable.id], name: "wallet_cashouts_user_id_fk" }),
 ]);
 
 export type WalletCashout = typeof walletCashoutsTable.$inferSelect;

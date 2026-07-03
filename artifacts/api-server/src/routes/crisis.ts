@@ -3,6 +3,7 @@ import { db, crisisStateTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
+import { adminLimiter } from "../middlewares/rate-limit";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 
@@ -75,7 +76,7 @@ router.get("/crisis/status", async (_req, res) => {
   return res.json(crisisState);
 });
 
-router.post("/crisis/activate", requireAuth, requireAdmin(), async (req, res) => {
+router.post("/crisis/activate", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const { message, level, resources } = req.body as {
     message?: string;
     level?: string;
@@ -115,7 +116,7 @@ router.post("/crisis/activate", requireAuth, requireAdmin(), async (req, res) =>
   return res.json(crisisState);
 });
 
-router.post("/crisis/deactivate", requireAuth, requireAdmin(), async (req, res) => {
+router.post("/crisis/deactivate", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const crisisState = DEFAULT_STATE;
   try {
     await insertCrisisState(crisisState, req.authenticatedUserId!);

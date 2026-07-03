@@ -6,6 +6,7 @@ import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
+import { adminLimiter } from "../middlewares/rate-limit";
 
 const router = Router();
 
@@ -100,7 +101,7 @@ router.post("/reports", requireAuth, async (req, res) => {
 });
 
 // ── GET /reports — admin: list all reports with optional status filter ─────
-router.get("/reports", requireAuth, requireAdmin(), async (req, res) => {
+router.get("/reports", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const status = req.query.status as string | undefined;
   const validStatuses = ["pending", "under_review", "resolved_dismissed", "resolved_warned", "resolved_banned"];
   const validStatus = status && validStatuses.includes(status) ? status : undefined;
@@ -116,7 +117,7 @@ router.get("/reports", requireAuth, requireAdmin(), async (req, res) => {
 });
 
 // ── GET /reports/:id — admin: get a single report ─────────────────────────
-router.get("/reports/:id", requireAuth, requireAdmin(), async (req, res) => {
+router.get("/reports/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
@@ -154,7 +155,7 @@ router.get("/reports/:id", requireAuth, requireAdmin(), async (req, res) => {
 });
 
 // ── PATCH /reports/:id/review — admin: update report status + notes ───────
-router.patch("/reports/:id/review", requireAuth, requireAdmin(), async (req, res) => {
+router.patch("/reports/:id/review", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
@@ -195,7 +196,7 @@ router.patch("/reports/:id/review", requireAuth, requireAdmin(), async (req, res
 });
 
 // ── GET /users/:id/reports — admin: get all reports filed by or against a user
-router.get("/users/:id/reports", requireAuth, requireAdmin(), async (req, res) => {
+router.get("/users/:id/reports", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const userId = parseInt(String(req.params.id));
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
 

@@ -14,6 +14,7 @@ import { startNiaCheckinWorker } from "./workers/nia-checkin-worker";
 import { startNiaPushQueueWorker } from "./workers/nia-push-queue-worker";
 import { startPoolMinimumsWorker } from "./workers/pool-minimums-worker";
 import { processRecurringRequests } from "./routes/recurring";
+const RECURRING_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 import { db, usersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
@@ -93,6 +94,16 @@ server.listen(port, async () => {
   startPledgeDefaultWorker();
   // Cashout reconciliation — refunds stale pending/failed cashouts with no Stripe transfer
   startCashoutReconciliation();
+  // Recurring requests — fire any due recurring requests every hour
+  processRecurringRequests().catch((err: unknown) =>
+    logger.error({ err }, "recurring-worker: initial run failed — non-fatal")
+  );
+  setInterval(() => {
+    processRecurringRequests().catch((err: unknown) =>
+      logger.error({ err }, "recurring-worker: scheduled run failed")
+    );
+  }, RECURRING_INTERVAL_MS);
+  logger.info({ intervalMs: RECURRING_INTERVAL_MS }, "recurring-worker: started");
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
