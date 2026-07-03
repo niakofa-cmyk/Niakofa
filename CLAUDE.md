@@ -1107,3 +1107,44 @@ respective files; would have caused duplicate-import TS errors.**
 - Cancel route, pin-coordinate fuzzing, crisis message, pool-runway dashboard, business frontend UI, "posting as" switcher — all already correctly implemented from prior sessions. See "Verified as already built" note above.
 
 **Lesson: always grep the live code before assuming a reported bug is still present. Three of the seven items the user flagged were already fixed; implementing them again would have introduced regressions.**
+
+---
+
+## Session — ToS version gate, admin pool settings, Settings tab (July 3, 2026)
+
+**Read before this session:** second audit document (items: ToS version-check gate, minimum wage/guaranteed minimum admin controls, frontend build verification, operational readiness checklist, login flow verification). Verified each against live code before touching anything.
+
+**Changes shipped:**
+
+1. **`artifacts/api-server/src/routes/requests.ts` — ToS version-check gate:**
+   - Previous gate checked only `tos_waiver_accepted_at` (non-null = allowed). A user who accepted version "2025-01" could still post childcare/medical/etc. requests even after the ToS was updated to "2026-07".
+   - Now also checks `tos_waiver_version === CURRENT_TOS_VERSION` ("2026-07"). If the accepted version is stale, returns `{ requires_tos_waiver: true, tos_version_outdated: true, current_version, accepted_version }` — the frontend WaiverModal flow handles `requires_tos_waiver: true` and resurfaces the modal.
+   - `CURRENT_TOS_VERSION` is a server-side constant (not from the DB), co-located with the gate comment. Must be kept in sync with `WaiverModal.tsx CURRENT_TOS_VERSION` — both must be bumped together on any ToS update.
+
+2. **`artifacts/api-server/src/routes/admin-analytics.ts` — Community Pool settings API:**
+   - Added `GET /admin/pool-settings` — reads `pool_enabled`, `pool_minimum_hourly_rate`, `pool_guaranteed_minimum` from `system_settings` table. Defaults: enabled=true, hourly=$15, flat=$20.
+   - Added `PATCH /admin/pool-settings` — upserts any combination of those three settings. Input-validated (hourly must be 0<x≤999; flat must be 0≤x≤9999). Changes take effect immediately for all new pool payouts — no redeploy needed.
+   - Added private `upsertSetting(key, value)` helper following the existing `setNiaEnabled` pattern.
+   - Both routes require `requireAuth` + `requireAdmin()` + `adminLimiter`.
+
+3. **`artifacts/pay-it-forward/src/pages/admin.tsx` — Admin Settings tab:**
+   - Added `SlidersHorizontal`, `Save`, `Loader2` to lucide-react imports.
+   - Added `SettingsTab` component: pool on/off toggle, minimum hourly rate input, flat guaranteed minimum input, live-values summary, save button (disabled when no changes), ToS version informational card.
+   - Added "settings" to the `activeTab` type union and `TABS` array (icon: SlidersHorizontal).
+   - Added `{activeTab === "settings" && <SettingsTab />}` to tab content area.
+   - HMR confirmed compilation clean (no TypeScript errors).
+
+**Verified as correct (not changed) this session:**
+- Login flow (`artifacts/pay-it-forward/src/pages/login.tsx`) — already uses `POST /api/users/login` with correct auth path.
+- `tos_waiver_version` column — confirmed present in `lib/db/src/schema/users.ts:68`.
+- Both workflows running: Vite on port 5000, API server on port 8080.
+
+**Operational readiness notes (not code, action required before launch):**
+- DB migrations must be applied: `pnpm --filter db run migrate` — the dev database still has no tables (all workers log "relation does not exist" non-fatally).
+- Set Railway env vars: `SESSION_SECRET`, `INTERNAL_SECRET`, `CHECKR_WEBHOOK_SECRET`, `ADMIN_BOOTSTRAP_SECRET`, `DATABASE_URL`.
+- Run `/admin/bootstrap` (POST with `ADMIN_BOOTSTRAP_SECRET`) to create the first admin account before launch.
+- Decide on guaranteed minimum and hourly rate values, then set via admin Settings tab once migrations are applied.
+
+**Lessons:**
+- ToS version gates must check both presence (accepted) AND version string (current) — a gate on presence alone silently grandfather all existing users through every future ToS update.
+- When the ToS version changes, bump the constant in BOTH `WaiverModal.tsx` AND `requests.ts` — they are intentionally kept in two places (frontend display, server enforcement) to avoid a single point of failure.

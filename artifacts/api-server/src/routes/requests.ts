@@ -290,10 +290,17 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
   // Note: we use req.authenticatedUserId (not parsed.data.requester_id) so a
   // caller cannot spoof a different user's acceptance record.
   const WAIVER_GATED_CATEGORIES = ["childcare", "senior_care", "medical", "home_repair", "moving_labor"];
+  // Keep this in sync with WaiverModal.tsx CURRENT_TOS_VERSION.
+  // When the ToS is updated, bump both strings — old acceptances are then
+  // treated as stale and the gate forces re-acceptance.
+  const CURRENT_TOS_VERSION = "2026-07";
   if (WAIVER_GATED_CATEGORIES.includes(parsed.data.category)) {
     const authenticatedUserId = req.authenticatedUserId!;
     const [requesterRow] = await db
-      .select({ tos_waiver_accepted_at: usersTable.tos_waiver_accepted_at })
+      .select({
+        tos_waiver_accepted_at: usersTable.tos_waiver_accepted_at,
+        tos_waiver_version: usersTable.tos_waiver_version,
+      })
       .from(usersTable)
       .where(eq(usersTable.id, authenticatedUserId))
       .limit(1);
@@ -303,6 +310,21 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
           "You must accept the community liability waiver before posting a request in this category. " +
           "Please complete the waiver in the app before submitting.",
         requires_tos_waiver: true,
+        category: parsed.data.category,
+      });
+    }
+    // Version gate: if the user accepted an older version, block until they
+    // re-accept the current one. The frontend should detect requires_tos_waiver
+    // and surface the modal again.
+    if (requesterRow.tos_waiver_version !== CURRENT_TOS_VERSION) {
+      return res.status(400).json({
+        error:
+          "The community liability waiver has been updated. " +
+          "Please review and accept the current version before continuing.",
+        requires_tos_waiver: true,
+        tos_version_outdated: true,
+        current_version: CURRENT_TOS_VERSION,
+        accepted_version: requesterRow.tos_waiver_version ?? null,
         category: parsed.data.category,
       });
     }

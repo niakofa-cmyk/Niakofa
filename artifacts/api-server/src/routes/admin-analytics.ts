@@ -581,4 +581,79 @@ router.post("/admin/bootstrap", authLimiter, async (req, res) => {
   return res.json({ ok: true, user_id: updated.id, email: updated.email });
 });
 
+// ── Community Pool Settings ────────────────────────────────────────────────
+// GET /admin/pool-settings — read current pool config (enabled flag + wage floors).
+// PATCH /admin/pool-settings — update one or more settings atomically.
+//
+// These three keys drive every payout the pool makes. Putting them behind
+// requireAdmin() means the app can change live values without a redeploy.
+
+async function upsertSetting(key: string, value: string): Promise<void> {
+  await db
+    .insert(systemSettingsTable)
+    .values({ key, value })
+    .onConflictDoUpdate({
+      target: systemSettingsTable.key,
+      set: { value, updated_at: new Date() },
+    });
+}
+
+router.get("/admin/pool-settings", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  try {
+    const rows = await db
+      .select({ key: systemSettingsTable.key, value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(
+        sql`${systemSettingsTable.key} IN ('pool_enabled','pool_minimum_hourly_rate','pool_guaranteed_minimum')`
+      );
+
+    const map: Record<string, string> = {};
+    for (const r of rows) map[r.key] = r.value;
+
+    return res.json({
+      pool_enabled: map["pool_enabled"] !== "false",
+      pool_minimum_hourly_rate: parseFloat(map["pool_minimum_hourly_rate"] ?? "15") || 15,
+      pool_guaranteed_minimum: parseFloat(map["pool_guaranteed_minimum"] ?? "20") || 20,
+    });
+  } catch (err) {
+    logger.error({ err }, "admin: failed to read pool settings");
+    return res.status(500).json({ error: "Failed to load pool settings" });
+  }
+});
+
+router.patch("/admin/pool-settings", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const body = req.body as {
+    pool_enabled?: boolean;
+    pool_minimum_hourly_rate?: number;
+    pool_guaranteed_minimum?: number;
+  };
+
+  const updates: Array<{ key: string; value: string }> = [];
+
+  if (typeof body.pool_enabled === "boolean") {
+    updates.push({ key: "pool_enabled", value: body.pool_enabled ? "true" : "false" });
+  }
+  if (typeof body.pool_minimum_hourly_rate === "number") {
+    if (!Number.isFinite(body.pool_minimum_hourly_rate) || body.pool_minimum_hourly_rate <= 0 || body.pool_minimum_hourly_rate > 999) {
+      return res.status(400).json({ error: "pool_minimum_hourly_rate must be a positive number ≤ 999" });
+    }
+    updates.push({ key: "pool_minimum_hourly_rate", value: String(body.pool_minimum_hourly_rate) });
+  }
+  if (typeof body.pool_guaranteed_minimum === "number") {
+    if (!Number.isFinite(body.pool_guaranteed_minimum) || body.pool_guaranteed_minimum < 0 || body.pool_guaranteed_minimum > 9999) {
+      return res.status(400).json({ error: "pool_guaranteed_minimum must be ≥ 0 and ≤ 9999" });
+    }
+    updates.push({ key: "pool_guaranteed_minimum", value: String(body.pool_guaranteed_minimum) });
+  }
+
+  if (updates.length === 0) {
+    return res.status(400).json({ error: "No valid fields provided. Send at least one of: pool_enabled, pool_minimum_hourly_rate, pool_guaranteed_minimum" });
+  }
+
+  await Promise.all(updates.map(({ key, value }) => upsertSetting(key, value)));
+
+  logger.info({ updates, admin: req.authenticatedUserId }, "admin: pool settings updated");
+  return res.json({ ok: true, updated: updates.map((u) => u.key) });
+});
+
 export default router;

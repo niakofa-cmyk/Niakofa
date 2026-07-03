@@ -6,7 +6,8 @@ import {
   Users, Search, Ban, AlertTriangle, Star, Bot, Power, Timer,
   BarChart2, TrendingUp, Activity, Zap, MessageSquare, Package,
   ChevronDown, ChevronUp, CheckSquare, Square, HandHeart, DollarSign,
-  LineChart, FileText, Gavel, Sparkles, RotateCcw, Landmark, Building2
+  LineChart, FileText, Gavel, Sparkles, RotateCcw, Landmark, Building2,
+  SlidersHorizontal, Save, Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -1936,6 +1937,219 @@ function OrgsTab({ authed }: { authed: boolean }) {
   );
 }
 
+// ── Settings Tab — Community Pool wage floors and feature toggles ─────────────
+function SettingsTab() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [settings, setSettings] = useState<{
+    pool_enabled: boolean;
+    pool_minimum_hourly_rate: number;
+    pool_guaranteed_minimum: number;
+  } | null>(null);
+
+  const [form, setForm] = useState({
+    pool_enabled: true,
+    pool_minimum_hourly_rate: "15",
+    pool_guaranteed_minimum: "20",
+  });
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/admin/pool-settings", {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        if (!res.ok) throw new Error("Failed to load");
+        const data = await res.json() as typeof settings;
+        setSettings(data);
+        if (data) {
+          setForm({
+            pool_enabled: data.pool_enabled,
+            pool_minimum_hourly_rate: String(data.pool_minimum_hourly_rate),
+            pool_guaranteed_minimum: String(data.pool_guaranteed_minimum),
+          });
+        }
+      } catch {
+        toast({ title: "Failed to load pool settings", variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleSave = async () => {
+    const hourlyRate = parseFloat(form.pool_minimum_hourly_rate);
+    const flatMin = parseFloat(form.pool_guaranteed_minimum);
+    if (!Number.isFinite(hourlyRate) || hourlyRate <= 0) {
+      toast({ title: "Invalid hourly rate", description: "Must be a positive number.", variant: "destructive" });
+      return;
+    }
+    if (!Number.isFinite(flatMin) || flatMin < 0) {
+      toast({ title: "Invalid flat minimum", description: "Must be 0 or greater.", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/pool-settings", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({
+          pool_enabled: form.pool_enabled,
+          pool_minimum_hourly_rate: hourlyRate,
+          pool_guaranteed_minimum: flatMin,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json() as { error?: string };
+        throw new Error(err.error ?? "Failed to save");
+      }
+      setSettings({ pool_enabled: form.pool_enabled, pool_minimum_hourly_rate: hourlyRate, pool_guaranteed_minimum: flatMin });
+      toast({ title: "Pool settings saved", description: "Changes take effect immediately for all new payouts." });
+    } catch (err) {
+      toast({ title: "Save failed", description: String(err), variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const changed =
+    form.pool_enabled !== (settings?.pool_enabled ?? true) ||
+    parseFloat(form.pool_minimum_hourly_rate) !== (settings?.pool_minimum_hourly_rate ?? 15) ||
+    parseFloat(form.pool_guaranteed_minimum) !== (settings?.pool_guaranteed_minimum ?? 20);
+
+  return (
+    <div className="space-y-6 pb-8">
+      <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1">Community Pool Settings</div>
+
+      {/* Pool on/off toggle */}
+      <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-bold text-sm">Community Pool</div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              When disabled, the pool will not front payments or pay guaranteed minimums.
+            </div>
+          </div>
+          <button
+            onClick={() => setForm((f) => ({ ...f, pool_enabled: !f.pool_enabled }))}
+            className={`relative w-11 h-6 rounded-full transition-colors ${form.pool_enabled ? "bg-primary" : "bg-muted"}`}
+            style={{ touchAction: "manipulation" }}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${form.pool_enabled ? "translate-x-5" : "translate-x-0"}`}
+            />
+          </button>
+        </div>
+        <div className={`text-xs font-bold text-center py-1.5 rounded-xl ${form.pool_enabled ? "bg-green-500/10 text-green-400" : "bg-destructive/10 text-destructive"}`}>
+          {form.pool_enabled ? "Pool is ACTIVE — helpers will be paid" : "Pool is PAUSED — no payouts will be issued"}
+        </div>
+      </div>
+
+      {/* Wage floor settings */}
+      <div className="bg-card border border-border rounded-2xl p-5 space-y-5">
+        <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Helper Wage Floors</div>
+
+        <div className="space-y-1.5">
+          <label className="text-sm font-bold">Minimum Hourly Rate</label>
+          <p className="text-xs text-muted-foreground">
+            Used to compute the guaranteed minimum when a request has an estimated duration
+            (guaranteed = max(flat minimum, hours × hourly rate)).
+          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-muted-foreground font-bold">$</span>
+            <input
+              type="number"
+              min="1"
+              max="999"
+              step="0.25"
+              value={form.pool_minimum_hourly_rate}
+              onChange={(e) => setForm((f) => ({ ...f, pool_minimum_hourly_rate: e.target.value }))}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <span className="text-muted-foreground text-sm">/ hr</span>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-sm font-bold">Flat Guaranteed Minimum</label>
+          <p className="text-xs text-muted-foreground">
+            Fallback floor when no hours estimate exists. Also used as the minimum when
+            the hourly calculation is lower than this value.
+          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-muted-foreground font-bold">$</span>
+            <input
+              type="number"
+              min="0"
+              max="9999"
+              step="1"
+              value={form.pool_guaranteed_minimum}
+              onChange={(e) => setForm((f) => ({ ...f, pool_guaranteed_minimum: e.target.value }))}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <span className="text-muted-foreground text-sm">flat</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Current live values (from last save) */}
+      {settings && (
+        <div className="bg-muted/40 border border-border rounded-2xl p-4 space-y-2">
+          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground mb-2">Current Live Values</div>
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Pool status</span>
+            <span className={`font-bold ${settings.pool_enabled ? "text-green-400" : "text-destructive"}`}>
+              {settings.pool_enabled ? "Active" : "Paused"}
+            </span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Hourly rate</span>
+            <span className="font-bold">${settings.pool_minimum_hourly_rate.toFixed(2)}/hr</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Flat minimum</span>
+            <span className="font-bold">${settings.pool_guaranteed_minimum.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={handleSave}
+        disabled={saving || !changed}
+        className="w-full py-3.5 rounded-2xl font-black text-sm uppercase tracking-wider bg-primary text-primary-foreground flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed active:opacity-80 transition-opacity"
+        style={{ touchAction: "manipulation" }}
+      >
+        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+        {saving ? "Saving…" : changed ? "Save Changes" : "No Changes"}
+      </button>
+
+      {/* ToS version info (informational — no editable setting) */}
+      <div className="bg-card border border-border rounded-2xl p-5 space-y-2">
+        <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">ToS Version Gate</div>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Current enforced version: <span className="font-bold text-foreground">2026-07</span>. Users who accepted an older version are blocked from
+          posting waiver-gated requests until they re-accept. To update the version, change{" "}
+          <code className="bg-muted px-1 py-0.5 rounded text-[10px]">CURRENT_TOS_VERSION</code> in both{" "}
+          <code className="bg-muted px-1 py-0.5 rounded text-[10px]">WaiverModal.tsx</code> and{" "}
+          <code className="bg-muted px-1 py-0.5 rounded text-[10px]">requests.ts</code>.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Admin Screen ─────────────────────────────────────────────────────────
 export default function AdminScreen() {
   const [authed, setAuthed] = useState(false);
@@ -1950,7 +2164,7 @@ export default function AdminScreen() {
   }, [currentUser?.is_admin]);
 
   const [, setLocation] = useLocation();
-  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics" | "orgs">("reports");
+  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics" | "orgs" | "settings">("reports");
 
   // ── Session timer ─────────────────────────────────────────────────────────
   const [sessionSecondsLeft, setSessionSecondsLeft] = useState(SESSION_DURATION_MS / 1000);
@@ -2102,6 +2316,7 @@ export default function AdminScreen() {
     { key: "audit",     label: "Audit",     icon: FileText },
     { key: "nia",       label: "Nia AI",    icon: Bot },
     { key: "analytics", label: "Stats",     icon: BarChart2 },
+    { key: "settings",  label: "Settings",  icon: SlidersHorizontal },
   ] as const;
 
   return (
@@ -2178,6 +2393,7 @@ export default function AdminScreen() {
         )}
         {activeTab === "users"     && <UsersTab />}
         {activeTab === "reports"   && <ReportsTab authed={authed} />}
+        {activeTab === "settings"  && <SettingsTab />}
       </div>
 
       {/* ── Bottom tab bar (mobile-native) ───────────────────────────────── */}
