@@ -84,6 +84,45 @@ router.get("/helpers/online", requireAuth, async (req, res) => {
   return res.json(result);
 });
 
+// GET /helpers/:id — public helper profile (safe fields only; no PII)
+// Used by request pages, recurring request cards, and the donor/thank-you flow
+// to show who helped. Returns 404 when the user isn't a helper (helper_status!=approved).
+router.get("/helpers/:id", requireAuth, async (req, res) => {
+  const helperId = parseInt(req.params.id as string);
+  if (isNaN(helperId)) return res.status(400).json({ error: "Invalid helper id" });
+
+  const [helper] = await db
+    .select({
+      id: usersTable.id,
+      name: usersTable.name,
+      avatar_url: usersTable.avatar_url,
+      helper_bio: usersTable.helper_bio,
+      helper_skills: usersTable.helper_skills,
+      trust_score: usersTable.trust_score,
+      help_count: usersTable.help_count,
+      helper_mode_active: usersTable.helper_mode_active,
+      helper_status: usersTable.helper_status,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.id, helperId))
+    .limit(1);
+
+  if (!helper || helper.helper_status !== "approved") {
+    return res.status(404).json({ error: "Helper not found" });
+  }
+
+  return res.json({
+    id: helper.id,
+    name: helper.name,
+    avatar_url: helper.avatar_url,
+    helper_bio: helper.helper_bio ?? null,
+    helper_skills: helper.helper_skills ?? [],
+    trust_score: helper.trust_score ?? 0,
+    help_count: helper.help_count ?? 0,
+    is_online: helper.helper_mode_active,
+  });
+});
+
 // Auto-assign nearest available helper to a request
 // NOTE: despite the name, this endpoint only SUGGESTS the nearest helper —
 // it never writes to the database. There is no actual auto-assignment

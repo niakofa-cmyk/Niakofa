@@ -29,6 +29,16 @@ if (!rawPort) throw new Error("PORT environment variable is required but was not
 const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) throw new Error(`Invalid PORT value: "${rawPort}"`);
 
+// ── Critical secrets guard ─────────────────────────────────────────────────
+// Fail fast at startup rather than serving auth-broken requests.
+const SESSION_SECRET = process.env["SESSION_SECRET"];
+if (!SESSION_SECRET || SESSION_SECRET.length < 32) {
+  throw new Error(
+    "SESSION_SECRET must be set to a random string of at least 32 characters. " +
+    "All authenticated requests will fail without it. Set this in Railway Variables."
+  );
+}
+
 const server = http.createServer(app);
 initWebSocketServer(server);
 
@@ -143,6 +153,15 @@ const shutdown = async (signal: string) => {
   stopHeartbeat();
   server.close(async () => {
     await closeRedis();
+    // Drain the Postgres connection pool cleanly so Railway doesn't accumulate
+    // dangling connections across rolling restarts.
+    try {
+      const { pool } = await import("@workspace/db");
+      await pool.end();
+      logger.info("shutdown: DB pool drained");
+    } catch (err) {
+      logger.error({ err }, "shutdown: DB pool drain failed — forcing exit anyway");
+    }
     logger.info("shutdown: complete");
     process.exit(0);
   });

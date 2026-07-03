@@ -118,6 +118,15 @@ function getClientIp(req: IncomingMessage): string {
 let wss: WebSocketServer | null = null;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
+// Build the allowlist once at startup from ALLOWED_ORIGIN.
+// In dev (no env var) all origins are permitted — Railway always sets this in prod.
+function buildWsOriginAllowlist(): Set<string> | null {
+  const raw = process.env["ALLOWED_ORIGIN"];
+  if (!raw) return null; // open (dev)
+  return new Set(raw.split(",").map(s => s.trim().replace(/\/$/, "")));
+}
+const WS_ORIGIN_ALLOWLIST = buildWsOriginAllowlist();
+
 export function initWebSocketServer(server: import("http").Server): WebSocketServer {
   wss = new WebSocketServer({ server, path: "/ws" });
 
@@ -136,6 +145,16 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
 
   wss.on("connection", (socket: WebSocket, req: IncomingMessage) => {
     const ip = getClientIp(req);
+
+    // ── Origin check (production only) ─────────────────────────────────────────
+    if (WS_ORIGIN_ALLOWLIST) {
+      const origin = (req.headers["origin"] ?? "").replace(/\/$/, "");
+      if (!WS_ORIGIN_ALLOWLIST.has(origin)) {
+        logger.warn({ ip, origin }, "WS: rejected — origin not in ALLOWED_ORIGIN");
+        socket.close(1008, "Origin not allowed");
+        return;
+      }
+    }
 
     // ── Per-IP connection limit ───────────────────────────────────────────────
     const currentCount = ipConnectionCount.get(ip) ?? 0;
