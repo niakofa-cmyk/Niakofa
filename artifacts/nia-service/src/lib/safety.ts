@@ -13,28 +13,35 @@
  */
 
 // ═════════════════════════════════════════════════════════════════════════════
-// CRISIS PATTERNS — Bilingual (English + Spanish)
+// CRISIS PATTERNS — Multilingual (English, Spanish, Swahili, Zulu, Twi,
+//                                 Yoruba, Hausa, Amharic, Somali, Pidgin, Luganda)
 // ═════════════════════════════════════════════════════════════════════════════
 //
-// CRITICAL: This file MUST detect crisis language in BOTH English and Spanish.
-// Niakofa serves bilingual communities (i18next en/es, voice_language field).
-// A Spanish-speaking user disclosing suicidal ideation, abuse, overdose, etc.
-// MUST trigger the same escalation as an English speaker. False negatives here
-// are unacceptable — they mean someone in crisis never receives 988/211/SAMHSA.
+// CRITICAL: This file MUST detect crisis language in ALL languages Nia speaks.
+// culturalGreetings.ts supports en, sw (Swahili), zu (Zulu), tw (Akan/Twi),
+// yo (Yoruba), ha (Hausa), am (Amharic), so (Somali), pcm (Nigerian Pidgin),
+// lg (Luganda). Crisis detection must match Nia's full language roster.
 //
-// Pattern categories: suicidal ideation, self-harm, overdose, abuse/violence,
-// trafficking, homelessness, hunger, medical emergency, child safety,
-// hopelessness, LGBTQ+ crisis, veteran crisis, addiction emergency, grief.
+// A user writing "Nataka kufa" (Swahili for "I want to die") or "Mo fẹ́ kú"
+// (Yoruba) is in exactly the same crisis as an English speaker — and MUST
+// receive the same immediate 988/211 escalation. Nia's identity centers the
+// African diaspora; her safety floor must too.
 //
-// Each category has English patterns first, then Spanish equivalents.
-// Spanish patterns use common regional variants (Mexico, Central America,
-// Caribbean, South Texas) — not just formal Castilian.
+// Pattern structure:
+//   1. English patterns first
+//   2. Spanish immediately after (South Texas bilingual community)
+//   3. African & diaspora languages (Swahili, Zulu, Twi, Yoruba, Hausa,
+//      Amharic, Somali, Nigerian Pidgin, Luganda) — added 2026-07
+//
+// NEVER LOWER THE FLOOR: Do not remove patterns without replacing them with
+// something more precise. Every language track has the same non-negotiable
+// coverage requirement.
 //
 // When adding new patterns:
 //   1. Add English pattern to the appropriate category
 //   2. Add Spanish pattern immediately below it
-//   3. Test both with real phrases from the community
-//   4. Never remove a pattern without replacing it with something more precise
+//   3. Add African/diaspora-language equivalents
+//   4. Test real phrases from the community before deploying
 
 const CRISIS_PATTERNS = [
   // ── Suicidal ideation — explicit ───────────────────────────────────────────
@@ -96,17 +103,65 @@ const CRISIS_PATTERNS = [
   // ── Grief emergency (complicated/acute) ────────────────────────────────────
   /\b(just lost my (child|baby|husband|wife|partner|mother|father|son|daughter)|found them dead|my (child|baby|husband|wife|partner) died today|suicide of a loved one|they killed themselves)\b/i,
   /\b(acabo de perder a mi (hijo|hija|bebé|esposo|esposa|pareja|madre|padre)|lo encontré muerto|mi (hijo|hija|esposo|esposa|pareja) murió hoy|suicidio de un ser querido|se mató|se quitó la vida)\b/i,
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // AFRICAN & DIASPORA LANGUAGE CRISIS PATTERNS — added 2026-07
+  //
+  // Nia's identity centers the African diaspora. Her safety floor must too.
+  // These patterns cover the languages in culturalGreetings.ts: Swahili (sw),
+  // Zulu (zu), Akan/Twi (tw), Yoruba (yo), Hausa (ha), Amharic (am),
+  // Somali (so), Nigerian Pidgin (pcm), Luganda (lg).
+  //
+  // A false negative in ANY of these languages is unacceptable.
+  // When adding phrases: test with native speakers or verified translation;
+  // prefer word-boundary patterns where the script allows.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // ── Swahili (sw) — suicidal ideation, self-harm, hopelessness ─────────────
+  // NOTE: No \b boundaries — \b is ASCII-only and fails on languages with
+  // diacritics or non-Latin scripts. Phrases here are long and specific enough
+  // that false positives are negligible; false negatives are unacceptable.
+  /(nataka kufa|nijiue|kujiua|kutaka kufa|sina sababu ya kuishi|maisha hayana maana|ningependa kufa|ninataka kumaliza maisha yangu|ninauma sana|sina nguvu tena|hakuna matumaini)/i,
+  // Swahili — abuse, violence, hunger, homelessness
+  /(wananipiga|wananitesa|sina mahali pa kulala|nalala nje|sina chakula|watoto hawajala|sina nyumba|ninateswa|wamenibaka|sina msaada)/i,
+
+  // ── Zulu (zu) — suicidal ideation, hopelessness, violence ─────────────────
+  /(ngifuna ukufa|ngifuna ukuzibulala|anginawo amandla|angisafuni ukuphila|ngiyeselwa|ngishaywa|anginandawo yokuhlala|abantwana abadlile|ngingenakho|ngiyaphela)/i,
+
+  // ── Akan / Twi (tw) — suicidal ideation, distress ─────────────────────────
+  /(mepε sε mewu|me pε sε mefi ha|menim mekɔ hen|mennim w'ayε|mehia mmoa|me yε ohia|mεyε deεn|mepε sε mekum me ho)/i,
+
+  // ── Yoruba (yo) — suicidal ideation, pain, crisis ─────────────────────────
+  // Yoruba uses heavy diacritics; \b would always fail on these characters.
+  /(mo fẹ́ kú|mo fẹ kú|mo fẹ̀ kú|inú mi ń jẹ mi|mi ò lè farada mọ|mi ò fẹ́ gbé mọ|ìrànlọ́wọ́ mi|mo nílò ìrànlọ́wọ́|mo ti rẹ̀ ara mi|onídìítì)/i,
+
+  // ── Hausa (ha) — suicidal ideation, suffering, violence ───────────────────
+  /(ina son mutuwa|rayuwata ba ta da amfani|ba zan iya ci gaba ba|ana yi mini duka|babu bege|babu abinci|ba ni da gida|ana cutar da ni|ina ciwo mai tsanani|ba zan iya jimrewa ba)/i,
+
+  // ── Amharic (am) — suicidal ideation, suffering ───────────────────────────
+  /(lemot felagalhu|mecheresha felegalehu|aysasam bilo aydelem|qirta demo ayinim|endih memrat aychilim|beshita neger yellem|tesfa qorechu|yizo mecheresha felegalehu)/i,
+
+  // ── Somali (so) — suicidal ideation, violence, hunger ────────────────────
+  /(in aan dhinto rabaa|nafta iska qaadi rabaa|caawimo baahan yahay|la i dhibaateeye|waxaan u baahan ahay gargaar|cunada ma haysto|guriga ma haysto|cabsi badan ayaan qabaa|caawimaad deg deg ah)/i,
+
+  // ── Nigerian Pidgin (pcm) — suicidal ideation, abuse, suffering ───────────
+  // Pidgin is ASCII-safe, but keeping no \b for consistency with this section.
+  /(i wan die|i no get reason to dey alive|dem dey beat me|dem dey do me bad thing|i no get food|i no get where to sleep|i don tire|nobody dey help me|i need help quick quick|e don do me bad)/i,
+
+  // ── Luganda (lg) — suicidal ideation, hopelessness ────────────────────────
+  /(njagala okuffa|sirina maanyi|ngenda okujitta|sirina kwegenda|bajjiddwa|sirina kulya|sirina gy'omanira|bampa nnyo|njagala obuyambi|tewali tukwatako)/i,
 ];
 
 // ═════════════════════════════════════════════════════════════════════════════
-// SOFT DISTRESS PATTERNS — Bilingual (English + Spanish)
+// SOFT DISTRESS PATTERNS — Multilingual (English, Spanish, African languages)
 // ═════════════════════════════════════════════════════════════════════════════
 //
 // These patterns trigger the CARE DIRECTIVE (soft flag) — Nia leads with
 // warmth and acknowledgment before offering resources. Not an immediate
 // crisis escalation, but signals the user needs extra care.
 //
-// Same bilingual requirement as CRISIS_PATTERNS above.
+// Same multilingual requirement as CRISIS_PATTERNS above.
+// African & diaspora language patterns are at the bottom of this section.
 
 const SOFT_DISTRESS_PATTERNS = [
   // ── Emotional distress ─────────────────────────────────────────────────────
@@ -144,6 +199,37 @@ const SOFT_DISTRESS_PATTERNS = [
   // ── Isolation ────────────────────────────────────────────────────────────
   /\b(no one to talk to|no friends|completely alone|no family|nobody cares|invisible|forgotten)\b/i,
   /\b(nadie con quien hablar|no tengo amigos|totalmente solo|no tengo familia|a nadie le importo|invisible|olvidado|nadie me quiere|me siento solo)\b/i,
+
+  // ── Soft distress — African & diaspora languages (added 2026-07) ──────────
+  // Same bilingual requirement applies. Swahili, Zulu, Twi, Yoruba, Hausa,
+  // Amharic, Somali, Nigerian Pidgin, Luganda soft-distress signals.
+
+  // Swahili (sw) — no \b for same reason as crisis patterns above
+  /(nimechoka|niko peke yangu|ninahangaika|sijui la kufanya|ninahitaji msaada|ninaomba msaada|sina pesa|nimepoteza kazi|siwezi kulipa kodi|sina nguvu|nachanganyikiwa)/i,
+
+  // Zulu (zu)
+  /(ngiyakhathala|ngihluphe|ngidinga usizo|angikwazi ukuqhubeka|ngiyagcwaneka|ngiyesaba|ngihlala yedwa|ngiswele|anginayo imali|ngalahlekelwa umsebenzi)/i,
+
+  // Akan / Twi (tw)
+  /(me ho yε me ya|me yε adwenemhunu|mehia mmoa|menim me kɔ hen|me yε ohia|mabrε|me ho mfata|mennim me bra tumi)/i,
+
+  // Yoruba (yo)
+  /(mo rẹwẹsì|inú mi bí mi|mo ní ìjákulẹ̀|aini owó|mo pàdánù iṣẹ́|mi ò lè sanwó yàrá|mo rẹ̀|àánú fún mi|inú mi kò dára)/i,
+
+  // Hausa (ha)
+  /(ina gajiya|ban san yadda zan yi ba|ina bukata taimako|ba ni da kudi|na rasa aiki|ban iya biya haya ba|ina wahala|ni kadai nake|na rasa duka)/i,
+
+  // Amharic (am)
+  /(dekemat|yeteshalehu|lemiyaderg ayawk ne|gena lesra aydelem|birr yellem|work yellem|guad yellem|lemot felagalhu|tilit yellenem)/i,
+
+  // Somali (so)
+  /(waan daalan ahay|gargaar baahan ahay|lacag ma haysto|shaqo ma haysto|keli ahaan|aqoon ma haysto xalka|taageero baahan ahay|dhibaato aad badan|waan welwelsanahay)/i,
+
+  // Nigerian Pidgin (pcm)
+  /(i don tire|i no know wetin to do|i need help|i no get money|i no get work|i no fit pay rent|i dey suffer|nobody dey for me|i dey alone|e don do me bad thing)/i,
+
+  // Luganda (lg)
+  /(nkooye|sijja kola kitalo|nsinga buyambi|sirina ssente|naggya omulimu|sinnonya kwegatta|ndi bwekasi|nzijukiza|sirina gyetaagisa|bampitirirako)/i,
 ];
 
 export interface SafetyResult {

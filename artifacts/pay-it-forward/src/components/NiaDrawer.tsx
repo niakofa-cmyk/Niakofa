@@ -4,6 +4,8 @@ import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown } from "luc
 import { authHeaders } from "../lib/auth";
 import { useAppContext } from "../lib/AppContext";
 import { useNiaTTS } from "../hooks/useNiaTTS";
+import { useVoiceWakeWord } from "../hooks/useVoiceWakeWord";
+import { VoiceWakeWordIndicator } from "./VoiceWakeWordIndicator";
 import {
   detectUserLanguage,
   getCareGreeting,
@@ -1193,6 +1195,7 @@ export function NiaFab({ onClick, enabled = true }: { onClick: () => void; enabl
   const [fabY, setFabY] = useState(() => safeRead("nia_fab_y", 0));
   const [isDragging, setIsDragging] = useState(false);
   const dragStartTime = useRef(0);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const dragStartPos = useRef({ x: 0, y: 0 });
 
   // Only allow drag when Nia is enabled
@@ -1221,6 +1224,18 @@ export function NiaFab({ onClick, enabled = true }: { onClick: () => void; enabl
     }
   };
 
+  // Phase 7a — voice wake-word detection (LAST hooks — hook order must not change)
+  // Supports all of Nia's languages: "Hey Nia", "Hujambo Nia", "Sawubona Nia",
+  // "Abeg Nia", "Wasuze otya Nia", and others defined in culturalGreetings.ts.
+  // When a wake word is detected, open the drawer just like a tap would.
+  const userLang = detectUserLanguage();
+  const { listeningState, isSupported } = useVoiceWakeWord({
+    enabled: enabled ?? true,
+    onWakeWordDetected: (_lang, _transcript) => {
+      onClick();
+    },
+  });
+
   return (
     <motion.div
       drag={enabled}
@@ -1239,9 +1254,21 @@ export function NiaFab({ onClick, enabled = true }: { onClick: () => void; enabl
       style={{
         cursor: enabled ? (isDragging ? "grabbing" : "grab") : "pointer",
         touchAction: enabled ? "none" : "manipulation",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: 6,
       }}
       aria-label="Open Nia — your community assistant"
     >
+      {/* Phase 7a: Wake word listening indicator — appears above the orb when active */}
+      {isSupported && listeningState !== "idle" && (
+        <VoiceWakeWordIndicator
+          state={listeningState}
+          language={userLang}
+          className="shadow-lg"
+        />
+      )}
       <motion.button
         onClick={handleClick}
         whileHover={!isDragging ? { scale: 1.06 } : {}}

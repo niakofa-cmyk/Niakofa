@@ -1,0 +1,45 @@
+
+
+Fix and Verify : 1	Check how many counties/regions actually have admin-verified crisis resources vs. sitting in the unreviewed Claude-suggested queue — a gap here means Nia has nothing real to offer someone in crisis in an unreviewed area.
+1. Reconcile the 90-day pledge-default window against the "up to 2 years" promise in your messaging.
+2. Build the requester-side reputation field — the trust-tiers module documents this exact gap.
+3. Extend guaranteed-minimum wage protection to immediate-pay jobs, or document why it's intentionally excluded.
+4. Expand sensitive-category gating beyond childcare/senior_care/medical if "almost any legal task" is meant literally.
+
+
+Fix and Verify! I confirmed directly: useVoiceWakeWord is still not imported anywhere in NiaDrawer.tsx — matching what you flagged last session. The wake-word detection and cultural greetings code exists and works standalone, it's just not connected to the drawer yet.
+
+Pool solvency guardrails. I saw the advisory-lock protection against overdrawing the pool on concurrent completions — good. What I didn't see: an automated alert when the pool balance itself gets low, before it hits zero. Worth adding to pool-minimums-worker.ts.
+Helper-side "PIF income visibility." You want helpers to trust they'll get paid a livable wage "just by waking up." Right now that trust is implicit in the backend logic — I'd surface it explicitly in helper-dashboard.tsx: something like "guaranteed minimum" shown before they claim a PIF job, not just after.
+Finish the voice integration — closes out Phase 7a.
+Positioning/copy pass — the code fully supports your "everyday people helping out of kindness" vision, but I didn't check whether the actual UI copy (onboarding, request-new) communicates that ethos or still reads more transactional/gig-economy. Worth a content pass to match Ubuntu philosophy branding.
+
+
+Fix and Verify business bulk invoicing, and closing the OpenAPI documentation gap on /stripe/* and /verification/* routes (still the highest-risk undocumented surface, now more relevant since cash-out adds more Stripe routes to that undocumented pile).
+
+Fix and Verify to trace the cash-out flow against a specific failure scenario (e.g., server crash mid-transfer, And Verify a helper with no connected Stripe account yet) to pressure-test it further
+
+
+Bugs I found while verifying
+1. Duration logging bug on errors. In chat.ts, streamStartTime is declared once outside the try block (let streamStartTime = 0) and then redeclared with const inside the try block. The catch block references the outer variable, which never gets updated — so every failed request logs a duration of "time since Unix epoch" instead of the actual elapsed time. Harmless to users, but it's quietly corrupting your error-latency metrics.
+2. Stale year hardcoded into search queries. The continuous-learning worker's search queries are literally "Fort Worth Texas community news mutual aid neighbors helping 2025", "...2025" for all four topics. It's July 2026 now — these should build the year dynamically (new Date().getFullYear()), or Nia is quietly biasing her "current" local knowledge toward last year.
+3. A real safety gap, worth prioritizing: crisis detection is English/Spanish only, but Nia's identity isn't. culturalGreetings.ts supports Swahili, Akan/Twi, Zulu, Yoruba, and Luganda — core to your vision of an assistant that centers the African diaspora. But safety.ts's crisis and soft-distress patterns only exist in English and Spanish. If someone in genuine crisis writes to Nia in Swahili or Yoruba, right now she has no way to detect it and route them to 988/211. Given your explicit "never lower the floor" comment already in that file, this is the highest-value gap to close — not a nice-to-have.
+The one confirmed unfinished thread from last session
+VoiceWakeWordIndicator and useVoiceWakeWord exist, are fully coded, and are imported nowhere — no page or component renders them. The wake-word detection logic works standalone but has no UI surface. This matches what you flagged before; it's still open.
+
+
+Nia crisis support	Built, but resource coverage depends on unreviewed admin queue?
+
+One real gap I found this pass: crisis resource suggestions are Claude-generated but explicitly gated from auto-publish
+crisis-resources.ts uses Claude to suggest real emergency contacts for a region (911, 211, 988, SAMHSA, local Red Cross), but the code comment is explicit: an admin must review and hit "Save & Verify" before users ever see them — because "Claude can hallucinate phone numbers." This is good practice, but it means your crisis-resource coverage is only as current as your admin review cadence. If no admin has reviewed a region's suggestions, users in that county get nothing when Nia would otherwise want to route them to real help. Worth checking how many regions currently have verified (not just suggested) resources.
+
+
+
+Recommendations
+* Get the cash-out system in front of a second pair of eyes (or a Stripe Connect specialist) before real money flows through it at volume — the design is sound, but this is the one subsystem where a subtle bug costs actual dollars.
+* Now that helpers can cash out, this is the moment to lock down the 1099-K/NEC tax-reporting question with Stripe — it's no longer hypothetical.
+* Keep the topic-based memory file pattern going forward instead of reverting to one big doc.
+
+"Almost any legal task" enforcement	Partial — only 3 sensitive categories gated?
+Requester-side reputation	Missing — documented gap in the code itself?
+90-day pledge default vs. "2 years" promise	Mismatch?

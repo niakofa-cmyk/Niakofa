@@ -24,17 +24,34 @@ export function getTrustTier(trustScore: number, helpCount: number): TrustTier {
 }
 
 /**
- * Categories that involve vulnerable people (children, elderly, medical
- * situations). These carry liability and trust exposure that groceries or
- * errands don't, so they are gated:
+ * Categories that involve vulnerable people or significant liability exposure.
+ * These carry trust/safety concerns that groceries or errands don't, so they
+ * are gated:
  *   - Helpers must be at least "verified" tier AND identity-verified (or
  *     have a passed background check) to claim them.
  *   - Requesters must explicitly acknowledge that Niakofa is not a licensed
- *     childcare / homecare / medical provider when creating them.
+ *     provider when creating them.
  * Shared by api-server (claim/create gates) and pay-it-forward (UI badges,
- * consent flow) so the two can never drift.
+ * consent flow, WaiverModal) so the two can never drift.
+ *
+ * Category rationale:
+ *   childcare    — care of minor children (Texas Family Code liability)
+ *   senior_care  — care of elderly/disabled adults (APS regulations)
+ *   medical      — health-adjacent help from unlicensed volunteers
+ *   home_repair  — work on real property; injuries, permit exposure
+ *   moving_labor — physical labor + handling personal property
+ *   pet_care     — care of animals in someone's home; injury/loss risk
+ *   tutoring     — potential 1-on-1 contact with minors; background check warranted
  */
-export const SENSITIVE_CATEGORIES = ["childcare", "senior_care", "medical"] as const;
+export const SENSITIVE_CATEGORIES = [
+  "childcare",
+  "senior_care",
+  "medical",
+  "home_repair",
+  "moving_labor",
+  "pet_care",
+  "tutoring",
+] as const;
 export type SensitiveCategory = (typeof SENSITIVE_CATEGORIES)[number];
 
 export function isSensitiveCategory(category: string | null | undefined): category is SensitiveCategory {
@@ -62,6 +79,45 @@ export const TIER_LABEL: Record<TrustTier, string> = {
   anchor: "Community Anchor",
 };
 
+// ─── Requester-side reputation ────────────────────────────────────────────────
+// goodwill_score lives on users and tracks give-back behavior:
+//   - starts at 100 on registration
+//   - decremented by processPledgeDefaults (-5 per defaulted pledge)
+//   - can be boosted by admins for exceptional community contributions
+//
+// This is the one existing field that represents "did this requester hold up
+// their end of the PIF covenant?" It's not a full reputation system, but it
+// is real data — unlike inventing thresholds against fields that don't exist.
+//
+// Tier names deliberately differ from the helper ladder to prevent confusion:
+//   community_new → community_member → good_neighbor → trusted_neighbor
+//
+// These are shown on request-detail.tsx (helper's view of requester) and on
+// admin pages. They are intentionally softer labels ("Good Neighbor") —
+// requesters are not rated, they are seen.
+export type RequesterTier = "community_new" | "community_member" | "good_neighbor" | "trusted_neighbor";
+
+export function getRequesterTier(goodwillScore: number): RequesterTier {
+  if (goodwillScore >= 95) return "trusted_neighbor";
+  if (goodwillScore >= 80) return "good_neighbor";
+  if (goodwillScore >= 50) return "community_member";
+  return "community_new";
+}
+
+export const REQUESTER_TIER_LABEL: Record<RequesterTier, string> = {
+  community_new:    "New Neighbor",
+  community_member: "Community Member",
+  good_neighbor:    "Good Neighbor",
+  trusted_neighbor: "Trusted Neighbor",
+};
+
+export const REQUESTER_TIER_EMOJI: Record<RequesterTier, string> = {
+  community_new:    "👋",
+  community_member: "🤝",
+  good_neighbor:    "💚",
+  trusted_neighbor: "⭐",
+};
+
 /**
  * Role-aware badge resolution — single entry point for "what badge does this
  * user show, anywhere in the app." Added when PayItForwardBadge.tsx was found
@@ -73,16 +129,9 @@ export const TIER_LABEL: Record<TrustTier, string> = {
  *   - admin: a flag, not a ladder. Being an admin isn't a trust achievement.
  *   - helper: the real trust_score/help_count ladder above. This is the only
  *     track backed by an actual behavioral reputation signal in the schema.
- *   - member: everyone else (a requester who hasn't opted into helper mode).
- *     There is currently no schema field tracking requester-side give-back
- *     behavior independently of helping (goodwill_score/benevolence_wallet
- *     are both credited to the *helper* side of a transaction — see
- *     requests.ts/stripe.ts comments). Rather than invent a fake numeric
- *     ladder on top of data that doesn't exist, members get one honest
- *     static badge. A real requester-side metric (e.g. completed-request
- *     count, on-time payment rate) would need a new schema field and a
- *     dedicated design pass before it could support real tiers — don't
- *     fake thresholds against data that isn't there.
+ *   - member: uses goodwill_score (real data) via getRequesterTier() above.
+ *     goodwill_score starts at 100, decrements on pledge defaults, and can be
+ *     boosted for exceptional contributions. It is the honest requester metric.
  */
 export type BadgeRole = "admin" | "helper" | "member";
 
@@ -97,6 +146,7 @@ export function getBadgeForUser(user: {
   is_helper?: boolean | null;
   trust_score?: number | null;
   help_count?: number | null;
+  goodwill_score?: number | null;
 }): BadgeResult {
   if (user.is_admin) {
     return { role: "admin", tier: "admin", label: "Admin" };
@@ -105,5 +155,8 @@ export function getBadgeForUser(user: {
     const tier = getTrustTier(user.trust_score ?? 0, user.help_count ?? 0);
     return { role: "helper", tier, label: TIER_LABEL[tier] };
   }
-  return { role: "member", tier: "member", label: "Community Member" };
+  // Member track uses goodwill_score — a real behavioral signal from the schema.
+  // Starts at 100, decremented by pledge defaults, never fabricated.
+  const requesterTier = getRequesterTier(user.goodwill_score ?? 100);
+  return { role: "member", tier: "member", label: REQUESTER_TIER_LABEL[requesterTier] };
 }

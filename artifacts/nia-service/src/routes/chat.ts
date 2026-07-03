@@ -158,7 +158,12 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   res.setHeader("Connection", "keep-alive");
 
   let fullResponse = "";
-  let streamStartTime = 0;
+  // Capture start time BEFORE the try block so the catch block can compute
+  // a meaningful elapsed duration. Previously streamStartTime was declared as
+  // `let streamStartTime = 0` here and then re-declared as a block-scoped
+  // `const` inside the try — the catch always read the outer zero, producing
+  // a durationMs of "milliseconds since Unix epoch" on every error.
+  const streamStartTime = Date.now();
 
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => {
@@ -208,7 +213,6 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
 
     let inputTokens = 0;
     let outputTokens = 0;
-    const streamStartTime = Date.now();
 
     for await (const chunk of stream) {
       if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {

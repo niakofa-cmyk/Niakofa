@@ -7,7 +7,7 @@ import { useGetRequest, useClaimRequest, getGetRequestQueryKey, getGetRequestsQu
 import { useQueryClient } from "@tanstack/react-query";
 import { useAppContext } from "@/lib/AppContext";
 import { toast } from "@/hooks/use-toast";
-import { isSensitiveCategory } from "@workspace/trust-tiers";
+import { isSensitiveCategory, getRequesterTier, REQUESTER_TIER_LABEL, REQUESTER_TIER_EMOJI } from "@workspace/trust-tiers";
 
 const URGENCY_CONFIG = {
   emergency: { label: "Emergency", color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/30", icon: AlertTriangle },
@@ -202,14 +202,26 @@ export default function RequestDetailScreen() {
         {request.requester_name && (
           <div className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
             <div className="w-10 h-10 rounded-full overflow-hidden bg-muted border border-border shrink-0">
-              {request.requester_avatar
-                ? <img src={request.requester_avatar} alt="" className="w-full h-full object-cover" />
+              {(request as typeof request & { requester_avatar?: string | null }).requester_avatar
+                ? <img src={(request as typeof request & { requester_avatar?: string | null }).requester_avatar!} alt="" className="w-full h-full object-cover" />
                 : <div className="w-full h-full flex items-center justify-center font-bold text-sm">{request.requester_name[0]}</div>
               }
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Posted by</div>
               <div className="font-black text-sm">{request.requester_name}</div>
+              {/* Requester reputation tier — based on goodwill_score (pledge-fulfillment track) */}
+              {(() => {
+                const gs = (request as typeof request & { requester_goodwill_score?: number }).requester_goodwill_score;
+                if (gs == null) return null;
+                const tier = getRequesterTier(gs);
+                return (
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <span className="text-[10px]">{REQUESTER_TIER_EMOJI[tier]}</span>
+                    <span className="text-[10px] text-muted-foreground font-medium">{REQUESTER_TIER_LABEL[tier]}</span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}

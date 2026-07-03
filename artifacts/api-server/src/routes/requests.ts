@@ -610,14 +610,22 @@ router.get("/requests/:id", requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
   const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, parsed.data.id)).limit(1);
   if (!request) return res.status(404).json({ error: "Not found" });
-  const [requester] = await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url })
+  const [requester] = await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url, goodwill_score: usersTable.goodwill_score })
     .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1);
   let helperName = null;
   if (request.helper_id) {
     const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, request.helper_id)).limit(1);
     helperName = helper?.name ?? null;
   }
-  return res.json({ ...request, requester_name: requester?.name ?? null, requester_avatar: requester?.avatar_url ?? null, helper_name: helperName, distance_miles: null, estimated_duration_min: null });
+  return res.json({
+    ...request,
+    requester_name: requester?.name ?? null,
+    requester_avatar: requester?.avatar_url ?? null,
+    requester_goodwill_score: requester?.goodwill_score ?? 100,
+    helper_name: helperName,
+    distance_miles: null,
+    estimated_duration_min: null,
+  });
 });
 
 router.patch("/requests/:id", requireAuth, async (req, res) => {

@@ -30,6 +30,8 @@
 - [Niakofa vision enhancements](niakofa-vision-enhancements.md) — 6-chunk upgrade: Nia 24h checkin worker, AI dispatch signals, anomaly rating-velocity+no-show, SMS multi-modal, NiaDrawer Ubuntu prompts.
 - [Niakofa anomaly worker Redis dedup](niakofa-anomaly-dedup.md) — anomaly alerts deduped via Redis TTL (anomaly:alert:${key}, 7200s EX); never use in-memory Map alone (lost on restart).
 - [Niakofa NiaFab safe-area hook order](niakofa-niafab-hooks.md) — safeAreaBottom useRef must be declared LAST in NiaFab (after all callbacks); closures capture binding not value.
+- [Niakofa NiaFab wake word wiring](niakofa-niafab-wakework.md) — wake word lives in NiaDrawer.tsx exported NiaFab (bottom of file), NOT the standalone NiaFab.tsx (App.tsx imports from NiaDrawer).
+- [Niakofa safety multilingual patterns](niakofa-safety-multilingual.md) — safety.ts covers 11 languages; African/diaspora patterns must omit \\b (ASCII-only, breaks on diacritics).
 - [Niakofa mobile mandate](niakofa-mobile.md) — mobile-first core preference: input font≥16px, active: not hover:, safe-area-inset-bottom on fixed bars, Nia always visible.
 - [Niakofa Zod/drizzle-zod contract](niakofa-zod-drizzle.md) — drizzle-zod v0.8.x uses Zod v4 types; must import z from "zod/v4" not "zod" in schema files.
 - [Niakofa Express error handler placement](niakofa-express-error-handler.md) — global 4-arg handler must go AFTER static/SPA middleware, as the absolute last app.use().

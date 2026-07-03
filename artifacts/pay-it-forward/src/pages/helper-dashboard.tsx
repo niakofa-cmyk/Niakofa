@@ -7,7 +7,7 @@ import {
 } from "@workspace/api-client-react";
 import type { HelpRequest } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Activity, Star, MapPin, Clock, Heart, Award, Wrench, Zap, Filter } from "lucide-react";
+import { ChevronLeft, Activity, Star, MapPin, Clock, Heart, Award, Wrench, Zap, Filter, DollarSign, Coins } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "@/hooks/use-toast";
 
@@ -252,15 +252,31 @@ export default function HelperDashboardScreen() {
                         </div>
                       )}
                     </div>
-                    {helperModeActive && (
-                      <button
-                        onClick={() => handleClaim(req)}
-                        disabled={claimMutation.isPending}
-                        className="shrink-0 bg-primary text-primary-foreground text-xs font-black px-3 py-1.5 rounded-xl disabled:opacity-50 active:scale-95 transition-all"
-                      >
-                        Claim
-                      </button>
-                    )}
+                    <div className="shrink-0 flex flex-col items-end gap-1.5">
+                      {/* Payment type — shown before claiming so helpers know what they're signing up for */}
+                      {(req as HelpRequest & { payment_type?: string; pay_it_forward_amount?: number }).payment_type === "immediate" &&
+                        (req as HelpRequest & { pay_it_forward_amount?: number }).pay_it_forward_amount ? (
+                        <div className="flex items-center gap-0.5 text-[10px] font-black text-green-400 bg-green-400/10 border border-green-400/20 px-1.5 py-0.5 rounded-full">
+                          <DollarSign className="w-2.5 h-2.5" />
+                          {((req as HelpRequest & { pay_it_forward_amount?: number }).pay_it_forward_amount!).toFixed(0)}
+                        </div>
+                      ) : (req as HelpRequest & { payment_type?: string }).payment_type === "pay_it_forward" ? (
+                        <div className="flex items-center gap-0.5 text-[10px] font-black text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-full"
+                             title="Community pool guarantees your pay — minimum wage protected">
+                          <Coins className="w-2.5 h-2.5" />
+                          Pool pays
+                        </div>
+                      ) : null}
+                      {helperModeActive && (
+                        <button
+                          onClick={() => handleClaim(req)}
+                          disabled={claimMutation.isPending}
+                          className="shrink-0 bg-primary text-primary-foreground text-xs font-black px-3 py-1.5 rounded-xl disabled:opacity-50 active:scale-95 transition-all"
+                        >
+                          Claim
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </motion.div>
               ))}

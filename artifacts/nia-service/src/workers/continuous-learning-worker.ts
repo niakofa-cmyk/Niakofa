@@ -26,34 +26,40 @@ const logger = pino({ level: "info" });
 const LEARNING_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
 const KNOWLEDGE_TTL_DAYS = 7;
 
-// Topics Nia continuously researches to stay current and grounded
-const LEARNING_TOPICS: { key: string; query: string; description: string }[] = [
-  {
-    key: "fort_worth_community_news",
-    query: "Fort Worth Texas community news mutual aid neighbors helping 2025",
-    description: "Recent Fort Worth community and mutual aid news",
-  },
-  {
-    key: "tarrant_county_resources",
-    query: "Tarrant County food bank shelter social services updates 2025",
-    description: "Current Tarrant County resource availability",
-  },
-  {
-    key: "fort_worth_events",
-    query: "Fort Worth community events volunteer opportunities this month",
-    description: "Upcoming Fort Worth community events and volunteer opportunities",
-  },
-  {
-    key: "community_help_trends",
-    query: "community mutual aid help platform trends United States 2025",
-    description: "Broader mutual aid and community help trends",
-  },
-  {
-    key: "fort_worth_food_resources",
-    query: "Fort Worth food pantry distribution schedule Tarrant County 2025",
-    description: "Current Fort Worth food resource schedule and availability",
-  },
-];
+// Build learning topics at call-time so the year is always current.
+// Using a function prevents the year from being frozen to whatever year
+// the module was first loaded — previously all queries had "2025" hardcoded,
+// which means Nia's "current" knowledge was silently biased toward the past.
+function buildLearningTopics(): { key: string; query: string; description: string }[] {
+  const year = new Date().getFullYear();
+  return [
+    {
+      key: "fort_worth_community_news",
+      query: `Fort Worth Texas community news mutual aid neighbors helping ${year}`,
+      description: "Recent Fort Worth community and mutual aid news",
+    },
+    {
+      key: "tarrant_county_resources",
+      query: `Tarrant County food bank shelter social services updates ${year}`,
+      description: "Current Tarrant County resource availability",
+    },
+    {
+      key: "fort_worth_events",
+      query: "Fort Worth community events volunteer opportunities this month",
+      description: "Upcoming Fort Worth community events and volunteer opportunities",
+    },
+    {
+      key: "community_help_trends",
+      query: `community mutual aid help platform trends United States ${year}`,
+      description: "Broader mutual aid and community help trends",
+    },
+    {
+      key: "fort_worth_food_resources",
+      query: `Fort Worth food pantry distribution schedule Tarrant County ${year}`,
+      description: "Current Fort Worth food resource schedule and availability",
+    },
+  ];
+}
 
 async function upsertKnowledge(
   key: string,
@@ -149,7 +155,7 @@ async function runLearningCycle(client: Anthropic): Promise<void> {
 
   // Learn one topic at a time with gentle pacing
   // (don't hammer Anthropic or the web search API)
-  for (const topic of LEARNING_TOPICS) {
+  for (const topic of buildLearningTopics()) {
     await learnAboutTopic(client, topic);
     // 30-second gap between topics to be a good API citizen
     await new Promise((r) => setTimeout(r, 30_000));

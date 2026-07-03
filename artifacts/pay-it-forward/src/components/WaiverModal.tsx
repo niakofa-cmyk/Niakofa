@@ -14,9 +14,12 @@ import { X, AlertTriangle, CheckCircle2, Shield, Loader2 } from "lucide-react";
 
 export const CURRENT_TOS_VERSION = "2026-07";
 
-// Categories that require the waiver
+// Categories that require the waiver — must stay in sync with
+// SENSITIVE_CATEGORIES in lib/trust-tiers/src/index.ts.
+// Both lists gate helpers (server-side claim check) and requesters (UI consent flow).
 export const WAIVER_CATEGORIES = [
   "childcare", "senior_care", "medical", "home_repair", "moving_labor",
+  "pet_care", "tutoring",
 ] as const;
 
 export type WaiverCategory = typeof WAIVER_CATEGORIES[number];
@@ -27,6 +30,8 @@ const CATEGORY_LABELS: Record<WaiverCategory, string> = {
   medical: "Medical Assistance",
   home_repair: "Home Repair",
   moving_labor: "Moving Labor",
+  pet_care: "Pet Care",
+  tutoring: "Tutoring / Academic Help",
 };
 
 const CATEGORY_RISKS: Record<WaiverCategory, string> = {
@@ -45,6 +50,13 @@ const CATEGORY_RISKS: Record<WaiverCategory, string> = {
   moving_labor:
     "involves physical labor and the handling of personal property. " +
     "You accept all risk of damage or injury and should not offer this task for antiques, heirlooms, or fragile items without special agreement.",
+  pet_care:
+    "involves the care of animals in or around your home. You accept full responsibility for any injuries to the helper, " +
+    "damage caused by the animal, or loss of the animal. Niakofa is not a licensed veterinary or pet-care service.",
+  tutoring:
+    "may involve one-on-one contact with a minor. You are solely responsible for supervising any session " +
+    "involving a child under 18. Niakofa does not run background checks on every helper — " +
+    "verify the helper's identity and credentials before arranging unsupervised contact.",
 };
 
 interface WaiverModalProps {

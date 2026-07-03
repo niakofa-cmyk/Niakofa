@@ -30,6 +30,9 @@
 import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { NiaOrb } from "./NiaDrawer";
+import { useVoiceWakeWord } from "../hooks/useVoiceWakeWord";
+import { VoiceWakeWordIndicator } from "./VoiceWakeWordIndicator";
+import { detectUserLanguage } from "../lib/culturalGreetings";
 
 interface NiaFabProps {
   onClick: () => void;
@@ -62,6 +65,11 @@ export function NiaFab({ onClick, enabled = true }: NiaFabProps) {
 /**
  * Inner component — only mounts when enabled.
  * Separated so hooks are not called when disabled.
+ *
+ * Phase 7a: Voice wake word is integrated here so the orb acts as a live
+ * listening indicator even when the drawer is closed. Saying a wake word in
+ * any of Nia's supported languages ("Hey Nia", "Hujambo Nia", "Sawubona Nia",
+ * "Abeg Nia", etc.) opens the drawer automatically.
  */
 function NiaFabInner({ onClick }: { onClick: () => void }) {
   const [fabX, setFabX] = useState(() => safeRead("nia_fab_x", 0));
@@ -69,6 +77,19 @@ function NiaFabInner({ onClick }: { onClick: () => void }) {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartTime = useRef(0);
   const didDrag = useRef(false);
+
+  // Phase 7a — voice wake word integration.
+  // The indicator renders above the orb so users know Nia is listening.
+  // We detect the user's preferred language once (browser locale) so the
+  // listening prompt appears in their language ("Nasikiliza…" in Swahili, etc.)
+  const userLang = detectUserLanguage();
+  const { listeningState, isSupported } = useVoiceWakeWord({
+    enabled: true,
+    onWakeWordDetected: (_lang, _transcript) => {
+      // Don't open if already open (parent component manages open state)
+      onClick();
+    },
+  });
 
   const handleDragStart = () => {
     setIsDragging(true);
@@ -127,9 +148,21 @@ function NiaFabInner({ onClick }: { onClick: () => void }) {
         touchAction: "none",
         userSelect: "none",
         WebkitUserSelect: "none",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: 6,
       }}
       aria-label="Open Nia — your community assistant"
     >
+      {/* Phase 7a: Wake word listening indicator — appears above the orb */}
+      {isSupported && listeningState !== "idle" && (
+        <VoiceWakeWordIndicator
+          state={listeningState}
+          language={userLang}
+          className="shadow-lg"
+        />
+      )}
       <motion.button
         onClick={handleClick}
         whileHover={!isDragging ? { scale: 1.06 } : {}}
