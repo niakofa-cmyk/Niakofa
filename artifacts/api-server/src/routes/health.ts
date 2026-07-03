@@ -253,4 +253,45 @@ router.get("/admin/global-ops", requireAuth, adminLimiter, async (req, res, next
   }
 });
 
+// ── Public status page feed — no auth required ────────────────────────────────
+// Returns the minimum information needed to show a "Is Niakofa working?" page
+// to users who can't load the app (wrong region, server degraded, etc.).
+// Deliberately exposes NO sensitive data: no user counts, no secrets, no internals.
+router.get("/status", async (_req, res) => {
+  const checks: Array<{ name: string; ok: boolean; latency_ms?: number }> = [];
+
+  // 1. Database
+  const dbStart = Date.now();
+  let dbOk = false;
+  try {
+    await db.execute(sql`SELECT 1`);
+    dbOk = true;
+  } catch { /* fall through */ }
+  checks.push({ name: "database", ok: dbOk, latency_ms: Date.now() - dbStart });
+
+  // 2. Nia AI — check kill-switch setting (no API call, just DB read)
+  let niaEnabled = false;
+  try {
+    const { rows } = await db.execute(
+      sql`SELECT value FROM system_settings WHERE key = 'nia_enabled' LIMIT 1`
+    );
+    const raw = (rows[0] as { value?: unknown } | undefined)?.value;
+    niaEnabled = dbOk && (raw === "true" || raw === true);
+  } catch { /* fall through */ }
+  checks.push({ name: "nia_ai", ok: niaEnabled });
+
+  // 3. Map / Geolocation — check env key presence (no external call)
+  const mapOk = !!(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
+  checks.push({ name: "map", ok: mapOk });
+
+  const allOk = checks.every(c => c.ok);
+  res.status(allOk ? 200 : 503).json({
+    status: allOk ? "operational" : "degraded",
+    checks,
+    commit: GIT_COMMIT,
+    started_at: PROCESS_STARTED_AT,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 export default router;

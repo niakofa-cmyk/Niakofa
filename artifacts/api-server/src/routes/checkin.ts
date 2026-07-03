@@ -56,7 +56,9 @@ Generate a warm, genuine 1-2 sentence check-in message. Ask how it went. Be brie
 No markdown, no emoji, just human warmth.`;
 
     const message = await anthropic.messages.create({
-      model: "claude-opus-4-8",
+      // haiku is the right model for a short warm check-in message —
+      // opus-4-8 was significantly over-spec (and over-budget) for 150 tokens.
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 150,
       messages: [{ role: "user", content: userPrompt }],
     });

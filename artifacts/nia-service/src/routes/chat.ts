@@ -180,7 +180,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
 
     const stream = await anthropic.messages.stream(
       {
-        model: "claude-sonnet-4-5", // claude-sonnet-4-5 → keeping pinned version for stability
+        model: "claude-sonnet-5", // current-gen Sonnet for richer emotional/safety responses
         max_tokens: 1024,
         system:
           memoryPrefix +
@@ -250,7 +250,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
     await logNiaCost({
       userId,
       sessionId,
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-5",
       inputTokens,
       outputTokens,
       estimatedCostUsd,
@@ -270,7 +270,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
     await logNiaCost({
       userId,
       sessionId,
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-5",
       success: false,
       errorType: isTimeout ? "timeout" : "stream_error",
       durationMs: Date.now() - streamStartTime,
@@ -344,7 +344,7 @@ router.post("/analyze-image", parseOptionalAuth, async (req: Request, res: Respo
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-5",
       max_tokens: 1024,
       system:
         "You are Nia, the Niakofa community assistant. When analyzing images, be helpful and community-minded. " +

@@ -67,3 +67,4 @@
 - [Niakofa voice profiles](niakofa-voice-profiles.md) — ElevenLabs/OpenAI TTS routing; 8 community voices; profile available=false = pending license not broken.
 - [Niakofa onboarding system](niakofa-onboarding.md) — password validation before bcrypt, ToS checkbox, global cities, AdminLiveBanner pending counts.
 - [Niakofa Nia AI admin toggle](niakofa-nia-toggle.md) — transactional DB writes + WS broadcast; voice/chat gated; NiaFab null-init prevents flicker; NiaGlobal instant via WS.
+- [Niakofa Wouter location](niakofa-wouter-location.md) — useLocation/Switch fail for auth-bypass routes; use window.location.pathname in AppContent instead.

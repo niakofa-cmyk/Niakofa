@@ -16,7 +16,7 @@
  */
 import { Worker, type Job } from "bullmq";
 import { db, requestsTable, scheduledPaymentsTable, paymentTransactionsTable, usersTable } from "@workspace/db";
-import { eq, and, lte, sql } from "drizzle-orm";
+import { eq, and, lte, sql, isNull } from "drizzle-orm";
 import { getRedisConnection, QUEUE } from "../lib/queue";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
@@ -41,7 +41,17 @@ async function reconcilePledges(_job: Job): Promise<void> {
         eq(requestsTable.status, "completed"),
         eq(requestsTable.pledge_status, "active"),
         // pledge_paid < pledge_amount (still outstanding)
-        sql`COALESCE(${requestsTable.pledge_paid}, 0) < COALESCE(${requestsTable.pledge_amount}, 0)`
+        sql`COALESCE(${requestsTable.pledge_paid}, 0) < COALESCE(${requestsTable.pledge_amount}, 0)`,
+        // ── Hardship exclusion ────────────────────────────────────────────
+        // A user who has filed a hardship request is in financial distress.
+        // Sending them a "pay now" push + email that same morning is actively
+        // harmful and undermines the platform's mutual-aid ethic.
+        //
+        // Reminders resume automatically the NEXT daily run after the hardship
+        // is dismissed by an admin (hardship_requested_at is cleared to NULL).
+        // Forgiven/written_off pledges are already excluded by pledge_status
+        // above, so this only guards the "still active, hardship pending" case.
+        isNull(requestsTable.hardship_requested_at)
       )
     );
 

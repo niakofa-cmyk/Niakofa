@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter, useRoute } from "wouter";
+import { Switch, Route, Router as WouterRouter, useRoute, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -31,6 +31,7 @@ import PendingApprovalScreen from "@/pages/pending-approval";
 import RecurringScreen from "@/pages/recurring";
 import BusinessApplyScreen from "@/pages/business-apply";
 import GovSponsorApplyScreen from "@/pages/gov-sponsor-apply";
+import StatusPage from "@/pages/status";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30000, retry: 1 } },
@@ -171,6 +172,24 @@ function AppShell() {
   );
 }
 
+// Renders either the public status page (no auth) or the main app shell.
+// Uses window.location.pathname directly to avoid Wouter base-stripping
+// ambiguity — the raw browser URL is always reliable for this one check.
+function AppContent() {
+  const pathname =
+    typeof window !== "undefined" ? window.location.pathname : "";
+  if (pathname === "/status" || pathname.endsWith("/status")) {
+    return <StatusPage />;
+  }
+  return (
+    <>
+      <AppShell />
+      {/* NiaGlobal: Nia FAB + Drawer globally mounted, polls nia-status */}
+      <NiaGlobal />
+    </>
+  );
+}
+
 function App() {
   return (
     <ErrorBoundary>
@@ -178,9 +197,7 @@ function App() {
         <TooltipProvider>
           <AppProvider>
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <AppShell />
-              {/* NiaGlobal: Nia FAB + Drawer globally mounted, polls nia-status */}
-              <NiaGlobal />
+              <AppContent />
             </WouterRouter>
             <Toaster />
           </AppProvider>
