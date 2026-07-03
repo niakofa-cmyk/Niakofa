@@ -8,6 +8,7 @@ import { broadcast } from "../lib/ws-hub";
 import {
   getPoolBalance,
   getGuaranteedMinimum,
+  getHourlyMinimumRate,
   isPoolEnabled,
   recordPoolContribution,
   processPendingMinimums,
@@ -57,9 +58,10 @@ router.get("/pool/stats", generalApiLimiter, async (_req, res) => {
           AND COALESCE(${requestsTable.pledge_paid}, 0) < COALESCE(${requestsTable.pledge_amount}, 0)`
       );
 
-    const [enabled, guaranteed_minimum, [pendingTotals]] = await Promise.all([
+    const [enabled, guaranteed_minimum, minimum_hourly_rate, [pendingTotals]] = await Promise.all([
       isPoolEnabled(),
-      getGuaranteedMinimum(),
+      getGuaranteedMinimum(),     // flat per-task floor
+      getHourlyMinimumRate(),     // per-hour rate (scales with estimated_hours)
       db
         .select({
           pending_minimums_count: sql<number>`COUNT(*)::int`,
@@ -79,6 +81,7 @@ router.get("/pool/stats", generalApiLimiter, async (_req, res) => {
     res.json({
       enabled,
       guaranteed_minimum,
+      minimum_hourly_rate,
       balance,
       total_contributed: totals?.total_contributed ?? 0,
       total_fronted: totals?.total_fronted ?? 0,
@@ -190,6 +193,57 @@ router.post("/pool/contribute", requireAuth, paymentLimiter, async (req, res) =>
   } catch (err) {
     logger.error({ err, user_id: userId }, "Pool contribution failed");
     return res.status(500).json({ error: "Contribution failed. Please try again." });
+  }
+});
+
+/**
+ * POST /pool/donate — anonymous public Community Pool donation.
+ *
+ * No authentication required — anyone (logged-in or not) can fund the pool.
+ * This is the gap identified in the product review: "pool contributions still
+ * require login" limits public/grassroots funding. Anonymous donations are
+ * Stripe-only (no dev-mode direct credit) to prevent abuse.
+ *
+ * The Stripe webhook at /stripe/webhook already handles pool_contribution=true
+ * and gracefully accepts a null user_id, so no webhook changes are needed.
+ */
+router.post("/pool/donate", generalApiLimiter, async (req, res) => {
+  const amount = typeof req.body?.amount === "number" ? req.body.amount : NaN;
+
+  if (!Number.isFinite(amount) || amount < 1 || amount > 10000) {
+    return res.status(400).json({ error: "amount must be between $1 and $10,000" });
+  }
+
+  if (!_stripe) {
+    return res.status(503).json({
+      error: "Anonymous donations require Stripe to be configured.",
+      setup: "Ask the admin to add the STRIPE_SECRET_KEY to enable real donations.",
+    });
+  }
+
+  try {
+    const intent = await _stripe.paymentIntents.create({
+      amount: Math.round(amount * 100),
+      currency: "usd",
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        pool_contribution: "true",
+        anonymous_donation: "true",
+        // user_id intentionally omitted — anonymous contribution
+        // The webhook handles this: parseInt("") || null → records userId as null
+      },
+    });
+
+    logger.info({ amount, anonymous: true }, "Anonymous pool donation PaymentIntent created");
+
+    return res.json({
+      mode: "stripe",
+      client_secret: intent.client_secret,
+      payment_intent_id: intent.id,
+    });
+  } catch (err) {
+    logger.error({ err }, "Anonymous pool donation failed");
+    return res.status(500).json({ error: "Donation failed. Please try again." });
   }
 });
 

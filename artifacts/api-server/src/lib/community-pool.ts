@@ -46,7 +46,37 @@ export async function isPoolEnabled(): Promise<boolean> {
   }
 }
 
-export async function getGuaranteedMinimum(): Promise<number> {
+/**
+ * Per-hour minimum wage used to scale the guaranteed minimum by estimated task
+ * duration. Stored in system_settings as `pool_minimum_hourly_rate`.
+ * Default $15/hr — approximate Texas livable wage floor.
+ */
+export async function getHourlyMinimumRate(): Promise<number> {
+  try {
+    const [row] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "pool_minimum_hourly_rate"))
+      .limit(1);
+    const parsed = row ? parseFloat(row.value) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 15;
+  } catch {
+    return 15;
+  }
+}
+
+/**
+ * Compute the guaranteed minimum for a completed task.
+ *
+ * When `estimatedHours` is supplied (from `help_requests.estimated_hours`),
+ * the floor is: max(flat_floor, estimatedHours × hourlyRate).
+ * This makes the "livable wage" guarantee real math rather than a flat number
+ * regardless of how long the job actually takes.
+ *
+ * When no hours estimate exists, falls back to the flat `pool_guaranteed_minimum`
+ * setting so existing completed tasks are unchanged.
+ */
+export async function getGuaranteedMinimum(estimatedHours?: number | null): Promise<number> {
   try {
     const [row] = await db
       .select({ value: systemSettingsTable.value })
@@ -54,7 +84,18 @@ export async function getGuaranteedMinimum(): Promise<number> {
       .where(eq(systemSettingsTable.key, "pool_guaranteed_minimum"))
       .limit(1);
     const parsed = row ? parseFloat(row.value) : NaN;
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+    const flatFloor = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+
+    // Hours-scaled floor: take the GREATER of flat floor and hours × rate.
+    // This ensures short tasks still get the flat minimum, and longer tasks get
+    // a proportional guarantee that reflects real effort/duration.
+    if (estimatedHours && estimatedHours > 0) {
+      const hourlyRate = await getHourlyMinimumRate();
+      const hoursFloor = roundMoney(estimatedHours * hourlyRate);
+      return Math.max(flatFloor, hoursFloor);
+    }
+
+    return flatFloor;
   } catch {
     return 0;
   }

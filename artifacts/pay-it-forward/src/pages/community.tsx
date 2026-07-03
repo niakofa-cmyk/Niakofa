@@ -8,7 +8,7 @@ import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetReque
 import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { useGetSponsorHistory } from "@/hooks/useGetSponsorHistory";
-import { StripePaymentModal } from "@/components/StripePaymentModal";
+import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
 
 interface GratitudePost {
   id: number;
@@ -627,6 +627,12 @@ export default function CommunityScreen() {
   const [contributeMsg, setContributeMsg] = useState<string | null>(null);
   const [contributeSecret, setContributeSecret] = useState<string | null>(null);
 
+  // Anonymous donation state (no login required — POST /pool/donate)
+  const [anonAmount, setAnonAmount] = useState("");
+  const [anonMsg, setAnonMsg] = useState<string | null>(null);
+  const [anonSecret, setAnonSecret] = useState<string | null>(null);
+  const [anonPending, setAnonPending] = useState(false);
+
   useWebSocket("pool_updated", () => { refetchPoolStats(); refetchPoolLedger(); });
   useWebSocket("pool_front_paid", () => { refetchPoolStats(); refetchPoolLedger(); });
   useWebSocket("pool_low_balance", () => { refetchPoolStats(); });
@@ -643,13 +649,46 @@ export default function CommunityScreen() {
       if (result.mode === "stripe" && result.client_secret) {
         setContributeSecret(result.client_secret);
       } else {
-        setContributeMsg(`Thank you! $${amt.toFixed(2)} added to the pool. 💙`);
+        setContributeMsg(`Thank you! ${amt.toFixed(2)} added to the pool. 💙`);
         setContributeAmount("");
         refetchPoolStats();
         refetchPoolLedger();
       }
     } catch {
       setContributeMsg("Contribution failed. Please try again.");
+    }
+  };
+
+  // Anonymous donation — no account required (POST /pool/donate, Stripe-only)
+  const submitAnonDonation = async () => {
+    const amt = parseFloat(anonAmount);
+    if (!Number.isFinite(amt) || amt < 1) {
+      setAnonMsg("Enter an amount of $1 or more.");
+      return;
+    }
+    setAnonMsg(null);
+    setAnonPending(true);
+    try {
+      const res = await fetch(`${base}/api/pool/donate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: amt }),
+      });
+      const data = await res.json() as { mode?: string; client_secret?: string; error?: string; setup?: string };
+      if (!res.ok) {
+        setAnonMsg(data.setup ?? data.error ?? "Donation failed. Please try again.");
+        return;
+      }
+      if (data.mode === "stripe" && data.client_secret) {
+        setAnonSecret(data.client_secret);
+      } else {
+        setAnonMsg("Thank you for supporting the community! 💙");
+        setAnonAmount("");
+      }
+    } catch {
+      setAnonMsg("Network error. Please try again.");
+    } finally {
+      setAnonPending(false);
     }
   };
 
@@ -843,7 +882,10 @@ export default function CommunityScreen() {
                 </div>
                 {poolStats && poolStats.guaranteed_minimum > 0 && (
                   <div className="text-[10px] text-green-400 font-bold mt-1">
-                    ✓ ${poolStats.guaranteed_minimum.toFixed(2)} guaranteed minimum per completed task
+                    ✓ ${poolStats.guaranteed_minimum.toFixed(2)} flat floor
+                    {(poolStats as typeof poolStats & { minimum_hourly_rate?: number }).minimum_hourly_rate
+                      ? ` · ${(poolStats as typeof poolStats & { minimum_hourly_rate?: number }).minimum_hourly_rate!.toFixed(0)}/hr for timed tasks`
+                      : ""} guaranteed per task
                   </div>
                 )}
               </div>
@@ -1204,6 +1246,66 @@ export default function CommunityScreen() {
               )}
             </div>
 
+            {/* Anonymous public donation — no account required */}
+            {!currentUser && isStripeConfigured() && (
+              <div className="bg-primary/10 border border-primary/30 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Heart className="w-4 h-4 text-primary shrink-0" />
+                  <div className="font-bold text-sm text-primary">Support the Community</div>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  You don't need an account to fund the pool. Every dollar goes directly to helpers serving Tarrant County neighbors.
+                </p>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <DollarSign className="w-4 h-4 text-primary/50 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={1}
+                      max={10000}
+                      placeholder="Amount"
+                      value={anonAmount}
+                      onChange={(e) => setAnonAmount(e.target.value)}
+                      className="w-full bg-background/60 border border-primary/30 rounded-xl pl-9 pr-3 py-2.5 text-base font-bold focus:outline-none focus:border-primary/60"
+                    />
+                  </div>
+                  <button
+                    onClick={submitAnonDonation}
+                    disabled={anonPending}
+                    className="shrink-0 bg-primary text-primary-foreground font-black text-xs uppercase tracking-wider rounded-xl px-4 py-2.5 active:scale-95 transition-transform disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {anonPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Heart className="w-3.5 h-3.5" />}
+                    Donate
+                  </button>
+                </div>
+                <div className="flex gap-1.5">
+                  {[5, 10, 25, 50].map((amt) => (
+                    <button
+                      key={amt}
+                      onClick={() => setAnonAmount(String(amt))}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                        anonAmount === String(amt)
+                          ? "bg-primary/20 border-primary/60 text-primary"
+                          : "bg-background/40 border-border text-muted-foreground"
+                      }`}
+                    >
+                      ${amt}
+                    </button>
+                  ))}
+                </div>
+                {anonMsg && (
+                  <div className={`text-xs rounded-xl px-3 py-2 ${
+                    anonMsg.startsWith("Thank")
+                      ? "text-green-400 bg-green-500/10"
+                      : "text-destructive/80 bg-destructive/10"
+                  }`}>
+                    {anonMsg}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Stripe payment sheet for pool contributions */}
             {contributeSecret && (
               <StripePaymentModal
@@ -1218,6 +1320,23 @@ export default function CommunityScreen() {
                 }}
                 onSkip={() => setContributeSecret(null)}
                 onClose={() => setContributeSecret(null)}
+              />
+            )}
+
+            {/* Stripe payment sheet for anonymous donations */}
+            {anonSecret && (
+              <StripePaymentModal
+                clientSecret={anonSecret}
+                amount={parseFloat(anonAmount) || 0}
+                description="Anonymous Community Pool donation — your gift goes directly to helpers serving Tarrant County neighbors."
+                onSuccess={() => {
+                  setAnonSecret(null);
+                  setAnonMsg("Thank you for supporting the community! Your donation is on its way to the pool. 💙");
+                  setAnonAmount("");
+                  setTimeout(() => { refetchPoolStats(); refetchPoolLedger(); }, 2500);
+                }}
+                onSkip={() => setAnonSecret(null)}
+                onClose={() => setAnonSecret(null)}
               />
             )}
           </div>

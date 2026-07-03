@@ -437,9 +437,22 @@ router.post("/requests", requireAuth, requireOwnership("requester_id"), requestC
   // an admin queue. All other requests get the heuristic filter applied to the
   // combined title + description. "Pending" requests still go live (someone
   // genuinely needs help), but they are flagged for admin review.
-  const estimatedHours = typeof (req.body as Record<string, unknown>).estimated_hours === "number"
-    ? (req.body as Record<string, unknown>).estimated_hours as number
-    : null;
+  // Server-side bounds validation for estimated_hours.
+  // A malicious caller submitting a huge value (e.g. 10000 hours) would
+  // inflate the guaranteed minimum calculation and create unbounded payout
+  // obligations in the Community Pool queue. Clamp hard server-side, never
+  // trust the client value alone.
+  const rawEstimatedHours = (req.body as Record<string, unknown>).estimated_hours;
+  let estimatedHours: number | null = null;
+  if (typeof rawEstimatedHours === "number" && Number.isFinite(rawEstimatedHours)) {
+    if (rawEstimatedHours < 0.5 || rawEstimatedHours > 24) {
+      return res.status(400).json({
+        error: "estimated_hours must be between 0.5 and 24.",
+        code: "invalid_estimated_hours",
+      });
+    }
+    estimatedHours = Math.round(rawEstimatedHours * 10) / 10; // round to 1 decimal
+  }
 
   const isEmergencyUrgency = parsed.data.urgency === "emergency";
   let modStatus: "approved" | "pending" = "approved";
@@ -921,7 +934,9 @@ router.post("/requests/:id/complete", requireAuth, async (req, res) => {
 
       // Guaranteed minimum floor: top up to the minimum when the pool front
       // didn't happen or came in under the floor (goodwill tasks included).
-      const minimum = await getGuaranteedMinimum();
+      // Pass estimated_hours so the floor scales with task duration (hours × rate),
+      // making the "livable wage" guarantee real math, not a flat number.
+      const minimum = await getGuaranteedMinimum(request.estimated_hours);
       if (minimum > 0 && paidFromPool < minimum) {
         const topUp = Math.round((minimum - paidFromPool) * 100) / 100;
         const minOutcome = await payHelperFromPool({

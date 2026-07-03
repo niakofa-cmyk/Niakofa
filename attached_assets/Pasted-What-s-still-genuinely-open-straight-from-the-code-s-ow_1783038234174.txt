@@ -1,0 +1,48 @@
+What's still genuinely open (straight from the code's own gap list, verified against what I found)
+1. Background checks are stubbed. The background_check_status column and the gate that checks it are real, but there's no actual Checkr-style provider wired in yet — it's manually set. Until that's live, childcare/senior_care/medical claims are gated on a flag nobody's actually verifying.
+2. No liability waiver flow in code for home_repair, moving_labor, medical, senior_care — the acknowledgment checkbox exists for sensitive categories, but a real ToS-backed waiver (drafted by a lawyer) doesn't yet.
+3. Pool contributions still require login (POST /pool/contribute is requireAuth) — no anonymous public donation path yet, which limits one of the funding sources from my design doc.
+4. Guaranteed minimum is still a flat number, not yet scaled by the new estimated_hours field — the data exists, the payout logic doesn't use it yet.
+5. No automated pledge-default handling — an admin can manually write off a pledge, but there's no reminder cadence or consequence system yet.
+6. The legal consult still hasn't happened (as far as the code can tell me) — the architecture is now legal-safe by design, but "by design" isn't the same as "cleared by counsel," and that's explicitly still open per the project's own notes.
+7. One thing I'd add that isn't in their list: hate-speech/slur detection is explicitly not implemented in the moderation heuristic — it's admin-queue-and-reports only. Worth knowing if you're relying on the moderation system to catch that category of abuse; right now it doesn't, by design.
+
+
+
+The two things I'd push on next, in order: get the guaranteed-minimum floor actually using estimated_hours so "livable wage" is real math instead of a flat number, and get a real background-check provider wired in before anyone relies on this for senior or child care.
+
+estimated_hours is captured but not yet consumed — the guaranteed-minimum payout in community-pool.ts still pays a flat number, not hours × rate. Data plumbing is there; the actual wage math isn't wired up yet. The frontend request form doesn't even collect it yet either.
+Background checks are still just a status field, not a real provider — and the doc now calls this out as the top priority before scaling childcare/senior_care/medical.
+
+
+
+update this app in chunks. Read text doc word for word, line by line. Fix, and address each and every issue. . Think carefully before editing. Understand the App and the vision and mission before you edit code. Review the code line by line before you edit code. We are using Mapbox .Understand the Niakafa app and Nia ai separation and connection before editing code. REad the Replit Godfatehermd, read Claudemd.
+
+Where I'd push you to look next — these are real gaps, not nitpicks:
+1. Vetting is thinner than payment. There's a background_check_status field on users, but no actual background-check provider wired in — it looks like a manual/stub status, not an automated Checkr-style integration. Identity verification (Stripe Identity, photo-ID match) is real, but that confirms who someone is, not that they're safe to let into a home for senior_care or childcare. Given those are explicit categories in your app, I'd treat this as the top priority gap before scaling.
+2. No content moderation on request descriptions. Community/gratitude posts run through a moderation filter before going public — help requests themselves don't. Nothing stops someone using the "other" category to describe something illegal or unsafe in free text with no automatic screening, only after-the-fact user reports.
+3. No liability/insurance or waiver flow in the code. For tasks like moving labor, home repair, or senior care, you'll want this addressed legally (ToS/waiver) even if it doesn't live in code — I didn't find any trace of it, which suggests it hasn't been addressed yet either way.
+4. Pool sustainability is honestly the biggest open question. Right now funding sources for the pool seem to be requester repayments and gov sponsors — I didn't find a direct "the public can donate into the pool" endpoint. If the pool runs dry, helpers still get eventually paid via the queued backfill, but that's a soft spot worth stress-testing before you lean hard on "helpers get paid every day."
+5. The guaranteed minimum is currently a flat per-task floor, not tied to time/effort. If "livable wage" is core to your pitch, you may want that floor to scale with estimated hours rather than being one flat number regardless of job size.
+
+One thing I need to flag directly
+Your memory shows a recent session fixed a critical vulnerability where POST /requests/:id/tip credited arbitrary tip amounts with no Stripe verification, and retired that endpoint with a 410 Gone. In this uploaded zip, that endpoint is still the old, unfixed version — it still credits benevolence_wallet directly from a client-supplied tip_amount with no payment verification at all. Either that fix hasn't been pushed/committed yet, or this export predates it. Before you rely on this code in production, confirm which is true — this is a real money-security hole if it's live.
+The gaps — and this part is worth knowing
+Interestingly, the codebase's own CLAUDE.md has a section titled "Known product gaps — owner briefing," dated today (July 2, 2026), where a prior session already recorded almost exactly the tension in your vision. Paraphrasing what it says:
+1. Pay-it-forward currently puts the payment risk on the helper, not the platform. As built, the helper's wallet is only credited when the requester's Stripe payment actually succeeds — meaning if a requester never pays, the helper earns nothing for that task. The note says achieving "helpers earn a livable wage" requires the pool to be funded (sponsors/county/grants) so it can front payment reliably, and a real guaranteed-minimum budget — not just the mechanism, but actual money behind it.
+2. Task categories are narrow — groceries, transportation, errands, home repair, medical, emergency, other. Missing: moving/labor, pet care, tech help, tutoring, childcare, senior care, yard work, business services. No per-category liability/insurance handling (medical and home repair carry very different risk than groceries).
+3. No pledge default handling — no reminder escalation, no real write-off process, no trust-score consequence for people who never pay.
+4. A real legal flag, not a code flag: letting someone pay for services rendered "whenever they have the funds — in 2 days, 2 months, or 2 years" is functionally extending consumer credit. At scale that can trigger Truth-in-Lending, state usury caps, or lending-license requirements depending on your state. This is the one I'd take most seriously — it's worth a conversation with an actual lawyer before this scales past friends-and-neighbors usage in Tarrant County. I'm not able to give legal advice here, just flagging that the codebase itself is right to flag it.
+5. Tax reporting: helpers paid via Stripe Connect will cross 1099-K/1099-NEC thresholds — that needs to be surfaced to helpers, not just handled silently by Stripe.
+6. Business accounts are underbuilt — the flag exists, but there's no real business flow (bulk requests, invoicing, recurring service agreements) yet.
+What I'd add on top of that
+* Nothing currently prevents someone from spamming pay_it_forward claims and never paying anyone — there's no cap on outstanding pledge exposure per user before the platform requires them to switch to immediate.
+* The guaranteed-minimum amount is a system_settings value an admin sets — right now nothing enforces it stays sustainable against pool balance in real time beyond a low-balance alert; worth a dashboard showing pool runway before you promote this feature publicly.
+* Worth deciding now, before scale: is the "livable wage" framing hourly-equivalent, per-task-flat, or tiered by task difficulty/urgency? The schema doesn't encode task effort/duration anywhere yet, which you'd need for genuinely livable per-task payouts.
+
+(childcare, senior_care, and medical should require an actual background-check gate. check doesn't exist in the users table yet)
+
+
+Two docs, both grounded in your actual schema and the codebase's own trust-tier logic, not written in a vacuum:
+Pool funding & legal-safe design doc — the key move is reframing every "pay it forward" payment as a voluntary community gift rather than a debt (this is what keeps you out of consumer-lending/usury territory), a diversified funding model so the guaranteed minimum doesn't depend on any one requester ever paying you back, a solvency-aware minimum that auto-throttles instead of silently running dry, and a specific list of six questions to bring to a Texas-licensed attorney — money transmission, usury exposure, nonprofit structuring, Stripe Connect's platform terms, tax reporting, and required TOS disclosures.
+Category taxonomy — extends your six current categories to fourteen, and ties each one to a liability tier (Low/Medium/High) that drives helper trust-tier requirements, whether a background check is mandatory, what disclaimer a requester has to acknowledge, and which payment types are even allowed. I anchored this to SENSITIVE_CATEGORIES in your trust-tiers package — it already lists childcare and senior_care as gated categories even though those aren't valid category values yet, so this closes a real gap between what your code expects and what your schema allows.

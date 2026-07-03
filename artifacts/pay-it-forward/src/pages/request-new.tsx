@@ -65,6 +65,9 @@ const formSchema = z.object({
   urgency: z.enum(["low", "medium", "high", "emergency"]),
   pay_it_forward_amount: z.number().optional(),
   pledge_amount: z.number().optional(),
+  // Optional task duration estimate — used by the Community Pool to compute a
+  // livable-wage guaranteed minimum (hours × $15/hr rate vs flat floor).
+  estimated_hours: z.number().min(0.5, "At least 0.5 hours").max(24, "Max 24 hours").optional(),
 });
 
 const PAYMENT_OPTIONS: { type: PaymentType; label: string; desc: string; color: string; icon: ReactElement }[] = [
@@ -299,6 +302,7 @@ export default function NewRequestScreen() {
         neighborhood: userPlace?.city ?? userPlace?.county ?? undefined,
         pay_it_forward_amount: values.pay_it_forward_amount,
         pledge_amount: values.pledge_amount,
+        ...(values.estimated_hours ? { estimated_hours: values.estimated_hours } as Record<string, unknown> : {}),
         ...(isSensitive ? { sensitive_acknowledged: true } : {}),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ...(photoDataUrl ? { photo_url: photoDataUrl } as any : {}),
@@ -506,6 +510,40 @@ export default function NewRequestScreen() {
                   </FormItem>
                 )}
               />
+
+              {/* Estimated hours — used by the pool to compute a livable-wage guarantee */}
+              {paymentType !== "goodwill" && (
+                <FormField
+                  control={form.control}
+                  name="estimated_hours"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">
+                        Estimated Hours{" "}
+                        <span className="normal-case font-normal tracking-normal text-muted-foreground/60">
+                          (optional — helps ensure fair pay)
+                        </span>
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.5"
+                          min="0.5"
+                          max="24"
+                          placeholder="e.g. 1.5"
+                          className="bg-card border-border text-base"
+                          {...field}
+                          onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                        />
+                      </FormControl>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        The Community Pool uses this to scale the helper's guaranteed minimum — longer tasks earn proportionally more.
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               {/* Item Checklist — §3.1.4 Request specificity */}
               {checklistItems.length > 0 || true ? (

@@ -96,13 +96,14 @@ Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
 
 These gaps are real and documented, not code bugs:
 
-1. **Background-check provider (top priority):** `background_check_status` column exists and is checked in the claim route for `childcare`, `senior_care`, `medical` — but no automated Checkr-style provider is wired in. Status is currently manual/stub. Before scaling those categories, wire a real provider.
-2. **No liability/waiver flow in code:** for `home_repair`, `moving_labor`, `medical`, `senior_care`, etc. a ToS waiver needs to be added (both frontend acknowledgement and server-side record). Not in code; may need a lawyer to draft the ToS first.
-3. **Pool sustainability:** no public anonymous donation endpoint yet (only signed-in users + gov sponsors can contribute). Diversified funding (grants, county, public) is the intended long-term model.
-4. **Guaranteed minimum is flat:** `estimated_hours` field now exists on requests (migration 0032) to enable future per-hour scaling, but the floor is still a flat per-task number in `system_settings`.
+1. **Background-check provider (top priority):** `background_check_status` column exists and is checked in the claim route for `childcare`, `senior_care`, `medical` — but no automated Checkr-style provider is wired in. Status is currently manual/stub. Before scaling those categories, wire a real provider (Checkr API + webhook).
+2. **No liability/waiver flow in code:** for `home_repair`, `moving_labor`, `medical`, `senior_care`, etc. a ToS waiver needs to be added (both frontend acknowledgement and server-side record). Not in code; needs a TX-licensed attorney to draft the ToS first.
+3. **Pool sustainability — NOW OPEN TO THE PUBLIC:** `POST /pool/donate` (no auth) allows anyone to fund the pool anonymously via Stripe. Logged-in users also have `POST /pool/contribute`. Diversified funding (grants, county, public) is the intended long-term model.
+4. **Guaranteed minimum is NOW HOURS-SCALED:** `getGuaranteedMinimum(estimatedHours?)` computes `max(flat_floor, hours × $15/hr)`. `estimated_hours` is collected in the request form and validated server-side (0.5–24). See `pool_guaranteed_minimum` and `pool_minimum_hourly_rate` system settings.
 5. **Pay-it-forward = community gift, not debt (legal):** structuring PIF pledges as voluntary gifts (not loans) is what keeps the platform out of consumer-lending/usury territory. No interest, no enforcement, no credit reporting. Consult a TX-licensed attorney before scaling past community pilot. (See community-pool session note for full 1099/lending details.)
 6. **Business accounts underbuilt:** schema + guardrails exist but no bulk requests, invoicing, or recurring service agreements yet.
-7. **No pledge default handling beyond admin write-off:** no automated reminder escalation or trust-score consequence for users who never pay back. Admin `PATCH /admin/requests/:id/pledge-status` is the only tool.
+7. **No pledge default handling beyond admin write-off:** PIF nudge worker exists (2d/14d/60d windows for zero-repayment requesters) but no consequence system or trust-score hit. Admin `PATCH /admin/requests/:id/pledge-status` is the only manual tool.
+8. **Hate-speech/slur detection NOT implemented:** the moderation heuristic catches spam/phone/link patterns + illegal-service keywords but not slurs. That category relies on the admin queue + user reports only — by design (heuristic false-positive rate would be too high without a real ML model).
 
 ## Known gaps (real, not yet built)
 

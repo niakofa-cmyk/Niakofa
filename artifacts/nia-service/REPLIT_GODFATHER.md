@@ -471,3 +471,27 @@ Three privacy / sustainability features shipped and confirmed running clean.
 - `PATCH /admin/requests/:id/pledge-status` now uses `requireAdmin()` middleware + `adminLimiter` instead of a manual DB `is_admin` check inside the handler. Consistent with the rest of the admin surface.
 
 **CLAUDE.md updated:** "Known product gaps — owner briefing" section added, moderation design choice updated to reflect both post and request coverage.
+
+### Session: July 3, 2026 — Livable-wage minimum (hours-scaled), anonymous pool donation, server-side bounds guard
+
+**Document reviewed line-by-line:** second uploaded owner-briefing document. Seven gaps verified against code. Two gaps were fully code-addressable this session:
+
+**Gap #4 resolved — guaranteed minimum now scales with task duration:**
+- `getHourlyMinimumRate()` added to `community-pool.ts`: reads `pool_minimum_hourly_rate` system setting (default $15/hr — Texas livable wage floor).
+- `getGuaranteedMinimum(estimatedHours?: number | null)` updated: `floor = max(flat_floor, roundMoney(estimatedHours × hourlyRate))`. Short tasks still get the flat minimum; longer tasks earn proportionally more. Backward-compatible — callers without hours fall back to flat floor unchanged.
+- `/requests/:id/complete` route now passes `request.estimated_hours` to `getGuaranteedMinimum()`.
+- **Server-side bounds validation added:** `estimated_hours` rejected if outside 0.5–24 range (returns 400). Prevents payout-abuse via inflated hours from direct API callers.
+- Frontend `request-new.tsx`: `estimated_hours` field added to Zod schema + form UI (optional, shown for non-goodwill tasks). Helper text explains it drives the livable-wage calculation.
+- `GET /pool/stats` now returns `minimum_hourly_rate` alongside `guaranteed_minimum`. Pool tab displays "flat floor · $X/hr for timed tasks" context label.
+
+**Gap #3 resolved — anonymous public pool donations (no login required):**
+- `POST /pool/donate` added to `pool.ts` — unauthenticated, `generalApiLimiter`, Stripe-only (no dev-mode direct credit to prevent anonymous abuse).
+- Stripe webhook already handled `userId = null` safely (`parseInt("") || null`); no webhook changes needed.
+- Community page Pool tab: "Support the Community" anonymous donation widget (preset amounts $5/$10/$25/$50, Stripe modal) visible only to non-logged-in users when Stripe is configured. Logged-in contribution flow unchanged.
+
+**Remaining gaps (not code-addressable without external providers/legal):**
+1. Background-check provider — column + gate exist, but no Checkr integration (needs API keys + agreement). Documented.
+2. Liability/ToS waiver — needs a lawyer to draft before code makes sense.
+3. Pledge default automation — PIF nudge worker exists (2d/14d/60d windows); consequence system design is out of scope without product decision.
+4. Legal consult — not code.
+5. Hate-speech/slur detection — by design, admin-queue + user reports only (documented in CLAUDE.md).
