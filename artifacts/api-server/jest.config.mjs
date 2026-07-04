@@ -15,6 +15,7 @@ const config = {
         tsconfig: {
           module: "ESNext",
           moduleResolution: "bundler",
+          esModuleInterop: true,
         },
       },
     ],

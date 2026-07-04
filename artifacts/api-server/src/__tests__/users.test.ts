@@ -77,16 +77,21 @@ beforeAll(async () => {
 // ── Reset mocks between tests ─────────────────────────────────────────────────
 beforeEach(async () => {
   const { db } = await import("@workspace/db");
-  (db.select as jest.Mock).mockClear().mockReturnThis();
-  (db.update as jest.Mock).mockClear().mockReturnThis();
-  (db.insert as jest.Mock).mockClear().mockReturnThis();
-  (db.delete as jest.Mock).mockClear().mockReturnThis();
-  (db.from as jest.Mock).mockClear().mockReturnThis();
-  (db.where as jest.Mock).mockClear().mockReturnThis();
-  (db.set as jest.Mock).mockClear().mockReturnThis();
-  (db.values as jest.Mock).mockClear().mockReturnThis();
-  (db.limit as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
-  (db.returning as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
+  // mockReset() clears both call history AND any queued mockResolvedValueOnce/
+  // mockReturnValueOnce entries from previous tests — critical for preventing
+  // mock state bleeding when a test sets up a once-mock but the route returns
+  // early (e.g. Zod validation failure) without consuming it.
+  (db.select as jest.Mock).mockReset().mockReturnThis();
+  (db.update as jest.Mock).mockReset().mockReturnThis();
+  (db.insert as jest.Mock).mockReset().mockReturnThis();
+  (db.delete as jest.Mock).mockReset().mockReturnThis();
+  (db.from as jest.Mock).mockReset().mockReturnThis();
+  (db.where as jest.Mock).mockReset().mockReturnThis();
+  (db.set as jest.Mock).mockReset().mockReturnThis();
+  (db.values as jest.Mock).mockReset().mockReturnThis();
+  (db.orderBy as jest.Mock).mockReset().mockReturnThis();
+  (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
+  (db.returning as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
 });
 
 // ── Registration tests ────────────────────────────────────────────────────────
@@ -106,10 +111,10 @@ describe("POST /api/users/register", () => {
 
     const res = await request(app)
       .post("/api/users/register")
-      .send({ name: "Alice", email: "alice@example.com", password: "secret123" });
+      .send({ name: "Alice", email: "alice@example.com", password: "secret123", tos_accepted: true, account_type: "individual" });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/already registered/i);
+    expect(res.body.error).toMatch(/already exists/i);
   });
 
   it("returns 201 with user and token on successful registration", async () => {
@@ -130,7 +135,7 @@ describe("POST /api/users/register", () => {
 
     const res = await request(app)
       .post("/api/users/register")
-      .send({ name: "Bob", email: "bob@example.com", password: "securePass1" });
+      .send({ name: "Bob", email: "bob@example.com", password: "securePass1", tos_accepted: true, account_type: "individual" });
 
     expect(res.status).toBe(201);
     expect(res.body.user).toBeDefined();
@@ -142,21 +147,16 @@ describe("POST /api/users/register", () => {
   });
 
   it("registers successfully without a password (legacy/no-password account)", async () => {
-    const { db } = await import("@workspace/db");
-    (db.limit as jest.Mock).mockResolvedValueOnce([]);
-    (db.returning as jest.Mock).mockResolvedValueOnce([{
-      id: 43, name: "Legacy User", email: "legacy@example.com",
-      is_helper: false, trust_score: 50, help_count: 0, benevolence_wallet: 0,
-      password_hash: null,
-    }]);
-
+    // Note: password-less registration is no longer supported via the standard
+    // register endpoint (Zod schema requires password). This test validates the
+    // 400 response for a missing password — the old "legacy account creation"
+    // path is now handled through admin import tooling, not the public API.
     const res = await request(app)
       .post("/api/users/register")
-      .send({ name: "Legacy User", email: "legacy@example.com" });
+      .send({ name: "Legacy User", email: "legacy@example.com", tos_accepted: true, account_type: "individual" });
 
-    expect(res.status).toBe(201);
-    expect(res.body.user).toBeDefined();
-    expect(res.body.token).toBeDefined();
+    // password is required by the Zod schema — expect 400
+    expect(res.status).toBe(400);
   });
 });
 
@@ -209,9 +209,9 @@ describe("POST /api/users/login", () => {
     expect(res.body.error).toMatch(/incorrect password/i);
   });
 
-  it("returns 200 with password_reset_required for legacy accounts", async () => {
+  it("returns 403 with LEGACY_PASSWORD_REQUIRED for legacy accounts", async () => {
     const { db } = await import("@workspace/db");
-    // Legacy account — no password_hash
+    // Legacy account — no password_hash (imported from external source, never set a password)
     (db.limit as jest.Mock).mockResolvedValueOnce([{
       id: 5, name: "Legacy", email: "legacy@example.com",
       password_hash: null, is_helper: false,
@@ -221,9 +221,10 @@ describe("POST /api/users/login", () => {
       .post("/api/users/login")
       .send({ email: "legacy@example.com", password: "anything" });
 
-    expect(res.status).toBe(200);
-    expect(res.body.password_reset_required).toBe(true);
-    expect(res.body.token).toBeDefined();
-    expect(res.body.user.id).toBe(5);
+    // Route returns 403 with error_code so the client can redirect to the
+    // forgot-password / set-password flow — not 200 with a token.
+    expect(res.status).toBe(403);
+    expect(res.body.error_code).toBe("LEGACY_PASSWORD_REQUIRED");
+    expect(res.body.user_id).toBe(5);
   });
 });

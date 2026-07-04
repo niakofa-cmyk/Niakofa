@@ -315,7 +315,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const capturedId = storedId; // stable reference for the async callback
 
-    fetch(`/api/users/${capturedId}`, { headers: { Authorization: `Bearer ${token}` } })
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/users/${capturedId}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(async r => {
         if (!active) return; // component unmounted or auth changed — discard
 

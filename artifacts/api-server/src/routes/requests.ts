@@ -1593,68 +1593,71 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
   // Atomic SQL increment — avoids lost-update race when two repayments hit concurrently.
   // Status is computed inside the DB from the post-update pledge_paid value, never from
   // stale application-layer reads.  RETURNING captures what was actually written.
-  const [updated] = await db.transaction(async (tx) => {
-    const rows = await tx
-      .update(requestsTable)
-      .set({
-        // Increment pledge_paid atomically; cap at pledge_amount to prevent overshoot
-        pledge_paid: sql`LEAST(
-          COALESCE(${requestsTable.pledge_paid}, 0) + ${safeAmount},
-          COALESCE(${requestsTable.pledge_amount}, 0)
-        )`,
-        // Status transitions computed inside DB from post-update state:
-        //   fully paid  → 'forgiven'
-        //   was defaulted, partially paid → 'active'  (reinstatement on any repayment)
-        //   was active, partially paid → unchanged ('active')
-        pledge_status: sql<string>`CASE
-          WHEN (COALESCE(${requestsTable.pledge_paid}, 0) + ${safeAmount}) >= COALESCE(${requestsTable.pledge_amount}, 0)
-            THEN 'forgiven'
-          WHEN ${requestsTable.pledge_status} = 'defaulted'
-            THEN 'active'
-          ELSE ${requestsTable.pledge_status}
-        END`,
-        // Clear any pending hardship — requester has demonstrated intent to pay
-        hardship_requested_at: null,
-        hardship_note: null,
-      } as Record<string, unknown>)
-      .where(
-        and(
-          eq(requestsTable.id, requestId),
-          // Guard: only update rows still carrying an outstanding balance
-          // (prevents double-credit if the same client fires the request twice)
-          sql`COALESCE(${requestsTable.pledge_paid}, 0) < COALESCE(${requestsTable.pledge_amount}, 0)`,
+  let updated: { pledge_paid: number | null; pledge_status: string | null; pledge_amount: number | null } | undefined;
+  try {
+    [updated] = await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(requestsTable)
+        .set({
+          // Increment pledge_paid atomically; cap at pledge_amount to prevent overshoot
+          pledge_paid: sql`LEAST(
+            COALESCE(${requestsTable.pledge_paid}, 0) + ${safeAmount},
+            COALESCE(${requestsTable.pledge_amount}, 0)
+          )`,
+          // Status transitions computed inside DB from post-update state:
+          //   fully paid  → 'forgiven'
+          //   was defaulted, partially paid → 'active'  (reinstatement on any repayment)
+          //   was active, partially paid → unchanged ('active')
+          pledge_status: sql<string>`CASE
+            WHEN (COALESCE(${requestsTable.pledge_paid}, 0) + ${safeAmount}) >= COALESCE(${requestsTable.pledge_amount}, 0)
+              THEN 'forgiven'
+            WHEN ${requestsTable.pledge_status} = 'defaulted'
+              THEN 'active'
+            ELSE ${requestsTable.pledge_status}
+          END`,
+          // Clear any pending hardship — requester has demonstrated intent to pay
+          hardship_requested_at: null,
+          hardship_note: null,
+        } as Record<string, unknown>)
+        .where(
+          and(
+            eq(requestsTable.id, requestId),
+            // Guard: only update rows still carrying an outstanding balance
+            // (prevents double-credit if the same client fires the request twice)
+            sql`COALESCE(${requestsTable.pledge_paid}, 0) < COALESCE(${requestsTable.pledge_amount}, 0)`,
+          )
         )
-      )
-      .returning({
-        pledge_paid: requestsTable.pledge_paid,
-        pledge_status: requestsTable.pledge_status,
-        pledge_amount: requestsTable.pledge_amount,
+        .returning({
+          pledge_paid: requestsTable.pledge_paid,
+          pledge_status: requestsTable.pledge_status,
+          pledge_amount: requestsTable.pledge_amount,
+        });
+
+      if (!rows[0]) {
+        // Race: another concurrent repayment already cleared the balance
+        throw Object.assign(new Error("already_paid"), { status: 409 });
+      }
+
+      const row = rows[0];
+      const amountActuallyApplied = Math.min(safeAmount, (row.pledge_amount ?? 0) - ((row.pledge_paid ?? 0) - safeAmount));
+
+      // Record the repayment in the pool ledger for the audit trail.
+      await tx.insert(communityPoolLedgerTable).values({
+        entry_type: "pledge_repayment",
+        amount: amountActuallyApplied > 0 ? amountActuallyApplied : safeAmount,
+        request_id: requestId,
+        user_id: requesterId,
+        notes: `Self-service repayment — pledge ${row.pledge_status === "forgiven" ? "fully paid" : "reinstated from defaulted"}`,
       });
 
-    if (!rows[0]) {
-      // Race: another concurrent repayment already cleared the balance
-      throw Object.assign(new Error("already_paid"), { status: 409 });
-    }
-
-    const row = rows[0];
-    const amountActuallyApplied = Math.min(safeAmount, (row.pledge_amount ?? 0) - ((row.pledge_paid ?? 0) - safeAmount));
-
-    // Record the repayment in the pool ledger for the audit trail.
-    await tx.insert(communityPoolLedgerTable).values({
-      entry_type: "pledge_repayment",
-      amount: amountActuallyApplied > 0 ? amountActuallyApplied : safeAmount,
-      request_id: requestId,
-      user_id: requesterId,
-      notes: `Self-service repayment — pledge ${row.pledge_status === "forgiven" ? "fully paid" : "reinstated from defaulted"}`,
+      return rows;
     });
-
-    return rows;
-  }).catch((err: Error & { status?: number }) => {
-    if (err.message === "already_paid") {
-      throw err; // re-throw to be caught below
+  } catch (err) {
+    if (err instanceof Error && err.message === "already_paid") {
+      return res.status(409).json({ error: "This pledge is already fully paid or resolved." });
     }
     throw err;
-  });
+  }
 
   if (!updated) {
     return res.status(409).json({ error: "This pledge is already fully paid or resolved." });

@@ -174,7 +174,7 @@ async function processPifNudges(): Promise<void> {
 
 const PLEDGE_DEFAULT_DAYS = 90;
 
-async function processPledgeDefaults(): Promise<void> {
+export async function processPledgeDefaults(): Promise<void> {
   const { db, requestsTable, usersTable } = await import("@workspace/db");
   const { eq, and, sql, lt } = await import("drizzle-orm");
 
@@ -273,7 +273,7 @@ async function processPledgeDefaults(): Promise<void> {
                   "Or submit a hardship request if you're going through a difficult time and need a waiver.",
                 ].join("\n"),
                 ctaText: "Open My Wallet",
-                ctaUrl: "https://niakofa.app/wallet",
+                ctaUrl: `${process.env["APP_URL"] ?? "https://niakofa.com"}/wallet`,
               }).catch(() => {})
             )
             .catch(() => {});

@@ -21,6 +21,9 @@ import type { Request } from "express";
  * of IP, so this never affects live deployments.
  */
 function skipLocalhostInDev(req: Request): boolean {
+  // Skip rate limiting entirely in the test environment so Jest suites
+  // don't 429-themselves when calling auth or payment endpoints repeatedly.
+  if (process.env.NODE_ENV === "test") return true;
   if (process.env.NODE_ENV !== "development") return false;
   const ip = req.ip ?? "";
   return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";

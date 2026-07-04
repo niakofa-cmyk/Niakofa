@@ -17,6 +17,8 @@
 - [Niakofa pledge defaults](niakofa-pledge-defaults.md) — processPledgeDefaults 90-day worker; atomic WHERE pledge_status='active' prevents double-penalty; 'defaulted' hard-blocks new PIF.
 - [Niakofa openapi codegen](niakofa-openapi-codegen.md) — orval runs via root node_modules; duplicate YAML keys and null-valued properties silently break codegen.
 - [Niakofa test setup](niakofa-test-setup.md) — Jest+Supertest in ESM mode (ts-jest esm preset); __tests__ excluded from main tsconfig to avoid type conflicts.
+- [Niakofa test mock bleeding](niakofa-test-mock-bleeding.md) — users.test.ts must use mockReset() not mockClear(); tos_accepted required in register bodies; bug-15b-15c.test.ts pre-existing failures.
+- [Niakofa pledge default consolidation](niakofa-pledge-default-consolidation.md) — Step 6 removed from pledge-worker.ts; scheduler.ts::processPledgeDefaults is sole auto-default owner; exported for testing.
 - [Niakofa auth flow](niakofa-auth-flow.md) — DB tables caused all 500s; AppContext must own centralized logout(); last-known location persisted as niakofa_last_location.
 - [Niakofa rate limiter](niakofa-rate-limit.md) — authLimiter 10/15min; adminLimiter 100/15min; niaChatHistoryLimiter 60/15min; pool/donate uses paymentLimiter not generalApiLimiter.
 - [Niakofa recurring requests](niakofa-recurring.md) — recurring_requests table + /api/recurring routes; processRecurringRequests must be called in index.ts as hourly setInterval worker.

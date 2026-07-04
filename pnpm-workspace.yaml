@@ -34,7 +34,6 @@ minimumReleaseAgeExclude:
   - '@replit/*'
   - stripe-replit-sync
   - orval
-  - orval
 
 packages:
   - artifacts/*

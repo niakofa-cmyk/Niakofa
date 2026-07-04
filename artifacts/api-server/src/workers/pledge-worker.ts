@@ -16,7 +16,7 @@
  */
 import { Worker, type Job } from "bullmq";
 import { db, requestsTable, scheduledPaymentsTable, paymentTransactionsTable, usersTable } from "@workspace/db";
-import { eq, and, lte, sql, isNull } from "drizzle-orm";
+import { eq, and, lte, sql } from "drizzle-orm";
 import { getRedisConnection, QUEUE } from "../lib/queue";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
@@ -164,125 +164,17 @@ When you're ready, you can pay through the Niakofa app — every contribution ke
     }
   }
 
-  // ── Step 6: Auto-default pledges > 90 days outstanding ───────────────────
-  // This is the documented safety net referenced in requests.ts and the admin
-  // pledge-status panel. Without this step, pledge_status='defaulted' can ONLY
-  // be set manually by an admin, meaning the "90-day auto-default" described
-  // in the codebase's own comments never actually triggers — defeating the pool
-  // sustainability mechanism and leaving serial non-payers unblocked indefinitely.
+  // ── Step 6 removed ────────────────────────────────────────────────────────
+  // Auto-default logic (pledges > 90 days outstanding) is now the sole
+  // responsibility of scheduler.ts::startPledgeDefaultWorker, which runs as
+  // a setInterval every 12 hours and works with or without Redis.
   //
-  // Clock starts at completed_at (when the request was fulfilled and the
-  // Pay It Forward obligation began). Hardship exemption: accounts with a
-  // pending hardship_requested_at are never auto-defaulted (admin reviews those).
-  //
-  // Idempotency: the WHERE clause includes pledge_status='active' so re-running
-  // this step on already-defaulted rows is a no-op.
-  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-  const toDefault = await db
-    .select()
-    .from(requestsTable)
-    .where(
-      and(
-        eq(requestsTable.payment_type, "pay_it_forward"),
-        eq(requestsTable.status, "completed"),
-        eq(requestsTable.pledge_status, "active"),
-        sql`COALESCE(${requestsTable.pledge_paid}, 0) < COALESCE(${requestsTable.pledge_amount}, 0)`,
-        sql`${requestsTable.completed_at} < ${ninetyDaysAgo.toISOString()}::timestamptz`,
-        isNull(requestsTable.hardship_requested_at),
-      )
-    );
-
-  if (toDefault.length > 0) {
-    logger.info({ count: toDefault.length }, "pledge-worker: auto-defaulting pledges outstanding >90 days");
-
-    for (const req of toDefault) {
-      const [updated] = await db
-        .update(requestsTable)
-        .set({ pledge_status: "defaulted" })
-        .where(
-          and(
-            eq(requestsTable.id, req.id),
-            eq(requestsTable.pledge_status, "active"), // idempotency guard
-          )
-        )
-        .returning({ id: requestsTable.id });
-
-      if (!updated) continue; // concurrent update already handled it
-
-      // ── Trust/goodwill penalty ────────────────────────────────────────────
-      // Mirrors scheduler.ts processPledgeDefaults so both workers produce an
-      // identical outcome regardless of which one wins the 90-day atomic race.
-      // The WHERE pledge_status='active' guard above guarantees only one worker
-      // actually updates the row; the other gets 0 rows and skips everything.
-      if (req.requester_id) {
-        await db
-          .update(usersTable)
-          .set({
-            trust_score:    sql`GREATEST(0, COALESCE(trust_score, 5.0) - 10)`,
-            goodwill_score: sql`GREATEST(0, COALESCE(goodwill_score, 0) - 5)`,
-          })
-          .where(eq(usersTable.id, req.requester_id))
-          .catch(err => logger.error({ err, request_id: req.id }, "pledge-worker: failed to apply trust penalty"));
-      }
-
-      logger.warn(
-        {
-          request_id: req.id,
-          requester_id: req.requester_id,
-          outstanding: (req.pledge_amount ?? 0) - (req.pledge_paid ?? 0),
-          completed_at: req.completed_at?.toISOString(),
-        },
-        "pledge-worker: pledge auto-defaulted after 90 days — trust penalty applied"
-      );
-
-      // Notify the requester so they know their posting ability is now blocked.
-      // Look up their email synchronously within the loop so the fire-and-forget
-      // mailer call has a real address (the previous placeholder was always "").
-      if (req.requester_id) {
-        const [requester] = await db
-          .select({ email: usersTable.email, name: usersTable.name })
-          .from(usersTable)
-          .where(eq(usersTable.id, req.requester_id))
-          .limit(1);
-
-        // Push notification (fire-and-forget — failure must not interrupt the loop)
-        try {
-          await sendPushToUser(req.requester_id, {
-            title: "Pay It Forward pledge defaulted",
-            body: `Your pledge for "${req.title}" has been marked as defaulted after 90 days with no repayment. Contact support to restore your posting ability.`,
-            notifType: "wallet",
-          });
-        } catch { /* push may fail silently — continue */ }
-
-        // Email notification — only if we resolved a real address
-        if (requester?.email) {
-          const recipientName = requester.name ?? "Niakofa member";
-          import("../lib/mailer.js")
-            .then(({ sendAlertEmail }) =>
-              sendAlertEmail({
-                to:      requester.email,
-                subject: "Your Pay It Forward pledge has been defaulted",
-                title:   "Pay It Forward pledge defaulted",
-                body: [
-                  `Hi ${recipientName},`,
-                  "",
-                  `Your Pay It Forward pledge for "${req.title}" has been marked as defaulted`,
-                  "after 90 days without repayment.",
-                  "",
-                  "This means you cannot post new Pay It Forward requests until the pledge is resolved.",
-                  "Please contact support@niakofa.app to discuss a hardship waiver or repayment plan.",
-                ].join("\n"),
-                ctaText: "Contact Support",
-                ctaUrl:  "mailto:support@niakofa.app",
-              }).catch(() => {})
-            )
-            .catch(() => {});
-        }
-      }
-    }
-  } else {
-    logger.debug("pledge-worker: no pledges eligible for auto-default today");
-  }
+  // Having Step 6 here AND in scheduler.ts was redundant: both read the same
+  // rows and the atomic WHERE pledge_status='active' guard prevented double-
+  // processing, but it wasted a DB scan and created two surfaces that had to
+  // be kept in sync. With Step 6 removed, the single source of truth is
+  // scheduler.ts — edit that file for any changes to default eligibility,
+  // penalty amounts, or notification copy.
 
   logger.info("pledge-worker: reconciliation complete");
 }

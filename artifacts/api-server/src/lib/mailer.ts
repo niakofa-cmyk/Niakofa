@@ -102,7 +102,10 @@ export interface AlertEmailData {
 
 export async function sendAlertEmail(data: AlertEmailData): Promise<void> {
   const smtpUser = process.env["SMTP_USER"];
-  if (!smtpUser) return;
+  if (!smtpUser) {
+    logger.warn({ to: data.to, subject: data.subject }, "SMTP not configured — alert email not sent (set SMTP_HOST/SMTP_USER/SMTP_PASS in Railway)");
+    return;
+  }
 
   const ctaBlock = data.ctaText && data.ctaUrl
     ? `<div style="text-align:center;margin-top:24px"><a href="${data.ctaUrl}" style="display:inline-block;background:#00d4ff;color:#0a0f1e;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;text-decoration:none">${data.ctaText}</a></div>`
