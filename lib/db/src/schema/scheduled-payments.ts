@@ -9,6 +9,10 @@ export const scheduledPaymentsTable = pgTable("scheduled_payments", {
   status: text("status").notNull().default("pending"),
   note: text("note"),
   created_at: timestamp("created_at").defaultNow().notNull(),
+  // Dedup sentinel: updated each time a push/email reminder is sent for this
+  // payment. The scheduler only re-sends when this is NULL or > 24h old,
+  // preventing indefinite re-notification for users who intend to pay later.
+  last_reminder_sent_at: timestamp("last_reminder_sent_at"),
 });
 
 export type ScheduledPayment = typeof scheduledPaymentsTable.$inferSelect;

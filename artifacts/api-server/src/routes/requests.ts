@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
-import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, userSettingsTable, businessesTable, businessMembersTable, systemSettingsTable } from "@workspace/db";
+import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, userSettingsTable, businessesTable, businessMembersTable, systemSettingsTable, communityPoolLedgerTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -1536,6 +1536,146 @@ router.post("/admin/requests/:id/moderate", requireAuth, requireAdmin(), adminLi
     `Admin ${action === "approve" ? "approved" : "rejected"} flagged request`,
   );
   return res.json(updated);
+});
+
+// ── Self-service pledge repayment ─────────────────────────────────────────────
+// POST /requests/:id/pledge-repay
+//
+// Any authenticated requester can record a partial or full repayment against
+// their Pay It Forward pledge. Making ANY repayment immediately reinstates a
+// defaulted pledge back to 'active', restoring the user's ability to post new
+// PIF requests without waiting for an admin action.
+//
+// Design intent: "No pressure — pay what you can, whenever you can."
+// Once a requester demonstrates intent by making a payment, they regain access.
+// The full outstanding balance remains tracked until the pledge is fully repaid.
+//
+// Rules:
+//   - Only the original requester can submit a repayment
+//   - Only on active or defaulted pledges (forgiven/written_off are closed)
+//   - Amount must be > 0 and ≤ outstanding balance
+//   - Ledger entry recorded for audit trail
+//   - 'defaulted' status flips back to 'active' on any repayment
+//   - Full repayment flips status to 'forgiven' (pledge completed)
+router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
+  const requesterId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id), 10);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  const { amount } = req.body as { amount?: unknown };
+  const amountNum = typeof amount === "number" ? amount : parseFloat(String(amount ?? ""));
+  if (!amountNum || isNaN(amountNum) || amountNum <= 0) {
+    return res.status(400).json({ error: "amount must be a positive number" });
+  }
+
+  const [request] = await db
+    .select()
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.requester_id !== requesterId) return res.status(403).json({ error: "Forbidden" });
+  if (request.pledge_status !== "defaulted" && request.pledge_status !== "active") {
+    return res.status(409).json({ error: "This pledge is already resolved." });
+  }
+  if (!request.pledge_amount || request.pledge_amount <= 0) {
+    return res.status(400).json({ error: "No outstanding pledge on this request." });
+  }
+
+  const outstanding = (request.pledge_amount ?? 0) - (request.pledge_paid ?? 0);
+  if (outstanding <= 0) {
+    return res.status(409).json({ error: "This pledge is already fully paid." });
+  }
+  // Cap repayment at the outstanding balance — no overpayment
+  const safeAmount = Math.min(amountNum, outstanding);
+
+  // Atomic SQL increment — avoids lost-update race when two repayments hit concurrently.
+  // Status is computed inside the DB from the post-update pledge_paid value, never from
+  // stale application-layer reads.  RETURNING captures what was actually written.
+  const [updated] = await db.transaction(async (tx) => {
+    const rows = await tx
+      .update(requestsTable)
+      .set({
+        // Increment pledge_paid atomically; cap at pledge_amount to prevent overshoot
+        pledge_paid: sql`LEAST(
+          COALESCE(${requestsTable.pledge_paid}, 0) + ${safeAmount},
+          COALESCE(${requestsTable.pledge_amount}, 0)
+        )`,
+        // Status transitions computed inside DB from post-update state:
+        //   fully paid  → 'forgiven'
+        //   was defaulted, partially paid → 'active'  (reinstatement on any repayment)
+        //   was active, partially paid → unchanged ('active')
+        pledge_status: sql<string>`CASE
+          WHEN (COALESCE(${requestsTable.pledge_paid}, 0) + ${safeAmount}) >= COALESCE(${requestsTable.pledge_amount}, 0)
+            THEN 'forgiven'
+          WHEN ${requestsTable.pledge_status} = 'defaulted'
+            THEN 'active'
+          ELSE ${requestsTable.pledge_status}
+        END`,
+        // Clear any pending hardship — requester has demonstrated intent to pay
+        hardship_requested_at: null,
+        hardship_note: null,
+      } as Record<string, unknown>)
+      .where(
+        and(
+          eq(requestsTable.id, requestId),
+          // Guard: only update rows still carrying an outstanding balance
+          // (prevents double-credit if the same client fires the request twice)
+          sql`COALESCE(${requestsTable.pledge_paid}, 0) < COALESCE(${requestsTable.pledge_amount}, 0)`,
+        )
+      )
+      .returning({
+        pledge_paid: requestsTable.pledge_paid,
+        pledge_status: requestsTable.pledge_status,
+        pledge_amount: requestsTable.pledge_amount,
+      });
+
+    if (!rows[0]) {
+      // Race: another concurrent repayment already cleared the balance
+      throw Object.assign(new Error("already_paid"), { status: 409 });
+    }
+
+    const row = rows[0];
+    const amountActuallyApplied = Math.min(safeAmount, (row.pledge_amount ?? 0) - ((row.pledge_paid ?? 0) - safeAmount));
+
+    // Record the repayment in the pool ledger for the audit trail.
+    await tx.insert(communityPoolLedgerTable).values({
+      entry_type: "pledge_repayment",
+      amount: amountActuallyApplied > 0 ? amountActuallyApplied : safeAmount,
+      request_id: requestId,
+      user_id: requesterId,
+      notes: `Self-service repayment — pledge ${row.pledge_status === "forgiven" ? "fully paid" : "reinstated from defaulted"}`,
+    });
+
+    return rows;
+  }).catch((err: Error & { status?: number }) => {
+    if (err.message === "already_paid") {
+      throw err; // re-throw to be caught below
+    }
+    throw err;
+  });
+
+  if (!updated) {
+    return res.status(409).json({ error: "This pledge is already fully paid or resolved." });
+  }
+
+  const fullyPaid = updated.pledge_status === "forgiven";
+
+  logger.info(
+    { request_id: requestId, requester_id: requesterId, amount: safeAmount, new_status: updated.pledge_status, fully_paid: fullyPaid },
+    "pledge-repay: self-service repayment recorded"
+  );
+
+  return res.status(200).json({
+    success: true,
+    amount_paid: safeAmount,
+    new_pledge_paid: updated.pledge_paid,
+    pledge_status: updated.pledge_status,
+    message: fullyPaid
+      ? "Thank you! Your pledge has been fully paid. The community is grateful. 💙"
+      : "Thank you! Your pledge is back in good standing. Pay more whenever you're able. 💙",
+  });
 });
 
 // ── Hardship / Forgiveness Request — requester self-service ──────────────────

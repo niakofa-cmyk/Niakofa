@@ -74,7 +74,10 @@ async function reconcilePledges(_job: Job): Promise<void> {
         )
       );
 
-    // 3. Check for overdue scheduled payments for this request
+    // 3. Check for overdue scheduled payments for this request.
+    //    Dedup: only send if last_reminder_sent_at IS NULL OR > 24h ago.
+    //    This mirrors scheduler.ts::processScheduledReminders() dedup gate so
+    //    users can't receive multiple reminder paths firing on the same day.
     const overdueScheduled = await db
       .select()
       .from(scheduledPaymentsTable)
@@ -82,7 +85,9 @@ async function reconcilePledges(_job: Job): Promise<void> {
         and(
           eq(scheduledPaymentsTable.request_id, request.id),
           eq(scheduledPaymentsTable.status, "pending"),
-          lte(scheduledPaymentsTable.scheduled_date, now)
+          lte(scheduledPaymentsTable.scheduled_date, now),
+          sql`(${scheduledPaymentsTable.last_reminder_sent_at} IS NULL
+            OR ${scheduledPaymentsTable.last_reminder_sent_at} < NOW() - INTERVAL '24 hours')`
         )
       );
 
@@ -95,13 +100,16 @@ async function reconcilePledges(_job: Job): Promise<void> {
       const amountStr = `${scheduled.amount.toFixed(2)}`;
 
       // Push notification (non-fatal if not subscribed)
-      await sendPushToUser(scheduled.user_id, {
+      const sent = await sendPushToUser(scheduled.user_id, {
         title: "💙 Pay It Forward — Ready When You Are",
         body: `Your ${amountStr} Pay It Forward contribution was scheduled for ${dateStr}. Tap to pay when you're ready — no pressure.`,
         urgency: "normal",
         requestId: request.id ?? undefined,
         notifType: "wallet" as const,
-      }).catch(err => logger.warn({ err, user_id: scheduled.user_id }, "pledge-worker: push reminder failed (non-fatal)"));
+      }).then(() => true).catch(err => {
+        logger.warn({ err, user_id: scheduled.user_id }, "pledge-worker: push reminder failed (non-fatal)");
+        return false;
+      });
 
       // Email reminder — look up the requester's email so we can send a warm reminder.
       // Uses lazy import to avoid circular dependency with the workers bootstrap file.
@@ -130,6 +138,16 @@ When you're ready, you can pay through the Niakofa app — every contribution ke
         }
       } catch (err) {
         logger.warn({ err, user_id: scheduled.user_id }, "pledge-worker: email reminder failed (non-fatal)");
+      }
+
+      // Stamp send time so neither this worker NOR the scheduler's 6-hour cron
+      // will re-send the same payment reminder within 24 hours.
+      if (sent) {
+        await db
+          .update(scheduledPaymentsTable)
+          .set({ last_reminder_sent_at: new Date() })
+          .where(eq(scheduledPaymentsTable.id, scheduled.id))
+          .catch(() => {});
       }
     }
 
@@ -191,6 +209,22 @@ When you're ready, you can pay through the Niakofa app — every contribution ke
 
       if (!updated) continue; // concurrent update already handled it
 
+      // ── Trust/goodwill penalty ────────────────────────────────────────────
+      // Mirrors scheduler.ts processPledgeDefaults so both workers produce an
+      // identical outcome regardless of which one wins the 90-day atomic race.
+      // The WHERE pledge_status='active' guard above guarantees only one worker
+      // actually updates the row; the other gets 0 rows and skips everything.
+      if (req.requester_id) {
+        await db
+          .update(usersTable)
+          .set({
+            trust_score:    sql`GREATEST(0, COALESCE(trust_score, 5.0) - 10)`,
+            goodwill_score: sql`GREATEST(0, COALESCE(goodwill_score, 0) - 5)`,
+          })
+          .where(eq(usersTable.id, req.requester_id))
+          .catch(err => logger.error({ err, request_id: req.id }, "pledge-worker: failed to apply trust penalty"));
+      }
+
       logger.warn(
         {
           request_id: req.id,
@@ -198,7 +232,7 @@ When you're ready, you can pay through the Niakofa app — every contribution ke
           outstanding: (req.pledge_amount ?? 0) - (req.pledge_paid ?? 0),
           completed_at: req.completed_at?.toISOString(),
         },
-        "pledge-worker: pledge auto-defaulted after 90 days without repayment"
+        "pledge-worker: pledge auto-defaulted after 90 days — trust penalty applied"
       );
 
       // Notify the requester so they know their posting ability is now blocked.

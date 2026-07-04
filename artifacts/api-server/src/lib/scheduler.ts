@@ -29,7 +29,13 @@ async function processScheduledReminders(): Promise<void> {
       .where(
         and(
           eq(scheduledPaymentsTable.status, "pending"),
-          lte(scheduledPaymentsTable.scheduled_date, now)
+          lte(scheduledPaymentsTable.scheduled_date, now),
+          // Dedup: only send if never reminded OR last reminder was > 24 hours ago.
+          // Without this, a user who intends to pay later receives a new push every
+          // 6 hours indefinitely for the same payment — feels spammy and erodes trust.
+          // The column is added by migration 0042; IS NULL covers rows from before the migration.
+          sql`(${scheduledPaymentsTable.last_reminder_sent_at} IS NULL
+            OR ${scheduledPaymentsTable.last_reminder_sent_at} < NOW() - INTERVAL '24 hours')`
         )
       );
   } catch (err) {
@@ -47,13 +53,23 @@ async function processScheduledReminders(): Promise<void> {
       day: "numeric",
     });
 
-    await sendPushToUser(payment.user_id, {
+    const sent = await sendPushToUser(payment.user_id, {
       title: "💙 Niakofa Reminder",
-      body: `Your $${payment.amount.toFixed(2)} contribution was scheduled for ${d}. Tap to pay when you're ready — no pressure.`,
+      body: `Your ${payment.amount.toFixed(2)} contribution was scheduled for ${d}. Tap to pay when you're ready — no pressure.`,
       urgency: "normal",
       requestId: payment.request_id ?? undefined,
       notifType: "wallet" as const,
-    }).catch(() => {});
+    }).then(() => true).catch(() => false);
+
+    // Record the send time so this payment isn't reminded again within 24 hours.
+    // Failure here is non-critical — worst case is one extra nudge on the next run.
+    if (sent) {
+      await db
+        .update(scheduledPaymentsTable)
+        .set({ last_reminder_sent_at: new Date() })
+        .where(eq(scheduledPaymentsTable.id, payment.id))
+        .catch(() => {});
+    }
   }
 }
 
@@ -176,7 +192,10 @@ async function processPledgeDefaults(): Promise<void> {
           eq(requestsTable.payment_type, "pay_it_forward"),
           eq(requestsTable.status, "completed"),
           eq(requestsTable.pledge_status, "active"), // only active pledges; forgiven/written_off already resolved
-          sql`COALESCE(${requestsTable.pledge_paid}, 0) = 0`,
+          // Any unpaid balance (partial or zero) — mirrors pledge-worker.ts eligibility
+          sql`COALESCE(${requestsTable.pledge_paid}, 0) < COALESCE(${requestsTable.pledge_amount}, 0)`,
+          // Hardship exemption — admin reviews these separately, never auto-default them
+          sql`${requestsTable.hardship_requested_at} IS NULL`,
           // More than 90 days since completion — past the grace window
           sql`${requestsTable.completed_at} < NOW() - INTERVAL '${sql.raw(String(PLEDGE_DEFAULT_DAYS))} days'`,
           sql`${requestsTable.completed_at} IS NOT NULL`,
@@ -220,9 +239,50 @@ async function processPledgeDefaults(): Promise<void> {
         })
         .where(eq(usersTable.id, req.requester_id));
 
+      // Fire push + email — mirrors pledge-worker.ts Step 6 so outcome is
+      // identical regardless of which cron wins the 90-day race.
+      // The atomic WHERE pledge_status='active' above ensures only one worker
+      // ever reaches this block for any given row.
+      sendPushToUser(req.requester_id, {
+        title: "Pay It Forward pledge defaulted",
+        body: `Your pledge has been marked as defaulted after ${PLEDGE_DEFAULT_DAYS} days. Make any repayment in your wallet to restore your posting ability.`,
+        urgency: "normal",
+        notifType: "wallet" as const,
+      }).catch(() => {});
+
+      // Look up requester email for mailer — fire-and-forget, never throws
+      db.select({ email: usersTable.email, name: usersTable.name })
+        .from(usersTable)
+        .where(eq(usersTable.id, req.requester_id))
+        .limit(1)
+        .then(([requester]) => {
+          if (!requester?.email) return;
+          import("./mailer.js")
+            .then(({ sendAlertEmail }) =>
+              sendAlertEmail({
+                to: requester.email,
+                subject: "Your Pay It Forward pledge has been defaulted",
+                title: "Pay It Forward pledge defaulted",
+                body: [
+                  `Hi ${requester.name ?? "neighbor"},`,
+                  "",
+                  `Your Pay It Forward pledge has been marked as defaulted after ${PLEDGE_DEFAULT_DAYS} days without repayment.`,
+                  "This means you cannot post new Pay It Forward requests until the pledge is resolved.",
+                  "",
+                  "Make any payment — even a small one — in your Niakofa wallet to restore your posting ability immediately.",
+                  "Or submit a hardship request if you're going through a difficult time and need a waiver.",
+                ].join("\n"),
+                ctaText: "Open My Wallet",
+                ctaUrl: "https://niakofa.app/wallet",
+              }).catch(() => {})
+            )
+            .catch(() => {});
+        })
+        .catch(() => {});
+
       logger.info(
         { request_id: req.id, requester_id: req.requester_id, days: PLEDGE_DEFAULT_DAYS },
-        "pledge-default: pledge defaulted, trust score penalized"
+        "pledge-default: pledge defaulted, trust score penalized, notification dispatched"
       );
     } catch (err) {
       logger.error({ err, request_id: req.id }, "pledge-default: failed to process row");

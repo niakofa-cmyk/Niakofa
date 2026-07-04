@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Wallet, TrendingUp, Heart, DollarSign, Gift, Clock, X, ArrowUpRight, ArrowDownLeft, Loader2, Calendar, CheckCircle, CreditCard, ExternalLink, Play, BanknoteIcon, LifeBuoy, AlertCircle } from "lucide-react";
+import { Wallet, TrendingUp, Heart, DollarSign, Gift, Clock, X, ArrowUpRight, ArrowDownLeft, Loader2, Calendar, CheckCircle, CreditCard, ExternalLink, Play, BanknoteIcon, LifeBuoy, AlertCircle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAppContext } from "@/lib/AppContext";
@@ -105,6 +105,44 @@ export default function WalletScreen() {
   const [hardshipRequestId, setHardshipRequestId] = useState<number | null>(null);
   const [hardshipNote, setHardshipNote] = useState("");
   const [hardshipLoading, setHardshipLoading] = useState(false);
+
+  // Pledge self-service repayment state (for defaulted pledges)
+  const [repayRequestId, setRepayRequestId] = useState<number | null>(null);
+  const [repayAmount, setRepayAmount] = useState("");
+  const [repayLoading, setRepayLoading] = useState(false);
+  // Self-service pledge repayment — any amount reinstates a defaulted pledge
+  const handlePledgeRepay = async (requestId: number, outstanding: number) => {
+    const amt = parseFloat(repayAmount);
+    if (isNaN(amt) || amt <= 0) {
+      toast({ title: "Enter a valid amount", variant: "destructive" });
+      return;
+    }
+    if (amt > outstanding + 0.01) {
+      toast({ title: `Maximum repayment is ${outstanding.toFixed(2)}`, variant: "destructive" });
+      return;
+    }
+    if (!currentUser) return;
+    setRepayLoading(true);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const res = await fetch(`${base}/api/requests/${requestId}/pledge-repay`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ amount: amt }),
+      });
+      const data = await res.json() as { success?: boolean; message?: string; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed to record repayment");
+      toast({ title: data.message ?? "Repayment recorded! 💙" });
+      setRepayRequestId(null);
+      setRepayAmount("");
+      queryClient.invalidateQueries({ queryKey: getGetUserOutstandingPledgesQueryKey(currentUser.id) });
+    } catch (err) {
+      toast({ title: err instanceof Error ? err.message : "Repayment failed", variant: "destructive" });
+    } finally {
+      setRepayLoading(false);
+    }
+  };
+
   const submitHardship = async () => {
     if (!hardshipRequestId || !userId) return;
     setHardshipLoading(true);
@@ -663,29 +701,101 @@ export default function WalletScreen() {
               {outstandingPledges.map(r => {
                 const outstanding = (r.pledge_amount ?? 0) - (r.pledge_paid ?? 0);
                 const alreadyHardship = !!(r as typeof r & { hardship_requested_at?: string | null }).hardship_requested_at;
+                const isDefaulted = (r as typeof r & { pledge_status?: string }).pledge_status === "defaulted";
+                const isRepaying = repayRequestId === r.id;
                 return (
-                  <div key={r.id} className="bg-card border border-yellow-500/30 rounded-xl p-3.5 space-y-2">
+                  <div key={r.id} className={`bg-card border rounded-xl p-3.5 space-y-2 ${isDefaulted ? "border-red-500/40" : "border-yellow-500/30"}`}>
                     <div className="flex items-center gap-3">
                       <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm truncate">{r.title}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="font-semibold text-sm truncate">{r.title}</div>
+                          {isDefaulted && (
+                            <span className="text-[9px] font-black uppercase tracking-wider text-red-400 bg-red-500/10 border border-red-500/30 px-1.5 py-0.5 rounded-full shrink-0">Defaulted</span>
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
-                          Outstanding: <span className="text-yellow-400 font-bold">${outstanding.toFixed(2)}</span>
+                          Outstanding: <span className={`font-bold ${isDefaulted ? "text-red-400" : "text-yellow-400"}`}>${outstanding.toFixed(2)}</span>
                           {(r.pledge_paid ?? 0) > 0 && (
                             <span className="ml-2 text-green-400">· ${(r.pledge_paid ?? 0).toFixed(2)} paid</span>
                           )}
                         </div>
-                        {/* Daily reminders are live — pledge-worker sends push+email at 9am for overdue pledges */}
                         <div className="text-[10px] text-muted-foreground mt-1">
-                          We'll remind you gently — pay whatever you can, whenever you can.
+                          {isDefaulted
+                            ? "Posting paused — any repayment reinstates your account immediately."
+                            : "We'll remind you gently — pay whatever you can, whenever you can."}
                         </div>
                       </div>
-                      <button
-                        onClick={() => { setSchedulerRequest(r); setSchedulerOpen(true); }}
-                        className="text-[10px] font-black text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2.5 py-1.5 rounded-lg hover:border-purple-500/60 transition-all flex items-center gap-1 shrink-0"
-                      >
-                        <Calendar className="w-3 h-3" /> Schedule
-                      </button>
+                      {!isDefaulted && (
+                        <button
+                          onClick={() => { setSchedulerRequest(r); setSchedulerOpen(true); }}
+                          className="text-[10px] font-black text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2.5 py-1.5 rounded-lg hover:border-purple-500/60 transition-all flex items-center gap-1 shrink-0"
+                        >
+                          <Calendar className="w-3 h-3" /> Schedule
+                        </button>
+                      )}
                     </div>
+
+                    {/* Self-service reinstatement for defaulted pledges */}
+                    {isDefaulted && (
+                      <AnimatePresence>
+                        {isRepaying ? (
+                          <motion.div
+                            key="repay-form"
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="space-y-2 overflow-hidden"
+                          >
+                            <div className="text-[10px] text-red-400 font-semibold">
+                              Enter any amount to reinstate your pledge:
+                            </div>
+                            <div className="flex gap-2">
+                              <div className="relative flex-1">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                                <Input
+                                  type="number"
+                                  min="0.01"
+                                  step="0.01"
+                                  max={outstanding}
+                                  placeholder={outstanding.toFixed(2)}
+                                  value={repayAmount}
+                                  onChange={e => setRepayAmount(e.target.value)}
+                                  className="pl-5 h-8 text-sm"
+                                  style={{ fontSize: "16px" }}
+                                />
+                              </div>
+                              <button
+                                onClick={() => handlePledgeRepay(r.id, outstanding)}
+                                disabled={repayLoading || !repayAmount}
+                                className="h-8 px-3 bg-green-600 text-white text-[10px] font-black rounded-lg flex items-center gap-1 disabled:opacity-50 active:scale-95 transition-all"
+                              >
+                                {repayLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                                Reinstate
+                              </button>
+                              <button
+                                onClick={() => { setRepayRequestId(null); setRepayAmount(""); }}
+                                className="h-8 w-8 border border-border rounded-lg flex items-center justify-center text-muted-foreground"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </motion.div>
+                        ) : (
+                          <motion.button
+                            key="repay-btn"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => { setRepayRequestId(r.id); setRepayAmount(""); }}
+                            className="w-full flex items-center justify-center gap-1.5 text-[10px] font-bold text-green-400 bg-green-500/10 border border-green-500/30 hover:border-green-500/60 rounded-lg px-2.5 py-1.5 transition-all active:scale-95"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            Pay some back to reinstate your account
+                          </motion.button>
+                        )}
+                      </AnimatePresence>
+                    )}
+
                     {/* Hardship self-service — only shown if not already filed */}
                     {alreadyHardship ? (
                       <div className="flex items-center gap-1.5 text-[10px] text-primary bg-primary/10 border border-primary/20 rounded-lg px-2.5 py-1.5">

@@ -2,7 +2,8 @@ import { Router } from "express";
 import { db, communityPoolLedgerTable, poolPendingMinimumsTable, usersTable, requestsTable } from "@workspace/db";
 import { desc, eq, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
-import { paymentLimiter, generalApiLimiter } from "../middlewares/rate-limit";
+import { requireAdmin } from "../middlewares/authz";
+import { paymentLimiter, generalApiLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { broadcast } from "../lib/ws-hub";
 import {
@@ -244,6 +245,69 @@ router.post("/pool/donate", paymentLimiter, async (req, res) => {
   } catch (err) {
     logger.error({ err }, "Anonymous pool donation failed");
     return res.status(500).json({ error: "Donation failed. Please try again." });
+  }
+});
+
+/**
+ * GET /admin/pool/stripe-balance
+ * Compares the actual Stripe platform balance against the Community Pool ledger
+ * sum so admins can detect drift between the accounting system and held funds.
+ *
+ * Drift is expected to be small (in-flight payouts, Stripe fees) but large gaps
+ * may indicate a ledger bug, a missed webhook, or a reconciliation error.
+ * The endpoint logs a structured warning when gap > $10.
+ */
+router.get("/admin/pool/stripe-balance", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  try {
+    // Use the canonical pool helper — same value shown in the pool stats endpoint
+    const ledgerBalance = await getPoolBalance();
+
+    if (!_stripe) {
+      return res.json({
+        stripe_configured: false,
+        ledger_balance: ledgerBalance,
+        message: "Stripe is not configured — real-time balance check unavailable.",
+      });
+    }
+
+    const stripeBalance = await _stripe.balance.retrieve();
+
+    // "available" is immediately accessible; "pending" is in transit.
+    // Sum USD amounts across both buckets for a full picture.
+    const available = stripeBalance.available
+      .filter(b => b.currency === "usd")
+      .reduce((s, b) => s + b.amount, 0) / 100;
+
+    const pending = stripeBalance.pending
+      .filter(b => b.currency === "usd")
+      .reduce((s, b) => s + b.amount, 0) / 100;
+
+    const totalStripe = available + pending;
+    const drift = Math.abs(totalStripe - ledgerBalance);
+    const driftAlert = drift > 10; // alert threshold: $10
+
+    if (driftAlert) {
+      logger.warn(
+        { stripe_available: available, stripe_pending: pending, ledger_balance: ledgerBalance, drift },
+        "pool/stripe-balance: ledger vs Stripe drift exceeds $10 — review reconciliation"
+      );
+    }
+
+    return res.json({
+      stripe_configured: true,
+      stripe_available: available,
+      stripe_pending: pending,
+      stripe_total: totalStripe,
+      ledger_balance: ledgerBalance,
+      drift,
+      drift_alert: driftAlert,
+      message: driftAlert
+        ? `⚠️ Ledger/Stripe gap is ${drift.toFixed(2)} — review pool ledger or Stripe dashboard.`
+        : `✓ Ledger and Stripe are within $10 (gap: ${drift.toFixed(2)}).`,
+    });
+  } catch (err) {
+    logger.error({ err }, "Failed to retrieve Stripe balance for pool reconciliation");
+    return res.status(500).json({ error: "Failed to retrieve balance." });
   }
 });
 
