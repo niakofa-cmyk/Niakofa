@@ -32,13 +32,22 @@ import { smoothHeading } from "@/lib/heading-math";
  *    circular (mod-360-safe) exponential smoothing + a small time-based
  *    throttle, so consumers get a stable value, not raw sensor noise.
  *
- * 4. iOS PERMISSION ON MOUNT: iOS 13+ requires DeviceOrientationEvent
- *    permission to be requested from within a user gesture handler, not on
- *    component mount — Safari silently denies (or never prompts) otherwise.
- *    This hook still attempts start() on mount for browsers that don't
- *    require permission (Android/desktop), but the actual permission
- *    request should be re-triggered from a tap (see OrientationToggle's
- *    onToggle, which is a real user gesture) for iOS to work reliably.
+ * 4. iOS PERMISSION ON MOUNT (fixed): iOS 13+ requires
+ *    DeviceOrientationEvent.requestPermission() to be *called* synchronously
+ *    from within a real user gesture handler (tap/click) — Safari silently
+ *    denies (or never even prompts) if it's called from a mount-time
+ *    useEffect. The old version called it from start() on mount, which
+ *    meant iOS users could NEVER get the permission prompt at all.
+ *
+ *    Fix: `requestOrientationPermission()` below is exported so a tap
+ *    handler (see OrientationToggle) can call it directly. On success it
+ *    flips the module-level `iosPermissionGranted` flag and dispatches
+ *    `niakofa-orientation-permission-granted` on window; every mounted
+ *    instance of this hook listens for that event and attaches its sensor
+ *    listeners at that point. start() still runs on mount too, which is a
+ *    harmless no-op attempt on iOS (fails silently, no prompt shown without
+ *    a gesture) but works immediately on Android/desktop, which don't
+ *    gate behind requestPermission at all.
  */
 
 declare global {
@@ -52,6 +61,40 @@ declare global {
 
 const SMOOTHING_ALPHA = 0.25;
 const MIN_UPDATE_INTERVAL_MS = 50; // ~20Hz ceiling — plenty smooth, far less churn
+const PERMISSION_GRANTED_EVENT = "niakofa-orientation-permission-granted";
+
+// Module-level (not per-hook-instance) because iOS permission is a single
+// browser-session grant, not a per-component concept — every mounted
+// consumer of useDeviceHeading should benefit once granted anywhere.
+let iosPermissionGranted = false;
+
+/**
+ * Call this DIRECTLY from inside a click/tap event handler (not after an
+ * `await`, not inside a `.then()`, not from a `useEffect`) so the call to
+ * `DeviceOrientationEvent.requestPermission()` itself happens synchronously
+ * within the browser's "user is currently interacting" window — iOS Safari
+ * checks that, not whether the *result* is awaited synchronously.
+ */
+export async function requestOrientationPermission(): Promise<boolean> {
+  const DC = DeviceOrientationEvent as unknown as {
+    requestPermission?: () => Promise<"granted" | "denied" | "default">;
+  };
+  if (typeof DC.requestPermission !== "function") {
+    // Android/desktop — no permission gate exists at all.
+    iosPermissionGranted = true;
+    return true;
+  }
+  try {
+    const perm = await DC.requestPermission();
+    iosPermissionGranted = perm === "granted";
+  } catch {
+    iosPermissionGranted = false;
+  }
+  if (iosPermissionGranted && typeof window !== "undefined") {
+    window.dispatchEvent(new Event(PERMISSION_GRANTED_EVENT));
+  }
+  return iosPermissionGranted;
+}
 
 export function useDeviceHeading(): number | null {
   const [heading, setHeading] = useState<number | null>(null);
