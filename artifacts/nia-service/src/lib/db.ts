@@ -595,7 +595,16 @@ export async function getPhrasingInsights(): Promise<string[]> {
 
 // ── Kill-switch: isNiaEnabled() ──────────────────────────────────────────────
 // Reads system_settings.nia_enabled from DB with a 10-second in-process cache.
-// Defense-in-depth backstop — the proxy already blocks disabled traffic.
+//
+// FAIL-CLOSED — must match api-server/routes/nia-proxy.ts semantics exactly.
+// A missing row, an unexpected value, or a failed DB read must NEVER enable
+// Nia. The proxy is the primary gate; this is not allowed to silently default
+// to "on" even if it is reached independently (e.g. race on first boot, a
+// redeploy that resets the DB, or migration-tracker drift).
+//
+// Previously this was fail-open ("defense-in-depth backstop — the proxy already
+// blocks disabled traffic"), which meant any DB hiccup at startup would leave
+// all three background workers active despite the admin toggle being off.
 let _niaCachedEnabled: boolean | null = null;
 let _niaCacheTs = 0;
 const NIA_CACHE_TTL_MS = 10_000;
@@ -615,9 +624,11 @@ export async function isNiaEnabled(): Promise<boolean> {
     const row = await pool.query<{ value: string }>(
       "SELECT value FROM system_settings WHERE key = 'nia_enabled' LIMIT 1"
     );
-    _niaCachedEnabled = row.rows.length === 0 || row.rows[0].value !== "false";
+    // Only true when a row explicitly exists AND its value is the string "true".
+    // Missing row → false. Any other value → false. Same default as api-server.
+    _niaCachedEnabled = row.rows.length > 0 && row.rows[0].value === "true";
   } catch {
-    _niaCachedEnabled = true; // fail open
+    _niaCachedEnabled = false; // fail closed — a broken read must never enable Nia
   }
   _niaCacheTs = now;
   return _niaCachedEnabled;

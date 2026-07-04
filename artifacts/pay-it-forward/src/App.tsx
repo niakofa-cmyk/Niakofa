@@ -7,7 +7,6 @@ import { BottomNav } from "@/components/BottomNav";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
 import { useState, useEffect } from "react";
-import { wsSubscribe, type WsEventType } from "@/lib/wsClient";
 
 import MapScreen from "@/pages/map";
 import NewRequestScreen from "@/pages/request-new";
@@ -37,97 +36,76 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30000, retry: 1 } },
 });
 
-// NiaGlobal — mounts Nia FAB + Drawer globally, polls admin kill-switch every 60s
+// NiaGlobal — mounts Nia FAB + Drawer globally.
+// niaEnabled comes from AppContext (polled every 60s + instant WS) — there is
+// no local copy of that state here. One source of truth, zero drift.
+//
+// Bug fixed: previously `if (niaEnabled === null || hideNiaFab) return null`
+// bailed out of the entire component on the map route, which meant
+// <NiaDrawer> was never in the tree, so window.openNia() from TopBar's
+// center orb fired but nothing responded. Now only the floating FAB div is
+// hidden on map — the Drawer stays mounted everywhere, hard-gated on
+// niaEnabled === true so it can never open while disabled.
 function NiaGlobal() {
-  const { currentUser, myLocation, helperModeActive, activeRequestId, userPlace } = useAppContext();
+  const { currentUser, myLocation, helperModeActive, activeRequestId, userPlace, niaEnabled } = useAppContext();
   const [niaOpen, setNiaOpen] = useState(false);
-  // Expose openNia globally so TopBar's center Nia orb can trigger the drawer
-  useEffect(() => { (window as any).openNia = () => setNiaOpen(true); return () => { delete (window as any).openNia; }; }, []);
-  // Start as null (unknown) so Nia FAB never flickers ON before the first
-  // status poll returns. With nia_enabled=false as the DB default, an optimistic
-  // `true` would briefly show the FAB to all users before being corrected.
-  const [niaEnabled, setNiaEnabled] = useState<boolean | null>(null);
   const [niaInitialMessage, setNiaInitialMessage] = useState<string | undefined>(undefined);
   const [isAdmin] = useRoute("/admin");
   const [isOnboarding] = useRoute("/onboarding");
   const [isMap] = useRoute("/");
   const [isStripeConnected] = useRoute("/wallet/connected");
 
-  // Poll /admin/nia-status every 60s — fallback for when WS is not connected
+  // Expose openNia globally so TopBar's center Nia orb can trigger the drawer.
+  // Only actually opens when niaEnabled is true — the orb tap on map is
+  // the entry point; the gate is enforced here and in the Drawer's open prop.
   useEffect(() => {
-    let cancelled = false;
-    async function checkNiaStatus() {
-      try {
-        const res = await fetch("/api/admin/nia-status");
-        if (res.ok) {
-          const data = await res.json() as { enabled: boolean };
-          if (!cancelled) setNiaEnabled(data.enabled);
-        }
-      } catch { /* non-critical — keep showing Nia by default */ }
-    }
-    checkNiaStatus();
-    const interval = setInterval(checkNiaStatus, 60_000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, []);
+    (window as any).openNia = () => {
+      if (niaEnabled === true) setNiaOpen(true);
+    };
+    return () => { delete (window as any).openNia; };
+  }, [niaEnabled]);
 
-  // WS instant kill-switch — no 60s wait when admin flips the toggle
+  // Close drawer instantly if admin disables Nia while it's open.
   useEffect(() => {
-    const unsub = wsSubscribe((event) => {
-      if (
-        event.type === ("nia_status" as WsEventType) &&
-        typeof (event.payload as Record<string, unknown>)?.enabled === "boolean"
-      ) {
-        setNiaEnabled((event.payload as { enabled: boolean }).enabled);
-      }
-    });
-    return unsub;
-  }, []);
+    if (!niaEnabled && niaOpen) setNiaOpen(false);
+  }, [niaEnabled, niaOpen]);
 
-  // Hide on screens where Nia FAB would conflict with layout.
-  // isMap included: map screen's TopBar already renders its own Nia orb
-  // (wired to window.openNia) — without this, the fixed-position FAB below
-  // stacks on top of it, producing two visible orbs on the map screen.
-  const hideNiaFab = isAdmin || isOnboarding || isStripeConnected || isMap;
+  // On admin / onboarding / stripe-connected, hide everything.
+  if (isAdmin || isOnboarding || isStripeConnected) return null;
 
-  // null = still loading — fail-closed, show nothing.
-  // false = admin-disabled — show a dormant (desaturated, inert) orb so the
-  //   user still sees Nia in her last position. Tapping shows a tooltip.
-  // true = active — show the fully interactive orb + drawer.
-  if (niaEnabled === null || hideNiaFab) return null;
+  // On the map screen: the TopBar renders its own Nia orb (wired to
+  // window.openNia). We still need <NiaDrawer> mounted here so that orb
+  // can actually open it — but we skip the duplicate floating FAB div.
+  const showFloatingFab = !isMap;
 
-  // ── Dormant state: Nia is disabled by admin ─────────────────────────────────
-  if (niaEnabled === false) {
-    return (
-      <div style={{
-        position: "fixed",
-        top: "max(8px, env(safe-area-inset-top))",
-        left: "50%",
-        transform: "translateX(-50%)",
-        zIndex: 9997,
-        pointerEvents: "auto",
-      }}>
-        {/* NiaFab in dormant mode: same position, desaturated orb, tooltip-only. */}
-        <NiaFab onClick={() => {}} enabled={false} dormant />
-      </div>
-    );
-  }
+  // null = still loading — don't flash the FAB before the first poll resolves.
+  if (niaEnabled === null) return null;
 
-  // ── Active state: Nia is enabled ─────────────────────────────────────────────
   return (
     <>
-      {/* Nia FAB — floats top-center on non-map screens */}
-      <div style={{
-        position: "fixed",
-        top: "max(8px, env(safe-area-inset-top))",
-        left: "50%",
-        transform: "translateX(-50%)",
-        zIndex: 9997,
-        pointerEvents: "auto",
-      }}>
-        <NiaFab onClick={() => setNiaOpen(true)} enabled={niaEnabled === true} />
-      </div>
+      {/* Floating FAB — shown on all non-map screens, hidden on map to avoid
+          double-orb with TopBar's own Nia button. */}
+      {showFloatingFab && (
+        <div style={{
+          position: "fixed",
+          top: "max(8px, env(safe-area-inset-top))",
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 9997,
+          pointerEvents: "auto",
+        }}>
+          {niaEnabled
+            ? <NiaFab onClick={() => setNiaOpen(true)} enabled={true} />
+            : <NiaFab onClick={() => {}} enabled={false} dormant />
+          }
+        </div>
+      )}
+
+      {/* NiaDrawer — always mounted (so window.openNia from TopBar works on
+          map), but open prop is hard-gated on niaEnabled===true so the drawer
+          can never actually appear while Nia is disabled. */}
       <NiaDrawer
-        open={niaOpen}
+        open={niaEnabled === true && niaOpen}
         onClose={() => { setNiaOpen(false); setNiaInitialMessage(undefined); }}
         initialMessage={niaInitialMessage}
         userId={currentUser?.id ?? null}

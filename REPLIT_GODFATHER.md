@@ -38,8 +38,17 @@ The crisis follow-up worker is the ONLY scheduler for crisis follow-ups. It live
 ### 6. Migrations Are Idempotent
 Every migration must use `IF NOT EXISTS`. The `nia-service` self-migrates on boot via `runMigrations()` in `lib/db.ts`. If a migration silently fails (Drizzle reports success but column doesn't exist), write a NEW migration with the same idempotent statements rather than debugging the ledger.
 
-### 7. The Kill-Switch Works
-`isNiaEnabled()` reads `system_settings.nia_enabled` with a 10-second in-process cache. The `/internal/flush-nia-cache` endpoint resets this cache immediately when an admin toggles Nia off. Both api-server and nia-service respect this flag.
+### 7. The Kill-Switch Works (With One Explicit Safety Exemption)
+`isNiaEnabled()` reads `system_settings.nia_enabled` with a 10-second in-process cache. The `/internal/flush-nia-cache` endpoint resets this cache immediately when an admin toggles Nia off.
+
+**Both api-server and nia-service enforce the kill-switch — fail-closed in both cases** (missing row, unexpected value, or DB error all resolve to `false`/disabled). The check in `nia-proxy.ts` (api-server) and `lib/db.ts` (nia-service) now use identical semantics.
+
+**Workers gated by kill-switch** (skip their entire cycle when Nia is disabled):
+- `ambient-presence-worker.ts` — proactive food-signal, recurring-need, and silent-user check-ins
+- `general-checkin-worker.ts` — 24h post-completion check-ins
+- `continuous-learning-worker.ts` — 6-hour Anthropic/web-search learning cycles
+
+**Intentional kill-switch exemption — crisis-followup-worker.ts**: This worker does NOT check `isNiaEnabled()`. This is a deliberate safety decision: if an admin disables Nia as a product toggle, suppressing a 48–72h gentle follow-up for someone who reached out during a crisis is the wrong outcome. The kill-switch controls Nia as a product feature; crisis follow-ups are a human-safety obligation independent of that decision. Do not "fix" this by pattern-matching the other three workers without explicitly revisiting that distinction.
 
 ### 8. Safety Is Non-Negotiable
 `safety.ts` is the most important file in this service. Crisis patterns must be bilingual (English + Spanish). False positives cost nothing. False negatives are unacceptable. Never remove a pattern without replacing it with something more precise.

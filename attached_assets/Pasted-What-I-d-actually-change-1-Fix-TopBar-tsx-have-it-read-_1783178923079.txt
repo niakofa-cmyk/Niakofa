@@ -1,0 +1,156 @@
+What I'd actually change
+1. Fix TopBar.tsx — have it read the same niaEnabled state (or accept it as a prop from App.tsx) and pass dormant/enabled through to NiaOrb, same as the FAB does.
+2. Fix the isMap early-return so hiding the duplicate FAB div doesn't also block the <NiaDrawer> from ever mounting on the map route.
+3. Gate the three non-safety workers behind if (!(await isNiaEnabled())) return; at the top of each interval tick.
+4. Decide and document whether crisis follow-up is an intentional, permanent exemption from the kill switch — then leave a comment saying so, instead of it being silent.
+5. Collapse the four copies of isNiaEnabled() into one shared module (published from lib/db workspace package, imported by both services) with one agreed-upon default, so this can't silently diverge again.
+6. Delete the orphaned components/NiaGlobal.tsx — it's dead code describing behavior that no longer matches reality.
+7. Seed an explicit nia_enabled row in system_settings via migration so "no row yet" is never an ambiguous state anyone has to guess about.
+
+
+Root cause #1 — the map screen's Nia orb never checks the killswitch at all
+components/TopBar.tsx (used only by pages/map.tsx — your home screen) renders Nia like this:
+
+tsx
+import { NiaOrb } from "@/components/NiaDrawer";
+...
+onClick={() => (window as any).openNia?.()}
+...
+<NiaOrb size={46} pulse />
+No niaEnabled check. No dormant prop. It's hardcoded to always show the fully active, pulsing orb — regardless of what the admin toggle says. Every design decision you specified (desaturated, no pulse, no particles, tooltip-only) is correctly built in NiaFab.tsx/App.tsx — I verified that logic is solid — but it's simply never reached on the one screen most people see first. That's why disabling Nia doesn't feel like it "took."
+Root cause #2 — on that same screen, the Drawer can't even open right now
+Separate from the killswitch: App.tsx's NiaGlobal component (the one actually mounted — there's also an orphaned, unused components/NiaGlobal.tsx file with stale comments describing older behavior; worth deleting so it stops misleading whoever edits this next) does this:
+
+tsx
+const hideNiaFab = isAdmin || isOnboarding || isStripeConnected || isMap;
+if (niaEnabled === null || hideNiaFab) return null;   // ← whole component bails
+...
+<NiaDrawer open={niaOpen} ... />                       // ← never reached on map
+Because isMap is folded into hideNiaFab, the entire component — FAB and Drawer — returns null on the map route, active or dormant. window.openNia() still fires from TopBar's tap, but there's no <NiaDrawer> in the tree to respond to it there. That's a separate, real bug worth fixing regardless of the killswitch question.
+Root cause #3 — Nia's background workers never check the killswitch either
+This is the bigger one for "why won't she die." I checked all four background workers in nia-service:
+* ambient-presence-worker.ts, continuous-learning-worker.ts, general-checkin-worker.ts — zero references to isNiaEnabled(). They run on their own setInterval loops and queue real push notifications ("💙 Nia checked in on you") completely independent of the admin toggle.
+* crisis-followup-worker.ts also doesn't check it — this one I'd actually argue should stay exempt (you don't want a crisis follow-up silently suppressed because someone flipped a product toggle), but right now that's an accident, not a decision — nobody wrote it down as intentional.
+So even with the toggle off, Nia keeps proactively reaching out from the backend. That's the real "won't turn off" experience.
+A quieter but related landmine: the enabled-check itself is duplicated 4 times, inconsistently
+* api-server/routes/nia-proxy.ts and nia-voice.ts: fail closed — missing DB row = disabled. Correct kill-switch posture.
+* nia-service/lib/db.ts (used by chat.ts): fail open — missing row = enabled, and DB errors also fail open ("true"). This is the opposite default.
+Four independent copies of the same one-line check is exactly how this kind of drift happens — it already did.
+
+
+Good news and bad news. I dug through the actual repo (not memory), and here's what I found.
+The good news: your UX spec is already built, almost verbatim.
+NiaDrawer.tsx / NiaFab.tsx already implement exactly what you described:
+* Dormant orb: opacity: dormant ? 0.42 : 1, filter: grayscale(75%) brightness(0.55), no aura/heartbeat/shimmer/particle layers when dormant, crescent glyph instead of the "N" (lines ~197–351)
+* Same anchor position, drag disabled when dormant (drag={enabled && !dormant})
+* Tap shows a 3-second tooltip instead of opening the drawer (handleClick, ~line 1430)
+* Wake-word listening explicitly disabled when dormant: useVoiceWakeWord({ enabled: (enabled ?? true) && !dormant, ... })
+So the frontend "sleeping, not dead" design is not the problem.
+The actual bug: the killswitch has two independent enforcers, and they disagree.
+Nia's chat traffic gets checked in two places:
+1. artifacts/api-server/src/routes/nia-proxy.ts (isNiaEnabled()) — fail-closed: missing row, wrong value, or DB error all resolve to false (disabled). This one's correct.
+2. artifacts/nia-service/src/lib/db.ts (its own separate isNiaEnabled(), line ~609–623) — fail-open:
+
+js
+_niaCachedEnabled = row.rows.length === 0 || row.rows[0].value !== "false";
+...
+} catch {
+  _niaCachedEnabled = true; // fail open
+}
+Missing row → enabled. DB error → enabled. Anything other than the literal string "false" → enabled.
+The comment justifies this as "defense-in-depth backstop — the proxy already blocks disabled traffic." That assumption is the hardwiring problem you're describing: it treats nia-service's own gate as decorative, so it was written to default to on.
+Why the row can actually be missing: only api-server's migration (0018_system_settings.sql) seeds nia_enabled = 'false'. nia-service's own migrate.sql creates the same table (CREATE TABLE IF NOT EXISTS) but never inserts that seed row — it just assumes api-server already did. Your own run-migrations.mjs even has a recovery block explicitly written for the case where "0018_system_settings.sql" is marked as applied but the table was never actually created — meaning this exact failure mode has already bitten you once.
+Put together: if nia-service ever reads system_settings before that row exists (race on first boot, a redeploy that resets the DB, migration tracker drift), nia-service defaults Nia to on, independent of whatever the admin toggle or api-server says.
+Fix: make nia-service's check match api-server's — fail-closed, no exceptions:
+
+js
+_niaCachedEnabled = row.rows.length > 0 && row.rows[0].value === "true";
+...
+} catch {
+  _niaCachedEnabled = false; // fail closed — a broken read must never enable Nia
+}
+
+
+
+Dry-ran it against a copy of your repo and it applies cleanly. Confirmed diff:
+Show the resulting diff for review
+
+Show the resulting diff for review
+
+
+Show the resulting diff for review
+
+
+bash
+diff -u /home/claude/niakofa/Niakofa-main/artifacts/nia-service/src/lib/db.ts /home/claude/test_apply/artifacts/nia-service/src/lib/db.ts
+Output
+--- /home/claude/niakofa/Niakofa-main/artifacts/nia-service/src/lib/db.ts	2026-07-04 13:04:21.000000000 +0000
++++ /home/claude/test_apply/artifacts/nia-service/src/lib/db.ts	2026-07-04 14:41:13.011813856 +0000
+@@ -595,7 +595,10 @@
+ 
+ // ── Kill-switch: isNiaEnabled() ──────────────────────────────────────────────
+ // Reads system_settings.nia_enabled from DB with a 10-second in-process cache.
+-// Defense-in-depth backstop — the proxy already blocks disabled traffic.
++// Fail-closed backstop — must match api-server's nia-proxy.ts semantics.
++// A missing row, an unexpected value, or a failed read must NEVER
++// enable Nia. The proxy is the primary gate, but this is not allowed
++// to silently default to "on" if it's ever reached on its own.
+ let _niaCachedEnabled: boolean | null = null;
+ let _niaCacheTs = 0;
+ const NIA_CACHE_TTL_MS = 10_000;
+@@ -615,9 +618,9 @@
+     const row = await pool.query<{ value: string }>(
+       "SELECT value FROM system_settings WHERE key = 'nia_enabled' LIMIT 1"
+     );
+-    _niaCachedEnabled = row.rows.length === 0 || row.rows[0].value !== "false";
++    _niaCachedEnabled = row.rows.length > 0 && row.rows[0].value === "true";
+   } catch {
+-    _niaCachedEnabled = true; // fail open
++    _niaCachedEnabled = false; // fail closed — a broken read must never enable Nia
+   }
+   _niaCacheTs = now;
+   return _niaCachedEnabled;
+
+
+
+
+Done
+
+That's the fix — one clean, minimal diff, no side effects on the rest of the file.
+Grab patch_nia_service_failclosed.py and run it locally:
+
+
+
+Recommendations To Fix, Improve and enhance these issues Now! Ensure and Verify each issue has been fixed Now!
+* xedHit GET /admin/nia-status directly (no auth required) right now and check the raw enabled value — this tells you definitively whether the DB thinks Nia is on or off, independent of what the UI shows.
+* If it comes back true, someone toggled it on after deploy — call POST /admin/nia-toggle with {"enabled": false} to force it back to the dormant state, and consider treating "who has toggle access" as an audit item since this is the actual control surface for your "default off" requirement, not the migration seed.
+* Hard-refresh (bypass cache) on the client you're testing from, to rule out a stale bundle serving pre-dormant-orb code.
+* Confirm which surface you were checking — if it was the login screen, that hero orb is intentionally excluded from the kill switch; the FAB (top-center on all other logged-in screens) is the one that reflects true dormant/enabled state.
+
+1. The nia_enabled DB value was flipped to true at some point and never flipped back. The migration (0018_system_settings.sql) only seeds nia_enabled = 'false' — that seed runs once, on first migration. If anyone (you, a tester, an agent doing QA) ever hit POST /admin/nia-toggle with enabled: true, the DB row is now 'true' permanently, and every redeploy will keep showing the fully-active orb because the seed doesn't overwrite an existing row. This is the single most likely explanation — the "default disabled" behavior only holds until the first toggle.
+2. You're looking at the login screen's hero orb, not the FAB. By design, the login-screen NiaOrb is a separate component that is "always alive to greet visitors" and is explicitly not gated by the kill switch — this is intentional per .agents/memory/niakofa-nia-toggle.md, but it's easy to mistake for "Nia isn't disabled" if you're checking from the login screen.
+3. Stale frontend bundle. If the deployed Railway build predates this dormant-orb code, the browser may be serving an older App.tsx/NiaDrawer.tsx bundle that doesn't have the dormant branch at all — in which case you'd see the fully-active Nia because that build genuinely doesn't have this feature yet, regardless of the DB flag.
+* 
+* 
+* Prioritize the tenure-tier wage system next — it's fully designed and the closest remaining gap to shipping.
+* Scope and start the civic-portal request/accept/pay flow — it's your vision's most distinctive remaining gap.
+* Add helper reliability scoring alongside trust_score for a complete "can I count on this person" signal.
+* Consider the SMS onboarding path as a low-effort, high-inclusion win given Twilio is already installed.
+
+* Build the civic portal's request/accept/pay side — this is the single largest remaining distance from your "county's open portal" vision; funding-only is not the same as institutional participation.
+* Implement the tenure-tier wage system — the roadmap has ready-to-ship code for this; it's the most direct path to "helpers paid a livable wage over time."
+* Add helper reliability scoring — distinct from trust_score, and important for a "real-time on-demand help" promise where no-shows would erode trust in the whole model.
+* Wire the SMS onboarding path — meaningfully expands "everyday people," including those without smartphones.
+
+
+Core fix — single source of truth (lib/AppContext.tsx): niaEnabled now lives in AppContext, polled + WS-subscribed once, instead of App.tsx's NiaGlobal keeping its own private copy. Every component that renders any part of Nia reads the same value.
+App.tsx: NiaGlobal now consumes niaEnabled from context instead of duplicating the poll/WS logic. Fixed the bug where the whole component (FAB and Drawer) returned null on the map route — now only the floating FAB div is conditionally hidden there; the Drawer stays mounted everywhere but its open prop is hard-gated on niaEnabled === true, so window.openNia() can never actually open chat while disabled, even from the map screen's own orb.
+components/TopBar.tsx — the actual bug you found: the map screen's Nia orb was hardcoded to <NiaOrb size={46} pulse /> with zero awareness of the kill-switch. It now branches on niaEnabled: active → real orb, tap opens chat; disabled → dormant orb (no pulse, desaturated per the existing NiaOrb component), tap shows a 3-second self-dismissing tooltip ("Nia is resting — an admin will wake her soon"), and does nothing else.
+Three nia-service workers gated: ambient-presence-worker.ts, general-checkin-worker.ts, and continuous-learning-worker.ts each now check isNiaEnabled() at the top of their cycle and skip (with a log line) when disabled — no more proactive pushes or Anthropic spend while Nia is supposedly off.
+crisis-followup-worker.ts: left untouched functionally, but I added a comment explicitly documenting that its exemption from the kill-switch is a deliberate safety call, not an oversight — so a future dev doesn't "fix" it by pattern-matching the other three workers without that being a real product decision.
+Deleted: the orphaned components/NiaGlobal.tsx — dead code, never imported, describing older behavior that no longer matched what's actually running.
+One thing I couldn't verify from here: I didn't run this through your project's real tsc/build (no node_modules in this sandbox), so run your normal typecheck before merging — esbuild confirms syntax is clean but not full cross-file types.
+
+What's left
+* Helper-side reliability scoring and a public pool runway metric a
+

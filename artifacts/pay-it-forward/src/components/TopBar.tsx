@@ -5,7 +5,7 @@ import { useAppContext } from "@/lib/AppContext";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { subscribeToPush } from "@/lib/push";
-import { ShieldAlert, X, Phone, AlertTriangle, Heart, MapPin, MessageSquare } from "lucide-react";
+import { ShieldAlert, X, Phone, Heart, MapPin, MessageSquare } from "lucide-react";
 import { NiaOrb } from "@/components/NiaDrawer";
 
 const EMERGENCY_RESOURCES = [
@@ -206,15 +206,36 @@ function SOSModal({ open, onClose }: { open: boolean; onClose: () => void }) {
 }
 
 export function TopBar({ onNiaClick }: { onNiaClick?: () => void } = {}) {
-  const { helperModeActive, setHelperModeActive, currentUser } = useAppContext();
+  const { helperModeActive, setHelperModeActive, currentUser, niaEnabled } = useAppContext();
   const [, setLocation] = useLocation();
   const [sosOpen, setSosOpen] = useState(false);
+  // Dormant tooltip — shown for 3 seconds when user taps the orb while Nia is off.
+  const [dormantTooltip, setDormantTooltip] = useState(false);
+  const dormantTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (helperModeActive && currentUser) {
       subscribeToPush(currentUser.id).catch(() => {});
     }
   }, [helperModeActive, currentUser]);
+
+  // Clear tooltip timer on unmount
+  useEffect(() => {
+    return () => { if (dormantTimerRef.current) clearTimeout(dormantTimerRef.current); };
+  }, []);
+
+  function handleNiaOrbTap() {
+    if (niaEnabled === true) {
+      // Active — open the drawer via the global bridge NiaGlobal registered.
+      (window as any).openNia?.();
+      onNiaClick?.();
+    } else {
+      // Dormant — show a self-dismissing tooltip, do nothing else.
+      setDormantTooltip(true);
+      if (dormantTimerRef.current) clearTimeout(dormantTimerRef.current);
+      dormantTimerRef.current = setTimeout(() => setDormantTooltip(false), 3000);
+    }
+  }
 
   return (
     <>
@@ -245,13 +266,33 @@ export function TopBar({ onNiaClick }: { onNiaClick?: () => void } = {}) {
               />
             </div>
           ) : (
-            <button
-              onClick={() => (window as any).openNia?.()}
-              aria-label="Open Nia — your community AI assistant"
-              style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}
-            >
-              <NiaOrb size={46} pulse />
-            </button>
+            // Nia orb — branches on kill-switch state from AppContext.
+            // niaEnabled=true  → active pulsing orb, tap opens drawer.
+            // niaEnabled=false → dormant (desaturated, no pulse), tap shows tooltip.
+            // niaEnabled=null  → still loading, render dormant as a safe default.
+            <div className="relative">
+              <button
+                onClick={handleNiaOrbTap}
+                aria-label={niaEnabled === true ? "Open Nia — your community AI assistant" : "Nia is resting"}
+                style={{ background: "none", border: "none", cursor: niaEnabled === true ? "pointer" : "default", padding: 0 }}
+              >
+                <NiaOrb size={46} pulse={niaEnabled === true} dormant={niaEnabled !== true} />
+              </button>
+              {/* Self-dismissing dormant tooltip */}
+              <AnimatePresence>
+                {dormantTooltip && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 4, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 4, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute top-full left-1/2 -translate-x-1/2 mt-2 whitespace-nowrap rounded-xl px-3 py-1.5 text-[11px] font-semibold bg-card border border-border shadow-lg text-muted-foreground pointer-events-none z-50"
+                  >
+                    🌙 Nia is resting — an admin will wake her soon
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           )}
 
           {/* Profile avatar */}

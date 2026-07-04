@@ -29,7 +29,7 @@
  * Also fixed: help_requests column is requester_id, NOT user_id.
  */
 import { pino } from "pino";
-import { pool } from "../lib/db.js";
+import { pool, isNiaEnabled } from "../lib/db.js";
 
 const logger = pino({ level: "info" });
 
@@ -254,6 +254,15 @@ async function processSilentUsers(): Promise<number> {
 // ─── Main cycle ───────────────────────────────────────────────────────────────
 
 async function runAmbientPresence(): Promise<void> {
+  // Kill-switch: skip the entire cycle when Nia is disabled by admin.
+  // Without this gate, proactive pushes ("💙 Nia checked in on you") and
+  // Anthropic spend continue even while the toggle is off. Fail-closed: a
+  // broken DB read also resolves to false, so any uncertainty means silence.
+  if (!(await isNiaEnabled())) {
+    logger.info("ambient-presence-worker: Nia is disabled — skipping cycle");
+    return;
+  }
+
   logger.info("ambient-presence-worker: starting cycle");
   let total = 0;
 

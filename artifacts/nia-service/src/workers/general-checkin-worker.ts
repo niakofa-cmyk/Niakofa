@@ -50,7 +50,7 @@
  * misses their Nia check-in due to a single service failure.
  */
 import { pino } from "pino";
-import { pool } from "../lib/db.js";
+import { pool, isNiaEnabled } from "../lib/db.js";
 
 const logger = pino({ level: "info" });
 
@@ -86,6 +86,13 @@ async function ensureCheckinColumn(): Promise<boolean> {
 // ─── Main cycle ───────────────────────────────────────────────────────────────
 
 async function runGeneralCheckin(): Promise<void> {
+  // Kill-switch: skip the entire cycle when Nia is disabled by admin.
+  // Without this gate, 24h check-in pushes fire regardless of the toggle.
+  if (!(await isNiaEnabled())) {
+    logger.info("general-checkin-worker: Nia is disabled — skipping cycle");
+    return;
+  }
+
   const ready = await ensureCheckinColumn();
   if (!ready) return;
 

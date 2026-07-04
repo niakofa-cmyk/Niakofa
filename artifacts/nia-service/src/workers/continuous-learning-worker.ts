@@ -19,7 +19,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { pino } from "pino";
-import { pool } from "../lib/db.js";
+import { pool, isNiaEnabled } from "../lib/db.js";
 
 const logger = pino({ level: "info" });
 
@@ -144,6 +144,14 @@ async function learnAboutTopic(
 }
 
 async function runLearningCycle(client: Anthropic): Promise<void> {
+  // Kill-switch: skip the entire cycle when Nia is disabled by admin.
+  // Without this gate, Anthropic spend and web-search API calls continue
+  // every 6 hours even while the toggle is off — "Nia won't turn off."
+  if (!(await isNiaEnabled())) {
+    logger.info("nia-learning: Nia is disabled — skipping learning cycle");
+    return;
+  }
+
   logger.info("nia-learning: starting learning cycle");
 
   // Purge expired knowledge first

@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import type { User } from "@workspace/api-client-react";
 import { useUpdateUserLocation, useUpdateHelperMode } from "@workspace/api-client-react";
 import { useWebSocket } from "./useWebSocket";
-import { wsStart, wsRegister, wsUnregister } from "./wsClient";
+import { wsStart, wsRegister, wsUnregister, wsSubscribe, type WsEventType } from "./wsClient";
 import { GratitudeModal } from "../components/GratitudeModal";
 import { clearToken, getToken } from "./auth";
 import { getIpLocation } from "./locale-utils";
@@ -34,6 +34,10 @@ interface AppContextType {
   userPlace: UserPlace | null;
   setUserPlace: (place: UserPlace | null) => void;
   logout: () => void;
+  /** Nia kill-switch: null = loading, false = disabled, true = enabled.
+   *  Single source of truth — polled every 60s + instant via WS.
+   *  All components that render any part of Nia must read this value. */
+  niaEnabled: boolean | null;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -74,6 +78,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch {}
     return null;
   });
+
+  // ── Nia kill-switch — single source of truth ─────────────────────────────
+  // null = still loading (fail-closed: nothing shows until first poll resolves)
+  // false = admin disabled (dormant orb shown; no chat, no draw, no workers)
+  // true = active (full Nia experience)
+  const [niaEnabled, setNiaEnabled] = useState<boolean | null>(null);
 
   const [location, setLocation] = useLocation();
 
@@ -354,6 +364,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => { active = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Nia kill-switch: poll + WS (single source of truth) ─────────────────
+  // All components that need niaEnabled must read it from context — never
+  // duplicate this poll/WS logic elsewhere (e.g. in a local component state).
+  useEffect(() => {
+    let cancelled = false;
+    async function checkNiaStatus() {
+      try {
+        const res = await fetch("/api/admin/nia-status");
+        if (res.ok && !cancelled) {
+          const data = await res.json() as { enabled: boolean };
+          setNiaEnabled(data.enabled);
+        }
+      } catch { /* network error — keep existing state, never flip to a guess */ }
+    }
+    checkNiaStatus();
+    const interval = setInterval(checkNiaStatus, 60_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  // WS instant path — admin toggle fires a nia_status broadcast so the UI
+  // responds within milliseconds rather than waiting up to 60s for the poll.
+  useEffect(() => {
+    const unsub = wsSubscribe((event) => {
+      if (
+        event.type === ("nia_status" as WsEventType) &&
+        typeof (event.payload as Record<string, unknown>)?.enabled === "boolean"
+      ) {
+        setNiaEnabled((event.payload as { enabled: boolean }).enabled);
+      }
+    });
+    return unsub;
+  }, []);
+
   return (
     <AppContext.Provider value={{
       currentUser,
@@ -366,6 +409,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       userPlace,
       setUserPlace,
       logout,
+      niaEnabled,
     }}>
       {children}
       <GratitudeModal

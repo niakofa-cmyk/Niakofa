@@ -28,6 +28,7 @@
 - [Niakofa schema hardening & migrations](niakofa-schema-hardening.md) — push reads schema source for dev; prod hardening SQL applied via psql; civic_suggestions status is dismissed not rejected.
 - [Niakofa Godfather covenant](niakofa-godfather.md) — Replit is Godfather of Nia AI; covenant doc at artifacts/nia-service/REPLIT_GODFATHER.md; update each session.
 - [Niakofa Nia dormant visual](niakofa-nia-dormant.md) — NiaOrb dormant prop: grayscale(75%)+brightness(0.55)+opacity(0.42), no animation layers, 🌙 glyph; NiaFab dormant: no drag, no wake-word, tooltip-on-tap with useEffect cleanup; App.tsx: null=null(loading), false=dormant FAB, true=active.
+- [Niakofa kill-switch architecture](niakofa-killswitch-arch.md) — niaEnabled lives in AppContext (single source of truth); TopBar reads it via context; NiaGlobal separates FAB-hiding from Drawer-mounting; 3 workers gated; crisis-followup intentionally exempt; nia-service fail-closed.
 - [Niakofa dev DB provisioning](niakofa-dev-db-provisioning.md) — empty dev DB floods logs; enable postgis + apply migrations/*.sql via psql; needs extensionsFilters:["postgis"].
 - [Niakofa spec/generated drift](niakofa-openapi-codegen.md) — committed generated client/Zod can drift ahead of openapi.yaml; yaml must list every live route/field/enum.
 - [Niakofa vision enhancements](niakofa-vision-enhancements.md) — 6-chunk upgrade: Nia 24h checkin worker, AI dispatch signals, anomaly rating-velocity+no-show, SMS multi-modal, NiaDrawer Ubuntu prompts.

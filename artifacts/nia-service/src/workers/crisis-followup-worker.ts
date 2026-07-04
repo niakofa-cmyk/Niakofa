@@ -119,6 +119,18 @@ export function startCrisisFollowupWorker(): () => void {
     return () => {};
   }
 
+  // ── Kill-switch exemption (INTENTIONAL) ─────────────────────────────────────
+  // This worker deliberately does NOT check isNiaEnabled() before running.
+  // Rationale: a gentle crisis follow-up is a safety function, not a product
+  // feature. If an admin disables Nia as a product toggle, suppressing a 48-72h
+  // follow-up for someone who reached out during a hard moment would be the wrong
+  // outcome. The three non-safety workers (ambient-presence, general-checkin,
+  // continuous-learning) all check the kill-switch and skip when Nia is off —
+  // this one does not, and that is a deliberate product decision.
+  // Do not "fix" this by pattern-matching the other three workers without
+  // revisiting whether safety follow-ups should be subject to the product toggle.
+  // ────────────────────────────────────────────────────────────────────────────
+
   // Stagger by 15 minutes on startup, offset from any other startup-delayed
   // worker, so they don't all hit the DB/Anthropic at the same moment.
   const startupDelay = setTimeout(() => {

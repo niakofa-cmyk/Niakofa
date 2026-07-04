@@ -41,6 +41,16 @@ CREATE TABLE IF NOT EXISTS system_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Seed nia_enabled = 'false' so "no row yet" is never an ambiguous state.
+-- isNiaEnabled() (in both api-server and nia-service) is fail-closed: a
+-- missing row resolves to false. This seed makes the default explicit and
+-- survives redeploys. Nia must be explicitly enabled by an admin.
+-- ON CONFLICT DO NOTHING: if an admin has already toggled Nia on, preserve
+-- that decision — never overwrite an intentional toggle with the default.
+INSERT INTO system_settings (key, value, updated_at)
+VALUES ('nia_enabled', 'false', NOW())
+ON CONFLICT (key) DO NOTHING;
+
 -- nia_knowledge: Nia's continuous learning store.
 -- Keyed entries (e.g. 'fort_worth_news', 'community_trends') with TTL.
 -- The continuous-learning worker writes here every 6h.
