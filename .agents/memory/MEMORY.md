@@ -64,6 +64,8 @@
 - [Niakofa global GPS fixes](niakofa-global-gps-fixes.md) — AppContext null init (not Fort Worth); tryIpFallback on GPS error; detectUserLanguage localStorage-first; CrisisStrip 112 not just 911; QuickPrompts translated; request-new IP map center.
 - [Niakofa global coverage v2](niakofa-global-coverage-v2.md) — safety.ts FR/PT/HT/AR patterns; diacritic-free ?? matching; nia.ts globally-aware emergency protocol; ?? not || for lat/lng; admin WorkerHealth 30s refresh.
 - [Niakofa seed accounts](niakofa-seed-accounts.md) — 3 verified test accounts in DB (admin/helper/user); auth bugs fixed (POST /requests ownership, "me" alias, resolveMeParam middleware).
+- [Niakofa forgot-password dev mode](niakofa-forgot-password.md) — strict allowlist (development|test) gates dev_code response; never "not production"; codes never logged in prod.
+- [Niakofa login UX patterns](niakofa-login-ux.md) — wrong-password auto-opens forgot-password flow; devResetCode state at component level; Back buttons must clear devResetCode+forgotCode+forgotStep.
 - [Niakofa auth bugs fixed](niakofa-auth-bugs.md) — POST /requests removed requireOwnership("requester_id"); resolveMeParam middleware added; is_crisis belongs on nia_conversations not users; requester_id optional in openapi.yaml.
 - [Niakofa global ops admin](niakofa-global-ops-admin.md) — GET /admin/global-ops: GPS health, region buckets, lang distribution, feature checks + config_status (critical_missing list); getRegion() order critical.
 - [Niakofa secrets required](niakofa-secrets-required.md) — VITE_MAPBOX_TOKEN+MAPBOX_TOKEN+ANTHROPIC_API_KEY+INTERNAL_SECRET are critical; navigation.ts now reads MAPBOX_TOKEN??VITE_MAPBOX_TOKEN server-side.
