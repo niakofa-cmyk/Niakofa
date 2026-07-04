@@ -2329,6 +2329,230 @@ function ReportsTab({ authed }: { authed: boolean }) {
 }
 
 
+// ── Disputes Tab ─────────────────────────────────────────────────────────────
+interface AdminDispute {
+  id: number;
+  request_id: number;
+  opened_by: number;
+  against_user: number | null;
+  reason: string;
+  details: string | null;
+  status: string;
+  resolution: string | null;
+  resolved_by: number | null;
+  resolved_at: string | null;
+  created_at: string;
+  opener_name: string | null;
+  opener_email: string | null;
+  against_user_name: string | null;
+}
+
+const DISPUTE_STATUS_COLORS: Record<string, string> = {
+  open:         "bg-destructive/10 text-destructive border-destructive/30",
+  under_review: "bg-yellow-500/10 text-yellow-500 border-yellow-500/30",
+  resolved:     "bg-primary/10 text-primary border-primary/30",
+  dismissed:    "bg-muted text-muted-foreground border-border",
+};
+
+function DisputesTab() {
+  const [disputes, setDisputes] = useState<AdminDispute[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<"open" | "under_review" | "resolved" | "dismissed" | "all">("open");
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const [resolution, setResolution] = useState("");
+  const [submitting, setSubmitting] = useState<number | null>(null);
+
+  const fetchDisputes = (status = statusFilter) => {
+    setLoading(true);
+    const tok = getToken();
+    fetch(`${BASE}/api/admin/disputes?status=${status}&limit=100`, {
+      headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+    })
+      .then(r => r.ok ? r.json() : { disputes: [] })
+      .then((data: { disputes?: AdminDispute[] }) => {
+        setDisputes(Array.isArray(data.disputes) ? data.disputes : []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchDisputes(); }, [statusFilter]); // eslint-disable-line
+
+  const updateStatus = async (disputeId: number, newStatus: "under_review" | "resolved" | "dismissed") => {
+    setSubmitting(disputeId);
+    const tok = getToken();
+    try {
+      const res = await fetch(`${BASE}/api/admin/disputes/${disputeId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: JSON.stringify({ status: newStatus, resolution: resolution.trim() || undefined }),
+      });
+      if (res.ok) {
+        setResolution("");
+        setExpanded(null);
+        fetchDisputes();
+        toast({ title: `Dispute ${newStatus.replace("_", " ")}`, description: `Dispute #${disputeId} updated.` });
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast({ title: "Error", description: (err as { error?: string }).error ?? "Failed to update dispute", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Network error", variant: "destructive" });
+    } finally {
+      setSubmitting(null);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-black uppercase tracking-wider">Dispute Resolution</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Review and resolve disputes filed by requesters and helpers
+          </p>
+        </div>
+        <button onClick={() => fetchDisputes()} style={{ touchAction: "manipulation" }}
+          className="p-2 rounded-xl border border-border bg-card active:bg-muted">
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Status filter pills */}
+      <div className="flex gap-2 flex-wrap">
+        {(["open", "under_review", "resolved", "dismissed", "all"] as const).map(s => (
+          <button key={s} onClick={() => setStatusFilter(s)} style={{ touchAction: "manipulation" }}
+            className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider border transition-colors ${
+              statusFilter === s ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground bg-background active:bg-muted"
+            }`}>
+            {s.replace("_", " ")}
+          </button>
+        ))}
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center py-12 text-muted-foreground">
+          <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading disputes…
+        </div>
+      )}
+
+      {!loading && disputes.length === 0 && (
+        <div className="text-center py-12 text-muted-foreground">
+          <Gavel className="w-8 h-8 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">No {statusFilter !== "all" ? statusFilter.replace("_", " ") : ""} disputes</p>
+        </div>
+      )}
+
+      {disputes.map(d => (
+        <div key={d.id} className="bg-card border border-border rounded-2xl overflow-hidden">
+          {/* Header row */}
+          <button
+            className="w-full flex items-start gap-3 p-4 text-left active:bg-muted/50"
+            onClick={() => { setExpanded(expanded === d.id ? null : d.id); setResolution(""); }}
+            style={{ touchAction: "manipulation" }}
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className="text-xs font-black text-muted-foreground">#{d.id}</span>
+                <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${DISPUTE_STATUS_COLORS[d.status] ?? ""}`}>
+                  {d.status.replace("_", " ")}
+                </span>
+                <span className="text-xs text-muted-foreground">Request #{d.request_id}</span>
+              </div>
+              <p className="text-sm font-bold text-foreground truncate">{d.reason}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                By {d.opener_name ?? "Unknown"} ({d.opener_email ?? "—"})
+                {d.against_user_name && <> · vs {d.against_user_name}</>}
+              </p>
+            </div>
+            <span className="text-xs text-muted-foreground shrink-0 mt-0.5">
+              {new Date(d.created_at).toLocaleDateString()}
+            </span>
+          </button>
+
+          {/* Expanded detail */}
+          <AnimatePresence>
+            {expanded === d.id && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden border-t border-border"
+              >
+                <div className="p-4 space-y-3">
+                  {d.details && (
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Details</p>
+                      <p className="text-sm text-foreground bg-muted/40 rounded-xl p-3 whitespace-pre-wrap">{d.details}</p>
+                    </div>
+                  )}
+                  {d.resolution && (
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Admin resolution</p>
+                      <p className="text-sm text-foreground bg-primary/5 border border-primary/20 rounded-xl p-3">{d.resolution}</p>
+                    </div>
+                  )}
+
+                  {/* Resolution input — only if not already terminal */}
+                  {d.status !== "resolved" && d.status !== "dismissed" && (
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Resolution note (optional)</p>
+                      <textarea
+                        value={resolution}
+                        onChange={e => setResolution(e.target.value)}
+                        placeholder="Describe what action was taken or why this is dismissed…"
+                        rows={3}
+                        style={{ fontSize: 16 }}
+                        className="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-foreground resize-none focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  {d.status !== "resolved" && d.status !== "dismissed" && (
+                    <div className="flex gap-2 flex-wrap">
+                      {d.status === "open" && (
+                        <button
+                          onClick={() => updateStatus(d.id, "under_review")}
+                          disabled={submitting === d.id}
+                          style={{ touchAction: "manipulation" }}
+                          className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-yellow-500/15 border border-yellow-500/30 text-yellow-500 active:bg-yellow-500/25 disabled:opacity-50"
+                        >
+                          {submitting === d.id ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : "Mark Under Review"}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => updateStatus(d.id, "resolved")}
+                        disabled={submitting === d.id}
+                        style={{ touchAction: "manipulation" }}
+                        className="flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-primary/15 border border-primary/30 text-primary active:bg-primary/25 disabled:opacity-50"
+                      >
+                        {submitting === d.id ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : "Resolve"}
+                      </button>
+                      <button
+                        onClick={() => updateStatus(d.id, "dismissed")}
+                        disabled={submitting === d.id}
+                        style={{ touchAction: "manipulation" }}
+                        className="py-2.5 px-4 rounded-xl text-xs font-black uppercase tracking-wider bg-muted border border-border text-muted-foreground active:bg-border disabled:opacity-50"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
+
+                  {(d.status === "resolved" || d.status === "dismissed") && d.resolved_at && (
+                    <p className="text-xs text-muted-foreground">
+                      {d.status === "resolved" ? "Resolved" : "Dismissed"} on {new Date(d.resolved_at).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Helper Applications Tab ───────────────────────────────────────────────────
 interface PendingHelper {
   id: number;
@@ -4159,7 +4383,7 @@ export default function AdminScreen() {
   }, [currentUser?.is_admin]);
 
   const [, setLocation] = useLocation();
-  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics" | "orgs" | "settings" | "system">("reports");
+  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics" | "orgs" | "disputes" | "settings" | "system">("reports");
 
   // ── Session timer ─────────────────────────────────────────────────────────
   const [sessionSecondsLeft, setSessionSecondsLeft] = useState(SESSION_DURATION_MS / 1000);
@@ -4317,6 +4541,7 @@ export default function AdminScreen() {
     { key: "audit",     label: "Audit",     icon: FileText },
     { key: "nia",       label: "Nia AI",    icon: Bot },
     { key: "analytics", label: "Stats",     icon: BarChart2 },
+    { key: "disputes",  label: "Disputes",  icon: Gavel },
     { key: "settings",  label: "Settings",  icon: SlidersHorizontal },
     { key: "system",    label: "System",    icon: Server },
   ] as const;
@@ -4399,6 +4624,7 @@ export default function AdminScreen() {
         )}
         {activeTab === "users"     && <UsersTab />}
         {activeTab === "reports"   && <ReportsTab authed={authed} />}
+        {activeTab === "disputes"  && <DisputesTab />}
         {activeTab === "settings"  && <SettingsTab />}
         {activeTab === "system"    && <SystemTab />}
       </div>

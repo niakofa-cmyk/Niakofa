@@ -55,7 +55,7 @@ async function processScheduledReminders(): Promise<void> {
 
     const sent = await sendPushToUser(payment.user_id, {
       title: "💙 Niakofa Reminder",
-      body: `Your ${payment.amount.toFixed(2)} contribution was scheduled for ${d}. Tap to pay when you're ready — no pressure.`,
+      body: `Your $${payment.amount.toFixed(2)} contribution was scheduled for ${d}. Tap to pay when you're ready — no pressure.`,
       urgency: "normal",
       requestId: payment.request_id ?? undefined,
       notifType: "wallet" as const,

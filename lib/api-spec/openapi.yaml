@@ -1987,7 +1987,7 @@ components:
           type: ["string", "null"]
         category:
           type: string
-          enum: [groceries, transportation, errands, home_repair, medical, emergency, other, stock_shelves, event_setup, delivery_run, tech_support, local_farm, food_pantry, moving_labor, pet_care, childcare, senior_care, yard_work, tutoring, cleaning, meal_prep, paperwork, business_services]
+          enum: [groceries, transportation, errands, home_repair, medical, emergency, other, stock_shelves, event_setup, delivery_run, tech_support, local_farm, food_pantry, moving_labor, pet_care, childcare, senior_care, yard_work, tutoring, cleaning, meal_prep, paperwork, business_services, legal_aid, financial_coaching, job_assistance, language_help, mental_health_peer, technology_help]
         urgency:
           type: string
           enum: [low, medium, high, emergency]
@@ -2050,7 +2050,7 @@ components:
           type: string
         category:
           type: string
-          enum: [groceries, transportation, errands, home_repair, medical, emergency, other, stock_shelves, event_setup, delivery_run, tech_support, local_farm, food_pantry, moving_labor, pet_care, childcare, senior_care, yard_work, tutoring, cleaning, meal_prep, paperwork, business_services]
+          enum: [groceries, transportation, errands, home_repair, medical, emergency, other, stock_shelves, event_setup, delivery_run, tech_support, local_farm, food_pantry, moving_labor, pet_care, childcare, senior_care, yard_work, tutoring, cleaning, meal_prep, paperwork, business_services, legal_aid, financial_coaching, job_assistance, language_help, mental_health_peer, technology_help]
         urgency:
           type: string
           enum: [low, medium, high, emergency]

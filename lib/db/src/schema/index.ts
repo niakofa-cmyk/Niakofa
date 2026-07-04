@@ -28,3 +28,4 @@ export * from "./community-pool";
 export * from "./businesses";
 export * from "./government-sponsors";
 export * from "./wallet-cashouts";
+export * from "./disputes";

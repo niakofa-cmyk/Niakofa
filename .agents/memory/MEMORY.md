@@ -87,3 +87,5 @@
 - [Niakofa users API shape](niakofa-users-api-shape.md) — GET /users returns { users, total, limit, offset }; all callers must destructure data.users not treat response as raw array; supports ?q= server-side search.
 - [Niakofa account lockout](niakofa-account-lockout.md) — in-memory Map keyed by user.id; 5/10/15 attempts → 30s/5min/30min lock; checked BEFORE bcrypt.compare; .unref() on prune interval; for multi-instance use Redis INCR+EXPIRE.
 - [Niakofa pledge auto-default](niakofa-pledge-autodefault.md) — 90-day auto-default runs inside reconcilePledges (Step 6); must look up requester email via DB before fire-and-forget mailer (req.requester_id alone is not enough for email send).
+- [Niakofa dispute resolution](niakofa-disputes.md) — atomic status transitions (SQL WHERE not just SELECT guard); notifType must be "community"; DisputesTab wired in admin.tsx.
+- [Niakofa category expansion](niakofa-category-expansion.md) — 6 places to update when adding categories; generated enum files must be hand-updated; server uses api-zod enum not frontend z.enum.

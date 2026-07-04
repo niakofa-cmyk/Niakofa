@@ -16,7 +16,7 @@
  */
 import { Worker, type Job } from "bullmq";
 import { db, requestsTable, scheduledPaymentsTable, paymentTransactionsTable, usersTable } from "@workspace/db";
-import { eq, and, lte, sql } from "drizzle-orm";
+import { eq, and, lte, isNull, sql } from "drizzle-orm";
 import { getRedisConnection, QUEUE } from "../lib/queue";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";

@@ -220,7 +220,7 @@ export function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: bo
           borderRadius: "50%",
           top: cx - size * 0.9,
           left: cx - size * 0.9,
-          background: "radial-gradient(circle, rgba(29,158,117,0.45) 0%, rgba(29,158,117,0.12) 50%, transparent 75%)",
+          background: "radial-gradient(circle, rgba(0,212,255,0.45) 0%, rgba(0,212,255,0.12) 50%, transparent 75%)",
           pointerEvents: "none",
           willChange: "transform, opacity",
         }}
@@ -237,7 +237,7 @@ export function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: bo
           borderRadius: "50%",
           top: cx - size * 0.59,
           left: cx - size * 0.59,
-          border: "1.5px solid rgba(93,202,165,0.7)",
+          border: "1.5px solid rgba(80,225,255,0.7)",
           pointerEvents: "none",
           willChange: "transform, opacity",
         }}
@@ -255,17 +255,17 @@ export function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: bo
             borderRadius: "50%",
             top: cx - size * 0.68,
             left: cx - size * 0.68,
-            border: "1px solid rgba(29,200,140,0.4)",
+            border: "1px solid rgba(0,212,255,0.4)",
             pointerEvents: "none",
             willChange: "transform, opacity",
           }}
         />
       )}
 
-      {/* Layer 4 — orb body: bob animation */}
+      {/* Layer 4 — orb body: gentle drift (bob + sway), like floating in zero-gravity */}
       <motion.div
-        animate={{ y: [0, -size * 0.06, 0] }}
-        transition={{ duration: 3.0, repeat: Infinity, ease: "easeInOut" }}
+        animate={{ y: [0, -size * 0.06, 0], x: [0, size * 0.03, 0, -size * 0.03, 0] }}
+        transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }}
         style={{
           position: "absolute",
           width: size,
@@ -282,12 +282,12 @@ export function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: bo
             width: size,
             height: size,
             borderRadius: "50%",
-            background: "linear-gradient(135deg, #23CFA4 0%, #1D9E75 40%, #0A6B4E 75%, #063D2E 100%)",
+            background: "linear-gradient(135deg, #4DE4FF 0%, #00B8E6 40%, #036A94 75%, #04304A 100%)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            border: `${Math.max(1.5, size * 0.025)}px solid rgba(93,202,165,0.6)`,
-            boxShadow: `0 0 ${size * 0.35}px rgba(35,207,164,0.45), 0 0 ${size * 0.7}px rgba(29,158,117,0.2), inset 0 1px 0 rgba(255,255,255,0.15)`,
+            border: `${Math.max(1.5, size * 0.025)}px solid rgba(120,230,255,0.6)`,
+            boxShadow: `0 0 ${size * 0.35}px rgba(0,212,255,0.45), 0 0 ${size * 0.7}px rgba(0,180,255,0.2), inset 0 1px 0 rgba(255,255,255,0.15)`,
             overflow: "hidden",
             position: "relative",
             willChange: "transform",
@@ -322,7 +322,7 @@ export function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: bo
             style={{
               fontSize: size * 0.44,
               fontWeight: 800,
-              color: "#E8FFF6",
+              color: "#EAFBFF",
               fontFamily: "var(--font-sans)",
               letterSpacing: "-0.02em",
               userSelect: "none",
@@ -369,9 +369,9 @@ export function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: bo
                 borderRadius: "50%",
                 background:
                   i % 2 === 0
-                    ? "rgba(35,207,164,0.95)"
-                    : "rgba(147,250,210,0.85)",
-                boxShadow: `0 0 ${dotR * 3}px rgba(35,207,164,0.8)`,
+                    ? "rgba(0,212,255,0.95)"
+                    : "rgba(160,240,255,0.85)",
+                boxShadow: `0 0 ${dotR * 3}px rgba(0,212,255,0.8)`,
               }}
             />
           </motion.div>
@@ -1292,6 +1292,50 @@ export function NiaFab({ onClick, enabled = true }: { onClick: () => void; enabl
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const dragStartPos = useRef({ x: 0, y: 0 });
 
+  // Full-viewport roam bounds — Nia can glide anywhere on screen, not just a
+  // small box near her anchor point. Recomputed on resize/rotation so she
+  // never drifts off-screen after a layout change. The anchor itself sits at
+  // fixed top-center (see App.tsx), so bounds are expressed as offsets from
+  // there: she can travel the full width, and from just below the top safe
+  // area down to just above the bottom nav.
+  const [dragBounds, setDragBounds] = useState(() => ({
+    left: -160, right: 160, top: -20, bottom: 500,
+  }));
+  useEffect(() => {
+    const computeBounds = () => {
+      const halfWidth = window.innerWidth / 2;
+      setDragBounds({
+        left: -(halfWidth - 44),
+        right: halfWidth - 44,
+        top: -20,
+        // Stop ~140px above the bottom nav so she never hides behind it
+        bottom: Math.max(200, window.innerHeight - 220),
+      });
+    };
+    computeBounds();
+    window.addEventListener("resize", computeBounds);
+    window.addEventListener("orientationchange", computeBounds);
+    return () => {
+      window.removeEventListener("resize", computeBounds);
+      window.removeEventListener("orientationchange", computeBounds);
+    };
+  }, []);
+
+  // Re-clamp a previously-saved position whenever bounds change (e.g. a
+  // saved position from a wider screen would otherwise sit off-screen on a
+  // narrower one).
+  useEffect(() => {
+    const clampedX = Math.min(dragBounds.right, Math.max(dragBounds.left, fabX));
+    const clampedY = Math.min(dragBounds.bottom, Math.max(dragBounds.top, fabY));
+    if (clampedX !== fabX || clampedY !== fabY) {
+      setFabX(clampedX);
+      setFabY(clampedY);
+      safeWrite("nia_fab_x", clampedX);
+      safeWrite("nia_fab_y", clampedY);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragBounds]);
+
   // Only allow drag when Nia is enabled
   const handleDragStart = () => {
     if (!enabled) return;
@@ -1302,8 +1346,10 @@ export function NiaFab({ onClick, enabled = true }: { onClick: () => void; enabl
   const handleDragEnd = (_: unknown, info: { offset: { x: number; y: number } }) => {
     if (!enabled) return;
     setIsDragging(false);
-    const newX = fabX + info.offset.x;
-    const newY = fabY + info.offset.y;
+    // Clamp to the current bounds — dragElastic can briefly push past the
+    // edge, but where she comes to rest should always be a valid position.
+    const newX = Math.min(dragBounds.right, Math.max(dragBounds.left, fabX + info.offset.x));
+    const newY = Math.min(dragBounds.bottom, Math.max(dragBounds.top, fabY + info.offset.y));
     setFabX(newX);
     setFabY(newY);
     safeWrite("nia_fab_x", newX);
@@ -1334,15 +1380,11 @@ export function NiaFab({ onClick, enabled = true }: { onClick: () => void; enabl
     <motion.div
       drag={enabled}
       dragMomentum={false}
-      dragElastic={0.1}
-      dragConstraints={{
-        // Constrain to reasonable screen bounds; center of orb stays visible
-        left: -120,
-        right: 120,
-        top: -60,
-        bottom: 120,
-      }}
+      dragElastic={0.15}
+      dragTransition={{ bounceStiffness: 300, bounceDamping: 24 }}
+      dragConstraints={dragBounds}
       animate={{ x: fabX, y: fabY }}
+      transition={{ type: "spring", stiffness: 260, damping: 28 }}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       style={{

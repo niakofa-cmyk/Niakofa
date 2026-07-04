@@ -33,4 +33,10 @@ export const HelpRequestInputCategory = {
   meal_prep: 'meal_prep',
   paperwork: 'paperwork',
   business_services: 'business_services',
+  legal_aid: 'legal_aid',
+  financial_coaching: 'financial_coaching',
+  job_assistance: 'job_assistance',
+  language_help: 'language_help',
+  mental_health_peer: 'mental_health_peer',
+  technology_help: 'technology_help',
 } as const;

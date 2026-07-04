@@ -26,6 +26,7 @@ import backgroundChecksRouter from "./background-checks";
 import walletRouter from "./wallet";
 import googleAuthRouter from "./google-auth";
 import checkinRouter from "./checkin";
+import disputesRouter from "./disputes";
 
 const router: IRouter = Router();
 
@@ -56,5 +57,6 @@ router.use(backgroundChecksRouter);
 router.use(walletRouter);
 router.use(googleAuthRouter);
 router.use("/checkin", checkinRouter);
+router.use(disputesRouter);
 
 export default router;

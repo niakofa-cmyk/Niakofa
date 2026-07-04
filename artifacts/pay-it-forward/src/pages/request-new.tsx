@@ -42,6 +42,13 @@ const CATEGORIES = [
   { value: "paperwork",         label: "📄 Paperwork Help",     group: "Community" },
   { value: "local_farm",        label: "🌾 Local Farm",         group: "Community" },
   { value: "food_pantry",       label: "🥫 Food Pantry",        group: "Community" },
+  // Expanded marketplace categories (broader than mutual-aid)
+  { value: "legal_aid",         label: "⚖️ Legal Aid",           group: "Community" },
+  { value: "financial_coaching",label: "💰 Financial Help",      group: "Community" },
+  { value: "job_assistance",    label: "👔 Job Search Help",     group: "Community" },
+  { value: "language_help",     label: "🌐 Translation / Interpretation", group: "Community" },
+  { value: "mental_health_peer",label: "💜 Peer Support",        group: "Community" },
+  { value: "technology_help",   label: "📱 Technology Help",     group: "Community" },
   // Business
   { value: "stock_shelves",     label: "📦 Stock Shelves",      group: "Business" },
   { value: "event_setup",       label: "🎪 Event Setup",        group: "Business" },
@@ -62,6 +69,9 @@ const formSchema = z.object({
     "moving_labor", "pet_care", "childcare", "senior_care", "yard_work", "tutoring",
     "cleaning", "meal_prep", "paperwork", "local_farm", "food_pantry",
     "stock_shelves", "event_setup", "delivery_run", "tech_support", "business_services",
+    // Expanded marketplace categories
+    "legal_aid", "financial_coaching", "job_assistance", "language_help",
+    "mental_health_peer", "technology_help",
     "other",
   ] as [string, ...string[]]),
   urgency: z.enum(["low", "medium", "high", "emergency"]),
