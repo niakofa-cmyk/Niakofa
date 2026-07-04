@@ -83,14 +83,36 @@ function NiaGlobal() {
     return unsub;
   }, []);
 
-  // Hide on screens where Nia FAB would conflict with layout
+  // Hide on screens where Nia FAB would conflict with layout.
   // isMap included: map screen's TopBar already renders its own Nia orb
   // (wired to window.openNia) — without this, the fixed-position FAB below
   // stacks on top of it, producing two visible orbs on the map screen.
   const hideNiaFab = isAdmin || isOnboarding || isStripeConnected || isMap;
-  // null = still loading; false = disabled. Both hide the FAB — fail-closed.
-  if (niaEnabled !== true || hideNiaFab) return null;
 
+  // null = still loading — fail-closed, show nothing.
+  // false = admin-disabled — show a dormant (desaturated, inert) orb so the
+  //   user still sees Nia in her last position. Tapping shows a tooltip.
+  // true = active — show the fully interactive orb + drawer.
+  if (niaEnabled === null || hideNiaFab) return null;
+
+  // ── Dormant state: Nia is disabled by admin ─────────────────────────────────
+  if (niaEnabled === false) {
+    return (
+      <div style={{
+        position: "fixed",
+        top: "max(8px, env(safe-area-inset-top))",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 9997,
+        pointerEvents: "auto",
+      }}>
+        {/* NiaFab in dormant mode: same position, desaturated orb, tooltip-only. */}
+        <NiaFab onClick={() => {}} enabled={false} dormant />
+      </div>
+    );
+  }
+
+  // ── Active state: Nia is enabled ─────────────────────────────────────────────
   return (
     <>
       {/* Nia FAB — floats top-center on non-map screens */}

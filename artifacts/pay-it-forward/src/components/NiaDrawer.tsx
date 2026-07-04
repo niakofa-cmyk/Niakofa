@@ -186,14 +186,25 @@ function useIsLowEndDevice() {
   return ref.current;
 }
 
-export function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: boolean }) {
+export function NiaOrb({
+  size = 38,
+  pulse = false,
+  dormant = false,
+}: {
+  size?: number;
+  pulse?: boolean;
+  /** Dormant = Nia is admin-disabled. Shows a desaturated, still orb with a
+   *  sleeping crescent cue — communicates "resting," not "broken" or "gone." */
+  dormant?: boolean;
+}) {
   const pad = Math.round(size * 0.55);
   const total = size + pad * 2;
   const cx = total / 2;
   const orbitR = size * 0.72;
   const dotR = Math.max(2, size * 0.075);
   const isLow = useIsLowEndDevice();
-  const showParticles = pulse && !isLow;
+  // Dormant: no particles, no pulse, no rings — fully still
+  const showParticles = pulse && !isLow && !dormant;
 
   return (
     <div
@@ -204,47 +215,55 @@ export function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: bo
         flexShrink: 0,
         marginLeft: -pad,
         marginTop: -pad,
-        // GPU layer hint — avoids layout thrash from child animations
         transform: "translateZ(0)",
         willChange: "transform",
+        // Dormant visual: desaturate + dim. Same shape, same colors, but
+        // clearly communicates "resting" without looking broken or gone.
+        filter: dormant ? "grayscale(75%) brightness(0.55)" : undefined,
+        opacity: dormant ? 0.42 : 1,
+        transition: "filter 0.5s ease, opacity 0.5s ease",
       }}
     >
-      {/* Layer 1 — breathing aura */}
-      <motion.div
-        animate={{ scale: [1, 1.55, 1], opacity: [0.3, 0, 0.3] }}
-        transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
-        style={{
-          position: "absolute",
-          width: size * 1.8,
-          height: size * 1.8,
-          borderRadius: "50%",
-          top: cx - size * 0.9,
-          left: cx - size * 0.9,
-          background: "radial-gradient(circle, rgba(0,212,255,0.45) 0%, rgba(0,212,255,0.12) 50%, transparent 75%)",
-          pointerEvents: "none",
-          willChange: "transform, opacity",
-        }}
-      />
+      {/* Layer 1 — breathing aura — hidden when dormant */}
+      {!dormant && (
+        <motion.div
+          animate={{ scale: [1, 1.55, 1], opacity: [0.3, 0, 0.3] }}
+          transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+          style={{
+            position: "absolute",
+            width: size * 1.8,
+            height: size * 1.8,
+            borderRadius: "50%",
+            top: cx - size * 0.9,
+            left: cx - size * 0.9,
+            background: "radial-gradient(circle, rgba(0,212,255,0.45) 0%, rgba(0,212,255,0.12) 50%, transparent 75%)",
+            pointerEvents: "none",
+            willChange: "transform, opacity",
+          }}
+        />
+      )}
 
-      {/* Layer 2 — heartbeat ring */}
-      <motion.div
-        animate={{ scale: [1, 1.35, 1], opacity: [0.6, 0, 0.6] }}
-        transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut", delay: 0.4 }}
-        style={{
-          position: "absolute",
-          width: size * 1.18,
-          height: size * 1.18,
-          borderRadius: "50%",
-          top: cx - size * 0.59,
-          left: cx - size * 0.59,
-          border: "1.5px solid rgba(80,225,255,0.7)",
-          pointerEvents: "none",
-          willChange: "transform, opacity",
-        }}
-      />
+      {/* Layer 2 — heartbeat ring — hidden when dormant */}
+      {!dormant && (
+        <motion.div
+          animate={{ scale: [1, 1.35, 1], opacity: [0.6, 0, 0.6] }}
+          transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut", delay: 0.4 }}
+          style={{
+            position: "absolute",
+            width: size * 1.18,
+            height: size * 1.18,
+            borderRadius: "50%",
+            top: cx - size * 0.59,
+            left: cx - size * 0.59,
+            border: "1.5px solid rgba(80,225,255,0.7)",
+            pointerEvents: "none",
+            willChange: "transform, opacity",
+          }}
+        />
+      )}
 
-      {/* Layer 3 — slow outer ring — ONLY on pulse, skip on low-end */}
-      {pulse && !isLow && (
+      {/* Layer 3 — slow outer ring — ONLY on pulse, skip on low-end or dormant */}
+      {pulse && !isLow && !dormant && (
         <motion.div
           animate={{ scale: [1, 1.22, 1], opacity: [0.35, 0, 0.35] }}
           transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", delay: 1.2 }}
@@ -262,21 +281,27 @@ export function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: bo
         />
       )}
 
-      {/* Layer 4 — orb body: gentle drift (bob + sway), like floating in zero-gravity */}
+      {/* Layer 4 — orb body: drift when active, completely still when dormant */}
       <motion.div
-        animate={{ y: [0, -size * 0.06, 0], x: [0, size * 0.03, 0, -size * 0.03, 0] }}
-        transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }}
+        animate={dormant
+          ? { y: 0, x: 0 }
+          : { y: [0, -size * 0.06, 0], x: [0, size * 0.03, 0, -size * 0.03, 0] }
+        }
+        transition={dormant
+          ? {}
+          : { duration: 5.5, repeat: Infinity, ease: "easeInOut" }
+        }
         style={{
           position: "absolute",
           width: size,
           height: size,
           top: cx - size / 2,
           left: cx - size / 2,
-          willChange: "transform",
+          willChange: dormant ? undefined : "transform",
         }}
       >
         <motion.div
-          animate={pulse ? { scale: [1, 1.04, 1] } : {}}
+          animate={pulse && !dormant ? { scale: [1, 1.04, 1] } : {}}
           transition={{ duration: 3.5, repeat: Infinity, ease: "easeInOut" }}
           style={{
             width: size,
@@ -287,23 +312,27 @@ export function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: bo
             alignItems: "center",
             justifyContent: "center",
             border: `${Math.max(1.5, size * 0.025)}px solid rgba(120,230,255,0.6)`,
-            boxShadow: `0 0 ${size * 0.35}px rgba(0,212,255,0.45), 0 0 ${size * 0.7}px rgba(0,180,255,0.2), inset 0 1px 0 rgba(255,255,255,0.15)`,
+            boxShadow: dormant
+              ? "none"
+              : `0 0 ${size * 0.35}px rgba(0,212,255,0.45), 0 0 ${size * 0.7}px rgba(0,180,255,0.2), inset 0 1px 0 rgba(255,255,255,0.15)`,
             overflow: "hidden",
             position: "relative",
-            willChange: "transform",
+            willChange: dormant ? undefined : "transform",
           }}
         >
-          {/* Rotating shimmer — CSS animation instead of framer for mobile perf */}
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              borderRadius: "50%",
-              background: "conic-gradient(from 0deg, transparent 70%, rgba(255,255,255,0.18) 85%, transparent 100%)",
-              pointerEvents: "none",
-              animation: "nia-shimmer 6s linear infinite",
-            }}
-          />
+          {/* Rotating shimmer — hidden when dormant */}
+          {!dormant && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                borderRadius: "50%",
+                background: "conic-gradient(from 0deg, transparent 70%, rgba(255,255,255,0.18) 85%, transparent 100%)",
+                pointerEvents: "none",
+                animation: "nia-shimmer 6s linear infinite",
+              }}
+            />
+          )}
           {/* Glint highlight */}
           <div
             style={{
@@ -318,25 +347,41 @@ export function NiaOrb({ size = 38, pulse = false }: { size?: number; pulse?: bo
               pointerEvents: "none",
             }}
           />
-          <span
-            style={{
-              fontSize: size * 0.44,
-              fontWeight: 800,
-              color: "#EAFBFF",
-              fontFamily: "var(--font-sans)",
-              letterSpacing: "-0.02em",
-              userSelect: "none",
-              position: "relative",
-              textShadow: `0 1px ${size * 0.06}px rgba(0,0,0,0.3)`,
-              lineHeight: 1,
-            }}
-          >
-            N
-          </span>
+          {/* Center glyph: "N" when active, crescent when dormant (sleeping, not broken) */}
+          {dormant ? (
+            <span
+              style={{
+                fontSize: size * 0.38,
+                lineHeight: 1,
+                userSelect: "none",
+                position: "relative",
+                filter: "grayscale(1)",
+              }}
+              aria-label="Nia is resting"
+            >
+              🌙
+            </span>
+          ) : (
+            <span
+              style={{
+                fontSize: size * 0.44,
+                fontWeight: 800,
+                color: "#EAFBFF",
+                fontFamily: "var(--font-sans)",
+                letterSpacing: "-0.02em",
+                userSelect: "none",
+                position: "relative",
+                textShadow: `0 1px ${size * 0.06}px rgba(0,0,0,0.3)`,
+                lineHeight: 1,
+              }}
+            >
+              N
+            </span>
+          )}
         </motion.div>
       </motion.div>
 
-      {/* Layer 5 — orbiting sparkle particles — only on non-low-end devices */}
+      {/* Layer 5 — orbiting sparkle particles — only when active + non-low-end */}
       {showParticles &&
         SPARKLE_ANGLES.map((angle, i) => (
           <motion.div
@@ -1276,8 +1321,20 @@ Your limit resets at ${reset}. Rest well — I'll be here when you return.
   );
 }
 
-export function NiaFab({ onClick, enabled = true }: { onClick: () => void; enabled?: boolean }) {
-  // Drag position — persisted in localStorage so Nia remembers where the user placed her
+export function NiaFab({
+  onClick,
+  enabled = true,
+  dormant = false,
+}: {
+  onClick: () => void;
+  enabled?: boolean;
+  /** Dormant = Nia is admin-disabled. Orb is visible (same position, same
+   *  size) but fully inert: no drag, no wake-word, no drawer. Tapping shows
+   *  a one-line tooltip "Nia is resting — an admin will wake her soon." */
+  dormant?: boolean;
+}) {
+  // Drag position — persisted in localStorage so Nia remembers where the user
+  // placed her across navigations, app restarts, and enable/disable cycles.
   const safeRead = (key: string, fallback: number) => {
     try { const v = localStorage.getItem(key); return v === null ? fallback : Number(v); } catch { return fallback; }
   };
@@ -1291,6 +1348,19 @@ export function NiaFab({ onClick, enabled = true }: { onClick: () => void; enabl
   const dragStartTime = useRef(0);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const dragStartPos = useRef({ x: 0, y: 0 });
+
+  // Dormant tooltip — shown briefly on tap when Nia is disabled
+  const [tooltipVisible, setTooltipVisible] = useState(false);
+  const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Clear timer on unmount to prevent stale setState after component removal
+  useEffect(() => {
+    return () => {
+      if (tooltipTimerRef.current) {
+        clearTimeout(tooltipTimerRef.current);
+        tooltipTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Full-viewport roam bounds — Nia can glide anywhere on screen, not just a
   // small box near her anchor point. Recomputed on resize/rotation so she
@@ -1357,7 +1427,17 @@ export function NiaFab({ onClick, enabled = true }: { onClick: () => void; enabl
   };
 
   const handleClick = () => {
-    // Only fire click if not dragging (drag distance < 8px)
+    if (dormant) {
+      // Dormant: show tooltip for 3s — do NOT open drawer
+      if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
+      setTooltipVisible(true);
+      tooltipTimerRef.current = setTimeout(() => {
+        setTooltipVisible(false);
+        tooltipTimerRef.current = null;
+      }, 3000);
+      return;
+    }
+    // Active: only fire click if not dragging (drag distance < 8px)
     const dragDuration = Date.now() - dragStartTime.current;
     if (!isDragging || dragDuration < 150) {
       onClick();
@@ -1368,9 +1448,10 @@ export function NiaFab({ onClick, enabled = true }: { onClick: () => void; enabl
   // Supports all of Nia's languages: "Hey Nia", "Hujambo Nia", "Sawubona Nia",
   // "Abeg Nia", "Wasuze otya Nia", and others defined in culturalGreetings.ts.
   // When a wake word is detected, open the drawer just like a tap would.
+  // Disabled when Nia is dormant (admin kill-switch off) — orb is inert.
   const userLang = detectUserLanguage();
   const { listeningState, isSupported } = useVoiceWakeWord({
-    enabled: enabled ?? true,
+    enabled: (enabled ?? true) && !dormant,
     onWakeWordDetected: (_lang, _transcript) => {
       onClick();
     },
@@ -1378,7 +1459,8 @@ export function NiaFab({ onClick, enabled = true }: { onClick: () => void; enabl
 
   return (
     <motion.div
-      drag={enabled}
+      // Dormant: no drag — she stays in her last position. Active: full roam.
+      drag={enabled && !dormant}
       dragMomentum={false}
       dragElastic={0.15}
       dragTransition={{ bounceStiffness: 300, bounceDamping: 24 }}
@@ -1388,26 +1470,63 @@ export function NiaFab({ onClick, enabled = true }: { onClick: () => void; enabl
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       style={{
-        cursor: enabled ? (isDragging ? "grabbing" : "grab") : "pointer",
-        touchAction: enabled ? "none" : "manipulation",
+        cursor: dormant ? "pointer" : (enabled ? (isDragging ? "grabbing" : "grab") : "pointer"),
+        touchAction: (enabled && !dormant) ? "none" : "manipulation",
         display: "flex",
         flexDirection: "column",
         alignItems: "flex-end",
         gap: 6,
+        // Stack context for the tooltip
+        position: "relative",
       }}
-      aria-label="Open Nia — your community assistant"
+      aria-label={dormant ? "Nia is resting" : "Open Nia — your community assistant"}
     >
       {/* Phase 7a: Wake word listening indicator — appears above the orb when active */}
-      {isSupported && listeningState !== "idle" && (
+      {isSupported && listeningState !== "idle" && !dormant && (
         <VoiceWakeWordIndicator
           state={listeningState}
           language={userLang}
           className="shadow-lg"
         />
       )}
+
+      {/* Dormant tooltip — auto-dismiss after 3 seconds */}
+      <AnimatePresence>
+        {tooltipVisible && (
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.92 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.92 }}
+            transition={{ duration: 0.2 }}
+            style={{
+              position: "absolute",
+              // Place the tooltip just below the orb
+              top: "100%",
+              left: "50%",
+              transform: "translateX(-50%)",
+              marginTop: 8,
+              whiteSpace: "nowrap",
+              background: "rgba(0,0,0,0.82)",
+              color: "#e5f9ff",
+              fontSize: 12,
+              fontWeight: 500,
+              padding: "6px 12px",
+              borderRadius: 8,
+              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+              pointerEvents: "none",
+              zIndex: 1,
+              backdropFilter: "blur(6px)",
+            }}
+            role="tooltip"
+          >
+            Nia is resting — an admin will wake her soon
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <motion.button
         onClick={handleClick}
-        whileHover={!isDragging ? { scale: 1.06 } : {}}
+        whileHover={!isDragging && !dormant ? { scale: 1.06 } : {}}
         whileTap={!isDragging ? { scale: 0.93 } : {}}
         style={{
           background: "none",
@@ -1420,7 +1539,7 @@ export function NiaFab({ onClick, enabled = true }: { onClick: () => void; enabl
           WebkitTapHighlightColor: "transparent",
         }}
       >
-        <NiaOrb size={68} pulse={enabled} />
+        <NiaOrb size={68} pulse={enabled && !dormant} dormant={dormant} />
       </motion.button>
     </motion.div>
   );
