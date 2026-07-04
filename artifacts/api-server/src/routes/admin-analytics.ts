@@ -353,11 +353,15 @@ router.get("/admin/nia-status", generalApiLimiter, async (_req, res) => {
   try {
     // Single round-trip: fetch both keys together via getSystemSettings.
     const settings = await getSystemSettings(["nia_enabled", "nia_last_toggled_at"]);
-    const enabled = settings["nia_enabled"] !== "false";
+    // MUST be explicitly "true" — any other value (missing, "false", empty) → disabled.
+    // Previously used `!== "false"` which defaulted Nia ON when the row was absent.
+    // Nia is disabled by default; admin must explicitly enable it.
+    const enabled = settings["nia_enabled"] === "true";
     const last_toggled_at = settings["nia_last_toggled_at"] ?? null;
     return res.json({ enabled, last_toggled_at });
   } catch {
-    return res.json({ enabled: true, last_toggled_at: null });
+    // On DB error, default to DISABLED (safe fail-closed posture).
+    return res.json({ enabled: false, last_toggled_at: null });
   }
 });
 

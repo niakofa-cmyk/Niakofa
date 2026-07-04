@@ -4115,7 +4115,6 @@ function SystemTab() {
 // ── Main Admin Screen ─────────────────────────────────────────────────────────
 export default function AdminScreen() {
   const [authed, setAuthed] = useState(false);
-  const [adminInput, setAdminInput] = useState("");
 
   // Primary auth: if the logged-in user has is_admin=true (verified by the
   // server on every API call via requireAdmin()), auto-authenticate them into
@@ -4141,7 +4140,6 @@ export default function AdminScreen() {
   const logout = useCallback(() => {
     clearTimer();
     setAuthed(false);
-    setAdminInput("");
     setShowBumpPrompt(false);
     toast({ title: "Admin session ended", description: "Session expired." });
   }, [clearTimer]);
@@ -4175,96 +4173,103 @@ export default function AdminScreen() {
     return `${m}:${s}`;
   };
 
-  // ── Login screen ─────────────────────────────────────────────────────────
+  // ── Auth gate ─────────────────────────────────────────────────────────────
+  // Admin access is granted exclusively via the is_admin flag on the user's
+  // DB account — no client-side secret or separate password. This keeps
+  // authorization authoritative on the server (requireAdmin() middleware) and
+  // ensures all admin API calls carry a valid JWT.
   if (!authed) {
     const isLoggedInNonAdmin = !!currentUser && !currentUser.is_admin;
     return (
-      <div className="fixed inset-0 bg-background flex flex-col items-center justify-center p-6 gap-6"
-        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
+      <div
+        className="fixed inset-0 bg-background flex flex-col items-center justify-center p-6 gap-5"
+        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
+      >
+        {/* Icon */}
         <motion.div
           initial={{ scale: 0.85, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: "spring", damping: 22 }}
-          className="w-16 h-16 bg-primary/10 border border-primary/20 rounded-3xl flex items-center justify-center"
+          className="w-20 h-20 bg-primary/10 border border-primary/20 rounded-3xl flex items-center justify-center"
         >
-          <Shield className="w-8 h-8 text-primary" />
+          <Shield className="w-10 h-10 text-primary" />
         </motion.div>
+
+        {/* Title */}
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
           className="text-center"
         >
-          <h1 className="text-2xl font-black">Admin Access</h1>
-          <p className="text-sm text-muted-foreground mt-1">Niakofa Admin — secure session</p>
+          <h1 className="text-2xl font-black tracking-tight">Admin Panel</h1>
+          <p className="text-sm text-muted-foreground mt-1">Niakofa — restricted access</p>
         </motion.div>
 
-        {isLoggedInNonAdmin ? (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.18 }}
-            className="w-full max-w-sm space-y-3"
-          >
-            <div className="bg-destructive/10 border border-destructive/30 rounded-2xl p-4 text-center">
-              <AlertTriangle className="w-6 h-6 text-destructive mx-auto mb-2" />
-              <p className="text-sm font-bold text-destructive">No admin access</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Your account ({currentUser.email}) does not have admin privileges. Contact the app administrator.
-              </p>
-            </div>
-            <button
-              onClick={() => setLocation("/")}
-              style={{ touchAction: "manipulation" }}
-              className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-black text-base active:opacity-80 transition-opacity"
-            >Back to app</button>
-          </motion.div>
-        ) : (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.18 }}
-            className="w-full max-w-sm space-y-3"
-          >
-            {!currentUser && (
-              <p className="text-center text-sm text-muted-foreground">
-                Sign in as an admin user to access this page.
-              </p>
-            )}
-            <input
-              type="password"
-              placeholder="Admin secret (if configured)"
-              value={adminInput}
-              onChange={e => setAdminInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === "Enter") {
-                  const secret = import.meta.env.VITE_ADMIN_SECRET ?? "";
-                  if (secret && adminInput === secret) setAuthed(true);
-                  else toast({ title: "Incorrect secret", variant: "destructive" });
-                }
-              }}
-              className="w-full px-5 py-4 rounded-2xl border border-border bg-card text-foreground text-base focus:outline-none focus:ring-2 focus:ring-primary"
-              autoFocus
-              autoComplete="current-password"
-            />
-            <button
-              onClick={() => {
-                const secret = import.meta.env.VITE_ADMIN_SECRET ?? "";
-                if (secret && adminInput === secret) setAuthed(true);
-                else toast({ title: "Incorrect secret", variant: "destructive" });
-              }}
-              style={{ touchAction: "manipulation" }}
-              className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-black text-base active:opacity-80 transition-opacity"
-            >
-              Enter Admin
-            </button>
-            <button
-              onClick={() => setLocation("/")}
-              style={{ touchAction: "manipulation" }}
-              className="w-full py-3 text-sm text-muted-foreground"
-            >Back to app</button>
-          </motion.div>
-        )}
+        {/* State-specific content */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.18 }}
+          className="w-full max-w-sm space-y-3"
+        >
+          {isLoggedInNonAdmin ? (
+            /* Logged in but no admin rights */
+            <>
+              <div className="bg-destructive/10 border border-destructive/30 rounded-2xl p-5 text-center space-y-2">
+                <AlertTriangle className="w-7 h-7 text-destructive mx-auto" />
+                <p className="text-sm font-black text-destructive">No admin access</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  <strong>{currentUser.email}</strong> does not have admin privileges.
+                  Contact the app administrator to grant access.
+                </p>
+              </div>
+              <button
+                onClick={() => setLocation("/")}
+                style={{ touchAction: "manipulation" }}
+                className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-black text-base active:opacity-80 transition-opacity"
+              >
+                Back to app
+              </button>
+            </>
+          ) : (
+            /* Not signed in — must sign in with admin account */
+            <>
+              <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                    <Shield className="w-4.5 h-4.5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-foreground">Sign in required</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                      Sign in with your admin account. Access is verified by your account's admin status — no separate secret needed.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-muted/50 rounded-xl px-3 py-2 text-[11px] text-muted-foreground">
+                  <Fingerprint className="w-3.5 h-3.5 shrink-0 text-primary" />
+                  <span>All admin actions are logged and server-verified</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setLocation("/login")}
+                style={{ touchAction: "manipulation" }}
+                className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-black text-base active:opacity-80 transition-opacity flex items-center justify-center gap-2"
+              >
+                <Shield className="w-4 h-4" />
+                Sign In to Admin Account
+              </button>
+              <button
+                onClick={() => setLocation("/")}
+                style={{ touchAction: "manipulation" }}
+                className="w-full py-3 text-sm text-muted-foreground active:text-foreground transition-colors"
+              >
+                Back to app
+              </button>
+            </>
+          )}
+        </motion.div>
       </div>
     );
   }
@@ -4364,25 +4369,46 @@ export default function AdminScreen() {
         {activeTab === "system"    && <SystemTab />}
       </div>
 
-      {/* ── Bottom tab bar (mobile-native) ───────────────────────────────── */}
+      {/* ── Bottom tab bar (mobile-native, horizontally scrollable) ───────── */}
+      {/* 10 tabs don't fit a phone screen side-by-side at readable size.
+          Horizontal scroll with snap lets the user swipe through all tabs
+          while keeping 44px+ tap targets. A fade gradient on the right edge
+          signals that more tabs exist beyond the viewport. */}
       <div
         className="fixed bottom-0 left-0 right-0 z-20 bg-card/95 backdrop-blur-xl border-t border-border"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <div className="flex max-w-3xl mx-auto">
-          {TABS.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              onClick={() => setActiveTab(key as typeof activeTab)}
-              style={{ touchAction: "manipulation" }}
-              className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
-                activeTab === key ? "text-primary" : "text-muted-foreground"
-              }`}
-            >
-              <Icon className="w-5 h-5" />
-              <span className="text-[10px] font-bold">{label}</span>
-            </button>
-          ))}
+        {/* Fade gradient on right edge — scroll indicator */}
+        <div className="relative">
+          <div
+            role="tablist"
+            aria-label="Admin sections"
+            className="overflow-x-auto scrollbar-none overscroll-x-contain"
+          >
+            <div className="flex w-max min-w-full px-1">
+              {TABS.map(({ key, label, icon: Icon }) => (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={activeTab === key}
+                  onClick={() => setActiveTab(key as typeof activeTab)}
+                  style={{ touchAction: "manipulation" }}
+                  className={`flex flex-col items-center gap-1 py-3.5 px-4 min-w-[72px] transition-colors relative ${
+                    activeTab === key ? "text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  {/* Active indicator pill */}
+                  {activeTab === key && (
+                    <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-primary" />
+                  )}
+                  <Icon className="w-5 h-5 shrink-0" />
+                  <span className="text-[10px] font-bold whitespace-nowrap">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Right fade — subtle scroll hint */}
+          <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-card/95 to-transparent" />
         </div>
       </div>
     </div>

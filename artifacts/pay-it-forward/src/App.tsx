@@ -43,7 +43,10 @@ function NiaGlobal() {
   const [niaOpen, setNiaOpen] = useState(false);
   // Expose openNia globally so TopBar's center Nia orb can trigger the drawer
   useEffect(() => { (window as any).openNia = () => setNiaOpen(true); return () => { delete (window as any).openNia; }; }, []);
-  const [niaEnabled, setNiaEnabled] = useState(true); // optimistic: show Nia immediately
+  // Start as null (unknown) so Nia FAB never flickers ON before the first
+  // status poll returns. With nia_enabled=false as the DB default, an optimistic
+  // `true` would briefly show the FAB to all users before being corrected.
+  const [niaEnabled, setNiaEnabled] = useState<boolean | null>(null);
   const [niaInitialMessage, setNiaInitialMessage] = useState<string | undefined>(undefined);
   const [isAdmin] = useRoute("/admin");
   const [isOnboarding] = useRoute("/onboarding");
@@ -85,7 +88,8 @@ function NiaGlobal() {
   // (wired to window.openNia) — without this, the fixed-position FAB below
   // stacks on top of it, producing two visible orbs on the map screen.
   const hideNiaFab = isAdmin || isOnboarding || isStripeConnected || isMap;
-  if (!niaEnabled || hideNiaFab) return null;
+  // null = still loading; false = disabled. Both hide the FAB — fail-closed.
+  if (niaEnabled !== true || hideNiaFab) return null;
 
   return (
     <>
@@ -98,7 +102,7 @@ function NiaGlobal() {
         zIndex: 9997,
         pointerEvents: "auto",
       }}>
-        <NiaFab onClick={() => setNiaOpen(true)} enabled={niaEnabled} />
+        <NiaFab onClick={() => setNiaOpen(true)} enabled={niaEnabled === true} />
       </div>
       <NiaDrawer
         open={niaOpen}

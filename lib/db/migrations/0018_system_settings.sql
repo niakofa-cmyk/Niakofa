@@ -16,7 +16,10 @@ CREATE TABLE IF NOT EXISTS system_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Seed the default so the table is never empty on first boot
+-- Seed the default so the table is never empty on first boot.
+-- Nia AI is DISABLED by default — admin must explicitly enable it via the
+-- admin panel. This prevents Nia from appearing for users on fresh installs
+-- before the admin has verified the AI connection is properly configured.
 INSERT INTO system_settings (key, value)
-VALUES ('nia_enabled', 'true')
+VALUES ('nia_enabled', 'false')
 ON CONFLICT (key) DO NOTHING;

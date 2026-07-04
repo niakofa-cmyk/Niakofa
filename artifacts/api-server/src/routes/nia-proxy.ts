@@ -34,9 +34,12 @@ async function isNiaEnabled(): Promise<boolean> {
       .from(systemSettingsTable)
       .where(eq(systemSettingsTable.key, "nia_enabled"))
       .limit(1);
-    return row?.value !== "false";
+    // Nia is disabled by default. Must be explicitly "true" — any other value
+    // (row missing, "false", empty string) means disabled. This is a fail-closed
+    // posture: a missing DB row never accidentally enables AI on all users.
+    return row?.value === "true";
   } catch {
-    return true; // safe default
+    return false; // fail-closed: DB error → Nia disabled
   }
 }
 

@@ -44,9 +44,10 @@ async function isNiaEnabled(): Promise<boolean> {
       .from(systemSettingsTable)
       .where(eq(systemSettingsTable.key, "nia_enabled"))
       .limit(1);
-    return row?.value !== "false";
+    // Fail-closed: must be explicitly "true". Missing row, "false", or empty → disabled.
+    return row?.value === "true";
   } catch {
-    return true; // safe default — never accidentally silence Nia on a DB hiccup
+    return false; // fail-closed: DB error → Nia voice disabled
   }
 }
 
@@ -95,6 +96,11 @@ router.post(
   requireAuth,
   voiceLimiter,
   async (req: Request, res: Response) => {
+    // Kill-switch check — must be consistent with /nia/voice/speak and /nia/chat.
+    // Previously missing: a disabled Nia still accepted transcription requests.
+    if (!(await isNiaEnabled())) {
+      return res.status(503).json({ error: "Nia voice transcription is temporarily unavailable." });
+    }
     if (!OPENAI_API_KEY) {
       return res.status(503).json({ error: "Voice transcription is not configured on this server." });
     }
