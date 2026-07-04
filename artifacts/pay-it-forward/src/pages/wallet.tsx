@@ -675,6 +675,7 @@ export default function WalletScreen() {
                     placeholder="Optional: share what's going on (e.g. lost my job, medical expenses, etc.)"
                     rows={3}
                     className="w-full text-sm bg-background border border-border rounded-xl p-3 resize-none focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground"
+                    style={{ fontSize: "16px" }}
                     maxLength={1000}
                   />
                   <div className="flex gap-2">

@@ -25,6 +25,7 @@ import govSponsorsRouter from "./gov-sponsors";
 import backgroundChecksRouter from "./background-checks";
 import walletRouter from "./wallet";
 import googleAuthRouter from "./google-auth";
+import checkinRouter from "./checkin";
 
 const router: IRouter = Router();
 
@@ -54,5 +55,6 @@ router.use(govSponsorsRouter);
 router.use(backgroundChecksRouter);
 router.use(walletRouter);
 router.use(googleAuthRouter);
+router.use("/checkin", checkinRouter);
 
 export default router;

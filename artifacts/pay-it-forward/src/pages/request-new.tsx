@@ -635,6 +635,7 @@ export default function NewRequestScreen() {
                           onChange={e => setChecklistItems(prev => prev.map((v, j) => j === i ? e.target.value : v))}
                           placeholder={`Item ${i + 1}`}
                           className="flex-1 bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-primary transition-colors"
+                          style={{ fontSize: "16px" }}
                         />
                         <button
                           type="button"

@@ -100,7 +100,8 @@ function CivicResourcesTab() {
   };
 
   useEffect(() => {
-    fetch("/api/civic/resources")
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/civic/resources`)
       .then(r => r.json())
       .then((data) => { if (Array.isArray(data)) setResources(data); setLoading(false); })
       .catch(() => setLoading(false));

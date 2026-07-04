@@ -824,6 +824,7 @@ export default function LoginScreen() {
                       onChange={e => setForgotEmail(e.target.value)}
                       onKeyDown={e => e.key === "Enter" && handleRequestForgotCode()}
                       className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      style={{ fontSize: "16px" }}
                       autoComplete="email"
                     />
                   </div>
@@ -844,6 +845,7 @@ export default function LoginScreen() {
                     value={forgotCode}
                     onChange={e => setForgotCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                     className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground tracking-widest"
+                    style={{ fontSize: "16px" }}
                     autoComplete="one-time-code"
                   />
                   <div className="relative">
@@ -853,6 +855,7 @@ export default function LoginScreen() {
                       value={forgotNewPassword}
                       onChange={e => setForgotNewPassword(e.target.value)}
                       className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 pr-11 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      style={{ fontSize: "16px" }}
                       autoComplete="new-password"
                     />
                     <button type="button" onClick={() => setShowForgotNewPass(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors" tabIndex={-1}>
@@ -867,6 +870,7 @@ export default function LoginScreen() {
                       onChange={e => setForgotConfirmPassword(e.target.value)}
                       onKeyDown={e => e.key === "Enter" && handleResetPassword()}
                       className="w-full bg-card border border-border rounded-2xl px-4 py-3.5 pr-11 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      style={{ fontSize: "16px" }}
                       autoComplete="new-password"
                     />
                     <button type="button" onClick={() => setShowForgotConfirmPass(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors" tabIndex={-1}>
@@ -939,6 +943,7 @@ export default function LoginScreen() {
                       value={resetCode}
                       onChange={e => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                       className="w-full bg-card border border-border rounded-2xl pl-11 pr-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground tracking-widest"
+                      style={{ fontSize: "16px" }}
                       autoComplete="one-time-code"
                     />
                   </div>
@@ -950,6 +955,7 @@ export default function LoginScreen() {
                       value={newPassword}
                       onChange={e => setNewPassword(e.target.value)}
                       className="w-full bg-card border border-border rounded-2xl pl-11 pr-12 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      style={{ fontSize: "16px" }}
                       autoComplete="new-password"
                     />
                     <button onClick={() => setShowNewPass(p => !p)} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground active:text-foreground transition-colors">
@@ -965,6 +971,7 @@ export default function LoginScreen() {
                       onChange={e => setConfirmPassword(e.target.value)}
                       onKeyDown={e => e.key === "Enter" && handleSetPassword()}
                       className="w-full bg-card border border-border rounded-2xl pl-11 pr-4 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
+                      style={{ fontSize: "16px" }}
                       autoComplete="new-password"
                     />
                   </div>

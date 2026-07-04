@@ -3,7 +3,7 @@ import { db, civicResourcesTable, civicSuggestionsTable } from "@workspace/db";
 import { eq, and, or, isNull } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
-import { adminLimiter } from "../middlewares/rate-limit";
+import { adminLimiter, generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { cacheGet, cacheSet } from "../lib/cache";
 
@@ -194,7 +194,7 @@ router.get("/civic/resources", async (req, res) => {
 // (with a comment anticipating this exact admin review route) but was never
 // wired up. Now actually persists, and the admin routes below make the
 // review queue real.
-router.post("/civic/suggestions", async (req, res) => {
+router.post("/civic/suggestions", generalApiLimiter, async (req, res) => {
   const { name, category, description, phone, website } = req.body as {
     name?: string; category?: string; description?: string; phone?: string; website?: string;
   };

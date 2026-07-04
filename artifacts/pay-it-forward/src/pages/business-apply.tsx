@@ -389,7 +389,7 @@ export default function BusinessApplyScreen() {
 
   // Fetch existing business on mount
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser) { setLoadingBusiness(false); return; }
     fetch(`${BASE}/api/businesses/mine`, { headers: (getToken() ? { Authorization: `Bearer ${getToken()}` } : {}) })
       .then(r => r.ok ? r.json() : [])
       .then((data: Business[]) => {
@@ -430,6 +430,16 @@ export default function BusinessApplyScreen() {
       setSaving(false);
     }
   };
+
+  if (!currentUser && !loadingBusiness) {
+    return (
+      <div className="min-h-[100dvh] bg-background flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <Building2 className="w-12 h-12 text-muted-foreground" />
+        <p className="text-muted-foreground text-sm">Please sign in to manage your business account.</p>
+        <Button onClick={() => setLocation("/login")}>Sign In</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">

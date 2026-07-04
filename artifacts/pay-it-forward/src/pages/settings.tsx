@@ -572,6 +572,7 @@ function HelperSettings({ userId }: { userId: number }) {
                 }))
               }
               className="w-full bg-muted border border-border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all mt-2"
+              style={{ fontSize: "16px" }}
             />
           </div>
           <div className="p-3 bg-background rounded-xl border border-border mb-2">
@@ -594,6 +595,7 @@ function HelperSettings({ userId }: { userId: number }) {
                 }))
               }
               className="w-full bg-muted border border-border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all mt-2"
+              style={{ fontSize: "16px" }}
             />
           </div>
           <Button

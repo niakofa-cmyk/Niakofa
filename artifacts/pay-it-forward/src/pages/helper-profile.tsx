@@ -28,7 +28,8 @@ export default function HelperProfileScreen() {
   useEffect(() => {
     if (!helperId) return;
     setLoading(true);
-    fetch(`/api/users/${helperId}/public`, { headers: authHeaders() })
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/users/${helperId}/public`, { headers: authHeaders() })
       .then(r => r.json())
       .then((u: User) => {
         setHelper(u);
@@ -37,7 +38,7 @@ export default function HelperProfileScreen() {
       .catch(() => setLoading(false));
 
     // Load recent completed requests by this helper
-    fetch(`/api/requests?helper_id=${helperId}&status=completed&limit=5`, { headers: authHeaders() })
+    fetch(`${base}/api/requests?helper_id=${helperId}&status=completed&limit=5`, { headers: authHeaders() })
       .then(r => r.json())
       .then((data) => {
         if (Array.isArray(data)) setRecentHelps(data.slice(0, 5));

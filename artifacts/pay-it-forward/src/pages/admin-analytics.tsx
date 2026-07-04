@@ -54,7 +54,7 @@ const PIE_COLORS = [
   "#06b6d4", "#6366f1", "#a855f7", "#ec4899",
 ];
 
-const BASE = "";
+const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
 // ── KPI card ─────────────────────────────────────────────────────────────────
 function KpiCard({ icon: Icon, label, value, sub }: {

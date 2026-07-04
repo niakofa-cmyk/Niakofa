@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { useAppContext } from "@/lib/AppContext";
+import { authHeaders } from "@/lib/auth";
 import { useTranslation } from "react-i18next";
 import { Star, CheckCircle2, MapPin as MapPinIcon } from "lucide-react";
 import { TrustTierBadge } from "@/components/TrustTierBadge";
@@ -176,8 +177,9 @@ function MatchedHelpersSection({ lat, lng }: { lat: number | null; lng: number |
       params.set("lat", String(lat));
       params.set("lng", String(lng));
     }
-    fetch(`/api/recurring/matched-helpers?${params}`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem("nia_token") ?? ""}` },
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/recurring/matched-helpers?${params}`, {
+      headers: authHeaders(),
     })
       .then(r => r.json())
       .then(data => {
