@@ -455,6 +455,30 @@ router.post("/users/:id/change-password", requireAuth, resolveMeParam, requireOw
   return res.json({ user: safePwUser, token: pwToken });
 });
 
+// GET /users/:id/public — public helper profile, no ownership required.
+// Returns only the fields safe for any authenticated user to see.
+// helper-profile.tsx calls this to render another helper's profile card.
+router.get("/users/:id/public", requireAuth, resolveMeParam, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  // Return only public-safe fields — never email, password, lat/lng, tokens,
+  // or any admin/moderation field.
+  return res.json({
+    id: user.id,
+    name: user.name,
+    avatar_url: user.avatar_url,
+    is_helper: user.is_helper,
+    neighborhood: user.neighborhood,
+    city: user.city,
+    trust_score: user.trust_score,
+    specialties: user.specialties,
+    quick_replies: user.quick_replies,
+    created_at: user.created_at,
+  });
+});
+
 router.get("/users/:id", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const parsed = GetUserParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!parsed.success) return res.status(400).json({ error: "Invalid id" });

@@ -36,6 +36,9 @@ export const requestsTable = pgTable("help_requests", {
   pledge_status: text("pledge_status").notNull().default("active"),
   // Business account FK (migration 0027) — null = personal request
   business_id: integer("business_id"),
+  // Government/County sponsor FK (migration 0042) — set when an approved
+  // gov-sponsor posts a community need via the Civic Portal. Null = personal/business request.
+  government_sponsor_id: integer("government_sponsor_id"),
   // Content moderation (migration 0032) — mirrors gratitude posts pattern.
   // 'approved' = cleared heuristic, 'pending' = held for admin review.
   // Emergency requests bypass screening entirely (life safety > content guard).

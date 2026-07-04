@@ -31,6 +31,7 @@ import PendingApprovalScreen from "@/pages/pending-approval";
 import RecurringScreen from "@/pages/recurring";
 import BusinessApplyScreen from "@/pages/business-apply";
 import GovSponsorApplyScreen from "@/pages/gov-sponsor-apply";
+import CivicPortalPage from "@/pages/civic-portal";
 import StatusPage from "@/pages/status";
 
 const queryClient = new QueryClient({
@@ -170,6 +171,7 @@ function AppShell() {
         <Route path="/admin/analytics" component={AdminAnalyticsDashboard} />
         <Route path="/business/apply" component={BusinessApplyScreen} />
         <Route path="/gov-sponsor/apply" component={GovSponsorApplyScreen} />
+        <Route path="/civic-portal" component={CivicPortalPage} />
         <Route component={NotFound} />
       </Switch>
       {!isActiveRequest && !isTrackingRequest && !isAdmin && !isLogin && !isOnboarding && !isStripeConnected && <BottomNav />}

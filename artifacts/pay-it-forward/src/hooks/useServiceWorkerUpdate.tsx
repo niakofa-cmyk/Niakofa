@@ -45,7 +45,13 @@ export function useServiceWorkerUpdate() {
               toast({
                 title: "A new version of Niakofa is available",
                 description: "Refresh to get the latest updates.",
-                duration: 0,
+                // IMPORTANT: must be Infinity, NOT 0. In Radix Toast the duration
+                // prop is evaluated as `durationProp || context.duration` — since 0
+                // is falsy in JS, duration: 0 silently falls through to the
+                // provider default (~5 s) and the toast auto-dismisses before the
+                // user can click Refresh. Infinity is the correct sentinel for
+                // "never auto-dismiss".
+                duration: Infinity,
                 action: (
                   <ToastAction
                     altText="Refresh"

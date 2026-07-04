@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, civicResourcesTable, civicSuggestionsTable } from "@workspace/db";
-import { eq, and, or, isNull } from "drizzle-orm";
+import { db, civicResourcesTable, civicSuggestionsTable, governmentSponsorsTable, requestsTable } from "@workspace/db";
+import { eq, and, desc } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter, generalApiLimiter } from "../middlewares/rate-limit";
@@ -237,6 +237,124 @@ router.get("/admin/civic-suggestions", requireAuth, requireAdmin(), adminLimiter
         .where(eq(civicSuggestionsTable.status, statusParam))
         .limit(limit).offset(offset)
     : await db.select().from(civicSuggestionsTable).limit(limit).offset(offset);
+  return res.json(rows);
+});
+
+// ── CIVIC PORTAL — county/gov sponsor self-serve request dispatch ─────────────
+//
+// POST /civic/portal/requests
+//   Authenticated user with an APPROVED gov-sponsor record posts a community
+//   need. Creates a standard help_request tagged with government_sponsor_id so
+//   it flows through the normal claim/complete pipeline. The platform uses the
+//   sponsor entity's location (county + state) but the request lat/lng must be
+//   supplied by the client (e.g. from the device GPS or a geocoded address).
+//
+// GET /civic/portal/requests
+//   Lists all help_requests previously posted by this sponsor (by gov_sponsor_id).
+//
+// Both routes require auth + an approved gov-sponsor record.
+
+router.post("/civic/portal/requests", requireAuth, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+
+  // 1. Verify the caller has an approved gov-sponsor record
+  const [sponsor] = await db
+    .select({ id: governmentSponsorsTable.id, entity_name: governmentSponsorsTable.entity_name })
+    .from(governmentSponsorsTable)
+    .where(
+      and(
+        eq(governmentSponsorsTable.submitted_by_user_id, userId),
+        eq(governmentSponsorsTable.approval_status, "approved"),
+      ),
+    )
+    .limit(1);
+
+  if (!sponsor) {
+    return res.status(403).json({
+      error: "You must have an approved government sponsor account to post civic requests.",
+    });
+  }
+
+  const {
+    title, description, category, urgency, neighborhood,
+    lat, lng, estimated_hours,
+  } = req.body as {
+    title?: string; description?: string; category?: string; urgency?: string;
+    neighborhood?: string; lat?: number; lng?: number; estimated_hours?: number;
+  };
+
+  if (!title?.trim()) return res.status(400).json({ error: "title is required." });
+
+  // lat/lng: fall back to 32.7555 / -97.3308 (Fort Worth, TX — platform home base)
+  // if the client doesn't supply coordinates. Helpers nearby will still see it on the map.
+  const resolvedLat = typeof lat === "number" && isFinite(lat) ? lat : 32.7555;
+  const resolvedLng = typeof lng === "number" && isFinite(lng) ? lng : -97.3308;
+
+  const [created] = await db.insert(requestsTable).values({
+    title: title.trim(),
+    description: description?.trim() || null,
+    category: (category?.trim() || "other").toLowerCase().replace(/\s+/g, "_"),
+    urgency: urgency ?? "medium",
+    status: "open",
+    payment_type: "pay_it_forward",
+    requester_id: userId,
+    lat: resolvedLat,
+    lng: resolvedLng,
+    neighborhood: neighborhood?.trim() || null,
+    government_sponsor_id: sponsor.id,
+    estimated_hours: typeof estimated_hours === "number" && estimated_hours > 0 ? estimated_hours : null,
+    moderation_status: "approved", // gov-sponsor requests bypass heuristic moderation
+  } as typeof requestsTable.$inferInsert).returning();
+
+  logger.info(
+    { request_id: created.id, gov_sponsor_id: sponsor.id, entity: sponsor.entity_name, title: created.title },
+    "civic-portal: community need posted",
+  );
+
+  return res.status(201).json(created);
+});
+
+router.get("/civic/portal/requests", requireAuth, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+
+  // Verify approved sponsor
+  const [sponsor] = await db
+    .select({ id: governmentSponsorsTable.id })
+    .from(governmentSponsorsTable)
+    .where(
+      and(
+        eq(governmentSponsorsTable.submitted_by_user_id, userId),
+        eq(governmentSponsorsTable.approval_status, "approved"),
+      ),
+    )
+    .limit(1);
+
+  if (!sponsor) {
+    return res.status(403).json({
+      error: "You must have an approved government sponsor account to view civic requests.",
+    });
+  }
+
+  const rows = await db
+    .select({
+      id: requestsTable.id,
+      title: requestsTable.title,
+      description: requestsTable.description,
+      category: requestsTable.category,
+      urgency: requestsTable.urgency,
+      status: requestsTable.status,
+      neighborhood: requestsTable.neighborhood,
+      estimated_hours: requestsTable.estimated_hours,
+      created_at: requestsTable.created_at,
+      claimed_at: requestsTable.claimed_at,
+      completed_at: requestsTable.completed_at,
+      cancelled_at: requestsTable.cancelled_at,
+    })
+    .from(requestsTable)
+    .where(eq(requestsTable.government_sponsor_id, sponsor.id))
+    .orderBy(desc(requestsTable.created_at))
+    .limit(100);
+
   return res.json(rows);
 });
 
