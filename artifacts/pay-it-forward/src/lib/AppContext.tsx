@@ -151,11 +151,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── All useEffect calls last ──────────────────────────────────────────────
 
-  // Redirect to login if no user — except already on /login
+  // Redirect to login if no user.
+  // Excluded paths that handle their own auth or are public:
+  //   /login   — already on the login page
+  //   /admin   — AdminScreen has its own auth gate (shield + secret / is_admin check);
+  //              sending it to /login first breaks that flow entirely
+  //   /status  — public unauthenticated status page
+  const NO_REDIRECT_PATHS = ["/login", "/admin", "/admin/analytics", "/status"];
   useEffect(() => {
-    if (!currentUser && location !== "/login") {
+    if (!currentUser && !NO_REDIRECT_PATHS.some(p => location === p || location.startsWith(p + "/"))) {
       setLocation("/login");
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, location, setLocation]);
 
   // GPS watchPosition — high-accuracy continuous stream.

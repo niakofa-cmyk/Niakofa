@@ -432,6 +432,7 @@ export default function LoginScreen() {
             name: name.trim(),
             email: email.trim(),
             password,
+            tos_accepted: tosAccepted,   // required by server — must be explicitly true
             is_helper: false,
             account_type: accountType,
             organization_name: organizationName.trim() || undefined,

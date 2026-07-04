@@ -109,7 +109,13 @@ router.post("/users/register", authLimiter, async (req, res) => {
     return res.status(400).json({ error: "You must accept the Terms of Service to create an account" });
   }
 
-  const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
+  // Normalize email to lowercase before any DB operations.
+  // login() always lowercases the input — if we store mixed-case here, users
+  // who register as "Bob@Example.com" can never log in because login searches
+  // for "bob@example.com" and finds nothing.
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const existing = await db.select().from(usersTable).where(eq(usersTable.email, normalizedEmail)).limit(1);
   if (existing.length > 0) {
     // BUG-C01: Never return an existing user row to an arbitrary registrant — leaks PII.
     return res.status(409).json({ error: "An account with that email already exists. Please sign in instead." });
@@ -137,7 +143,7 @@ router.post("/users/register", authLimiter, async (req, res) => {
   const approval_status = REQUIRES_REVIEW.includes(account_type) ? "pending" : "approved";
 
   const [user] = await db.insert(usersTable).values({
-    name, email,
+    name, email: normalizedEmail,
     password_hash,
     avatar_url: avatar_url ?? null,
     is_helper: is_helper ?? false,
