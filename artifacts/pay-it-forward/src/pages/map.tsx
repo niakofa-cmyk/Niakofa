@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type mapboxgl from "mapbox-gl";
 import { useLocation } from "wouter";
 import Map, { Marker, Source, Layer } from "react-map-gl/mapbox";
@@ -18,7 +18,10 @@ import { BottomSheet } from "@/components/BottomSheet";
 import { RequestMarker } from "@/components/RequestMarker";
 import { HelperMarker } from "@/components/HelperMarker";
 import { BestMatchCard } from "@/components/BestMatchCard";
-import { MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle, Navigation2, Car } from "lucide-react";
+import {
+  MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle,
+  Navigation2, Car, LocateFixed, Plus, Minus, Layers,
+} from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { wsIsConnected } from "@/lib/wsClient";
@@ -26,6 +29,11 @@ import { useTerrain } from "@/hooks/useTerrain";
 import { useDeviceHeading } from "@/hooks/useDeviceHeading";
 import { useMapOrientation } from "@/hooks/useMapOrientation";
 import { OrientationToggle } from "@/components/OrientationToggle";
+
+// Cluster zoom threshold — below this zoom, request markers are grouped into
+// cluster bubbles. Above it, individual React Marker components take over,
+// giving the full-rich pin UX (icons, tooltips, claim buttons).
+const CLUSTER_MAX_ZOOM = 12;
 
 function pickBestMatch(requests: HelpRequest[]): HelpRequest | null {
   if (requests.length === 0) return null;
@@ -47,11 +55,23 @@ export default function MapScreen() {
   const [statsVisible, setStatsVisible] = useState(true);
   const [bestMatchDismissed, setBestMatchDismissed] = useState<number | null>(null);
   const [showTraffic, setShowTraffic] = useState(true);
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  // mapZoom drives the cluster / individual-marker toggle
+  const [mapZoom, setMapZoom] = useState(() => myLocation ? 13.5 : 2);
+  // isOffCenter turns true when the user pans away from their location
+  const [isOffCenter, setIsOffCenter] = useState(false);
   const prevHelperMode = useRef(false);
 
+  // Stable refs for location values so moveend closure never goes stale
+  const myLocationRef = useRef(myLocation);
+  const ipFallbackRef = useRef<{ lat: number; lng: number; zoom: number } | null>(null);
+  useEffect(() => { myLocationRef.current = myLocation; }, [myLocation]);
+
+  // Track whether the first GPS fix has been received and auto-recentered
+  const hadInitialGps = useRef(!!myLocation);
+  const hasAutoRecenteredOnGps = useRef(false);
+
   // IP-based fallback location when GPS is unavailable.
-  // Covers global users (Africa, diaspora hubs, rural areas) where the old
-  // Fort Worth hardcoded default was useless.
   const [ipFallback, setIpFallback] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
   useEffect(() => {
     if (myLocation) return; // GPS available — no need for IP
@@ -59,15 +79,22 @@ export default function MapScreen() {
       if (!loc) return;
       const fb = { lat: loc.lat, lng: loc.lng, zoom: loc.zoom ?? 11 };
       setIpFallback(fb);
-      // initialViewState is only read at mount time, so if the async IP lookup
-      // resolves after the map has already rendered at (0,0), we must also
-      // explicitly move the camera. mapRef may not be set yet if the map hasn't
-      // mounted — the check guards against that.
-      if (mapRef.current && !myLocation) {
+      ipFallbackRef.current = fb;
+      if (mapRef.current && !myLocationRef.current) {
         mapRef.current.jumpTo({ center: [fb.lng, fb.lat], zoom: fb.zoom });
       }
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-recenter once when the first GPS fix arrives after an IP-fallback start
+  useEffect(() => {
+    if (!myLocation || hadInitialGps.current || hasAutoRecenteredOnGps.current) return;
+    hasAutoRecenteredOnGps.current = true;
+    if (mapRef.current) {
+      mapRef.current.flyTo({ center: [myLocation.lng, myLocation.lat], zoom: 13.5, speed: 1.2 });
+    }
+    setIsOffCenter(false);
+  }, [myLocation]);
 
   const onMapError = useCallback((e: unknown) => {
     const msg = (e as { error?: { message?: string } })?.error?.message ?? "Map failed to load";
@@ -183,14 +210,41 @@ export default function MapScreen() {
   const deviceHeading = useDeviceHeading();
   const { mode: orientMode, setMode: setOrientMode, applyHeading } = useMapOrientation(mapRef);
 
-  // Apply localized map labels after map loads — runs once, safe to omit stable deps
+  // Recenter the map on the user's current location (GPS first, then IP fallback).
+  const recenterOnMe = useCallback(() => {
+    const loc = myLocationRef.current ?? ipFallbackRef.current;
+    if (!loc || !mapRef.current) return;
+    const zoom = "zoom" in loc ? loc.zoom : 13.5;
+    mapRef.current.flyTo({
+      center: [loc.lng, loc.lat],
+      zoom: Math.max(mapRef.current.getZoom(), zoom),
+      speed: 1.4,
+    });
+    setIsOffCenter(false);
+  }, []);
+
+  // Track whether the camera has drifted away from the user's location.
+  // Uses the raw Mapbox event (fired once per pan gesture) to avoid the
+  // overhead of comparing coordinates on every move frame.
   const handleMapLoad = useCallback(() => {
     const lang = detectMapLanguage();
     if (lang !== "en" && mapRef.current) {
       localizeMapLabels(mapRef.current, lang);
     }
+
+    mapRef.current?.on("moveend", () => {
+      const map = mapRef.current;
+      const loc = myLocationRef.current ?? ipFallbackRef.current;
+      if (!map || !loc) return;
+      const center = map.getCenter();
+      const dist = Math.hypot(center.lng - loc.lng, center.lat - loc.lat);
+      // ~0.002 degrees ≈ 200 m — small enough to ignore rounding noise
+      setIsOffCenter(dist > 0.002);
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => { if (deviceHeading !== null) applyHeading(deviceHeading); }, [deviceHeading, applyHeading]);
+
   const handleClaim = useCallback((request: HelpRequest) => {
     if (!currentUser) return;
     claimMutation.mutate(
@@ -224,6 +278,26 @@ export default function MapScreen() {
   // Dispatch Intelligence — Best Match card
   const bestMatch = helperModeActive ? pickBestMatch(openRequests) : null;
   const showBestMatch = bestMatch && bestMatch.id !== bestMatchDismissed;
+
+  // GeoJSON feature collection for request markers — drives both the cluster
+  // source (low zoom) and the demand heatmap layer. Re-computed only when the
+  // open-requests list changes (not on every render).
+  const requestsGeoJSON = useMemo((): GeoJSON.FeatureCollection => ({
+    type: "FeatureCollection",
+    features: openRequests.map(r => ({
+      type: "Feature",
+      properties: {
+        id: r.id,
+        urgency: r.urgency ?? "low",
+        is_emergency: r.urgency === "emergency",
+      },
+      geometry: { type: "Point", coordinates: [r.lng, r.lat] },
+    })),
+  }), [openRequests]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Show individual React Markers only when Mapbox's cluster has already broken
+  // the points into individual features (i.e. zoom > CLUSTER_MAX_ZOOM).
+  const showIndividualMarkers = mapZoom > CLUSTER_MAX_ZOOM;
 
   return (
     <div className="relative w-full h-[100dvh] overflow-hidden bg-background">
@@ -331,9 +405,10 @@ export default function MapScreen() {
           bearing: 0,
         }}
         onLoad={handleMapLoad}
+        onZoom={e => setMapZoom(e.viewState.zoom)}
         ref={(ref) => { if (ref) (mapRef as React.MutableRefObject<mapboxgl.Map | null>).current = ref.getMap(); }}
       >
-        {/* My location dot with accuracy ring */}
+        {/* ── My location dot with accuracy ring ──────────────────────────── */}
         {myLocation && (
           <Marker longitude={myLocation.lng} latitude={myLocation.lat} anchor="center">
             <div className="relative flex items-center justify-center w-8 h-8">
@@ -344,7 +419,7 @@ export default function MapScreen() {
           </Marker>
         )}
 
-        {/* Real-time traffic layer — same data source as the navigation view */}
+        {/* ── Real-time traffic layer ──────────────────────────────────────── */}
         {showTraffic && (
           <Source id="mapbox-traffic" type="vector" url="mapbox://mapbox.mapbox-traffic-v1">
             <Layer
@@ -368,21 +443,102 @@ export default function MapScreen() {
           </Source>
         )}
 
-        {/* Online helpers — animated dots */}
+        {/* ── Demand heatmap (admin / helper insight) ──────────────────────── */}
+        {showHeatmap && openRequests.length > 0 && (
+          <Source id="heatmap-source" type="geojson" data={requestsGeoJSON}>
+            <Layer
+              id="demand-heatmap"
+              type="heatmap"
+              paint={{
+                // Weight emergency requests 3× higher in the heatmap
+                "heatmap-weight": [
+                  "case", ["==", ["get", "urgency"], "emergency"], 3,
+                  ["case", ["==", ["get", "urgency"], "high"], 2, 1],
+                ],
+                "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 1, 12, 2.5],
+                "heatmap-color": [
+                  "interpolate", ["linear"], ["heatmap-density"],
+                  0,   "rgba(0,212,255,0)",
+                  0.2, "rgba(0,212,255,0.25)",
+                  0.5, "rgba(100,200,255,0.5)",
+                  0.8, "rgba(255,220,0,0.7)",
+                  1,   "rgba(255,80,0,0.85)",
+                ],
+                "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 0, 20, 14, 50],
+                "heatmap-opacity": 0.75,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* ── Request clusters (low zoom) ──────────────────────────────────── */}
+        {/* Cluster source — at zoom ≤ CLUSTER_MAX_ZOOM Mapbox groups nearby  */}
+        {/* request pins into colored bubble clusters. At higher zoom the       */}
+        {/* cluster breaks apart and individual React Markers take over.         */}
+        {openRequests.length > 0 && (
+          <Source
+            id="requests-cluster"
+            type="geojson"
+            data={requestsGeoJSON}
+            cluster={true}
+            clusterMaxZoom={CLUSTER_MAX_ZOOM}
+            clusterRadius={55}
+          >
+            {/* Cluster bubble — color steps from green → yellow → red */}
+            <Layer
+              id="request-clusters"
+              type="circle"
+              filter={["has", "point_count"]}
+              paint={{
+                "circle-color": [
+                  "step", ["get", "point_count"],
+                  "#4ade80",   /* 1–4   → green  */
+                  5,  "#facc15", /* 5–14  → yellow */
+                  15, "#ef4444", /* 15+   → red    */
+                ],
+                "circle-radius": [
+                  "step", ["get", "point_count"],
+                  22,   /* 1–4   → 22 px */
+                  5,  32, /* 5–14  → 32 px */
+                  15, 44, /* 15+   → 44 px */
+                ],
+                "circle-stroke-width": 2.5,
+                "circle-stroke-color": "rgba(0,0,0,0.5)",
+                "circle-opacity": 0.88,
+              }}
+            />
+            {/* Cluster count label */}
+            <Layer
+              id="cluster-count"
+              type="symbol"
+              filter={["has", "point_count"]}
+              layout={{
+                "text-field": "{point_count_abbreviated}",
+                "text-size": 13,
+                "text-font": ["DIN Pro Bold", "Arial Unicode MS Bold"],
+              }}
+              paint={{ "text-color": "#000" }}
+            />
+          </Source>
+        )}
+
+        {/* ── Online helpers — animated dots ──────────────────────────────── */}
         {displayHelpers.map(h => (
           <Marker key={h.id} longitude={h.lng} latitude={h.lat} anchor="center">
             <HelperMarker helper={h} />
           </Marker>
         ))}
 
-        {/* Open request markers with emergency pulse rings */}
-        {openRequests.map(r => (
+        {/* ── Individual request markers (high zoom only) ─────────────────── */}
+        {/* Only rendered when the cluster source has broken up, preventing    */}
+        {/* duplicate pins — cluster at ≤ 12, React Markers at > 12.           */}
+        {showIndividualMarkers && openRequests.map(r => (
           <Marker key={r.id} longitude={r.lng} latitude={r.lat} anchor="bottom">
             <RequestMarker request={r} />
           </Marker>
         ))}
 
-        {/* Live route line */}
+        {/* ── Live route line ──────────────────────────────────────────────── */}
         {activeHelperRouteData?.geometry && (
           <Source id="helper-route" type="geojson" data={activeHelperRouteData.geometry as unknown as GeoJSON.FeatureCollection}>
             <Layer
@@ -400,7 +556,8 @@ export default function MapScreen() {
           </Source>
         )}
 
-        {/* Traffic toggle — bottom-left of map */}
+        {/* ── Map control buttons ──────────────────────────────────────────── */}
+        {/* Traffic toggle */}
         <button
           onClick={() => setShowTraffic(t => !t)}
           style={{ touchAction: "manipulation" }}
@@ -413,6 +570,52 @@ export default function MapScreen() {
           <Car className="w-3 h-3" />
           <span>Traffic</span>
         </button>
+
+        {/* Demand heatmap toggle — helps helpers see where demand is densest */}
+        <button
+          onClick={() => setShowHeatmap(h => !h)}
+          style={{ touchAction: "manipulation" }}
+          className={`absolute bottom-24 left-24 z-10 flex items-center gap-1.5 px-3 py-2 rounded-full border text-[10px] font-black backdrop-blur-sm transition-all active:scale-95 ${
+            showHeatmap
+              ? "bg-yellow-400/20 border-yellow-400/50 text-yellow-400"
+              : "bg-card/80 border-border text-muted-foreground"
+          }`}
+        >
+          <Layers className="w-3 h-3" />
+          <span>Heat</span>
+        </button>
+
+        {/* Zoom controls — right edge */}
+        <div className="absolute bottom-28 right-4 z-10 flex flex-col gap-1.5">
+          <button
+            onClick={() => mapRef.current?.zoomIn()}
+            style={{ touchAction: "manipulation" }}
+            className="w-10 h-10 flex items-center justify-center bg-card/90 backdrop-blur-sm border border-border rounded-full shadow-md text-foreground active:scale-95 transition-transform"
+            aria-label="Zoom in"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => mapRef.current?.zoomOut()}
+            style={{ touchAction: "manipulation" }}
+            className="w-10 h-10 flex items-center justify-center bg-card/90 backdrop-blur-sm border border-border rounded-full shadow-md text-foreground active:scale-95 transition-transform"
+            aria-label="Zoom out"
+          >
+            <Minus className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Recenter on me — only shown when the user has panned away */}
+        {isOffCenter && (myLocation ?? ipFallback) && (
+          <button
+            onClick={recenterOnMe}
+            style={{ touchAction: "manipulation" }}
+            className="absolute bottom-44 right-4 z-10 w-11 h-11 flex items-center justify-center bg-primary text-background rounded-full shadow-lg active:scale-95 transition-transform animate-bounce"
+            aria-label="Recenter on my location"
+          >
+            <LocateFixed className="w-5 h-5" />
+          </button>
+        )}
 
         <OrientationToggle mode={orientMode} onToggle={() => setOrientMode(orientMode === "heading-up" ? "north-up" : "heading-up")} />
       </Map>

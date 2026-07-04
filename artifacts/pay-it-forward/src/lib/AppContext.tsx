@@ -5,7 +5,7 @@ import { useUpdateUserLocation, useUpdateHelperMode } from "@workspace/api-clien
 import { useWebSocket } from "./useWebSocket";
 import { wsStart, wsRegister, wsUnregister } from "./wsClient";
 import { GratitudeModal } from "../components/GratitudeModal";
-import { clearToken } from "./auth";
+import { clearToken, getToken } from "./auth";
 import { getIpLocation } from "./locale-utils";
 
 interface Location {
@@ -288,6 +288,70 @@ export function AppProvider({ children }: { children: ReactNode }) {
       wsUnregister();
     }
   }, [currentUser?.id]);
+
+  // Startup token validation — runs once on mount.
+  // Without this, a user whose JWT has expired appears "logged in" (the stored
+  // niakofa_user is still in localStorage) but every API call returns 401,
+  // creating a confusing stuck state where the app renders their profile but
+  // nothing works. This effect validates the stored token against the server
+  // and either refreshes stale user data or cleanly redirects to login.
+  //
+  // Race-safety: we capture the userId and token at the start of the effect, then
+  // confirm they still match what's in localStorage *before* applying the server
+  // response. If the user logs out (or logs in as a different account) before the
+  // fetch resolves, `active` is false and we discard the stale response entirely.
+  //
+  // MUST be declared LAST so it never affects the hook order above.
+  useEffect(() => {
+    let active = true; // flipped to false in the cleanup to cancel late responses
+
+    const token = getToken();
+    let storedId: number | null = null;
+    try {
+      const j = localStorage.getItem("niakofa_user");
+      storedId = j ? ((JSON.parse(j) as { id?: number }).id ?? null) : null;
+    } catch { storedId = null; }
+    if (!token || !storedId) return;
+
+    const capturedId = storedId; // stable reference for the async callback
+
+    fetch(`/api/users/${capturedId}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(async r => {
+        if (!active) return; // component unmounted or auth changed — discard
+
+        // Verify the session hasn't changed while the request was in-flight.
+        // (User logged out → localStorage cleared; or logged in as someone else.)
+        let currentStoredId: number | null = null;
+        try {
+          const j2 = localStorage.getItem("niakofa_user");
+          currentStoredId = j2 ? ((JSON.parse(j2) as { id?: number }).id ?? null) : null;
+        } catch {}
+        if (currentStoredId !== capturedId) return; // stale — a different session is now active
+
+        if (r.status === 401 || r.status === 403) {
+          // Token expired or revoked — wipe stored session and show a clear message
+          clearToken();
+          try { localStorage.removeItem("niakofa_user"); } catch {}
+          setCurrentUser(null);
+          sessionStorage.setItem("niakofa_session_expired", "1");
+          return;
+        }
+        if (r.ok) {
+          // Refresh with latest server data so the app always reflects current
+          // approval_status, helper_status, is_admin, trust_score, etc.
+          const fresh = await r.json() as User;
+          if (!active) return; // raced between r.ok check and json() parsing
+          try { localStorage.setItem("niakofa_user", JSON.stringify(fresh)); } catch {}
+          setCurrentUser(fresh);
+        }
+      })
+      .catch(() => {
+        // Network failure — keep the stored user. They'll see API errors inline.
+        // Never wipe a valid session just because the device is temporarily offline.
+      });
+
+    return () => { active = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <AppContext.Provider value={{

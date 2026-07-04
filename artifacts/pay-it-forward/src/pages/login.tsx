@@ -534,11 +534,52 @@ export default function LoginScreen() {
           return;
         }
 
+        // Per-account lockout (429) — too many wrong passwords from one account.
+        // Proactively open the forgot-password flow so the user can bypass the
+        // lockout immediately instead of staring at a confusing error message.
+        if (res.status === 429 && data.error_code === "ACCOUNT_LOCKED") {
+          const waitSec = (data as { retry_after_sec?: number }).retry_after_sec ?? 30;
+          const waitLabel = waitSec < 60 ? `${waitSec} seconds` : `${Math.ceil(waitSec / 60)} minutes`;
+          toast({
+            title: "Account temporarily locked",
+            description: `Too many failed sign-in attempts. Wait ${waitLabel}, or reset your password now.`,
+            variant: "destructive",
+          });
+          // Pre-fill and open the forgot-password flow so they can reset immediately
+          setForgotEmail(email.trim());
+          setForgotStep("email");
+          setForgotPasswordMode(true);
+          return;
+        }
+
         if (!res.ok) {
-          const msgKey =
-            data.error === "Incorrect password" ? "auth.wrong_password" :
-            data.error === "No account found with that email" ? "auth.no_account" : null;
-          throw new Error(msgKey ? t(msgKey) : (data.error ?? t("common.error")));
+          // "No account found" — the user's email isn't in the DB. Most likely causes:
+          //  • typo in the email address
+          //  • registered with a different email / device
+          //  • session expired and they forgot which email they used
+          // Don't just throw — give actionable next steps inline.
+          if (data.error === "No account found with that email") {
+            toast({
+              title: "No account found with that email",
+              description: "Check for typos, try a different email, or tap \"Join\" to create a new account.",
+              variant: "destructive",
+            });
+            return;
+          }
+
+          // Wrong password — suggest forgot-password after a failed attempt so the
+          // user knows there's a recovery path before they get locked out.
+          if (data.error && (data.error.startsWith("Incorrect password") || data.error === t("auth.wrong_password"))) {
+            const hint = data.error.includes("locked") ? "" : " Forgot your password? Tap below to reset it.";
+            toast({
+              title: "Incorrect password",
+              description: hint || data.error,
+              variant: "destructive",
+            });
+            return;
+          }
+
+          throw new Error(data.error ?? t("common.error"));
         }
 
         if (!data.user) throw new Error(t("common.error"));
