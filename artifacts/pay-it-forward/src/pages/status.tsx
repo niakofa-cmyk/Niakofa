@@ -17,9 +17,12 @@ interface Check {
 interface StatusResponse {
   status: "operational" | "degraded";
   checks: Check[];
-  commit: string;
-  started_at: string;
   timestamp: string;
+  // commit and started_at were removed from the public /status endpoint
+  // (they are still served by /healthz and /version for ops tooling).
+  // Kept optional here so any cached/stale response doesn't cause a type error.
+  commit?: string;
+  started_at?: string;
 }
 
 const SERVICE_META: Record<string, { label: string; icon: React.ElementType; description: string }> = {

@@ -5,14 +5,14 @@
  * All routes require authentication + admin role.
  */
 import { Router } from "express";
-import { db, requestsTable, usersTable, reportsTable, systemSettingsTable, niaMemoriesTable, niaConversationsTable } from "@workspace/db";
+import { db, requestsTable, usersTable, reportsTable, niaMemoriesTable, niaConversationsTable } from "@workspace/db";
 import { eq, sql, and, gte } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter, authLimiter, generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { broadcast } from "../lib/ws-hub";
-import { getSystemSettings, setSystemSetting, setSystemSettings } from "../lib/db-helpers";
+import { getSystemSettings, setSystemSettings } from "../lib/db-helpers";
 
 const router = Router();
 
@@ -346,8 +346,6 @@ router.get("/admin/suspended", requireAuth, requireAdmin(), adminLimiter, async 
 });
 
 // ── Nia AI toggle ─────────────────────────────────────────────────────────────
-// ── Nia AI toggle ─────────────────────────────────────────────────────────────
-// ── Nia AI toggle ─────────────────────────────────────────────────────────────
 // GET /admin/nia-status — public, no auth. Frontend polls this to know
 // whether to show the NiaFab and drawer.
 // Returns { enabled: boolean, last_toggled_at: string | null }.
@@ -642,7 +640,11 @@ router.patch("/admin/pool-settings", requireAuth, requireAdmin(), adminLimiter, 
     return res.status(400).json({ error: "No valid fields provided. Send at least one of: pool_enabled, pool_minimum_hourly_rate, pool_guaranteed_minimum" });
   }
 
-  await Promise.all(updates.map(({ key, value }) => setSystemSetting(key, value)));
+  // Use setSystemSettings for a single atomic transaction: if either the
+  // pool_enabled flag or a wage floor fails to write, neither is committed.
+  const settingsObj: Record<string, string> = {};
+  for (const { key, value } of updates) settingsObj[key] = value;
+  await setSystemSettings(settingsObj);
 
   logger.info({ updates, admin: req.authenticatedUserId }, "admin: pool settings updated");
   return res.json({ ok: true, updated: updates.map((u) => u.key) });

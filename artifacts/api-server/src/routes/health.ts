@@ -261,7 +261,17 @@ router.get("/admin/global-ops", requireAuth, adminLimiter, async (req, res, next
 // ── Public status page feed — no auth required ────────────────────────────────
 // Returns the minimum information needed to show a "Is Niakofa working?" page
 // to users who can't load the app (wrong region, server degraded, etc.).
-// Deliberately exposes NO sensitive data: no user counts, no secrets, no internals.
+//
+// Deliberately exposes NO sensitive data beyond health signals:
+//   • no commit SHA  (available at /healthz and /version for authenticated ops tools)
+//   • no started_at  (available at /healthz and /version)
+//   • no user counts, no secrets, no internals
+//
+// Every field here is either:
+//   - a boolean "ok" flag, or
+//   - a numeric latency (helpful for status-page UX, reveals nothing sensitive), or
+//   - a short "operational" / "degraded" string, or
+//   - an ISO timestamp so the caller can verify the response is fresh.
 router.get("/status", async (_req, res) => {
   const checks: Array<{ name: string; ok: boolean; latency_ms?: number }> = [];
 
@@ -288,11 +298,12 @@ router.get("/status", async (_req, res) => {
   checks.push({ name: "map", ok: mapOk });
 
   const allOk = checks.every(c => c.ok);
+  // NOTE: commit and started_at are intentionally omitted here. They are
+  // served by /healthz (Railway probe) and /version (ops tooling) which are
+  // also unauthenticated but exist for internal use, not public consumption.
   res.status(allOk ? 200 : 503).json({
     status: allOk ? "operational" : "degraded",
     checks,
-    commit: GIT_COMMIT,
-    started_at: PROCESS_STARTED_AT,
     timestamp: new Date().toISOString(),
   });
 });
