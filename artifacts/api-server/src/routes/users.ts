@@ -26,6 +26,48 @@ import { logger } from "../lib/logger";
 import { requestSelect } from "../lib/request-select";
 import { userSelect } from "../lib/user-select";
 
+// ── Per-account login attempt tracking ────────────────────────────────────────
+// Guards against distributed brute-force attacks where a single account is
+// targeted from many IPs, bypassing the IP-based authLimiter above.
+// IP rate-limiting (authLimiter) blocks high-volume spray attacks; this adds
+// a per-account layer for low-and-slow attacks from rotating IPs.
+//
+// Thresholds (gentler than the NIST SP 800-63B minimum of ≥10 before lockout,
+// to minimize friction for legitimate typos while still blocking automation):
+//   ≥ 5 wrong attempts  → 30-second cooldown
+//   ≥ 10 wrong attempts → 5-minute lockout
+//   ≥ 15 wrong attempts → 30-minute lockout (≈ 3 attempts/hour ceiling)
+//
+// Implementation: in-memory Map keyed by user.id.
+// For multi-instance production deployments, replace with Redis INCR+EXPIRE
+// on keys like `login:fail:${userId}` for shared cross-instance state.
+interface LoginAttemptRecord { count: number; lockedUntil: number; resetAt: number; }
+const _loginAttempts = new Map<number, LoginAttemptRecord>();
+
+function _getAttempts(uid: number): LoginAttemptRecord {
+  const rec = _loginAttempts.get(uid);
+  return (!rec || Date.now() > rec.resetAt) ? { count: 0, lockedUntil: 0, resetAt: 0 } : rec;
+}
+function _recordFailedAttempt(uid: number): { retryAfterSec: number } {
+  const now = Date.now();
+  const rec = _getAttempts(uid);
+  const count = rec.count + 1;
+  const retrySec = count >= 15 ? 30 * 60 : count >= 10 ? 5 * 60 : count >= 5 ? 30 : 0;
+  _loginAttempts.set(uid, {
+    count,
+    // Only extend the lock, never shorten it (monotonically increasing)
+    lockedUntil: retrySec > 0 ? now + retrySec * 1000 : (rec.lockedUntil ?? 0),
+    resetAt: now + 60 * 60 * 1000, // auto-clear after 1 hour
+  });
+  return { retryAfterSec: retrySec };
+}
+function _clearAttempts(uid: number) { _loginAttempts.delete(uid); }
+// Prune expired records every 10 minutes — prevents unbounded Map growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of _loginAttempts) if (now > v.resetAt) _loginAttempts.delete(k);
+}, 10 * 60 * 1000).unref(); // .unref() prevents this timer from keeping the process alive
+
 const router = Router();
 
 
@@ -83,11 +125,31 @@ router.post("/users/login", authLimiter, async (req, res) => {
     });
   }
 
-  const passwordMatches = await bcrypt.compare(password, user.password_hash);
-  if (!passwordMatches) {
-    return res.status(401).json({ error: "Incorrect password" });
+  // Per-account lockout: checked BEFORE bcrypt.compare (expensive hash) so
+  // locked accounts are rejected instantly without doing CPU-intensive work
+  // for the attacker. Lockout state is separate from the IP-based authLimiter —
+  // both layers must be satisfied for a login to proceed.
+  const attemptRec = _getAttempts(user.id);
+  if (attemptRec.lockedUntil > Date.now()) {
+    const waitSec = Math.ceil((attemptRec.lockedUntil - Date.now()) / 1000);
+    const waitLabel = waitSec < 60 ? `${waitSec} seconds` : `${Math.ceil(waitSec / 60)} minutes`;
+    return res.status(429).json({
+      error: `Too many failed sign-in attempts. Please wait ${waitLabel} and try again, or use "Forgot password?" to reset it.`,
+      error_code: "ACCOUNT_LOCKED",
+      retry_after_sec: waitSec,
+    });
   }
 
+  const passwordMatches = await bcrypt.compare(password, user.password_hash);
+  if (!passwordMatches) {
+    const { retryAfterSec } = _recordFailedAttempt(user.id);
+    const hint = retryAfterSec > 0
+      ? ` Account temporarily locked for ${retryAfterSec < 60 ? retryAfterSec + "s" : Math.ceil(retryAfterSec / 60) + " min"} — use "Forgot password?" to bypass.`
+      : "";
+    return res.status(401).json({ error: `Incorrect password.${hint}` });
+  }
+
+  _clearAttempts(user.id); // successful login — reset the failure counter
   const token = signTokenById(user.id, user.token_version);
   // Strip all sensitive fields — including password_reset_* which were previously
   // leaked in the login response (zip-file fix BUG-SEC-01).
@@ -783,8 +845,27 @@ router.post("/users/:id/logout", requireAuth, resolveMeParam, requireOwnership()
 // Returns approval_status and account_type so admins can see pending/denied
 // accounts and distinguish individual vs. organization vs. business accounts
 // from the user list without needing separate fetches.
-router.get("/users", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
-  const users = await db.select({
+//
+// Supports server-side search (?q=) and pagination (?limit=&offset=).
+// Always returns { users, total, limit, offset } — never a raw array —
+// so the admin UI can display "Showing X of Y" accurately even when total
+// users exceed the page limit. Previously returned a raw array capped at 200,
+// causing the admin Users tab count to silently plateau and show wrong numbers.
+router.get("/users", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const limitParam  = parseInt(String(req.query.limit  ?? "200"), 10);
+  const offsetParam = parseInt(String(req.query.offset ?? "0"),   10);
+  const limit  = Number.isFinite(limitParam)  ? Math.min(Math.max(limitParam,  1), 500) : 200;
+  const offset = Number.isFinite(offsetParam) && offsetParam > 0 ? offsetParam : 0;
+
+  // Case-insensitive full-table search so an admin can find any user regardless
+  // of insertion order — previously the list was hard-capped at the first 200 rows
+  // with no way to reach anyone past that cutoff, and search happened only client-side.
+  const whereClause = q
+    ? sql`(lower(${usersTable.name}) LIKE ${"%" + q.toLowerCase() + "%"} OR lower(${usersTable.email}) LIKE ${"%" + q.toLowerCase() + "%"})`
+    : undefined;
+
+  const baseQuery = db.select({
     id: usersTable.id,
     name: usersTable.name,
     email: usersTable.email,
@@ -803,8 +884,21 @@ router.get("/users", requireAuth, requireAdmin(), adminLimiter, async (_req, res
     // Background check fields — used by BackgroundCheckAdmin in the admin UI
     background_check_status: usersTable.background_check_status,
     background_check_completed_at: usersTable.background_check_completed_at,
-  }).from(usersTable).limit(200);
-  return res.json(users);
+  }).from(usersTable);
+
+  const [users, [{ total }]] = await Promise.all([
+    (whereClause ? baseQuery.where(whereClause) : baseQuery)
+      .orderBy(usersTable.id)
+      .limit(limit)
+      .offset(offset),
+    whereClause
+      ? db.select({ total: sql<number>`COUNT(*)::int` }).from(usersTable).where(whereClause)
+      : db.select({ total: sql<number>`COUNT(*)::int` }).from(usersTable),
+  ]);
+
+  // Return both the page of users AND the true total so the admin UI can
+  // show "Showing X of Y" instead of silently implying the list is complete.
+  return res.json({ users, total, limit, offset });
 });
 
 // PATCH /users/:id/helper-application

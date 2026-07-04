@@ -1272,6 +1272,7 @@ function PendingBusinessesCard() {
 
 function UsersTab() {
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [actionUser, setActionUser] = useState<AdminUser | null>(null);
@@ -1279,20 +1280,46 @@ function UsersTab() {
   const [selectedUsers, setSelectedUsers] = useState<Set<number>>(new Set());
   const [bulkMode, setBulkMode] = useState(false);
 
+  // Debounced server-side search — searching client-side over only the first
+  // 200 fetched rows meant an admin could never find users past that cutoff,
+  // and the displayed count could silently plateau below the true total.
+  // The server now accepts ?q= for full-table name/email search and returns
+  // the true total count so "Showing X of Y" is always accurate.
   useEffect(() => {
     const tok = getToken();
-    fetch(`${BASE}/api/users?limit=200`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} })
-      .then(r => r.json())
-      .then((data) => { if (Array.isArray(data)) setUsers(data); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
+    setLoading(true);
+    // AbortController cancels any in-flight request when the search term changes
+    // before the 300ms debounce fires, preventing stale-results races where a
+    // slower earlier response arrives after a faster later one.
+    const controller = new AbortController();
+    const handle = setTimeout(() => {
+      const qParam = search.trim() ? `&q=${encodeURIComponent(search.trim())}` : "";
+      fetch(`${BASE}/api/users?limit=200${qParam}`, {
+        headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+        signal: controller.signal,
+      })
+        .then(r => {
+          if (!r.ok) throw new Error(`Server error: ${r.status}`);
+          return r.json() as Promise<{ users?: AdminUser[]; total?: number }>;
+        })
+        .then((data) => {
+          setUsers(Array.isArray(data.users) ? data.users : []);
+          setTotal(typeof data.total === "number" ? data.total : null);
+          setLoading(false);
+        })
+        .catch(err => {
+          if (err instanceof DOMException && err.name === "AbortError") return; // cancelled — ignore
+          setUsers([]);
+          setTotal(null);
+          setLoading(false);
+        });
+    }, search.trim() ? 300 : 0); // 300ms debounce for search; instant on first load
+    return () => { clearTimeout(handle); controller.abort(); };
+  }, [search]);
 
-  const filtered = users.filter(u => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
-    const matchHelper = !showHelperOnly || u.is_helper;
-    return matchSearch && matchHelper;
-  });
+  // Helper filter is client-side only (applied over the already-fetched page).
+  // Server-side filtering by helper status could be added later if needed.
+  const filtered = users.filter(u => !showHelperOnly || u.is_helper);
 
   const handleAction = async (userId: number, action: "warn" | "ban") => {
     try {
@@ -1337,7 +1364,13 @@ function UsersTab() {
       </div>
 
       <div className="flex items-center justify-between px-1">
-        <div className="text-xs text-muted-foreground">{filtered.length} user{filtered.length !== 1 ? "s" : ""}</div>
+        <div className="text-xs text-muted-foreground">
+          {search.trim()
+            ? `${filtered.length} match${filtered.length !== 1 ? "es" : ""}${typeof total === "number" ? ` of ${total} total` : ""}`
+            : typeof total === "number"
+              ? `Showing ${filtered.length} of ${total} user${total !== 1 ? "s" : ""}`
+              : `${filtered.length} user${filtered.length !== 1 ? "s" : ""}`}
+        </div>
         <button
           onClick={() => { setBulkMode(!bulkMode); setSelectedUsers(new Set()); }}
           className={`text-[10px] font-black px-2.5 py-1.5 rounded-full border transition-all ${
@@ -2317,12 +2350,13 @@ function HelperApplicationsTab() {
 
   useEffect(() => {
     const tok = getToken();
-    fetch(`${BASE}/api/users?limit=200&helper_status=pending`, {
+    fetch(`${BASE}/api/users?limit=500`, {
       headers: tok ? { Authorization: `Bearer ${tok}` } : {},
     })
-      .then(r => r.json())
-      .then((users: PendingHelper[]) => {
-        if (Array.isArray(users)) setPending(users.filter(u => u.helper_status === "pending"));
+      .then(r => r.ok ? r.json() : { users: [] })
+      .then((data: { users?: PendingHelper[] }) => {
+        const users = Array.isArray(data.users) ? data.users : [];
+        setPending(users.filter(u => u.helper_status === "pending"));
         setLoading(false);
       })
       .catch(() => setLoading(false));

@@ -146,6 +146,110 @@ When you're ready, you can pay through the Niakofa app — every contribution ke
     }
   }
 
+  // ── Step 6: Auto-default pledges > 90 days outstanding ───────────────────
+  // This is the documented safety net referenced in requests.ts and the admin
+  // pledge-status panel. Without this step, pledge_status='defaulted' can ONLY
+  // be set manually by an admin, meaning the "90-day auto-default" described
+  // in the codebase's own comments never actually triggers — defeating the pool
+  // sustainability mechanism and leaving serial non-payers unblocked indefinitely.
+  //
+  // Clock starts at completed_at (when the request was fulfilled and the
+  // Pay It Forward obligation began). Hardship exemption: accounts with a
+  // pending hardship_requested_at are never auto-defaulted (admin reviews those).
+  //
+  // Idempotency: the WHERE clause includes pledge_status='active' so re-running
+  // this step on already-defaulted rows is a no-op.
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const toDefault = await db
+    .select()
+    .from(requestsTable)
+    .where(
+      and(
+        eq(requestsTable.payment_type, "pay_it_forward"),
+        eq(requestsTable.status, "completed"),
+        eq(requestsTable.pledge_status, "active"),
+        sql`COALESCE(${requestsTable.pledge_paid}, 0) < COALESCE(${requestsTable.pledge_amount}, 0)`,
+        sql`${requestsTable.completed_at} < ${ninetyDaysAgo.toISOString()}::timestamptz`,
+        isNull(requestsTable.hardship_requested_at),
+      )
+    );
+
+  if (toDefault.length > 0) {
+    logger.info({ count: toDefault.length }, "pledge-worker: auto-defaulting pledges outstanding >90 days");
+
+    for (const req of toDefault) {
+      const [updated] = await db
+        .update(requestsTable)
+        .set({ pledge_status: "defaulted" })
+        .where(
+          and(
+            eq(requestsTable.id, req.id),
+            eq(requestsTable.pledge_status, "active"), // idempotency guard
+          )
+        )
+        .returning({ id: requestsTable.id });
+
+      if (!updated) continue; // concurrent update already handled it
+
+      logger.warn(
+        {
+          request_id: req.id,
+          requester_id: req.requester_id,
+          outstanding: (req.pledge_amount ?? 0) - (req.pledge_paid ?? 0),
+          completed_at: req.completed_at?.toISOString(),
+        },
+        "pledge-worker: pledge auto-defaulted after 90 days without repayment"
+      );
+
+      // Notify the requester so they know their posting ability is now blocked.
+      // Look up their email synchronously within the loop so the fire-and-forget
+      // mailer call has a real address (the previous placeholder was always "").
+      if (req.requester_id) {
+        const [requester] = await db
+          .select({ email: usersTable.email, name: usersTable.name })
+          .from(usersTable)
+          .where(eq(usersTable.id, req.requester_id))
+          .limit(1);
+
+        // Push notification (fire-and-forget — failure must not interrupt the loop)
+        try {
+          await sendPushToUser(req.requester_id, {
+            title: "Pay It Forward pledge defaulted",
+            body: `Your pledge for "${req.title}" has been marked as defaulted after 90 days with no repayment. Contact support to restore your posting ability.`,
+            notifType: "wallet",
+          });
+        } catch { /* push may fail silently — continue */ }
+
+        // Email notification — only if we resolved a real address
+        if (requester?.email) {
+          const recipientName = requester.name ?? "Niakofa member";
+          import("../lib/mailer.js")
+            .then(({ sendAlertEmail }) =>
+              sendAlertEmail({
+                to:      requester.email,
+                subject: "Your Pay It Forward pledge has been defaulted",
+                title:   "Pay It Forward pledge defaulted",
+                body: [
+                  `Hi ${recipientName},`,
+                  "",
+                  `Your Pay It Forward pledge for "${req.title}" has been marked as defaulted`,
+                  "after 90 days without repayment.",
+                  "",
+                  "This means you cannot post new Pay It Forward requests until the pledge is resolved.",
+                  "Please contact support@niakofa.app to discuss a hardship waiver or repayment plan.",
+                ].join("\n"),
+                ctaText: "Contact Support",
+                ctaUrl:  "mailto:support@niakofa.app",
+              }).catch(() => {})
+            )
+            .catch(() => {});
+        }
+      }
+    }
+  } else {
+    logger.debug("pledge-worker: no pledges eligible for auto-default today");
+  }
+
   logger.info("pledge-worker: reconciliation complete");
 }
 

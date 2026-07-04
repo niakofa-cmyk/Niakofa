@@ -74,3 +74,6 @@
 - [Niakofa Nia fail-closed default](niakofa-nia-failclosed.md) — Nia must be DISABLED by default; all isNiaEnabled() use === "true" not !== "false"; NiaGlobal useState(null) not useState(true); transcribe route also needs kill-switch check.
 - [Niakofa admin auth model](niakofa-admin-auth-model.md) — admin gate is purely is_admin DB flag; no VITE_ADMIN_SECRET client bypass; admin must log in as real user first; /admin excluded from AppContext redirect.
 - [Niakofa Google OAuth](niakofa-google-oauth.md) — POST /auth/google; race-safe find/link/create; suspension checked before mutations; VITE_GOOGLE_CLIENT_ID gates Google button; @react-oauth/google frontend.
+- [Niakofa users API shape](niakofa-users-api-shape.md) — GET /users returns { users, total, limit, offset }; all callers must destructure data.users not treat response as raw array; supports ?q= server-side search.
+- [Niakofa account lockout](niakofa-account-lockout.md) — in-memory Map keyed by user.id; 5/10/15 attempts → 30s/5min/30min lock; checked BEFORE bcrypt.compare; .unref() on prune interval; for multi-instance use Redis INCR+EXPIRE.
+- [Niakofa pledge auto-default](niakofa-pledge-autodefault.md) — 90-day auto-default runs inside reconcilePledges (Step 6); must look up requester email via DB before fire-and-forget mailer (req.requester_id alone is not enough for email send).

@@ -44,15 +44,14 @@ export function BackgroundCheckAdmin() {
   const load = useCallback(() => {
     setLoading(true);
     const tok = getToken();
-    fetch(`${BASE}/api/users?limit=200`, {
+    fetch(`${BASE}/api/users?limit=500`, {
       headers: tok ? { Authorization: `Bearer ${tok}` } : {},
     })
-      .then(r => r.ok ? r.json() : [])
-      .then((users: HelperWithBgCheck[]) => {
-        if (Array.isArray(users)) {
-          // Show only helpers (or those who applied to be helpers)
-          setHelpers(users.filter(u => u.is_helper || (u.help_count ?? 0) > 0));
-        }
+      .then(r => r.ok ? r.json() : { users: [] })
+      .then((data: { users?: HelperWithBgCheck[] }) => {
+        const users = Array.isArray(data.users) ? data.users : [];
+        // Show only helpers (or those who applied to be helpers)
+        setHelpers(users.filter(u => u.is_helper || (u.help_count ?? 0) > 0));
         setLoading(false);
       })
       .catch(() => setLoading(false));
