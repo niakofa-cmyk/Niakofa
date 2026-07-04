@@ -314,6 +314,15 @@ router.post(["/users/request-password-reset", "/users/forgot-password"], authLim
       .set({ password_reset_code: code, password_reset_expires_at: expiresAt })
       .where(eq(usersTable.id, user.id));
 
+    // Always log the code prominently so it is accessible in server logs
+    // even when SMTP is not configured. In production this is a secondary
+    // fallback; the email is the primary delivery mechanism.
+    logger.info(
+      { email: user.email, user_id: user.id },
+      `\n${"─".repeat(60)}\n  PASSWORD RESET CODE for ${user.email}\n  Code: ${code}  (expires in 15 min)\n${"─".repeat(60)}`
+    );
+
+    const smtpConfigured = Boolean(process.env["SMTP_USER"]);
     const { sendAlertEmail } = await import("../lib/mailer.js");
     await sendAlertEmail({
       to: user.email,
@@ -321,6 +330,14 @@ router.post(["/users/request-password-reset", "/users/forgot-password"], authLim
       title: "Your sign-in code",
       body: `Hi ${user.name}, use this code to finish setting up sign-in on Niakofa: <strong style="font-size:24px;letter-spacing:4px">${code}</strong><br><br>This code expires in 15 minutes. If you didn't request this, you can ignore this email.`,
     });
+
+    // DEV MODE: when SMTP is not configured, return the code in the response
+    // body so it can be displayed directly in the UI without needing email.
+    // In production (SMTP_USER set) this field is never included — the code
+    // arrives only via the email delivery path.
+    if (!smtpConfigured && process.env["NODE_ENV"] !== "production") {
+      return res.json({ ok: true, dev_code: code, dev_notice: "SMTP not configured — code shown here for development only" });
+    }
   }
 
   return res.json({ ok: true });

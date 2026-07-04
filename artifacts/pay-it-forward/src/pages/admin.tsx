@@ -1367,9 +1367,11 @@ function UsersTab() {
         <div className="text-xs text-muted-foreground">
           {search.trim()
             ? `${filtered.length} match${filtered.length !== 1 ? "es" : ""}${typeof total === "number" ? ` of ${total} total` : ""}`
-            : typeof total === "number"
-              ? `Showing ${filtered.length} of ${total} user${total !== 1 ? "s" : ""}`
-              : `${filtered.length} user${filtered.length !== 1 ? "s" : ""}`}
+            : showHelperOnly
+              ? `${filtered.length} helper${filtered.length !== 1 ? "s" : ""}${typeof total === "number" ? ` (${total} total users)` : ""}`
+              : typeof total === "number"
+                ? `${total} user${total !== 1 ? "s" : ""} registered`
+                : `${filtered.length} user${filtered.length !== 1 ? "s" : ""}`}
         </div>
         <button
           onClick={() => { setBulkMode(!bulkMode); setSelectedUsers(new Set()); }}

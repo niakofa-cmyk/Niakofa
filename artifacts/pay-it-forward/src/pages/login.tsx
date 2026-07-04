@@ -567,15 +567,20 @@ export default function LoginScreen() {
             return;
           }
 
-          // Wrong password — suggest forgot-password after a failed attempt so the
-          // user knows there's a recovery path before they get locked out.
+          // Wrong password — pre-fill email and open forgot-password flow immediately
+          // so the user can reset without having to find the link themselves.
           if (data.error && (data.error.startsWith("Incorrect password") || data.error === t("auth.wrong_password"))) {
-            const hint = data.error.includes("locked") ? "" : " Forgot your password? Tap below to reset it.";
             toast({
               title: "Incorrect password",
-              description: hint || data.error,
+              description: "Opening password reset so you can recover your account right away.",
               variant: "destructive",
             });
+            // Pre-fill email and open forgot-password flow automatically —
+            // user gets a recovery path without extra taps.
+            setForgotEmail(email.trim());
+            setForgotStep("email");
+            setDevResetCode(null);
+            setForgotPasswordMode(true);
             return;
           }
 
@@ -725,17 +730,32 @@ export default function LoginScreen() {
     }
   };
 
+  const [devResetCode, setDevResetCode] = useState<string | null>(null);
+
   const handleRequestForgotCode = async () => {
     if (!forgotEmail.trim()) return;
     setForgotSaving(true);
     try {
-      await fetch("/api/users/forgot-password", {
+      const res = await fetch("/api/users/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: forgotEmail.trim() }),
       });
+      const data = await res.json().catch(() => ({})) as { ok?: boolean; dev_code?: string; dev_notice?: string };
       setForgotStep("code");
-      toast({ title: "If that email has an account, a code has been sent." });
+      // DEV MODE: if SMTP is not configured the server returns the code directly
+      // so password reset can be tested without an email provider.
+      if (data.dev_code) {
+        setDevResetCode(data.dev_code);
+        setForgotCode(data.dev_code); // auto-fill the code field
+        toast({
+          title: "Dev mode — code auto-filled",
+          description: `Reset code: ${data.dev_code} (configure SMTP_HOST/SMTP_USER/SMTP_PASS in Railway for email delivery)`,
+        });
+      } else {
+        setDevResetCode(null);
+        toast({ title: "Code sent!", description: "Check your email for the 6-digit code." });
+      }
     } catch {
       toast({ title: t("common.error"), variant: "destructive" });
     } finally {
@@ -831,12 +851,20 @@ export default function LoginScreen() {
                   <Button className="w-full h-13 font-black text-base mt-2" onClick={handleRequestForgotCode} disabled={forgotSaving || !forgotEmail.trim()}>
                     {forgotSaving ? <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />Sending…</span> : "Send Code"}
                   </Button>
-                  <button onClick={() => setForgotPasswordMode(false)} className="w-full text-center text-xs text-muted-foreground active:text-foreground transition-colors py-2">
+                  <button onClick={() => { setForgotPasswordMode(false); setDevResetCode(null); setForgotCode(""); setForgotStep("email"); }} className="w-full text-center text-xs text-muted-foreground active:text-foreground transition-colors py-2">
                     Back to sign in
                   </button>
                 </motion.div>
               ) : (
                 <motion.div key="code-step" className="space-y-3">
+                  {devResetCode && (
+                    <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl px-4 py-3 text-xs text-amber-400 leading-relaxed">
+                      <span className="font-black">Dev mode</span> — SMTP not configured. Your code is:{" "}
+                      <span className="font-mono font-black tracking-widest text-amber-300">{devResetCode}</span>
+                      <br />
+                      <span className="text-amber-500/70">Set SMTP_HOST / SMTP_USER / SMTP_PASS in Railway for email delivery.</span>
+                    </div>
+                  )}
                   <input
                     type="text"
                     inputMode="numeric"
@@ -891,7 +919,7 @@ export default function LoginScreen() {
                   >
                     Resend code
                   </button>
-                  <button onClick={() => setForgotPasswordMode(false)} className="w-full text-center text-xs text-muted-foreground active:text-foreground transition-colors py-2">
+                  <button onClick={() => { setForgotPasswordMode(false); setDevResetCode(null); setForgotCode(""); setForgotStep("email"); }} className="w-full text-center text-xs text-muted-foreground active:text-foreground transition-colors py-2">
                     Back to sign in
                   </button>
                 </motion.div>
