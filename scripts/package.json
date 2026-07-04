@@ -9,14 +9,17 @@
     "seed-if-empty": "tsx ./src/seed-if-empty.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "seed-crisis": "tsx ./src/seed-regional-crisis.ts",
-    "seed-businesses": "tsx ./src/seed-businesses.ts"
+    "seed-businesses": "tsx ./src/seed-businesses.ts",
+    "seed-test-accounts": "tsx ./src/seed-test-accounts.ts"
   },
   "dependencies": {
     "@workspace/db": "workspace:*",
+    "bcryptjs": "^3.0.3",
     "drizzle-orm": "catalog:",
     "pg": "^8.20.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^3.0.0",
     "@types/node": "catalog:",
     "@types/pg": "^8.20.0",
     "tsx": "catalog:"
