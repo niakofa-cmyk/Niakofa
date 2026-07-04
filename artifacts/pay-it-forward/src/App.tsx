@@ -7,6 +7,7 @@ import { BottomNav } from "@/components/BottomNav";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
 import { useState, useEffect } from "react";
+import { useServiceWorkerUpdate } from "@/hooks/useServiceWorkerUpdate";
 
 import MapScreen from "@/pages/map";
 import NewRequestScreen from "@/pages/request-new";
@@ -180,6 +181,11 @@ function AppShell() {
 // Uses window.location.pathname directly to avoid Wouter base-stripping
 // ambiguity — the raw browser URL is always reliable for this one check.
 function AppContent() {
+  // Register the service worker and show a one-click refresh toast when a
+  // new version is available. Lives here (inside QueryClientProvider + AppProvider)
+  // so it can access the app's existing Toaster context.
+  useServiceWorkerUpdate();
+
   const pathname =
     typeof window !== "undefined" ? window.location.pathname : "";
   if (pathname === "/status" || pathname.endsWith("/status")) {

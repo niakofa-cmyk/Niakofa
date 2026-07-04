@@ -121,8 +121,8 @@ async function processPifNudges(): Promise<void> {
           eq(requestsTable.status, "completed"),
           // Nothing repaid yet
           sql`COALESCE(${requestsTable.pledge_paid}, 0) = 0`,
-          // Completed but within 90 days — no point nudging ancient rows
-          sql`${requestsTable.completed_at} > NOW() - INTERVAL '90 days'`,
+          // Completed but within 2 years — no point nudging ancient rows
+          sql`${requestsTable.completed_at} > NOW() - INTERVAL '730 days'`,
           sql`${requestsTable.completed_at} IS NOT NULL`,
         )
       );
@@ -161,18 +161,22 @@ async function processPifNudges(): Promise<void> {
 }
 
 // ─── Pledge Default Worker ────────────────────────────────────────────────────
-// After 90 days with no repayment, a PIF pledge is considered defaulted.
+// After 2 years with no repayment, a PIF pledge is considered defaulted.
 // This worker:
-//   1. Finds completed PIF requests with pledge_paid=0 after the 90-day window
+//   1. Finds completed PIF requests with pledge_paid=0 after the 2-year grace window
 //   2. Sets pledge_status='defaulted'
 //   3. Applies a trust-score penalty (-10 points, floored at 0)
 //   4. Logs the action for the admin audit trail
 //
-// "Defaulted" is softer than "written_off": the requester can still repay at
-// any time and the admin can restore the pledge_status manually. The trust hit
-// is what makes future PIF requests impossible until they pay something back.
+// Grace window is intentionally generous (730 days / 2 years) — the whole point
+// of pay-it-forward is "no pressure, pay when life gets better." A 90-day hard
+// default contradicted the mission and quietly blocked people at day 91.
+//
+// "Defaulted" is a soft internal risk signal + trust-score ding. It does NOT
+// hard-block new PIF requests — the requester can still use the platform.
+// Admin can restore pledge_status manually at any time.
 
-const PLEDGE_DEFAULT_DAYS = 90;
+const PLEDGE_DEFAULT_DAYS = 730;
 
 export async function processPledgeDefaults(): Promise<void> {
   const { db, requestsTable, usersTable } = await import("@workspace/db");
@@ -244,8 +248,8 @@ export async function processPledgeDefaults(): Promise<void> {
       // The atomic WHERE pledge_status='active' above ensures only one worker
       // ever reaches this block for any given row.
       sendPushToUser(req.requester_id, {
-        title: "Pay It Forward pledge defaulted",
-        body: `Your pledge has been marked as defaulted after ${PLEDGE_DEFAULT_DAYS} days. Make any repayment in your wallet to restore your posting ability.`,
+        title: "💙 Pay It Forward — Pledge Update",
+        body: `Your pledge has been marked as overdue after ${PLEDGE_DEFAULT_DAYS / 365} years. When you're able, even a small payment keeps the cycle going for the next neighbor. No rush — we're here for you.`,
         urgency: "normal",
         notifType: "wallet" as const,
       }).catch(() => {});
@@ -266,10 +270,10 @@ export async function processPledgeDefaults(): Promise<void> {
                 body: [
                   `Hi ${requester.name ?? "neighbor"},`,
                   "",
-                  `Your Pay It Forward pledge has been marked as defaulted after ${PLEDGE_DEFAULT_DAYS} days without repayment.`,
-                  "This means you cannot post new Pay It Forward requests until the pledge is resolved.",
+                  `Your Pay It Forward pledge has been marked as overdue after ${PLEDGE_DEFAULT_DAYS / 365} years without repayment.`,
+                  "This is a gentle signal, not a hard block — you can still use the platform.",
                   "",
-                  "Make any payment — even a small one — in your Niakofa wallet to restore your posting ability immediately.",
+                  "When life gets better, make any payment — even a small one — in your Niakofa wallet to keep the cycle going for the next neighbor.",
                   "Or submit a hardship request if you're going through a difficult time and need a waiver.",
                 ].join("\n"),
                 ctaText: "Open My Wallet",

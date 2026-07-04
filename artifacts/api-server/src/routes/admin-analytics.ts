@@ -168,6 +168,38 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), adminLimiter, async 
       .orderBy(sql`COUNT(*) DESC`),
   ]);
 
+  // Effective hourly rate: avg(pledge_paid / estimated_hours) for completed PIF
+  // tasks where the helper was actually paid and hours were estimated. This is
+  // the "livable wage proof" metric — surfaces what helpers actually earned per
+  // hour on average, making the platform's economic promise concrete for admins.
+  const [hourlyRateRow] = await db
+    .select({
+      avg_effective_hourly_rate: sql<number>`
+        COALESCE(
+          AVG(
+            CASE
+              WHEN ${requestsTable.estimated_hours} > 0
+               AND ${requestsTable.pledge_paid} > 0
+              THEN ${requestsTable.pledge_paid}::float / ${requestsTable.estimated_hours}::float
+              ELSE NULL
+            END
+          ),
+          0
+        )::float`,
+      sample_size: sql<number>`
+        COUNT(*) FILTER (
+          WHERE ${requestsTable.estimated_hours} > 0
+            AND ${requestsTable.pledge_paid} > 0
+        )::int`,
+    })
+    .from(requestsTable)
+    .where(
+      and(
+        eq(requestsTable.status, "completed"),
+        eq(requestsTable.payment_type, "pay_it_forward"),
+      )
+    );
+
   const openCount = statusCounts.find((s: { status: string; count: number }) => s.status === "open")?.count ?? 0;
   const completedCount = statusCounts.find((s: { status: string; count: number }) => s.status === "completed")?.count ?? 0;
 
@@ -186,6 +218,12 @@ router.get("/admin/analytics", requireAuth, requireAdmin(), adminLimiter, async 
       total_pledged: pledgeStats[0]?.total_pledged ?? 0,
       total_paid: pledgeStats[0]?.total_paid ?? 0,
       pending: (pledgeStats[0]?.total_pledged ?? 0) - (pledgeStats[0]?.total_paid ?? 0),
+    },
+    // Average effective hourly rate paid to helpers (PIF tasks with estimated_hours + actual payout).
+    // This is proof of the livable-wage promise — surfaces in the admin analytics dashboard.
+    helper_compensation: {
+      avg_effective_hourly_rate: Math.round((hourlyRateRow?.avg_effective_hourly_rate ?? 0) * 100) / 100,
+      sample_size: hourlyRateRow?.sample_size ?? 0,
     },
     reports_by_status: reportStatusCounts,
     reports_by_type: reportTypeCounts,

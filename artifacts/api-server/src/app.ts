@@ -143,7 +143,10 @@ if (process.env.NODE_ENV === "production" && process.env.SERVE_FRONTEND === "tru
 
   app.use(express.static(frontendDist, {
     setHeaders(res, filePath) {
-      if (filePath.endsWith("index.html")) {
+      if (filePath.endsWith("index.html") || filePath.endsWith("sw.js")) {
+        // sw.js must never be cached — browsers allow up to 24h before re-checking
+        // a service worker without an explicit no-cache header, which produces the
+        // "stuck on old build" experience. Treat it identically to index.html.
         res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         res.setHeader("Pragma", "no-cache");
         res.setHeader("Expires", "0");

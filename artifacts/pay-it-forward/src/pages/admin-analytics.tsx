@@ -35,6 +35,7 @@ interface AnalyticsData {
   requests_by_category: { category: string; count: number }[];
   daily_request_volume: { day: string; count: number }[];
   pledge_pool: { total_pledged: number; total_paid: number; pending: number };
+  helper_compensation?: { avg_effective_hourly_rate: number; sample_size: number };
   reports_by_status: { status: string; count: number }[];
   reports_by_type: { type: string; count: number }[];
   trust_score_distribution: { bucket: string; count: number }[];
@@ -269,9 +270,9 @@ export default function AdminAnalyticsDashboard() {
             // toLocaleString() uses the admin's browser locale for number formatting
             // (e.g. "1,234" in en-US, "1.234" in de-DE) while the $ prefix
             // correctly reflects that these are USD pool amounts.
-            { label: "Pledged",  value: `${pledge_pool.total_pledged.toLocaleString("en-US")}`, color: "text-foreground" },
-            { label: "Paid Out", value: `${pledge_pool.total_paid.toLocaleString("en-US")}`,    color: "text-green-400" },
-            { label: "Pending",  value: `${pledge_pool.pending.toLocaleString("en-US")}`,       color: "text-amber-400" },
+            { label: "Pledged",  value: `$${pledge_pool.total_pledged.toLocaleString("en-US")}`, color: "text-foreground" },
+            { label: "Paid Out", value: `$${pledge_pool.total_paid.toLocaleString("en-US")}`,    color: "text-green-400" },
+            { label: "Pending",  value: `$${pledge_pool.pending.toLocaleString("en-US")}`,       color: "text-amber-400" },
           ].map(({ label, value, color }) => (
             <div key={label} className="bg-background rounded-xl p-3 text-center">
               <DollarSign className="w-4 h-4 text-muted-foreground mx-auto mb-1" />
@@ -281,6 +282,31 @@ export default function AdminAnalyticsDashboard() {
           ))}
         </div>
       </Section>
+
+      {/* Helper compensation — effective hourly rate proof-of-livable-wage */}
+      {data.helper_compensation && (
+        <Section title="Helper Compensation">
+          <div className="flex items-center gap-4">
+            <div className="bg-background rounded-xl p-4 flex-1 text-center">
+              <p className="text-[11px] text-muted-foreground mb-1">Avg Effective Hourly Rate</p>
+              <p className="text-2xl font-black text-green-400">
+                {data.helper_compensation.avg_effective_hourly_rate > 0
+                  ? `$${data.helper_compensation.avg_effective_hourly_rate.toFixed(2)}/hr`
+                  : "—"}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                {data.helper_compensation.sample_size > 0
+                  ? `Based on ${data.helper_compensation.sample_size} paid tasks`
+                  : "No paid tasks with hour estimates yet"}
+              </p>
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground px-1">
+            Computed from completed Pay-It-Forward tasks where estimated hours and actual payout are both recorded.
+            This is the platform's livable-wage proof metric.
+          </p>
+        </Section>
+      )}
 
       {/* Reports */}
       <Section title="Reports by Status">

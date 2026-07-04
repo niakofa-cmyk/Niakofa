@@ -1105,7 +1105,7 @@ export default function CommunityScreen() {
               <div className="space-y-3">
                 {[
                   { step: "1", title: "Get help now", desc: "When you need help, a neighbor shows up — no payment required upfront." },
-                  { step: "2", title: "Pay when you're able", desc: "When life gets better, contribute back any amount within 90 days — even a dollar keeps the cycle going for the next neighbor who needs help." },
+                  { step: "2", title: "Pay when you're able", desc: "When life gets better, contribute back any amount — even a dollar keeps the cycle going for the next neighbor who needs help. No deadline, no pressure." },
                   { step: "3", title: "Strengthen the pool", desc: "Every dollar flows into the community reserve, funding future helpers." },
                 ].map(item => (
                   <div key={item.step} className="flex gap-3">

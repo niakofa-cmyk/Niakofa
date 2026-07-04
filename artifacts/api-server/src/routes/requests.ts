@@ -517,40 +517,20 @@ router.post("/requests", requireAuth, requestCreationLimiter, async (req, res) =
     });
   }
 
-  // ── PIF outstanding pledge cap + defaulted check ───────────────────────────
-  // Prevent PIF abuse: someone who repeatedly gets help and never pays forward
-  // clogs the pool and takes from helpers who front their time.
+  // ── PIF outstanding pledge soft cap ───────────────────────────────────────
+  // A gentle signal — not a hard block — for users who repeatedly get help
+  // without ever paying forward. "Defaulted" is an internal risk signal and
+  // trust-score ding; it does NOT hard-block new requests. That would
+  // contradict the mission ("2 days to 2 years, no pressure").
   //
-  // Two-tier gate:
-  //   1. Hard block: any defaulted pledge → must resolve before new PIF (no cap)
-  //   2. Soft cap: max 3 active unpaid pledges before a new PIF is blocked
+  // Soft cap: max 5 unpaid pledges (active OR defaulted) before a new PIF is
+  // gently declined with a clear path back (pay any amount to restore).
+  // Counting defaulted pledges means serial non-payers still get a ceiling,
+  // but a single defaulted pledge no longer kills the account immediately.
   //
-  // "Defaulted" = pledge_status set by the pledge-default worker after 90 days
-  // with zero repayment. Admin can restore status via PATCH /admin/requests/:id/pledge-status.
+  // Admin can restore pledge_status via PATCH /admin/requests/:id/pledge-status.
   if (parsed.data.payment_type === "pay_it_forward") {
-    // Hard block: any defaulted pledge
-    const [defaultedPif] = await db
-      .select({ count: sql<number>`COUNT(*)::int` })
-      .from(requestsTable)
-      .where(
-        and(
-          eq(requestsTable.requester_id, req.authenticatedUserId!),
-          eq(requestsTable.payment_type, "pay_it_forward"),
-          eq(requestsTable.pledge_status, "defaulted"),
-        )
-      );
-    if ((defaultedPif?.count ?? 0) > 0) {
-      return res.status(403).json({
-        error:
-          "You have a pay-it-forward pledge that has been marked as defaulted after 90 days without repayment. " +
-          "Please contact an admin to resolve your defaulted pledge before posting new pay-it-forward requests. " +
-          "Even a small partial payment can restore your standing.",
-        code: "pif_pledge_defaulted",
-        defaulted_count: defaultedPif?.count ?? 0,
-      });
-    }
-
-    // Soft cap: max 3 active unpaid pledges
+    // Soft cap: max 5 unpaid pledges (active + defaulted combined)
     const [unpaidPif] = await db
       .select({ count: sql<number>`COUNT(*)::int` })
       .from(requestsTable)
@@ -559,18 +539,18 @@ router.post("/requests", requireAuth, requestCreationLimiter, async (req, res) =
           eq(requestsTable.requester_id, req.authenticatedUserId!),
           eq(requestsTable.payment_type, "pay_it_forward"),
           eq(requestsTable.status, "completed"),
-          eq(requestsTable.pledge_status, "active"),
+          sql`${requestsTable.pledge_status} IN ('active', 'defaulted')`,
           sql`${requestsTable.pledge_amount} > 0`,
-          sql`${requestsTable.pledge_paid} = 0`,
+          sql`COALESCE(${requestsTable.pledge_paid}, 0) = 0`,
         )
       );
     const unpaidCount = unpaidPif?.count ?? 0;
-    if (unpaidCount >= 3) {
+    if (unpaidCount >= 5) {
       return res.status(403).json({
         error:
           `You have ${unpaidCount} completed pay-it-forward requests with no repayment yet. ` +
-          "Please pay something forward before posting another pay-it-forward request — " +
-          "even a small amount keeps the community pool healthy for everyone.",
+          "When you're back on your feet, even a small contribution keeps the cycle going for the next neighbor. " +
+          "Pay any amount in your wallet to restore your posting ability.",
         code: "pif_pledge_cap_exceeded",
         unpaid_pif_count: unpaidCount,
       });
