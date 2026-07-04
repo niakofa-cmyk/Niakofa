@@ -93,3 +93,4 @@
 - [Niakofa pledge auto-default](niakofa-pledge-autodefault.md) — 90-day auto-default runs inside reconcilePledges (Step 6); must look up requester email via DB before fire-and-forget mailer (req.requester_id alone is not enough for email send).
 - [Niakofa dispute resolution](niakofa-disputes.md) — atomic status transitions (SQL WHERE not just SELECT guard); notifType must be "community"; DisputesTab wired in admin.tsx.
 - [Niakofa category expansion](niakofa-category-expansion.md) — 6 places to update when adding categories; generated enum files must be hand-updated; server uses api-zod enum not frontend z.enum.
+- [Niakofa heading fusion fix](niakofa-heading-fusion-fix.md) — Heading-Up map jump fixed via rAF camera loop + GPS/compass complementary filter; use useFusedHeading not raw useDeviceHeading for nav.

@@ -20,7 +20,7 @@ import { HelperMarker } from "@/components/HelperMarker";
 import { BestMatchCard } from "@/components/BestMatchCard";
 import {
   MapPin, Wifi, WifiOff, Users, Activity, AlertTriangle,
-  Navigation2, Car, LocateFixed, Plus, Minus, Layers, Compass,
+  Navigation2, Car, LocateFixed, Plus, Minus, Layers,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
@@ -29,6 +29,7 @@ import { useTerrain } from "@/hooks/useTerrain";
 import { useFusedHeading } from "@/hooks/useFusedHeading";
 import { useMapOrientation } from "@/hooks/useMapOrientation";
 import { OrientationToggle } from "@/components/OrientationToggle";
+import { Compass } from "lucide-react";
 
 // Cluster zoom threshold — below this zoom, request markers are grouped into
 // cluster bubbles. Above it, individual React Marker components take over,

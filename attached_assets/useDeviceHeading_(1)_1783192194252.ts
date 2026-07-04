@@ -31,14 +31,6 @@ import { smoothHeading } from "@/lib/heading-math";
  *    React state on every single event — often 30–60 times/second. Fixed:
  *    circular (mod-360-safe) exponential smoothing + a small time-based
  *    throttle, so consumers get a stable value, not raw sensor noise.
- *
- * 4. iOS PERMISSION ON MOUNT: iOS 13+ requires DeviceOrientationEvent
- *    permission to be requested from within a user gesture handler, not on
- *    component mount — Safari silently denies (or never prompts) otherwise.
- *    This hook still attempts start() on mount for browsers that don't
- *    require permission (Android/desktop), but the actual permission
- *    request should be re-triggered from a tap (see OrientationToggle's
- *    onToggle, which is a real user gesture) for iOS to work reliably.
  */
 
 declare global {
