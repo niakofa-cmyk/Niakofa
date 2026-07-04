@@ -21,11 +21,25 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "https://js.stripe.com", "https://maps.googleapis.com"],
+        scriptSrc: [
+          "'self'", "'unsafe-inline'",
+          "https://js.stripe.com",
+          "https://maps.googleapis.com",
+          // Google Identity Services (GSI) — Google Sign-In button + token issuance
+          "https://accounts.google.com",
+        ],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         // Mapbox GL JS loads tile images and its own glyphs/sprites from *.mapbox.com
-        imgSrc: ["'self'", "data:", "blob:", "https://*.stripe.com", "https://maps.gstatic.com", "https://*.googlevideo.com", "https://*.mapbox.com"],
+        // lh3.googleusercontent.com = Google profile pictures returned by Google OAuth
+        imgSrc: [
+          "'self'", "data:", "blob:",
+          "https://*.stripe.com",
+          "https://maps.gstatic.com",
+          "https://*.googlevideo.com",
+          "https://*.mapbox.com",
+          "https://lh3.googleusercontent.com", // Google profile avatars
+        ],
         // Mapbox GL JS spawns web workers from blob: URLs — required for map rendering
         workerSrc: ["'self'", "blob:"],
         // Mapbox fetches vector tiles, styles, geocoding, directions from these origins
@@ -38,9 +52,18 @@ app.use(
           // Mapbox GL JS + Mapbox APIs (tiles, geocoding, directions, events telemetry)
           "https://*.mapbox.com",
           "https://events.mapbox.com",
+          // Google OAuth — ID token verification endpoint
+          "https://oauth2.googleapis.com",
+          "https://accounts.google.com",
           process.env.NIA_SERVICE_URL ?? "https://niakofa-production.up.railway.app",
         ].filter(Boolean),
-        frameSrc: ["'self'", "https://js.stripe.com", "https://hooks.stripe.com"],
+        frameSrc: [
+          "'self'",
+          "https://js.stripe.com",
+          "https://hooks.stripe.com",
+          // Google Identity Services renders its sign-in button as an iframe
+          "https://accounts.google.com",
+        ],
         objectSrc: ["'none'"],
         upgradeInsecureRequests: process.env.NODE_ENV === "production" ? [] : null,
       },

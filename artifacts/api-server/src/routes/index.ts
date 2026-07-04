@@ -24,6 +24,7 @@ import businessesRouter from "./businesses";
 import govSponsorsRouter from "./gov-sponsors";
 import backgroundChecksRouter from "./background-checks";
 import walletRouter from "./wallet";
+import googleAuthRouter from "./google-auth";
 
 const router: IRouter = Router();
 
@@ -52,5 +53,6 @@ router.use(businessesRouter);
 router.use(govSponsorsRouter);
 router.use(backgroundChecksRouter);
 router.use(walletRouter);
+router.use(googleAuthRouter);
 
 export default router;

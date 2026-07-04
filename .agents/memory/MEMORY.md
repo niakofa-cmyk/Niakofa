@@ -73,3 +73,4 @@
 - [Niakofa auth/registration bugs](niakofa-auth-registration-bugs.md) — 3 critical bugs: tos_accepted missing from register body; email not lowercased before insert; AppContext redirect fired for /admin → must exclude /admin/* from redirect paths.
 - [Niakofa Nia fail-closed default](niakofa-nia-failclosed.md) — Nia must be DISABLED by default; all isNiaEnabled() use === "true" not !== "false"; NiaGlobal useState(null) not useState(true); transcribe route also needs kill-switch check.
 - [Niakofa admin auth model](niakofa-admin-auth-model.md) — admin gate is purely is_admin DB flag; no VITE_ADMIN_SECRET client bypass; admin must log in as real user first; /admin excluded from AppContext redirect.
+- [Niakofa Google OAuth](niakofa-google-oauth.md) — POST /auth/google; race-safe find/link/create; suspension checked before mutations; VITE_GOOGLE_CLIENT_ID gates Google button; @react-oauth/google frontend.

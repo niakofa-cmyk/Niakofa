@@ -37,7 +37,15 @@ router.post("/users/login", authLimiter, async (req, res) => {
   const { email, password } = req.body as { email: string; password: string };
   if (!email) return res.status(400).json({ error: "Email required" });
   if (!password) return res.status(400).json({ error: "Password required" });
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
+  // Use sql`lower()` for case-insensitive matching — the eq() operator performs
+  // a byte-level comparison that would miss "Bob@Example.com" vs "bob@example.com"
+  // if somehow a mixed-case email ended up in the DB (legacy data, direct inserts).
+  // lower() guarantees we always find the account regardless of stored casing.
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(sql`lower(${usersTable.email}) = ${email.trim().toLowerCase()}`)
+    .limit(1);
   if (!user) return res.status(401).json({ error: "No account found with that email" });
 
   // Legacy accounts created before password auth was added have no
@@ -45,6 +53,27 @@ router.post("/users/login", authLimiter, async (req, res) => {
   // can route them through a password-setup flow instead of a dead end.
   // Include user_email and user_name so the frontend can pre-populate the
   // reset form without a separate lookup.
+  // Suspended accounts: reject before doing any password work
+  if (user.is_suspended) {
+    return res.status(403).json({
+      error: "Your account has been suspended. Please contact support@niakofa.app.",
+      error_code: "ACCOUNT_SUSPENDED",
+    });
+  }
+
+  // Google-only accounts have no password_hash. If the user registered via
+  // Google and now tries email+password, guide them back to Google sign-in
+  // rather than routing through the legacy-password setup flow.
+  if (!user.password_hash && user.oauth_provider === "google") {
+    return res.status(403).json({
+      error: "This account was created with Google Sign-In. Please use the \"Continue with Google\" button to sign in.",
+      error_code: "GOOGLE_ACCOUNT_USE_OAUTH",
+    });
+  }
+
+  // Legacy accounts created before password auth was added have no
+  // password_hash — distinct from "wrong password" so the client can
+  // route them through the password-setup flow instead of a dead end.
   if (!user.password_hash) {
     return res.status(403).json({
       error_code: "LEGACY_PASSWORD_REQUIRED",
@@ -60,7 +89,9 @@ router.post("/users/login", authLimiter, async (req, res) => {
   }
 
   const token = signTokenById(user.id, user.token_version);
-  const { password_hash, ...safeUser } = user;
+  // Strip all sensitive fields — including password_reset_* which were previously
+  // leaked in the login response (zip-file fix BUG-SEC-01).
+  const { password_hash, password_reset_code, password_reset_expires_at, google_id: _gid, ...safeUser } = user;
   return res.json({ user: safeUser, token });
 });
 
@@ -115,7 +146,7 @@ router.post("/users/register", authLimiter, async (req, res) => {
   // for "bob@example.com" and finds nothing.
   const normalizedEmail = email.trim().toLowerCase();
 
-  const existing = await db.select().from(usersTable).where(eq(usersTable.email, normalizedEmail)).limit(1);
+  const existing = await db.select().from(usersTable).where(sql`lower(${usersTable.email}) = ${normalizedEmail}`).limit(1);
   if (existing.length > 0) {
     // BUG-C01: Never return an existing user row to an arbitrary registrant — leaks PII.
     return res.status(409).json({ error: "An account with that email already exists. Please sign in instead." });
@@ -154,7 +185,8 @@ router.post("/users/register", authLimiter, async (req, res) => {
     approval_status,
   }).returning();
   const token = signTokenById(user.id, user.token_version);
-  const { password_hash: _ph, ...safeUser } = user;
+  // Strip all sensitive fields (zip-file fix BUG-SEC-01 extended to register).
+  const { password_hash: _ph, password_reset_code: _prc, password_reset_expires_at: _pre, google_id: _gid, ...safeUser } = user;
 
   // ── Post-registration side-effects (non-blocking) ─────────────────────────
   // Notify admin in real-time when a non-individual account or helper
@@ -211,7 +243,8 @@ router.post(["/users/request-password-reset", "/users/forgot-password"], authLim
   const { email } = req.body as { email?: string };
   if (!email) return res.status(400).json({ error: "Email required" });
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase())).limit(1);
+  // sql`lower()` for case-insensitive matching — same as login() for consistency
+  const [user] = await db.select().from(usersTable).where(sql`lower(${usersTable.email}) = ${email.trim().toLowerCase()}`).limit(1);
   if (user) {
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
@@ -248,12 +281,13 @@ router.post(["/users/set-initial-password", "/users/reset-password"], authLimite
   // has it from the /users/login response). The general "Forgot password?"
   // flow only has email — fall back to an email-only lookup in that case.
   // Identity is still verified by the random code + expiry check below either way.
+  // sql`lower()` for case-insensitive matching throughout — consistent with login()
   const [user] = user_id
     ? await db.select().from(usersTable)
-        .where(and(eq(usersTable.id, user_id), eq(usersTable.email, email.trim().toLowerCase())))
+        .where(and(eq(usersTable.id, user_id), sql`lower(${usersTable.email}) = ${email.trim().toLowerCase()}`))
         .limit(1)
     : await db.select().from(usersTable)
-        .where(eq(usersTable.email, email.trim().toLowerCase()))
+        .where(sql`lower(${usersTable.email}) = ${email.trim().toLowerCase()}`)
         .limit(1);
   // All failure paths (no account, wrong code, expired code) use the SAME
   // HTTP status (403) and the SAME generic message — an attacker must not be

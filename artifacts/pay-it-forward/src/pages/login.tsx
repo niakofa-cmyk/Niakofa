@@ -9,6 +9,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import type { User as AppUser } from "@workspace/api-client-react";
+import { GoogleOAuthProvider, GoogleLogin } from "@react-oauth/google";
+
+// VITE_GOOGLE_CLIENT_ID must be set to enable Google Sign-In.
+// If unset (empty string), the Google button is hidden and email+password is the only option.
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
 
 type ApiAuthResponse = Partial<AppUser> & {
   error?: string;
@@ -334,6 +339,7 @@ export default function LoginScreen() {
   const [organizationName, setOrganizationName] = useState("");
   const [organizationDescription, setOrganizationDescription] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   // Helper profile state
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
@@ -504,6 +510,18 @@ export default function LoginScreen() {
         });
         const data = await res.json().catch(() => ({})) as ApiAuthResponse;
 
+        // Google-only account trying email+password — guide them back to Google button
+        if (!res.ok && res.status === 403 && data.error_code === "GOOGLE_ACCOUNT_USE_OAUTH") {
+          toast({
+            title: "Please use Google Sign-In",
+            description: GOOGLE_CLIENT_ID
+              ? "This account was created with Google. Use the \"Continue with Google\" button above."
+              : "This account requires Google Sign-In, which isn't configured here yet.",
+            variant: "destructive",
+          });
+          return;
+        }
+
         if (!res.ok && res.status === 403 && data.error_code === "LEGACY_PASSWORD_REQUIRED" && data.user_id && data.user_email && data.user_name) {
           setPendingLegacyUser({ id: data.user_id, email: data.user_email, name: data.user_name });
           // Fire the emailed verification code immediately — no extra tap needed
@@ -578,6 +596,91 @@ export default function LoginScreen() {
       toast({ title: err instanceof Error ? err.message : t("common.error"), variant: "destructive" });
     } finally {
       setSavingPassword(false);
+    }
+  };
+
+  // ── Google Sign-In handler ────────────────────────────────────────────────────
+  // Called by GoogleLogin's onSuccess with the ID token string.
+  // Sends the token to /api/auth/google which verifies it server-side,
+  // then finds / creates / links the Niakofa account and returns a JWT.
+  const handleGoogleSuccess = async (credential: string) => {
+    setGoogleLoading(true);
+    try {
+      const res = await fetch("/api/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_token: credential }),
+      });
+      const data = await res.json().catch(() => ({})) as {
+        user?: AppUser;
+        token?: string;
+        created?: boolean;
+        linked?: boolean;
+        error?: string;
+        error_code?: string;
+      };
+
+      if (!res.ok) {
+        if (data.error_code === "GOOGLE_NOT_CONFIGURED") {
+          toast({ title: "Google Sign-In is not set up yet", description: "Please use email + password for now.", variant: "destructive" });
+        } else if (data.error_code === "ACCOUNT_SUSPENDED") {
+          toast({ title: "Account suspended", description: "Please contact support@niakofa.app.", variant: "destructive" });
+        } else {
+          toast({ title: data.error ?? "Google sign-in failed. Please try again.", variant: "destructive" });
+        }
+        return;
+      }
+
+      if (!data.user || !data.token) throw new Error("Sign-in failed — please try again.");
+
+      setToken(data.token);
+      setCurrentUser(data.user);
+      localStorage.setItem("niakofa_user", JSON.stringify(data.user));
+
+      if (data.linked) {
+        toast({
+          title: "Google account linked! 🔗",
+          description: "You can now sign in with Google or your existing email + password.",
+        });
+      } else if (data.created) {
+        toast({ title: `Welcome to Niakofa, ${data.user.name}! 💙`, description: "Account created with Google." });
+      } else {
+        toast({ title: `Welcome back, ${data.user.name}!` });
+      }
+
+      // If joining as helper with skills filled in, submit the helper application now
+      if (data.created && mode === "register" && isHelper && selectedSkills.length > 0) {
+        try {
+          await fetch(`/api/users/${data.user.id}/helper-application`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${data.token}`,
+            },
+            body: JSON.stringify({
+              helper_skills: selectedSkills,
+              helper_languages: selectedLanguages,
+              helper_qualifications: selectedQuals,
+              helper_bio: bio.trim() || undefined,
+              helper_vehicle: vehicle || undefined,
+              helper_social_links: socialLinks.trim() || undefined,
+            }),
+          });
+          toast({ title: "Helper application submitted!", description: "Pending admin review." });
+        } catch {
+          /* non-blocking — account is already created */
+        }
+      }
+
+      const onboarded = localStorage.getItem("niakofa_onboarded");
+      setLocation(data.created && !onboarded ? "/onboarding" : "/");
+    } catch (err) {
+      toast({
+        title: err instanceof Error ? err.message : "Google sign-in failed",
+        variant: "destructive",
+      });
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -932,6 +1035,53 @@ export default function LoginScreen() {
         </div>
 
         <div className="w-full max-w-sm space-y-3">
+
+          {/* ── Google Sign-In ──────────────────────────────────────────────────
+               Only rendered when VITE_GOOGLE_CLIENT_ID is configured.
+               GoogleOAuthProvider is scoped here so it doesn't affect unrelated
+               parts of the app. The official Google button is rendered inside
+               an iframe managed by Google's Identity Services script — this is
+               required by Google's security model and guarantees the button's
+               click handler is never tampered with by the hosting page.
+          ──────────────────────────────────────────────────────────────────── */}
+          {GOOGLE_CLIENT_ID && (
+            <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+              <div className="w-full flex flex-col gap-3">
+                <div className="w-full flex justify-center">
+                  {googleLoading ? (
+                    <div className="w-full h-11 bg-card border border-border rounded-2xl flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Signing in with Google…</span>
+                    </div>
+                  ) : (
+                    <GoogleLogin
+                      onSuccess={(r) => {
+                        if (r.credential) handleGoogleSuccess(r.credential);
+                        else toast({ title: "Google sign-in failed — no credential returned.", variant: "destructive" });
+                      }}
+                      onError={() =>
+                        toast({ title: "Google sign-in was cancelled or failed. Please try again.", variant: "destructive" })
+                      }
+                      theme="outline"
+                      size="large"
+                      width="352"
+                      text={mode === "login" ? "signin_with" : "signup_with"}
+                      shape="rectangular"
+                      logo_alignment="left"
+                      useOneTap={false}
+                    />
+                  )}
+                </div>
+                {/* Divider */}
+                <div className="flex items-center gap-3">
+                  <div className="h-px flex-1 bg-border/60" />
+                  <span className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">or continue with email</span>
+                  <div className="h-px flex-1 bg-border/60" />
+                </div>
+              </div>
+            </GoogleOAuthProvider>
+          )}
+
           <AnimatePresence mode="wait">
             {mode === "register" && (
               <motion.div key="name" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">

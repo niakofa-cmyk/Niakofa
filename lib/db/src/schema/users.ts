@@ -66,6 +66,12 @@ export const usersTable = pgTable("users", {
   // require re-acceptance.
   tos_waiver_accepted_at: timestamp("tos_waiver_accepted_at", { withTimezone: true }),
   tos_waiver_version: text("tos_waiver_version"),
+  // Google OAuth (migration 0041)
+  // google_id: the stable "sub" from Google's ID token — used for fast repeated-login lookups.
+  // oauth_provider: 'google' when the account was created or linked via Google OAuth.
+  //   NULL means email+password only. Both can coexist (linked account).
+  google_id: text("google_id"),
+  oauth_provider: text("oauth_provider"),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
