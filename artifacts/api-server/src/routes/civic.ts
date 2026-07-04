@@ -358,6 +358,60 @@ router.get("/civic/portal/requests", requireAuth, async (req, res) => {
   return res.json(rows);
 });
 
+// GET /admin/civic/portal/requests — all civic requests across all sponsors (admin view)
+// Returns each request joined with its sponsor's entity_name, county, state.
+// Supports ?status=open|claimed|completed|cancelled&limit=100&offset=0
+router.get("/admin/civic/portal/requests", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const statusParam = req.query.status as string | undefined;
+  const limitRaw = parseInt(req.query.limit as string ?? "100", 10);
+  const offsetRaw = parseInt(req.query.offset as string ?? "0", 10);
+  const limit = isNaN(limitRaw) || limitRaw < 1 ? 100 : Math.min(limitRaw, 500);
+  const offset = isNaN(offsetRaw) || offsetRaw < 0 ? 0 : offsetRaw;
+
+  const VALID_STATUSES = ["open", "claimed", "completed", "cancelled"];
+  if (statusParam && !VALID_STATUSES.includes(statusParam)) {
+    return res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(", ")}` });
+  }
+
+  const baseQuery = db
+    .select({
+      id: requestsTable.id,
+      title: requestsTable.title,
+      description: requestsTable.description,
+      category: requestsTable.category,
+      urgency: requestsTable.urgency,
+      status: requestsTable.status,
+      neighborhood: requestsTable.neighborhood,
+      estimated_hours: requestsTable.estimated_hours,
+      created_at: requestsTable.created_at,
+      claimed_at: requestsTable.claimed_at,
+      completed_at: requestsTable.completed_at,
+      cancelled_at: requestsTable.cancelled_at,
+      government_sponsor_id: requestsTable.government_sponsor_id,
+      sponsor_entity_name: governmentSponsorsTable.entity_name,
+      sponsor_county: governmentSponsorsTable.county,
+      sponsor_state: governmentSponsorsTable.state,
+    })
+    .from(requestsTable)
+    .innerJoin(
+      governmentSponsorsTable,
+      eq(requestsTable.government_sponsor_id, governmentSponsorsTable.id),
+    );
+
+  const rows = statusParam
+    ? await baseQuery
+        .where(eq(requestsTable.status, statusParam))
+        .orderBy(desc(requestsTable.created_at))
+        .limit(limit)
+        .offset(offset)
+    : await baseQuery
+        .orderBy(desc(requestsTable.created_at))
+        .limit(limit)
+        .offset(offset);
+
+  return res.json(rows);
+});
+
 // PATCH /admin/civic-suggestions/:id — approve/dismiss a suggestion
 router.patch("/admin/civic-suggestions/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(req.params.id as string, 10);

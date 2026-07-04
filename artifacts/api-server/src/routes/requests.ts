@@ -1585,12 +1585,12 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
             COALESCE(${requestsTable.pledge_amount}, 0)
           )`,
           // Status transitions computed inside DB from post-update state:
-          //   fully paid  → 'forgiven'
+          //   fully paid  → 'repaid'  (NOT 'forgiven' — 'forgiven' is admin charity only)
           //   was defaulted, partially paid → 'active'  (reinstatement on any repayment)
           //   was active, partially paid → unchanged ('active')
           pledge_status: sql<string>`CASE
             WHEN (COALESCE(${requestsTable.pledge_paid}, 0) + ${safeAmount}) >= COALESCE(${requestsTable.pledge_amount}, 0)
-              THEN 'forgiven'
+              THEN 'repaid'
             WHEN ${requestsTable.pledge_status} = 'defaulted'
               THEN 'active'
             ELSE ${requestsTable.pledge_status}
@@ -1627,7 +1627,7 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
         amount: amountActuallyApplied > 0 ? amountActuallyApplied : safeAmount,
         request_id: requestId,
         user_id: requesterId,
-        notes: `Self-service repayment — pledge ${row.pledge_status === "forgiven" ? "fully paid" : "reinstated from defaulted"}`,
+        notes: `Self-service repayment — pledge ${row.pledge_status === "repaid" ? "fully paid" : "reinstated from defaulted"}`,
       });
 
       return rows;
@@ -1643,7 +1643,8 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
     return res.status(409).json({ error: "This pledge is already fully paid or resolved." });
   }
 
-  const fullyPaid = updated.pledge_status === "forgiven";
+  // 'repaid' = system-closed after full self-service repayment (NOT 'forgiven' — that's admin charity)
+  const fullyPaid = updated.pledge_status === "repaid";
 
   logger.info(
     { request_id: requestId, requester_id: requesterId, amount: safeAmount, new_status: updated.pledge_status, fully_paid: fullyPaid },
@@ -1752,7 +1753,7 @@ router.get("/admin/hardship-requests", requireAuth, requireAdmin(), adminLimiter
     })
     .from(requestsTable)
     .innerJoin(usersTable, eq(usersTable.id, requestsTable.requester_id))
-    .where(sql`${requestsTable.hardship_requested_at} IS NOT NULL AND ${requestsTable.pledge_status} NOT IN ('forgiven', 'written_off')`)
+    .where(sql`${requestsTable.hardship_requested_at} IS NOT NULL AND ${requestsTable.pledge_status} NOT IN ('forgiven', 'written_off', 'repaid')`)
     .orderBy(requestsTable.hardship_requested_at);
 
   return res.json(rows);

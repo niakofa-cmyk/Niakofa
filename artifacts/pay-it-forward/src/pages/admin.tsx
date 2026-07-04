@@ -4385,7 +4385,7 @@ export default function AdminScreen() {
   }, [currentUser?.is_admin]);
 
   const [, setLocation] = useLocation();
-  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics" | "orgs" | "disputes" | "settings" | "system">("reports");
+  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics" | "orgs" | "civic" | "disputes" | "settings" | "system">("reports");
 
   // ── Session timer ─────────────────────────────────────────────────────────
   const [sessionSecondsLeft, setSessionSecondsLeft] = useState(SESSION_DURATION_MS / 1000);
@@ -4540,6 +4540,7 @@ export default function AdminScreen() {
     { key: "users",     label: "Users",     icon: Users },
     { key: "pledges",   label: "Pledges",   icon: HandHeart },
     { key: "orgs",      label: "Orgs",      icon: Landmark },
+    { key: "civic",     label: "Civic",     icon: Building2 },
     { key: "audit",     label: "Audit",     icon: FileText },
     { key: "nia",       label: "Nia AI",    icon: Bot },
     { key: "analytics", label: "Stats",     icon: BarChart2 },
@@ -4605,6 +4606,7 @@ export default function AdminScreen() {
       {/* Tab content */}
       <div className="flex-1 max-w-3xl mx-auto w-full px-4 pt-4 space-y-3">
         {activeTab === "orgs"      && <OrgsTab authed={authed} />}
+        {activeTab === "civic"     && <AdminCivicRequestsTab />}
         {activeTab === "pledges"   && (
           <div className="space-y-4">
             <PoolBalanceBanner />
