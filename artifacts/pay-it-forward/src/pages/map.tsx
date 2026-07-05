@@ -7,7 +7,7 @@ import { useAppContext } from "@/lib/AppContext";
 import { getIpLocation, detectMapLanguage, localizeMapLabels } from "@/lib/locale-utils";
 import {
   useGetNearbyRequests, useGetOnlineHelpers, useClaimRequest,
-  useGetRequestStats, useGetRoute,
+  useGetRequestStats, useGetRoute, useGetUserSettings,
   getGetNearbyRequestsQueryKey, getGetOnlineHelpersQueryKey,
   getGetRequestStatsQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey,
 } from "@workspace/api-client-react";
@@ -101,13 +101,33 @@ export default function MapScreen() {
     setMapError(msg);
   }, []);
 
+  // ── Helper's own travel radius drives what the map fetches ────────────────
+  // Previously hardcoded to 10 miles regardless of what the user configured
+  // in Settings. The backend's claim-time check (requests.ts) enforces the
+  // helper's real max_travel_miles (falling back to 15 if unset) — so a
+  // helper who set a 5-mile radius could still see, and get Best-Match-carded
+  // toward, requests up to 10 miles out, only to hit a distance rejection at
+  // claim time. Reading the same setting here keeps the map and the backend
+  // enforcement boundary in sync. Requester (non-helper) browsing uses
+  // service_radius_miles instead, since max_travel_miles is a helper-only concept.
+  const { data: userSettings } = useGetUserSettings(
+    currentUser?.id ?? 0,
+    { query: { enabled: !!currentUser?.id } }
+  );
+  // 15 mirrors the backend's own fallback when max_travel_miles is unset
+  // (see requests.ts claim-time check) — keep these two numbers in sync.
+  const DEFAULT_RADIUS_MILES = 15;
+  const radiusMiles = helperModeActive
+    ? (userSettings?.max_travel_miles ?? userSettings?.service_radius_miles ?? DEFAULT_RADIUS_MILES)
+    : (userSettings?.service_radius_miles ?? DEFAULT_RADIUS_MILES);
+
   const { data: requests = [], isSuccess: requestsLoaded } = useGetNearbyRequests(
-    { lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: 10 },
-    { query: { enabled: !!myLocation, queryKey: getGetNearbyRequestsQueryKey({ lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: 10 }) } }
+    { lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: radiusMiles },
+    { query: { enabled: !!myLocation, queryKey: getGetNearbyRequestsQueryKey({ lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: radiusMiles }) } }
   );
   const { data: helpers = [], isSuccess: helpersLoaded } = useGetOnlineHelpers(
-    { lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: 10 },
-    { query: { enabled: !!myLocation, queryKey: getGetOnlineHelpersQueryKey({ lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: 10 }) } }
+    { lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: radiusMiles },
+    { query: { enabled: !!myLocation, queryKey: getGetOnlineHelpersQueryKey({ lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: radiusMiles }) } }
   );
   const { data: stats } = useGetRequestStats({
     query: { queryKey: getGetRequestStatsQueryKey(), staleTime: 30000 }
@@ -149,6 +169,19 @@ export default function MapScreen() {
   useWebSocket(useCallback((event) => {
     if (event.type === "connected") {
       setWsConnected(true);
+      // Missed WS events during a disconnect (however brief) are gone for
+      // good — deltas like REQUEST_CREATED/REQUEST_COMPLETED that fired while
+      // we were offline never replay. A full resync on every reconnect is
+      // the only way to guarantee the map reflects reality after any gap.
+      const loc = myLocationRef.current;
+      if (loc) {
+        queryClient.invalidateQueries({
+          queryKey: getGetNearbyRequestsQueryKey({ lat: loc.lat, lng: loc.lng, radius_miles: radiusMiles }),
+        });
+        queryClient.invalidateQueries({
+          queryKey: getGetOnlineHelpersQueryKey({ lat: loc.lat, lng: loc.lng, radius_miles: radiusMiles }),
+        });
+      }
     } else if (event.type === "REQUEST_CREATED" || event.type === "new_request") {
       const req = event.payload as HelpRequest;
       setLiveRequests(prev => {
@@ -189,7 +222,7 @@ export default function MapScreen() {
       const loc = event.payload as { id: number };
       setLiveHelpers(prev => prev.filter(h => h.id !== loc.id));
     }
-  }, [currentUser?.id, queryClient]));
+  }, [currentUser?.id, queryClient, radiusMiles]));
 
   const activeHelper = activeHelperRoute
     ? (Array.isArray(liveHelpers) ? liveHelpers : []).find(h => h.id === activeHelperRoute.helperId)
@@ -588,6 +621,8 @@ export default function MapScreen() {
         <button
           onClick={() => setShowTraffic(t => !t)}
           style={{ touchAction: "manipulation" }}
+          aria-label="Toggle traffic layer"
+          aria-pressed={showTraffic}
           className={`absolute bottom-24 left-4 z-10 flex items-center gap-1.5 px-3 py-2 rounded-full border text-[10px] font-black backdrop-blur-sm transition-all active:scale-95 ${
             showTraffic
               ? "bg-primary/20 border-primary/40 text-primary"
@@ -602,6 +637,8 @@ export default function MapScreen() {
         <button
           onClick={() => setShowHeatmap(h => !h)}
           style={{ touchAction: "manipulation" }}
+          aria-label="Toggle demand heatmap"
+          aria-pressed={showHeatmap}
           className={`absolute bottom-24 left-24 z-10 flex items-center gap-1.5 px-3 py-2 rounded-full border text-[10px] font-black backdrop-blur-sm transition-all active:scale-95 ${
             showHeatmap
               ? "bg-yellow-400/20 border-yellow-400/50 text-yellow-400"
