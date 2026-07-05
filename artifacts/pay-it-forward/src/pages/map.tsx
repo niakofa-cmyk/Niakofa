@@ -101,11 +101,11 @@ export default function MapScreen() {
     setMapError(msg);
   }, []);
 
-  const { data: requests = [] } = useGetNearbyRequests(
+  const { data: requests = [], isSuccess: requestsLoaded } = useGetNearbyRequests(
     { lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: 10 },
     { query: { enabled: !!myLocation, queryKey: getGetNearbyRequestsQueryKey({ lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: 10 }) } }
   );
-  const { data: helpers = [] } = useGetOnlineHelpers(
+  const { data: helpers = [], isSuccess: helpersLoaded } = useGetOnlineHelpers(
     { lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: 10 },
     { query: { enabled: !!myLocation, queryKey: getGetOnlineHelpersQueryKey({ lat: myLocation?.lat || 0, lng: myLocation?.lng || 0, radius_miles: 10 }) } }
   );
@@ -118,14 +118,23 @@ export default function MapScreen() {
   const initHelpers = useRef(false);
   const initRequests = useRef(false);
 
+  // BUG FIX: both branches below used to require `.length > 0`, which meant
+  // they were identical and a genuinely empty server response (e.g. every
+  // open request nearby just got claimed/completed) could never clear
+  // liveHelpers/liveRequests — the map kept showing stale markers forever.
+  // Gate on `isSuccess` instead of array length so we can tell "query hasn't
+  // resolved yet" (data defaults to []) apart from "query resolved with zero
+  // results" (also []) — only the latter should sync an empty list into state.
   useEffect(() => {
-    if (helpers.length > 0 && !initHelpers.current) { setLiveHelpers(helpers as HelperLocation[]); initHelpers.current = true; }
-    else if (helpers.length > 0) setLiveHelpers(helpers as HelperLocation[]);
-  }, [helpers]);
+    if (!helpersLoaded) return;
+    setLiveHelpers(helpers as HelperLocation[]);
+    initHelpers.current = true;
+  }, [helpers, helpersLoaded]);
   useEffect(() => {
-    if (requests.length > 0 && !initRequests.current) { setLiveRequests(requests as HelpRequest[]); initRequests.current = true; }
-    else if (requests.length > 0) setLiveRequests(requests as HelpRequest[]);
-  }, [requests]);
+    if (!requestsLoaded) return;
+    setLiveRequests(requests as HelpRequest[]);
+    initRequests.current = true;
+  }, [requests, requestsLoaded]);
 
   // Reset best match dismissal when helper mode toggles ON
   useEffect(() => {

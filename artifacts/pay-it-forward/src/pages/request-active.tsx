@@ -20,7 +20,7 @@ import { getToken } from "@/lib/auth";
 import { TurnArrowHUD } from "@/components/TurnArrowHUD";
 import { OrientationToggle } from "@/components/OrientationToggle";
 import { useWebSocket } from "@/lib/useWebSocket";
-import { useDeviceHeading } from "@/hooks/useDeviceHeading";
+import { useFusedHeading } from "@/hooks/useFusedHeading";
 import { useMapOrientation } from "@/hooks/useMapOrientation";
 import { useTerrain } from "@/hooks/useTerrain";
 import { motion, AnimatePresence } from "framer-motion";
@@ -134,13 +134,24 @@ export default function ActiveRequestScreen() {
     rawMapRef.current = mapRef.current?.getMap?.() ?? null;
   }, []);
 
-  const deviceHeading = useDeviceHeading();
+  // Fused heading: blends the magnetometer compass with GPS course-over-
+  // ground (myLocation.heading/.speed from AppContext). GPS course dominates
+  // once moving at walking pace or faster — critical here since helpers are
+  // usually driving/walking to the request. See useFusedHeading.ts and
+  // .agents/memory/niakofa-heading-fusion-fix.md for the full rationale;
+  // this page previously used the raw useDeviceHeading hook directly, which
+  // inherited the vehicle-compass-unreliability problem useFusedHeading exists
+  // to solve.
+  const fusedHeading = useFusedHeading({
+    gpsHeading: myLocation?.heading ?? null,
+    gpsSpeed: myLocation?.speed ?? null,
+  });
   const { mode, setMode, applyHeading } = useMapOrientation(rawMapRef);
   useTerrain(rawMapRef);
 
   useEffect(() => {
-    if (deviceHeading != null) applyHeading(deviceHeading);
-  }, [deviceHeading, applyHeading]);
+    if (fusedHeading != null) applyHeading(fusedHeading);
+  }, [fusedHeading, applyHeading]);
 
   // ── Data ───────────────────────────────────────────────────────────────
 
@@ -342,9 +353,12 @@ export default function ActiveRequestScreen() {
     mapRef.current.fitBounds(bounds, { padding: 80, duration: 1200, pitch: 55, maxZoom: 17 });
   }, [routeData?.geometry]);
 
-  // GPS heading fallback (only fires when device compass is unavailable)
+  // GPS heading fallback (only fires when the fused heading hook has no
+  // signal at all — e.g. no compass AND no GPS course yet). Once
+  // useFusedHeading produces a value, the applyHeading effect above owns
+  // camera bearing and this fallback stays silent.
   useEffect(() => {
-    if (deviceHeading != null) return;
+    if (fusedHeading != null) return;
     if (!myLocation?.heading || !mapRef.current || isArrived) return;
     if (mode !== "heading-up") return;
     mapRef.current.easeTo({
@@ -352,7 +366,7 @@ export default function ActiveRequestScreen() {
       duration: 800,
       easing: (t: number) => t,
     });
-  }, [myLocation?.heading, isArrived, deviceHeading, mode]);
+  }, [myLocation?.heading, isArrived, fusedHeading, mode]);
 
   // Re-center on user
   useEffect(() => {
@@ -611,7 +625,7 @@ export default function ActiveRequestScreen() {
             distanceMeters={currentStep.distance_meters ?? 0}
             instruction={currentStep.instruction ?? ""}
             speedMph={myLocation?.speed != null ? Math.round(myLocation.speed * 2.237) : null}
-            deviceHeading={deviceHeading}
+            deviceHeading={fusedHeading}
           />
         </div>
       )}

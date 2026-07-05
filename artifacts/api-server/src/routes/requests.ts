@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth } from "../middlewares/auth";
+import { requireAuth, requireApproved } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
 import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, userSettingsTable, businessesTable, businessMembersTable, systemSettingsTable, communityPoolLedgerTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
@@ -738,7 +738,7 @@ router.patch("/requests/:id", requireAuth, async (req, res) => {
 // action this consequential. requireOwnership("helper_id") used to guard
 // against exactly this, by checking body.helper_id === authenticatedUserId
 // — safe, but a roundabout way to express "act as yourself."
-router.post("/requests/:id/claim", requireAuth, async (req, res) => {
+router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = ClaimRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -830,7 +830,7 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/en-route", requireAuth, async (req, res) => {
+router.post("/requests/:id/en-route", requireAuth, requireApproved, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -853,7 +853,7 @@ router.post("/requests/:id/en-route", requireAuth, async (req, res) => {
   return res.json(enriched);
 });
 
-router.post("/requests/:id/arrived", requireAuth, async (req, res) => {
+router.post("/requests/:id/arrived", requireAuth, requireApproved, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = MarkArrivedParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
@@ -983,7 +983,7 @@ router.post("/requests/:id/cancel", requireAuth, async (req, res) => {
   return res.json({ ...enriched, message: "Request withdrawn." });
 });
 
-router.post("/requests/:id/complete", requireAuth, async (req, res) => {
+router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, res) => {
   const helperId = req.authenticatedUserId!;
   const pParsed = CompleteRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
   if (!pParsed.success) {
