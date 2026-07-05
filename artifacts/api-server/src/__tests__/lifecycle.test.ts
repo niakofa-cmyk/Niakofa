@@ -7,51 +7,21 @@
  *   - Accept the correct user (200/201 when authorized)
  *
  * DB interactions are mocked so no real Postgres connection is needed.
+ *
+ * NOTE: this suite runs under Jest's native ESM support
+ * (--experimental-vm-modules). Under native ESM, `jest.mock()` does NOT
+ * intercept dynamic `await import()` calls — only `jest.unstable_mockModule()`
+ * does. All mocked modules are registered below BEFORE any dynamic import,
+ * and everything that might transitively touch "@workspace/db" (including
+ * the auth middleware and the requests router) is imported dynamically
+ * inside beforeAll, after the mocks are in place.
  */
 import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals";
 import request from "supertest";
 import express, { Express } from "express";
-import { signTokenById } from "../middlewares/auth.js";
 
 // ── Minimal DB mock ───────────────────────────────────────────────────────────
-// We mock @workspace/db so no real DB connection is needed in unit tests.
-jest.mock("@workspace/db", () => {
-  const OPEN_REQUEST = {
-    id: 1,
-    title: "Test Request",
-    status: "open",
-    helper_id: null,
-    requester_id: 10,
-    payment_type: "goodwill",
-    category: "errands",
-    pay_it_forward_amount: null,
-    pledge_paid: 0,
-    lat: 32.7,
-    lng: -97.3,
-    neighborhood: null,
-    created_at: new Date().toISOString(),
-    claimed_at: null,
-    en_route_at: null,
-    arrived_at: null,
-    completed_at: null,
-  };
-
-  const CLAIMED_REQUEST = {
-    ...OPEN_REQUEST,
-    id: 2,
-    status: "claimed",
-    helper_id: 20,
-  };
-
-  const COMPLETED_REQUEST = {
-    ...OPEN_REQUEST,
-    id: 3,
-    status: "completed",
-    helper_id: 20,
-    requester_id: 10,
-    completed_at: new Date().toISOString(),
-  };
-
+jest.unstable_mockModule("@workspace/db", () => {
   const mockDb: Record<string, unknown> = {
     select: jest.fn().mockReturnThis(),
     update: jest.fn().mockReturnThis(),
@@ -67,58 +37,101 @@ jest.mock("@workspace/db", () => {
     catch: jest.fn().mockResolvedValue([null]),
   };
 
-  // Configure the request-specific returns
-  (mockDb.limit as jest.Mock).mockImplementation(function(this: unknown) {
-    return Promise.resolve([]);
-  });
+  (mockDb.limit as jest.Mock).mockImplementation(() => Promise.resolve([]));
   (mockDb.returning as jest.Mock).mockImplementation(() => Promise.resolve([]));
 
   return {
     db: mockDb,
-    requestsTable: { id: "id", status: "status", helper_id: "helper_id", requester_id: "requester_id" },
-    usersTable: { id: "id", name: "name", email: "email", help_count: "help_count", trust_score: "trust_score", goodwill_score: "goodwill_score", benevolence_wallet: "benevolence_wallet", helper_mode_active: "helper_mode_active" },
+    // NOTE: this list must mirror EVERY table symbol requests.ts (and
+    // anything it transitively imports, e.g. lib/community-pool.ts) pulls
+    // from "@workspace/db" — under native ESM, a missing key here throws
+    // "does not provide an export named X" at import time, not at use time.
+    requestsTable: { id: "id", status: "status", helper_id: "helper_id", requester_id: "requester_id", lat: "lat", lng: "lng", urgency: "urgency", category: "category" },
+    usersTable: { id: "id", name: "name", email: "email", help_count: "help_count", trust_score: "trust_score", goodwill_score: "goodwill_score", benevolence_wallet: "benevolence_wallet", helper_mode_active: "helper_mode_active", lat: "lat", lng: "lng" },
+    userSettingsTable: { id: "id", user_id: "user_id", max_travel_miles: "max_travel_miles" },
     transactionsTable: { id: "id" },
     stripeAccountsTable: { id: "id", user_id: "user_id", payouts_enabled: "payouts_enabled", stripe_account_id: "stripe_account_id" },
     paymentTransactionsTable: { id: "id" },
+    requestHelpersTable: { id: "id", request_id: "request_id", helper_id: "helper_id" },
+    helperAvailabilityTable: { id: "id", user_id: "user_id" },
+    businessesTable: { id: "id" },
+    businessMembersTable: { id: "id", business_id: "business_id", user_id: "user_id" },
+    systemSettingsTable: { key: "key", value: "value" },
+    communityPoolLedgerTable: { id: "id", amount: "amount", request_id: "request_id", created_at: "created_at" },
+    poolPendingMinimumsTable: { id: "id", request_id: "request_id" },
   };
 });
 
-jest.mock("drizzle-orm", () => ({
+// NOTE: under native ESM, Jest builds a static synthetic module from the
+// factory's OWN enumerable keys — a Proxy with no real keys would export
+// nothing, breaking any transitively-imported module's named imports (e.g.
+// community-pool.ts imports `asc`, which requests.ts pulls in indirectly).
+// So every drizzle-orm function used anywhere in the api-server import
+// graph (see `grep -rn 'from "drizzle-orm"' src`) must be listed here.
+jest.unstable_mockModule("drizzle-orm", () => ({
   eq: jest.fn(),
   and: jest.fn(),
+  or: jest.fn(),
+  not: jest.fn(),
   sql: jest.fn(),
   inArray: jest.fn(),
+  notInArray: jest.fn(),
+  asc: jest.fn(),
+  desc: jest.fn(),
+  gte: jest.fn(),
+  gt: jest.fn(),
+  lte: jest.fn(),
+  lt: jest.fn(),
+  ne: jest.fn(),
+  isNull: jest.fn(),
+  isNotNull: jest.fn(),
 }));
 
-jest.mock("../lib/ws-hub.js", () => ({
+jest.unstable_mockModule("../lib/ws-hub.js", () => ({
   broadcast: jest.fn(),
   broadcastRequestEvent: jest.fn(),
+  sendToUser: jest.fn(),
+  sendToRequestParticipants: jest.fn(),
+  sendToUsers: jest.fn(),
+  isUserOnline: jest.fn().mockReturnValue(false),
+  getConnectedUserIds: jest.fn().mockReturnValue([]),
+  getHubMetrics: jest.fn().mockReturnValue({}),
 }));
 
-jest.mock("../lib/queue.js", () => ({
+jest.unstable_mockModule("../lib/queue.js", () => ({
   enqueuePayoutRetry: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("../routes/push.js", () => ({
+jest.unstable_mockModule("../routes/push.js", () => ({
   sendPushToNearbyHelpers: jest.fn().mockResolvedValue(undefined),
   sendPushToAllHelpers: jest.fn().mockResolvedValue(undefined),
+  sendPushToUser: jest.fn().mockResolvedValue(undefined),
+  sendPushToUsers: jest.fn().mockResolvedValue(undefined),
+  default: { get: jest.fn(), post: jest.fn(), use: jest.fn() },
 }));
 
-jest.mock("./leaderboard.js", () => ({
+jest.unstable_mockModule("../routes/leaderboard.js", () => ({
   broadcastLeaderboardUpdate: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("../lib/mailer.js", () => ({
+jest.unstable_mockModule("../lib/mailer.js", () => ({
   sendReceipt: jest.fn().mockResolvedValue(undefined),
 }));
 
-// ── App setup ─────────────────────────────────────────────────────────────────
+// ── App + mocked-module handles, wired up after mocks are registered ─────────
 let app: Express;
+let db: any;
+let signTokenById: (id: number) => string;
 
 beforeAll(async () => {
+  ({ db } = await import("@workspace/db"));
+  ({ signTokenById } = await import("../middlewares/auth.js"));
+  const { parseAuth } = await import("../middlewares/auth.js");
+  const { default: requestsRouter } = await import("../routes/requests.js");
+
   app = express();
   app.use(express.json());
-  const { default: requestsRouter } = await import("../routes/requests.js");
+  app.use(parseAuth);
   app.use("/api", requestsRouter);
 });
 
@@ -128,8 +141,7 @@ function bearerToken(userId: number): string {
 }
 
 // ── Reset mocks between tests to avoid state bleed ───────────────────────────
-beforeEach(async () => {
-  const { db } = await import("@workspace/db");
+beforeEach(() => {
   (db.select as jest.Mock).mockClear().mockReturnThis();
   (db.update as jest.Mock).mockClear().mockReturnThis();
   (db.insert as jest.Mock).mockClear().mockReturnThis();
@@ -138,26 +150,13 @@ beforeEach(async () => {
   (db.where as jest.Mock).mockClear().mockReturnThis();
   (db.set as jest.Mock).mockClear().mockReturnThis();
   (db.values as jest.Mock).mockClear().mockReturnThis();
-  (db.limit as jest.Mock).mockClear();
+  (db.limit as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
   (db.returning as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
-  
-  // Pre-populate token versions for all tested users (10, 20, 99)
-  // These will be consumed in order by getCurrentTokenVersion during auth
-  // Multiple queues account for multiple test invocations
-  (db.limit as jest.Mock)
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 10, test 1
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 20, test 3
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 99, test 2
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 20, test 4
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 20, test 5
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 99, test 6
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 20, test 7
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 10, test 8
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 20, test 9
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 10, test 10
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 99, test 11
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // user 20, test 12
-    .mockImplementation(() => Promise.resolve([])); // fallback
+  // NOTE: none of the lifecycle routes under test (claim/en-route/arrived/
+  // complete/tip) run requireApproved, so there is no token-version DB
+  // lookup to pre-seed here — parseAuth verifies the HMAC token in-memory
+  // only. Each test below queues exactly the DB calls its own route path
+  // makes, in order.
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -169,8 +168,10 @@ describe("POST /api/requests/:id/claim", () => {
   });
 
   it("returns 403 when requester tries to claim own request", async () => {
-    const { db } = await import("@workspace/db");
-    (db.limit as jest.Mock).mockResolvedValueOnce([{ requester_id: 10 }]);
+    // Single query: existingFull (lat/lng/urgency/category/requester_id).
+    // requester_id === helperId (10) triggers the early 403 before any
+    // further DB calls.
+    (db.limit as jest.Mock).mockResolvedValueOnce([{ requester_id: 10, urgency: "normal", lat: null, lng: null, category: "errands" }]);
     const res = await request(app)
       .post("/api/requests/1/claim")
       .set("Authorization", bearerToken(10))
@@ -180,12 +181,17 @@ describe("POST /api/requests/:id/claim", () => {
   });
 
   it("returns 200 when a different user claims an open request", async () => {
-    const { db } = await import("@workspace/db");
-    const openReq = { id: 1, status: "open", requester_id: 10, helper_id: null };
-    const claimedReq = { ...openReq, status: "claimed", helper_id: 20 };
-    (db.limit as jest.Mock).mockResolvedValueOnce([openReq]);
+    // Call order: existingFull -> userSettings (none -> default 15mi) ->
+    // helperUser (no lat/lng -> distance check skipped) -> [update+returning]
+    // -> final helper-name lookup.
+    const existingFull = { requester_id: 10, urgency: "normal", lat: null, lng: null, category: "errands" };
+    const claimedReq = { id: 1, status: "claimed", helper_id: 20, requester_id: 10 };
+    (db.limit as jest.Mock)
+      .mockResolvedValueOnce([existingFull])
+      .mockResolvedValueOnce([]) // no userSettings row
+      .mockResolvedValueOnce([{ lat: null, lng: null }]) // helper has no location
+      .mockResolvedValueOnce([{ name: "Helper" }]); // final helper-name lookup
     (db.returning as jest.Mock).mockResolvedValueOnce([claimedReq]);
-    (db.limit as jest.Mock).mockResolvedValueOnce([{ id: 20, name: "Helper", lat: null, lng: null }]);
     const res = await request(app)
       .post("/api/requests/1/claim")
       .set("Authorization", bearerToken(20))
@@ -202,21 +208,23 @@ describe("POST /api/requests/:id/en-route", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when a different user tries to mark en-route", async () => {
-    const { db } = await import("@workspace/db");
-    (db.limit as jest.Mock).mockResolvedValueOnce([{ helper_id: 20 }]);
+  // NOTE: en-route uses a single atomic UPDATE ... WHERE id AND helper_id
+  // AND status='claimed' guard (see requests.ts comment above the route) —
+  // there is no separate ownership SELECT. A mismatched helper_id or wrong
+  // status simply matches zero rows, so the response is 409 (not 403): the
+  // request still exists, the caller just isn't the current assigned helper
+  // in a state that allows this transition.
+  it("returns 409 when a different user tries to mark en-route", async () => {
     const res = await request(app)
       .post("/api/requests/2/en-route")
       .set("Authorization", bearerToken(99))
       .send({});
-    expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/not the assigned helper/i);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/no longer the assigned helper/i);
   });
 
   it("returns 200 when the assigned helper marks en-route", async () => {
-    const { db } = await import("@workspace/db");
     const updatedReq = { id: 2, status: "en_route", helper_id: 20, requester_id: 10 };
-    (db.limit as jest.Mock).mockResolvedValueOnce([{ helper_id: 20 }]);
     (db.returning as jest.Mock).mockResolvedValueOnce([updatedReq]);
     const res = await request(app)
       .post("/api/requests/2/en-route")
@@ -233,21 +241,19 @@ describe("POST /api/requests/:id/arrived", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when a different user tries to mark arrived", async () => {
-    const { db } = await import("@workspace/db");
-    (db.limit as jest.Mock).mockResolvedValueOnce([{ helper_id: 20 }]);
+  // Same atomic-UPDATE guard pattern as en-route above: mismatch -> 0 rows
+  // updated -> 409, not 403.
+  it("returns 409 when a different user tries to mark arrived", async () => {
     const res = await request(app)
       .post("/api/requests/2/arrived")
       .set("Authorization", bearerToken(99))
       .send({});
-    expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/not the assigned helper/i);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/not currently in en-route status/i);
   });
 
   it("returns 200 when the assigned helper marks arrived", async () => {
-    const { db } = await import("@workspace/db");
     const updatedReq = { id: 2, status: "arrived", helper_id: 20, requester_id: 10 };
-    (db.limit as jest.Mock).mockResolvedValueOnce([{ helper_id: 20 }]);
     (db.returning as jest.Mock).mockResolvedValueOnce([updatedReq]);
     const res = await request(app)
       .post("/api/requests/2/arrived")
@@ -264,35 +270,34 @@ describe("POST /api/requests/:id/complete", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when a non-helper tries to complete a request", async () => {
-    const { db } = await import("@workspace/db");
-    (db.limit as jest.Mock).mockResolvedValueOnce([{ helper_id: 20, status: "claimed" }]);
+  // Complete uses the same atomic UPDATE ... WHERE id AND helper_id AND
+  // status NOT IN (completed, cancelled) guard — a wrong helper and an
+  // already-completed request both simply match zero rows, so both cases
+  // return the SAME 404 response (not 403/409 respectively).
+  it("returns 404 when a non-helper tries to complete a request", async () => {
     const res = await request(app)
       .post("/api/requests/2/complete")
       .set("Authorization", bearerToken(99))
       .send({});
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not the assigned helper/i);
   });
 
-  it("returns 409 if request is already completed", async () => {
-    const { db } = await import("@workspace/db");
-    (db.limit as jest.Mock).mockResolvedValueOnce([{ helper_id: 20, status: "completed" }]);
+  it("returns 404 if request is already completed", async () => {
     const res = await request(app)
       .post("/api/requests/2/complete")
       .set("Authorization", bearerToken(20))
       .send({});
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/already completed/i);
   });
 
   it("returns 200 when the assigned helper completes an active request", async () => {
-    const { db } = await import("@workspace/db");
-    const activeReq = { id: 2, status: "arrived", helper_id: 20, requester_id: 10, payment_type: "goodwill" };
-    const completedReq = { ...activeReq, status: "completed" };
-    (db.limit as jest.Mock).mockResolvedValueOnce([activeReq]);
-    (db.returning as jest.Mock).mockResolvedValueOnce([completedReq]);
-    (db.returning as jest.Mock).mockResolvedValueOnce([{ id: 20, help_count: 1, goodwill_score: 10 }]);
+    const completedReq = { id: 2, status: "completed", helper_id: 20, requester_id: 10, payment_type: "goodwill", pay_it_forward_amount: 0, title: "Grocery run" };
+    (db.returning as jest.Mock)
+      .mockResolvedValueOnce([completedReq]) // the completion UPDATE
+      .mockResolvedValueOnce([{ id: 20, help_count: 1, goodwill_score: 10 }]); // goodwill_score increment
+    (db.limit as jest.Mock).mockResolvedValueOnce([{ help_count: 0, trust_score: 50, name: "Helper" }]); // helperBefore
     const res = await request(app)
       .post("/api/requests/2/complete")
       .set("Authorization", bearerToken(20))
@@ -302,44 +307,34 @@ describe("POST /api/requests/:id/complete", () => {
   });
 });
 
-describe("POST /api/requests/:id/tip", () => {
-  it("returns 401 when no Authorization header", async () => {
+// POST /requests/:id/tip is permanently retired (410 Gone) — see the
+// comment block above the route in requests.ts. It used to credit an
+// arbitrary client-supplied tip_amount straight to a helper's wallet with
+// no Stripe verification, which was a money-security hole. It now always
+// returns 410 regardless of auth, body, or ownership, so there's nothing
+// left to test except that retirement is unconditional.
+describe("POST /api/requests/:id/tip (retired)", () => {
+  it("returns 410 Gone even with no Authorization header", async () => {
     const res = await request(app).post("/api/requests/3/tip").send({ tip_amount: 5 });
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(410);
+    expect(res.body.code).toBe("endpoint_retired");
   });
 
-  it("returns 400 when tip_amount is missing", async () => {
+  it("returns 410 Gone regardless of body contents", async () => {
     const res = await request(app)
       .post("/api/requests/3/tip")
       .set("Authorization", bearerToken(10))
       .send({});
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(410);
+    expect(res.body.code).toBe("endpoint_retired");
   });
 
-  it("returns 403 when a non-requester tries to tip", async () => {
-    const { db } = await import("@workspace/db");
-    (db.limit as jest.Mock).mockResolvedValueOnce([{ id: 3, status: "completed", helper_id: 20, requester_id: 10 }]);
+  it("returns 410 Gone regardless of who calls it", async () => {
     const res = await request(app)
       .post("/api/requests/3/tip")
       .set("Authorization", bearerToken(99))
       .send({ tip_amount: 5 });
-    expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/only the requester/i);
-  });
-
-  it("returns 200 when the requester tips the helper", async () => {
-    const { db } = await import("@workspace/db");
-    const completedReq = {
-      id: 3, status: "completed", helper_id: 20, requester_id: 10,
-      payment_type: "goodwill", title: "Grocery run",
-    };
-    (db.limit as jest.Mock).mockResolvedValueOnce([completedReq]);
-    (db.returning as jest.Mock).mockResolvedValueOnce([{ ...completedReq }]);
-    (db.returning as jest.Mock).mockResolvedValueOnce([{ id: 20, benevolence_wallet: 5 }]);
-    const res = await request(app)
-      .post("/api/requests/3/tip")
-      .set("Authorization", bearerToken(10))
-      .send({ tip_amount: 5 });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(410);
+    expect(res.body.error).toMatch(/retired/i);
   });
 });

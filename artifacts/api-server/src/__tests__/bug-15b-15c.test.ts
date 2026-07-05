@@ -12,14 +12,21 @@
  *   - Wrong internal secret returns 403
  *
  * DB interactions are mocked so no real Postgres connection is needed.
+ *
+ * NOTE: this suite runs under Jest's native ESM support
+ * (--experimental-vm-modules). Under native ESM, `jest.mock()` does NOT
+ * intercept dynamic `await import()` calls — only `jest.unstable_mockModule()`
+ * does. All mocked modules are registered below BEFORE any dynamic import,
+ * and everything that might transitively touch "@workspace/db" (including
+ * the auth middleware and the requests/checkin routers) is imported
+ * dynamically inside beforeAll, after the mocks are in place.
  */
 import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals";
 import request from "supertest";
 import express, { Express } from "express";
-import { signTokenById } from "../middlewares/auth.js";
 
 // ── Minimal DB mock ───────────────────────────────────────────────────────────
-jest.mock("@workspace/db", () => {
+jest.unstable_mockModule("@workspace/db", () => {
   const mockDb: Record<string, unknown> = {
     select: jest.fn().mockReturnThis(),
     update: jest.fn().mockReturnThis(),
@@ -35,59 +42,105 @@ jest.mock("@workspace/db", () => {
     catch: jest.fn().mockResolvedValue([null]),
   };
 
-  (mockDb.limit as jest.Mock).mockImplementation(function(this: unknown) {
-    return Promise.resolve([]);
-  });
+  (mockDb.limit as jest.Mock).mockImplementation(() => Promise.resolve([]));
   (mockDb.returning as jest.Mock).mockImplementation(() => Promise.resolve([]));
 
   return {
     db: mockDb,
-    requestsTable: { id: "id", status: "status", helper_id: "helper_id", requester_id: "requester_id", lat: "lat", lng: "lng", urgency: "urgency" },
+    // NOTE: this list must mirror EVERY table symbol requests.ts (and
+    // anything it transitively imports, e.g. lib/community-pool.ts) pulls
+    // from "@workspace/db" — under native ESM, a missing key here throws
+    // "does not provide an export named X" at import time, not at use time.
+    requestsTable: { id: "id", status: "status", helper_id: "helper_id", requester_id: "requester_id", lat: "lat", lng: "lng", urgency: "urgency", category: "category" },
     usersTable: { id: "id", name: "name", email: "email", help_count: "help_count", trust_score: "trust_score", goodwill_score: "goodwill_score", benevolence_wallet: "benevolence_wallet", helper_mode_active: "helper_mode_active", lat: "lat", lng: "lng" },
     userSettingsTable: { id: "id", user_id: "user_id", max_travel_miles: "max_travel_miles" },
     transactionsTable: { id: "id" },
     stripeAccountsTable: { id: "id", user_id: "user_id", payouts_enabled: "payouts_enabled", stripe_account_id: "stripe_account_id" },
     paymentTransactionsTable: { id: "id" },
+    requestHelpersTable: { id: "id", request_id: "request_id", helper_id: "helper_id" },
+    helperAvailabilityTable: { id: "id", user_id: "user_id" },
+    businessesTable: { id: "id" },
+    businessMembersTable: { id: "id", business_id: "business_id", user_id: "user_id" },
+    systemSettingsTable: { key: "key", value: "value" },
+    communityPoolLedgerTable: { id: "id", amount: "amount", request_id: "request_id", created_at: "created_at" },
+    poolPendingMinimumsTable: { id: "id", request_id: "request_id" },
   };
 });
 
-jest.mock("drizzle-orm", () => ({
+// NOTE: under native ESM, Jest builds a static synthetic module from the
+// factory's OWN enumerable keys — every drizzle-orm function used anywhere
+// in the api-server import graph (see `grep -rn 'from "drizzle-orm"' src`)
+// must be listed here, or transitively-imported modules throw
+// "does not provide an export named X" at import time.
+jest.unstable_mockModule("drizzle-orm", () => ({
   eq: jest.fn(),
   and: jest.fn(),
+  or: jest.fn(),
+  not: jest.fn(),
   sql: jest.fn(),
   inArray: jest.fn(),
+  notInArray: jest.fn(),
+  asc: jest.fn(),
+  desc: jest.fn(),
+  gte: jest.fn(),
+  gt: jest.fn(),
+  lte: jest.fn(),
+  lt: jest.fn(),
+  ne: jest.fn(),
+  isNull: jest.fn(),
+  isNotNull: jest.fn(),
 }));
 
-jest.mock("../lib/ws-hub.js", () => ({
+jest.unstable_mockModule("../lib/ws-hub.js", () => ({
   broadcast: jest.fn(),
   broadcastRequestEvent: jest.fn(),
+  sendToUser: jest.fn(),
+  sendToRequestParticipants: jest.fn(),
+  sendToUsers: jest.fn(),
+  isUserOnline: jest.fn().mockReturnValue(false),
+  getConnectedUserIds: jest.fn().mockReturnValue([]),
+  getHubMetrics: jest.fn().mockReturnValue({}),
 }));
 
-jest.mock("../lib/queue.js", () => ({
+jest.unstable_mockModule("../lib/queue.js", () => ({
   enqueuePayoutRetry: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("../routes/push.js", () => ({
+jest.unstable_mockModule("../routes/push.js", () => ({
   sendPushToNearbyHelpers: jest.fn().mockResolvedValue(undefined),
   sendPushToAllHelpers: jest.fn().mockResolvedValue(undefined),
+  sendPushToUser: jest.fn().mockResolvedValue(undefined),
+  sendPushToUsers: jest.fn().mockResolvedValue(undefined),
+  default: { get: jest.fn(), post: jest.fn(), use: jest.fn() },
 }));
 
-jest.mock("../lib/mailer.js", () => ({
+jest.unstable_mockModule("../routes/leaderboard.js", () => ({
+  broadcastLeaderboardUpdate: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.unstable_mockModule("../lib/mailer.js", () => ({
   sendReceipt: jest.fn().mockResolvedValue(undefined),
   sendAlertEmail: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("../lib/logger.js", () => ({
+jest.unstable_mockModule("../lib/logger.js", () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-// ── App setup ─────────────────────────────────────────────────────────────────
+// ── App + mocked-module handles, wired up after mocks are registered ─────────
 let app: Express;
+let db: any;
+let signTokenById: (id: number) => string;
 
 beforeAll(async () => {
+  ({ db } = await import("@workspace/db"));
+  ({ signTokenById } = await import("../middlewares/auth.js"));
+  const { parseAuth } = await import("../middlewares/auth.js");
+  const { default: requestsRouter } = await import("../routes/requests.js");
+
   app = express();
   app.use(express.json());
-  const { default: requestsRouter } = await import("../routes/requests.js");
+  app.use(parseAuth);
   app.use("/api", requestsRouter);
 });
 
@@ -97,8 +150,7 @@ function bearerToken(userId: number): string {
 }
 
 // ── Reset mocks between tests ─────────────────────────────────────────────────
-beforeEach(async () => {
-  const { db } = await import("@workspace/db");
+beforeEach(() => {
   (db.select as jest.Mock).mockClear().mockReturnThis();
   (db.update as jest.Mock).mockClear().mockReturnThis();
   (db.insert as jest.Mock).mockClear().mockReturnThis();
@@ -107,35 +159,28 @@ beforeEach(async () => {
   (db.where as jest.Mock).mockClear().mockReturnThis();
   (db.set as jest.Mock).mockClear().mockReturnThis();
   (db.values as jest.Mock).mockClear().mockReturnThis();
-  (db.limit as jest.Mock).mockClear();
+  (db.limit as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
   (db.returning as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
-  
-  // Pre-populate token versions for userId 20 (used in all tests via bearerToken(20))
-  // These will be consumed in order by getCurrentTokenVersion during auth
-  (db.limit as jest.Mock)
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0 for user 20
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // fallback token v0 for user 20
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0 for emergency test
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0 for default max_travel test
-    .mockResolvedValueOnce([{ version: 0, version_salt: "test" }]) // token v0 for within limit test
-    .mockImplementation(() => Promise.resolve([])); // fallback for any additional calls
+  // NOTE: /claim runs under requireAuth only (no requireApproved), so
+  // parseAuth's HMAC check needs no DB lookup here — no token-version
+  // preload required. Each test below queues exactly the DB calls the
+  // claim handler itself makes, in call order.
 });
 
 // ── BUG-15b: max_travel_miles enforcement ─────────────────────────────────────
 
 describe("BUG-15b: POST /api/requests/:id/claim — max_travel_miles enforcement", () => {
   it("returns 400 when helper's max_travel_miles is exceeded (non-emergency)", async () => {
-    const { db } = await import("@workspace/db");
-    // Request at (0, 0) — helper at (0.2, 0) ≈ 13.8 miles away
-    const request = { id: 1, requester_id: 10, urgency: "high", lat: 0, lng: 0 };
+    // Request at (0, 0) — helper at (0.2, 0) ≈ 13.8 miles away.
+    // Call order: existingFull -> userSettings -> helperUser location.
+    const mockRequest = { id: 1, requester_id: 10, urgency: "high", lat: 0, lng: 0, category: "errands" };
     const helper = { id: 20, lat: 0.2, lng: 0 };
     const helperSettings = { max_travel_miles: 10 };
 
     (db.limit as jest.Mock)
-      .mockResolvedValueOnce([{ requester_id: 10 }])          // ownership check
-      .mockResolvedValueOnce([request])                       // full request (urgency)
+      .mockResolvedValueOnce([mockRequest])                   // existingFull
       .mockResolvedValueOnce([helperSettings])                // userSettings
-      .mockResolvedValueOnce([helper]);                        // helper location
+      .mockResolvedValueOnce([helper]);                       // helper location
 
     const res = await request(app)
       .post("/api/requests/1/claim")
@@ -149,18 +194,15 @@ describe("BUG-15b: POST /api/requests/:id/claim — max_travel_miles enforcement
   });
 
   it("returns 200 when emergency request bypasses max_travel_miles", async () => {
-    const { db } = await import("@workspace/db");
-    // Emergency request 50 miles away
-    const request = { id: 1, requester_id: 10, urgency: "emergency", lat: 0, lng: 0 };
-    const helper = { id: 20, lat: 0.7, lng: 0 }; // ~48 miles
+    // Emergency request 50 miles away — urgency="emergency" skips the
+    // userSettings/helperUser distance-check queries entirely.
+    // Call order: existingFull -> [update+returning] -> final helper-name lookup.
+    const mockRequest = { id: 1, requester_id: 10, urgency: "emergency", lat: 0, lng: 0, category: "errands" };
     const claimedReq = { id: 1, status: "claimed", helper_id: 20, requester_id: 10 };
 
     (db.limit as jest.Mock)
-      .mockResolvedValueOnce([{ requester_id: 10 }])          // ownership check
-      .mockResolvedValueOnce([request])                       // full request (emergency)
-      // NO userSettings query — emergency bypasses
-      .mockResolvedValueOnce([helper])                        // helper location (not used for emergency)
-      .mockResolvedValueOnce([claimedReq]);                   // update returning
+      .mockResolvedValueOnce([mockRequest])                   // existingFull (emergency)
+      .mockResolvedValueOnce([{ name: "Helper" }]);           // final helper-name lookup
 
     (db.returning as jest.Mock).mockResolvedValueOnce([claimedReq]);
 
@@ -174,18 +216,17 @@ describe("BUG-15b: POST /api/requests/:id/claim — max_travel_miles enforcement
   });
 
   it("returns 200 when helper has no userSettings (default 15 miles)", async () => {
-    const { db } = await import("@workspace/db");
-    // Request 14 miles away — within default 15
-    const request = { id: 1, requester_id: 10, urgency: "normal", lat: 0, lng: 0 };
+    // Request 14 miles away — within default 15.
+    // Call order: existingFull -> userSettings (empty) -> helperUser -> [update+returning] -> final helper-name lookup.
+    const mockRequest = { id: 1, requester_id: 10, urgency: "normal", lat: 0, lng: 0, category: "errands" };
     const helper = { id: 20, lat: 0.2, lng: 0 }; // ~13.8 miles
     const claimedReq = { id: 1, status: "claimed", helper_id: 20, requester_id: 10 };
 
     (db.limit as jest.Mock)
-      .mockResolvedValueOnce([{ requester_id: 10 }])          // ownership check
-      .mockResolvedValueOnce([request])                       // full request
-      .mockResolvedValueOnce([])                               // no userSettings row
+      .mockResolvedValueOnce([mockRequest])                   // existingFull
+      .mockResolvedValueOnce([])                              // no userSettings row
       .mockResolvedValueOnce([helper])                        // helper location
-      .mockResolvedValueOnce([claimedReq]);                   // update returning
+      .mockResolvedValueOnce([{ name: "Helper" }]);           // final helper-name lookup
 
     (db.returning as jest.Mock).mockResolvedValueOnce([claimedReq]);
 
@@ -199,19 +240,18 @@ describe("BUG-15b: POST /api/requests/:id/claim — max_travel_miles enforcement
   });
 
   it("returns 200 when helper is within max_travel_miles", async () => {
-    const { db } = await import("@workspace/db");
-    // Request 5 miles away — within max 10
-    const request = { id: 1, requester_id: 10, urgency: "normal", lat: 0, lng: 0 };
+    // Request 5 miles away — within max 10.
+    // Call order: existingFull -> userSettings -> helperUser -> [update+returning] -> final helper-name lookup.
+    const mockRequest = { id: 1, requester_id: 10, urgency: "normal", lat: 0, lng: 0, category: "errands" };
     const helper = { id: 20, lat: 0.07, lng: 0 }; // ~4.8 miles
     const helperSettings = { max_travel_miles: 10 };
     const claimedReq = { id: 1, status: "claimed", helper_id: 20, requester_id: 10 };
 
     (db.limit as jest.Mock)
-      .mockResolvedValueOnce([{ requester_id: 10 }])          // ownership check
-      .mockResolvedValueOnce([request])                       // full request
+      .mockResolvedValueOnce([mockRequest])                   // existingFull
       .mockResolvedValueOnce([helperSettings])                // userSettings
       .mockResolvedValueOnce([helper])                        // helper location
-      .mockResolvedValueOnce([claimedReq]);                   // update returning
+      .mockResolvedValueOnce([{ name: "Helper" }]);           // final helper-name lookup
 
     (db.returning as jest.Mock).mockResolvedValueOnce([claimedReq]);
 
@@ -226,6 +266,23 @@ describe("BUG-15b: POST /api/requests/:id/claim — max_travel_miles enforcement
 });
 
 // ── BUG-15c: /checkin endpoint security ───────────────────────────────────────
+
+jest.unstable_mockModule("@anthropic-ai/sdk", () => ({
+  Anthropic: jest.fn().mockImplementation(() => ({
+    messages: {
+      create: jest.fn().mockResolvedValue({
+        content: [{ type: "text", text: "Hey friend! How did your request go?" }],
+      }),
+    },
+  })),
+  default: jest.fn().mockImplementation(() => ({
+    messages: {
+      create: jest.fn().mockResolvedValue({
+        content: [{ type: "text", text: "Hey friend! How did your request go?" }],
+      }),
+    },
+  })),
+}));
 
 describe("BUG-15c: POST /checkin — Nia check-in endpoint security", () => {
   let checkinApp: Express;
@@ -271,17 +328,6 @@ describe("BUG-15c: POST /checkin — Nia check-in endpoint security", () => {
   });
 
   it("returns 200 with valid x-internal-secret (Claude API mocked)", async () => {
-    // Mock the Claude API call
-    jest.mock("@anthropic-ai/sdk", () => ({
-      Anthropic: jest.fn().mockImplementation(() => ({
-        messages: {
-          create: jest.fn().mockResolvedValue({
-            content: [{ type: "text", text: "Hey friend! How did your request go?" }],
-          }),
-        },
-      })),
-    }));
-
     const res = await request(checkinApp)
       .post("/checkin")
       .set("x-internal-secret", process.env.INTERNAL_SECRET || "test-secret")

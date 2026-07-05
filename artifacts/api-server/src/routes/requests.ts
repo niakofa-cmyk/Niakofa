@@ -747,10 +747,15 @@ router.post("/requests/:id/claim", requireAuth, async (req, res) => {
   // Emergency requests bypass this check by design (consistent with the
   // rest of the urgency-based bypass pattern used elsewhere in this file).
   const [existingFull] = await db
-    .select({ lat: requestsTable.lat, lng: requestsTable.lng, urgency: requestsTable.urgency, category: requestsTable.category })
+    .select({ lat: requestsTable.lat, lng: requestsTable.lng, urgency: requestsTable.urgency, category: requestsTable.category, requester_id: requestsTable.requester_id })
     .from(requestsTable)
     .where(eq(requestsTable.id, pParsed.data.id))
     .limit(1);
+
+  // A requester cannot claim their own request as a helper.
+  if (existingFull && existingFull.requester_id === helperId) {
+    return res.status(403).json({ error: "You cannot claim your own request." });
+  }
 
   // Sensitive categories (childcare, senior_care, medical) involve vulnerable
   // people, so claiming them requires more than signup: the helper must be at
