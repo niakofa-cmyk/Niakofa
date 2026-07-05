@@ -1072,15 +1072,27 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
 
   // ── Community Pool: front pay-it-forward payment + guaranteed minimum ─────
   // The pool pays the helper NOW; the requester's later repayment replenishes
-  // the pool (handled in the Stripe webhook). Every payment type — pay_it_forward,
-  // goodwill, AND immediate — gets a guaranteed minimum floor.
+  // the pool (handled in the Stripe webhook).
   //
-  // For immediate tasks the requester's Stripe payment already counts toward
-  // the floor: the pool only covers the gap, so there is never a double-pay.
+  // ENHANCEMENT (2026-07-05): the guaranteed-minimum floor now applies to
+  // EVERY payment type, including immediate. Previously this whole block was
+  // skipped for immediate-pay tasks entirely (`payment_type !== "immediate"`),
+  // which meant the "helpers get paid a livable wage" guarantee only actually
+  // held for pay-it-forward and goodwill tasks — a requester paying
+  // immediately could set any price, including well under the per-hour floor,
+  // with zero enforcement. Immediate-pay money still comes directly from the
+  // requester via Stripe Connect transfer (unchanged, handled further below)
+  // — the pool only tops up the *gap* between what the requester actually
+  // paid and the floor, same as it already does for underfunded pledges.
   try {
     if (await isPoolEnabled()) {
       const pledge = request.pay_it_forward_amount ?? 0;
       let paidFromPool = 0;
+      // Money the helper already has coming from a non-pool source for this
+      // task (the requester's own immediate payment). Counts toward the
+      // floor so the pool only ever covers the shortfall, never duplicates
+      // a fair price the requester already paid.
+      const directPayAmount = request.payment_type === "immediate" ? pledge : 0;
 
       if (request.payment_type === "pay_it_forward" && pledge > 0) {
         const frontOutcome = await payHelperFromPool({
@@ -1118,20 +1130,15 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
         }
       }
 
-      // Guaranteed minimum floor: top up to the minimum when the pool front
-      // didn't happen or came in under the floor (goodwill tasks included).
-      // Pass estimated_hours so the floor scales with task duration (hours × rate),
-      // making the "livable wage" guarantee real math, not a flat number.
-      //
-      // For immediate-pay tasks, count the requester's Stripe payment toward the
-      // floor first — the pool only tops up the gap, never double-pays.
-      const effectivePaid = request.payment_type === "immediate"
-        ? Math.max(paidFromPool, pledge)
-        : paidFromPool;
-
+      // Guaranteed minimum floor: top up to the minimum when the amount the
+      // helper already has coming (pool front, or the requester's own direct
+      // immediate payment) falls short. Pass estimated_hours so the floor
+      // scales with task duration (hours × rate), making the "livable wage"
+      // guarantee real math, not a flat number.
       const minimum = await getGuaranteedMinimum(request.estimated_hours);
-      if (minimum > 0 && effectivePaid < minimum) {
-        const topUp = Math.round((minimum - effectivePaid) * 100) / 100;
+      const alreadyPaid = paidFromPool + directPayAmount;
+      if (minimum > 0 && alreadyPaid < minimum) {
+        const topUp = Math.round((minimum - alreadyPaid) * 100) / 100;
         const minOutcome = await payHelperFromPool({
           entryType: "guaranteed_minimum",
           amount: topUp,
@@ -1152,9 +1159,14 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
         } else if (minOutcome === "insufficient") {
           // Pool ran dry — queue the guarantee so the backfill worker pays it
           // once the pool is replenished. For an un-fronted pay-it-forward
-          // request the pledge itself still arrives via Stripe later, so only
-          // the gap below the floor is owed.
-          const owed = request.payment_type === "pay_it_forward" ? minimum - pledge : topUp;
+          // request the pledge itself still arrives via Stripe later, and for
+          // an immediate task the requester's direct payment still arrives
+          // via Stripe Connect regardless of pool solvency — so in both
+          // cases only the gap below the floor is actually owed by the pool.
+          const owed =
+            request.payment_type === "pay_it_forward" ? minimum - pledge :
+            request.payment_type === "immediate" ? minimum - directPayAmount :
+            topUp;
           await queuePendingMinimum({
             requestId: request.id,
             helperId,

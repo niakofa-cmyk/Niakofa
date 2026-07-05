@@ -16,10 +16,7 @@ WORKDIR /app
 # Railway "Root Directory" setting (confirmed empty). It's a real bug in how
 # that builder resolves a scoped, never-before-cached per-subdirectory COPY
 # path inside a monorepo. Copying the entire repo root in a single COPY
-# avoids that code path entirely, at the cost of losing the old two-stage
-# caching optimization (any source change now busts the install layer too,
-# not just the app layer) — see the pnpm store cache mount below, which
-# keeps repeat installs fast regardless of that layer-cache tradeoff.
+# avoids that code path entirely.
 #
 # See .dockerignore at the repo root for what's excluded from this context
 # (node_modules, .git, attached_assets, etc.) so this stays reasonably lean.

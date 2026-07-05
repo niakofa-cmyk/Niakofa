@@ -353,6 +353,15 @@ export default function ActiveRequestScreen() {
     mapRef.current.fitBounds(bounds, { padding: 80, duration: 1200, pitch: 55, maxZoom: 17 });
   }, [routeData?.geometry]);
 
+  // NOTE (2026-07-05): a manual GPS-heading fallback effect used to live
+  // here, guarded to only fire when `fusedHeading` was null. Removed as
+  // confirmed dead code: useFusedHeading (see useFusedHeading.ts) already
+  // has an internal GPS-only branch, so fusedHeading can only be null when
+  // BOTH compass and GPS heading are unavailable — which is exactly the same
+  // condition this fallback's own guard (`!myLocation?.heading`) checked. It
+  // could never actually execute. The applyHeading effect above is the only
+  // thing that needs to own camera bearing.
+
   // Re-center on user
   useEffect(() => {
     if (!myLocation || !mapRef.current || isArrived || autoArrived) return;
