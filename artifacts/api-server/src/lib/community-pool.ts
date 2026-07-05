@@ -76,6 +76,10 @@ export async function getHourlyMinimumRate(): Promise<number> {
  * When no hours estimate exists, falls back to the flat `pool_guaranteed_minimum`
  * setting so existing completed tasks are unchanged.
  */
+// Hard-coded safety floor: if the DB is unavailable we never pay $0.
+// This matches the seed value in migration 0024 ('5').
+const GUARANTEED_MINIMUM_FALLBACK = 5;
+
 export async function getGuaranteedMinimum(estimatedHours?: number | null): Promise<number> {
   try {
     const [row] = await db
@@ -84,7 +88,8 @@ export async function getGuaranteedMinimum(estimatedHours?: number | null): Prom
       .where(eq(systemSettingsTable.key, "pool_guaranteed_minimum"))
       .limit(1);
     const parsed = row ? parseFloat(row.value) : NaN;
-    const flatFloor = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+    // Fall back to seeded default ($5) when row is missing or unparseable.
+    const flatFloor = Number.isFinite(parsed) && parsed >= 0 ? parsed : GUARANTEED_MINIMUM_FALLBACK;
 
     // Hours-scaled floor: take the GREATER of flat floor and hours × rate.
     // This ensures short tasks still get the flat minimum, and longer tasks get
@@ -97,7 +102,8 @@ export async function getGuaranteedMinimum(estimatedHours?: number | null): Prom
 
     return flatFloor;
   } catch {
-    return 0;
+    // DB error → return the hard-coded seed default so helpers always get paid.
+    return GUARANTEED_MINIMUM_FALLBACK;
   }
 }
 

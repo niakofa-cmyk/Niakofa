@@ -23,12 +23,29 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
-import { db, usersTable, requestsTable, userSettingsTable } from "@workspace/db";
+import { db, usersTable, requestsTable, userSettingsTable, systemSettingsTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { distanceMiles } from "../lib/geo";
 import { logger } from "../lib/logger";
 
 const router = Router();
+
+/**
+ * Fail-closed kill-switch check — mirrors the one in nia-proxy.ts.
+ * Any error (DB down, row missing, wrong value) defaults to DISABLED.
+ */
+async function isNiaEnabled(): Promise<boolean> {
+  try {
+    const [row] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "nia_enabled"))
+      .limit(1);
+    return row?.value === "true";
+  } catch {
+    return false; // fail-closed: DB error → Nia disabled
+  }
+}
 
 const NEARBY_RADIUS_MILES = 2;
 const CACHE_TTL_MS = 30_000; // 30-second cache per user
@@ -48,6 +65,13 @@ export interface NiaContext {
 }
 
 router.get("/nia/context", requireAuth, generalApiLimiter, async (req, res) => {
+  // Kill-switch: context endpoint must be gated just like all other Nia routes.
+  // Without this check the endpoint leaks real-time community stats even when
+  // an admin has disabled Nia for legal/technical reasons.
+  if (!(await isNiaEnabled())) {
+    return res.status(503).json({ error: "Nia is temporarily unavailable." });
+  }
+
   const userId = (req as any).authenticatedUserId as number | undefined;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
