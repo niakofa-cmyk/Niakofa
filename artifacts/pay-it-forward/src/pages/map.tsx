@@ -10,6 +10,7 @@ import {
   useGetRequestStats, useGetRoute, useGetUserSettings,
   getGetNearbyRequestsQueryKey, getGetOnlineHelpersQueryKey,
   getGetRequestStatsQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey,
+  getGetUserSettingsQueryKey,
 } from "@workspace/api-client-react";
 import type { HelpRequest, HelperLocation } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -112,7 +113,7 @@ export default function MapScreen() {
   // service_radius_miles instead, since max_travel_miles is a helper-only concept.
   const { data: userSettings } = useGetUserSettings(
     currentUser?.id ?? 0,
-    { query: { enabled: !!currentUser?.id } }
+    { query: { queryKey: getGetUserSettingsQueryKey(currentUser?.id ?? 0), enabled: !!currentUser?.id } }
   );
   // 15 mirrors the backend's own fallback when max_travel_miles is unset
   // (see requests.ts claim-time check) — keep these two numbers in sync.

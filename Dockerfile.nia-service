@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1
+#
+# Nia-service Dockerfile — kept at the REPO ROOT intentionally.
+#
+# WHY THIS FILE IS HERE (not in artifacts/nia-service/):
+#   Railway's Metal builder calls fsutil.NewFS(dockerfilePath) expecting a
+#   directory as the build-context root. When dockerfilePath contained a
+#   subdirectory separator (e.g. "artifacts/nia-service/Dockerfile"), the
+#   builder attempted to call NewFS on the full path INCLUDING the filename,
+#   which is a file — not a directory — and the build failed with:
+#
+#     "fsutil.NewFS(...artifacts/nia-service/Dockerfile):
+#      stat ...Dockerfile: not a directory"
+#
+#   Placing this file at the repo root and setting dockerfilePath to
+#   "Dockerfile.nia-service" (no subdirectory component) avoids that
+#   code path entirely. The build context is still the full monorepo root
+#   so pnpm-lock.yaml and workspace config remain accessible.
+#
+#   See: artifacts/nia-service/railway.toml for the corresponding config.
+
+FROM node:22-alpine
+
+# Pin pnpm to the exact version used by the rest of the monorepo so transitive
+# dependency resolution is identical to what every other workspace package sees.
+RUN corepack enable && corepack prepare pnpm@10.26.1 --activate
+
+WORKDIR /app
+
+# Copy the full monorepo root so the Dockerfile has access to pnpm-lock.yaml,
+# pnpm-workspace.yaml, and all workspace packages needed to resolve transitive
+# dependencies consistently with every other service in the monorepo.
+# .dockerignore at the repo root excludes node_modules, .git, attached_assets,
+# build outputs, and test files to keep the context lean.
+COPY . .
+
+# Install only the nia-service and its workspace dependencies.
+# Note: intentionally NOT using --mount=type=cache here. Railway requires cache
+# mount IDs to be hardcoded with a service-ID prefix (format
+# `id=s/<service-id>-name`) rather than a Dockerfile ARG/variable, and that ID
+# breaks if this service is ever recreated. Plain frozen-lockfile install is
+# more reliable than a fragile cache mount.
+RUN pnpm install --frozen-lockfile --filter nia-service
+
+RUN pnpm --filter nia-service build
+
+# --legacy: pnpm v10 changed `pnpm deploy`'s default to require
+# inject-workspace-packages=true unless this flag is passed. nia-service
+# resolves deps via the hoisted node_modules layout set in .npmrc, so --legacy
+# keeps the original simpler deploy behavior.
+RUN pnpm --filter nia-service deploy --prod --legacy /app/deploy
+
+WORKDIR /app/deploy
+
+# Port is injected via the PORT env var at runtime by Railway.
+EXPOSE 3001
+CMD ["node", "dist/index.js"]

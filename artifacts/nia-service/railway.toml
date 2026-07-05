@@ -1,10 +1,13 @@
 [build]
 builder = "dockerfile"
-# buildContext is the monorepo root so the Dockerfile can access the workspace
-# pnpm-lock.yaml and pin all transitive deps to the same versions used by the
-# rest of the monorepo (api-server, pay-it-forward, etc.).
-buildContext = "."
-dockerfilePath = "artifacts/nia-service/Dockerfile"
+# WHY dockerfilePath points to the repo root:
+#   Railway's Metal builder calls fsutil.NewFS(dockerfilePath) expecting a
+#   directory. When dockerfilePath contained a "/" separator (e.g.
+#   "artifacts/nia-service/Dockerfile"), it tried to use that full path —
+#   including the filename — as a filesystem root, which fails with
+#   "not a directory". Placing the Dockerfile at the repo root and using a
+#   flat filename (no subdirectory) avoids that code path.
+dockerfilePath = "Dockerfile.nia-service"
 
 [deploy]
 startCommand = "node dist/index.js"
