@@ -58,7 +58,11 @@ router.post("/verification/identity/webhook", async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
 
   const sig = req.headers["stripe-signature"] as string;
-  const webhookSecret = process.env["STRIPE_IDENTITY_WEBHOOK_SECRET"] ?? "";
+  const webhookSecret = process.env["STRIPE_IDENTITY_WEBHOOK_SECRET"];
+  if (!webhookSecret) {
+    logger.error("identity webhook: STRIPE_IDENTITY_WEBHOOK_SECRET not configured — rejecting request");
+    return res.status(503).json({ error: "Identity webhook not configured" });
+  }
 
   let event: Stripe.Event;
   try {

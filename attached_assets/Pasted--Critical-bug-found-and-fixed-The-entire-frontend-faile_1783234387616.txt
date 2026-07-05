@@ -1,3 +1,70 @@
+
+
+🔴 Critical bug found and fixed
+The entire frontend failed to compile. admin.tsx referenced a component, AdminCivicRequestsTab, that doesn't exist anywhere in the codebase — a dangling reference, probably left over from wiring up the "Civic" tab button before the component behind it was built. This broke pnpm run typecheck across the whole project, meaning the app could not have been shipped in this state.
+I fixed it by pointing the Civic tab at the existing CivicSuggestionsSection component (which already reviews community-submitted food bank/shelter/clinic listings). Full typecheck now passes clean across all 5 buildable workspaces.
+🟡 Test suite is broken (pre-existing, not caused by the fix above)
+35 of 55 tests fail. Two distinct root causes:
+1. pledge-default-parity.test.ts — the pledge auto-default logic in scheduler.ts uses a dynamic await import("@workspace/db") inside the function instead of the module already imported at the top of the file. This bypasses jest.mock(), so the test tries to hit a real Postgres on localhost:5432 and fails with ECONNREFUSED.
+2. lifecycle.test.ts / integration-lifecycle.test.ts — db.select.mockClear is not a function, meaning the mocked db object isn't behaving like a real Jest mock under the current ESM/ts-jest config.
+The practical implication: your regression tests for the core Pay-It-Forward default/reinstatement logic aren't actually running. That's your most vision-critical mechanism, and it currently has no working safety net. I'd treat this as a near-term priority, not just tech debt.
+🟡 Guaranteed minimum wage can silently be $0
+getGuaranteedMinimum() in community-pool.ts reads pool_guaranteed_minimum from system_settings, and if that row doesn't exist, it falls back to 0 — not the $20 the admin dashboard displays as the assumed default. No seed script populates this setting. So on a fresh deployment (e.g., a new county launch), a helper doing a short pay-it-forward task with no hours estimate could get paid $0 from the pool until an admin manually visits Settings and saves a value — directly undermining "helpers get a livable wage just for waking up and helping." Worth seeding this explicitly in your setup/migration scripts.
+
+New P0 found and fixed: the Stripe Identity webhook (POST /verification/identity/webhook) defaulted its signing secret to an empty string if STRIPE_IDENTITY_WEBHOOK_SECRET wasn't configured — and never checked for that before verifying signatures. Since HMAC works fine with an empty key, an unconfigured secret made this endpoint forgeable: anyone could POST a fake "verified" event and mark any user_id as identity-verified with a 95 trust score, no real ID check required. What confirmed this wasn't speculative: your own stripe.ts and background-checks.ts webhooks already fail closed with a 503 in this exact situation — this was the one place that established pattern got missed. Fixed to match.
+Action item on your end: check your Railway variables for STRIPE_IDENTITY_WEBHOOK_SECRET. If it was never set, this was live — worth knowing. Either way, the fixed code now fails safely regardless.
+
+1. Why the admin credentials don't work
+Those three accounts (admin/helper/user) are created by scripts/src/seed-test-accounts.ts — and that script is deliberately not run automatically on deploy. The comment at the top of the file says it outright:
+"This is intentionally NOT wired into railpack.json's automatic deploy startCommand. Seeding known admin credentials on every production boot would be a standing security hole. Run it once, by hand."
+So the credentials in that table only exist in whatever database someone last ran that script against manually — most likely a local Replit dev DB from an earlier session, per .agents/memory/niakofa-seed-accounts.md. If your live Railway Postgres never had this script run against it, admin@niakofa.app simply doesn't exist as a row there yet — that's almost certainly why login fails, not a bug in the login flow itself.
+2. Should you create new credentials?
+Yes — don't assume the shared test creds are live anywhere you haven't verified. Run the seed script directly against your production DATABASE_URL (the file tells you how: use Railway's DATABASE_PUBLIC_URL from Postgres → Variables, and run pnpm --filter @workspace/scripts run seed-test-accounts). It's safe to re-run — it upserts by email, resets is_suspended/token_version, and rehashes the password. I'd also treat these specific passwords as burned now (they're sitting in plaintext in your repo/docs) and rotate them after confirming login works, rather than keeping NiakofaAdmin2026! as a long-term credential.
+3. Is Nia actually disabled by default in this build?
+Yes, in the code you uploaded. Migration 0018_system_settings.sql creates system_settings and seeds nia_enabled = 'false' with ON CONFLICT DO NOTHING. That migration runs on every deploy — it's part of railpack.json's startCommand: pnpm --filter @workspace/db run migrate && node ... index.mjs. The actual gate (nia-proxy.ts's isNiaEnabled()) is fail-closed: only an explicit "true" string enables it, any missing row/error/other value = disabled.
+One thing worth knowing: once an admin has toggled it on, ON CONFLICT DO NOTHING means a redeploy won't reset it back to false — the row persists. So "not disabled" in a live environment usually means someone already flipped it on, not that the default logic is broken.
+(Minor unrelated thing I noticed: health.ts line ~292 computes its status-page niaEnabled as val !== "false" instead of val === "true" — that's fail-open and could make the health dashboard display "on" even when the real gate is off. Cosmetic, doesn't affect actual behavior, but worth fixing for consistency.)
+4. Can the killswitch actually disable Nia?
+Yes, structurally it's solid — this looks like a real, deliberate fix (documented in .agents/memory/niakofa-killswitch-arch.md). The frontend (App.tsx, TopBar.tsx) reads niaEnabled from one shared AppContext (polled + WebSocket push), the orb is hard-gated so it can't open while disabled, and three background workers (ambient-presence, general-checkin, continuous-learning) all check isNiaEnabled() and skip their cycle when false. Crisis-followup is intentionally exempt from the switch for safety reasons — that's documented as a decision, not a bug.
+5. Is Nia "resting" when disabled?
+Literally, yes — TopBar.tsx sets aria-label={niaEnabled === true ? "Open Nia..." : "Nia is resting"} and renders the orb desaturated/non-pulsing. That exact behavior is in the code you uploaded.
+6. What's preventing the new build from being picked up?
+This is the part I can't verify directly since I don't have access to your Railway dashboard — but the repo has real fingerprints of past build-cache pain: .build-cache-bust and .railway-cache-bust files with timestamps (used to force Railway/BuildKit to invalidate a stale layer), plus a Dockerfile comment in artifacts/nia-service/Dockerfile describing a specific BuildKit bug ("failed to calculate checksum of ref... not found") that was worked around with a CACHE_BUST arg. There are also multiple zip files in attached_assets literally named things like niakofa-stale-build-fix.
+Concretely, to force a fresh build right now: bump the value in .build-cache-bust and .railway-cache-bust (or the CACHE_BUST arg in the nia-service Dockerfile) and trigger a redeploy — then check Railway's build logs to confirm it's not reusing a cached layer, and check the deployed frontend's asset hash/timestamp against your latest commit to confirm the static bundle actually updated (that's a separate, common trap: API redeploys but the frontend CDN cache doesn't).
+
+
+Critical gap: pay-it-forward money never leaves the app as real money
+This is the single most important finding, straight from your own team's forensic notes:
+"Pay-it-forward and Community Pool money never becomes real money for the helper... benevolence_wallet is a plain integer column in Postgres — it is never the destination of a stripe.transfers.create() call anywhere in the codebase." attached_assets
+All three transfers.create call sites are hard-gated to payment_type === "immediate" only. So a helper who does a pay-it-forward or pool-fronted job accumulates a number in their wallet that never actually gets deposited to their bank account via Stripe Connect. This directly undercuts "Helpers will be paid and benefit over time" — right now they see credit, not cash, for the majority of your intended use case.
+Other findings
+Payments / Community Pool — architecturally solid: signed-amount ledger, advisory-lock-serialized debits, idempotent completion, pending-minimums backfill queue for when the pool runs dry, low-balance admin alerting. community-pool.ts. Legal/tax flag your team already noted: pool fronting may resemble extension-of-credit under TX lending law, and helpers nearing $600/yr in direct pool credits may trigger 1099-NEC obligations — flagged as "consult a lawyer before scaling," not yet resolved.
+Matching — request/helper matching (matching.ts) is a transparent, tunable scoring function (urgency dominant, skill + proximity break ties, availability is a soft bonus) with visible reasons for explainability. Solid design.
+Nia AI — the kill-switch is now properly DB-backed, transactional, and WS-broadcast per niakofa-killswitch-arch.md, with three enforcement layers (chat, voice, and per-worker gating). Background workers (crisis follow-up, 24h check-in, continuous learning, ambient presence) are running per REPLIT_GODFATHER.md. One documented open question: whether crisis follow-up should be a permanent exemption from the kill switch — currently undocumented as intentional.
+Open PRs — only 1 open: PR #1 fixes business/sponsor registrations silently downgrading to individual, plus mailer XSS sanitization and rate-limiter test fixes. Not yet merged.
+Recent bug-fix history (per .agents/memory/) shows a mature, actively-audited codebase: fixed pledge dedup cross-user DoS, TOCTOU race on pledge_paid increments, GPS privacy fuzzing for non-participants, dispute-status atomic transitions, and password-hash leakage in profile responses.
+
+Recommendations — what I'd add or fix next
+1. Close the wallet-to-bank gap first. This is the highest-priority fix — extend stripe.transfers.create() to cover pay-it-forward and pool-fronted earnings, or explicitly redesign the wallet as a cash-out-on-demand balance with a clear UI distinction from "immediate" earnings. Right now the product silently promises money it doesn't deliver.
+2. Build the livable-wage mechanic. Your team's roadmap already has a concrete tenure-tier design sketched (Neighbor → Pillar → Anchor → Elder, multiplying the floor by 1.0–1.5x based on help_count) — this is ready to implement, just not yet shipped.
+3. Clarify and scope the civic portal. Decide explicitly: do counties fund the pool (built), post their own requests (not built), or both? Your team asked this exact question and it's still open.
+4. Get legal review on pool-fronting before scaling. The TX lending-law and 1099-NEC exposure your team flagged is a real compliance risk once volume grows past a hobby project.
+5. Merge or close PR #1 — it's been open since July 1 and fixes a real registration bug (sponsor accounts silently downgrading).
+6. Document the crisis-follow-up kill-switch exemption explicitly rather than leaving it as an undocumented behavior.
+
+🟠 Gaps between your vision and what exists (your own ROADMAP.md tracks these honestly)
+* Counties can put money in, but can't yet post requests or browse/claim them — no institutional "browse open requests" or staff-assignment flow yet. This is the biggest gap vs. your "county portal" vision.
+* No tenure-based earnings tiers — a first-time helper and someone who's helped 50 people currently get the same pay floor. Designed in the roadmap, not built.
+* No SMS/no-app onboarding — matters for the "everyday people" reach of your vision; Twilio's installed but unused for this.
+* No reliability score (no-shows, late cancels) — only quality rating exists, not show-up reliability, which matters for trust in on-demand local help.
+
+A 90-day auto-default rule punishes exactly the "2 years later" patience your vision promises — this needs a policy decision, not just code.
+Legal review is still the biggest open risk — paying-later-for-services functions like consumer credit; this needs an actual attorney, not more code.
+Business accounts are a shell — membership management exists, but no invoicing or recurring contracts.
+Neighborhood "Circle chat & leaderboards" is a literal "coming soon" placeholder — probably your highest-value missing piece for the community feel.
+63 of 100 live API routes have no contract/type-checking, mostly payments and verification — a reliability risk as the app grows.
+
+
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
@@ -285,10 +352,18 @@ router.get("/status", async (_req, res) => {
   checks.push({ name: "database", ok: dbOk, latency_ms: Date.now() - dbStart });
 
   // 2. Nia AI — check kill-switch setting via db-helpers (no external API call)
+  //
+  // FIX (2026-07-05): this previously read `val !== "false"`, which is
+  // fail-OPEN — a missing row, a DB hiccup, or any unexpected value other
+  // than the literal string "false" was reported as enabled. That
+  // contradicted every other Nia gate in the codebase (nia-proxy.ts,
+  // nia-voice.ts, nia-service/src/lib/db.ts), which are all fail-CLOSED:
+  // only an explicit "true" counts as enabled. This status endpoint is
+  // just a health-check display, but a status page that says Nia is "on"
+  // while the real gate has it off is confusing and worth being correct.
   let niaEnabled = false;
   try {
     const val = await getSystemSetting("nia_enabled");
-    // fail-closed: only an explicit "true" counts as enabled, matching every other Nia gate
     niaEnabled = dbOk && val === "true";
   } catch { /* fall through */ }
   checks.push({ name: "nia_ai", ok: niaEnabled });
@@ -309,3 +384,4 @@ router.get("/status", async (_req, res) => {
 });
 
 export default router;
+

@@ -48,6 +48,7 @@
 - [Niakofa claim concurrency & cancel](niakofa-claim-cancel.md) — claim race safe via WHERE status='open' atomic UPDATE; /cancel was missing (silent 404); REQUEST_CANCELLED must be in WsEventType.
 - [Niakofa forensic v7 fixes](niakofa-forensic-v7.md) — pledge dedup needs user_id in WHERE; pledge_paid atomic SQL; reset-password ALL paths return same status+body.
 - [Niakofa spending cap auth](niakofa-spending-cap-auth.md) — spending cap check must use req.authenticatedUserId; SQL SUM returns dollars, multiply x100 for cents.
+- [Niakofa fail-open audit fixes](niakofa-fail-open-audit-fixes.md) — health.ts nia_ai check and identity webhook missing-secret handling were fail-open; both fixed to fail-closed.
 - [Niakofa account types](niakofa-account-types.md) — ALLOWED_ACCOUNT_TYPES = individual/organization/business/sponsor; REQUIRES_REVIEW → approval_status: pending; individual auto-approved.
 - [Niakofa gov-sponsor pool funding](niakofa-gov-sponsor-fund.md) — POST /gov-sponsors/:id/fund wires recordPoolContribution → processPendingMinimums → broadcast pool_updated.
 - [Niakofa business accounts](niakofa-businesses.md) — full business-account feature: schema, security guards, 5 bugs fixed.
