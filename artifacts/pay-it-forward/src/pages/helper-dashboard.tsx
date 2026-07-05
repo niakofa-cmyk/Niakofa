@@ -19,7 +19,10 @@ const CATEGORY_LABELS: Record<string, string> = {
   moving_labor: "📦 Moving", pet_care: "🐾 Pets", childcare: "🧸 Childcare",
   senior_care: "🧓 Seniors", yard_work: "🌿 Yard", tutoring: "📚 Tutoring",
   cleaning: "🧹 Cleaning", meal_prep: "🍲 Meals", paperwork: "📄 Paperwork",
-  business_services: "💼 Business", other: "💙 Other",
+  business_services: "💼 Business", legal_aid: "⚖️ Legal Aid",
+  financial_coaching: "💰 Financial", job_assistance: "👔 Jobs",
+  language_help: "🌐 Language", mental_health_peer: "💜 Peer Support",
+  technology_help: "📱 Tech Help", other: "💙 Other",
 };
 
 const URGENCY_COLORS: Record<string, string> = {

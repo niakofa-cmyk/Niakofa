@@ -35,13 +35,15 @@ export function getTrustTier(trustScore: number, helpCount: number): TrustTier {
  * consent flow, WaiverModal) so the two can never drift.
  *
  * Category rationale:
- *   childcare    — care of minor children (Texas Family Code liability)
- *   senior_care  — care of elderly/disabled adults (APS regulations)
- *   medical      — health-adjacent help from unlicensed volunteers
- *   home_repair  — work on real property; injuries, permit exposure
- *   moving_labor — physical labor + handling personal property
- *   pet_care     — care of animals in someone's home; injury/loss risk
- *   tutoring     — potential 1-on-1 contact with minors; background check warranted
+ *   childcare         — care of minor children (Texas Family Code liability)
+ *   senior_care       — care of elderly/disabled adults (APS regulations)
+ *   medical           — health-adjacent help from unlicensed volunteers
+ *   home_repair       — work on real property; injuries, permit exposure
+ *   moving_labor      — physical labor + handling personal property
+ *   pet_care          — care of animals in someone's home; injury/loss risk
+ *   tutoring          — potential 1-on-1 contact with minors; background check warranted
+ *   legal_aid         — lay volunteers giving legal guidance; UPL exposure without proper disclaimers
+ *   mental_health_peer — peer emotional support; crisis referral obligations, volunteer boundaries
  */
 export const SENSITIVE_CATEGORIES = [
   "childcare",
@@ -51,6 +53,8 @@ export const SENSITIVE_CATEGORIES = [
   "moving_labor",
   "pet_care",
   "tutoring",
+  "legal_aid",
+  "mental_health_peer",
 ] as const;
 export type SensitiveCategory = (typeof SENSITIVE_CATEGORIES)[number];
 

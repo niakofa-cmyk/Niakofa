@@ -58,6 +58,12 @@ const CATEGORIES = [
   { value: "moving_labor",      label: "📦 Moving & Labor" },
   { value: "business_services", label: "💼 Business Services" },
   { value: "home_repair",       label: "🔧 Home Repair" },
+  { value: "legal_aid",         label: "⚖️ Legal Aid" },
+  { value: "financial_coaching",label: "💰 Financial Help" },
+  { value: "job_assistance",    label: "👔 Job Search Help" },
+  { value: "language_help",     label: "🌐 Translation / Interpretation" },
+  { value: "mental_health_peer",label: "💜 Peer Support" },
+  { value: "technology_help",   label: "📱 Technology Help" },
   { value: "other",             label: "💙 Other" },
 ];
 const PAYMENT_TYPES = [

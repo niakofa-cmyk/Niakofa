@@ -352,7 +352,7 @@ router.post("/requests", requireAuth, requestCreationLimiter, async (req, res) =
   //
   // Note: we use req.authenticatedUserId (not parsed.data.requester_id) so a
   // caller cannot spoof a different user's acceptance record.
-  const WAIVER_GATED_CATEGORIES = ["childcare", "senior_care", "medical", "home_repair", "moving_labor"];
+  const WAIVER_GATED_CATEGORIES = ["childcare", "senior_care", "medical", "home_repair", "moving_labor", "legal_aid", "mental_health_peer"];
   // Keep this in sync with WaiverModal.tsx CURRENT_TOS_VERSION.
   // When the ToS is updated, bump both strings — old acceptances are then
   // treated as stale and the gate forces re-acceptance.

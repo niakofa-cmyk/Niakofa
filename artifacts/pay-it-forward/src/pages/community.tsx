@@ -44,6 +44,12 @@ const CATEGORY_LABELS: Record<string, string> = {
   delivery_run: "🚚 Delivery Run",
   tech_support: "💻 Tech Support",
   business_services: "💼 Business Services",
+  legal_aid: "⚖️ Legal Aid",
+  financial_coaching: "💰 Financial Help",
+  job_assistance: "👔 Job Search Help",
+  language_help: "🌐 Translation / Interpretation",
+  mental_health_peer: "💜 Peer Support",
+  technology_help: "📱 Technology Help",
   other: "💙 Other",
 };
 

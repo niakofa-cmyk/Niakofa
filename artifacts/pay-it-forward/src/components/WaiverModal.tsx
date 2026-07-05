@@ -19,7 +19,7 @@ export const CURRENT_TOS_VERSION = "2026-07";
 // Both lists gate helpers (server-side claim check) and requesters (UI consent flow).
 export const WAIVER_CATEGORIES = [
   "childcare", "senior_care", "medical", "home_repair", "moving_labor",
-  "pet_care", "tutoring",
+  "pet_care", "tutoring", "legal_aid", "mental_health_peer",
 ] as const;
 
 export type WaiverCategory = typeof WAIVER_CATEGORIES[number];
@@ -32,6 +32,8 @@ const CATEGORY_LABELS: Record<WaiverCategory, string> = {
   moving_labor: "Moving Labor",
   pet_care: "Pet Care",
   tutoring: "Tutoring / Academic Help",
+  legal_aid: "Legal Aid",
+  mental_health_peer: "Peer Support / Mental Health",
 };
 
 const CATEGORY_RISKS: Record<WaiverCategory, string> = {
@@ -57,6 +59,14 @@ const CATEGORY_RISKS: Record<WaiverCategory, string> = {
     "may involve one-on-one contact with a minor. You are solely responsible for supervising any session " +
     "involving a child under 18. Niakofa does not run background checks on every helper — " +
     "verify the helper's identity and credentials before arranging unsupervised contact.",
+  legal_aid:
+    "involves lay community volunteers providing general information — not licensed legal advice. " +
+    "Nothing shared through Niakofa constitutes attorney-client privilege or legal representation. " +
+    "For any legal matter with real consequences, consult a licensed Texas attorney.",
+  mental_health_peer:
+    "involves community peer support, not licensed counseling or therapy. Niakofa volunteers are not " +
+    "mental health professionals. If you or someone else is in crisis, call 988 (Suicide & Crisis Lifeline) " +
+    "or 911 immediately — do not rely on this platform for emergency mental health response.",
 };
 
 interface WaiverModalProps {
