@@ -308,7 +308,7 @@ function HelperProfileForm({
 export default function LoginScreen() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
-  const { setCurrentUser } = useAppContext();
+  const { setCurrentUser, niaEnabled } = useAppContext();
   const [mode, setMode] = useState<Mode>("login");
   // Reset ToS acceptance when switching between login and register modes so
   // a user can't accidentally carry over a stale checkbox state.
@@ -1433,10 +1433,13 @@ export default function LoginScreen() {
           </Button>
         </form>
 
-        {/* Nia presence indicator */}
+        {/* Nia presence indicator — copy reflects the real admin kill-switch state
+            so we never promise chat availability while Nia is disabled. */}
         <div className="flex items-center gap-2 mt-4 text-muted-foreground">
-          <MessageCircle className="w-3.5 h-3.5 text-primary animate-pulse" />
-          <span className="text-xs">Nia is here to help · Ask her anything</span>
+          <MessageCircle className={`w-3.5 h-3.5 ${niaEnabled ? "text-primary animate-pulse" : "text-muted-foreground"}`} />
+          <span className="text-xs">
+            {niaEnabled ? "Nia is here to help · Ask her anything" : "Nia AI assistant — currently resting"}
+          </span>
         </div>
 
         <div className="flex items-center gap-2 mt-2 text-muted-foreground">
