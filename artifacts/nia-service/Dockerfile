@@ -32,7 +32,7 @@ RUN pnpm install --frozen-lockfile --filter nia-service
 # was producing "failed to calculate checksum of ref ...: not found" even
 # though the directory is present and unchanged in the build context. Bump
 # the default value any time this layer needs to be force-rebuilt again.
-ARG CACHE_BUST=2026-06-27-1782594355
+ARG CACHE_BUST=2026-07-05-1782683155
 COPY artifacts/nia-service/ ./artifacts/nia-service/
 
 RUN pnpm --filter nia-service build
