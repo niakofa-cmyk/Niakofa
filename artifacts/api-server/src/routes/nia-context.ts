@@ -22,6 +22,7 @@
 
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
+import { generalApiLimiter } from "../middlewares/rate-limit";
 import { db, usersTable, requestsTable, userSettingsTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { distanceMiles } from "../lib/geo";
@@ -46,7 +47,7 @@ export interface NiaContext {
   neighborhood: string | null;
 }
 
-router.get("/nia/context", requireAuth, async (req, res) => {
+router.get("/nia/context", requireAuth, generalApiLimiter, async (req, res) => {
   const userId = (req as any).authenticatedUserId as number | undefined;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 

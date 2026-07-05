@@ -122,7 +122,7 @@ async function processFoodSignals(): Promise<number> {
         ``,
         `I noticed you've been looking for food help recently. I just wanted to check in — do you need help finding food resources today?`,
         ``,
-        `Tarrant Area Food Bank: 817-857-7100 | Text 211 for same-day food by zip code.`,
+        `You can text or call 211 to find same-day food assistance near you. In Tarrant County: Tarrant Area Food Bank 817-857-7100.`,
         `I'm here if you need anything.`,
       ].join("\n");
 

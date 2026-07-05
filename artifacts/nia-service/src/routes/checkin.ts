@@ -114,13 +114,12 @@ No markdown, no emoji, just human warmth.`;
       message.content[0]?.type === "text" ? message.content[0].text : "How did it go? I'd love to hear!";
 
     // 2. Save the message to nia_conversations
-    // Use INSERT ... ON CONFLICT to handle any race conditions
+    // Plain INSERT — nia_conversations has no unique constraint on (user_id, session_id)
+    // and no updated_at column; the sessionId is generated fresh per check-in call
+    // by api-server's checkin worker so collisions are not expected.
     await pool.query(
       `INSERT INTO nia_conversations (user_id, session_id, user_message, nia_response, is_crisis, created_at)
-       VALUES ($1, $2, $3, $4, false, NOW())
-       ON CONFLICT (user_id, session_id) DO UPDATE SET
-         nia_response = $4,
-         updated_at = NOW()`,
+       VALUES ($1, $2, $3, $4, false, NOW())`,
       [userId, sessionId, requestTitle, niaResponse]
     );
 

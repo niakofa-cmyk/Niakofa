@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Send, Loader2, RotateCcw, MapPin, MapPinOff, ChevronDown } from "lucide-react";
 import { authHeaders } from "../lib/auth";
 import { useAppContext } from "../lib/AppContext";
+import { wsSubscribe } from "../lib/wsClient";
 import { useNiaTTS } from "../hooks/useNiaTTS";
 import { useVoiceWakeWord } from "../hooks/useVoiceWakeWord";
 import { VoiceWakeWordIndicator } from "./VoiceWakeWordIndicator";
@@ -739,6 +740,10 @@ export function NiaDrawer({
   const [loading, setLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [showSplash, setShowSplash] = useState(false);
+  // WS-driven states: nia_typing fires from the backend when Nia starts/stops thinking;
+  // niaOffline fires on nia_status unavailable/error events.
+  const [niaTypingWs, setNiaTypingWs] = useState(false);
+  const [niaOffline, setNiaOffline] = useState(false);
   // Location status derived from AppContext GPS
   const locationStatus: "idle" | "requesting" | "granted" | "denied" =
     (resolvedCity || resolvedCounty || userLocation) ? "granted" : "idle";
@@ -867,6 +872,45 @@ I am Nia. How can I support you today?`,
   useEffect(() => {
     if (!open) stopSpeech();
   }, [open, stopSpeech]);
+
+  // ── WS event subscriptions ─────────────────────────────────────────────────
+  // nia_typing: backend fires when Nia starts/stops processing a chat message.
+  //   status="started" → show typing pulse; status="stopped" → hide it.
+  // nia_status: backend fires on upstream errors or when Nia is unavailable.
+  //   Shows a non-blocking banner inside the drawer.
+  // nia_checkin: ambient check-in or 24h follow-up arrived — append to messages
+  //   so user sees Nia's message the next time they open the drawer.
+  // nia_memory_update: story crafted or memory saved — no visible UI needed,
+  //   but we clear the niaOffline flag on any positive signal.
+  useEffect(() => {
+    const unsub = wsSubscribe((event) => {
+      if (event.type === "nia_typing") {
+        const p = event.payload as { status?: string };
+        if (p?.status === "started") setNiaTypingWs(true);
+        else setNiaTypingWs(false);
+      } else if (event.type === "nia_status") {
+        const p = event.payload as { status?: string };
+        if (p?.status === "unavailable" || p?.status === "error") {
+          setNiaOffline(true);
+          // Auto-clear after 12 seconds so the banner doesn't linger
+          setTimeout(() => setNiaOffline(false), 12_000);
+        } else {
+          setNiaOffline(false);
+        }
+      } else if (event.type === "nia_checkin") {
+        const p = event.payload as { nia_response?: string; requestTitle?: string } | undefined;
+        const checkinMsg = p?.nia_response ?? "Hey — just checking in on you. How are you doing?";
+        setMessages((prev) => [
+          ...prev,
+          { role: "nia", content: checkinMsg, timestamp: new Date() },
+        ]);
+        setNiaOffline(false);
+      } else if (event.type === "nia_memory_update") {
+        setNiaOffline(false);
+      }
+    });
+    return unsub;
+  }, []);
 
   const sendMessage = useCallback(async (text: string) => {
     const trimmed = text.trim();
@@ -1219,6 +1263,21 @@ Your limit resets at ${reset}. Rest well — I'll be here when you return.
                   <div style={{ paddingTop: 10, flexShrink: 0 }}>
                     <CrisisStrip lang={userLang} />
                   </div>
+                  {niaOffline && (
+                    <div style={{
+                      margin: "4px 12px 0",
+                      padding: "6px 12px",
+                      borderRadius: 10,
+                      background: "rgba(239,68,68,0.08)",
+                      border: "0.5px solid rgba(239,68,68,0.25)",
+                      fontSize: 12,
+                      color: "#ef4444",
+                      textAlign: "center",
+                      flexShrink: 0,
+                    }}>
+                      Nia is having trouble connecting right now — she'll be back shortly.
+                    </div>
+                  )}
                   <LiveContextBadge context={liveContext} />
                   <AnimatePresence mode="wait">
                     {showQuickPrompts && (
@@ -1247,6 +1306,17 @@ Your limit resets at ${reset}. Rest well — I'll be here when you return.
                     }}
                   >
                     {messages.map((msg, i) => <MessageBubble key={i} msg={msg} />)}
+                    {niaTypingWs && !loading && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <NiaOrb size={22} pulse />
+                        <div style={{
+                          fontSize: 12, color: "var(--color-text-tertiary)",
+                          fontStyle: "italic", letterSpacing: "0.02em",
+                        }}>
+                          Nia is thinking…
+                        </div>
+                      </div>
+                    )}
                     <div ref={bottomRef} />
                   </div>
                   <div

@@ -95,3 +95,4 @@
 - [Niakofa dispute resolution](niakofa-disputes.md) — atomic status transitions (SQL WHERE not just SELECT guard); notifType must be "community"; DisputesTab wired in admin.tsx.
 - [Niakofa category expansion](niakofa-category-expansion.md) — 6 places to update when adding categories; generated enum files must be hand-updated; server uses api-zod enum not frontend z.enum.
 - [Niakofa heading fusion fix](niakofa-heading-fusion-fix.md) — Heading-Up map jump fixed via rAF camera loop + GPS/compass complementary filter; use useFusedHeading not raw useDeviceHeading for nav.
+- [Niakofa Nia audit fixes](niakofa-nia-audit-fixes.md) — Full Nia end-to-end audit: checkin ON CONFLICT crash, memory kill-switch gap, nia-context rate limit, WS nia_typing/nia_status UI, admin knowledge-refresh endpoint.

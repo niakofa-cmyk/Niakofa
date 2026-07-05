@@ -9,6 +9,7 @@ import crisisResourcesRouter from "./routes/crisis-resources.js";
 import neighborhoodsRouter from "./routes/neighborhoods.js";
 import memoryRouter from "./routes/memory.js";
 import checkinRouter from "./routes/checkin.js";
+import knowledgeRefreshRouter from "./routes/knowledge-refresh.js";
 import { purgeExpiredConversations } from "./lib/db.js";
 import { startCrisisFollowupWorker } from "./workers/crisis-followup-worker.js";
 import { startContinuousLearningWorker } from "./workers/continuous-learning-worker.js";
@@ -47,6 +48,7 @@ app.use("/", crisisResourcesRouter);
 app.use("/", neighborhoodsRouter);
 app.use("/", memoryRouter);
 app.use("/", checkinRouter);
+app.use("/", knowledgeRefreshRouter);
 
 const port = Number(process.env.PORT ?? 3001);
 app.listen(port, () => {

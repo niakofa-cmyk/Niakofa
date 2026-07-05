@@ -58,6 +58,16 @@ function buildLearningTopics(): { key: string; query: string; description: strin
       query: `Fort Worth food pantry distribution schedule Tarrant County ${year}`,
       description: "Current Fort Worth food resource schedule and availability",
     },
+    {
+      key: "global_emergency_resources",
+      query: `international emergency help lines crisis support global ${year}`,
+      description: "Global emergency and crisis support resources (international coverage)",
+    },
+    {
+      key: "mutual_aid_best_practices",
+      query: `mutual aid community help best practices equity ${year}`,
+      description: "Community mutual aid practices and equity-centered support approaches",
+    },
   ];
 }
 
@@ -192,6 +202,25 @@ export async function getFreshKnowledge(): Promise<string> {
     );
   } catch {
     return "";
+  }
+}
+
+/**
+ * Force a single learning cycle immediately — used by the admin force-refresh endpoint.
+ * Requires ANTHROPIC_API_KEY to be set; returns false if not configured.
+ */
+export async function triggerLearningCycle(): Promise<boolean> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    logger.warn("nia-learning: triggerLearningCycle called but ANTHROPIC_API_KEY not set");
+    return false;
+  }
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  try {
+    await runLearningCycle(client);
+    return true;
+  } catch (err) {
+    logger.error({ err }, "nia-learning: manual trigger failed");
+    return false;
   }
 }
 

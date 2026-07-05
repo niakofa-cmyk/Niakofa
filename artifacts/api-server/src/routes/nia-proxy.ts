@@ -14,8 +14,9 @@
  * Falls back to localhost:3001 for local development.
  */
 import { Router, type Request, type Response } from "express";
-import { parseAuth } from "../middlewares/auth";
-import { crisisAwareChatLimiter, niaChatHistoryLimiter } from "../middlewares/rate-limit";
+import { parseAuth, requireAuth } from "../middlewares/auth";
+import { requireAdmin } from "../middlewares/authz";
+import { crisisAwareChatLimiter, niaChatHistoryLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { db, systemSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -246,6 +247,9 @@ router.get("/nia/history/:sessionId", parseAuth, niaChatHistoryLimiter, async (r
 
 // ── GET /api/nia/memory ───────────────────────────────────────────────────────
 router.get("/nia/memory", parseAuth, async (req: Request, res: Response) => {
+  if (!(await isNiaEnabled())) {
+    return res.status(503).json({ error: "Nia is temporarily unavailable." });
+  }
   const userId = req.authenticatedUserId;
   if (!userId) return res.status(401).json({ error: "Authentication required" });
 
@@ -264,6 +268,9 @@ router.get("/nia/memory", parseAuth, async (req: Request, res: Response) => {
 
 // ── DELETE /api/nia/memory ────────────────────────────────────────────────────
 router.delete("/nia/memory", parseAuth, async (req: Request, res: Response) => {
+  if (!(await isNiaEnabled())) {
+    return res.status(503).json({ error: "Nia is temporarily unavailable." });
+  }
   const userId = req.authenticatedUserId;
   if (!userId) return res.status(401).json({ error: "Authentication required" });
 
@@ -394,6 +401,50 @@ router.post("/nia/share-story", parseAuth, async (req: Request, res: Response) =
     return res.status(500).json({ error: "Failed to craft story" });
   }
 });
+
+// ── POST /api/nia/knowledge-refresh (admin only) ──────────────────────────────
+// Triggers an immediate Nia learning cycle on the nia-service.
+// Used by the admin panel to force-refresh Nia's knowledge without waiting 6h.
+// The full cycle can take several minutes — the client should show a spinner.
+router.post(
+  "/nia/knowledge-refresh",
+  requireAuth,
+  requireAdmin(),
+  adminLimiter,
+  async (_req: Request, res: Response) => {
+
+    try {
+      const abortCtrl = new AbortController();
+      // 10-minute timeout — the full cycle takes ~5 minutes (30s gap × 7 topics)
+      const abortTimer = setTimeout(() => abortCtrl.abort(), 10 * 60_000);
+      let upstream: globalThis.Response;
+      try {
+        upstream = await fetch(`${getNiaUrl()}/knowledge-refresh`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-secret": process.env["INTERNAL_SECRET"] ?? "",
+          },
+          signal: abortCtrl.signal,
+        });
+      } finally {
+        clearTimeout(abortTimer);
+      }
+
+      if (!upstream.ok) {
+        const body = await upstream.json().catch(() => ({}));
+        return res.status(upstream.status).json(body);
+      }
+
+      const result = await upstream.json();
+      logger.info({ result }, "nia-proxy: admin triggered knowledge refresh — cycle complete");
+      return res.json(result);
+    } catch (err) {
+      logger.error({ err }, "nia-proxy: knowledge-refresh upstream failed");
+      return res.status(503).json({ error: "Knowledge refresh failed — nia-service may be unavailable" });
+    }
+  }
+);
 
 export default router;
 
