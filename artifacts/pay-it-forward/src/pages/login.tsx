@@ -1110,7 +1110,7 @@ export default function LoginScreen() {
           ))}
         </div>
 
-        <div className="w-full max-w-sm space-y-3">
+        <form className="w-full max-w-sm space-y-3" onSubmit={e => { e.preventDefault(); handleSubmit(); }}>
 
           {/* ── Google Sign-In ──────────────────────────────────────────────────
                Only rendered when VITE_GOOGLE_CLIENT_ID is configured.
@@ -1241,7 +1241,7 @@ export default function LoginScreen() {
               className="w-full bg-card border border-border rounded-2xl pl-11 pr-12 py-3.5 text-sm outline-none focus:ring-1 focus:ring-primary transition-all placeholder:text-muted-foreground"
               autoComplete={mode === "login" ? "current-password" : "new-password"}
             />
-            <button onClick={() => setShowPass(p => !p)} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground active:text-foreground transition-colors">
+            <button type="button" onClick={() => setShowPass(p => !p)} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground active:text-foreground transition-colors">
               {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
@@ -1403,8 +1403,8 @@ export default function LoginScreen() {
           </AnimatePresence>
 
           <Button
+            type="submit"
             className="w-full h-13 font-black text-base mt-2"
-            onClick={handleSubmit}
             disabled={
               loading ||
               !email.trim() ||
@@ -1431,7 +1431,7 @@ export default function LoginScreen() {
                       : "Create Account"
             )}
           </Button>
-        </div>
+        </form>
 
         {/* Nia presence indicator */}
         <div className="flex items-center gap-2 mt-4 text-muted-foreground">
