@@ -316,7 +316,10 @@ export default function MapScreen() {
 
   return (
     <div className="relative w-full h-[100dvh] overflow-hidden bg-background">
-      <TopBar />
+      {/* TopBar overlays the map — must be absolute so map fills full 100dvh */}
+      <div className="absolute inset-x-0 top-0 z-20">
+        <TopBar />
+      </div>
 
       {/* Live stats overlay */}
       {statsVisible && (

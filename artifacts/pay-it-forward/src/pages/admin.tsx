@@ -2951,6 +2951,248 @@ function OrgsTab({ authed }: { authed: boolean }) {
   );
 }
 
+// ── Admin Civic Requests Tab ──────────────────────────────────────────────────
+// Renders all civic-portal help requests across all government sponsors.
+// Backend: GET /admin/civic/portal/requests — exists, returns joined rows
+// with sponsor_entity_name, sponsor_county, sponsor_state.
+// This component was referenced in JSX but never defined, causing a crash
+// when the "Civic" tab was selected. Styled to match OrgsTab.
+interface CivicPortalRequest {
+  id: number;
+  title: string;
+  description: string | null;
+  category: string | null;
+  urgency: string | null;
+  status: string;
+  neighborhood: string | null;
+  estimated_hours: number | null;
+  created_at: string;
+  claimed_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  government_sponsor_id: number | null;
+  sponsor_entity_name: string | null;
+  sponsor_county: string | null;
+  sponsor_state: string | null;
+}
+
+const CIVIC_STATUS_FILTERS = ["all", "open", "claimed", "completed", "cancelled"] as const;
+type CivicStatusFilter = typeof CIVIC_STATUS_FILTERS[number];
+
+const CIVIC_STATUS_COLORS: Record<string, string> = {
+  open:      "bg-green-500/15 text-green-400 border-green-500/30",
+  claimed:   "bg-blue-500/15 text-blue-400 border-blue-500/30",
+  completed: "bg-primary/15 text-primary border-primary/30",
+  cancelled: "bg-muted text-muted-foreground border-border",
+};
+
+const URGENCY_COLORS: Record<string, string> = {
+  emergency: "text-destructive",
+  high:      "text-orange-400",
+  medium:    "text-yellow-400",
+  low:       "text-muted-foreground",
+};
+
+function AdminCivicRequestsTab() {
+  const [requests, setRequests] = useState<CivicPortalRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<CivicStatusFilter>("all");
+  const [expanded, setExpanded] = useState<number | null>(null);
+
+  const authH = (): Record<string, string> => {
+    const t = getToken();
+    return t ? { Authorization: `Bearer ${t}` } : {};
+  };
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const url = statusFilter !== "all"
+        ? `${BASE}/api/admin/civic/portal/requests?status=${statusFilter}&limit=200`
+        : `${BASE}/api/admin/civic/portal/requests?limit=200`;
+      const res = await fetch(url, { headers: authH() });
+      if (res.ok) {
+        const data = await res.json() as CivicPortalRequest[];
+        setRequests(Array.isArray(data) ? data : []);
+      } else {
+        setRequests([]);
+      }
+    } catch {
+      setRequests([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const counts = CIVIC_STATUS_FILTERS.reduce<Record<string, number>>((acc, s) => {
+    acc[s] = s === "all" ? requests.length : requests.filter(r => r.status === s).length;
+    return acc;
+  }, {});
+
+  const displayed = statusFilter === "all" ? requests : requests.filter(r => r.status === statusFilter);
+
+  return (
+    <div className="space-y-4 pb-8">
+      {/* Header + refresh */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Building2 className="w-4 h-4 text-primary" />
+          <span className="text-sm font-black uppercase tracking-wider">Civic Portal Requests</span>
+          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+            {requests.length}
+          </span>
+        </div>
+        <button
+          onClick={() => { void load(); }}
+          disabled={loading}
+          className="w-8 h-8 rounded-lg border border-border flex items-center justify-center hover:bg-muted transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        Community help requests posted by approved government sponsors across all counties. Each request flows through the normal claim/complete pipeline.
+      </p>
+
+      {/* Status filter pills */}
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+        {CIVIC_STATUS_FILTERS.map(s => (
+          <button
+            key={s}
+            onClick={() => setStatusFilter(s)}
+            style={{ touchAction: "manipulation" }}
+            className={`shrink-0 text-[11px] font-black px-3 py-1.5 rounded-full border capitalize transition-all ${
+              statusFilter === s
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-card border-border text-muted-foreground"
+            }`}
+          >
+            {s === "all" ? "All" : s}
+            {counts[s] > 0 && (
+              <span className={`ml-1.5 ${statusFilter === s ? "text-primary-foreground/70" : "text-muted-foreground/60"}`}>
+                {counts[s]}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
+          <RefreshCw className="w-5 h-5 animate-spin" /><span className="text-sm">Loading…</span>
+        </div>
+      ) : displayed.length === 0 ? (
+        <div className="rounded-xl border border-border bg-card/50 p-6 text-center">
+          <Globe className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />
+          <div className="text-sm font-bold text-muted-foreground">No civic requests{statusFilter !== "all" ? ` with status "${statusFilter}"` : ""}</div>
+          <div className="text-xs text-muted-foreground/60 mt-1">Approved government sponsors post needs here</div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {displayed.map(r => {
+            const isOpen = expanded === r.id;
+            return (
+              <div
+                key={r.id}
+                className="rounded-xl border border-border bg-card overflow-hidden"
+              >
+                {/* Summary row */}
+                <button
+                  onClick={() => setExpanded(isOpen ? null : r.id)}
+                  style={{ touchAction: "manipulation" }}
+                  className="w-full text-left p-3 flex items-start justify-between gap-2 active:bg-muted/30 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border capitalize ${CIVIC_STATUS_COLORS[r.status] ?? "bg-muted text-muted-foreground border-border"}`}>
+                        {r.status}
+                      </span>
+                      {r.urgency && (
+                        <span className={`text-[10px] font-bold capitalize ${URGENCY_COLORS[r.urgency] ?? "text-muted-foreground"}`}>
+                          ⚡ {r.urgency}
+                        </span>
+                      )}
+                      {r.category && (
+                        <span className="text-[10px] text-muted-foreground capitalize">
+                          {r.category.replace(/_/g, " ")}
+                        </span>
+                      )}
+                    </div>
+                    <div className="font-bold text-sm truncate">{r.title}</div>
+                    {r.sponsor_entity_name && (
+                      <div className="text-[11px] text-primary mt-0.5">
+                        🏛️ {r.sponsor_entity_name}
+                        {r.sponsor_county && ` · ${r.sponsor_county} County`}
+                        {r.sponsor_state && `, ${r.sponsor_state}`}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    {r.estimated_hours && (
+                      <div className="text-[10px] font-black text-muted-foreground">{r.estimated_hours}h</div>
+                    )}
+                    <div className="text-[10px] text-muted-foreground mt-0.5">{fmtDate(r.created_at)}</div>
+                    {isOpen ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground ml-auto mt-1" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground ml-auto mt-1" />}
+                  </div>
+                </button>
+
+                {/* Expanded detail */}
+                {isOpen && (
+                  <div className="border-t border-border px-3 pb-3 pt-2 space-y-2 bg-muted/20">
+                    {r.description && (
+                      <p className="text-xs text-muted-foreground leading-relaxed">{r.description}</p>
+                    )}
+                    <div className="grid grid-cols-2 gap-2 text-[10px]">
+                      {r.neighborhood && (
+                        <div>
+                          <span className="text-muted-foreground/60 uppercase tracking-wider">Neighborhood</span>
+                          <div className="font-bold mt-0.5">{r.neighborhood}</div>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-muted-foreground/60 uppercase tracking-wider">Request ID</span>
+                        <div className="font-bold mt-0.5">#{r.id}</div>
+                      </div>
+                      {r.claimed_at && (
+                        <div>
+                          <span className="text-muted-foreground/60 uppercase tracking-wider">Claimed</span>
+                          <div className="font-bold mt-0.5 text-blue-400">{fmtDate(r.claimed_at)}</div>
+                        </div>
+                      )}
+                      {r.completed_at && (
+                        <div>
+                          <span className="text-muted-foreground/60 uppercase tracking-wider">Completed</span>
+                          <div className="font-bold mt-0.5 text-green-400">{fmtDate(r.completed_at)}</div>
+                        </div>
+                      )}
+                      {r.cancelled_at && (
+                        <div>
+                          <span className="text-muted-foreground/60 uppercase tracking-wider">Cancelled</span>
+                          <div className="font-bold mt-0.5 text-destructive">{fmtDate(r.cancelled_at)}</div>
+                        </div>
+                      )}
+                      {r.estimated_hours && (
+                        <div>
+                          <span className="text-muted-foreground/60 uppercase tracking-wider">Est. Hours</span>
+                          <div className="font-bold mt-0.5">{r.estimated_hours}h</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Crisis Mode Control ───────────────────────────────────────────────────────
 function CrisisModeSection() {
   const [crisisStatus, setCrisisStatus] = useState<{
