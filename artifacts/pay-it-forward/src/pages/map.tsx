@@ -712,9 +712,7 @@ export default function MapScreen() {
 
       {/* Helper mode bottom sheet */}
       {helperModeActive && openRequests.length > 0 && !mapError && !showBestMatch && (
-        <div className="pb-20">
-          <BottomSheet requests={openRequests} onClaim={handleClaim} isClaiming={claimMutation.isPending} />
-        </div>
+        <BottomSheet requests={openRequests} onClaim={handleClaim} isClaiming={claimMutation.isPending} />
       )}
 
       {helperModeActive && openRequests.length === 0 && (

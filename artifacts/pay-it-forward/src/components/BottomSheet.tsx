@@ -74,7 +74,7 @@ export function BottomSheet({ requests, onClaim, isClaiming, dismissedId: _dismi
       initial={{ y: "100%" }}
       animate={{ y: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
-      className="absolute bottom-0 left-0 right-0 z-20 bg-card border-t border-border rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.5)] flex flex-col max-h-[65vh]"
+      className="absolute bottom-16 left-0 right-0 z-20 bg-card border-t border-border rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.5)] flex flex-col max-h-[55vh]"
     >
       <div className="flex justify-center p-3 cursor-grab active:cursor-grabbing shrink-0">
         <div className="w-12 h-1.5 rounded-full bg-border" />
