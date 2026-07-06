@@ -586,7 +586,7 @@ export default function CommunityScreen() {
 
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
-  const { currentUser } = useAppContext();
+  const { currentUser, niaEnabled } = useAppContext();
   const sponsorHistory = useGetSponsorHistory(currentUser?.id ?? null);
 
   // Load initial gratitude posts from API
@@ -777,12 +777,18 @@ export default function CommunityScreen() {
             )}
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Gratitude &amp; Stories</h3>
-              <button
-                onClick={() => setShowNiaStory(true)}
-                className="flex items-center gap-1.5 text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-full transition-colors"
-              >
-                <Mic className="w-3.5 h-3.5" /> Share with Nia
-              </button>
+              {niaEnabled === true ? (
+                <button
+                  onClick={() => setShowNiaStory(true)}
+                  className="flex items-center gap-1.5 text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-full transition-colors"
+                >
+                  <Mic className="w-3.5 h-3.5" /> Share with Nia
+                </button>
+              ) : niaEnabled === false ? (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground/50 px-3 py-1.5 rounded-full cursor-default select-none" title="Nia AI is currently resting — share your story in text below">
+                  <Mic className="w-3.5 h-3.5" /> Nia resting
+                </span>
+              ) : null /* loading — render nothing until we know */}
             </div>
             {postsLoading ? (
               <div className="flex justify-center items-center py-10">

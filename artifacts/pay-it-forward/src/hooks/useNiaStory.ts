@@ -77,7 +77,16 @@ export function useNiaStory(userName: string) {
         },
         body: JSON.stringify({ transcript: raw, userName, helperName, category }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        if (res.status === 503) {
+          throw new Error("Nia is resting right now 💙 — try again when she's awake.");
+        }
+        if (res.status === 401) {
+          throw new Error("Please sign in to share your story.");
+        }
+        const errBody = await res.json().catch(() => ({})) as any;
+        throw new Error(errBody.error ?? `Something went wrong (${res.status})`);
+      }
       const data = await res.json();
       setStory(data);
       setState("done");
