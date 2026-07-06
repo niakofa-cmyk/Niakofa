@@ -97,3 +97,6 @@
 - [Niakofa category expansion](niakofa-category-expansion.md) — 6 places to update when adding categories; generated enum files must be hand-updated; server uses api-zod enum not frontend z.enum.
 - [Niakofa heading fusion fix](niakofa-heading-fusion-fix.md) — Heading-Up map jump fixed via rAF camera loop + GPS/compass complementary filter; use useFusedHeading not raw useDeviceHeading for nav.
 - [Niakofa Nia audit fixes](niakofa-nia-audit-fixes.md) — Full Nia end-to-end audit: checkin ON CONFLICT crash, memory kill-switch gap, nia-context rate limit, WS nia_typing/nia_status UI, admin knowledge-refresh endpoint.
+- [Niakofa nia-service startup migrations](niakofa-nia-migrations-fix.md) — runMigrations() was dead code; must be called before app.listen() to create nia_knowledge/push_notification_queue/nia_cost_log.
+- [Niakofa push queue atomic drain](niakofa-push-queue-drain.md) — nia-push-queue-worker must use UPDATE...RETURNING with FOR UPDATE SKIP LOCKED (not SELECT then UPDATE) to prevent duplicate delivery under concurrent instances.
+- [Niakofa esbuild on Replit](niakofa-esbuild-replit.md) — pnpm overrides block @esbuild/linux-x64 as sub-dep; fix via postinstall script: "node node_modules/esbuild/install.js" in root package.json scripts.

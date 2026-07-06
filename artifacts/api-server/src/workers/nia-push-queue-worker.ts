@@ -39,47 +39,40 @@ async function drainPushQueue(): Promise<void> {
   let rows: QueueRow[];
 
   try {
+    // Atomic claim: UPDATE...RETURNING with FOR UPDATE SKIP LOCKED so concurrent
+    // worker instances each claim disjoint batches — prevents duplicate delivery.
+    // A plain SELECT + UPDATE in two round-trips creates a TOCTOU race where two
+    // instances select the same rows before either marks them sent.
     const result = await pool.query<QueueRow>(
-      `SELECT id, user_id, title, body, data
-       FROM push_notification_queue
-       WHERE sent_at IS NULL
-       ORDER BY created_at ASC
-       LIMIT $1`,
+      `UPDATE push_notification_queue
+       SET sent_at = NOW()
+       WHERE id IN (
+         SELECT id
+         FROM push_notification_queue
+         WHERE sent_at IS NULL
+         ORDER BY created_at ASC
+         LIMIT $1
+         FOR UPDATE SKIP LOCKED
+       )
+       RETURNING id, user_id, title, body, data`,
       [BATCH_SIZE]
     );
     rows = result.rows;
   } catch (err) {
-    // Table may not exist on early boot (nia-service hasn't migrated yet)
+    // Table may not exist on early boot (nia-service hasn't run migrations yet).
+    // Once runMigrations() is called in nia-service/src/index.ts the table exists.
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("does not exist")) {
       logger.debug("nia-push-queue-worker: push_notification_queue not yet created — skipping");
       return;
     }
-    logger.error({ err }, "nia-push-queue-worker: failed to read queue");
+    logger.error({ err }, "nia-push-queue-worker: failed to claim queue batch");
     return;
   }
 
   if (rows.length === 0) return;
 
   logger.info({ count: rows.length }, "nia-push-queue-worker: draining batch");
-
-  const ids = rows.map(r => r.id);
-
-  // Mark all as sent_at NOW() before attempting delivery.
-  // This prevents double-delivery if the worker restarts mid-batch.
-  // Nia's proactive messages are best-effort — mark sent, then try.
-  try {
-    await pool.query(
-      `UPDATE push_notification_queue
-       SET sent_at = NOW()
-       WHERE id = ANY($1::bigint[])
-         AND sent_at IS NULL`,
-      [ids]
-    );
-  } catch (err) {
-    logger.error({ err }, "nia-push-queue-worker: failed to mark rows as sent");
-    return; // don't attempt delivery if we couldn't mark — risk of double-send
-  }
 
   // Deliver each notification
   let delivered = 0;

@@ -10,7 +10,7 @@ import neighborhoodsRouter from "./routes/neighborhoods.js";
 import memoryRouter from "./routes/memory.js";
 import checkinRouter from "./routes/checkin.js";
 import knowledgeRefreshRouter from "./routes/knowledge-refresh.js";
-import { purgeExpiredConversations } from "./lib/db.js";
+import { purgeExpiredConversations, runMigrations } from "./lib/db.js";
 import { startCrisisFollowupWorker } from "./workers/crisis-followup-worker.js";
 import { startContinuousLearningWorker } from "./workers/continuous-learning-worker.js";
 import { startGeneralCheckinWorker } from "./workers/general-checkin-worker.js";
@@ -51,6 +51,24 @@ app.use("/", checkinRouter);
 app.use("/", knowledgeRefreshRouter);
 
 const port = Number(process.env.PORT ?? 3001);
+
+// PRIMARY BUG FIX: runMigrations() creates nia_knowledge, push_notification_queue,
+// and nia_cost_log — the only place those 3 tables are defined (they are NOT covered
+// by the main Drizzle pipeline). This function existed but was NEVER called, so in
+// production those 3 tables never existed. Confirmed by Postgres log showing
+// push_notification_queue erroring on every 5-minute poll cycle since boot.
+// Wrapped in try/catch: non-fatal since core Nia chat doesn't depend on them.
+try {
+  await runMigrations();
+  logger.info("nia: startup migrations applied (nia_knowledge, push_notification_queue, nia_cost_log)");
+} catch (err) {
+  logger.error(
+    { err },
+    "nia: startup migrations FAILED — nia_knowledge/push_notification_queue/nia_cost_log may not exist; " +
+    "continuing boot since core chat does not depend on them"
+  );
+}
+
 app.listen(port, () => {
   logger.info({ port }, "Nia service listening");
 
