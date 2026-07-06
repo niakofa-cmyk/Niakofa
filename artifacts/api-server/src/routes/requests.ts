@@ -1002,7 +1002,7 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
     // (e.g. notes is not a string). An empty / missing body always passes.
     const hasBody = req.body && Object.keys(req.body).length > 0;
     if (hasBody) {
-      return res.status(400).json({ error: "Invalid request body", details: bParsed.error.issues });
+      return res.status(400).json({ error: "Invalid request body", details: bParsed.error?.issues });
     }
   }
 

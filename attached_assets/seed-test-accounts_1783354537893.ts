@@ -255,27 +255,30 @@ async function main() {
       .where(sql`lower(${usersTable.email}) = ${normalizedEmail}`)
       .limit(1);
 
-    // Atomic upsert — INSERT ... ON CONFLICT (email) DO UPDATE.
-    // Safe under concurrent execution: no read-then-write race.
-    // The conflict target is the unique email column (case-folded by the
-    // unique index in the schema); we normalize to lowercase above.
-    const [result] = await db
-      .insert(usersTable)
-      .values({
+    if (existing) {
+      // ── Repair existing account ─────────────────────────────────────────
+      const updatePayload: Partial<typeof usersTable.$inferInsert> = {
+        password_hash,
+        ...acct.repairFields,
+      };
+      await db
+        .update(usersTable)
+        .set(updatePayload)
+        .where(eq(usersTable.id, existing.id));
+      console.log(`  ✔ repaired  ${acct.role.padEnd(6)} ${acct.email}  (id ${existing.id})`);
+    } else {
+      // ── Create new account ──────────────────────────────────────────────
+      const insertPayload: typeof usersTable.$inferInsert = {
         email: normalizedEmail,
         password_hash,
         ...acct.insertFields,
-      })
-      .onConflictDoUpdate({
-        target: usersTable.email,
-        set: {
-          password_hash,
-          ...acct.repairFields,
-        },
-      })
-      .returning({ id: usersTable.id });
-    const action = existing ? "repaired " : "created  ";
-    console.log(`  ✔ ${action} ${acct.role.padEnd(6)} ${acct.email}  (id ${result.id})`);
+      };
+      const [created] = await db
+        .insert(usersTable)
+        .values(insertPayload)
+        .returning({ id: usersTable.id });
+      console.log(`  ✔ created   ${acct.role.padEnd(6)} ${acct.email}  (id ${created.id})`);
+    }
   }
 
   console.log("\n✅ All three test accounts are ready.\n");

@@ -44,7 +44,7 @@
  * misses their Nia check-in due to a single service failure.
  */
 
-import { db, requestsTable, usersTable } from "@workspace/db";
+import { db, requestsTable, usersTable, systemSettingsTable } from "@workspace/db";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
@@ -54,7 +54,30 @@ const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? "";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
+// ── Nia kill-switch check ─────────────────────────────────────────────────────
+// Nia workers must honour the admin kill-switch. If nia_enabled != "true" in
+// system_settings, skip the check-in batch entirely — no AI calls, no push.
+// Fail-closed: a missing DB row or a query error means Nia is disabled.
+async function isNiaEnabled(): Promise<boolean> {
+  try {
+    const [row] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "nia_enabled"))
+      .limit(1);
+    return row?.value === "true";
+  } catch {
+    return false; // fail-closed: DB error → Nia disabled
+  }
+}
+
 async function processNiaCheckins(): Promise<void> {
+  // Honour the admin Nia kill-switch before doing any work.
+  if (!(await isNiaEnabled())) {
+    logger.debug("nia-checkin-worker: skipped — Nia is disabled (kill-switch)");
+    return;
+  }
+
   // Find requests completed 23–25 hours ago that haven't been checked-in yet.
   // We use a dedicated column `nia_checkin_sent_at` to track this; add a
   // migration if it doesn't exist yet (see migrate.sql note below).
