@@ -9,6 +9,7 @@ import {
 import { asc, eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { broadcast } from "./ws-hub";
+import { getTrustTier, getTierWageMultiplier } from "@workspace/trust-tiers";
 
 /**
  * Community Pool service.
@@ -80,7 +81,23 @@ export async function getHourlyMinimumRate(): Promise<number> {
 // This matches the seed value in migration 0024 ('5').
 const GUARANTEED_MINIMUM_FALLBACK = 5;
 
-export async function getGuaranteedMinimum(estimatedHours?: number | null): Promise<number> {
+/**
+ * Compute the guaranteed minimum for a completed task, optionally scaled by
+ * the helper's tenure tier (Roadmap: Tenure Tiers).
+ *
+ * When `helperId` is supplied the helper's trust_score and help_count are
+ * fetched from the DB to resolve their TrustTier, and the tier's wage
+ * multiplier (1.00–1.20×) is applied on top of the hours-scaled floor.
+ * This implements "livable wage that grows over time":
+ *   member 1.0×, verified 1.05×, trusted 1.1×, elite 1.15×, anchor 1.2×
+ *
+ * The multiplier is applied last so it scales whatever floor the hours
+ * calculation already produced — short or long tasks, all payment types.
+ */
+export async function getGuaranteedMinimum(
+  estimatedHours?: number | null,
+  helperId?: number | null,
+): Promise<number> {
   try {
     const [row] = await db
       .select({ value: systemSettingsTable.value })
@@ -94,13 +111,34 @@ export async function getGuaranteedMinimum(estimatedHours?: number | null): Prom
     // Hours-scaled floor: take the GREATER of flat floor and hours × rate.
     // This ensures short tasks still get the flat minimum, and longer tasks get
     // a proportional guarantee that reflects real effort/duration.
+    let base = flatFloor;
     if (estimatedHours && estimatedHours > 0) {
       const hourlyRate = await getHourlyMinimumRate();
       const hoursFloor = roundMoney(estimatedHours * hourlyRate);
-      return Math.max(flatFloor, hoursFloor);
+      base = Math.max(flatFloor, hoursFloor);
     }
 
-    return flatFloor;
+    // Tenure-tier wage multiplier: helpers who have built community trust earn
+    // proportionally more from the Community Pool floor. Fetched lazily — a DB
+    // error falls back to 1.0× so the base minimum is still honoured.
+    if (helperId != null) {
+      try {
+        const [helperRow] = await db
+          .select({ trust_score: usersTable.trust_score, help_count: usersTable.help_count })
+          .from(usersTable)
+          .where(eq(usersTable.id, helperId))
+          .limit(1);
+        if (helperRow) {
+          const tier = getTrustTier(helperRow.trust_score ?? 0, helperRow.help_count ?? 0);
+          const multiplier = getTierWageMultiplier(tier);
+          base = roundMoney(base * multiplier);
+        }
+      } catch {
+        // Non-fatal: tier lookup failure still pays base minimum
+      }
+    }
+
+    return base;
   } catch {
     // DB error → return the hard-coded seed default so helpers always get paid.
     return GUARANTEED_MINIMUM_FALLBACK;

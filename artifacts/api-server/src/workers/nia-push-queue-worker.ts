@@ -12,9 +12,15 @@
  *   - Clean service boundary: nia-service enqueues, api-server delivers
  *
  * Runs every 5 minutes. Processes up to 100 unsent rows per cycle.
- * Marks rows sent_at = NOW() as soon as delivery is attempted (non-retriable —
- * Nia's proactive messages are best-effort and time-sensitive; a 10-minute-old
- * "just checking in" push is fine, a retried one from 24h later is not).
+ * Delivery model: mark sent_at = NOW() BEFORE delivery attempt (mark-then-deliver).
+ * This is intentional: for Nia's ambient/proactive notifications, a MISSED delivery
+ * is better than a DUPLICATE. If the process crashes after marking but before
+ * delivery, the notification is silently dropped — acceptable for a "just checking in"
+ * message. The alternative (deliver-then-mark) would cause duplicates on crash/restart
+ * because multi-instance workers would re-deliver unacked rows, which is worse UX.
+ * The atomic UPDATE...RETURNING FOR UPDATE SKIP LOCKED already prevents the TOCTOU
+ * race (two instances grabbing the same batch), so the only remaining failure mode
+ * is crash-during-delivery — a known, accepted trade-off for ambient AI pings.
  *
  * Uses pool.query() directly because push_notification_queue is a nia-service
  * raw pg table, not in the Drizzle schema.

@@ -75,6 +75,36 @@ export function tierAtLeast(tier: TrustTier, minimum: TrustTier): boolean {
   return TIER_RANK[tier] >= TIER_RANK[minimum];
 }
 
+/**
+ * Wage multiplier for each trust tier — the core of "livable wage that grows
+ * over time" (Roadmap: Tenure Tiers).
+ *
+ * These multipliers scale the guaranteed minimum paid from the Community Pool
+ * when a task completes. A helper who has completed 50+ jobs and maintained
+ * a 97+ trust score (anchor tier) earns 20% more from the pool floor than a
+ * brand-new member. The multiplier is intentionally modest — it rewards tenure
+ * without creating perverse incentives to game the tier system.
+ *
+ *   member   → 1.00× (base, no adjustment)
+ *   verified → 1.05× (+5%)
+ *   trusted  → 1.10× (+10%)
+ *   elite    → 1.15× (+15%)
+ *   anchor   → 1.20× (+20%)
+ *
+ * Used by community-pool.ts getGuaranteedMinimum() when a helperId is passed.
+ */
+export const TIER_WAGE_MULTIPLIER: Record<TrustTier, number> = {
+  member:   1.00,
+  verified: 1.05,
+  trusted:  1.10,
+  elite:    1.15,
+  anchor:   1.20,
+};
+
+export function getTierWageMultiplier(tier: TrustTier): number {
+  return TIER_WAGE_MULTIPLIER[tier];
+}
+
 export const TIER_LABEL: Record<TrustTier, string> = {
   member: "Member",
   verified: "Verified Helper",

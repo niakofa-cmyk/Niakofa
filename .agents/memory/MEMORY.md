@@ -98,5 +98,8 @@
 - [Niakofa heading fusion fix](niakofa-heading-fusion-fix.md) — Heading-Up map jump fixed via rAF camera loop + GPS/compass complementary filter; use useFusedHeading not raw useDeviceHeading for nav.
 - [Niakofa Nia audit fixes](niakofa-nia-audit-fixes.md) — Full Nia end-to-end audit: checkin ON CONFLICT crash, memory kill-switch gap, nia-context rate limit, WS nia_typing/nia_status UI, admin knowledge-refresh endpoint.
 - [Niakofa nia-service startup migrations](niakofa-nia-migrations-fix.md) — runMigrations() was dead code; must be called before app.listen() to create nia_knowledge/push_notification_queue/nia_cost_log.
-- [Niakofa push queue atomic drain](niakofa-push-queue-drain.md) — nia-push-queue-worker must use UPDATE...RETURNING with FOR UPDATE SKIP LOCKED (not SELECT then UPDATE) to prevent duplicate delivery under concurrent instances.
+- [Niakofa push queue atomic drain](niakofa-push-queue-drain.md) — UPDATE...RETURNING FOR UPDATE SKIP LOCKED prevents duplicates; mark-before-deliver is intentional (drop > duplicate for ambient AI pings).
+- [Niakofa tenure tier wage multiplier](niakofa-tenure-tier.md) — TIER_WAGE_MULTIPLIER in trust-tiers/src/index.ts (1.0–1.2×); getGuaranteedMinimum(hours, helperId) in community-pool.ts applies it; trust-tiers needs tsconfig.json to build.
+- [Niakofa dev DB bootstrap](niakofa-dev-db-bootstrap.md) — Replit DB always provisioned; run pnpm --filter @workspace/db run migrate on fresh env; seed admin@niakofa.app/helper/user accounts manually; nia_enabled=false set by migration 0018.
+- [Niakofa heading-math tests](niakofa-heading-math-tests.md) — vitest installed in pay-it-forward; vitest.config.ts with @/ alias; run via pnpm --filter @workspace/pay-it-forward run test; 19/19 passing.
 - [Niakofa esbuild on Replit](niakofa-esbuild-replit.md) — pnpm overrides block @esbuild/linux-x64 as sub-dep; fix via postinstall script: "node node_modules/esbuild/install.js" in root package.json scripts.

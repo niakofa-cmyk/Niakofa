@@ -406,6 +406,17 @@ router.post("/nia/share-story", parseAuth, async (req: Request, res: Response) =
 // Triggers an immediate Nia learning cycle on the nia-service.
 // Used by the admin panel to force-refresh Nia's knowledge without waiting 6h.
 // The full cycle can take several minutes — the client should show a spinner.
+//
+// ── Kill-switch exemption (INTENTIONAL) ──────────────────────────────────────
+// This route deliberately does NOT check isNiaEnabled() before proxying.
+// Rationale: admins need to be able to refresh Nia's knowledge base WHILE the
+// toggle is off — the typical workflow is "prep knowledge → verify → then enable."
+// Gating this on isNiaEnabled() would break that workflow and force admins to
+// enable Nia (exposing it to users) just to run a learning cycle. The route is
+// already behind requireAuth + requireAdmin() + adminLimiter, so no end-user
+// can reach it. This is the same documented reasoning used by crisis-followup-
+// worker: safety/maintenance functions must not be blocked by the product toggle.
+// ──────────────────────────────────────────────────────────────────────────────
 router.post(
   "/nia/knowledge-refresh",
   requireAuth,

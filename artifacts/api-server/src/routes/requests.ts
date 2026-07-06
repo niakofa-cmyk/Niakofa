@@ -1139,7 +1139,9 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
         ? Math.max(paidFromPool, pledge)
         : paidFromPool;
 
-      const minimum = await getGuaranteedMinimum(request.estimated_hours);
+      // Pass helperId so the tenure-tier wage multiplier (1.0–1.2×) is applied.
+      // anchor-tier helpers (50+ helps, 97+ trust) earn 20% more from the pool.
+      const minimum = await getGuaranteedMinimum(request.estimated_hours, helperId);
       if (minimum > 0 && effectivePaid < minimum) {
         const topUp = Math.round((minimum - effectivePaid) * 100) / 100;
         const minOutcome = await payHelperFromPool({

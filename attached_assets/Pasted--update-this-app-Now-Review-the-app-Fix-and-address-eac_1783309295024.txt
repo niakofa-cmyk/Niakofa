@@ -1,0 +1,12 @@
+ update this app Now. Review the app . Fix, and address each and every issue. . Think carefully before editing. Understand the App and the vision and mission before you edit code. Review the code before you edit code. We are using Mapbox . Verify and Ensure your work! Improve and enhance the infrastructure of the Niakofa app. Verify that you have verified each and every issue. And have addressed each and every issue. Verify and Ensure that Nia ai is Disable to all users and Pages by default to the Niakofa app. Review your work and Verify That you Finish and checkpoint this edition of improvements before your usage rate or session percentage runs out! Verify you finish before your session time runs out!Read Verify each and every issue. Ensure you address each and every issue. And Fix, improve and enhance the code if you can. Fix, Improve and enhance and Close each and every and all remaining Gaps end to end, and issues. Fix, Improve and enhance, address all remaining Bugs end to end.
+
+
+Verify: Tenure tiers (Neighbor/Pillar/Anchor/Elder): another zero-match search — still design-only in ROADMAP.md, no implementation found. The new rating/trust-score endpoint is a plausible on-ramp to this, but the tier multiplier logic itself doesn't exist yet.
+* New category sensitive-gating: found the team's own internal checklist doc (niakofa-category-expansion.md) that spells out every place a new category must be registered, including a conditional step in trust-tiers/src/index.ts for sensitive categories [niakofa-cmyk/Niakofa/artifacts/pay-it-forward/src/pages/request-new.tsx]. I could not confirm whether the newest categories added in commit 9d0dede were actually run through that checklist's sensitive-category step — worth a direct check against that file.
+
+* Build the tenure-tier multiplier logic on top of the new trust-score field just added — that's the direct path to "livable wage that grows over time."
+* Directly inspect requests.ts payment-branching logic (not just search) to settle the wage-floor question once and for all.
+* Confirm the newest categories went through the sensitive-category checklist in niakofa-category-expansion.md.
+That makes the heading-math.test.ts file (already in your repo, verified correct earlier) actually runnable via pnpm --filter @workspace/pay-it-forward run test. This was the last outstanding item from that batch — everything else from it landed already.
+
+Fix, Verify all Nia AI wiring end to end.
