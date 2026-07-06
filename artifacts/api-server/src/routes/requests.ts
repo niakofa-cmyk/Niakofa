@@ -1,7 +1,8 @@
 import { Router } from "express";
+import { z } from "zod";
 import { requireAuth, requireApproved } from "../middlewares/auth";
 import { requireOwnership, requireAdmin } from "../middlewares/authz";
-import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, userSettingsTable, businessesTable, businessMembersTable, systemSettingsTable, communityPoolLedgerTable } from "@workspace/db";
+import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, userSettingsTable, businessesTable, businessMembersTable, systemSettingsTable, communityPoolLedgerTable, ratingsTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -1034,6 +1035,15 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
     .set({ help_count: sql`${usersTable.help_count} + 1` })
     .where(eq(usersTable.id, helperId));
 
+  // Trust-score participation bump: +1 per completed job, capped at 80.
+  // Participation raises a helper from the low starting default regardless of
+  // how any later rating turns out (low-quality jobs still count — that's the
+  // point). Cap is deliberately below the 85 threshold trust-tiers.ts needs
+  // to leave "member", so volume alone can never buy tier advancement.
+  await db.update(usersTable)
+    .set({ trust_score: sql`LEAST(80, COALESCE(${usersTable.trust_score}, 0) + 1)` })
+    .where(eq(usersTable.id, helperId));
+
   // Log request completion
   logger.info({ 
     request_id: request.id, 
@@ -1314,6 +1324,80 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
   });
 
   return res.json(enriched);
+});
+
+
+// ── POST /requests/:id/rate ────────────────────────────────────────────────────
+// RatingModal.tsx has called this endpoint since it was built; no route ever
+// existed in the server layer so every real submission was a silent 404.
+//
+// Design decisions (matching the patch spec):
+// - requireAuth only (no requireApproved): leaving a rating about a past job is
+//   an opinion, not a money-moving action. Suspended accounts may still rate.
+// - Only allowed once the request status is "completed" (exact string used by /complete).
+// - role/ratee derived server-side from request.requester_id/helper_id — never
+//   trusted from the client body. The frontend's `role` prop is display copy only.
+// - Duplicate submissions hit ratingsTable's unique(request_id, rater_id) constraint
+//   and return the exact error string the frontend already special-cases.
+const RateRequestBody = z.object({
+  stars: z.number().int().min(1).max(5),
+  review: z.string().max(500).trim().optional(),
+});
+
+router.post("/requests/:id/rate", requireAuth, async (req, res) => {
+  const pParsed = ClaimRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });
+
+  const bParsed = RateRequestBody.safeParse(req.body);
+  if (!bParsed.success) {
+    return res.status(400).json({ error: "Invalid rating", details: bParsed.error.issues });
+  }
+
+  const raterId = req.authenticatedUserId!;
+  const requestId = pParsed.data.id;
+
+  const [request] = await db.select().from(requestsTable)
+    .where(eq(requestsTable.id, requestId)).limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+
+  if (request.status !== "completed") {
+    return res.status(400).json({ error: "You can only rate a request after it's completed" });
+  }
+
+  let role: "requester" | "helper";
+  let rateeId: number;
+  if (request.requester_id === raterId) {
+    role = "requester";
+    if (!request.helper_id) {
+      return res.status(400).json({ error: "This request has no helper to rate yet" });
+    }
+    rateeId = request.helper_id;
+  } else if (request.helper_id === raterId) {
+    role = "helper";
+    rateeId = request.requester_id;
+  } else {
+    return res.status(403).json({ error: "You weren't part of this request" });
+  }
+
+  try {
+    await db.insert(ratingsTable).values({
+      request_id: requestId,
+      rater_id: raterId,
+      ratee_id: rateeId,
+      stars: bParsed.data.stars,
+      review: bParsed.data.review ?? null,
+      role,
+    });
+  } catch (err: unknown) {
+    if (typeof err === "object" && err !== null && "code" in err && (err as { code: string }).code === "23505") {
+      return res.status(409).json({ error: "You have already rated this request" });
+    }
+    logger.error({ err, request_id: requestId, rater_id: raterId }, "rating: insert failed");
+    return res.status(500).json({ error: "Failed to submit rating" });
+  }
+
+  logger.info({ request_id: requestId, rater_id: raterId, ratee_id: rateeId, role, stars: bParsed.data.stars }, "rating: submitted");
+  return res.json({ success: true });
 });
 
 

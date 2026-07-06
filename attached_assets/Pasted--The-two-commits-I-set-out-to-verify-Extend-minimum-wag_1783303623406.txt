@@ -1,0 +1,18 @@
+
+The two commits I set out to verify
+"Extend minimum wage floor to all payment types" — I could not locate the actual FLAT_FLOOR/HOURLY_RATE/getGuaranteedMinimum constants or function in this pass; the closest hit was community-pool.ts [niakofa-cmyk/Niakofa/attached_assets/Pasted--Critical-bug-found-and-fixed-The-entire-frontend-faile_1783234387616.txt], which confirms the pool "pays a guaranteed minimum per completed task" but the search didn't surface the specific code diff that would prove the floor now applies uniformly across immediate/pool/pledge payment types. I don't have grounded confirmation this gap is closed — treat it as unverified, not confirmed rather than fixed. Worth a direct look at community-pool.ts and the payment-type branch logic next time.
+"Update NIA service to disable AI features by default" — this appears to be a kill-switch feature, not a regression or a blanket disable. I found a kill-switch patch script (patch_nia_killswitch.py) [niakofa-cmyk/Niakofa/attached_assets/Pasted--Critical-bug-found-and-fixed-The-entire-frontend-faile_1783234387616.txt] describing the actual mechanism:
+* Toggle is persisted in system_settings DB table, hydrated on boot
+* nia-proxy.ts and nia-service/routes/chat.ts both call an isNiaEnabled() check (10s cache) before serving /chat and /history
+* admin-analytics.ts exposes the toggle to admins
+* App.tsx mounts the Nia FAB/drawer globally and polls nia-status to gate the UI on the toggle
+So "disabled by default" reads as: Nia now has an admin-controlled on/off switch that defaults to off, rather than a hardcoded regression that silently kills AI for everyone with no recourse. That's actually a reasonable safety feature (kill-switch you asked about in earlier audits) — but it does mean Nia AI may currently be OFF in production until an admin flips it on via the admin dashboard. I'd check the system_settings table value directly or the admin panel to confirm current live state — this is the one item that directly affects your "verify Nia AI functions are working" ask and I can't confirm from code search alone whether it's live-on or live-off right now.
+
+What it does, all in requests.ts:
+1. Implements POST /requests/:id/rate — the endpoint RatingModal.tsx has been calling this whole time with nothing on the other end. It:
+    * Requires auth only (not requireApproved — leaving a rating is an opinion about a past job, not a money-moving action, so a suspended account can still submit one).
+    * Only allows rating after the request's real status, "completed" (I checked — not "complete", which is what I'd have assumed without reading the actual /complete handler).
+    * Derives role and the ratee server-side from request.requester_id/helper_id — never trusts the client, consistent with how this file treats every other identity field. The frontend's role prop is just display copy; it was never even in the POST body.
+    * Returns the exact string "You have already rated this request" on a duplicate, matching what RatingModal.tsx already special-cases to show its "already submitted" state instead of an error toast.
+    * Validates stars (1–5) and review (≤500 chars) with a local zod schema.
+2. Adds the trust-score participation bump next to the existing help_count increment in /complete — capped at 80 (below the 85 threshold trust-tiers.ts needs to leave "member"), so raw participation can raise trust_score but can never itself buy tier advancement. Matches your answer #2 exactly: low-quality jobs 
