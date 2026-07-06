@@ -6,33 +6,69 @@ import { AppProvider, useAppContext } from "@/lib/AppContext";
 import { BottomNav } from "@/components/BottomNav";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { useServiceWorkerUpdate } from "@/hooks/useServiceWorkerUpdate";
 
+// ── Route-level lazy loading ───────────────────────────────────────────────
+// Each page is loaded on-demand, splitting the monolithic bundle into many
+// small per-route chunks. This keeps the initial JS payload small and lets
+// the browser cache each page independently.
+//
+// MapScreen is NOT lazy — it is the default route and must paint immediately
+// on first load to avoid a blank screen flash.
 import MapScreen from "@/pages/map";
-import NewRequestScreen from "@/pages/request-new";
-import ActiveRequestScreen from "@/pages/request-active";
-import ProfileScreen from "@/pages/profile";
-import SettingsPage from "@/pages/settings";
-import WalletScreen from "@/pages/wallet";
-import CommunityScreen from "@/pages/community";
-import AdminScreen from "@/pages/admin";
-import AdminAnalyticsDashboard from "@/pages/admin-analytics";
-import NotFound from "@/pages/not-found";
-import RequesterTrackingScreen from "@/pages/request-track";
-import LoginScreen from "@/pages/login";
-import HelperProfileScreen from "@/pages/helper-profile";
-import RequestDetailScreen from "@/pages/request-detail";
-import OnboardingScreen from "@/pages/onboarding";
-import StripeConnectedScreen from "@/pages/stripe-connected";
-import HelperDashboardScreen from "@/pages/helper-dashboard";
-import HelperOnboardingScreen from "@/pages/helper-onboarding";
-import PendingApprovalScreen from "@/pages/pending-approval";
-import RecurringScreen from "@/pages/recurring";
-import BusinessApplyScreen from "@/pages/business-apply";
-import GovSponsorApplyScreen from "@/pages/gov-sponsor-apply";
-import CivicPortalPage from "@/pages/civic-portal";
-import StatusPage from "@/pages/status";
+
+const NewRequestScreen     = lazy(() => import("@/pages/request-new"));
+const ActiveRequestScreen  = lazy(() => import("@/pages/request-active"));
+const ProfileScreen        = lazy(() => import("@/pages/profile"));
+const SettingsPage         = lazy(() => import("@/pages/settings"));
+const WalletScreen         = lazy(() => import("@/pages/wallet"));
+const CommunityScreen      = lazy(() => import("@/pages/community"));
+const AdminScreen          = lazy(() => import("@/pages/admin"));
+const AdminAnalyticsDashboard = lazy(() => import("@/pages/admin-analytics"));
+const NotFound             = lazy(() => import("@/pages/not-found"));
+const RequesterTrackingScreen = lazy(() => import("@/pages/request-track"));
+const LoginScreen          = lazy(() => import("@/pages/login"));
+const HelperProfileScreen  = lazy(() => import("@/pages/helper-profile"));
+const RequestDetailScreen  = lazy(() => import("@/pages/request-detail"));
+const OnboardingScreen     = lazy(() => import("@/pages/onboarding"));
+const StripeConnectedScreen = lazy(() => import("@/pages/stripe-connected"));
+const HelperDashboardScreen = lazy(() => import("@/pages/helper-dashboard"));
+const HelperOnboardingScreen = lazy(() => import("@/pages/helper-onboarding"));
+const PendingApprovalScreen = lazy(() => import("@/pages/pending-approval"));
+const RecurringScreen      = lazy(() => import("@/pages/recurring"));
+const BusinessApplyScreen  = lazy(() => import("@/pages/business-apply"));
+const GovSponsorApplyScreen = lazy(() => import("@/pages/gov-sponsor-apply"));
+const CivicPortalPage      = lazy(() => import("@/pages/civic-portal"));
+const StatusPage           = lazy(() => import("@/pages/status"));
+
+// Minimal spinner shown while a lazy chunk is loading.
+// Kept intentionally simple — just a centred, low-opacity dot so the
+// transition is barely perceptible on fast connections.
+function PageFallback() {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--color-background-primary, #0e1111)",
+      }}
+    >
+      <div
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: "var(--color-text-tertiary, #444)",
+          animation: "pulse 1.2s ease-in-out infinite",
+        }}
+      />
+    </div>
+  );
+}
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30000, retry: 1 } },
@@ -134,46 +170,60 @@ function AppShell() {
   const [isStripeConnected] = useRoute("/wallet/connected");
 
   // Admin page has its own auth — don't redirect to login
-  if (isAdmin) return <AdminScreen />;
+  if (isAdmin) return (
+    <Suspense fallback={<PageFallback />}>
+      <AdminScreen />
+    </Suspense>
+  );
 
   // Show login/register screen if no authenticated user
   if (!currentUser) {
-    return <LoginScreen />;
+    return (
+      <Suspense fallback={<PageFallback />}>
+        <LoginScreen />
+      </Suspense>
+    );
   }
+
   // Redirect unapproved users to pending-approval screen
   const extUser = currentUser as (typeof currentUser & { approval_status?: string }) | null;
   if (extUser?.approval_status === 'pending' || extUser?.approval_status === 'denied') {
-    return <PendingApprovalScreen />;
+    return (
+      <Suspense fallback={<PageFallback />}>
+        <PendingApprovalScreen />
+      </Suspense>
+    );
   }
-
 
   return (
     <>
-      <Switch>
-        <Route path="/login" component={LoginScreen} />
-        <Route path="/onboarding" component={OnboardingScreen} />
-        <Route path="/helper/:id" component={HelperProfileScreen} />
-        <Route path="/request/:id/view" component={RequestDetailScreen} />
-        <Route path="/wallet/connected" component={StripeConnectedScreen} />
-        <Route path="/" component={MapScreen} />
-        <Route path="/community" component={CommunityScreen} />
-        <Route path="/request/new" component={NewRequestScreen} />
-        <Route path="/request/:id/track" component={RequesterTrackingScreen} />
-        <Route path="/request/:id" component={ActiveRequestScreen} />
-        <Route path="/wallet" component={WalletScreen} />
-        <Route path="/profile" component={ProfileScreen} />
-        <Route path="/settings" component={SettingsPage} />
-        <Route path="/admin" component={AdminScreen} />
-        <Route path="/helper-dashboard" component={HelperDashboardScreen} />
-        <Route path="/helper-onboarding" component={HelperOnboardingScreen} />
-        <Route path="/pending-approval" component={PendingApprovalScreen} />
-        <Route path="/recurring" component={RecurringScreen} />
-        <Route path="/admin/analytics" component={AdminAnalyticsDashboard} />
-        <Route path="/business/apply" component={BusinessApplyScreen} />
-        <Route path="/gov-sponsor/apply" component={GovSponsorApplyScreen} />
-        <Route path="/civic-portal" component={CivicPortalPage} />
-        <Route component={NotFound} />
-      </Switch>
+      <Suspense fallback={<PageFallback />}>
+        <Switch>
+          <Route path="/login" component={LoginScreen} />
+          <Route path="/onboarding" component={OnboardingScreen} />
+          <Route path="/helper/:id" component={HelperProfileScreen} />
+          <Route path="/request/:id/view" component={RequestDetailScreen} />
+          <Route path="/wallet/connected" component={StripeConnectedScreen} />
+          <Route path="/" component={MapScreen} />
+          <Route path="/community" component={CommunityScreen} />
+          <Route path="/request/new" component={NewRequestScreen} />
+          <Route path="/request/:id/track" component={RequesterTrackingScreen} />
+          <Route path="/request/:id" component={ActiveRequestScreen} />
+          <Route path="/wallet" component={WalletScreen} />
+          <Route path="/profile" component={ProfileScreen} />
+          <Route path="/settings" component={SettingsPage} />
+          <Route path="/admin" component={AdminScreen} />
+          <Route path="/helper-dashboard" component={HelperDashboardScreen} />
+          <Route path="/helper-onboarding" component={HelperOnboardingScreen} />
+          <Route path="/pending-approval" component={PendingApprovalScreen} />
+          <Route path="/recurring" component={RecurringScreen} />
+          <Route path="/admin/analytics" component={AdminAnalyticsDashboard} />
+          <Route path="/business/apply" component={BusinessApplyScreen} />
+          <Route path="/gov-sponsor/apply" component={GovSponsorApplyScreen} />
+          <Route path="/civic-portal" component={CivicPortalPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
       {!isActiveRequest && !isTrackingRequest && !isAdmin && !isLogin && !isOnboarding && !isStripeConnected && <BottomNav />}
     </>
   );
@@ -191,7 +241,11 @@ function AppContent() {
   const pathname =
     typeof window !== "undefined" ? window.location.pathname : "";
   if (pathname === "/status" || pathname.endsWith("/status")) {
-    return <StatusPage />;
+    return (
+      <Suspense fallback={<PageFallback />}>
+        <StatusPage />
+      </Suspense>
+    );
   }
   return (
     <>

@@ -41,9 +41,6 @@ export default defineConfig({
     alias: {
       // "@" maps to src/ — safe in all environments
       "@": path.resolve(import.meta.dirname, "src"),
-      // "@assets" was a Replit-specific convenience alias pointing to
-      // attached_assets/. It is unused in production code and has been
-      // removed to avoid build-time confusion in non-Replit environments.
     },
     dedupe: ["react", "react-dom"],
   },
@@ -51,6 +48,63 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // mapbox-gl is ~1.8 MB (minified, gzipped ~600 KB) — that is its fixed
+    // library size and cannot be reduced. All other per-route chunks are
+    // well under 600 KB after the lazy-loading split in App.tsx.
+    // Set the warning threshold high enough to silence the mapbox noise while
+    // still catching any genuinely oversized non-map bundles.
+    chunkSizeWarningLimit: 2000,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          // ── Vendor: mapbox-gl ────────────────────────────────────────────
+          // Isolate mapbox-gl into its own chunk so it is cached independently
+          // of application code and does not inflate the shared vendor chunk.
+          if (id.includes("node_modules/mapbox-gl")) {
+            return "vendor-mapbox";
+          }
+
+          // ── Vendor: React core ───────────────────────────────────────────
+          if (
+            id.includes("node_modules/react/") ||
+            id.includes("node_modules/react-dom/") ||
+            id.includes("node_modules/scheduler/")
+          ) {
+            return "vendor-react";
+          }
+
+          // ── Vendor: Radix UI primitives ──────────────────────────────────
+          if (id.includes("node_modules/@radix-ui/")) {
+            return "vendor-radix";
+          }
+
+          // ── Vendor: Framer Motion ────────────────────────────────────────
+          if (id.includes("node_modules/framer-motion")) {
+            return "vendor-framer";
+          }
+
+          // ── Vendor: Tanstack Query ───────────────────────────────────────
+          if (
+            id.includes("node_modules/@tanstack/") ||
+            id.includes("node_modules/react-query")
+          ) {
+            return "vendor-query";
+          }
+
+          // ── Vendor: Stripe ───────────────────────────────────────────────
+          if (
+            id.includes("node_modules/@stripe/") ||
+            id.includes("node_modules/stripe")
+          ) {
+            return "vendor-stripe";
+          }
+
+          // ── Vendor: remaining large node_modules ─────────────────────────
+          // Let Rollup's default splitting handle individual route chunks
+          // (those come from the lazy() imports in App.tsx).
+        },
+      },
+    },
   },
   server: {
     port,
