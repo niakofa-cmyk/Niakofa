@@ -24,6 +24,56 @@ export function getTrustTier(trustScore: number, helpCount: number): TrustTier {
 }
 
 /**
+ * Compute the effective tier applying tier stickiness.
+ *
+ * Effective tier = max(currently computed tier, highest_tier_reached).
+ * A helper's tier can only go up, never down, once earned.
+ * Pass the stored `highest_tier_reached` column value from the DB row.
+ */
+export function getEffectiveTier(
+  trustScore: number,
+  helpCount: number,
+  highestTierReached: string | null | undefined,
+): TrustTier {
+  const computed = getTrustTier(trustScore, helpCount);
+  const stored = (highestTierReached ?? "member") as TrustTier;
+  // Validate stored value is a real tier; fall back to computed if not
+  const storedRank = TIER_RANK[stored] ?? 0;
+  return storedRank > TIER_RANK[computed] ? stored : computed;
+}
+
+/**
+ * Tiers that require a quality gate (avg recent rating ≥ 4.0) before
+ * advancement is recorded in highest_tier_reached. Member and verified
+ * are reachable on count/score alone — participation matters at that stage.
+ * Once in trusted/elite/anchor the helper has demonstrated reliability and
+ * quality becomes the gating signal.
+ */
+export const QUALITY_GATED_TIERS: ReadonlySet<TrustTier> = new Set([
+  "trusted",
+  "elite",
+  "anchor",
+]);
+
+/**
+ * Returns true when the candidate tier is either not quality-gated, or when
+ * the helper's average rating meets the 4.0 minimum for quality-gated tiers.
+ *
+ * @param candidateTier  The tier the helper would advance to.
+ * @param avgRating      Average star rating as a helper (null = no ratings yet).
+ *                       null is treated as passing (benefit of the doubt for new helpers).
+ */
+export function meetsQualityGate(
+  candidateTier: TrustTier,
+  avgRating: number | null,
+): boolean {
+  if (!QUALITY_GATED_TIERS.has(candidateTier)) return true;
+  // No ratings yet → benefit of the doubt (they haven't been rated badly)
+  if (avgRating === null) return true;
+  return avgRating >= 4.0;
+}
+
+/**
  * Categories that involve vulnerable people or significant liability exposure.
  * These carry trust/safety concerns that groceries or errands don't, so they
  * are gated:

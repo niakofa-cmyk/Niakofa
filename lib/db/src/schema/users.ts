@@ -72,6 +72,13 @@ export const usersTable = pgTable("users", {
   //   NULL means email+password only. Both can coexist (linked account).
   google_id: text("google_id"),
   oauth_provider: text("oauth_provider"),
+  // Community membership (migration 0047)
+  // NULL = not yet assigned; falls back to global pool for legacy rows.
+  community_id: integer("community_id"),
+  // Tier stickiness (migration 0047)
+  // Effective tier = max(getTrustTier(…), highest_tier_reached).
+  // Can only advance (never reassessed downward). Removed only on account deletion.
+  highest_tier_reached: text("highest_tier_reached").notNull().default("member"),
   created_at: timestamp("created_at").defaultNow().notNull(),
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

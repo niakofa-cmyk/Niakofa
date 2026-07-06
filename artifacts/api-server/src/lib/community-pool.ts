@@ -5,11 +5,12 @@ import {
   systemSettingsTable,
   usersTable,
   transactionsTable,
+  communitiesTable,
 } from "@workspace/db";
 import { asc, eq, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { broadcast } from "./ws-hub";
-import { getTrustTier, getTierWageMultiplier } from "@workspace/trust-tiers";
+import { getEffectiveTier, getTierWageMultiplier } from "@workspace/trust-tiers";
 
 /**
  * Community Pool service.
@@ -82,17 +83,17 @@ export async function getHourlyMinimumRate(): Promise<number> {
 const GUARANTEED_MINIMUM_FALLBACK = 5;
 
 /**
- * Compute the guaranteed minimum for a completed task, optionally scaled by
- * the helper's tenure tier (Roadmap: Tenure Tiers).
+ * Compute the guaranteed minimum for a completed task, optionally scaled by:
+ *   1. The helper's effective tenure tier (highest_tier_reached stickiness).
+ *   2. The community's pool-health ratio (balance ÷ target_reserve, clamped to
+ *      [0.5, 1.0]) — richer pools give bigger bonuses; depleted pools scale back
+ *      without zeroing out helpers' bonuses entirely.
  *
- * When `helperId` is supplied the helper's trust_score and help_count are
- * fetched from the DB to resolve their TrustTier, and the tier's wage
- * multiplier (1.00–1.20×) is applied on top of the hours-scaled floor.
- * This implements "livable wage that grows over time":
- *   member 1.0×, verified 1.05×, trusted 1.1×, elite 1.15×, anchor 1.2×
+ * Final minimum = hours_scaled_floor × tier_multiplier × pool_health_ratio
  *
- * The multiplier is applied last so it scales whatever floor the hours
- * calculation already produced — short or long tasks, all payment types.
+ * This implements the roadmap spec: "the multiplier should depend on the amount
+ * of funds in that particular community/county's pool — richer pools give bigger
+ * bonuses, thinner pools scale it back to protect solvency."
  */
 export async function getGuaranteedMinimum(
   estimatedHours?: number | null,
@@ -109,8 +110,6 @@ export async function getGuaranteedMinimum(
     const flatFloor = Number.isFinite(parsed) && parsed >= 0 ? parsed : GUARANTEED_MINIMUM_FALLBACK;
 
     // Hours-scaled floor: take the GREATER of flat floor and hours × rate.
-    // This ensures short tasks still get the flat minimum, and longer tasks get
-    // a proportional guarantee that reflects real effort/duration.
     let base = flatFloor;
     if (estimatedHours && estimatedHours > 0) {
       const hourlyRate = await getHourlyMinimumRate();
@@ -118,29 +117,90 @@ export async function getGuaranteedMinimum(
       base = Math.max(flatFloor, hoursFloor);
     }
 
-    // Tenure-tier wage multiplier: helpers who have built community trust earn
-    // proportionally more from the Community Pool floor. Fetched lazily — a DB
-    // error falls back to 1.0× so the base minimum is still honoured.
+    // ── Tenure-tier wage multiplier + community pool-health ratio ─────────
+    // Fetch the helper's tier and their community's target_reserve in one shot.
+    // Falls back gracefully: tier → 1.0×, pool_health → 1.0× on any DB error.
     if (helperId != null) {
       try {
         const [helperRow] = await db
-          .select({ trust_score: usersTable.trust_score, help_count: usersTable.help_count })
+          .select({
+            trust_score: usersTable.trust_score,
+            help_count: usersTable.help_count,
+            highest_tier_reached: usersTable.highest_tier_reached,
+            community_id: usersTable.community_id,
+          })
           .from(usersTable)
           .where(eq(usersTable.id, helperId))
           .limit(1);
+
         if (helperRow) {
-          const tier = getTrustTier(helperRow.trust_score ?? 0, helperRow.help_count ?? 0);
-          const multiplier = getTierWageMultiplier(tier);
-          base = roundMoney(base * multiplier);
+          // Effective tier respects stickiness: max(computed, highest_tier_reached)
+          const tier = getEffectiveTier(
+            helperRow.trust_score ?? 0,
+            helperRow.help_count ?? 0,
+            helperRow.highest_tier_reached,
+          );
+          const tierMultiplier = getTierWageMultiplier(tier);
+
+          // Community pool-health ratio
+          // balance / target_reserve_amount, clamped to [0.5, 1.0]
+          // - At 100 %+ funded → 1.0 (full tier bonus)
+          // - At 50 % or below → 0.5 (half tier bonus; pool protected from over-drain)
+          let poolHealthRatio = 1.0;
+          try {
+            const communityId = helperRow.community_id;
+            // Fetch the balance scoped to this community (NULL community_id rows
+            // are the historical "global" bucket — include them when no community
+            // is set so legacy data is counted correctly).
+            const [balRow] = await db
+              .select({ balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` })
+              .from(communityPoolLedgerTable)
+              .where(
+                communityId != null
+                  ? eq(communityPoolLedgerTable.community_id, communityId)
+                  : sql`${communityPoolLedgerTable.community_id} IS NULL`
+              );
+            const balance = balRow?.balance ?? 0;
+
+            if (communityId != null) {
+              const [communityRow] = await db
+                .select({ target_reserve_amount: communitiesTable.target_reserve_amount })
+                .from(communitiesTable)
+                .where(eq(communitiesTable.id, communityId))
+                .limit(1);
+              const target = communityRow?.target_reserve_amount ?? 10000;
+              if (target > 0) {
+                poolHealthRatio = Math.min(1.0, Math.max(0.5, balance / target));
+              }
+            } else {
+              // Global pool: use pool_low_balance_threshold as a proxy for
+              // "healthy" target (default $25 → above threshold = ratio 1.0)
+              const [threshRow] = await db
+                .select({ value: systemSettingsTable.value })
+                .from(systemSettingsTable)
+                .where(eq(systemSettingsTable.key, "pool_low_balance_threshold"))
+                .limit(1);
+              const threshold = threshRow ? parseFloat(threshRow.value) : 25;
+              // Use 4× the low-balance threshold as the "healthy" target.
+              // e.g. threshold=$25 → target=$100; balance ≥ $100 → full multiplier.
+              const globalTarget = threshold * 4;
+              if (globalTarget > 0) {
+                poolHealthRatio = Math.min(1.0, Math.max(0.5, balance / globalTarget));
+              }
+            }
+          } catch {
+            // Pool-health lookup failure → keep ratio at 1.0 (full bonus)
+          }
+
+          base = roundMoney(base * tierMultiplier * poolHealthRatio);
         }
       } catch {
-        // Non-fatal: tier lookup failure still pays base minimum
+        // Non-fatal: tier/pool-health lookup failure still pays base minimum
       }
     }
 
     return base;
   } catch {
-    // DB error → return the hard-coded seed default so helpers always get paid.
     return GUARANTEED_MINIMUM_FALLBACK;
   }
 }
@@ -158,6 +218,8 @@ interface PoolDebitParams {
   requestId: number;
   helperId: number;
   requestTitle: string;
+  /** Community scope — written to the ledger row so per-community balance queries work. */
+  communityId?: number | null;
 }
 
 /** Outcome of a pool debit attempt — callers must distinguish these. */
@@ -170,7 +232,7 @@ export type PoolPayOutcome = "paid" | "insufficient" | "duplicate" | "error";
  * indexes make double-pay impossible), "error" on unexpected failure.
  */
 export async function payHelperFromPool(params: PoolDebitParams): Promise<PoolPayOutcome> {
-  const { entryType, requestId, helperId, requestTitle } = params;
+  const { entryType, requestId, helperId, requestTitle, communityId } = params;
   const amount = roundMoney(params.amount);
   if (amount <= 0) return "error";
 
@@ -179,6 +241,8 @@ export async function payHelperFromPool(params: PoolDebitParams): Promise<PoolPa
       // Serialize pool debits — balance check + debit must be atomic.
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${POOL_LOCK_KEY})`);
 
+      // Balance check is always global (all entries) — we maintain one liquid pool,
+      // community_id is a reporting/multiplier label, not a separate sub-fund.
       const [balRow] = await tx
         .select({ balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` })
         .from(communityPoolLedgerTable);
@@ -196,11 +260,14 @@ export async function payHelperFromPool(params: PoolDebitParams): Promise<PoolPa
       // Debit the pool. The partial unique indexes on (request_id) for
       // helper_front / guaranteed_minimum throw on duplicates, aborting the
       // transaction — no double-pay possible.
+      // community_id is written here so per-community balance queries in
+      // getGuaranteedMinimum() see real data, not all-NULL rows.
       await tx.insert(communityPoolLedgerTable).values({
         entry_type: entryType,
         amount: -amount,
         request_id: requestId,
         user_id: helperId,
+        community_id: communityId ?? null,
         notes:
           entryType === "helper_front"
             ? `Pool fronted helper payment for: ${requestTitle}`
@@ -257,8 +324,11 @@ export async function recordPoolRepayment(params: {
   requestId: number;
   requesterId: number | null;
   stripePaymentIntentId?: string;
+  /** Community scope — must match the original debit's community_id so per-community
+   *  balance queries remain accurate when the repayment arrives. */
+  communityId?: number | null;
 }): Promise<void> {
-  const { requestId, requesterId, stripePaymentIntentId } = params;
+  const { requestId, requesterId, stripePaymentIntentId, communityId } = params;
   const amount = roundMoney(params.amount);
   if (amount <= 0) return;
   await db.insert(communityPoolLedgerTable).values({
@@ -266,6 +336,7 @@ export async function recordPoolRepayment(params: {
     amount,
     request_id: requestId,
     user_id: requesterId,
+    community_id: communityId ?? null,
     stripe_payment_intent_id: stripePaymentIntentId ?? null,
     notes: "Requester repaid a pool-fronted pledge — pool replenished",
   });
@@ -426,8 +497,10 @@ export async function recordPoolContribution(params: {
   stripePaymentIntentId?: string;
   notes?: string;
   governmentSponsorId?: number;
+  /** Community this contribution is designated for. Null = global/Tarrant County bucket. */
+  communityId?: number | null;
 }): Promise<boolean> {
-  const { userId, stripePaymentIntentId, notes, governmentSponsorId } = params;
+  const { userId, stripePaymentIntentId, notes, governmentSponsorId, communityId } = params;
   const amount = roundMoney(params.amount);
   if (amount <= 0) return false;
   try {
@@ -435,6 +508,7 @@ export async function recordPoolContribution(params: {
       entry_type: "sponsor_contribution",
       amount,
       user_id: userId,
+      community_id: communityId ?? null,
       stripe_payment_intent_id: stripePaymentIntentId ?? null,
       notes: notes ?? "Sponsor contribution to the Community Pool",
       government_sponsor_id: governmentSponsorId ?? null,

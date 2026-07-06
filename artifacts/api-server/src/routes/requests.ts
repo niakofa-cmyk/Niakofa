@@ -26,7 +26,8 @@ import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser, type PushPayload } from "./push";
 import { payHelperFromPool, getGuaranteedMinimum, isPoolEnabled, queuePendingMinimum, maybeAlertLowBalance } from "../lib/community-pool";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
-import { getTrustTier, tierAtLeast, isSensitiveCategory } from "@workspace/trust-tiers";
+import { getTrustTier, getEffectiveTier, meetsQualityGate, TIER_RANK, tierAtLeast, isSensitiveCategory } from "@workspace/trust-tiers";
+import type { TrustTier } from "@workspace/trust-tiers";
 import { logger } from "../lib/logger";
 import { sendReceipt } from "../lib/mailer";
 import { moderateRequestText } from "../lib/post-moderation";
@@ -1023,9 +1024,15 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
     });
   }
 
-  // Capture pre-increment stats for tier-change detection + name for gratitude prompt
+  // Capture pre-increment stats for tier-change detection + name for gratitude prompt.
+  // community_id is also fetched here so pool ledger writes can be scoped correctly.
   const [helperBefore] = await db
-    .select({ help_count: usersTable.help_count, trust_score: usersTable.trust_score, name: usersTable.name })
+    .select({
+      help_count:   usersTable.help_count,
+      trust_score:  usersTable.trust_score,
+      name:         usersTable.name,
+      community_id: usersTable.community_id,
+    })
     .from(usersTable)
     .where(eq(usersTable.id, helperId))
     .limit(1);
@@ -1043,6 +1050,69 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
   await db.update(usersTable)
     .set({ trust_score: sql`LEAST(80, COALESCE(${usersTable.trust_score}, 0) + 1)` })
     .where(eq(usersTable.id, helperId));
+
+  // ── Tier stickiness: advance highest_tier_reached when quality gate passes ─
+  // After the participation bump, re-read the fresh stats and check whether the
+  // helper has crossed a tier threshold AND passes the quality gate (avg rating
+  // ≥ 4.0 for trusted/elite/anchor).  highest_tier_reached can only go up.
+  try {
+    const [refreshed] = await db
+      .select({
+        trust_score:           usersTable.trust_score,
+        help_count:            usersTable.help_count,
+        highest_tier_reached:  usersTable.highest_tier_reached,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, helperId))
+      .limit(1);
+
+    if (refreshed) {
+      const computedTier  = getTrustTier(refreshed.trust_score ?? 0, refreshed.help_count ?? 0);
+      const currentHighest = (refreshed.highest_tier_reached ?? "member") as TrustTier;
+
+      if (TIER_RANK[computedTier] > TIER_RANK[currentHighest]) {
+        // Quality gate: fetch average rating as ratee (helper being rated by requesters)
+        const [avgRow] = await db
+          .select({ avg: sql<number>`AVG(${ratingsTable.stars})::float8` })
+          .from(ratingsTable)
+          .where(eq(ratingsTable.ratee_id, helperId));
+        const avgRating = (avgRow?.avg != null && !isNaN(avgRow.avg)) ? avgRow.avg : null;
+
+        if (meetsQualityGate(computedTier, avgRating)) {
+          // Atomic monotonic advance: SQL CASE converts tier names to numeric rank
+          // so the UPDATE only fires when the stored tier is STRICTLY lower than the
+          // candidate. Two concurrent completions cannot regress the tier — the one
+          // with the lower computed tier will evaluate the WHERE to false and be a
+          // safe no-op.
+          const candidateRank = TIER_RANK[computedTier];
+          await db.execute(sql`
+            UPDATE users
+            SET highest_tier_reached = ${computedTier}
+            WHERE id = ${helperId}
+              AND CASE highest_tier_reached
+                WHEN 'anchor'   THEN 4
+                WHEN 'elite'    THEN 3
+                WHEN 'trusted'  THEN 2
+                WHEN 'verified' THEN 1
+                ELSE 0
+              END < ${candidateRank}
+          `);
+          logger.info(
+            { helper_id: helperId, new_tier: computedTier, candidate_rank: candidateRank, avg_rating: avgRating },
+            "helper: tier advanced — highest_tier_reached updated atomically"
+          );
+        } else {
+          logger.info(
+            { helper_id: helperId, candidate_tier: computedTier, avg_rating: avgRating },
+            "helper: tier advancement blocked by quality gate (avg rating < 4.0)"
+          );
+        }
+      }
+    }
+  } catch (tierErr) {
+    // Non-fatal — completion always succeeds regardless of tier advancement errors
+    logger.warn({ err: tierErr, helper_id: helperId }, "highest_tier_reached update failed (non-fatal)");
+  }
 
   // Log request completion
   logger.info({ 
@@ -1099,6 +1169,7 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
           requestId: request.id,
           helperId,
           requestTitle: request.title,
+          communityId: helperBefore?.community_id ?? null,
         });
         if (frontOutcome === "paid") {
           paidFromPool = pledge;
@@ -1149,6 +1220,7 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
           amount: topUp,
           requestId: request.id,
           helperId,
+          communityId: helperBefore?.community_id ?? null,
           requestTitle: request.title,
         });
         if (minOutcome === "paid") {
@@ -1396,6 +1468,43 @@ router.post("/requests/:id/rate", requireAuth, async (req, res) => {
     }
     logger.error({ err, request_id: requestId, rater_id: raterId }, "rating: insert failed");
     return res.status(500).json({ error: "Failed to submit rating" });
+  }
+
+  // ── Trust-score adjustment from star rating ───────────────────────────────
+  // When the REQUESTER rates the HELPER (role="requester"), apply a small
+  // trust_score nudge to the helper based on stars received.
+  // Ratings push the score past the participation cap (80) up to 100 —
+  // quality signal is the only path to the upper tier thresholds (90/95/97).
+  //
+  // Mapping: 5⭐→+2, 4⭐→+1, 3⭐→0, 2⭐→-1, 1⭐→-2
+  // Clamped to [1, 100]. Only applied to verified helpers (is_helper=true).
+  //
+  // INVERSE direction: when the HELPER rates the REQUESTER (role="helper"),
+  // adjust goodwill_score instead of trust_score. Goodwill score governs
+  // pledge accountability, not the helper tier ladder.
+  if (role === "requester") {
+    const stars = bParsed.data.stars;
+    const adjustment = stars >= 5 ? 2 : stars === 4 ? 1 : stars === 3 ? 0 : stars === 2 ? -1 : -2;
+    if (adjustment !== 0) {
+      await db.update(usersTable)
+        .set({ trust_score: sql`LEAST(100, GREATEST(1, COALESCE(${usersTable.trust_score}, 5) + ${adjustment}))` })
+        .where(and(eq(usersTable.id, rateeId), eq(usersTable.is_helper, true)))
+        .catch((err) => {
+          logger.warn({ err, ratee_id: rateeId, stars }, "rating: trust_score adjustment failed (non-fatal)");
+        });
+    }
+  } else if (role === "helper") {
+    // Helper rated the requester: adjust goodwill_score
+    const stars = bParsed.data.stars;
+    const adjustment = stars >= 4 ? 1 : stars === 3 ? 0 : -1;
+    if (adjustment !== 0) {
+      await db.update(usersTable)
+        .set({ goodwill_score: sql`LEAST(200, GREATEST(0, COALESCE(${usersTable.goodwill_score}, 100) + ${adjustment}))` })
+        .where(eq(usersTable.id, rateeId))
+        .catch((err) => {
+          logger.warn({ err, ratee_id: rateeId, stars }, "rating: goodwill_score adjustment failed (non-fatal)");
+        });
+    }
   }
 
   logger.info({ request_id: requestId, rater_id: raterId, ratee_id: rateeId, role, stars: bParsed.data.stars }, "rating: submitted");

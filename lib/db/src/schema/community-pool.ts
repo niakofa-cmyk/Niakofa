@@ -31,6 +31,8 @@ export const communityPoolLedgerTable = pgTable("community_pool_ledger", {
   notes: text("notes"),
   // migration 0030: optional link to the government sponsor that funded the pool
   government_sponsor_id: integer("government_sponsor_id"),
+  // migration 0047: community scope — NULL = global/Tarrant County bucket
+  community_id: integer("community_id"),
   created_at: timestamp("created_at", { withTimezone: true })
     .notNull()
     .default(sql`NOW()`),
