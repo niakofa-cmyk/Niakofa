@@ -4,6 +4,7 @@ import { initReactI18next } from "react-i18next";
 const en = {
   nav: {
     map: "Map",
+    browse: "Browse",
     helper_dashboard: "Dashboard",
     community: "Community",
     wallet: "Wallet",
@@ -127,6 +128,7 @@ const en = {
 const es: typeof en = {
   nav: {
     map: "Mapa",
+    browse: "Explorar",
     helper_dashboard: "Panel",
     community: "Comunidad",
     wallet: "Cartera",
@@ -250,7 +252,8 @@ const es: typeof en = {
 // ── Partial translation helper ────────────────────────────────────────────────
 // Missing keys fall back to English via i18next fallbackLng: "en".
 // Cast suppresses TS complaints about incomplete objects — runtime is fine.
-function p(partial: Partial<typeof en>): typeof en {
+type DeepPartial<T> = { [K in keyof T]?: T[K] extends Record<string, unknown> ? DeepPartial<T[K]> : T[K] };
+function p(partial: DeepPartial<typeof en>): typeof en {
   return partial as typeof en;
 }
 

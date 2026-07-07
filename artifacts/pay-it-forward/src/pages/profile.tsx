@@ -1473,6 +1473,56 @@ export default function ProfileScreen() {
               </div>
             </div>
 
+            {/* Invite a Neighbor — referral */}
+            <div className="bg-gradient-to-br from-primary/15 to-background border border-primary/30 rounded-2xl p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                  <Users className="w-5 h-5 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-black text-sm text-foreground">Invite a Neighbor</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                    Niakofa grows through word of mouth. Share with someone who could use a hand — or wants to give one.
+                  </p>
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      aria-label="Share invite link"
+                      onClick={async () => {
+                        const url = `${window.location.origin}/login?ref=${currentUser.id}`;
+                        if (navigator.share) {
+                          try {
+                            await navigator.share({
+                              title: "Join Niakofa — Community Help",
+                              text: `${currentUser.name} invited you to Niakofa. Get help from neighbors or become a helper. It's free.`,
+                              url,
+                            });
+                          } catch {}
+                        } else {
+                          await navigator.clipboard.writeText(url).catch(() => {});
+                          toast({ title: "Invite link copied!", description: "Share it with a neighbor." });
+                        }
+                      }}
+                      className="flex items-center gap-1.5 bg-primary text-primary-foreground text-xs font-black px-4 py-2.5 rounded-xl active:scale-95 transition-all shadow-[0_0_12px_rgba(0,212,255,0.25)]"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Share Invite Link
+                    </button>
+                    <button
+                      aria-label="Copy invite link to clipboard"
+                      onClick={async () => {
+                        const url = `${window.location.origin}/login?ref=${currentUser.id}`;
+                        await navigator.clipboard.writeText(url).catch(() => {});
+                        toast({ title: "Link copied!" });
+                      }}
+                      className="flex items-center gap-1.5 bg-muted text-muted-foreground text-xs font-bold px-3 py-2.5 rounded-xl border border-border active:scale-95 transition-all"
+                    >
+                      Copy link
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Support & Safety */}
             <div className="bg-card border border-border rounded-2xl overflow-hidden">
               <div className="p-4 border-b border-border">

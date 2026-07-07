@@ -41,6 +41,7 @@ const BusinessApplyScreen  = lazy(() => import("@/pages/business-apply"));
 const GovSponsorApplyScreen = lazy(() => import("@/pages/gov-sponsor-apply"));
 const CivicPortalPage      = lazy(() => import("@/pages/civic-portal"));
 const StatusPage           = lazy(() => import("@/pages/status"));
+const RequestsBrowsePage   = lazy(() => import("@/pages/requests-browse"));
 
 // Minimal spinner shown while a lazy chunk is loading.
 // Kept intentionally simple — just a centred, low-opacity dot so the
@@ -211,6 +212,7 @@ function AppShell() {
           <Route path="/business/apply" component={BusinessApplyScreen} />
           <Route path="/gov-sponsor/apply" component={GovSponsorApplyScreen} />
           <Route path="/civic-portal" component={CivicPortalPage} />
+          <Route path="/requests" component={RequestsBrowsePage} />
           <Route component={NotFound} />
         </Switch>
       </Suspense>

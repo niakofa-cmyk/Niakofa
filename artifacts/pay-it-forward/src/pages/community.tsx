@@ -594,8 +594,9 @@ export default function CommunityScreen() {
   useEffect(() => {
     fetch(`${base}/api/gratitude`)
       .then(r => r.json())
-      .then((data: GratitudePost[]) => {
-        setPosts(data);
+      .then((data: unknown) => {
+        // Defensive: API should return GratitudePost[] but guard against shape drift
+        setPosts(Array.isArray(data) ? (data as GratitudePost[]) : []);
         setPostsLoading(false);
       })
       .catch(() => setPostsLoading(false));
@@ -613,10 +614,12 @@ export default function CommunityScreen() {
     setPosts(prev => prev.map(p => p.id === id ? { ...p, likes } : p));
   });
 
-  const { data: recentCompleted = [] } = useGetRequests(
+  const { data: rawRecentCompleted } = useGetRequests(
     { status: "completed" },
     { query: { queryKey: getGetRequestsQueryKey({ status: "completed" }), staleTime: 60000 } }
   );
+  // Defensive: useGetRequests is typed HelpRequest[] but guard against API shape drift
+  const recentCompleted = Array.isArray(rawRecentCompleted) ? rawRecentCompleted : [];
 
   const { data: stats } = useGetRequestStats({
     query: { queryKey: getGetRequestStatsQueryKey(), staleTime: 30000 }
@@ -760,6 +763,41 @@ export default function CommunityScreen() {
         {/* FEED TAB */}
         {tab === "feed" && (
           <div className="space-y-4">
+            {/* Personal Impact Banner */}
+            {currentUser && (
+              <div className="bg-gradient-to-br from-primary/15 to-background border border-primary/30 rounded-2xl p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                    <span className="text-lg font-black text-primary">
+                      {currentUser.name?.[0]?.toUpperCase() ?? "?"}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-black text-sm text-foreground">{currentUser.name}</p>
+                    <p className="text-xs text-muted-foreground">Your community impact</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-black text-primary">{currentUser.trust_score ?? 0}</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider">Trust</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-background/60 rounded-xl p-2.5 text-center">
+                    <div className="text-lg font-black text-green-400">{(currentUser as any).help_count ?? 0}</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Helped</div>
+                  </div>
+                  <div className="bg-background/60 rounded-xl p-2.5 text-center">
+                    <div className="text-lg font-black text-yellow-400">{(currentUser as any).request_count ?? 0}</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Received</div>
+                  </div>
+                  <div className="bg-background/60 rounded-xl p-2.5 text-center">
+                    <div className="text-lg font-black text-primary">{currentUser.is_helper ? "✓" : "—"}</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Helper</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {recentCompleted.length > 0 && (
               <div className="space-y-2">
                 <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2">Recent Help</h3>
@@ -1081,7 +1119,7 @@ export default function CommunityScreen() {
             )}
 
             {/* Transparency ledger */}
-            {poolLedger && poolLedger.entries.length > 0 && (
+            {poolLedger && Array.isArray(poolLedger.entries) && poolLedger.entries.length > 0 && (
               <div className="bg-card border border-border rounded-2xl p-4 space-y-2.5">
                 <h3 className="font-black text-sm flex items-center gap-2">
                   <Activity className="w-4 h-4 text-primary" /> Pool Activity
