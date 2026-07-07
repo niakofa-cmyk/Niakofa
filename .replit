@@ -69,6 +69,7 @@ externalPort = 8080
 [userenv.shared]
 NODE_ENV = "development"
 PORT = "8080"
+VAPID_PUBLIC_KEY = "BFLzCRNCIrfsaMnansSg5H1OtEA5NvqLuV4GtqM0KGoIjOwqmauEnuW4csMpZl_qzBuJ0IozxQULymRA-eCAMpI"
 
 [nix]
 channel = "stable-25_05"

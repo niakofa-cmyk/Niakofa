@@ -59,6 +59,12 @@ jest.unstable_mockModule("@workspace/db", () => {
     systemSettingsTable: { key: "key", value: "value" },
     communityPoolLedgerTable: { id: "id", amount: "amount", request_id: "request_id", created_at: "created_at" },
     poolPendingMinimumsTable: { id: "id", request_id: "request_id" },
+    communitiesTable: { id: "id", name: "name", target_reserve_amount: "target_reserve_amount", created_at: "created_at" },
+    ratingsTable: { id: "id", request_id: "request_id", rater_id: "rater_id", ratee_id: "ratee_id", stars: "stars", role: "role" },
+    paymentTransactionsTable: { id: "id", request_id: "request_id", state: "state" },
+    scheduledPaymentsTable: { id: "id", user_id: "user_id" },
+    walletCashoutsTable: { id: "id", user_id: "user_id" },
+    transactionsTable: { id: "id", user_id: "user_id" },
   };
 });
 
@@ -152,11 +158,13 @@ beforeEach(() => {
   (db.values as jest.Mock).mockClear().mockReturnThis();
   (db.limit as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
   (db.returning as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
-  // NOTE: none of the lifecycle routes under test (claim/en-route/arrived/
-  // complete/tip) run requireApproved, so there is no token-version DB
-  // lookup to pre-seed here — parseAuth verifies the HMAC token in-memory
-  // only. Each test below queues exactly the DB calls its own route path
-  // makes, in order.
+  // requireApproved (used on claim/en-route/arrived/complete) makes one DB
+  // lookup before each route handler runs. Pre-seed it here so every test
+  // that sends a valid auth token gets past requireApproved automatically.
+  // Tests without auth (401) never reach this DB call, so this is harmless.
+  (db.limit as jest.Mock).mockResolvedValueOnce([{
+    is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0,
+  }]);
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

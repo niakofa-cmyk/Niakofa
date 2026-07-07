@@ -15,6 +15,11 @@
  *   2. Calls db.update for each overdue pledge
  *   3. Skips the trust penalty when update returns 0 rows (concurrent race)
  *   4. pledge-worker.ts startPledgeWorker returns null without Redis
+ *
+ * NOTE: this suite runs under Jest's native ESM support
+ * (--experimental-vm-modules). Under native ESM, `jest.mock()` does NOT
+ * intercept dynamic `await import()` calls — only `jest.unstable_mockModule()`
+ * does. All mocked modules are registered below BEFORE any dynamic import.
  */
 import { jest, describe, it, expect, beforeEach } from "@jest/globals";
 
@@ -50,20 +55,22 @@ function makeWhereResult(resolveValue: unknown[]) {
 
 // Track which .where() calls are select vs update via call count
 let whereCallCount = 0;
-const whereMock = jest.fn(() => {
-  whereCallCount++;
-  return makeWhereResult(whereCallCount === 1 ? _overdueRows : []);
-});
 
+// mockDb defined OUTSIDE the factory so:
+//  1. beforeEach can reset individual methods
+//  2. the factory closes over the same reference
 const mockDb = {
   select:    jest.fn().mockReturnThis() as jest.Mock,
   update:    jest.fn().mockReturnThis() as jest.Mock,
   from:      jest.fn().mockReturnThis() as jest.Mock,
   set:       jest.fn().mockReturnThis() as jest.Mock,
-  where:     whereMock,
+  where:     jest.fn(() => {
+    whereCallCount++;
+    return makeWhereResult(whereCallCount === 1 ? _overdueRows : []);
+  }) as jest.Mock,
 };
 
-jest.mock("@workspace/db", () => ({
+jest.unstable_mockModule("@workspace/db", () => ({
   db: mockDb,
   requestsTable: {
     id: "id",
@@ -84,40 +91,75 @@ jest.mock("@workspace/db", () => ({
     email: "email",
     name: "name",
   },
+  communitiesTable: { id: "id", name: "name", target_reserve_amount: "target_reserve_amount" },
+  communityPoolLedgerTable: { id: "id", amount: "amount", request_id: "request_id" },
+  poolPendingMinimumsTable: { id: "id", request_id: "request_id" },
+  scheduledPaymentsTable: { id: "id", user_id: "user_id", status: "status" },
+  walletCashoutsTable: { id: "id", user_id: "user_id", status: "status" },
+  paymentTransactionsTable: { id: "id", request_id: "request_id", state: "state" },
+  transactionsTable: { id: "id", user_id: "user_id" },
+  ratingsTable: { id: "id", request_id: "request_id", stars: "stars" },
 }));
 
-jest.mock("drizzle-orm", () => ({
+jest.unstable_mockModule("drizzle-orm", () => ({
   eq:     jest.fn((_col: unknown, val: unknown) => ({ eq: { _col, val } })),
   and:    jest.fn((...args: unknown[]) => ({ and: args })),
+  or:     jest.fn((...args: unknown[]) => ({ or: args })),
   sql:    Object.assign(jest.fn((s: unknown) => s), {
     raw: jest.fn((s: unknown) => s),
   }),
-  isNull: jest.fn((col: unknown) => ({ isNull: col })),
+  isNull:     jest.fn((col: unknown) => ({ isNull: col })),
+  isNotNull:  jest.fn((col: unknown) => ({ isNotNull: col })),
   lte:    jest.fn((_col: unknown, val: unknown) => ({ lte: { _col, val } })),
   lt:     jest.fn((_col: unknown, val: unknown) => ({ lt: { _col, val } })),
+  gte:    jest.fn((_col: unknown, val: unknown) => ({ gte: { _col, val } })),
+  gt:     jest.fn((_col: unknown, val: unknown) => ({ gt: { _col, val } })),
+  ne:     jest.fn((_col: unknown, val: unknown) => ({ ne: { _col, val } })),
+  asc:    jest.fn((col: unknown) => ({ asc: col })),
+  desc:   jest.fn((col: unknown) => ({ desc: col })),
+  inArray:    jest.fn(),
+  notInArray: jest.fn(),
+  not:        jest.fn(),
 }));
 
-jest.mock("../lib/queue.js", () => ({
+jest.unstable_mockModule("../lib/queue.js", () => ({
   getRedisConnection: jest.fn().mockReturnValue(null),
+  isRedisConfigured: jest.fn().mockReturnValue(false),
   QUEUE: { PLEDGE_RECONCILIATION: "pledge-reconciliation" },
   pledgeQueue: null,
 }));
 
-jest.mock("../routes/push.js", () => ({
+jest.unstable_mockModule("../routes/push.js", () => ({
   sendPushToUser: jest.fn().mockResolvedValue(undefined),
+  sendPushToNearbyHelpers: jest.fn().mockResolvedValue(undefined),
+  sendPushToAllHelpers: jest.fn().mockResolvedValue(undefined),
+  sendPushToUsers: jest.fn().mockResolvedValue(undefined),
+  default: { get: jest.fn(), post: jest.fn(), use: jest.fn() },
 }));
 
-jest.mock("../lib/mailer.js", () => ({
+jest.unstable_mockModule("../lib/mailer.js", () => ({
   sendAlertEmail: jest.fn().mockResolvedValue(undefined),
+  sendReceipt: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("../lib/logger.js", () => ({
+jest.unstable_mockModule("../lib/logger.js", () => ({
   logger: {
     info:  jest.fn(),
     warn:  jest.fn(),
     error: jest.fn(),
     debug: jest.fn(),
   },
+}));
+
+jest.unstable_mockModule("../lib/ws-hub.js", () => ({
+  broadcast: jest.fn(),
+  broadcastRequestEvent: jest.fn(),
+  sendToUser: jest.fn(),
+  sendToRequestParticipants: jest.fn(),
+  sendToUsers: jest.fn(),
+  isUserOnline: jest.fn().mockReturnValue(false),
+  getConnectedUserIds: jest.fn().mockReturnValue([]),
+  getHubMetrics: jest.fn().mockReturnValue({}),
 }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -150,8 +192,8 @@ beforeEach(() => {
   mockDb.update.mockReturnValue(mockDb);
   mockDb.from.mockReturnValue(mockDb);
   mockDb.set.mockReturnValue(mockDb);
-  // where is always called fresh; whereCallCount tracks select vs update call
-  (mockDb.where as jest.Mock).mockImplementation(() => {
+  // Reset where to default implementation
+  mockDb.where.mockImplementation(() => {
     whereCallCount++;
     return makeWhereResult(whereCallCount === 1 ? _overdueRows : []);
   });
@@ -210,7 +252,7 @@ describe("processPledgeDefaults (scheduler.ts — sole auto-default owner)", () 
 
     // Allow multiple where() calls — first one = select, subsequent = update chains
     let wc = 0;
-    (mockDb.where as jest.Mock).mockImplementation(() => {
+    mockDb.where.mockImplementation(() => {
       wc++;
       return makeWhereResult(wc === 1 ? _overdueRows : [{ id: wc }]);
     });

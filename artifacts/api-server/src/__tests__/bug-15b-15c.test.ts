@@ -64,6 +64,12 @@ jest.unstable_mockModule("@workspace/db", () => {
     systemSettingsTable: { key: "key", value: "value" },
     communityPoolLedgerTable: { id: "id", amount: "amount", request_id: "request_id", created_at: "created_at" },
     poolPendingMinimumsTable: { id: "id", request_id: "request_id" },
+    communitiesTable: { id: "id", name: "name", target_reserve_amount: "target_reserve_amount", created_at: "created_at" },
+    ratingsTable: { id: "id", request_id: "request_id", rater_id: "rater_id", ratee_id: "ratee_id", stars: "stars", role: "role" },
+    paymentTransactionsTable: { id: "id", request_id: "request_id", state: "state" },
+    scheduledPaymentsTable: { id: "id", user_id: "user_id" },
+    walletCashoutsTable: { id: "id", user_id: "user_id" },
+    transactionsTable: { id: "id", user_id: "user_id" },
   };
 });
 
@@ -161,10 +167,12 @@ beforeEach(() => {
   (db.values as jest.Mock).mockClear().mockReturnThis();
   (db.limit as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
   (db.returning as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
-  // NOTE: /claim runs under requireAuth only (no requireApproved), so
-  // parseAuth's HMAC check needs no DB lookup here — no token-version
-  // preload required. Each test below queues exactly the DB calls the
-  // claim handler itself makes, in call order.
+  // requireApproved (used on /claim) makes one DB lookup before the route
+  // handler. Pre-seed it so authenticated tests get past requireApproved.
+  // Tests without auth (401) never reach this call.
+  (db.limit as jest.Mock).mockResolvedValueOnce([{
+    is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0,
+  }]);
 });
 
 // ── BUG-15b: max_travel_miles enforcement ─────────────────────────────────────

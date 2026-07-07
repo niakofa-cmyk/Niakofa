@@ -73,6 +73,7 @@ jest.unstable_mockModule("@workspace/db", () => {
     systemSettingsTable: { key: "key", value: "value" },
     communityPoolLedgerTable: { id: "id", amount: "amount", request_id: "request_id", created_at: "created_at" },
     poolPendingMinimumsTable: { id: "id", request_id: "request_id" },
+    communitiesTable: { id: "id", name: "name", target_reserve_amount: "target_reserve_amount", created_at: "created_at" },
   };
 });
 
@@ -116,6 +117,7 @@ jest.unstable_mockModule("../lib/ws-hub.js", () => ({
 
 jest.unstable_mockModule("../lib/queue.js", () => ({
   enqueuePayoutRetry: jest.fn().mockResolvedValue(undefined),
+  isRedisConfigured: jest.fn().mockReturnValue(false),
 }));
 
 jest.unstable_mockModule("../routes/push.js", () => ({

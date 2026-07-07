@@ -10,58 +10,107 @@
  *   - Wrong password / unknown email (401)
  *
  * DB interactions are mocked so no real Postgres connection is needed.
+ *
+ * NOTE: this suite runs under Jest's native ESM support
+ * (--experimental-vm-modules). Under native ESM, `jest.mock()` does NOT
+ * intercept dynamic `await import()` calls — only `jest.unstable_mockModule()`
+ * does. All mocked modules are registered below BEFORE any dynamic import,
+ * and the router is imported dynamically inside beforeAll, after the mocks
+ * are in place.
  */
 import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals";
 import request from "supertest";
 import express, { Express } from "express";
 
-// ── DB mock ───────────────────────────────────────────────────────────────────
-jest.mock("@workspace/db", () => {
-  const mockDb: Record<string, unknown> = {
-    select: jest.fn().mockReturnThis(),
-    update: jest.fn().mockReturnThis(),
-    insert: jest.fn().mockReturnThis(),
-    delete: jest.fn().mockReturnThis(),
-    from: jest.fn().mockReturnThis(),
-    where: jest.fn().mockReturnThis(),
-    set: jest.fn().mockReturnThis(),
-    values: jest.fn().mockReturnThis(),
-    limit: jest.fn(),
-    returning: jest.fn(),
-    orderBy: jest.fn().mockReturnThis(),
-  };
-  (mockDb.limit as jest.Mock).mockImplementation(() => Promise.resolve([]));
-  (mockDb.returning as jest.Mock).mockImplementation(() => Promise.resolve([]));
+// ── DB mock — defined outside factory so beforeEach can reset methods ─────────
+const mockDb: Record<string, jest.Mock> = {
+  select:  jest.fn().mockReturnThis(),
+  update:  jest.fn().mockReturnThis(),
+  insert:  jest.fn().mockReturnThis(),
+  delete:  jest.fn().mockReturnThis(),
+  from:    jest.fn().mockReturnThis(),
+  where:   jest.fn().mockReturnThis(),
+  set:     jest.fn().mockReturnThis(),
+  values:  jest.fn().mockReturnThis(),
+  limit:   jest.fn().mockResolvedValue([]),
+  returning: jest.fn().mockResolvedValue([]),
+  orderBy: jest.fn().mockReturnThis(),
+  leftJoin: jest.fn().mockReturnThis(),
+  groupBy: jest.fn().mockReturnValue([]),
+};
 
-  return {
-    db: mockDb,
-    usersTable: { id: "id", name: "name", email: "email", password_hash: "password_hash" },
-    requestsTable: {},
-    transactionsTable: {},
-    stripeAccountsTable: {},
-    paymentTransactionsTable: {},
-    scheduledPaymentsTable: {},
-    userSettingsTable: {},
-  };
-});
+jest.unstable_mockModule("@workspace/db", () => ({
+  db: mockDb,
+  usersTable: {
+    id: "id", name: "name", email: "email", password_hash: "password_hash",
+    is_helper: "is_helper", trust_score: "trust_score", help_count: "help_count",
+    benevolence_wallet: "benevolence_wallet", is_admin: "is_admin",
+    is_suspended: "is_suspended", tos_accepted: "tos_accepted",
+    tos_waiver_version: "tos_waiver_version", account_type: "account_type",
+    approval_status: "approval_status", helper_status: "helper_status",
+  },
+  requestsTable: { id: "id", status: "status", requester_id: "requester_id" },
+  transactionsTable: { id: "id", user_id: "user_id" },
+  stripeAccountsTable: { id: "id", user_id: "user_id" },
+  paymentTransactionsTable: { id: "id" },
+  scheduledPaymentsTable: { id: "id", user_id: "user_id" },
+  userSettingsTable: { id: "id", user_id: "user_id" },
+  helperAvailabilityTable: { id: "id", user_id: "user_id" },
+  communityPoolLedgerTable: { id: "id", amount: "amount" },
+  poolPendingMinimumsTable: { id: "id", request_id: "request_id" },
+  communitiesTable: { id: "id", name: "name", target_reserve_amount: "target_reserve_amount" },
+  systemSettingsTable: { key: "key", value: "value" },
+}));
 
-jest.mock("drizzle-orm", () => ({
+jest.unstable_mockModule("drizzle-orm", () => ({
   eq: jest.fn(),
   and: jest.fn(),
+  or: jest.fn(),
+  not: jest.fn(),
   sql: jest.fn(),
   inArray: jest.fn(),
+  notInArray: jest.fn(),
+  asc: jest.fn(),
+  desc: jest.fn(),
+  gte: jest.fn(),
+  gt: jest.fn(),
+  lte: jest.fn(),
+  lt: jest.fn(),
+  ne: jest.fn(),
+  isNull: jest.fn(),
+  isNotNull: jest.fn(),
 }));
 
-jest.mock("../lib/ws-hub.js", () => ({
+jest.unstable_mockModule("../lib/ws-hub.js", () => ({
   broadcast: jest.fn(),
+  broadcastRequestEvent: jest.fn(),
+  sendToUser: jest.fn(),
+  sendToRequestParticipants: jest.fn(),
+  sendToUsers: jest.fn(),
+  isUserOnline: jest.fn().mockReturnValue(false),
+  getConnectedUserIds: jest.fn().mockReturnValue([]),
+  getHubMetrics: jest.fn().mockReturnValue({}),
 }));
 
-jest.mock("../lib/queue.js", () => ({
+jest.unstable_mockModule("../lib/queue.js", () => ({
   enqueuePayoutRetry: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("../lib/mailer.js", () => ({
+jest.unstable_mockModule("../lib/mailer.js", () => ({
   sendReceipt: jest.fn().mockResolvedValue(undefined),
+  sendAlertEmail: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.unstable_mockModule("../lib/logger.js", () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+
+jest.unstable_mockModule("../routes/push.js", () => ({
+  sendPushToNearbyHelpers: jest.fn().mockResolvedValue(undefined),
+  sendPushToAllHelpers: jest.fn().mockResolvedValue(undefined),
+  sendPushToUser: jest.fn().mockResolvedValue(undefined),
+  sendPushToUsers: jest.fn().mockResolvedValue(undefined),
+  default: { get: jest.fn(), post: jest.fn(), use: jest.fn() },
 }));
 
 // ── App setup ─────────────────────────────────────────────────────────────────
@@ -75,23 +124,24 @@ beforeAll(async () => {
 });
 
 // ── Reset mocks between tests ─────────────────────────────────────────────────
-beforeEach(async () => {
-  const { db } = await import("@workspace/db");
+beforeEach(() => {
   // mockReset() clears both call history AND any queued mockResolvedValueOnce/
   // mockReturnValueOnce entries from previous tests — critical for preventing
   // mock state bleeding when a test sets up a once-mock but the route returns
   // early (e.g. Zod validation failure) without consuming it.
-  (db.select as jest.Mock).mockReset().mockReturnThis();
-  (db.update as jest.Mock).mockReset().mockReturnThis();
-  (db.insert as jest.Mock).mockReset().mockReturnThis();
-  (db.delete as jest.Mock).mockReset().mockReturnThis();
-  (db.from as jest.Mock).mockReset().mockReturnThis();
-  (db.where as jest.Mock).mockReset().mockReturnThis();
-  (db.set as jest.Mock).mockReset().mockReturnThis();
-  (db.values as jest.Mock).mockReset().mockReturnThis();
-  (db.orderBy as jest.Mock).mockReset().mockReturnThis();
-  (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
-  (db.returning as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
+  mockDb.select.mockReset().mockReturnThis();
+  mockDb.update.mockReset().mockReturnThis();
+  mockDb.insert.mockReset().mockReturnThis();
+  mockDb.delete.mockReset().mockReturnThis();
+  mockDb.from.mockReset().mockReturnThis();
+  mockDb.where.mockReset().mockReturnThis();
+  mockDb.set.mockReset().mockReturnThis();
+  mockDb.values.mockReset().mockReturnThis();
+  mockDb.orderBy.mockReset().mockReturnThis();
+  mockDb.leftJoin.mockReset().mockReturnThis();
+  mockDb.groupBy.mockReset().mockReturnValue([]);
+  mockDb.limit.mockReset().mockResolvedValue([]);
+  mockDb.returning.mockReset().mockResolvedValue([]);
 });
 
 // ── Registration tests ────────────────────────────────────────────────────────
@@ -105,9 +155,8 @@ describe("POST /api/users/register", () => {
   });
 
   it("returns 409 when email is already registered", async () => {
-    const { db } = await import("@workspace/db");
     // First limit call = duplicate check (returns existing user)
-    (db.limit as jest.Mock).mockResolvedValueOnce([{ id: 1 }]);
+    mockDb.limit.mockResolvedValueOnce([{ id: 1 }]);
 
     const res = await request(app)
       .post("/api/users/register")
@@ -118,11 +167,10 @@ describe("POST /api/users/register", () => {
   });
 
   it("returns 201 with user and token on successful registration", async () => {
-    const { db } = await import("@workspace/db");
     // Duplicate check — no existing user
-    (db.limit as jest.Mock).mockResolvedValueOnce([]);
+    mockDb.limit.mockResolvedValueOnce([]);
     // Insert returning
-    (db.returning as jest.Mock).mockResolvedValueOnce([{
+    mockDb.returning.mockResolvedValueOnce([{
       id: 42,
       name: "Bob",
       email: "bob@example.com",
@@ -180,8 +228,7 @@ describe("POST /api/users/login", () => {
   });
 
   it("returns 401 when no account exists for that email", async () => {
-    const { db } = await import("@workspace/db");
-    (db.limit as jest.Mock).mockResolvedValueOnce([]);
+    mockDb.limit.mockResolvedValueOnce([]);
 
     const res = await request(app)
       .post("/api/users/login")
@@ -192,12 +239,11 @@ describe("POST /api/users/login", () => {
   });
 
   it("returns 401 when password is incorrect", async () => {
-    const { db } = await import("@workspace/db");
     // Return a user with a real bcrypt hash for "correctPassword"
     // We test with "wrongPassword" — bcrypt.compare will return false
     // Hash of "correctPassword" (pre-computed for test speed at 4 rounds)
     const hash = "$2a$04$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012";
-    (db.limit as jest.Mock).mockResolvedValueOnce([{
+    mockDb.limit.mockResolvedValueOnce([{
       id: 1, email: "user@example.com", password_hash: hash,
     }]);
 
@@ -210,9 +256,8 @@ describe("POST /api/users/login", () => {
   });
 
   it("returns 403 with LEGACY_PASSWORD_REQUIRED for legacy accounts", async () => {
-    const { db } = await import("@workspace/db");
     // Legacy account — no password_hash (imported from external source, never set a password)
-    (db.limit as jest.Mock).mockResolvedValueOnce([{
+    mockDb.limit.mockResolvedValueOnce([{
       id: 5, name: "Legacy", email: "legacy@example.com",
       password_hash: null, is_helper: false,
     }]);
