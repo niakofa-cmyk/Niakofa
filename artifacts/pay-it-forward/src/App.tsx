@@ -121,22 +121,12 @@ function NiaGlobal() {
 
   return (
     <>
-      {/* Floating FAB — shown on all non-map screens, hidden on map to avoid
-          double-orb with TopBar's own Nia button. */}
-      {showFloatingFab && (
-        <div style={{
-          position: "fixed",
-          top: "max(8px, env(safe-area-inset-top))",
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 9997,
-          pointerEvents: "auto",
-        }}>
-          {niaEnabled
-            ? <NiaFab onClick={() => setNiaOpen(true)} enabled={true} />
-            : <NiaFab onClick={() => {}} enabled={false} dormant />
-          }
-        </div>
+      {/* Floating FAB — position:fixed relative to viewport. No wrapping
+          transform div: transforms create a new containing block for fixed
+          children (CSS spec), which would break the orb positioning. Shown on
+          all non-map screens; on map the TopBar renders its own Nia orb. */}
+      {showFloatingFab && niaEnabled === true && (
+        <NiaFab onClick={() => setNiaOpen(true)} enabled={true} />
       )}
 
       {/* NiaDrawer — always mounted (so window.openNia from TopBar works on

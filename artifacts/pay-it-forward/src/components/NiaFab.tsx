@@ -128,11 +128,11 @@ function NiaFabInner({ onClick }: { onClick: () => void }) {
       dragMomentum={false}
       dragElastic={0.08}
       dragConstraints={{
-        // Keep the orb centre always visible on screen
-        left: -100,
-        right: 100,
-        top: -80,
-        bottom: 120,
+        // Keep the orb visible — can't drag below the nav or off left/top
+        left: -240,
+        right: 0,
+        top: -520,
+        bottom: 0,
       }}
       animate={{ x: fabX, y: fabY }}
       onDragStart={handleDragStart}
@@ -140,7 +140,8 @@ function NiaFabInner({ onClick }: { onClick: () => void }) {
       onDragEnd={handleDragEnd}
       style={{
         position: "fixed",
-        bottom: "1.5rem",
+        // Sit above the bottom nav bar (≈72px) + safe-area-inset-bottom
+        bottom: "calc(env(safe-area-inset-bottom) + 80px)",
         right: "1.5rem",
         zIndex: 9999,
         cursor: isDragging ? "grabbing" : "grab",

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
-  Shield, AlertCircle, CheckCircle2, Clock, X, ChevronLeft,
+  Shield, AlertCircle, CheckCircle2, Clock, X, ChevronLeft, ChevronRight,
   Eye, Flag, User as UserIcon, RefreshCw, ExternalLink,
   Users, Search, Ban, AlertTriangle, Star, Bot, Power, Timer,
   BarChart2, TrendingUp, Activity, Zap, MessageSquare, Package,
@@ -3441,7 +3441,7 @@ function CivicSuggestionsSection() {
 }
 
 // ── Settings Tab — Community Pool wage floors and feature toggles ─────────────
-function SettingsTab() {
+function SettingsTab({ onNavigate }: { onNavigate?: (tab: string) => void }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<{
@@ -3534,6 +3534,28 @@ function SettingsTab() {
 
   return (
     <div className="space-y-6 pb-8">
+
+      {/* ── Nia AI Quick Controls ──────────────────────────────────── */}
+      <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1">AI & Automation</div>
+      <div className="bg-card border border-border rounded-2xl p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Bot className="w-4 h-4 text-primary" />
+            <span className="text-sm font-bold">Nia AI Assistant</span>
+          </div>
+          <button
+            onClick={() => onNavigate?.("nia")}
+            style={{ touchAction: "manipulation" }}
+            className="flex items-center gap-1 text-xs font-bold text-primary active:opacity-70"
+          >
+            Manage <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+          Toggle Nia on/off for all users instantly, review usage costs, and manage community memory from the Nia AI tab.
+        </p>
+      </div>
+
       <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1">Community Pool Settings</div>
 
       {/* Pool on/off toggle */}
@@ -4658,6 +4680,17 @@ export default function AdminScreen() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics" | "orgs" | "civic" | "disputes" | "settings" | "system">("reports");
 
+  // Global auto-refresh tick every 30s — tabs that care subscribe to this
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date());
+  useEffect(() => {
+    const id = setInterval(() => {
+      setRefreshTick(t => t + 1);
+      setLastRefreshedAt(new Date());
+    }, 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   // ── Session timer ─────────────────────────────────────────────────────────
   const [sessionSecondsLeft, setSessionSecondsLeft] = useState(SESSION_DURATION_MS / 1000);
   const [showBumpPrompt, setShowBumpPrompt] = useState(false);
@@ -4805,17 +4838,25 @@ export default function AdminScreen() {
     );
   }
 
+  // Groups: 1 = Trust & Safety, 2 = Finance, 3 = Intelligence, 4 = Configure
+  const TAB_GROUPS: Record<string, number> = {
+    reports: 1, disputes: 1, users: 1, helpers: 1,
+    pledges: 2, orgs: 2,
+    nia: 3, analytics: 3, audit: 3,
+    civic: 4, settings: 4, system: 4,
+  };
+
   const TABS = [
     { key: "reports",   label: "Reports",   icon: Flag },
-    { key: "helpers",   label: "Helpers",   icon: UserIcon },
+    { key: "disputes",  label: "Disputes",  icon: Gavel },
     { key: "users",     label: "Users",     icon: Users },
+    { key: "helpers",   label: "Helpers",   icon: UserIcon },
     { key: "pledges",   label: "Pledges",   icon: HandHeart },
     { key: "orgs",      label: "Orgs",      icon: Landmark },
-    { key: "civic",     label: "Civic",     icon: Building2 },
-    { key: "audit",     label: "Audit",     icon: FileText },
     { key: "nia",       label: "Nia AI",    icon: Bot },
     { key: "analytics", label: "Stats",     icon: BarChart2 },
-    { key: "disputes",  label: "Disputes",  icon: Gavel },
+    { key: "audit",     label: "Audit",     icon: FileText },
+    { key: "civic",     label: "Civic",     icon: Building2 },
     { key: "settings",  label: "Settings",  icon: SlidersHorizontal },
     { key: "system",    label: "System",    icon: Server },
   ] as const;
@@ -4838,6 +4879,13 @@ export default function AdminScreen() {
           <h1 className="flex-1 text-lg font-black uppercase tracking-widest flex items-center gap-2">
             <Shield className="w-5 h-5 text-destructive" /> Admin
           </h1>
+          {/* Live refresh indicator */}
+          <div className="flex items-center gap-1 text-[9px] font-black text-green-400/80 shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+            <span className="hidden sm:inline">
+              {lastRefreshedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          </div>
           {/* Session timer */}
           <span className={`flex items-center gap-1 text-[11px] font-black px-2.5 py-1.5 rounded-full border ${
             sessionSecondsLeft <= 60 ? "text-destructive border-destructive/30 bg-destructive/10" :
@@ -4900,50 +4948,67 @@ export default function AdminScreen() {
         {activeTab === "users"     && <UsersTab />}
         {activeTab === "reports"   && <ReportsTab authed={authed} />}
         {activeTab === "disputes"  && <DisputesTab />}
-        {activeTab === "settings"  && <SettingsTab />}
+        {activeTab === "settings"  && <SettingsTab onNavigate={(tab) => setActiveTab(tab as typeof activeTab)} />}
         {activeTab === "system"    && <SystemTab />}
       </div>
 
-      {/* ── Bottom tab bar (mobile-native, horizontally scrollable) ───────── */}
-      {/* 10 tabs don't fit a phone screen side-by-side at readable size.
-          Horizontal scroll with snap lets the user swipe through all tabs
-          while keeping 44px+ tap targets. A fade gradient on the right edge
-          signals that more tabs exist beyond the viewport. */}
+      {/* ── Bottom tab bar — logically grouped, animated active pill ──────── */}
+      {/* Groups: Trust & Safety | Finance | Intelligence | Configure
+          Separators between groups; framer-motion layoutId animates the
+          highlight pill as the user jumps between tabs. */}
       <div
         className="fixed bottom-0 left-0 right-0 z-20 bg-card/95 backdrop-blur-xl border-t border-border"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        {/* Fade gradient on right edge — scroll indicator */}
         <div className="relative">
           <div
             role="tablist"
             aria-label="Admin sections"
             className="overflow-x-auto scrollbar-none overscroll-x-contain"
           >
-            <div className="flex w-max min-w-full px-1">
-              {TABS.map(({ key, label, icon: Icon }) => (
-                <button
-                  key={key}
-                  role="tab"
-                  aria-selected={activeTab === key}
-                  onClick={() => setActiveTab(key as typeof activeTab)}
-                  style={{ touchAction: "manipulation" }}
-                  className={`flex flex-col items-center gap-1 py-3.5 px-4 min-w-[72px] transition-colors relative ${
-                    activeTab === key ? "text-primary" : "text-muted-foreground"
-                  }`}
-                >
-                  {/* Active indicator pill */}
-                  {activeTab === key && (
-                    <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-primary" />
-                  )}
-                  <Icon className="w-5 h-5 shrink-0" />
-                  <span className="text-[10px] font-bold whitespace-nowrap">{label}</span>
-                </button>
-              ))}
+            <div className="flex w-max min-w-full items-center px-1.5 py-1 gap-0.5">
+              {TABS.flatMap(({ key, label, icon: Icon }, idx) => {
+                const isActive = activeTab === key;
+                const showSep = idx > 0 && TAB_GROUPS[key] !== TAB_GROUPS[TABS[idx - 1].key];
+                const items = [];
+                if (showSep) {
+                  items.push(
+                    <div
+                      key={`sep-${key}`}
+                      className="self-stretch w-px bg-border/50 mx-0.5 my-2.5 shrink-0"
+                    />
+                  );
+                }
+                items.push(
+                  <button
+                    key={key}
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => setActiveTab(key as typeof activeTab)}
+                    style={{ touchAction: "manipulation" }}
+                    className={`relative flex flex-col items-center gap-0.5 py-2.5 px-3 min-w-[58px] rounded-xl transition-colors shrink-0 ${
+                      isActive ? "text-primary" : "text-muted-foreground active:text-foreground"
+                    }`}
+                  >
+                    {/* Animated highlight pill — shared layoutId so it slides between tabs */}
+                    {isActive && (
+                      <motion.span
+                        layoutId="adminTabPill"
+                        className="absolute inset-0 rounded-xl bg-primary/10 border border-primary/15"
+                        transition={{ type: "spring", stiffness: 500, damping: 40 }}
+                      />
+                    )}
+                    <Icon className={`w-[18px] h-[18px] shrink-0 relative z-10 transition-transform duration-150 ${isActive ? "scale-110" : ""}`} />
+                    <span className="text-[9px] font-bold whitespace-nowrap relative z-10 leading-tight">{label}</span>
+                  </button>
+                );
+                return items;
+              })}
             </div>
           </div>
-          {/* Right fade — subtle scroll hint */}
-          <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-card/95 to-transparent" />
+          {/* Scroll-hint fade gradients on both edges */}
+          <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-3 bg-gradient-to-r from-card/95 to-transparent" />
+          <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-3 bg-gradient-to-l from-card/95 to-transparent" />
         </div>
       </div>
     </div>
