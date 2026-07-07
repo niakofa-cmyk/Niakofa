@@ -1,6 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, helperAvailabilityTable } from "@workspace/db";
+import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, helperAvailabilityTable, communitiesTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import {
   GetUserParams,
@@ -804,6 +804,37 @@ router.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(
 // PATCH /users/:id/panic-contacts route previously lived here with zero
 // frontend callers and zero test coverage; removed rather than left as dead
 // code that could silently drift from the real one.
+
+// Self-service community picker — lets a user choose which community pool will
+// back their future requests. Community is validated to exist; null clears the
+// assignment back to the global/unassigned bucket.
+router.put("/users/me/community", requireAuth, async (req, res) => {
+  const userId = (req as any).authenticatedUserId as number;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const { community_id } = req.body as { community_id?: number | null };
+  if (community_id !== null && community_id !== undefined && typeof community_id !== "number") {
+    return res.status(400).json({ error: "community_id must be a number or null" });
+  }
+
+  if (typeof community_id === "number") {
+    const [exists] = await db
+      .select({ id: communitiesTable.id })
+      .from(communitiesTable)
+      .where(eq(communitiesTable.id, community_id))
+      .limit(1);
+    if (!exists) return res.status(400).json({ error: "No community with that id" });
+  }
+
+  const [updated] = await db
+    .update(usersTable)
+    .set({ community_id: community_id ?? null, updated_at: new Date() })
+    .where(eq(usersTable.id, userId))
+    .returning({ id: usersTable.id, community_id: usersTable.community_id });
+
+  if (!updated) return res.status(404).json({ error: "User not found" });
+  return res.json({ ok: true, community_id: updated.community_id });
+});
 
 // Self-delete: authenticated user deletes their own account. Uses the token
 // subject (authenticatedUserId) as the canonical source — never a path param —

@@ -4694,9 +4694,7 @@ function SystemTab() {
 interface AdminCommunity {
   id: number;
   name: string;
-  description: string | null;
   target_reserve_amount: number;
-  pool_enabled: boolean;
   is_default: boolean;
   created_at: string;
   member_count?: number;
@@ -4708,7 +4706,7 @@ function CommunitiesTab() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<number | "new" | null>(null);
   const [editing, setEditing] = useState<number | "new" | null>(null);
-  const [form, setForm] = useState({ name: "", description: "", target_reserve_amount: "5000", pool_enabled: true });
+  const [form, setForm] = useState({ name: "", target_reserve_amount: "5000" });
   const [reassignUserId, setReassignUserId] = useState("");
   const [reassignCommunityId, setReassignCommunityId] = useState("");
   const [reassignMsg, setReassignMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -4732,17 +4730,12 @@ function CommunitiesTab() {
   useEffect(() => { load(); }, []);
 
   const openNew = () => {
-    setForm({ name: "", description: "", target_reserve_amount: "5000", pool_enabled: true });
+    setForm({ name: "", target_reserve_amount: "5000" });
     setEditing("new");
   };
 
   const openEdit = (c: AdminCommunity) => {
-    setForm({
-      name: c.name,
-      description: c.description ?? "",
-      target_reserve_amount: String(c.target_reserve_amount),
-      pool_enabled: c.pool_enabled,
-    });
+    setForm({ name: c.name, target_reserve_amount: String(c.target_reserve_amount) });
     setEditing(c.id);
   };
 
@@ -4754,9 +4747,7 @@ function CommunitiesTab() {
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
         body: JSON.stringify({
           name: form.name.trim(),
-          description: form.description.trim() || null,
           target_reserve_amount: parseFloat(form.target_reserve_amount) || 5000,
-          pool_enabled: form.pool_enabled,
         }),
       });
       if (res.ok) {
@@ -4780,9 +4771,7 @@ function CommunitiesTab() {
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
         body: JSON.stringify({
           name: form.name.trim(),
-          description: form.description.trim() || null,
           target_reserve_amount: parseFloat(form.target_reserve_amount) || 5000,
-          pool_enabled: form.pool_enabled,
         }),
       });
       if (res.ok) {
@@ -4873,40 +4862,17 @@ function CommunitiesTab() {
                 style={{ fontSize: "16px" }}
                 className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
               />
-              <input
-                placeholder="Description (optional)"
-                value={form.description}
-                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                style={{ fontSize: "16px" }}
-                className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
-              />
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">Target Reserve ($)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="5000"
-                    value={form.target_reserve_amount}
-                    onChange={e => setForm(f => ({ ...f, target_reserve_amount: e.target.value }))}
-                    style={{ fontSize: "16px" }}
-                    className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
-                  />
-                </div>
-                <div className="flex flex-col justify-end pb-0.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">Pool Active</label>
-                  <button
-                    onClick={() => setForm(f => ({ ...f, pool_enabled: !f.pool_enabled }))}
-                    style={{ touchAction: "manipulation" }}
-                    className={`px-4 py-2.5 rounded-xl text-[11px] font-black border transition-all ${
-                      form.pool_enabled
-                        ? "bg-green-500/15 border-green-500/40 text-green-400"
-                        : "bg-muted border-border text-muted-foreground"
-                    }`}
-                  >
-                    {form.pool_enabled ? "ON" : "OFF"}
-                  </button>
-                </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">Target Reserve ($)</label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="5000"
+                  value={form.target_reserve_amount}
+                  onChange={e => setForm(f => ({ ...f, target_reserve_amount: e.target.value }))}
+                  style={{ fontSize: "16px" }}
+                  className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+                />
               </div>
             </div>
             <div className="flex gap-2">
@@ -4952,15 +4918,7 @@ function CommunitiesTab() {
                     {c.is_default && (
                       <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30">Default</span>
                     )}
-                    <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                      c.pool_enabled
-                        ? "bg-green-500/10 text-green-400 border-green-500/30"
-                        : "bg-muted text-muted-foreground border-border"
-                    }`}>
-                      {c.pool_enabled ? "Pool ON" : "Pool OFF"}
-                    </span>
                   </div>
-                  {c.description && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{c.description}</p>}
                   <div className="text-[10px] text-muted-foreground mt-1">
                     ID #{c.id} · {(c.member_count ?? 0).toLocaleString()} members · Created {new Date(c.created_at).toLocaleDateString()}
                   </div>

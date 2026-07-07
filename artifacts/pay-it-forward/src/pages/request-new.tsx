@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minus, Camera, X, ShieldCheck, Building2, User, Sparkles, Loader2 } from "lucide-react";
+import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minus, Camera, X, ShieldCheck, Building2, User, Sparkles, Loader2, Globe } from "lucide-react";
 import { isSensitiveCategory } from "@workspace/trust-tiers";
 import { Button } from "@/components/ui/button";
 import { authHeaders } from "@/lib/auth";
@@ -176,6 +176,45 @@ export default function NewRequestScreen() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pendingMutateRef = useRef<(() => void) | null>(null);
   const isWaiverCategory = WAIVER_CATEGORIES.includes(selectedCategory as WaiverCategory);
+
+  // ── County/Community pool selector ─────────────────────────────────────────
+  interface CommunityOption { id: number; name: string; pool_health_ratio: number; pool_pct: number }
+  const [communities, setCommunities] = useState<CommunityOption[]>([]);
+  const [selectedCommunityId, setSelectedCommunityId] = useState<number | null>(
+    currentUser?.community_id ?? null
+  );
+  const [communityUpdating, setCommunityUpdating] = useState(false);
+
+  useEffect(() => {
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/communities`)
+      .then(r => r.ok ? r.json() : { communities: [] })
+      .then((j: { communities: CommunityOption[] }) => {
+        if (Array.isArray(j.communities) && j.communities.length > 0) {
+          setCommunities(j.communities);
+          if (selectedCommunityId === null && j.communities[0]) {
+            setSelectedCommunityId(j.communities[0].id);
+          }
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleCommunityChange = async (id: number) => {
+    setSelectedCommunityId(id);
+    if (!currentUser) return;
+    setCommunityUpdating(true);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      await fetch(`${base}/api/users/me/community`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ community_id: id }),
+      });
+    } catch { /* swallow — preference is saved optimistically */ }
+    finally { setCommunityUpdating(false); }
+  };
 
   // ── Business "posting as" state ────────────────────────────────────────────
   const [myBusinesses, setMyBusinesses] = useState<{ id: number; display_name: string }[]>([]);
@@ -544,6 +583,47 @@ export default function NewRequestScreen() {
                   )}
                 />
               </div>
+
+              {/* ── County pool selector ──────────────────────────────────── */}
+              {communities.length > 0 && (() => {
+                const selected = communities.find(c => c.id === selectedCommunityId) ?? communities[0];
+                const hRatio = selected?.pool_health_ratio ?? 1;
+                const healthColor = hRatio >= 0.9 ? "text-green-400" : hRatio >= 0.7 ? "text-yellow-400" : "text-orange-400";
+                const healthLabel = hRatio >= 0.9 ? "Fully Funded" : hRatio >= 0.7 ? "Healthy" : "Building Up";
+                return (
+                  <div className="bg-card border border-border rounded-2xl p-4 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                        <Globe className="w-3.5 h-3.5" /> Community Pool
+                      </div>
+                      <div className={`text-[10px] font-black ${healthColor} flex items-center gap-1`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${hRatio >= 0.9 ? "bg-green-400" : hRatio >= 0.7 ? "bg-yellow-400" : "bg-orange-400"}`} />
+                        {healthLabel} · {selected?.pool_pct ?? 0}%
+                        {communityUpdating && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
+                      </div>
+                    </div>
+
+                    {communities.length === 1 ? (
+                      <div className="text-sm font-black">{selected?.name}</div>
+                    ) : (
+                      <select
+                        value={selectedCommunityId ?? ""}
+                        onChange={e => handleCommunityChange(Number(e.target.value))}
+                        style={{ fontSize: "16px" }}
+                        className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary appearance-none"
+                      >
+                        {communities.map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    )}
+
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      This pool guarantees your helper a livable-wage minimum — paid the moment the task completes, before you pay it forward.
+                    </p>
+                  </div>
+                );
+              })()}
 
               {isSensitive && (
                 <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 space-y-2">
