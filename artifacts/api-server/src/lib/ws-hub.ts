@@ -222,7 +222,13 @@ export function sendToUser(userId: number, event: WsEvent): void {
   if (!sockets) return;
   const msg = JSON.stringify(event);
   sockets.forEach((sock) => {
-    if (sock.readyState === WebSocket.OPEN) sock.send(msg);
+    if (sock.readyState === WebSocket.OPEN) {
+      try {
+        sock.send(msg);
+      } catch (err) {
+        logger.warn({ err, userId, type: event.type }, "WS sendToUser: send failed — client likely closed mid-send");
+      }
+    }
   });
 }
 
@@ -239,7 +245,13 @@ export function sendToUsers(userIds: number[], event: WsEvent): void {
     const sockets = userSockets.get(userId);
     if (!sockets) continue;
     sockets.forEach((sock) => {
-      if (sock.readyState === WebSocket.OPEN) sock.send(msg);
+      if (sock.readyState === WebSocket.OPEN) {
+        try {
+          sock.send(msg);
+        } catch (err) {
+          logger.warn({ err, userId, type: event.type }, "WS sendToUsers: send failed — client likely closed mid-send");
+        }
+      }
     });
   }
 }
@@ -555,8 +567,15 @@ export function broadcast(event: WsEvent): void {
   let sent = 0;
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(msg);
-      sent++;
+      try {
+        client.send(msg);
+        sent++;
+      } catch (err) {
+        // One bad client must not abort the broadcast loop for everyone else.
+        // This can happen if the socket transitions to CLOSING between the
+        // readyState check and the send() call (torn-down race).
+        logger.warn({ err, type: event.type }, "WS broadcast: send failed for one client — skipped");
+      }
     }
   });
   if (sent > 0) logger.info({ type: event.type, clients: sent }, "WS broadcast");

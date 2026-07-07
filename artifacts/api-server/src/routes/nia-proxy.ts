@@ -179,18 +179,46 @@ router.post(
       if (!upstream.body) return res.end();
 
       const reader = upstream.body.getReader();
-      req.on("close", () => reader.cancel());
+      // Track client disconnect so the read loop exits cleanly without
+      // logging a spurious error when reader.cancel() throws.
+      let clientClosed = false;
+      const onClientClose = () => {
+        clientClosed = true;
+        reader.cancel().catch(() => { /* expected — reader already closed */ });
+      };
+      req.on("close", onClientClose);
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (!res.writableEnded) res.write(value);
+      try {
+        while (true) {
+          // If the client already disconnected, stop reading from upstream.
+          if (clientClosed || res.destroyed) break;
+          const { done, value } = await reader.read();
+          if (done) break;
+          // Guard both conditions — res could be destroyed mid-read.
+          if (!res.destroyed && !res.writableEnded) {
+            try {
+              res.write(value);
+            } catch {
+              // Write to a closed socket — treat as client disconnect.
+              clientClosed = true;
+              break;
+            }
+          }
+        }
+      } finally {
+        req.off("close", onClientClose);
+        reader.cancel().catch(() => { /* already cancelled */ });
       }
-      if (!res.writableEnded) res.end();
-      // Emit nia_typing stopped and nia_message delivered events
-      if (userId) {
-        sendNiaEventToUser(userId, "nia_typing", { status: "stopped", sessionId });
-        sendNiaEventToUser(userId, "nia_message", { status: "delivered", sessionId });
+
+      if (!res.destroyed && !res.writableEnded) res.end();
+
+      if (!clientClosed) {
+        // Only fire "delivered" events when the stream completed normally
+        // (not when the user navigated away mid-stream).
+        if (userId) {
+          sendNiaEventToUser(userId, "nia_typing", { status: "stopped", sessionId });
+          sendNiaEventToUser(userId, "nia_message", { status: "delivered", sessionId });
+        }
       }
       return;
     } catch (err) {
