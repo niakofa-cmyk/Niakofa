@@ -74,6 +74,55 @@ export async function getHourlyMinimumRate(): Promise<number> {
 }
 
 /**
+ * Returns the community_id new users should be assigned to at registration.
+ *
+ * Prior to this function, `users.community_id` was never written anywhere in
+ * the codebase — every user resolved to the NULL/global bucket regardless of
+ * getGuaranteedMinimum()'s per-community pool-health-ratio logic below, which
+ * was fully implemented but silently inert. This closes that gap.
+ *
+ * Resolution order:
+ *   1. system_settings.default_community_id, if set and it references a real
+ *      community row (lets an admin designate a primary county explicitly).
+ *   2. The lowest-id community row — the seeded "Tarrant County" row on a
+ *      fresh install.
+ *   3. null — no communities exist yet; new user falls back to the legacy
+ *      global pool bucket, exactly as every user did before this change.
+ */
+export async function getDefaultCommunityId(): Promise<number | null> {
+  try {
+    const [settingRow] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "default_community_id"))
+      .limit(1);
+    const configured = settingRow ? parseInt(settingRow.value, 10) : NaN;
+    if (Number.isFinite(configured)) {
+      const [exists] = await db
+        .select({ id: communitiesTable.id })
+        .from(communitiesTable)
+        .where(eq(communitiesTable.id, configured))
+        .limit(1);
+      if (exists) return exists.id;
+      logger.warn(
+        { configured },
+        "community-pool: default_community_id setting points to a missing community — falling back",
+      );
+    }
+
+    const [first] = await db
+      .select({ id: communitiesTable.id })
+      .from(communitiesTable)
+      .orderBy(asc(communitiesTable.id))
+      .limit(1);
+    return first?.id ?? null;
+  } catch (err) {
+    logger.error({ err }, "community-pool: getDefaultCommunityId DB error — new user will fall back to global pool");
+    return null;
+  }
+}
+
+/**
  * Compute the guaranteed minimum for a completed task.
  *
  * When `estimatedHours` is supplied (from `help_requests.estimated_hours`),

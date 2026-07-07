@@ -32,7 +32,7 @@ export function useNiaStory(userName: string) {
     const rec = new SR();
     rec.continuous = true;
     rec.interimResults = true;
-    rec.lang = "";
+    rec.lang = "en-US";
     let fullTranscript = "";
 
     rec.onstart = () => setState("recording");

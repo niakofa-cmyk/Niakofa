@@ -25,6 +25,7 @@ import { signTokenById } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 import { requestSelect } from "../lib/request-select";
 import { userSelect } from "../lib/user-select";
+import { getDefaultCommunityId } from "../lib/community-pool";
 
 // ── Per-account login attempt tracking ────────────────────────────────────────
 // Guards against distributed brute-force attacks where a single account is
@@ -235,6 +236,16 @@ router.post("/users/register", authLimiter, async (req, res) => {
   const REQUIRES_REVIEW = ["organization", "business", "sponsor"];
   const approval_status = REQUIRES_REVIEW.includes(account_type) ? "pending" : "approved";
 
+  // Assign every new user to a real community row (defaults to the seeded
+  // "Tarrant County" pool, or whichever community an admin has designated via
+  // system_settings.default_community_id). Previously community_id was never
+  // set anywhere, so every user fell into the NULL/global bucket and the
+  // per-community pool-health-ratio wage multiplier in community-pool.ts
+  // never actually differentiated anything. A lookup failure here must never
+  // block registration — fall back to null (legacy global bucket) exactly
+  // like before this change.
+  const community_id = await getDefaultCommunityId().catch(() => null);
+
   const [user] = await db.insert(usersTable).values({
     name, email: normalizedEmail,
     password_hash,
@@ -245,6 +256,7 @@ router.post("/users/register", authLimiter, async (req, res) => {
     organization_name: ["organization", "business", "sponsor"].includes(account_type) ? (body.organization_name ?? null) : null,
     organization_description: ["organization", "business", "sponsor"].includes(account_type) ? (body.organization_description ?? null) : null,
     approval_status,
+    community_id,
   }).returning();
   const token = signTokenById(user.id, user.token_version);
   // Strip all sensitive fields (zip-file fix BUG-SEC-01 extended to register).

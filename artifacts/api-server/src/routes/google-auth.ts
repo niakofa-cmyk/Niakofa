@@ -28,6 +28,7 @@ import { signTokenById } from "../middlewares/auth";
 import { authLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { broadcast } from "../lib/ws-hub";
+import { getDefaultCommunityId } from "../lib/community-pool";
 
 const router = Router();
 
@@ -158,6 +159,10 @@ router.post("/auth/google", authLimiter, async (req: Request, res: Response) => 
       // We catch that violation and re-fetch the row that won the race,
       // returning a successful login rather than a 500.
       try {
+        // Same default-community assignment as email/password registration
+        // (users.ts) — must never block account creation on failure.
+        const community_id = await getDefaultCommunityId().catch(() => null);
+
         const [created_user] = await db
           .insert(usersTable)
           .values({
@@ -168,6 +173,7 @@ router.post("/auth/google", authLimiter, async (req: Request, res: Response) => 
             avatar_url:      googlePicture,
             approval_status: "approved", // Google-verified email = trusted identity
             account_type:    "individual",
+            community_id,
             // password_hash intentionally NULL — OAuth accounts never need a password
           })
           .returning();
