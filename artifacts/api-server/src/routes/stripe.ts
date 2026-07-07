@@ -171,6 +171,23 @@ router.post("/stripe/webhook", async (req, res) => {
             }
           });
 
+          // Requester reputation boost for honouring their pledge on time.
+          // +2 trust points (capped at 80 — same ceiling as helper completions).
+          // Runs OUTSIDE the main transaction so a trust-score write failure
+          // never rolls back the financial records.
+          if (txRow.requester_id) {
+            await db
+              .update(usersTable)
+              .set({
+                trust_score: sql`LEAST(80, COALESCE(${usersTable.trust_score}, 0) + 2)`,
+              })
+              .where(eq(usersTable.id, txRow.requester_id));
+            logger.info(
+              { requester_id: txRow.requester_id, request_id: requestId },
+              "trust_score +2 for voluntary pledge repayment",
+            );
+          }
+
           if (fronted) {
             // Pool replenished — backfill any queued guaranteed minimums
             await processPendingMinimums();

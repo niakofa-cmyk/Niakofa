@@ -692,6 +692,31 @@ function PledgeWriteOffCard() {
 }
 
 // ── Audit Log Table ───────────────────────────────────────────────────────────
+// ── Narrow API shapes for the audit-log synthesis fetch ──────────────────────
+// These intentionally only declare the fields actually used — not the full
+// AdminUser/Report shapes — so the mapping code below is fully typed without
+// needing `as any`.
+interface AuditApiReport {
+  id: number;
+  status: string;
+  reviewed_at?: string | null;
+  reviewed_by?: number | null;
+  reported_user_id?: number | null;
+  admin_notes?: string | null;
+  type?: string | null;
+  created_at: string;
+}
+interface AuditApiUser {
+  id: number;
+  is_suspended?: boolean;
+  trust_score?: number | null;
+  name?: string | null;
+  email?: string | null;
+  suspended_reason?: string | null;
+  suspended_at?: string | null;
+  created_at?: string;
+}
+
 // Synthesises a unified audit timeline from multiple admin-accessible endpoints:
 //   • Resolved user reports   → shows who was warned/banned and by whom
 //   • Moderated requests      → flagged request approvals/rejections
@@ -710,31 +735,31 @@ function AuditLogTable() {
       fetch(`${BASE}/api/reports`, { headers }).then(r => r.ok ? r.json() : []),
       fetch(`${BASE}/api/admin/accounts?limit=100`, { headers }).then(r => r.ok ? r.json() : []),
     ])
-      .then(([reports, users]: [any[], any[]]) => {
-        const reportEntries: AuditLogEntry[] = (reports as any[])
-          .filter((r: any) => r.status !== "pending" && r.reviewed_at)
-          .map((r: any) => ({
+      .then(([reports, users]: [AuditApiReport[], AuditApiUser[]]) => {
+        const reportEntries: AuditLogEntry[] = reports
+          .filter((r) => r.status !== "pending" && r.reviewed_at)
+          .map((r) => ({
             id: r.id,
             user_id: r.reviewed_by ?? 0,
             action: r.status === "resolved_banned" ? "BANNED" :
                     r.status === "resolved_warned" ? "WARNED" :
                     r.status === "resolved_dismissed" ? "DISMISSED" :
                     r.status === "under_review" ? "REVIEWING" : r.status.toUpperCase(),
-            target_user_id: r.reported_user_id,
-            details: r.admin_notes || `Report type: ${TYPE_LABELS[r.type] ?? r.type}`,
+            target_user_id: r.reported_user_id ?? undefined,
+            details: r.admin_notes || `Report type: ${TYPE_LABELS[r.type ?? ""] ?? r.type}`,
             created_at: r.reviewed_at ?? r.created_at,
             admin_name: "Admin",
           }));
 
-        const userEntries: AuditLogEntry[] = (users as any[])
-          .filter((u: any) => u.is_suspended || (u.trust_score !== null && u.trust_score <= -1))
-          .map((u: any, i: number) => ({
+        const userEntries: AuditLogEntry[] = users
+          .filter((u) => u.is_suspended || (u.trust_score !== null && u.trust_score !== undefined && u.trust_score <= -1))
+          .map((u, i) => ({
             id: 10000 + i,
             user_id: 0,
-            action: u.trust_score !== null && u.trust_score <= -1 ? "BANNED" : "SUSPENDED",
+            action: u.trust_score != null && u.trust_score <= -1 ? "BANNED" : "SUSPENDED",
             target_user_id: u.id,
-            details: u.suspended_reason || `Account moderation — ${u.name}`,
-            created_at: u.suspended_at ?? u.created_at,
+            details: u.suspended_reason || `Account moderation — ${u.name ?? "user"}`,
+            created_at: u.suspended_at ?? u.created_at ?? new Date().toISOString(),
             admin_name: "System",
           }));
 
@@ -1296,7 +1321,7 @@ function PendingBusinessesCard() {
   );
 }
 
-function UsersTab() {
+function UsersTab({ refreshTick = 0 }: { refreshTick?: number }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1341,7 +1366,7 @@ function UsersTab() {
         });
     }, search.trim() ? 300 : 0); // 300ms debounce for search; instant on first load
     return () => { clearTimeout(handle); controller.abort(); };
-  }, [search]);
+  }, [search, refreshTick]);
 
   // Helper filter is client-side only (applied over the already-fetched page).
   // Server-side filtering by helper status could be added later if needed.
@@ -2248,7 +2273,7 @@ function PostModerationSection() {
   );
 }
 
-function UserReportsSection({ authed }: { authed: boolean }) {
+function UserReportsSection({ authed, refreshTick = 0 }: { authed: boolean; refreshTick?: number }) {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -2268,7 +2293,7 @@ function UserReportsSection({ authed }: { authed: boolean }) {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { if (authed) fetchReports(statusFilter); }, [statusFilter, authed, fetchReports]);
+  useEffect(() => { if (authed) fetchReports(statusFilter); }, [statusFilter, authed, fetchReports, refreshTick]);
 
   const handleReviewed = (updated: Report) => setReports(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r));
   const pendingCount = reports.filter(r => r.status === "pending").length;
@@ -2332,7 +2357,7 @@ function UserReportsSection({ authed }: { authed: boolean }) {
 }
 
 // ── Reports Tab — 3-section moderation hub ────────────────────────────────────
-function ReportsTab({ authed }: { authed: boolean }) {
+function ReportsTab({ authed, refreshTick = 0 }: { authed: boolean; refreshTick?: number }) {
   const [section, setSection] = useState<"user-reports" | "flagged" | "posts">("user-reports");
 
   const SECTIONS = [
@@ -2352,7 +2377,7 @@ function ReportsTab({ authed }: { authed: boolean }) {
           </button>
         ))}
       </div>
-      {section === "user-reports" && <UserReportsSection authed={authed} />}
+      {section === "user-reports" && <UserReportsSection authed={authed} refreshTick={refreshTick} />}
       {section === "flagged"      && <FlaggedRequestsSection />}
       {section === "posts"        && <PostModerationSection />}
     </div>
@@ -4945,8 +4970,8 @@ export default function AdminScreen() {
             </div>
           </div>
         )}
-        {activeTab === "users"     && <UsersTab />}
-        {activeTab === "reports"   && <ReportsTab authed={authed} />}
+        {activeTab === "users"     && <UsersTab refreshTick={refreshTick} />}
+        {activeTab === "reports"   && <ReportsTab authed={authed} refreshTick={refreshTick} />}
         {activeTab === "disputes"  && <DisputesTab />}
         {activeTab === "settings"  && <SettingsTab onNavigate={(tab) => setActiveTab(tab as typeof activeTab)} />}
         {activeTab === "system"    && <SystemTab />}

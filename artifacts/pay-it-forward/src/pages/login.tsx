@@ -27,6 +27,7 @@ type ApiAuthResponse = Partial<AppUser> & {
 import { setToken } from "@/lib/auth";
 import { toast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
+import { NiaOrb } from "@/components/NiaDrawer";
 
 type Mode = "login" | "register";
 
@@ -1028,7 +1029,19 @@ export default function LoginScreen() {
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col">
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-12 pb-8">
+      {/* ── Dormant Nia — resting at the top of the login page ─────────────── */}
+      {/* Nia sleeps here until the user wakes her by logging in.               */}
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1, duration: 0.8, ease: "easeOut" }}
+        className="flex justify-center pointer-events-none"
+        style={{ paddingTop: "max(8px, env(safe-area-inset-top))" }}
+      >
+        <NiaOrb size={44} dormant />
+      </motion.div>
+
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-6 pb-8">
         {/* ── NiaOrb Hero Element ─────────────────────────────────────────────── */}
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}

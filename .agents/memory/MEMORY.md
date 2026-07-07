@@ -1,7 +1,7 @@
 - [Niakofa mock-reset pattern](niakofa-mock-reset-pattern.md) — lifecycle.test.ts beforeEach MUST use mockReset() not mockClear(); mockClear leaves queued once-values that bleed across tests.
 - [Niakofa pool settings](niakofa-pool-settings.md) — all system_settings keys + defaults + migration numbers; 0048 seeds pool_minimum_hourly_rate=$15/hr; 0049 seeds instant_payouts_enabled=false.
 - [Niakofa instant payouts](niakofa-instant-payouts.md) — cashout method='instant': eligibility-check then degrade gracefully; NEVER roll back the transfer if payout fails; response includes payout_method + payout_id.
-- [Niakofa trust score PIF boost](niakofa-trust-score-pif.md) — +5 on full PIF repayment, +2 on defaulted→active reinstatement; county subsidize-pledge (admin-only) also grants +5 + pool contribution.
+- [Niakofa trust score PIF boost](niakofa-trust-score-pif.md) — +5 on full PIF repayment, +2 on defaulted→active reinstatement; +2 via Stripe webhook on voluntary pledge repayment (all paths covered); county subsidize-pledge (admin-only) also grants +5 + pool contribution.
 - [Niakofa shared-lib builds](niakofa-lib-builds.md) — tsc --build fixes TS6305 errors; lib packages have no "build" script, use tsc directly.
 - [Niakofa civic portal](niakofa-civic-portal.md) — gov-sponsor self-serve request dispatch; GET /users/:id/public public profile route; government_sponsor_id column on requestsTable (migration 0042).
 - [Niakofa code-review fixes](niakofa-code-review.md) — bugs fixed across admin.tsx, users.ts, leaderboard.ts, profile.tsx during full line-by-line review.
@@ -109,3 +109,7 @@
 - [Niakofa dev DB bootstrap](niakofa-dev-db-bootstrap.md) — Replit DB always provisioned; run pnpm --filter @workspace/db run migrate on fresh env; seed admin@niakofa.app/helper/user accounts manually; nia_enabled=false set by migration 0018.
 - [Niakofa heading-math tests](niakofa-heading-math-tests.md) — vitest installed in pay-it-forward; vitest.config.ts with @/ alias; run via pnpm --filter @workspace/pay-it-forward run test; 19/19 passing.
 - [Niakofa esbuild on Replit](niakofa-esbuild-replit.md) — pnpm overrides block @esbuild/linux-x64 as sub-dep; fix via postinstall script: "node node_modules/esbuild/install.js" in root package.json scripts.
+- [Niakofa login dormant Nia](niakofa-login-dormant-nia.md) — dormant NiaOrb lives in login.tsx (not NiaGlobal); positioned above the flex-1 centered block so it floats at top of page; NiaGlobal returns null for unauthenticated routes.
+- [Niakofa nia-service crash supervision](niakofa-nia-supervision.md) — railway.toml startCommand wraps nia-service in `while true; do ...; sleep 3; done &` restart loop; crash goes to Railway logs + restarts in 3s.
+- [Niakofa admin refreshTick real polling](niakofa-admin-refreshtick.md) — refreshTick must be passed as prop to UsersTab+ReportsTab/UserReportsSection and added to their useEffect dep arrays; without this the LIVE dot is cosmetic only.
+- [Niakofa XSS sanitization](niakofa-xss-sanitize.md) — lib/sanitize.ts: stripTags() removes HTML tags+null-bytes; applied to requests.ts title/description on create+update; escapeHtml in mailer.ts is for HTML email templates only.

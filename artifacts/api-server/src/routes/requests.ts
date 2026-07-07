@@ -28,6 +28,7 @@ import { payHelperFromPool, getGuaranteedMinimum, isPoolEnabled, queuePendingMin
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { getTrustTier, getEffectiveTier, meetsQualityGate, TIER_RANK, tierAtLeast, isSensitiveCategory } from "@workspace/trust-tiers";
 import type { TrustTier } from "@workspace/trust-tiers";
+import { stripTags } from "../lib/sanitize";
 import { logger } from "../lib/logger";
 import { sendReceipt } from "../lib/mailer";
 import { moderateRequestText } from "../lib/post-moderation";
@@ -626,8 +627,8 @@ router.post("/requests", requireAuth, requestCreationLimiter, async (req, res) =
   }
 
   const [request] = await db.insert(requestsTable).values({
-    title: parsed.data.title,
-    description: parsed.data.description ?? null,
+    title: stripTags(parsed.data.title),
+    description: parsed.data.description != null ? stripTags(parsed.data.description) : null,
     category: parsed.data.category ?? "other",
     urgency: parsed.data.urgency ?? "medium",
     payment_type: parsed.data.payment_type ?? "pay_it_forward",
@@ -779,7 +780,7 @@ router.patch("/requests/:id", requireAuth, async (req, res) => {
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
   const updates: Record<string, unknown> = {};
   if (bParsed.data.status !== undefined) updates.status = bParsed.data.status;
-  if (bParsed.data.description !== undefined) updates.description = bParsed.data.description;
+  if (bParsed.data.description !== undefined) updates.description = bParsed.data.description != null ? stripTags(bParsed.data.description) : null;
   if (bParsed.data.urgency !== undefined) updates.urgency = bParsed.data.urgency;
   const [updatedRequest] = await db.update(requestsTable).set(updates).where(eq(requestsTable.id, pParsed.data.id)).returning();
   if (!updatedRequest) return res.status(404).json({ error: "Not found" });
