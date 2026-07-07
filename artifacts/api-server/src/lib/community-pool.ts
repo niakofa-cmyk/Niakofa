@@ -43,7 +43,10 @@ export async function isPoolEnabled(): Promise<boolean> {
       .limit(1);
     // Default ON when the setting row is missing
     return row ? row.value === "true" : true;
-  } catch {
+  } catch (err) {
+    // Log so DB connectivity issues are visible in monitoring rather than
+    // silently returning a default that may mask infrastructure failures.
+    logger.error({ err }, "community-pool: isPoolEnabled DB error — defaulting to disabled");
     return false;
   }
 }
@@ -62,7 +65,10 @@ export async function getHourlyMinimumRate(): Promise<number> {
       .limit(1);
     const parsed = row ? parseFloat(row.value) : NaN;
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 15;
-  } catch {
+  } catch (err) {
+    // Log so DB connectivity issues are visible in monitoring rather than
+    // silently returning a default that may mask infrastructure failures.
+    logger.error({ err }, "community-pool: getHourlyMinimumRate DB error — defaulting to $15/hr");
     return 15;
   }
 }

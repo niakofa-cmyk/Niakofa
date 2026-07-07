@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, usersTable, requestsTable, gratitudePostsTable } from "@workspace/db";
 import { eq, sql, and, gte } from "drizzle-orm";
-import { broadcast } from "../lib/ws-hub";
+import { broadcastToAuthenticated } from "../lib/ws-hub";
 import { cacheGet, cacheSet, cacheDel } from "../lib/cache";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
@@ -129,7 +129,9 @@ export async function broadcastLeaderboardUpdate(
     : null;
   const oldTier = getTierName(prevTrustScore, prevHelpCount);
 
-  broadcast({
+  // Send only to authenticated sockets — leaderboard data contains real user
+  // names and cities that should not be visible to unauthenticated WS clients.
+  broadcastToAuthenticated({
     type: "leaderboard_update",
     payload: {
       entries,
@@ -143,7 +145,10 @@ export async function broadcastLeaderboardUpdate(
 }
 
 // ── GET /leaderboard — initial HTTP fetch (cached 60s) ────────────────────────
-router.get("/leaderboard", async (req, res) => {
+// requireAuth gates this because the leaderboard exposes real user names and
+// cities — it should only be visible to authenticated members of the platform,
+// not scraped by unauthenticated bots or competitor tools.
+router.get("/leaderboard", requireAuth, async (req, res) => {
   const city = req.query.city as string | undefined;
   const cacheKey = city ? `leaderboard:city:${city.toLowerCase()}` : LEADERBOARD_CACHE_KEY;
 
@@ -156,7 +161,7 @@ router.get("/leaderboard", async (req, res) => {
 });
 
 // ── GET /leaderboard/cities — list of distinct cities/neighborhoods ────────────
-router.get("/leaderboard/cities", async (_req, res) => {
+router.get("/leaderboard/cities", requireAuth, async (_req, res) => {
   const helpers = await db
     .select({ neighborhood: usersTable.neighborhood, city: usersTable.city })
     .from(usersTable)
@@ -222,7 +227,7 @@ router.post("/leaderboard/recalculate", requireAuth, requireAdmin(), adminLimite
     // Fetch fresh leaderboard after recalculation
     const entries = await fetchLeaderboard();
     
-    broadcast({
+    broadcastToAuthenticated({
       type: "leaderboard_update",
       payload: {
         entries,

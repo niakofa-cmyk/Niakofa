@@ -1,0 +1,4424 @@
+
+
+
+
+import {
+  db,
+  communityPoolLedgerTable,
+  poolPendingMinimumsTable,
+  systemSettingsTable,
+  usersTable,
+  transactionsTable,
+  communitiesTable,
+} from "@workspace/db";
+import { asc, eq, sql } from "drizzle-orm";
+import { logger } from "./logger";
+import { broadcast } from "./ws-hub";
+import { getEffectiveTier, getTierWageMultiplier } from "@workspace/trust-tiers";
+
+/**
+ * Community Pool service.
+ *
+ * The pool fronts helper payments immediately when a pay-it-forward request
+ * completes and pays a guaranteed minimum per completed task. All debits are
+ * serialized with a transaction-scoped advisory lock so two simultaneous
+ * completions can never overdraw the pool.
+ */
+
+// Advisory lock key for pool debits. Distinct from the migration lock (727501).
+const POOL_LOCK_KEY = 727502;
+
+/** Round a dollar amount to whole cents to avoid float drift in pool math. */
+export function toCents(dollars: number): number {
+  return Math.round(dollars * 100);
+}
+
+/** Round a dollar amount to a cents-exact dollar value. */
+export function roundMoney(dollars: number): number {
+  return toCents(dollars) / 100;
+}
+
+export async function isPoolEnabled(): Promise<boolean> {
+  try {
+    const [row] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "pool_enabled"))
+      .limit(1);
+    // Default ON when the setting row is missing
+    return row ? row.value === "true" : true;
+  } catch (err) {
+    // Log so DB connectivity issues are visible in monitoring rather than
+    // silently returning a default that may mask infrastructure failures.
+    logger.error({ err }, "community-pool: isPoolEnabled DB error — defaulting to disabled");
+    return false;
+  }
+}
+
+/**
+ * Per-hour minimum wage used to scale the guaranteed minimum by estimated task
+ * duration. Stored in system_settings as `pool_minimum_hourly_rate`.
+ * Default $15/hr — approximate Texas livable wage floor.
+ */
+export async function getHourlyMinimumRate(): Promise<number> {
+  try {
+    const [row] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "pool_minimum_hourly_rate"))
+      .limit(1);
+    const parsed = row ? parseFloat(row.value) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 15;
+  } catch (err) {
+    // Log so DB connectivity issues are visible in monitoring rather than
+    // silently returning a default that may mask infrastructure failures.
+    logger.error({ err }, "community-pool: getHourlyMinimumRate DB error — defaulting to $15/hr");
+    return 15;
+  }
+}
+
+/**
+ * Compute the guaranteed minimum for a completed task.
+ *
+ * When `estimatedHours` is supplied (from `help_requests.estimated_hours`),
+ * the floor is: max(flat_floor, estimatedHours × hourlyRate).
+ * This makes the "livable wage" guarantee real math rather than a flat number
+ * regardless of how long the job actually takes.
+ *
+ * When no hours estimate exists, falls back to the flat `pool_guaranteed_minimum`
+ * setting so existing completed tasks are unchanged.
+ */
+// Hard-coded safety floor: if the DB is unavailable we never pay $0.
+// This matches the seed value in migration 0024 ('5').
+const GUARANTEED_MINIMUM_FALLBACK = 5;
+
+/**
+ * Compute the guaranteed minimum for a completed task, optionally scaled by:
+ *   1. The helper's effective tenure tier (highest_tier_reached stickiness).
+ *   2. The community's pool-health ratio (balance ÷ target_reserve, clamped to
+ *      [0.5, 1.0]) — richer pools give bigger bonuses; depleted pools scale back
+ *      without zeroing out helpers' bonuses entirely.
+ *
+ * Final minimum = hours_scaled_floor × tier_multiplier × pool_health_ratio
+ *
+ * This implements the roadmap spec: "the multiplier should depend on the amount
+ * of funds in that particular community/county's pool — richer pools give bigger
+ * bonuses, thinner pools scale it back to protect solvency."
+ */
+export async function getGuaranteedMinimum(
+  estimatedHours?: number | null,
+  helperId?: number | null,
+): Promise<number> {
+  try {
+    const [row] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "pool_guaranteed_minimum"))
+      .limit(1);
+    const parsed = row ? parseFloat(row.value) : NaN;
+    // Fall back to seeded default ($5) when row is missing or unparseable.
+    const flatFloor = Number.isFinite(parsed) && parsed >= 0 ? parsed : GUARANTEED_MINIMUM_FALLBACK;
+
+    // Hours-scaled floor: take the GREATER of flat floor and hours × rate.
+    let base = flatFloor;
+    if (estimatedHours && estimatedHours > 0) {
+      const hourlyRate = await getHourlyMinimumRate();
+      const hoursFloor = roundMoney(estimatedHours * hourlyRate);
+      base = Math.max(flatFloor, hoursFloor);
+    }
+
+    // ── Tenure-tier wage multiplier + community pool-health ratio ─────────
+    // Fetch the helper's tier and their community's target_reserve in one shot.
+    // Falls back gracefully: tier → 1.0×, pool_health → 1.0× on any DB error.
+    if (helperId != null) {
+      try {
+        const [helperRow] = await db
+          .select({
+            trust_score: usersTable.trust_score,
+            help_count: usersTable.help_count,
+            highest_tier_reached: usersTable.highest_tier_reached,
+            community_id: usersTable.community_id,
+          })
+          .from(usersTable)
+          .where(eq(usersTable.id, helperId))
+          .limit(1);
+
+        if (helperRow) {
+          // Effective tier respects stickiness: max(computed, highest_tier_reached)
+          const tier = getEffectiveTier(
+            helperRow.trust_score ?? 0,
+            helperRow.help_count ?? 0,
+            helperRow.highest_tier_reached,
+          );
+          const tierMultiplier = getTierWageMultiplier(tier);
+
+          // Community pool-health ratio
+          // balance / target_reserve_amount, clamped to [0.5, 1.0]
+          // - At 100 %+ funded → 1.0 (full tier bonus)
+          // - At 50 % or below → 0.5 (half tier bonus; pool protected from over-drain)
+          let poolHealthRatio = 1.0;
+          try {
+            const communityId = helperRow.community_id;
+            // Fetch the balance scoped to this community (NULL community_id rows
+            // are the historical "global" bucket — include them when no community
+            // is set so legacy data is counted correctly).
+            const [balRow] = await db
+              .select({ balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` })
+              .from(communityPoolLedgerTable)
+              .where(
+                communityId != null
+                  ? eq(communityPoolLedgerTable.community_id, communityId)
+                  : sql`${communityPoolLedgerTable.community_id} IS NULL`
+              );
+            const balance = balRow?.balance ?? 0;
+
+            if (communityId != null) {
+              const [communityRow] = await db
+                .select({ target_reserve_amount: communitiesTable.target_reserve_amount })
+                .from(communitiesTable)
+                .where(eq(communitiesTable.id, communityId))
+                .limit(1);
+              const target = communityRow?.target_reserve_amount ?? 10000;
+              if (target > 0) {
+                poolHealthRatio = Math.min(1.0, Math.max(0.5, balance / target));
+              }
+            } else {
+              // Global pool: use pool_low_balance_threshold as a proxy for
+              // "healthy" target (default $25 → above threshold = ratio 1.0)
+              const [threshRow] = await db
+                .select({ value: systemSettingsTable.value })
+                .from(systemSettingsTable)
+                .where(eq(systemSettingsTable.key, "pool_low_balance_threshold"))
+                .limit(1);
+              const threshold = threshRow ? parseFloat(threshRow.value) : 25;
+              // Use 4× the low-balance threshold as the "healthy" target.
+              // e.g. threshold=$25 → target=$100; balance ≥ $100 → full multiplier.
+              const globalTarget = threshold * 4;
+              if (globalTarget > 0) {
+                poolHealthRatio = Math.min(1.0, Math.max(0.5, balance / globalTarget));
+              }
+            }
+          } catch {
+            // Pool-health lookup failure → keep ratio at 1.0 (full bonus)
+          }
+
+          base = roundMoney(base * tierMultiplier * poolHealthRatio);
+        }
+      } catch {
+        // Non-fatal: tier/pool-health lookup failure still pays base minimum
+      }
+    }
+
+    return base;
+  } catch {
+    return GUARANTEED_MINIMUM_FALLBACK;
+  }
+}
+
+export async function getPoolBalance(): Promise<number> {
+  const result = await db
+    .select({ balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` })
+    .from(communityPoolLedgerTable);
+  const row = Array.isArray(result) ? result[0] : undefined;
+  return row?.balance ?? 0;
+}
+
+interface PoolDebitParams {
+  entryType: "helper_front" | "guaranteed_minimum";
+  amount: number; // positive dollars to pay OUT of the pool
+  requestId: number;
+  helperId: number;
+  requestTitle: string;
+  /** Community scope — written to the ledger row so per-community balance queries work. */
+  communityId?: number | null;
+}
+
+/** Outcome of a pool debit attempt — callers must distinguish these. */
+export type PoolPayOutcome = "paid" | "insufficient" | "duplicate" | "error";
+
+/**
+ * Atomically debit the pool and credit the helper's benevolence_wallet.
+ * Returns "paid" on success, "insufficient" when the pool can't cover it,
+ * "duplicate" when this request was already fronted/minimum'd (unique partial
+ * indexes make double-pay impossible), "error" on unexpected failure.
+ */
+export async function payHelperFromPool(params: PoolDebitParams): Promise<PoolPayOutcome> {
+  const { entryType, requestId, helperId, requestTitle, communityId } = params;
+  const amount = roundMoney(params.amount);
+  if (amount <= 0) return "error";
+
+  try {
+    return await db.transaction(async (tx): Promise<PoolPayOutcome> => {
+      // Serialize pool debits — balance check + debit must be atomic.
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${POOL_LOCK_KEY})`);
+
+      // Balance check is always global (all entries) — we maintain one liquid pool,
+      // community_id is a reporting/multiplier label, not a separate sub-fund.
+      const [balRow] = await tx
+        .select({ balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` })
+        .from(communityPoolLedgerTable);
+      const balance = balRow?.balance ?? 0;
+
+      // Compare in whole cents so float representation noise can't flip the check
+      if (toCents(balance) < toCents(amount)) {
+        logger.warn(
+          { request_id: requestId, helper_id: helperId, balance, needed: amount, entry_type: entryType },
+          "Community pool balance insufficient — payment skipped"
+        );
+        return "insufficient";
+      }
+
+      // Debit the pool. The partial unique indexes on (request_id) for
+      // helper_front / guaranteed_minimum throw on duplicates, aborting the
+      // transaction — no double-pay possible.
+      // community_id is written here so per-community balance queries in
+      // getGuaranteedMinimum() see real data, not all-NULL rows.
+      await tx.insert(communityPoolLedgerTable).values({
+        entry_type: entryType,
+        amount: -amount,
+        request_id: requestId,
+        user_id: helperId,
+        community_id: communityId ?? null,
+        notes:
+          entryType === "helper_front"
+            ? `Pool fronted helper payment for: ${requestTitle}`
+            : `Guaranteed minimum for completed task: ${requestTitle}`,
+      });
+
+      // Credit the helper's Goodwill Fund
+      await tx
+        .update(usersTable)
+        .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${amount}` })
+        .where(eq(usersTable.id, helperId));
+
+      // Helper-visible ledger entry
+      await tx.insert(transactionsTable).values({
+        user_id: helperId,
+        request_id: requestId,
+        type: "pledge_received",
+        amount,
+        description:
+          entryType === "helper_front"
+            ? `Community Pool paid you now for: ${requestTitle}`
+            : `Community Pool thank-you minimum: ${requestTitle}`,
+      });
+
+      return "paid";
+    });
+  } catch (err: unknown) {
+    // Unique-violation = already paid for this request — safe skip, no retry needed
+    const code = (err as { code?: string })?.code;
+    if (code === "23505") {
+      logger.warn({ request_id: requestId, entry_type: entryType }, "Pool entry already exists for request — skipped duplicate");
+      return "duplicate";
+    }
+    logger.error({ err, request_id: requestId, helper_id: helperId }, "Pool payment failed");
+    return "error";
+  }
+}
+
+/** Has the pool fronted this request's helper payment? */
+export async function wasRequestFronted(requestId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ id: communityPoolLedgerTable.id })
+    .from(communityPoolLedgerTable)
+    .where(
+      sql`${communityPoolLedgerTable.request_id} = ${requestId} AND ${communityPoolLedgerTable.entry_type} = 'helper_front'`
+    )
+    .limit(1);
+  return !!row;
+}
+
+/** Record a repayment flowing back into the pool (requester repaid a fronted pledge). */
+export async function recordPoolRepayment(params: {
+  amount: number;
+  requestId: number;
+  requesterId: number | null;
+  stripePaymentIntentId?: string;
+  /** Community scope — must match the original debit's community_id so per-community
+   *  balance queries remain accurate when the repayment arrives. */
+  communityId?: number | null;
+}): Promise<void> {
+  const { requestId, requesterId, stripePaymentIntentId, communityId } = params;
+  const amount = roundMoney(params.amount);
+  if (amount <= 0) return;
+  await db.insert(communityPoolLedgerTable).values({
+    entry_type: "pledge_repayment",
+    amount,
+    request_id: requestId,
+    user_id: requesterId,
+    community_id: communityId ?? null,
+    stripe_payment_intent_id: stripePaymentIntentId ?? null,
+    notes: "Requester repaid a pool-fronted pledge — pool replenished",
+  });
+}
+
+/**
+ * Queue a guaranteed minimum the pool couldn't cover. The backfill worker
+ * retries these FIFO whenever the pool is replenished — no helper silently
+ * loses their guarantee. Unique index on request_id = queue-once.
+ */
+export async function queuePendingMinimum(params: {
+  requestId: number;
+  helperId: number;
+  amount: number;
+  requestTitle: string;
+}): Promise<void> {
+  const amount = roundMoney(params.amount);
+  if (amount <= 0) return;
+  try {
+    await db
+      .insert(poolPendingMinimumsTable)
+      .values({
+        request_id: params.requestId,
+        helper_id: params.helperId,
+        amount,
+        request_title: params.requestTitle,
+      })
+      .onConflictDoNothing();
+    logger.warn(
+      { request_id: params.requestId, helper_id: params.helperId, amount },
+      "Guaranteed minimum QUEUED — pool balance insufficient, will backfill when replenished"
+    );
+  } catch (err) {
+    logger.error({ err, request_id: params.requestId }, "Failed to queue pending minimum");
+  }
+}
+
+/**
+ * Backfill queued guaranteed minimums (FIFO) while the pool can cover them.
+ * Called after every pool credit (contribution / repayment) and by the
+ * interval worker as a safety net. Returns how many were paid.
+ */
+export async function processPendingMinimums(): Promise<number> {
+  if (!(await isPoolEnabled())) return 0;
+
+  let paidCount = 0;
+  try {
+    const pending = await db
+      .select()
+      .from(poolPendingMinimumsTable)
+      .where(eq(poolPendingMinimumsTable.status, "pending"))
+      .orderBy(asc(poolPendingMinimumsTable.created_at))
+      .limit(50);
+
+    for (const row of pending) {
+      const outcome = await payHelperFromPool({
+        entryType: "guaranteed_minimum",
+        amount: row.amount,
+        requestId: row.request_id,
+        helperId: row.helper_id,
+        requestTitle: row.request_title,
+      });
+
+      if (outcome === "paid" || outcome === "duplicate") {
+        // duplicate = a minimum already exists for this request — mark satisfied
+        await db
+          .update(poolPendingMinimumsTable)
+          .set({ status: "paid", paid_at: new Date() })
+          .where(eq(poolPendingMinimumsTable.id, row.id));
+        if (outcome === "paid") {
+          paidCount++;
+          logger.info(
+            { request_id: row.request_id, helper_id: row.helper_id, amount: row.amount },
+            "Backfilled guaranteed minimum from replenished pool"
+          );
+          // Lazy import avoids a circular dependency (routes/push imports lib modules)
+          const { sendPushToUser } = await import("../routes/push");
+          sendPushToUser(row.helper_id, {
+            title: "💙 Community Pool Thank-You (backfilled)",
+            body: `The pool was replenished — $${row.amount.toFixed(2)} was just added to your Goodwill Fund for: "${row.request_title}".`,
+            requestId: row.request_id,
+            notifType: "wallet" as const,
+          }).catch(() => {});
+        }
+      } else if (outcome === "insufficient") {
+        // FIFO: stop at the first one the pool can't cover
+        break;
+      }
+      // "error": leave pending, move on next cycle
+    }
+
+    if (paidCount > 0) {
+      const balance = await getPoolBalance();
+      broadcast({ type: "pool_updated", payload: { balance } });
+    }
+  } catch (err) {
+    logger.error({ err }, "processPendingMinimums failed");
+  }
+  return paidCount;
+}
+
+// ── Low-balance admin alert ──────────────────────────────────────────────────
+
+const LOW_BALANCE_ALERT_INTERVAL_MS = 6 * 60 * 60 * 1000; // at most once per 6h
+let _lastLowBalanceAlertAt = 0;
+
+export async function getLowBalanceThreshold(): Promise<number> {
+  try {
+    const [row] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "pool_low_balance_threshold"))
+      .limit(1);
+    const parsed = row ? parseFloat(row.value) : NaN;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 25;
+  } catch {
+    return 25;
+  }
+}
+
+/**
+ * If the pool balance is below the alert threshold, warn admins: warn-level
+ * log, `pool_low_balance` WS broadcast, and a push to every is_admin user.
+ * Deduped to once per 6 hours per process.
+ */
+export async function maybeAlertLowBalance(): Promise<void> {
+  try {
+    const [balance, threshold] = await Promise.all([getPoolBalance(), getLowBalanceThreshold()]);
+    if (toCents(balance) >= toCents(threshold)) return;
+    if (Date.now() - _lastLowBalanceAlertAt < LOW_BALANCE_ALERT_INTERVAL_MS) return;
+    _lastLowBalanceAlertAt = Date.now();
+
+    logger.warn({ balance, threshold }, "COMMUNITY POOL LOW BALANCE — guaranteed minimums at risk");
+    broadcast({ type: "pool_low_balance", payload: { balance, threshold } });
+
+    const adminsResult = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(eq(usersTable.is_admin, true));
+    const admins = Array.isArray(adminsResult) ? adminsResult : [];
+    // Lazy import avoids a circular dependency (routes/push imports lib modules)
+    const { sendPushToUser } = await import("../routes/push");
+    for (const admin of admins) {
+      sendPushToUser(admin.id, {
+        title: "⚠️ Community Pool low balance",
+        body: `Pool balance is $${balance.toFixed(2)} (threshold $${threshold.toFixed(2)}). Guaranteed minimums may be queued until the pool is replenished.`,
+        notifType: "wallet" as const,
+      }).catch(() => {});
+    }
+  } catch (err) {
+    logger.error({ err }, "maybeAlertLowBalance failed");
+  }
+}
+
+/** Record a sponsor contribution into the pool. */
+export async function recordPoolContribution(params: {
+  amount: number;
+  userId: number | null;
+  stripePaymentIntentId?: string;
+  notes?: string;
+  governmentSponsorId?: number;
+  /** Community this contribution is designated for. Null = global/Tarrant County bucket. */
+  communityId?: number | null;
+}): Promise<boolean> {
+  const { userId, stripePaymentIntentId, notes, governmentSponsorId, communityId } = params;
+  const amount = roundMoney(params.amount);
+  if (amount <= 0) return false;
+  try {
+    await db.insert(communityPoolLedgerTable).values({
+      entry_type: "sponsor_contribution",
+      amount,
+      user_id: userId,
+      community_id: communityId ?? null,
+      stripe_payment_intent_id: stripePaymentIntentId ?? null,
+      notes: notes ?? "Sponsor contribution to the Community Pool",
+      government_sponsor_id: governmentSponsorId ?? null,
+    });
+    return true;
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code;
+    if (code === "23505") {
+      // Webhook retry — contribution already recorded for this payment intent
+      logger.info({ stripe_pi: stripePaymentIntentId }, "Pool contribution already recorded — webhook retry ignored");
+      return false;
+    }
+    throw err;
+  }
+}
+
+
+
+
+
+
+/**
+ * Niakofa WebSocket Hub
+ *
+ * Manages all realtime connections with:
+ *   - Standardized event types (REQUEST_CREATED, etc.)
+ *   - Typed event payload interfaces for compile-time correctness
+ *   - Per-user socket registry for targeted sends
+ *   - Room-based broadcasting (sendToRequestParticipants)
+ *   - Batch multi-user sends (sendToUsers)
+ *   - Presence system (ONLINE / OFFLINE / BUSY / AVAILABLE / IN_REQUEST)
+ *   - Per-IP connection limits (max 10 sockets per IP)
+ *   - Reconnect cooldown (1 new connection / 2s per IP)
+ *   - Server-initiated heartbeat (30s ping, 10s timeout to respond)
+ *   - Hub metrics for admin health endpoint
+ */
+import { WebSocketServer, WebSocket } from "ws";
+import { IncomingMessage } from "http";
+import { logger } from "./logger";
+import { verifyToken } from "../middlewares/auth";
+
+// ── Standardized Niakofa Event Types ─────────────────────────────────────────
+export type WsEventType =
+  | "REQUEST_CREATED"
+  | "REQUEST_ACCEPTED"
+  | "REQUEST_CANCELLED"
+  | "HELPER_MOVING"
+  | "HELPER_ARRIVED"
+  | "REQUEST_COMPLETED"
+  | "PAYMENT_CONFIRMED"
+  | "new_request"
+  | "request_updated"
+  | "helper_location"
+  | "helper_online"
+  | "helper_offline"
+  | "pledge_paid"
+  | "pledge_scheduled"
+  | "leaderboard_update"
+  | "trust_tier_change"
+  | "new_gratitude"
+  | "new_gratitude_prompt"
+  | "gratitude_liked"
+  | "crisis_update"
+  | "payment_completed"
+  | "payouts_enabled"
+  | "payout_sent"
+  | "pool_updated"
+  | "pool_front_paid"
+  | "pool_low_balance"
+  | "presence_update"
+  | "connected"
+  | "pong"
+  | "ping"
+  | "new_report"
+  | "report_reviewed"
+  | "chat_message"
+  | "help_chain_joined"
+  | "help_chain_left"
+  // NIA AI event types — event-driven communication bridge
+  | "nia_message"
+  | "nia_checkin"
+  | "nia_crisis_alert"
+  | "nia_memory_update"
+  | "nia_typing"
+  | "nia_status"
+  | "nia_cost_alert"
+  // Wallet cashout events — benevolence_wallet → Stripe transfer
+  | "wallet_cashout"
+  | "wallet_cashout_reversed"
+  // Admin real-time notifications — new accounts / applications needing review
+  | "new_account_pending"
+  | "new_helper_application"
+  | "admin_summary_update";
+
+export interface WsEvent {
+  type: WsEventType;
+  payload: unknown;
+}
+
+// ── Typed Payload Interfaces ──────────────────────────────────────────────────
+// Import these in routes for compile-time correctness on broadcast payloads.
+
+export interface RequestEventPayload {
+  id: number;
+  title: string;
+  status: string;
+  category?: string;
+  urgency?: string;
+  payment_type?: string;
+  requester_id: number;
+  helper_id?: number | null;
+  lat?: number | null;
+  lng?: number | null;
+  neighborhood?: string | null;
+  requester_name?: string | null;
+  requester_avatar?: string | null;
+  helper_name?: string | null;
+  distance_miles?: number | null;
+  estimated_duration_min?: number | null;
+  created_at?: string | Date | null;
+  [key: string]: unknown;
+}
+
+export interface PresenceEventPayload {
+  user_id: number;
+  status: PresenceStatus;
+  identity_verified?: boolean;
+}
+
+export interface PoolEventPayload {
+  balance: number;
+  request_id?: number;
+  amount?: number;
+}
+
+export interface HelperLocationPayload {
+  user_id: number;
+  request_id?: number;
+  lat: number;
+  lng: number;
+  heading?: number | null;
+  speed?: number | null;
+}
+
+export interface NiaStatusPayload {
+  enabled: boolean;
+  last_toggled_at?: string | null;
+}
+
+export interface NiaCostAlertPayload {
+  cost_usd: number;
+  threshold_usd: number;
+  period: string;
+}
+
+export interface HelpChainPayload {
+  request_id: number;
+  helper_id: number;
+}
+
+export interface PledgeEventPayload {
+  user_id: number;
+  request_id: number;
+  amount: number;
+  request_title?: string;
+}
+
+export interface LeaderboardUpdatePayload {
+  user_id: number;
+  help_count?: number;
+  trust_score?: number;
+  goodwill_score?: number;
+  rank?: number;
+}
+
+export interface TrustTierChangePayload {
+  user_id: number;
+  old_tier?: string;
+  new_tier: string;
+  trust_score: number;
+}
+
+export interface CrisisUpdatePayload {
+  active: boolean;
+  level?: string;
+  region?: string;
+  message?: string;
+  [key: string]: unknown;
+}
+
+export interface ReportEventPayload {
+  report_id: number;
+  reporter_id?: number;
+  reported_user_id?: number;
+  reason?: string;
+  reviewed?: boolean;
+}
+
+export interface GratitudeEventPayload {
+  id: number;
+  author_id?: number;
+  content?: string;
+  likes?: number;
+  [key: string]: unknown;
+}
+
+export interface PayoutEventPayload {
+  user_id: number;
+  amount_cents?: number;
+  stripe_transfer_id?: string;
+}
+
+export interface AdminSummaryPayload {
+  pending_accounts?: number;
+  pending_helpers?: number;
+  open_reports?: number;
+  [key: string]: unknown;
+}
+
+// ── Presence System ───────────────────────────────────────────────────────────
+export type PresenceStatus = "ONLINE" | "OFFLINE" | "BUSY" | "AVAILABLE" | "IN_REQUEST";
+
+const presenceMap = new Map<number, PresenceStatus>();
+
+export function setPresence(userId: number, status: PresenceStatus): void {
+  presenceMap.set(userId, status);
+  broadcast({ type: "presence_update", payload: { user_id: userId, status } satisfies PresenceEventPayload });
+}
+
+export function getPresence(userId: number): PresenceStatus {
+  return presenceMap.get(userId) ?? "OFFLINE";
+}
+
+// ── Per-user socket registry ──────────────────────────────────────────────────
+const userSockets = new Map<number, Set<WebSocket>>();
+
+/**
+ * Send an event to all active WebSocket connections for a specific user.
+ * No-ops silently if the user has no open sockets.
+ */
+export function sendToUser(userId: number, event: WsEvent): void {
+  const sockets = userSockets.get(userId);
+  if (!sockets) return;
+  const msg = JSON.stringify(event);
+  sockets.forEach((sock) => {
+    if (sock.readyState === WebSocket.OPEN) {
+      try {
+        sock.send(msg);
+      } catch (err) {
+        logger.warn({ err, userId, type: event.type }, "WS sendToUser: send failed — client likely closed mid-send");
+      }
+    }
+  });
+}
+
+/**
+ * Send an event to multiple users in a single pass.
+ * Deduplicates — if the same userId appears twice, the event is sent once.
+ */
+export function sendToUsers(userIds: number[], event: WsEvent): void {
+  const seen = new Set<number>();
+  const msg = JSON.stringify(event);
+  for (const userId of userIds) {
+    if (seen.has(userId)) continue;
+    seen.add(userId);
+    const sockets = userSockets.get(userId);
+    if (!sockets) continue;
+    sockets.forEach((sock) => {
+      if (sock.readyState === WebSocket.OPEN) {
+        try {
+          sock.send(msg);
+        } catch (err) {
+          logger.warn({ err, userId, type: event.type }, "WS sendToUsers: send failed — client likely closed mid-send");
+        }
+      }
+    });
+  }
+}
+
+/**
+ * Canonical helper for request lifecycle events: notifies both the requester
+ * and the assigned helper (when one exists) without requiring callers to
+ * duplicate the null-check.
+ *
+ * Usage in routes replaces:
+ *   sendToUser(request.requester_id, event);
+ *   if (request.helper_id) sendToUser(request.helper_id, event);
+ *
+ * With:
+ *   sendToRequestParticipants(request.requester_id, request.helper_id, event);
+ */
+export function sendToRequestParticipants(
+  requesterId: number,
+  helperId: number | null | undefined,
+  event: WsEvent
+): void {
+  const ids: number[] = [requesterId];
+  if (helperId != null) ids.push(helperId);
+  sendToUsers(ids, event);
+}
+
+// ── Presence / online-status queries ─────────────────────────────────────────
+
+/**
+ * Returns true if the user has at least one open WebSocket connection.
+ * Uses the socket registry (not presenceMap) for a ground-truth answer.
+ */
+export function isUserOnline(userId: number): boolean {
+  const sockets = userSockets.get(userId);
+  if (!sockets || sockets.size === 0) return false;
+  for (const sock of sockets) {
+    if (sock.readyState === WebSocket.OPEN) return true;
+  }
+  return false;
+}
+
+/**
+ * Returns all user IDs that currently have at least one open connection.
+ * Useful for dispatch heuristics ("prefer online helpers") and admin dashboards.
+ */
+export function getConnectedUserIds(): number[] {
+  const ids: number[] = [];
+  for (const [userId, sockets] of userSockets) {
+    for (const sock of sockets) {
+      if (sock.readyState === WebSocket.OPEN) {
+        ids.push(userId);
+        break; // only count each user once
+      }
+    }
+  }
+  return ids;
+}
+
+// ── Hub Metrics ───────────────────────────────────────────────────────────────
+
+export interface HubMetrics {
+  /** Total raw WebSocket connections (one user on two tabs = 2) */
+  total_connections: number;
+  /** Distinct authenticated user IDs with ≥1 open socket */
+  registered_users: number;
+  /** Number of user IDs currently tracked in presence map */
+  presence_tracked: number;
+  /** Presence distribution: how many users are in each status */
+  presence_counts: Record<PresenceStatus, number>;
+  /** User IDs currently online (open socket) */
+  online_user_ids: number[];
+}
+
+/**
+ * Returns live metrics about the WebSocket hub for the admin health endpoint.
+ * All reads are O(n) over the in-memory maps — no DB calls.
+ */
+export function getHubMetrics(): HubMetrics {
+  let totalConnections = 0;
+  const onlineUserIds: number[] = [];
+
+  for (const [userId, sockets] of userSockets) {
+    let hasOpen = false;
+    for (const sock of sockets) {
+      if (sock.readyState === WebSocket.OPEN) {
+        totalConnections++;
+        hasOpen = true;
+      }
+    }
+    if (hasOpen) onlineUserIds.push(userId);
+  }
+
+  const presenceCounts: Record<PresenceStatus, number> = {
+    ONLINE: 0,
+    OFFLINE: 0,
+    BUSY: 0,
+    AVAILABLE: 0,
+    IN_REQUEST: 0,
+  };
+  for (const status of presenceMap.values()) {
+    presenceCounts[status]++;
+  }
+
+  return {
+    total_connections: totalConnections,
+    registered_users: onlineUserIds.length,
+    presence_tracked: presenceMap.size,
+    presence_counts: presenceCounts,
+    online_user_ids: onlineUserIds,
+  };
+}
+
+// ── Connection protection ─────────────────────────────────────────────────────
+const MAX_CONNECTIONS_PER_IP  = 10;
+const RECONNECT_COOLDOWN_MS   = 2_000;  // 1 new connection per 2s per IP
+const HEARTBEAT_INTERVAL_MS   = 30_000; // server pings every 30s
+const HEARTBEAT_TIMEOUT_MS    = 10_000; // client must pong within 10s or gets terminated
+
+const ipConnectionCount = new Map<string, number>();
+const ipLastConnectTime = new Map<string, number>();
+const socketAlive       = new WeakMap<WebSocket, boolean>();
+
+function getClientIp(req: IncomingMessage): string {
+  const fwd = req.headers["x-forwarded-for"];
+  if (fwd) return (Array.isArray(fwd) ? fwd[0] : fwd).split(",")[0]!.trim();
+  return req.socket.remoteAddress ?? "unknown";
+}
+
+// ── WebSocket Server ──────────────────────────────────────────────────────────
+let wss: WebSocketServer | null = null;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+// Build the allowlist once at startup from ALLOWED_ORIGIN.
+// In dev (no env var) all origins are permitted — Railway always sets this in prod.
+function buildWsOriginAllowlist(): Set<string> | null {
+  const raw = process.env["ALLOWED_ORIGIN"];
+  if (!raw) return null; // open (dev)
+  return new Set(raw.split(",").map(s => s.trim().replace(/\/$/, "")));
+}
+const WS_ORIGIN_ALLOWLIST = buildWsOriginAllowlist();
+
+export function initWebSocketServer(server: import("http").Server): WebSocketServer {
+  wss = new WebSocketServer({ server, path: "/ws" });
+
+  // ── Server-initiated heartbeat: ping every 30s, terminate non-responsive sockets ──
+  heartbeatTimer = setInterval(() => {
+    if (!wss) return;
+    wss.clients.forEach((client) => {
+      if (socketAlive.get(client) === false) {
+        client.terminate(); // did not respond to last ping
+        return;
+      }
+      socketAlive.set(client, false); // reset; must pong before next cycle
+      client.ping();
+    });
+  }, HEARTBEAT_INTERVAL_MS);
+
+  wss.on("connection", (socket: WebSocket, req: IncomingMessage) => {
+    const ip = getClientIp(req);
+
+    // ── Origin check (production only) ─────────────────────────────────────────
+    if (WS_ORIGIN_ALLOWLIST) {
+      const origin = (req.headers["origin"] ?? "").replace(/\/$/, "");
+      if (!WS_ORIGIN_ALLOWLIST.has(origin)) {
+        logger.warn({ ip, origin }, "WS: rejected — origin not in ALLOWED_ORIGIN");
+        socket.close(1008, "Origin not allowed");
+        return;
+      }
+    }
+
+    // ── Per-IP connection limit ───────────────────────────────────────────────
+    const currentCount = ipConnectionCount.get(ip) ?? 0;
+    if (currentCount >= MAX_CONNECTIONS_PER_IP) {
+      logger.warn({ ip, count: currentCount }, "WS: too many connections — rejecting");
+      socket.close(1008, "Too many WebSocket connections from your network. Please reload and try again.");
+      return;
+    }
+
+    // ── Reconnect cooldown ────────────────────────────────────────────────────
+    const lastConnect = ipLastConnectTime.get(ip) ?? 0;
+    const now = Date.now();
+    if (now - lastConnect < RECONNECT_COOLDOWN_MS) {
+      logger.warn({ ip }, "WS: reconnecting too fast — rejecting");
+      socket.close(1008, "Reconnecting too quickly. Please wait a moment before reconnecting.");
+      return;
+    }
+
+    ipConnectionCount.set(ip, currentCount + 1);
+    ipLastConnectTime.set(ip, now);
+    socketAlive.set(socket, true);
+
+    let registeredUserId: number | null = null;
+
+    logger.info({ ip, url: req.url, connections: currentCount + 1 }, "WS client connected");
+
+    // ── Heartbeat: track pong responses ──────────────────────────────────────
+    socket.on("pong", () => socketAlive.set(socket, true));
+
+    // ── Message handler ───────────────────────────────────────────────────────
+    socket.on("message", (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString()) as WsEvent;
+
+        if (msg.type === "ping") {
+          socketAlive.set(socket, true); // client-initiated ping also counts as alive
+          socket.send(JSON.stringify({ type: "pong" }));
+          return;
+        }
+
+        if ((msg as { type: string }).type === "register") {
+          // SECURITY: verify the Bearer token before trusting the claimed userId.
+          // Without this, any WebSocket client could register as any userId and receive
+          // that user's targeted push events (chat messages, payment confirmations, etc.).
+          const { userId, token } = msg.payload as { userId: number; token?: string };
+          if (userId && token) {
+            const { userId: verifiedId, valid } = verifyToken(token);
+            if (valid && verifiedId === userId) {
+              registeredUserId = userId;
+              if (!userSockets.has(userId)) userSockets.set(userId, new Set());
+              userSockets.get(userId)!.add(socket);
+              // Mark user online immediately on successful registration
+              if (presenceMap.get(userId) === "OFFLINE" || !presenceMap.has(userId)) {
+                presenceMap.set(userId, "ONLINE");
+                // Broadcast presence without calling setPresence to avoid recursion;
+                // the user is being registered, not yet interacting.
+                broadcast({ type: "presence_update", payload: { user_id: userId, status: "ONLINE" } });
+              }
+              logger.info({ userId, ip }, "WS: user registered to socket");
+            } else {
+              logger.warn({ ip, claimedUserId: userId }, "WS: register rejected — token mismatch");
+              socket.send(JSON.stringify({ type: "error", payload: { message: "Invalid token for this userId" } }));
+            }
+          } else if (userId && !token) {
+            // Legacy clients without token — log warning, allow but don't register
+            // to targeted delivery (they still get broadcast messages).
+            logger.warn({ ip, userId }, "WS: register without token — not registered for targeted delivery");
+          }
+          return;
+        }
+
+        if ((msg as { type: string }).type === "presence") {
+          // SECURITY: ignore client-supplied userId; bind status change to the
+          // server-verified registeredUserId so a socket can only set presence
+          // for the user it authenticated as — not for arbitrary user IDs.
+          const { status } = msg.payload as { userId?: number; status: PresenceStatus };
+          if (registeredUserId !== null && status) setPresence(registeredUserId, status);
+          return;
+        }
+      } catch {
+        // ignore malformed messages
+      }
+    });
+
+    // ── Cleanup on close ──────────────────────────────────────────────────────
+    socket.on("close", () => {
+      const remaining = Math.max(0, (ipConnectionCount.get(ip) ?? 1) - 1);
+      // Delete from map when count reaches 0 to prevent unbounded map growth
+      if (remaining === 0) {
+        ipConnectionCount.delete(ip);
+      } else {
+        ipConnectionCount.set(ip, remaining);
+      }
+      // Clean up reconnect cooldown entry after the window has passed
+      const lastConnectTs = ipLastConnectTime.get(ip) ?? 0;
+      if (Date.now() - lastConnectTs > RECONNECT_COOLDOWN_MS * 2) {
+        ipLastConnectTime.delete(ip);
+      }
+      socketAlive.delete(socket);
+
+      if (registeredUserId !== null) {
+        const sockets = userSockets.get(registeredUserId);
+        if (sockets) {
+          sockets.delete(socket);
+          if (sockets.size === 0) {
+            userSockets.delete(registeredUserId);
+            presenceMap.set(registeredUserId, "OFFLINE");
+            broadcast({ type: "presence_update", payload: { user_id: registeredUserId, status: "OFFLINE" } });
+          }
+        }
+      }
+
+      logger.info({ ip, remaining }, "WS client disconnected");
+    });
+
+    socket.on("error", (err) => logger.warn({ err }, "WS socket error"));
+
+    socket.send(
+      JSON.stringify({
+        type: "connected",
+        payload: {
+          message: "Niakofa live channel active — Help Today. Pay It Forward Tomorrow.",
+          heartbeat_interval_ms: HEARTBEAT_INTERVAL_MS,
+        },
+      })
+    );
+  });
+
+  return wss;
+}
+
+export function stopHeartbeat(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
+// ── Broadcast ─────────────────────────────────────────────────────────────────
+
+export function broadcast(event: WsEvent): void {
+  if (!wss) return;
+  const msg = JSON.stringify(event);
+  let sent = 0;
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      try {
+        client.send(msg);
+        sent++;
+      } catch (err) {
+        // One bad client must not abort the broadcast loop for everyone else.
+        // This can happen if the socket transitions to CLOSING between the
+        // readyState check and the send() call (torn-down race).
+        logger.warn({ err, type: event.type }, "WS broadcast: send failed for one client — skipped");
+      }
+    }
+  });
+  if (sent > 0) logger.info({ type: event.type, clients: sent }, "WS broadcast");
+}
+
+/**
+ * Broadcast an event only to WebSocket clients that have completed auth
+ * (i.e. sent a valid "register" message with a verified token).
+ *
+ * Use this instead of broadcast() for any events that carry user-identifiable
+ * data (leaderboard entries with names/cities, etc.) so unauthenticated sockets
+ * cannot receive the payload even though they may be connected.
+ *
+ * Implementation: iterate the userSockets registry (populated on successful
+ * token verification in the "register" handler) rather than wss.clients, so
+ * only verified sockets are reached.
+ */
+export function broadcastToAuthenticated(event: WsEvent): void {
+  const msg = JSON.stringify(event);
+  let sent = 0;
+  for (const sockets of userSockets.values()) {
+    sockets.forEach((sock) => {
+      if (sock.readyState === WebSocket.OPEN) {
+        try {
+          sock.send(msg);
+          sent++;
+        } catch (err) {
+          logger.warn({ err, type: event.type }, "WS broadcastToAuthenticated: send failed for one client — skipped");
+        }
+      }
+    });
+  }
+  if (sent > 0) logger.info({ type: event.type, clients: sent }, "WS broadcastToAuthenticated");
+}
+
+/**
+ * Sends the same request event under both the standardized type and the legacy
+ * type. When they are the same, only a single message is sent.
+ *
+ * Use this for request lifecycle events that older frontend versions may still
+ * listen for under the legacy name (e.g. REQUEST_CREATED + new_request).
+ */
+export function broadcastRequestEvent(
+  standardType: WsEventType,
+  legacyType: WsEventType,
+  payload: unknown
+): void {
+  broadcast({ type: standardType, payload });
+  if (standardType !== legacyType) {
+    broadcast({ type: legacyType, payload });
+  }
+}
+
+// ── NIA AI Event Helpers ──────────────────────────────────────────────────────
+
+/**
+ * Emit a NIA AI event to a specific user via WebSocket.
+ * Used for real-time status updates, typing indicators, and message delivery.
+ */
+export function sendNiaEventToUser(userId: number, type: WsEventType, payload: unknown): void {
+  sendToUser(userId, { type, payload });
+}
+
+/**
+ * Broadcast a NIA AI event to all connected clients.
+ * Used for global status updates, cost alerts, and system-wide NIA notifications.
+ */
+export function broadcastNiaEvent(type: WsEventType, payload: unknown): void {
+  broadcast({ type, payload });
+}
+
+/**
+ * Type guard for NIA AI event types.
+ */
+export function isNiaEventType(type: string): type is WsEventType {
+  return [
+    "nia_message",
+    "nia_checkin",
+    "nia_crisis_alert",
+    "nia_memory_update",
+    "nia_typing",
+    "nia_status",
+    "nia_cost_alert",
+  ].includes(type);
+}
+
+// Suppress unused-variable warning for HEARTBEAT_TIMEOUT_MS — it documents
+// the intended client-side SLA even though the server enforces it via the
+// alive WeakMap + terminate() call in the heartbeat timer above.
+void (HEARTBEAT_TIMEOUT_MS satisfies number);
+
+
+
+
+
+import { Router, type IRouter } from "express";
+import { db } from "@workspace/db";
+import { sql } from "drizzle-orm";
+import { logger } from "../lib/logger";
+import { getWorkerHealth, areAllCriticalWorkersRunning } from "../lib/worker-registry";
+import { isRedisConfigured } from "../lib/queue";
+import { requireAuth } from "../middlewares/auth";
+import { requireAdmin } from "../middlewares/authz";
+import { adminLimiter } from "../middlewares/rate-limit";
+import { getHubMetrics } from "../lib/ws-hub";
+import { getSystemSetting } from "../lib/db-helpers";
+
+// ── Region bucketing ──────────────────────────────────────────────────────────
+// Maps a lat/lng point to one of the platform's target regions.
+//
+// EVALUATION ORDER MATTERS — these boxes overlap and must be checked from most
+// specific / northerly to most general to avoid mis-classification:
+//
+//  1. Caribbean   — checked before N. America (same longitude band)
+//  2. Europe      — lat 37–72, lng -10–40; MUST come before Africa whose box
+//                   extends to lat 38, overlapping southern Europe
+//  3. Middle East — lat 12–42, lng 34–65; MUST come before Africa which also
+//                   covers these coordinates (e.g. Egypt / Horn of Africa top)
+//  4. Africa      — after Europe & Middle East so only truly African points land here
+//  5–8. Rest of world in decreasing likelihood for our user base
+//
+// Verified boundary city samples:
+//   Athens GR (37.9N, 23.7E)  → Europe  ✓
+//   Riyadh SA (24.7N, 46.7E)  → Middle East ✓
+//   Cairo EG  (30.0N, 31.2E)  → Africa (lng 31.2 < 34, misses ME box) ✓
+//   Nairobi KE (-1.3S, 36.8E) → Africa (lat -1 < 12, misses ME box) ✓
+//   Lagos NG   (6.5N,  3.4E)  → Africa ✓
+//   Kingston JM (18.0N,-76.8W) → Caribbean ✓
+function getRegion(lat: number, lng: number): string {
+  // 1. Caribbean (before North America — overlapping longitude band)
+  if (lat >= 10 && lat <= 26  && lng >= -86  && lng <= -58) return "Caribbean";
+  // 2. Europe (before Africa — southern Europe overlaps Africa's lat range)
+  if (lat >= 37 && lat <= 72  && lng >= -10  && lng <= 40)  return "Europe";
+  // 3. Middle East (before Africa — Arabia/Levant/Iran overlap Africa box)
+  //    lng starts at 34 so Egypt/Sudan (lng ~31–33) stays in Africa
+  if (lat >= 12 && lat <= 42  && lng >= 34   && lng <= 65)  return "Middle East";
+  // 4. Africa (now only truly African points remain)
+  if (lat >= -35 && lat <= 38 && lng >= -18  && lng <= 52)  return "Africa";
+  // 5. North America
+  if (lat >= 7  && lat <= 72  && lng >= -168 && lng <= -52) return "North America";
+  // 6. South America
+  if (lat >= -56 && lat <= 12 && lng >= -82  && lng <= -34) return "South America";
+  // 7. Asia
+  if (lat >= -10 && lat <= 55 && lng >= 60   && lng <= 145) return "Asia";
+  // 8. Oceania
+  if (lat >= -50 && lat <= -10 && lng >= 110 && lng <= 180) return "Oceania";
+  return "Other";
+}
+
+const REGION_ORDER = [
+  "Africa", "North America", "Europe", "Caribbean",
+  "South America", "Middle East", "Asia", "Oceania", "Other",
+];
+
+const router: IRouter = Router();
+
+// "built" and "commit" used to be hardcoded literals that never changed —
+// healthz could report success while running deploys old by days, with no
+// way to tell from the response itself. RAILWAY_GIT_COMMIT_SHA is injected
+// automatically by Railway at build time (no config needed); PROCESS_STARTED_AT
+// is captured once at module load, so it changes on every real deploy/restart
+// even if the commit SHA lookup ever failed for some reason.
+const GIT_COMMIT = (process.env.RAILWAY_GIT_COMMIT_SHA ?? "unknown").slice(0, 7);
+const PROCESS_STARTED_AT = new Date().toISOString();
+
+router.get("/healthz", async (_req, res) => {
+  try {
+    // Verify database connectivity with a lightweight query
+    await db.execute(sql`SELECT 1`);
+    res.json({ status: "ok", version: "chat-v2", commit: GIT_COMMIT, started_at: PROCESS_STARTED_AT, db: "connected" });
+  } catch (err) {
+    logger.error({ err }, "healthz: database connectivity check failed");
+    res.status(503).json({ status: "degraded", version: "chat-v2", commit: GIT_COMMIT, started_at: PROCESS_STARTED_AT, db: "disconnected", error: "Database unavailable" });
+  }
+});
+
+router.get("/version", (_req, res) => {
+  res.json({ version: "chat-v2", commit: GIT_COMMIT, started_at: PROCESS_STARTED_AT });
+});
+
+// ── Worker health — admin-only ────────────────────────────────────────────────
+// Returns the status of every registered background worker so the admin panel
+// can surface a banner if Redis drops and critical workers stop running.
+router.get("/admin/worker-health", requireAuth, adminLimiter, async (req, res, next) => {
+  try {
+    await requireAdmin()(req, res, async () => {
+      const workers = getWorkerHealth();
+      const critical = areAllCriticalWorkersRunning();
+      const redisOk = isRedisConfigured();
+      // Hub metrics are O(n) in-memory reads — no DB call, no async needed.
+      const hub = getHubMetrics();
+      res.json({
+        status: critical && redisOk ? "ok" : "degraded",
+        redis_configured: redisOk,
+        process_started_at: PROCESS_STARTED_AT,
+        workers,
+        websocket_hub: hub,
+      });
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Global Ops snapshot — admin-only ─────────────────────────────────────────
+// One-stop dashboard feed: GPS health, regional coverage, language distribution,
+// and live feature-flag verification. Auto-polled every 60s by the admin panel.
+router.get("/admin/global-ops", requireAuth, adminLimiter, async (req, res, next) => {
+  try {
+    await requireAdmin()(req, res, async () => {
+      // Run all DB queries in parallel to keep latency low
+      const [onlineHelperRows, openRequestRows, completedRows, langRows] = await Promise.all([
+        db.execute(sql`SELECT lat, lng FROM users WHERE helper_status = 'online'`),
+        db.execute(sql`SELECT lat, lng FROM help_requests WHERE status = 'open'`),
+        db.execute(sql`
+          SELECT lat, lng FROM help_requests
+          WHERE status = 'completed'
+            AND completed_at > NOW() - INTERVAL '7 days'
+        `),
+        db.execute(sql`
+          SELECT COALESCE(voice_language, 'en') AS lang, COUNT(*)::int AS count
+          FROM help_requests
+          WHERE created_at > NOW() - INTERVAL '7 days'
+          GROUP BY voice_language
+          ORDER BY count DESC
+          LIMIT 10
+        `),
+      ]);
+
+      type Row = { lat: number | null; lng: number | null };
+      type LangRow = { lang: string; count: number };
+
+      // GPS health — helpers online WITH vs WITHOUT coordinates
+      const helpersWithGps  = (onlineHelperRows.rows as Row[]).filter(h => h.lat != null && h.lng != null);
+      const helpersNoGps    = onlineHelperRows.rows.length - helpersWithGps.length;
+
+      // Region buckets
+      const helperRegions:    Record<string, number> = {};
+      const requestRegions:   Record<string, number> = {};
+      const completedRegions: Record<string, number> = {};
+
+      for (const h of helpersWithGps) {
+        const r = getRegion(h.lat!, h.lng!);
+        helperRegions[r] = (helperRegions[r] ?? 0) + 1;
+      }
+      for (const r of (openRequestRows.rows as Row[])) {
+        if (r.lat == null || r.lng == null) continue;
+        const reg = getRegion(r.lat, r.lng);
+        requestRegions[reg] = (requestRegions[reg] ?? 0) + 1;
+      }
+      for (const r of (completedRows.rows as Row[])) {
+        if (r.lat == null || r.lng == null) continue;
+        const reg = getRegion(r.lat, r.lng);
+        completedRegions[reg] = (completedRegions[reg] ?? 0) + 1;
+      }
+
+      const activeSet = new Set([
+        ...Object.keys(helperRegions),
+        ...Object.keys(requestRegions),
+        ...Object.keys(completedRegions),
+      ]);
+      const regions = REGION_ORDER
+        .filter(r => activeSet.has(r))
+        .map(r => ({
+          region:              r,
+          helpers_online:      helperRegions[r]    ?? 0,
+          open_requests:       requestRegions[r]   ?? 0,
+          recent_completions:  completedRegions[r] ?? 0,
+        }));
+
+      // Language distribution (last 7 days of requests)
+      const language_distribution = (langRows.rows as LangRow[]).map(row => ({
+        lang:  row.lang ?? "en",
+        count: Number(row.count),
+      }));
+
+      // Feature-flag verification — no calls to external APIs; just env presence
+      const workers    = getWorkerHealth();
+      // Only count workers as healthy if they are actually running (or no_redis when
+      // Redis is intentionally absent). A "stopped" critical worker means a failure — do
+      // NOT treat it as healthy. Non-critical workers with "no_redis" are expected when
+      // REDIS_URL is unset (graceful degradation, not a fault).
+      const workersOk  = workers.every(w =>
+        w.status === "running" ||
+        (w.status === "no_redis" && !w.redisRequired)
+      );
+
+      // Mapbox: accept MAPBOX_TOKEN (server preferred) OR VITE_MAPBOX_TOKEN (client/legacy).
+      // Use || (not ??) so empty-string placeholders fall through correctly.
+      const mapboxConfigured = !!(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
+      // Nia AI: Anthropic is the primary engine; check both key names
+      const niaConfigured = !!(process.env.ANTHROPIC_API_KEY ?? process.env.NIA_API_KEY);
+      // Push notifications
+      const pushConfigured = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
+      // Internal service security
+      const internalSecretSet = !!(process.env.INTERNAL_SECRET);
+      // Stripe payments
+      const stripeConfigured = !!(process.env.STRIPE_SECRET_KEY);
+      // Background checks
+      const checkrConfigured = !!(process.env.CHECKR_API_KEY);
+      // Nia service URL (defaults to localhost:3001 in dev)
+      const niaServiceUrl = process.env.NIA_SERVICE_URL ?? "http://localhost:3001 (dev default)";
+
+      // Count configured vs missing critical secrets
+      const criticalSecrets = [
+        { key: "MAPBOX_TOKEN / VITE_MAPBOX_TOKEN", ok: mapboxConfigured },
+        { key: "ANTHROPIC_API_KEY",                ok: niaConfigured },
+        { key: "INTERNAL_SECRET",                  ok: internalSecretSet },
+      ];
+      const optionalSecrets = [
+        { key: "VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY", ok: pushConfigured },
+        { key: "STRIPE_SECRET_KEY",                    ok: stripeConfigured },
+        { key: "CHECKR_API_KEY",                       ok: checkrConfigured },
+        { key: "REDIS_URL",                            ok: isRedisConfigured() },
+      ];
+      const missingCritical = criticalSecrets.filter(s => !s.ok).map(s => s.key);
+      const missingOptional = optionalSecrets.filter(s => !s.ok).map(s => s.key);
+
+      res.json({
+        gps_health: {
+          helpers_online_with_gps: helpersWithGps.length,
+          helpers_online_no_gps:   helpersNoGps,
+          total_online_helpers:    onlineHelperRows.rows.length,
+        },
+        regions,
+        language_distribution,
+        feature_checks: {
+          database:         "ok",
+          mapbox_token:     mapboxConfigured,
+          nia_ai:           niaConfigured,
+          internal_secret:  internalSecretSet,
+          redis:            isRedisConfigured(),
+          push_vapid:       pushConfigured,
+          stripe:           stripeConfigured,
+          background_checks: checkrConfigured,
+          workers_ok:       workersOk,
+        },
+        // Actionable config status for admin — tells exactly what needs to be set
+        config_status: {
+          critical_missing: missingCritical,
+          optional_missing:  missingOptional,
+          fully_configured:  missingCritical.length === 0,
+          nia_service_url:  niaServiceUrl,
+          notes: missingCritical.length > 0
+            ? `⚠️ ${missingCritical.length} critical secret(s) missing — map, navigation, and/or Nia AI will not function until configured in Replit Secrets.`
+            : optionalSecrets.filter(s => !s.ok).length > 0
+            ? `✅ Core features ready. Optional: ${missingOptional.join(", ")} not configured.`
+            : "✅ All features fully configured.",
+        },
+        summary: {
+          total_open_requests:   openRequestRows.rows.length,
+          total_online_helpers:  onlineHelperRows.rows.length,
+          regions_active:        regions.filter(r => r.helpers_online > 0 || r.open_requests > 0).length,
+          last_updated:          new Date().toISOString(),
+        },
+      });
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Public status page feed — no auth required ────────────────────────────────
+// Returns the minimum information needed to show a "Is Niakofa working?" page
+// to users who can't load the app (wrong region, server degraded, etc.).
+//
+// Deliberately exposes NO sensitive data beyond health signals:
+//   • no commit SHA  (available at /healthz and /version for authenticated ops tools)
+//   • no started_at  (available at /healthz and /version)
+//   • no user counts, no secrets, no internals
+//
+// Every field here is either:
+//   - a boolean "ok" flag, or
+//   - a numeric latency (helpful for status-page UX, reveals nothing sensitive), or
+//   - a short "operational" / "degraded" string, or
+//   - an ISO timestamp so the caller can verify the response is fresh.
+router.get("/status", async (_req, res) => {
+  const checks: Array<{ name: string; ok: boolean; latency_ms?: number }> = [];
+
+  // 1. Database
+  const dbStart = Date.now();
+  let dbOk = false;
+  try {
+    await db.execute(sql`SELECT 1`);
+    dbOk = true;
+  } catch { /* fall through */ }
+  checks.push({ name: "database", ok: dbOk, latency_ms: Date.now() - dbStart });
+
+  // 2. Nia AI — check kill-switch setting via db-helpers (no external API call)
+  let niaEnabled = false;
+  try {
+    const val = await getSystemSetting("nia_enabled");
+    // fail-closed: only an explicit "true" counts as enabled, matching every other Nia gate
+    niaEnabled = dbOk && val === "true";
+  } catch { /* fall through */ }
+  checks.push({ name: "nia_ai", ok: niaEnabled });
+
+  // 3. Map / Geolocation — check env key presence (no external call)
+  const mapOk = !!(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
+  checks.push({ name: "map", ok: mapOk });
+
+  const allOk = checks.every(c => c.ok);
+  // NOTE: commit and started_at are intentionally omitted here. They are
+  // served by /healthz (Railway probe) and /version (ops tooling) which are
+  // also unauthenticated but exist for internal use, not public consumption.
+  res.status(allOk ? 200 : 503).json({
+    status: allOk ? "operational" : "degraded",
+    checks,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+export default router;
+
+
+
+
+
+import { Router } from "express";
+import { db, usersTable, requestsTable, gratitudePostsTable } from "@workspace/db";
+import { eq, sql, and, gte } from "drizzle-orm";
+import { broadcastToAuthenticated } from "../lib/ws-hub";
+import { cacheGet, cacheSet, cacheDel } from "../lib/cache";
+import { requireAuth } from "../middlewares/auth";
+import { requireAdmin } from "../middlewares/authz";
+import { adminLimiter } from "../middlewares/rate-limit";
+import { logger } from "../lib/logger";
+import { getTrustTier } from "@workspace/trust-tiers";
+
+const LEADERBOARD_CACHE_KEY = "leaderboard:all";
+const LEADERBOARD_TTL = 60; // 60 seconds
+
+const router = Router();
+
+// ── Tier helper — re-exports the canonical @workspace/trust-tiers logic.
+// Previously this was a hand-copied "mirror" of TrustTierBadge.tsx that had
+// drifted from the real shared thresholds (missing the anti-gaming
+// trustScore >= 50 guard on the "verified" tier). Now there is exactly one
+// implementation, imported here, not re-derived. ────────────────────────────
+export const getTierName = getTrustTier;
+
+// ── Monthly contributions per helper ─────────────────────────────────────────
+async function fetchMonthlyContributions(): Promise<Map<number, number>> {
+  const firstOfMonth = new Date();
+  firstOfMonth.setDate(1);
+  firstOfMonth.setHours(0, 0, 0, 0);
+
+  try {
+    const rows = await db
+      .select({
+        helper_id: requestsTable.helper_id,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(requestsTable)
+      .where(
+        and(
+          eq(requestsTable.status, "completed"),
+          gte(requestsTable.completed_at, firstOfMonth)
+        )
+      )
+      .groupBy(requestsTable.helper_id);
+
+    const map = new Map<number, number>();
+    for (const row of rows) {
+      if (row.helper_id != null) map.set(row.helper_id, row.count);
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+// ── Leaderboard query ─────────────────────────────────────────────────────────
+async function fetchLeaderboard(city?: string) {
+  const [helpers, monthlyMap] = await Promise.all([
+    db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.is_helper, true))
+      .orderBy(sql`${usersTable.help_count} * 10 + COALESCE(${usersTable.trust_score}, 0) DESC`)
+      .limit(50),
+    fetchMonthlyContributions(),
+  ]);
+
+  // City/neighborhood filter (case-insensitive)
+  const filtered = city
+    ? helpers.filter(
+        (u) =>
+          u.neighborhood?.toLowerCase().includes(city.toLowerCase()) ||
+          u.city?.toLowerCase().includes(city.toLowerCase())
+      )
+    : helpers;
+
+  const entries = filtered.slice(0, 25).map((u, i) => ({
+    id: u.id,
+    name: u.name,
+    neighborhood: u.neighborhood ?? null,
+    city: u.city ?? null,
+    help_count: u.help_count ?? 0,
+    trust_score: u.trust_score ?? 0,
+    goodwill_score: u.goodwill_score ?? 0,
+    avatar_url: u.avatar_url ?? null,
+    tier: getTierName(u.trust_score ?? 0, u.help_count ?? 0),
+    rank: i + 1,
+    monthly_contributions: monthlyMap.get(u.id) ?? 0,
+  }));
+
+  // Determine city-level rankings (neighborhood #1 badge)
+  // Group by neighborhood and find top helper per neighborhood
+  const neighborhoodRank = new Map<string, number>(); // neighborhood → top helper id
+  const seenNeighborhoods = new Set<string>();
+  for (const entry of entries) {
+    const hood = entry.neighborhood ?? entry.city ?? "";
+    if (hood && !seenNeighborhoods.has(hood)) {
+      seenNeighborhoods.add(hood);
+      neighborhoodRank.set(hood, entry.id);
+    }
+  }
+
+  return entries.map((entry) => {
+    const hood = entry.neighborhood ?? entry.city ?? "";
+    const isNeighborhoodTop = hood
+      ? neighborhoodRank.get(hood) === entry.id
+      : false;
+    return { ...entry, is_neighborhood_top: isNeighborhoodTop };
+  });
+}
+
+// ── Invalidate cache whenever the leaderboard changes ─────────────────────────
+export async function invalidateLeaderboardCache(): Promise<void> {
+  await cacheDel(LEADERBOARD_CACHE_KEY);
+}
+
+// ── Broadcast helper (called by requests.ts after completion) ─────────────────
+export async function broadcastLeaderboardUpdate(
+  changedUserId: number,
+  prevHelpCount: number,
+  prevTrustScore: number
+): Promise<void> {
+  const [[updatedUser], entries] = await Promise.all([
+    db.select().from(usersTable).where(eq(usersTable.id, changedUserId)).limit(1),
+    fetchLeaderboard(),
+  ]);
+
+  const newTier = updatedUser
+    ? getTierName(updatedUser.trust_score ?? 0, updatedUser.help_count ?? 0)
+    : null;
+  const oldTier = getTierName(prevTrustScore, prevHelpCount);
+
+  // Send only to authenticated sockets — leaderboard data contains real user
+  // names and cities that should not be visible to unauthenticated WS clients.
+  broadcastToAuthenticated({
+    type: "leaderboard_update",
+    payload: {
+      entries,
+      changed_user_id: changedUserId,
+      tier_change:
+        newTier && newTier !== oldTier && updatedUser
+          ? { user_id: changedUserId, name: updatedUser.name, from_tier: oldTier, to_tier: newTier }
+          : null,
+    },
+  });
+}
+
+// ── GET /leaderboard — initial HTTP fetch (cached 60s) ────────────────────────
+// requireAuth gates this because the leaderboard exposes real user names and
+// cities — it should only be visible to authenticated members of the platform,
+// not scraped by unauthenticated bots or competitor tools.
+router.get("/leaderboard", requireAuth, async (req, res) => {
+  const city = req.query.city as string | undefined;
+  const cacheKey = city ? `leaderboard:city:${city.toLowerCase()}` : LEADERBOARD_CACHE_KEY;
+
+  const cached = await cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+
+  const entries = await fetchLeaderboard(city);
+  await cacheSet(cacheKey, entries, LEADERBOARD_TTL);
+  return res.json(entries);
+});
+
+// ── GET /leaderboard/cities — list of distinct cities/neighborhoods ────────────
+router.get("/leaderboard/cities", requireAuth, async (_req, res) => {
+  const helpers = await db
+    .select({ neighborhood: usersTable.neighborhood, city: usersTable.city })
+    .from(usersTable)
+    .where(eq(usersTable.is_helper, true));
+
+  const cities = new Set<string>();
+  for (const h of helpers) {
+    if (h.neighborhood) cities.add(h.neighborhood);
+    if (h.city) cities.add(h.city);
+  }
+
+  return res.json(Array.from(cities).sort());
+});
+
+// ── POST /leaderboard/recalculate — force leaderboard recalculation ────────────
+// Admin only. Invalidates cache and recalculates all rankings.
+router.post("/leaderboard/recalculate", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  try {
+    await invalidateLeaderboardCache();
+    
+    // Recalculate all helper trust scores and goodwill scores
+    const helpers = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.is_helper, true));
+    
+    let recalculated = 0;
+    for (const helper of helpers) {
+      // Recalculate help_count from actual completed requests
+      const completedCount = await db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(requestsTable)
+        .where(
+          and(
+            eq(requestsTable.helper_id, helper.id),
+            eq(requestsTable.status, "completed")
+          )
+        );
+      
+      const actualHelpCount = completedCount[0]?.count ?? 0;
+      
+      // Recalculate goodwill_score from gratitude posts
+      const goodwillResult = await db
+        .select({ total: sql<number>`COALESCE(SUM(${gratitudePostsTable.likes}), 0)::int` })
+        .from(gratitudePostsTable)
+        .where(eq(gratitudePostsTable.helper_id, helper.id));
+      
+      const actualGoodwill = goodwillResult[0]?.total ?? 0;
+      
+      // Update if different
+      if (actualHelpCount !== helper.help_count || actualGoodwill !== helper.goodwill_score) {
+        await db
+          .update(usersTable)
+          .set({
+            help_count: actualHelpCount,
+            goodwill_score: actualGoodwill,
+          })
+          .where(eq(usersTable.id, helper.id));
+        recalculated++;
+      }
+    }
+    
+    // Fetch fresh leaderboard after recalculation
+    const entries = await fetchLeaderboard();
+    
+    broadcastToAuthenticated({
+      type: "leaderboard_update",
+      payload: {
+        entries,
+        recalculated,
+        message: `Leaderboard recalculated: ${recalculated} helpers updated`,
+      },
+    });
+    
+    return res.json({
+      ok: true,
+      recalculated,
+      message: `Leaderboard recalculated: ${recalculated} helpers updated`,
+    });
+  } catch (err) {
+    logger.error({ err }, "leaderboard: recalculation failed");
+    return res.status(500).json({ error: "Failed to recalculate leaderboard" });
+  }
+});
+
+export default router;
+
+
+
+
+
+
+import { Router } from "express";
+import { z } from "zod";
+import { requireAuth, requireApproved } from "../middlewares/auth";
+import { requireOwnership, requireAdmin } from "../middlewares/authz";
+import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, userSettingsTable, businessesTable, businessMembersTable, systemSettingsTable, communityPoolLedgerTable, ratingsTable } from "@workspace/db";
+import { eq, and, sql, inArray } from "drizzle-orm";
+import {
+  GetRequestsQueryParams,
+  GetRequestParams,
+  CreateRequestBody,
+  UpdateRequestParams,
+  UpdateRequestBody,
+  ClaimRequestParams,
+  ClaimRequestBody,
+  CompleteRequestParams,
+  CompleteRequestBody,
+  GetNearbyRequestsQueryParams,
+  MarkEnRouteParams,
+  MarkEnRouteBody,
+  MarkArrivedParams,
+  MarkArrivedBody,
+} from "@workspace/api-zod";
+import { broadcast, broadcastRequestEvent, sendToUser, sendToRequestParticipants } from "../lib/ws-hub";
+import { requestCreationLimiter, adminLimiter } from "../middlewares/rate-limit";
+import { enqueuePayoutRetry } from "../lib/queue";
+import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser, type PushPayload } from "./push";
+import { payHelperFromPool, getGuaranteedMinimum, isPoolEnabled, queuePendingMinimum, maybeAlertLowBalance, getHourlyMinimumRate } from "../lib/community-pool";
+import { broadcastLeaderboardUpdate } from "./leaderboard";
+import { getTrustTier, getEffectiveTier, meetsQualityGate, TIER_RANK, tierAtLeast, isSensitiveCategory } from "@workspace/trust-tiers";
+import type { TrustTier } from "@workspace/trust-tiers";
+import { stripTags } from "../lib/sanitize";
+import { logger } from "../lib/logger";
+import { sendReceipt } from "../lib/mailer";
+import { moderateRequestText } from "../lib/post-moderation";
+import Stripe from "stripe";
+
+// Lazy Stripe client — null when STRIPE_SECRET_KEY is not configured
+const _STRIPE_SK = process.env["STRIPE_SECRET_KEY"] ?? "";
+const _stripe = _STRIPE_SK
+  ? new Stripe(_STRIPE_SK, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion })
+  : null;
+
+const router = Router();
+
+// ─── Pin-coordinate fuzzing ───────────────────────────────────────────────────
+// Browsing helpers see a ~100 m neighbourhood-level pin, not the requester's
+// exact address. Full precision is only returned via GET /requests/:id — which
+// a helper reaches after claiming (the claim flow navigates there).
+//
+// The jitter is deterministic (seeded by request ID) so the pin is stable
+// across map refreshes and doesn't appear to "jump". Emergency requests are
+// not fuzzed: getting there fast matters more than address privacy.
+//
+// Math: 0.001° lat ≈ 111 m; 0.001° lng ≈ 111 m × cos(lat).
+function fuzzCoordinates(
+  lat: number,
+  lng: number,
+  requestId: number,
+  urgency: string,
+): { lat: number; lng: number } {
+  if (urgency === "emergency") return { lat, lng };
+  // Two independent Knuth multiplicative hash steps for lat and lng jitter.
+  // >>> 0 converts to unsigned 32-bit so bitwise ops stay predictable.
+  const h1 = ((requestId * 2654435761) >>> 0);
+  const h2 = ((requestId * 1234567891 + 9876543) >>> 0);
+  const fuzzLat = ((h1 % 10000) / 10000 - 0.5) * 0.002;         // ±0.001°
+  const fuzzLng = ((h2 % 10000) / 10000 - 0.5) * 0.002
+    / Math.cos(lat * (Math.PI / 180));
+  return {
+    lat: Math.round((lat + fuzzLat) * 1e5) / 1e5,
+    lng: Math.round((lng + fuzzLng) * 1e5) / 1e5,
+  };
+}
+
+function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 3958.8;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function enrichRequest(r: typeof requestsTable.$inferSelect, userMap: Record<number, { name: string; avatar_url: string | null }>, helperName?: string | null, extraFields?: Record<string, unknown>) {
+  return {
+    ...r,
+    requester_name: userMap[r.requester_id]?.name ?? null,
+    requester_avatar: userMap[r.requester_id]?.avatar_url ?? null,
+    helper_name: helperName ?? null,
+    distance_miles: null,
+    estimated_duration_min: null,
+    ...extraFields,
+  };
+}
+
+router.get("/requests/stats", requireAuth, async (_req, res) => {
+  // All counts done in the DB — never load the full table into memory.
+  // requireAuth guards: prevents unauthenticated scraping of platform metrics.
+  try {
+    const [openRow] = await db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(requestsTable)
+      .where(eq(requestsTable.status, "open"));
+
+    const [completedRow] = await db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(requestsTable)
+      .where(eq(requestsTable.status, "completed"));
+
+    const [recentRow] = await db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(requestsTable)
+      .where(
+        and(
+          eq(requestsTable.status, "completed"),
+          sql`${requestsTable.completed_at} > NOW() - INTERVAL '24 hours'`
+        )
+      );
+
+    const [pledgeRow] = await db
+      .select({ total: sql<number>`COALESCE(SUM(pledge_paid), 0)::float` })
+      .from(requestsTable);
+
+    const categoryRows = await db
+      .select({ category: requestsTable.category, count: sql<number>`COUNT(*)::int` })
+      .from(requestsTable)
+      .groupBy(requestsTable.category);
+
+    const [helperRow] = await db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(usersTable)
+      .where(eq(usersTable.helper_mode_active, true));
+
+    return res.json({
+      total_open: openRow?.count ?? 0,
+      total_completed: completedRow?.count ?? 0,
+      total_helpers_online: helperRow?.count ?? 0,
+      requests_by_category: categoryRows.map(r => ({ category: r.category, count: r.count })),
+      recent_completions: recentRow?.count ?? 0,
+      total_pledge_volume: pledgeRow?.total ?? 0,
+    });
+  } catch (err) {
+    logger.error({ err }, "requests/stats: query failed");
+    return res.status(500).json({ error: "Failed to fetch stats" });
+  }
+});
+
+router.get("/requests/nearby", requireAuth, async (req, res) => {
+  const parsed = GetNearbyRequestsQueryParams.safeParse({
+    lat: parseFloat(req.query.lat as string),
+    lng: parseFloat(req.query.lng as string),
+    radius_miles: req.query.radius_miles ? parseFloat(req.query.radius_miles as string) : 5,
+  });
+  if (!parsed.success) return res.status(400).json({ error: "lat and lng are required" });
+  const { lat, lng, radius_miles } = parsed.data;
+  const radius = radius_miles ?? 5;
+
+  // PostGIS ST_DWithin: push the radius filter into the DB so we only
+  // transfer matching rows — critical at scale and for global deployments
+  // where a full-table JS Haversine scan over thousands of open requests
+  // would be unacceptably slow. ST_DWithin uses geography (meters on the
+  // spheroid) so it is accurate anywhere on Earth, including equatorial
+  // cities like Kampala (lat ≈ 0) and polar regions.
+  //
+  // Distance is computed once in the SELECT list, reused in ORDER BY via CTE.
+  // The index on (status, lat, lng) or a PostGIS GIST index on the geography
+  // column makes this sub-millisecond even with many rows.
+  // limit: caller can request up to 200 rows; default 100.
+  // This prevents a hard ceiling from silently hiding valid nearby requests in
+  // dense areas while still bounding payload size.
+  // Bug fixed: parseInt("abc") returns NaN, and NaN || 100 silently returns 100
+  // instead of a 400, giving callers wrong results they can't detect.
+  let limit = 100;
+  if (req.query.limit !== undefined) {
+    const parsedLimit = parseInt(req.query.limit as string, 10);
+    if (isNaN(parsedLimit) || parsedLimit < 1) {
+      return res.status(400).json({ error: "limit must be a positive integer" });
+    }
+    limit = Math.min(parsedLimit, 200);
+  }
+
+  const radiusMeters = radius * 1609.344;
+
+  // Attempt PostGIS ST_DWithin first for accurate global geo-filtering (all of
+  // Earth, spheroidal distance, indexed when a GIST index exists).
+  // If PostGIS is not available (e.g. extension not installed on a dev DB),
+  // fall back to in-memory Haversine with a warning so the endpoint keeps
+  // working — never throw an opaque 500 to callers.
+  let nearby: (typeof requestsTable.$inferSelect & { distance_miles: number })[];
+  try {
+    const nearbyRows = await db.execute(sql`
+      SELECT
+        hr.*,
+        ST_Distance(
+          ST_MakePoint(${lng}, ${lat})::geography,
+          ST_MakePoint(hr.lng, hr.lat)::geography
+        ) / 1609.344 AS distance_miles
+      FROM help_requests hr
+      WHERE hr.status = 'open'
+        AND ST_DWithin(
+          ST_MakePoint(${lng}, ${lat})::geography,
+          ST_MakePoint(hr.lng, hr.lat)::geography,
+          ${radiusMeters}
+        )
+      ORDER BY
+        CASE hr.urgency
+          WHEN 'emergency' THEN 0
+          WHEN 'high'      THEN 1
+          WHEN 'medium'    THEN 2
+          ELSE                  3
+        END,
+        distance_miles
+      LIMIT ${limit}
+    `);
+    nearby = nearbyRows.rows as (typeof requestsTable.$inferSelect & { distance_miles: number })[];
+  } catch (geoErr) {
+    // PostGIS not available — fall back to Haversine in JS.
+    // This is slower (full table scan) but keeps the endpoint functional.
+    logger.warn({ err: geoErr }, "nearby: PostGIS unavailable, falling back to Haversine");
+    const allOpen = await db.select().from(requestsTable).where(eq(requestsTable.status, "open"));
+    nearby = allOpen
+      .map(r => ({ ...r, distance_miles: distanceMiles(lat, lng, r.lat, r.lng) }))
+      .filter(r => r.distance_miles <= radius)
+      .sort((a, b) => {
+        const urgencyOrder: Record<string, number> = { emergency: 0, high: 1, medium: 2, low: 3 };
+        const urgencyDiff = (urgencyOrder[a.urgency] ?? 2) - (urgencyOrder[b.urgency] ?? 2);
+        if (urgencyDiff !== 0) return urgencyDiff;
+        return a.distance_miles - b.distance_miles;
+      })
+      .slice(0, limit);
+  }
+
+  const userIds = [...new Set(nearby.map(r => r.requester_id))];
+  const users = userIds.length > 0
+    ? await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url })
+        .from(usersTable)
+        .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(userIds.map(id => sql`${id}`), sql`, `)}]::int[])`)
+    : [];
+  const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+
+  return res.json(nearby.map(r => {
+    // Fuzz open-request coordinates so browsing helpers see a neighbourhood
+    // pin (~100 m jitter), not the requester's exact address.
+    const { lat: fLat, lng: fLng } = fuzzCoordinates(r.lat, r.lng, r.id, r.urgency);
+    return {
+      ...r,
+      lat: fLat,
+      lng: fLng,
+      requester_name: userMap[r.requester_id]?.name ?? null,
+      requester_avatar: userMap[r.requester_id]?.avatar_url ?? null,
+      helper_name: null,
+      estimated_duration_min: Math.round(r.distance_miles * 3),
+    };
+  }));
+});
+
+router.get("/requests", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+
+  // Look up admin flag once — used below to decide whether to unfuzz coordinates.
+  const [callerRow] = await db
+    .select({ is_admin: usersTable.is_admin })
+    .from(usersTable)
+    .where(eq(usersTable.id, callerId))
+    .limit(1);
+  const callerIsAdmin = callerRow?.is_admin === true;
+
+  const params = GetRequestsQueryParams.safeParse({
+    status: req.query.status,
+    lat: req.query.lat ? parseFloat(req.query.lat as string) : undefined,
+    lng: req.query.lng ? parseFloat(req.query.lng as string) : undefined,
+    radius_miles: req.query.radius_miles ? parseFloat(req.query.radius_miles as string) : undefined,
+  });
+
+  const helperIdRaw = req.query.helper_id ? parseInt(req.query.helper_id as string) : null;
+  const requesterIdRaw = req.query.requester_id ? parseInt(req.query.requester_id as string) : null;
+  // Guard against parseInt("abc") === NaN producing a malformed SQL query
+  if (helperIdRaw !== null && isNaN(helperIdRaw)) return res.status(400).json({ error: "helper_id must be a valid integer" });
+  if (requesterIdRaw !== null && isNaN(requesterIdRaw)) return res.status(400).json({ error: "requester_id must be a valid integer" });
+  const helperId = helperIdRaw;
+  const requesterId = requesterIdRaw;
+  const limitParam = req.query.limit ? parseInt(req.query.limit as string) : 100;
+  // Reject out-of-range limits explicitly rather than silently clamping, so
+  // callers get a clear error instead of truncated results they didn't expect.
+  if (isNaN(limitParam) || limitParam < 1) {
+    return res.status(400).json({ error: "limit must be a positive integer" });
+  }
+  if (limitParam > 100) {
+    return res.status(400).json({ error: "maximum limit is 100; use offset for pagination" });
+  }
+
+  // Build WHERE conditions in the DB — never load the full table.
+  const conditions = [];
+  if (params.success && params.data.status) {
+    conditions.push(eq(requestsTable.status, params.data.status as any));
+  }
+  if (helperId) conditions.push(eq(requestsTable.helper_id, helperId));
+  if (requesterId) conditions.push(eq(requestsTable.requester_id, requesterId));
+
+  // Bounding-box pre-filter when lat/lng provided (PostGIS not required).
+  // Exact haversine filter applied in JS after for accuracy.
+  if (params.success && params.data.lat && params.data.lng) {
+    const radius = params.data.radius_miles ?? 10;
+    const latDelta = radius / 69;
+    const lngDelta = radius / (69 * Math.cos((params.data.lat * Math.PI) / 180));
+    conditions.push(sql`${requestsTable.lat} BETWEEN ${params.data.lat - latDelta} AND ${params.data.lat + latDelta}`);
+    conditions.push(sql`${requestsTable.lng} BETWEEN ${params.data.lng - lngDelta} AND ${params.data.lng + lngDelta}`);
+  }
+
+  let rows = await db
+    .select()
+    .from(requestsTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(sql`${requestsTable.created_at} DESC`)
+    .limit(limitParam); // already validated to be 1–100 above
+
+  // Exact radius filter in JS (bounding box above is a fast pre-filter)
+  if (params.success && params.data.lat && params.data.lng) {
+    const radius = params.data.radius_miles ?? 10;
+    rows = rows.filter(r => distanceMiles(params.data.lat!, params.data.lng!, r.lat, r.lng) <= radius);
+  }
+
+  const allUserIds = [...new Set([
+    ...rows.map(r => r.requester_id),
+    ...rows.map(r => r.helper_id).filter((id): id is number => id != null),
+  ])];
+  const users = allUserIds.length > 0
+    ? await db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url })
+        .from(usersTable)
+        .where(sql`${usersTable.id} = ANY(ARRAY[${sql.join(allUserIds.map(id => sql`${id}`), sql`, `)}]::int[])`)
+    : [];
+  const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+
+  return res.json(rows.map(r => {
+    // Only the requester, assigned helper, and admins see exact coordinates.
+    // Every other authenticated caller gets the same ~100m jitter regardless
+    // of request status — the old "no fuzzing for claimed/completed" logic was
+    // the data-exposure gap: anyone could query ?status=completed and harvest
+    // real names tied to exact home coordinates.
+    const isParticipant =
+      r.requester_id === callerId ||
+      (r.helper_id != null && r.helper_id === callerId);
+    const { lat: fLat, lng: fLng } = (isParticipant || callerIsAdmin)
+      ? { lat: r.lat, lng: r.lng }
+      : fuzzCoordinates(r.lat, r.lng, r.id, r.urgency);
+    return {
+      ...r,
+      lat: fLat,
+      lng: fLng,
+      requester_name: userMap[r.requester_id]?.name ?? null,
+      requester_avatar: userMap[r.requester_id]?.avatar_url ?? null,
+      helper_name: r.helper_id ? (userMap[r.helper_id]?.name ?? null) : null,
+      helper_avatar: r.helper_id ? (userMap[r.helper_id]?.avatar_url ?? null) : null,
+      distance_miles: null,
+      estimated_duration_min: null,
+    };
+  }));
+});
+
+// POST /requests — no requireOwnership middleware here because requester_id
+// is not a URL param; it is derived from the auth token inside the handler.
+// Ownership is enforced at the DB level: requester_id is always set to
+// req.authenticatedUserId regardless of what the client sends.
+router.post("/requests", requireAuth, requestCreationLimiter, async (req, res) => {
+  const parsed = CreateRequestBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+
+  // Sensitive categories (childcare, senior_care, medical) involve vulnerable
+  // people. The requester must explicitly acknowledge that Niakofa is not a
+  // licensed childcare, homecare, or medical provider before posting one.
+  if (isSensitiveCategory(parsed.data.category) && (parsed.data as { sensitive_acknowledged?: boolean }).sensitive_acknowledged !== true) {
+    return res.status(400).json({
+      error:
+        "This category involves care for vulnerable people. Please confirm you understand that " +
+        "Niakofa is a community mutual-aid network — not a licensed childcare, homecare, or medical provider — " +
+        "and that you are responsible for vetting the helper before they begin.",
+      requires_sensitive_acknowledgment: true,
+    });
+  }
+
+  // ── ToS waiver server-side gate ───────────────────────────────────────────
+  // The liability waiver modal (WaiverModal.tsx) is shown in the frontend for
+  // childcare, senior_care, medical, home_repair, and moving_labor. That is a
+  // UX nicety — not a real control. Anyone hitting the API directly (Postman,
+  // a modified client, a script) can skip the modal entirely. This is the real
+  // gate: we check the DB to confirm the user's tos_waiver_accepted_at is set
+  // before allowing the request to be created. This mirrors exactly how
+  // sensitive_acknowledged works for the care categories above.
+  //
+  // Note: we use req.authenticatedUserId (not parsed.data.requester_id) so a
+  // caller cannot spoof a different user's acceptance record.
+  const WAIVER_GATED_CATEGORIES = ["childcare", "senior_care", "medical", "home_repair", "moving_labor", "legal_aid", "mental_health_peer"];
+  // Keep this in sync with WaiverModal.tsx CURRENT_TOS_VERSION.
+  // When the ToS is updated, bump both strings — old acceptances are then
+  // treated as stale and the gate forces re-acceptance.
+  const CURRENT_TOS_VERSION = "2026-07";
+  if (WAIVER_GATED_CATEGORIES.includes(parsed.data.category)) {
+    const authenticatedUserId = req.authenticatedUserId!;
+    const [requesterRow] = await db
+      .select({
+        tos_waiver_accepted_at: usersTable.tos_waiver_accepted_at,
+        tos_waiver_version: usersTable.tos_waiver_version,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, authenticatedUserId))
+      .limit(1);
+    if (!requesterRow || !requesterRow.tos_waiver_accepted_at) {
+      return res.status(400).json({
+        error:
+          "You must accept the community liability waiver before posting a request in this category. " +
+          "Please complete the waiver in the app before submitting.",
+        requires_tos_waiver: true,
+        category: parsed.data.category,
+      });
+    }
+    // Version gate: if the user accepted an older version, block until they
+    // re-accept the current one. The frontend should detect requires_tos_waiver
+    // and surface the modal again.
+    if (requesterRow.tos_waiver_version !== CURRENT_TOS_VERSION) {
+      return res.status(400).json({
+        error:
+          "The community liability waiver has been updated. " +
+          "Please review and accept the current version before continuing.",
+        requires_tos_waiver: true,
+        tos_version_outdated: true,
+        current_version: CURRENT_TOS_VERSION,
+        accepted_version: requesterRow.tos_waiver_version ?? null,
+        category: parsed.data.category,
+      });
+    }
+  }
+
+  // ── Business account guardrail ─────────────────────────────────────────────
+  // The document is explicit: "the actual guardrail goes in the request-creation
+  // route, not the frontend." Client-side hiding of pay_it_forward is a UX
+  // nicety, not the real control. This is the real control.
+  //
+  // If business_id is present:
+  //  1. Feature flag must be on (businesses_enabled in system_settings)
+  //  2. Business must be admin-approved
+  //  3. Requester must be an active member of that business
+  //  4. payment_type: pay_it_forward is rejected — businesses pay directly
+  //  5. Staff posts are held in pending_owner_approval until the owner approves
+  const businessId = (parsed.data as Record<string, unknown>).business_id as number | null | undefined;
+  let requestStatus: "open" | "pending_owner_approval" = "open";
+  if (businessId != null) {
+    const [flagRow] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "businesses_enabled"))
+      .limit(1);
+    if (!flagRow || flagRow.value !== "true") {
+      return res.status(403).json({
+        error: "Business accounts are not enabled yet. Contact support to enable this feature.",
+        code: "businesses_not_enabled",
+      });
+    }
+
+    const [business] = await db
+      .select({ approval_status: businessesTable.approval_status, display_name: businessesTable.display_name })
+      .from(businessesTable)
+      .where(eq(businessesTable.id, businessId))
+      .limit(1);
+    if (!business) {
+      return res.status(404).json({ error: "Business not found.", code: "business_not_found" });
+    }
+    if (business.approval_status !== "approved") {
+      return res.status(403).json({
+        error: `"${business.display_name}" is still pending admin approval. You cannot post requests for it yet.`,
+        code: "business_not_approved",
+        approval_status: business.approval_status,
+      });
+    }
+
+    // Use req.authenticatedUserId (not parsed.data.requester_id) so a caller
+    // cannot spoof a different user's membership to bypass the cap check.
+    const authenticatedRequesterId = req.authenticatedUserId!;
+    const [membership] = await db
+      .select({ role: businessMembersTable.role, spending_cap_cents: businessMembersTable.spending_cap_cents })
+      .from(businessMembersTable)
+      .where(and(
+        eq(businessMembersTable.business_id, businessId),
+        eq(businessMembersTable.user_id, authenticatedRequesterId),
+        eq(businessMembersTable.status, "active"),
+      ))
+      .limit(1);
+    if (!membership) {
+      return res.status(403).json({
+        error: "You are not an active member of this business.",
+        code: "not_business_member",
+      });
+    }
+
+    if (parsed.data.payment_type === "pay_it_forward") {
+      return res.status(400).json({
+        error: "Business requests cannot use pay-it-forward. Please choose immediate payment or goodwill.",
+        code: "business_pif_blocked",
+      });
+    }
+
+    // Per-staff spending cap enforcement: paid business requests (immediate) count
+    // against the AUTHENTICATED staff member's cap. Goodwill posts cost $0 and
+    // are always allowed. Using authenticatedRequesterId (not parsed body) prevents
+    // a caller from spoofing a different user's ID to bypass their own cap.
+    const isPaid = parsed.data.payment_type === "immediate";
+    const newAmountCents = isPaid && parsed.data.pay_it_forward_amount
+      ? Math.round(parsed.data.pay_it_forward_amount * 100)
+      : 0;
+    if (isPaid && membership.spending_cap_cents !== null && membership.spending_cap_cents !== undefined) {
+      // SQL returns sum in dollars; multiply by 100 to convert to cents.
+      const [spent] = await db
+        .select({ total_cents: sql<number>`COALESCE(SUM(${requestsTable.pay_it_forward_amount}), 0) * 100` })
+        .from(requestsTable)
+        .where(
+          and(
+            eq(requestsTable.business_id, businessId),
+            eq(requestsTable.requester_id, authenticatedRequesterId),
+            eq(requestsTable.payment_type, "immediate"),
+            inArray(requestsTable.status, ["open", "claimed", "en_route", "arrived", "completed", "pending_owner_approval"]),
+          )
+        );
+      const currentSpentCents = Math.round(spent?.total_cents ?? 0);
+      if (currentSpentCents + newAmountCents > membership.spending_cap_cents) {
+        return res.status(403).json({
+          error: "This request would exceed your business spending cap. Contact the business owner to request a higher limit.",
+          code: "business_spending_cap_exceeded",
+          spent_cents: currentSpentCents,
+          cap_cents: membership.spending_cap_cents,
+        });
+      }
+    }
+
+    // Owner posts go live immediately; staff posts require owner approval first.
+    requestStatus = membership.role === "owner" ? "open" : "pending_owner_approval";
+  }
+
+  // Max 5 active requests per user (open / claimed / en_route / arrived)
+  // Use req.authenticatedUserId — not parsed.data.requester_id — so a caller
+  // cannot spoof a different user's ID to bypass their own cap.
+  const [activeCount] = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(requestsTable)
+    .where(
+      and(
+        eq(requestsTable.requester_id, req.authenticatedUserId!),
+        inArray(requestsTable.status, ["open", "claimed", "en_route", "arrived"])
+      )
+    );
+  if ((activeCount?.count ?? 0) >= 5) {
+    return res.status(429).json({
+      error:
+        "You have 5 active requests already. " +
+        "Please wait for one to complete before creating another — this keeps the map accurate for everyone.",
+    });
+  }
+
+  // ── PIF outstanding pledge soft cap ───────────────────────────────────────
+  // A gentle signal — not a hard block — for users who repeatedly get help
+  // without ever paying forward. "Defaulted" is an internal risk signal and
+  // trust-score ding; it does NOT hard-block new requests. That would
+  // contradict the mission ("2 days to 2 years, no pressure").
+  //
+  // Soft cap: max 5 unpaid pledges (active OR defaulted) before a new PIF is
+  // gently declined with a clear path back (pay any amount to restore).
+  // Counting defaulted pledges means serial non-payers still get a ceiling,
+  // but a single defaulted pledge no longer kills the account immediately.
+  //
+  // Admin can restore pledge_status via PATCH /admin/requests/:id/pledge-status.
+  if (parsed.data.payment_type === "pay_it_forward") {
+    // Soft cap: max 5 unpaid pledges (active + defaulted combined)
+    const [unpaidPif] = await db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(requestsTable)
+      .where(
+        and(
+          eq(requestsTable.requester_id, req.authenticatedUserId!),
+          eq(requestsTable.payment_type, "pay_it_forward"),
+          eq(requestsTable.status, "completed"),
+          sql`${requestsTable.pledge_status} IN ('active', 'defaulted')`,
+          sql`${requestsTable.pledge_amount} > 0`,
+          sql`COALESCE(${requestsTable.pledge_paid}, 0) = 0`,
+        )
+      );
+    const unpaidCount = unpaidPif?.count ?? 0;
+    if (unpaidCount >= 5) {
+      return res.status(403).json({
+        error:
+          `You have ${unpaidCount} completed pay-it-forward requests with no repayment yet. ` +
+          "When you're back on your feet, even a small contribution keeps the cycle going for the next neighbor. " +
+          "Pay any amount in your wallet to restore your posting ability.",
+        code: "pif_pledge_cap_exceeded",
+        unpaid_pif_count: unpaidCount,
+      });
+    }
+  }
+
+  // ── Content moderation ─────────────────────────────────────────────────────
+  // Emergency requests bypass screening entirely — life safety cannot wait for
+  // an admin queue. All other requests get the heuristic filter applied to the
+  // combined title + description. "Pending" requests still go live (someone
+  // genuinely needs help), but they are flagged for admin review.
+  // Server-side bounds validation for estimated_hours.
+  // A malicious caller submitting a huge value (e.g. 10000 hours) would
+  // inflate the guaranteed minimum calculation and create unbounded payout
+  // obligations in the Community Pool queue. Clamp hard server-side, never
+  // trust the client value alone.
+  const rawEstimatedHours = (req.body as Record<string, unknown>).estimated_hours;
+  let estimatedHours: number | null = null;
+  if (typeof rawEstimatedHours === "number" && Number.isFinite(rawEstimatedHours)) {
+    if (rawEstimatedHours < 0.5 || rawEstimatedHours > 24) {
+      return res.status(400).json({
+        error: "estimated_hours must be between 0.5 and 24.",
+        code: "invalid_estimated_hours",
+      });
+    }
+    estimatedHours = Math.round(rawEstimatedHours * 10) / 10; // round to 1 decimal
+  }
+
+  const isEmergencyUrgency = parsed.data.urgency === "emergency";
+  let modStatus: "approved" | "pending" = "approved";
+  let modReason: string | null = null;
+  if (!isEmergencyUrgency) {
+    const modResult = moderateRequestText(parsed.data.title, parsed.data.description ?? "");
+    modStatus = modResult.status;
+    modReason = modResult.reason;
+    if (modStatus === "pending") {
+      logger.warn(
+        { requester_id: req.authenticatedUserId, title: parsed.data.title, reason: modReason },
+        "help request flagged for moderation review",
+      );
+    }
+  }
+
+  const [request] = await db.insert(requestsTable).values({
+    title: stripTags(parsed.data.title),
+    description: parsed.data.description != null ? stripTags(parsed.data.description) : null,
+    category: parsed.data.category ?? "other",
+    urgency: parsed.data.urgency ?? "medium",
+    payment_type: parsed.data.payment_type ?? "pay_it_forward",
+    status: requestStatus,
+    // Always derive requester_id from the auth token — never from the body.
+    // This prevents a caller from creating requests attributed to other users.
+    requester_id: req.authenticatedUserId!,
+    lat: parsed.data.lat,
+    lng: parsed.data.lng,
+    neighborhood: parsed.data.neighborhood ?? null,
+    pay_it_forward_amount: parsed.data.pay_it_forward_amount ?? null,
+    pledge_amount: parsed.data.pledge_amount ?? null,
+    business_id: businessId ?? null,
+    moderation_status: modStatus,
+    moderation_reason: modReason,
+    estimated_hours: estimatedHours,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any).returning();
+
+  // ── Livable-wage floor transparency ────────────────────────────────────────
+  // Compute the expected pool-backed floor for this request so the frontend
+  // can show a helpful subsidy notice: "The Community Pool will top your
+  // helper's pay up to $X (livable wage floor)." This is non-blocking —
+  // the request is created regardless of whether the offered amount meets
+  // the floor. The pool guarantees the floor at completion time.
+  let livableWageInfo: { floor: number; hourly_rate: number; subsidy_expected: boolean } | null = null;
+  if (parsed.data.payment_type === "pay_it_forward" && estimatedHours && estimatedHours > 0) {
+    try {
+      const hourlyRate = await getHourlyMinimumRate();
+      const floor = Math.round(estimatedHours * hourlyRate * 100) / 100;
+      const offeredAmount = (parsed.data.pledge_amount ?? parsed.data.pay_it_forward_amount) ?? 0;
+      livableWageInfo = { floor, hourly_rate: hourlyRate, subsidy_expected: offeredAmount < floor };
+    } catch {
+      // non-fatal — omit wage info from response
+    }
+  }
+
+  const enriched = {
+    ...request,
+    requester_name: null,
+    requester_avatar: null,
+    helper_name: null,
+    distance_miles: null,
+    estimated_duration_min: null,
+    ...(livableWageInfo ? { livable_wage_info: livableWageInfo } : {}),
+  };
+  broadcastRequestEvent("REQUEST_CREATED", "new_request", enriched);
+
+  // Push notifications — geolocation-targeted when request has coordinates
+  if (request.urgency === "emergency" || request.urgency === "high") {
+    const isEmergency = request.urgency === "emergency";
+    const payload: PushPayload = {
+      title: isEmergency ? "🚨 EMERGENCY — Help Needed Now!" : "🔴 Urgent Request Nearby",
+      body: request.title,
+      urgency: request.urgency,
+      requestId: request.id,
+      notifType: isEmergency ? "emergency" : "nearby_requests",
+    };
+    // Notify helpers within 15 miles of the request; fall back to all helpers if no nearby ones found
+    sendPushToNearbyHelpers(request.lat, request.lng, 15, payload).catch((err) => {
+      logger.warn({ err, requestId: request.id }, "push: nearby urgent/emergency delivery failed — falling back to broadcast");
+      sendPushToAllHelpers(payload).catch((err2) => {
+        logger.warn({ err: err2, requestId: request.id }, "push: broadcast fallback also failed — no push sent");
+      });
+    });
+  } else {
+    // For medium/low urgency, notify helpers within 5 miles
+    sendPushToNearbyHelpers(request.lat, request.lng, 5, {
+      title: "💙 Help Request Near You",
+      body: request.title,
+      urgency: request.urgency,
+      requestId: request.id,
+      notifType: "nearby_requests" as const,
+    }).catch((err) => {
+      logger.warn({ err, requestId: request.id }, "push: nearby normal delivery failed — helpers won't get push alert, request still created");
+    });
+  }
+
+  return res.status(201).json(enriched);
+});
+
+// GET /requests/:id
+// Full-precision lat/lng is only returned to:
+//   • the requester (their own request)
+//   • the assigned helper (they need exact coords to navigate)
+//   • admins (moderation / oversight)
+// All other authenticated users get fuzzed coordinates (~100 m jitter),
+// the same privacy protection applied to /requests/nearby.
+router.get("/requests/:id", requireAuth, async (req, res) => {
+  const parsed = GetRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
+
+  const authenticatedUserId = req.authenticatedUserId!;
+
+  const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, parsed.data.id)).limit(1);
+  if (!request) return res.status(404).json({ error: "Not found" });
+
+  // Determine access level in one DB round-trip alongside requester lookup
+  const [requester, authUser] = await Promise.all([
+    db.select({ id: usersTable.id, name: usersTable.name, avatar_url: usersTable.avatar_url, goodwill_score: usersTable.goodwill_score })
+      .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1).then(r => r[0] ?? null),
+    db.select({ is_admin: usersTable.is_admin })
+      .from(usersTable).where(eq(usersTable.id, authenticatedUserId)).limit(1).then(r => r[0] ?? null),
+  ]);
+
+  const isRequester      = request.requester_id === authenticatedUserId;
+  const isAssignedHelper = request.helper_id === authenticatedUserId;
+  const isAdmin          = authUser?.is_admin === true;
+  const hasFullAccess    = isRequester || isAssignedHelper || isAdmin;
+
+  // Fuzz coordinates for users who have no operational need for full precision
+  let lat = request.lat;
+  let lng = request.lng;
+  if (!hasFullAccess && lat !== null && lng !== null) {
+    // ±0.0009° ≈ ±100 m — same jitter as /requests/nearby
+    lat = lat + (Math.random() - 0.5) * 0.0018;
+    lng = lng + (Math.random() - 0.5) * 0.0018;
+  }
+
+  let helperName = null;
+  if (request.helper_id) {
+    const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, request.helper_id)).limit(1);
+    helperName = helper?.name ?? null;
+  }
+
+  return res.json({
+    ...request,
+    lat,
+    lng,
+    requester_name: requester?.name ?? null,
+    requester_avatar: requester?.avatar_url ?? null,
+    requester_goodwill_score: requester?.goodwill_score ?? 100,
+    helper_name: helperName,
+    distance_miles: null,
+    estimated_duration_min: null,
+  });
+});
+
+router.patch("/requests/:id", requireAuth, async (req, res) => {
+  const authenticatedUserId = (req as any).authenticatedUserId;
+  const requestId = parseInt(String(req.params.id));
+  const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.requester_id !== authenticatedUserId) {
+    return res.status(403).json({ error: "Forbidden: You can only update your own requests" });
+  }
+  const pParsed = UpdateRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
+  const bParsed = UpdateRequestBody.safeParse(req.body);
+  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
+  const updates: Record<string, unknown> = {};
+  if (bParsed.data.status !== undefined) updates.status = bParsed.data.status;
+  if (bParsed.data.description !== undefined) updates.description = bParsed.data.description != null ? stripTags(bParsed.data.description) : null;
+  if (bParsed.data.urgency !== undefined) updates.urgency = bParsed.data.urgency;
+  const [updatedRequest] = await db.update(requestsTable).set(updates).where(eq(requestsTable.id, pParsed.data.id)).returning();
+  if (!updatedRequest) return res.status(404).json({ error: "Not found" });
+  const enriched = { ...updatedRequest, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
+  broadcast({ type: "request_updated", payload: enriched });
+  return res.json(enriched);
+});
+
+// helper_id is intentionally NOT taken from the request body — it's the
+// authenticated caller's own ID, derived server-side from the verified
+// token. The body field still exists in the API contract (frontend may
+// send it) but the server never trusts a client-asserted identity for an
+// action this consequential. requireOwnership("helper_id") used to guard
+// against exactly this, by checking body.helper_id === authenticatedUserId
+// — safe, but a roundabout way to express "act as yourself."
+router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res) => {
+  const helperId = req.authenticatedUserId!;
+  const pParsed = ClaimRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
+
+  // Enforce max_travel_miles as a hard server-side block at claim time.
+  // Emergency requests bypass this check by design (consistent with the
+  // rest of the urgency-based bypass pattern used elsewhere in this file).
+  const [existingFull] = await db
+    .select({ lat: requestsTable.lat, lng: requestsTable.lng, urgency: requestsTable.urgency, category: requestsTable.category, requester_id: requestsTable.requester_id })
+    .from(requestsTable)
+    .where(eq(requestsTable.id, pParsed.data.id))
+    .limit(1);
+
+  // A requester cannot claim their own request as a helper.
+  if (existingFull && existingFull.requester_id === helperId) {
+    return res.status(403).json({ error: "You cannot claim your own request." });
+  }
+
+  // Sensitive categories (childcare, senior_care, medical) involve vulnerable
+  // people, so claiming them requires more than signup: the helper must be at
+  // least "verified" trust tier AND have completed identity verification (or a
+  // passed background check). Groceries-level trust is not enough to watch
+  // someone's kids or check on an elderly parent. NO emergency bypass here —
+  // urgency never lowers the bar for who can be alone with a vulnerable person.
+  if (existingFull && isSensitiveCategory(existingFull.category)) {
+    const [helperTrust] = await db
+      .select({
+        trust_score: usersTable.trust_score,
+        help_count: usersTable.help_count,
+        identity_verified: usersTable.identity_verified,
+        background_check_status: usersTable.background_check_status,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, helperId))
+      .limit(1);
+    if (!helperTrust) return res.status(404).json({ error: "Helper not found" });
+
+    const tier = getTrustTier(helperTrust.trust_score ?? 0, helperTrust.help_count ?? 0);
+    const idCleared = helperTrust.identity_verified === true || helperTrust.background_check_status === "passed";
+    if (!tierAtLeast(tier, "verified") || !idCleared) {
+      const missing: string[] = [];
+      if (!tierAtLeast(tier, "verified")) missing.push("reach Verified Helper tier (5 completed helps with good ratings)");
+      if (!idCleared) missing.push("complete identity verification in your Profile");
+      return res.status(403).json({
+        error:
+          "This request involves care for a vulnerable person (childcare, senior care, or medical), " +
+          "so it needs extra trust safeguards. To claim it, you still need to: " + missing.join(", and ") + ". " +
+          "Thank you for keeping our most vulnerable neighbors safe.",
+        sensitive_category: existingFull.category,
+        required_tier: "verified",
+        current_tier: tier,
+        identity_cleared: idCleared,
+      });
+    }
+  }
+
+  if (existingFull && existingFull.urgency !== "emergency") {
+    const [helperSettings] = await db
+      .select({ max_travel_miles: userSettingsTable.max_travel_miles })
+      .from(userSettingsTable)
+      .where(eq(userSettingsTable.user_id, helperId))
+      .limit(1);
+    const maxTravel = helperSettings?.max_travel_miles ?? 15;
+    const [helperUser] = await db
+      .select({ lat: usersTable.lat, lng: usersTable.lng })
+      .from(usersTable)
+      .where(eq(usersTable.id, helperId))
+      .limit(1);
+    if (helperUser?.lat != null && helperUser?.lng != null && existingFull.lat != null && existingFull.lng != null) {
+      const dist = distanceMiles(helperUser.lat, helperUser.lng, existingFull.lat, existingFull.lng);
+      if (dist > maxTravel) {
+        return res.status(400).json({
+          error: `This request is ${dist.toFixed(1)} miles away — beyond your max travel distance of ${maxTravel} miles. You can change this in Settings.`,
+          distance_miles: parseFloat(dist.toFixed(1)),
+          max_travel_miles: maxTravel,
+        });
+      }
+    }
+  }
+
+  const [request] = await db.update(requestsTable)
+    .set({ status: "claimed", helper_id: helperId, claimed_at: new Date() })
+    .where(and(eq(requestsTable.id, pParsed.data.id), eq(requestsTable.status, "open")))
+    .returning();
+  if (!request) return res.status(409).json({ error: "Request already claimed or not found" });
+  const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, helperId)).limit(1);
+  const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: helper?.name ?? null, distance_miles: null, estimated_duration_min: null };
+  broadcastRequestEvent("REQUEST_ACCEPTED", "request_updated", enriched);
+  return res.json(enriched);
+});
+
+router.post("/requests/:id/en-route", requireAuth, requireApproved, async (req, res) => {
+  const helperId = req.authenticatedUserId!;
+  const pParsed = MarkEnRouteParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
+  // Include status = 'claimed' in WHERE to make the transition atomic.
+  // Without it, a concurrent cancellation or admin reassignment between the
+  // caller's ownership check and this UPDATE could leave the row in an
+  // inconsistent state. The UPDATE returning null → 409 (not 404) because the
+  // request still exists — the caller is just no longer the assigned helper.
+  const [request] = await db.update(requestsTable)
+    .set({ status: "en_route", en_route_at: new Date() })
+    .where(and(
+      eq(requestsTable.id, pParsed.data.id),
+      eq(requestsTable.helper_id, helperId),
+      eq(requestsTable.status, "claimed"),
+    ))
+    .returning();
+  if (!request) return res.status(409).json({ error: "Cannot mark en-route — request may have been cancelled or you are no longer the assigned helper." });
+  const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
+  broadcastRequestEvent("HELPER_MOVING", "request_updated", enriched);
+  return res.json(enriched);
+});
+
+router.post("/requests/:id/arrived", requireAuth, requireApproved, async (req, res) => {
+  const helperId = req.authenticatedUserId!;
+  const pParsed = MarkArrivedParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!pParsed.success) return res.status(400).json({ error: "Invalid" });
+  // Include status = 'en_route' to make the transition atomic — same pattern
+  // as en-route above. A concurrent cancellation between check and write is
+  // caught by the missing row, returning 409 not 404.
+  const [request] = await db.update(requestsTable)
+    .set({ status: "arrived", arrived_at: new Date() })
+    .where(and(
+      eq(requestsTable.id, pParsed.data.id),
+      eq(requestsTable.helper_id, helperId),
+      eq(requestsTable.status, "en_route"),
+    ))
+    .returning();
+  if (!request) return res.status(409).json({ error: "Cannot mark arrived — request may have been cancelled or is not currently in en-route status." });
+  const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
+  broadcastRequestEvent("HELPER_ARRIVED", "request_updated", enriched);
+  return res.json(enriched);
+});
+
+// ─── Cancel ───────────────────────────────────────────────────────────────────
+// Two roles, two semantics:
+//
+//  Helper cancels (no-show / drop):
+//    • Sets status back to "open", clears helper_id and all progress timestamps.
+//    • The request re-enters the pool — fair to the requester who still needs help.
+//    • Records cancelled_at for audit; does NOT decrement help_count (was 0 for
+//      this request anyway — help_count is incremented only on completion).
+//    • Cannot cancel after "completed" (guard prevents it).
+//
+//  Requester cancels (withdraw):
+//    • Sets status to "cancelled", records cancelled_at.
+//    • Cannot cancel if already "completed" (guard prevents it).
+//    • CAN cancel even after a helper is "en_route" or "arrived" — rare but valid
+//      (e.g. emergency arose). If a helper is en-route/arrived the requester
+//      should confirm, but that UX gate lives on the client (window.confirm).
+//      Server records the cancellation fairly regardless.
+//
+// Concurrency note: the WHERE clause on each branch is the atomic guard.
+// Two simultaneous cancel calls from different sessions resolve safely —
+// the second UPDATE returns 0 rows → 409.
+router.post("/requests/:id/cancel", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id), 10);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  // Fetch current state to determine caller's role
+  const [existing] = await db
+    .select({
+      id: requestsTable.id,
+      status: requestsTable.status,
+      requester_id: requestsTable.requester_id,
+      helper_id: requestsTable.helper_id,
+    })
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+
+  if (!existing) return res.status(404).json({ error: "Request not found" });
+  if (existing.status === "completed") {
+    return res.status(409).json({ error: "Cannot cancel a completed request." });
+  }
+  if (existing.status === "cancelled") {
+    return res.status(409).json({ error: "Request is already cancelled." });
+  }
+
+  const isHelper   = existing.helper_id === callerId;
+  const isRequester = existing.requester_id === callerId;
+
+  if (!isHelper && !isRequester) {
+    return res.status(403).json({ error: "You are not associated with this request." });
+  }
+
+  let updated;
+
+  if (isHelper) {
+    // Helper releases claim — re-open for a new helper
+    [updated] = await db
+      .update(requestsTable)
+      .set({
+        status: "open",
+        helper_id: null,
+        claimed_at: null,
+        en_route_at: null,
+        arrived_at: null,
+        cancelled_at: new Date(),
+      })
+      .where(
+        and(
+          eq(requestsTable.id, requestId),
+          eq(requestsTable.helper_id, callerId),
+          sql`${requestsTable.status} NOT IN ('completed', 'cancelled')`
+        )
+      )
+      .returning();
+
+    if (!updated) {
+      return res.status(409).json({ error: "Request could not be released — it may have already changed state." });
+    }
+
+    const enriched = { ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
+    broadcastRequestEvent("REQUEST_CREATED", "request_updated", enriched); // re-open → back in the pool
+    logger.info({ request_id: requestId, helper_id: callerId }, "Helper released claim — request re-opened");
+    return res.json({ ...enriched, message: "Claim released. The request is back in the pool for another helper." });
+  }
+
+  // Requester withdraws
+  [updated] = await db
+    .update(requestsTable)
+    .set({ status: "cancelled", cancelled_at: new Date() })
+    .where(
+      and(
+        eq(requestsTable.id, requestId),
+        eq(requestsTable.requester_id, callerId),
+        sql`${requestsTable.status} NOT IN ('completed', 'cancelled')`
+      )
+    )
+    .returning();
+
+  if (!updated) {
+    return res.status(409).json({ error: "Request could not be cancelled — it may have already changed state." });
+  }
+
+  const enriched = { ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
+  broadcastRequestEvent("REQUEST_CANCELLED", "request_updated", enriched);
+  logger.info({ request_id: requestId, requester_id: callerId }, "Requester withdrew request");
+  return res.json({ ...enriched, message: "Request withdrawn." });
+});
+
+router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, res) => {
+  const helperId = req.authenticatedUserId!;
+  const pParsed = CompleteRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!pParsed.success) {
+    return res.status(400).json({ error: "Invalid request id", details: pParsed.error.issues });
+  }
+  // Parse the optional body. helper_id is derived from the auth token and
+  // is NEVER required in the body (sending it is accepted for backward compat
+  // but the server always uses req.authenticatedUserId, never the body value).
+  // notes is the only body field the handler may use in future.
+  // We accept an empty body or missing body gracefully.
+  const bParsed = CompleteRequestBody.safeParse(req.body ?? {});
+  if (!bParsed.success) {
+    // Body is entirely optional — only reject if something was sent AND invalid
+    // (e.g. notes is not a string). An empty / missing body always passes.
+    const hasBody = req.body && Object.keys(req.body).length > 0;
+    if (hasBody) {
+      return res.status(400).json({ error: "Invalid request body", details: bParsed.error?.issues });
+    }
+  }
+
+  // Status guard makes completion idempotent: a request can only transition to
+  // completed ONCE, so every side effect below (help_count, pool front,
+  // guaranteed minimum, payout) fires exactly once even on repeated calls.
+  const [request] = await db.update(requestsTable)
+    .set({ status: "completed", completed_at: new Date() })
+    .where(and(
+      eq(requestsTable.id, pParsed.data.id),
+      eq(requestsTable.helper_id, helperId),
+      sql`${requestsTable.status} NOT IN ('completed', 'cancelled')`
+    ))
+    .returning();
+  if (!request) {
+    return res.status(404).json({ 
+      error: "Request not found, already completed, or you are not the assigned helper",
+      request_id: pParsed.data.id
+    });
+  }
+
+  // Capture pre-increment stats for tier-change detection + name for gratitude prompt.
+  // community_id is also fetched here so pool ledger writes can be scoped correctly.
+  const [helperBefore] = await db
+    .select({
+      help_count:   usersTable.help_count,
+      trust_score:  usersTable.trust_score,
+      name:         usersTable.name,
+      community_id: usersTable.community_id,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.id, helperId))
+    .limit(1);
+
+  // Increment help_count
+  await db.update(usersTable)
+    .set({ help_count: sql`${usersTable.help_count} + 1` })
+    .where(eq(usersTable.id, helperId));
+
+  // Trust-score participation bump: +1 per completed job, capped at 80.
+  // Participation raises a helper from the low starting default regardless of
+  // how any later rating turns out (low-quality jobs still count — that's the
+  // point). Cap is deliberately below the 85 threshold trust-tiers.ts needs
+  // to leave "member", so volume alone can never buy tier advancement.
+  await db.update(usersTable)
+    .set({ trust_score: sql`LEAST(80, COALESCE(${usersTable.trust_score}, 0) + 1)` })
+    .where(eq(usersTable.id, helperId));
+
+  // ── Tier stickiness: advance highest_tier_reached when quality gate passes ─
+  // After the participation bump, re-read the fresh stats and check whether the
+  // helper has crossed a tier threshold AND passes the quality gate (avg rating
+  // ≥ 4.0 for trusted/elite/anchor).  highest_tier_reached can only go up.
+  try {
+    const [refreshed] = await db
+      .select({
+        trust_score:           usersTable.trust_score,
+        help_count:            usersTable.help_count,
+        highest_tier_reached:  usersTable.highest_tier_reached,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, helperId))
+      .limit(1);
+
+    if (refreshed) {
+      const computedTier  = getTrustTier(refreshed.trust_score ?? 0, refreshed.help_count ?? 0);
+      const currentHighest = (refreshed.highest_tier_reached ?? "member") as TrustTier;
+
+      if (TIER_RANK[computedTier] > TIER_RANK[currentHighest]) {
+        // Quality gate: fetch average rating as ratee (helper being rated by requesters)
+        const [avgRow] = await db
+          .select({ avg: sql<number>`AVG(${ratingsTable.stars})::float8` })
+          .from(ratingsTable)
+          .where(eq(ratingsTable.ratee_id, helperId));
+        const avgRating = (avgRow?.avg != null && !isNaN(avgRow.avg)) ? avgRow.avg : null;
+
+        if (meetsQualityGate(computedTier, avgRating)) {
+          // Atomic monotonic advance: SQL CASE converts tier names to numeric rank
+          // so the UPDATE only fires when the stored tier is STRICTLY lower than the
+          // candidate. Two concurrent completions cannot regress the tier — the one
+          // with the lower computed tier will evaluate the WHERE to false and be a
+          // safe no-op.
+          const candidateRank = TIER_RANK[computedTier];
+          await db.execute(sql`
+            UPDATE users
+            SET highest_tier_reached = ${computedTier}
+            WHERE id = ${helperId}
+              AND CASE highest_tier_reached
+                WHEN 'anchor'   THEN 4
+                WHEN 'elite'    THEN 3
+                WHEN 'trusted'  THEN 2
+                WHEN 'verified' THEN 1
+                ELSE 0
+              END < ${candidateRank}
+          `);
+          logger.info(
+            { helper_id: helperId, new_tier: computedTier, candidate_rank: candidateRank, avg_rating: avgRating },
+            "helper: tier advanced — highest_tier_reached updated atomically"
+          );
+        } else {
+          logger.info(
+            { helper_id: helperId, candidate_tier: computedTier, avg_rating: avgRating },
+            "helper: tier advancement blocked by quality gate (avg rating < 4.0)"
+          );
+        }
+      }
+    }
+  } catch (tierErr) {
+    // Non-fatal — completion always succeeds regardless of tier advancement errors
+    logger.warn({ err: tierErr, helper_id: helperId }, "highest_tier_reached update failed (non-fatal)");
+  }
+
+  // Log request completion
+  logger.info({ 
+    request_id: request.id, 
+    helper_id: helperId, 
+    payment_type: request.payment_type,
+    amount: request.pay_it_forward_amount 
+  }, "Request marked as completed");
+
+  // Immediate-pay jobs: record in earnings history ONLY — do NOT credit benevolence_wallet.
+  // benevolence_wallet is the goodwill/donation pot (pledges, sponsorships, tips).
+  // The real money for immediate jobs arrives via the Stripe Connect transfer below.
+  if (request.payment_type === "immediate" && request.pay_it_forward_amount && request.pay_it_forward_amount > 0) {
+    await db.insert(transactionsTable).values({
+      user_id: helperId,
+      request_id: request.id,
+      type: "earned",
+      amount: request.pay_it_forward_amount,
+      description: request.title,
+    });
+  }
+
+  // Award goodwill point for volunteer missions
+  if (request.payment_type === "goodwill") {
+    await db.update(usersTable)
+      .set({ goodwill_score: sql`${usersTable.goodwill_score} + 1` })
+      .where(eq(usersTable.id, helperId));
+    await db.insert(transactionsTable).values({
+      user_id: helperId,
+      request_id: request.id,
+      type: "goodwill",
+      amount: 0,
+      description: request.title,
+    });
+    logger.info({ helper_id: helperId, request_id: request.id }, "Goodwill point awarded");
+  }
+
+  // ── Community Pool: front pay-it-forward payment + guaranteed minimum ─────
+  // The pool pays the helper NOW; the requester's later repayment replenishes
+  // the pool (handled in the Stripe webhook). Every payment type — pay_it_forward,
+  // goodwill, AND immediate — gets a guaranteed minimum floor.
+  //
+  // For immediate tasks the requester's Stripe payment already counts toward
+  // the floor: the pool only covers the gap, so there is never a double-pay.
+  try {
+    if (await isPoolEnabled()) {
+      const pledge = request.pay_it_forward_amount ?? 0;
+      let paidFromPool = 0;
+
+      if (request.payment_type === "pay_it_forward" && pledge > 0) {
+        const frontOutcome = await payHelperFromPool({
+          entryType: "helper_front",
+          amount: pledge,
+          requestId: request.id,
+          helperId,
+          requestTitle: request.title,
+          communityId: helperBefore?.community_id ?? null,
+        });
+        if (frontOutcome === "paid") {
+          paidFromPool = pledge;
+          await db.insert(paymentTransactionsTable).values({
+            request_id: request.id,
+            helper_id: helperId,
+            requester_id: request.requester_id,
+            amount: pledge,
+            state: "sponsored",
+            payment_type: "pay_it_forward",
+            sponsored_by: "community_pool",
+            notes: "Community Pool fronted helper payment at completion — requester repayment replenishes the pool",
+          });
+          broadcast({
+            type: "pool_front_paid",
+            payload: { request_id: request.id, helper_id: helperId, amount: pledge },
+          });
+          sendPushToUser(helperId, {
+            title: "💙 Paid by the Community Pool",
+            body: `$${pledge.toFixed(2)} was added to your Goodwill Fund right away for: "${request.title}". No waiting.`,
+            requestId: request.id,
+            notifType: "wallet" as const,
+          }).catch((err) => {
+            logger.warn({ err, helper_id: helperId, request_id: request.id }, "push: pool-front wallet notification failed — helper still paid");
+          });
+          logger.info({ request_id: request.id, helper_id: helperId, amount: pledge }, "Community pool fronted helper payment");
+        }
+      }
+
+      // Guaranteed minimum floor: top up to the minimum when the pool front
+      // didn't happen or came in under the floor (goodwill tasks included).
+      // Pass estimated_hours so the floor scales with task duration (hours × rate),
+      // making the "livable wage" guarantee real math, not a flat number.
+      //
+      // For immediate-pay tasks, count the requester's Stripe payment toward the
+      // floor first — the pool only tops up the gap, never double-pays.
+      const effectivePaid = request.payment_type === "immediate"
+        ? Math.max(paidFromPool, pledge)
+        : paidFromPool;
+
+      // Pass helperId so the tenure-tier wage multiplier (1.0–1.2×) is applied.
+      // anchor-tier helpers (50+ helps, 97+ trust) earn 20% more from the pool.
+      const minimum = await getGuaranteedMinimum(request.estimated_hours, helperId);
+      if (minimum > 0 && effectivePaid < minimum) {
+        const topUp = Math.round((minimum - effectivePaid) * 100) / 100;
+        const minOutcome = await payHelperFromPool({
+          entryType: "guaranteed_minimum",
+          amount: topUp,
+          requestId: request.id,
+          helperId,
+          communityId: helperBefore?.community_id ?? null,
+          requestTitle: request.title,
+        });
+        if (minOutcome === "paid") {
+          sendPushToUser(helperId, {
+            title: "💙 Community Pool Thank-You",
+            body: `The Community Pool added $${topUp.toFixed(2)} to your Goodwill Fund for helping with: "${request.title}".`,
+            requestId: request.id,
+            notifType: "wallet" as const,
+          }).catch((err) => {
+            logger.warn({ err, helper_id: helperId, request_id: request.id }, "push: guaranteed-minimum wallet notification failed — minimum still paid");
+          });
+          logger.info({ request_id: request.id, helper_id: helperId, amount: topUp }, "Guaranteed minimum paid from community pool");
+        } else if (minOutcome === "insufficient") {
+          // Pool ran dry — queue the guarantee so the backfill worker pays it
+          // once the pool is replenished. For an un-fronted pay-it-forward
+          // request the pledge itself still arrives via Stripe later, so only
+          // the gap below the floor is owed.
+          const owed = request.payment_type === "pay_it_forward" ? minimum - pledge : topUp;
+          await queuePendingMinimum({
+            requestId: request.id,
+            helperId,
+            amount: owed,
+            requestTitle: request.title,
+          });
+        }
+      }
+
+      // Warn admins (deduped) whenever completions run against a low pool
+      maybeAlertLowBalance().catch(() => {});
+    }
+  } catch (err) {
+    // Never block completion on pool payment issues
+    logger.error({ err, request_id: request.id, helper_id: helperId }, "Community pool payment step failed");
+  }
+
+  // ── Real Stripe payout for immediate-pay completed requests ───────────────
+  // Only fires when: payment_type === "immediate", amount > 0, Stripe configured,
+  // and helper has a Connect account with payouts enabled.
+  if (
+    request.payment_type === "immediate" &&
+    request.pay_it_forward_amount &&
+    request.pay_it_forward_amount > 0 &&
+    _stripe
+  ) {
+    let stripeAcct: typeof stripeAccountsTable.$inferSelect | undefined;
+    try {
+      [stripeAcct] = await db
+        .select()
+        .from(stripeAccountsTable)
+        .where(eq(stripeAccountsTable.user_id, helperId))
+        .limit(1);
+
+      if (!stripeAcct) {
+        logger.warn({ helper_id: helperId, request_id: request.id }, "No Stripe account found for helper");
+      } else if (!stripeAcct.payouts_enabled) {
+        logger.info({ helper_id: helperId, request_id: request.id }, "Payouts disabled for helper account");
+      } else if (stripeAcct.stripe_account_id) {
+        const amountCents = Math.round(request.pay_it_forward_amount * 100);
+        const platformFeeCents = Math.round(amountCents * 0.05); // 5% platform fee
+        const payoutCents = amountCents - platformFeeCents;
+
+        logger.info({ 
+          helper_id: helperId, 
+          request_id: request.id,
+          amount_usd: (amountCents / 100).toFixed(2),
+          platform_fee_usd: (platformFeeCents / 100).toFixed(2)
+        }, "Processing Stripe transfer");
+
+        const transfer = await _stripe.transfers.create(
+          {
+            amount: payoutCents,
+            currency: "usd",
+            destination: stripeAcct.stripe_account_id,
+            metadata: {
+              request_id: String(request.id),
+              helper_id: String(helperId),
+              platform_fee_cents: String(platformFeeCents),
+            },
+          },
+          { idempotencyKey: `payout-${request.id}-${helperId}` }
+        );
+
+        // Record the completed payout
+        await db.insert(paymentTransactionsTable).values({
+          request_id: request.id,
+          helper_id: helperId,
+          requester_id: request.requester_id,
+          amount: request.pay_it_forward_amount,
+          state: "completed",
+          payment_type: "immediate",
+          stripe_transfer_id: transfer.id,
+          notes: `Auto-payout on completion. Platform fee: $${(platformFeeCents / 100).toFixed(2)}`,
+        });
+
+        logger.info({ 
+          helper_id: helperId, 
+          request_id: request.id,
+          transfer_id: transfer.id,
+          amount_transferred: (payoutCents / 100).toFixed(2)
+        }, "Stripe transfer completed successfully");
+
+        broadcast({
+          type: "payout_sent",
+          payload: {
+            helper_id: helperId,
+            amount: payoutCents / 100,
+            transfer_id: transfer.id,
+          },
+        });
+      }
+    } catch (err: unknown) {
+      // Non-fatal — wallet was already credited, but payout must be retried
+      logger.error({ 
+        err, 
+        request_id: request.id,
+        helper_id: helperId,
+        stripe_account_id: stripeAcct?.stripe_account_id
+      }, "Stripe payout failed — enqueuing retry");
+      
+      // Enqueue for exponential-backoff retry via BullMQ (up to 5 attempts)
+      if (stripeAcct?.stripe_account_id) {
+        const amountCents = Math.round((request.pay_it_forward_amount ?? 0) * 100);
+        const platformFeeCents = Math.round(amountCents * 0.05);
+        enqueuePayoutRetry({
+          request_id:         request.id,
+          helper_id:          helperId,
+          requester_id:       request.requester_id,
+          amount_cents:       amountCents,
+          platform_fee_cents: platformFeeCents,
+          stripe_account_id:  stripeAcct.stripe_account_id,
+          request_title:      request.title,
+        }).catch((err) => {
+          logger.error({ err, request_id: request.id }, "Failed to enqueue payout retry");
+        });
+      }
+    }
+  }
+
+  const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
+  broadcastRequestEvent("REQUEST_COMPLETED", "request_updated", enriched);
+
+  // Fire-and-forget leaderboard broadcast (doesn't block response)
+  broadcastLeaderboardUpdate(
+    helperId,
+    helperBefore?.help_count ?? 0,
+    helperBefore?.trust_score ?? 0
+  ).catch(() => {});
+
+
+  // Fire receipt email async (non-blocking)
+  const [requester] = await db.select({ email: usersTable.email, name: usersTable.name })
+    .from(usersTable).where(eq(usersTable.id, request.requester_id)).limit(1).catch(() => [null]);
+  if (requester?.email) {
+    sendReceipt({
+      to: requester.email,
+      helperName: helperBefore?.name ?? "Your helper",
+      requesterName: requester.name,
+      requestTitle: request.title,
+      amount: request.payment_type === "immediate" ? (request.pay_it_forward_amount ?? undefined) : undefined,
+      paymentType: request.payment_type,
+      completedAt: new Date(),
+    }).catch(() => {});
+  }
+
+  // Prompt the requester to write a public thank-you post
+  broadcast({
+    type: "new_gratitude_prompt",
+    payload: {
+      request_id: request.id,
+      requester_id: request.requester_id,
+      request_title: request.title,
+      helper_name: helperBefore?.name ?? null,
+      helper_id: helperId,
+    },
+  });
+
+  return res.json(enriched);
+});
+
+
+// ── POST /requests/:id/rate ────────────────────────────────────────────────────
+// RatingModal.tsx has called this endpoint since it was built; no route ever
+// existed in the server layer so every real submission was a silent 404.
+//
+// Design decisions (matching the patch spec):
+// - requireAuth only (no requireApproved): leaving a rating about a past job is
+//   an opinion, not a money-moving action. Suspended accounts may still rate.
+// - Only allowed once the request status is "completed" (exact string used by /complete).
+// - role/ratee derived server-side from request.requester_id/helper_id — never
+//   trusted from the client body. The frontend's `role` prop is display copy only.
+// - Duplicate submissions hit ratingsTable's unique(request_id, rater_id) constraint
+//   and return the exact error string the frontend already special-cases.
+const RateRequestBody = z.object({
+  stars: z.number().int().min(1).max(5),
+  review: z.string().max(500).trim().optional(),
+});
+
+router.post("/requests/:id/rate", requireAuth, async (req, res) => {
+  const pParsed = ClaimRequestParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!pParsed.success) return res.status(400).json({ error: "Invalid request id" });
+
+  const bParsed = RateRequestBody.safeParse(req.body);
+  if (!bParsed.success) {
+    return res.status(400).json({ error: "Invalid rating", details: bParsed.error?.issues });
+  }
+
+  const raterId = req.authenticatedUserId!;
+  const requestId = pParsed.data.id;
+
+  const [request] = await db.select().from(requestsTable)
+    .where(eq(requestsTable.id, requestId)).limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+
+  if (request.status !== "completed") {
+    return res.status(400).json({ error: "You can only rate a request after it's completed" });
+  }
+
+  let role: "requester" | "helper";
+  let rateeId: number;
+  if (request.requester_id === raterId) {
+    role = "requester";
+    if (!request.helper_id) {
+      return res.status(400).json({ error: "This request has no helper to rate yet" });
+    }
+    rateeId = request.helper_id;
+  } else if (request.helper_id === raterId) {
+    role = "helper";
+    rateeId = request.requester_id;
+  } else {
+    return res.status(403).json({ error: "You weren't part of this request" });
+  }
+
+  try {
+    await db.insert(ratingsTable).values({
+      request_id: requestId,
+      rater_id: raterId,
+      ratee_id: rateeId,
+      stars: bParsed.data.stars,
+      review: bParsed.data.review ?? null,
+      role,
+    });
+  } catch (err: unknown) {
+    if (typeof err === "object" && err !== null && "code" in err && (err as { code: string }).code === "23505") {
+      return res.status(409).json({ error: "You have already rated this request" });
+    }
+    logger.error({ err, request_id: requestId, rater_id: raterId }, "rating: insert failed");
+    return res.status(500).json({ error: "Failed to submit rating" });
+  }
+
+  // ── Trust-score adjustment from star rating ───────────────────────────────
+  // When the REQUESTER rates the HELPER (role="requester"), apply a small
+  // trust_score nudge to the helper based on stars received.
+  // Ratings push the score past the participation cap (80) up to 100 —
+  // quality signal is the only path to the upper tier thresholds (90/95/97).
+  //
+  // Mapping: 5⭐→+2, 4⭐→+1, 3⭐→0, 2⭐→-1, 1⭐→-2
+  // Clamped to [1, 100]. Only applied to verified helpers (is_helper=true).
+  //
+  // INVERSE direction: when the HELPER rates the REQUESTER (role="helper"),
+  // adjust goodwill_score instead of trust_score. Goodwill score governs
+  // pledge accountability, not the helper tier ladder.
+  if (role === "requester") {
+    const stars = bParsed.data.stars;
+    const adjustment = stars >= 5 ? 2 : stars === 4 ? 1 : stars === 3 ? 0 : stars === 2 ? -1 : -2;
+    if (adjustment !== 0) {
+      await db.update(usersTable)
+        .set({ trust_score: sql`LEAST(100, GREATEST(1, COALESCE(${usersTable.trust_score}, 5) + ${adjustment}))` })
+        .where(and(eq(usersTable.id, rateeId), eq(usersTable.is_helper, true)))
+        .catch((err) => {
+          logger.warn({ err, ratee_id: rateeId, stars }, "rating: trust_score adjustment failed (non-fatal)");
+        });
+    }
+  } else if (role === "helper") {
+    // Helper rated the requester: adjust goodwill_score
+    const stars = bParsed.data.stars;
+    const adjustment = stars >= 4 ? 1 : stars === 3 ? 0 : -1;
+    if (adjustment !== 0) {
+      await db.update(usersTable)
+        .set({ goodwill_score: sql`LEAST(200, GREATEST(0, COALESCE(${usersTable.goodwill_score}, 100) + ${adjustment}))` })
+        .where(eq(usersTable.id, rateeId))
+        .catch((err) => {
+          logger.warn({ err, ratee_id: rateeId, stars }, "rating: goodwill_score adjustment failed (non-fatal)");
+        });
+    }
+  }
+
+  logger.info({ request_id: requestId, rater_id: raterId, ratee_id: rateeId, role, stars: bParsed.data.stars }, "rating: submitted");
+  return res.json({ success: true });
+});
+
+
+// ── POST /requests/:id/tip — RETIRED (410 Gone) ───────────────────────────────
+// This endpoint previously credited an arbitrary client-supplied tip_amount
+// directly to a helper's benevolence_wallet with no Stripe payment verification.
+// That is a money-security hole: any authenticated user could inflate a helper's
+// wallet balance by any amount simply by calling this route.
+//
+// Tips now flow through the existing pledge/Stripe path:
+//   - Immediate tippers: create a Stripe PaymentIntent (POST /payments/create-intent)
+//     and confirm via the StripePaymentModal; the webhook handler credits the wallet.
+//   - PIF requesters: the standard Niakofa pledge flow (POST /users/:id/pledge).
+//
+// Returning 410 (not 404) signals to clients that the endpoint existed but was
+// intentionally removed — callers should update rather than retry.
+router.post("/requests/:id/tip", (_req, res) => {
+  return res.status(410).json({
+    error:
+      "POST /requests/:id/tip has been retired. Tips are now processed through " +
+      "the Stripe payment flow (POST /payments/create-intent) or the standard " +
+      "pledge path (POST /users/:id/pledge). See API changelog for migration guidance.",
+    code: "endpoint_retired",
+  });
+});
+
+// ── Help Chains ──────────────────────────────────────────────────────────────
+
+// POST /requests/:id/helpers/join — join the help chain for a request
+router.post("/requests/:id/helpers/join", requireAuth, async (req, res) => {
+  const requestId = parseInt(req.params.id as string);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+  const r = req as typeof req & { authenticatedUserId: number };
+  const helperId = r.authenticatedUserId;
+
+  const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.status !== "claimed" && request.status !== "en_route" && request.status !== "arrived") {
+    return res.status(409).json({ error: "Request must be claimed before joining the chain" });
+  }
+  if (request.requester_id === helperId) return res.status(409).json({ error: "Requester cannot join the help chain" });
+  if (request.helper_id === helperId) return res.status(409).json({ error: "Primary helper is already on this request" });
+
+  // Upsert — if already in chain, return 200 silently
+  const existing = await db.select().from(requestHelpersTable)
+    .where(and(eq(requestHelpersTable.request_id, requestId), eq(requestHelpersTable.helper_id, helperId)))
+    .limit(1);
+  if (existing.length > 0) return res.json({ ok: true, already_member: true });
+
+  const [row] = await db.insert(requestHelpersTable)
+    .values({ request_id: requestId, helper_id: helperId })
+    .returning();
+
+  // Notify requester and primary helper
+  sendToRequestParticipants(request.requester_id, request.helper_id, {
+    type: "help_chain_joined",
+    payload: { request_id: requestId, helper_id: helperId },
+  });
+
+  return res.status(201).json(row);
+});
+
+// DELETE /requests/:id/helpers/leave — leave the help chain
+router.delete("/requests/:id/helpers/leave", requireAuth, async (req, res) => {
+  const requestId = parseInt(req.params.id as string);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+  const r = req as typeof req & { authenticatedUserId: number };
+  const helperId = r.authenticatedUserId;
+
+  await db.delete(requestHelpersTable)
+    .where(and(eq(requestHelpersTable.request_id, requestId), eq(requestHelpersTable.helper_id, helperId)));
+
+  const [request] = await db.select({ requester_id: requestsTable.requester_id, helper_id: requestsTable.helper_id })
+    .from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+  if (request) {
+    sendToRequestParticipants(request.requester_id, request.helper_id, {
+      type: "help_chain_left",
+      payload: { request_id: requestId, helper_id: helperId },
+    });
+  }
+
+  return res.json({ ok: true });
+});
+
+// ── Admin: Pledge write-off ───────────────────────────────────────────────────
+// PATCH /admin/requests/:id/pledge-status
+// Marks a pledge as forgiven or written_off so stale unpaid pledges no longer
+// drag down the pool runway number (outstanding_pif_total). Only admins can
+// call this — it is an explicit write-off decision, not something the system
+// does automatically. Write-offs after ~12-18 months of non-payment are the
+// recommended threshold (see CLAUDE.md "Known product gaps").
+router.patch("/admin/requests/:id/pledge-status", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const adminId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id), 10);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  const { pledge_status } = req.body as { pledge_status?: string };
+  if (pledge_status !== "active" && pledge_status !== "forgiven" && pledge_status !== "written_off" && pledge_status !== "defaulted") {
+    return res.status(400).json({ error: "pledge_status must be 'active', 'forgiven', 'written_off', or 'defaulted'." });
+  }
+
+  const [updated] = await db
+    .update(requestsTable)
+    .set({ pledge_status } as Record<string, unknown>)
+    .where(eq(requestsTable.id, requestId))
+    .returning();
+
+  if (!updated) return res.status(404).json({ error: "Request not found." });
+
+  logger.info(
+    { request_id: requestId, pledge_status, admin_id: adminId, pledge_amount: updated.pledge_amount, pledge_paid: updated.pledge_paid },
+    `Admin ${pledge_status === "written_off" ? "wrote off" : pledge_status === "forgiven" ? "forgave" : "restored"} pledge`,
+  );
+  return res.json(updated);
+});
+
+// ── Admin: Flagged requests moderation queue ──────────────────────────────────
+// GET /admin/requests/flagged — list requests with moderation_status='pending'
+// These are requests that tripped the heuristic screen (spam/illegal signals)
+// but were still created (to not block someone who genuinely needs help).
+// Admins can approve or reject them here.
+router.get("/admin/requests/flagged", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const flagged = await db
+    .select({
+      id: requestsTable.id,
+      title: requestsTable.title,
+      description: requestsTable.description,
+      category: requestsTable.category,
+      urgency: requestsTable.urgency,
+      status: requestsTable.status,
+      moderation_status: requestsTable.moderation_status,
+      moderation_reason: requestsTable.moderation_reason,
+      requester_id: requestsTable.requester_id,
+      requester_name: usersTable.name,
+      requester_email: usersTable.email,
+      created_at: requestsTable.created_at,
+    })
+    .from(requestsTable)
+    .leftJoin(usersTable, eq(usersTable.id, requestsTable.requester_id))
+    .where(eq(requestsTable.moderation_status, "pending"))
+    .orderBy(requestsTable.created_at);
+
+  return res.json(flagged);
+});
+
+// POST /admin/requests/:id/moderate — approve or reject a flagged request
+// action: 'approve' → set moderation_status='approved' (request stays live)
+// action: 'reject'  → set moderation_status='rejected' + cancel the request
+// Only operates on rows where moderation_status='pending' to match queue semantics.
+router.post("/admin/requests/:id/moderate", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const adminId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id), 10);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  const { action } = req.body as { action?: "approve" | "reject" };
+  if (action !== "approve" && action !== "reject") {
+    return res.status(400).json({ error: "action must be 'approve' or 'reject'." });
+  }
+
+  // Approve: mark moderation cleared, request stays in its current status.
+  // Reject:  cancel the request AND mark moderation rejected — BUT only when
+  //          the request is still in a cancellable state (open or pending_owner_approval).
+  //          A request that was claimed/completed before moderation review must NOT
+  //          be silently cancelled — that would break the lifecycle and helper payment.
+  //          Admins should use pledge-status write-off for completed-but-problematic rows.
+  let updatePayload: Record<string, unknown>;
+  if (action === "approve") {
+    updatePayload = { moderation_status: "approved", moderation_reason: null };
+  } else {
+    updatePayload = { moderation_status: "rejected", status: "cancelled", cancelled_at: new Date() };
+  }
+
+  // WHERE clause:
+  //   - moderation_status = 'pending' (prevents re-moderation of already-reviewed rows)
+  //   - For reject: also restrict to open/pending_owner_approval (cannot cancel completed work)
+  const whereClause =
+    action === "approve"
+      ? and(eq(requestsTable.id, requestId), eq(requestsTable.moderation_status, "pending"))
+      : and(
+          eq(requestsTable.id, requestId),
+          eq(requestsTable.moderation_status, "pending"),
+          inArray(requestsTable.status, ["open", "pending_owner_approval"]),
+        );
+
+  const [updated] = await db
+    .update(requestsTable)
+    .set(updatePayload)
+    .where(whereClause)
+    .returning();
+
+  if (!updated) {
+    // Distinguish: already completed vs. not found vs. wrong moderation state
+    const [check] = await db
+      .select({ status: requestsTable.status, moderation_status: requestsTable.moderation_status })
+      .from(requestsTable)
+      .where(eq(requestsTable.id, requestId))
+      .limit(1);
+    if (!check) return res.status(404).json({ error: "Request not found." });
+    if (check.moderation_status !== "pending") {
+      return res.status(409).json({ error: "Request is not in pending moderation state.", moderation_status: check.moderation_status });
+    }
+    // reject attempted on a claimed/completed request
+    return res.status(409).json({
+      error:
+        "Cannot cancel this request — it has already been claimed or completed. " +
+        "Use the pledge write-off endpoint (PATCH /admin/requests/:id/pledge-status) " +
+        "to handle already-completed problematic requests.",
+      status: check.status,
+    });
+  }
+
+  logger.info(
+    { request_id: requestId, action, admin_id: adminId, title: updated.title },
+    `Admin ${action === "approve" ? "approved" : "rejected"} flagged request`,
+  );
+  return res.json(updated);
+});
+
+// ── Self-service pledge repayment ─────────────────────────────────────────────
+// POST /requests/:id/pledge-repay
+//
+// Any authenticated requester can record a partial or full repayment against
+// their Pay It Forward pledge. Making ANY repayment immediately reinstates a
+// defaulted pledge back to 'active', restoring the user's ability to post new
+// PIF requests without waiting for an admin action.
+//
+// Design intent: "No pressure — pay what you can, whenever you can."
+// Once a requester demonstrates intent by making a payment, they regain access.
+// The full outstanding balance remains tracked until the pledge is fully repaid.
+//
+// Rules:
+//   - Only the original requester can submit a repayment
+//   - Only on active or defaulted pledges (forgiven/written_off are closed)
+//   - Amount must be > 0 and ≤ outstanding balance
+//   - Ledger entry recorded for audit trail
+//   - 'defaulted' status flips back to 'active' on any repayment
+//   - Full repayment flips status to 'forgiven' (pledge completed)
+router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
+  const requesterId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id), 10);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  const { amount } = req.body as { amount?: unknown };
+  const amountNum = typeof amount === "number" ? amount : parseFloat(String(amount ?? ""));
+  if (!amountNum || isNaN(amountNum) || amountNum <= 0) {
+    return res.status(400).json({ error: "amount must be a positive number" });
+  }
+
+  const [request] = await db
+    .select()
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.requester_id !== requesterId) return res.status(403).json({ error: "Forbidden" });
+  if (request.pledge_status !== "defaulted" && request.pledge_status !== "active") {
+    return res.status(409).json({ error: "This pledge is already resolved." });
+  }
+  if (!request.pledge_amount || request.pledge_amount <= 0) {
+    return res.status(400).json({ error: "No outstanding pledge on this request." });
+  }
+
+  const outstanding = (request.pledge_amount ?? 0) - (request.pledge_paid ?? 0);
+  if (outstanding <= 0) {
+    return res.status(409).json({ error: "This pledge is already fully paid." });
+  }
+  // Cap repayment at the outstanding balance — no overpayment
+  const safeAmount = Math.min(amountNum, outstanding);
+
+  // Atomic SQL increment — avoids lost-update race when two repayments hit concurrently.
+  // Status is computed inside the DB from the post-update pledge_paid value, never from
+  // stale application-layer reads.  RETURNING captures what was actually written.
+  let updated: { pledge_paid: number | null; pledge_status: string | null; pledge_amount: number | null } | undefined;
+  try {
+    [updated] = await db.transaction(async (tx) => {
+      const rows = await tx
+        .update(requestsTable)
+        .set({
+          // Increment pledge_paid atomically; cap at pledge_amount to prevent overshoot
+          pledge_paid: sql`LEAST(
+            COALESCE(${requestsTable.pledge_paid}, 0) + ${safeAmount},
+            COALESCE(${requestsTable.pledge_amount}, 0)
+          )`,
+          // Status transitions computed inside DB from post-update state:
+          //   fully paid  → 'repaid'  (NOT 'forgiven' — 'forgiven' is admin charity only)
+          //   was defaulted, partially paid → 'active'  (reinstatement on any repayment)
+          //   was active, partially paid → unchanged ('active')
+          pledge_status: sql<string>`CASE
+            WHEN (COALESCE(${requestsTable.pledge_paid}, 0) + ${safeAmount}) >= COALESCE(${requestsTable.pledge_amount}, 0)
+              THEN 'repaid'
+            WHEN ${requestsTable.pledge_status} = 'defaulted'
+              THEN 'active'
+            ELSE ${requestsTable.pledge_status}
+          END`,
+          // Clear any pending hardship — requester has demonstrated intent to pay
+          hardship_requested_at: null,
+          hardship_note: null,
+        } as Record<string, unknown>)
+        .where(
+          and(
+            eq(requestsTable.id, requestId),
+            // Guard: only update rows still carrying an outstanding balance
+            // (prevents double-credit if the same client fires the request twice)
+            sql`COALESCE(${requestsTable.pledge_paid}, 0) < COALESCE(${requestsTable.pledge_amount}, 0)`,
+          )
+        )
+        .returning({
+          pledge_paid: requestsTable.pledge_paid,
+          pledge_status: requestsTable.pledge_status,
+          pledge_amount: requestsTable.pledge_amount,
+        });
+
+      if (!rows[0]) {
+        // Race: another concurrent repayment already cleared the balance
+        throw Object.assign(new Error("already_paid"), { status: 409 });
+      }
+
+      const row = rows[0];
+      const amountActuallyApplied = Math.min(safeAmount, (row.pledge_amount ?? 0) - ((row.pledge_paid ?? 0) - safeAmount));
+
+      // Record the repayment in the pool ledger for the audit trail.
+      await tx.insert(communityPoolLedgerTable).values({
+        entry_type: "pledge_repayment",
+        amount: amountActuallyApplied > 0 ? amountActuallyApplied : safeAmount,
+        request_id: requestId,
+        user_id: requesterId,
+        notes: `Self-service repayment — pledge ${row.pledge_status === "repaid" ? "fully paid" : "reinstated from defaulted"}`,
+      });
+
+      return rows;
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message === "already_paid") {
+      return res.status(409).json({ error: "This pledge is already fully paid or resolved." });
+    }
+    throw err;
+  }
+
+  if (!updated) {
+    return res.status(409).json({ error: "This pledge is already fully paid or resolved." });
+  }
+
+  // 'repaid' = system-closed after full self-service repayment (NOT 'forgiven' — that's admin charity)
+  const fullyPaid = updated.pledge_status === "repaid";
+
+  // Reward repayment with a visible trust-score boost so repayment history shows
+  // up in trust tiers — not just as protection against the -10 default penalty.
+  // +5 on full repayment; +2 on partial/reinstatement from defaulted.
+  // Both are capped at 100; the 80-cap only applies to the completion-volume bump.
+  if (fullyPaid) {
+    await db
+      .update(usersTable)
+      .set({ trust_score: sql`LEAST(100, COALESCE(${usersTable.trust_score}, 5) + 5)` })
+      .where(eq(usersTable.id, requesterId));
+  } else if (updated.pledge_status === "active") {
+    // Reinstated from defaulted — partial signal, smaller boost
+    await db
+      .update(usersTable)
+      .set({ trust_score: sql`LEAST(100, COALESCE(${usersTable.trust_score}, 5) + 2)` })
+      .where(eq(usersTable.id, requesterId));
+  }
+
+  logger.info(
+    { request_id: requestId, requester_id: requesterId, amount: safeAmount, new_status: updated.pledge_status, fully_paid: fullyPaid },
+    "pledge-repay: self-service repayment recorded"
+  );
+
+  return res.status(200).json({
+    success: true,
+    amount_paid: safeAmount,
+    new_pledge_paid: updated.pledge_paid,
+    pledge_status: updated.pledge_status,
+    message: fullyPaid
+      ? "Thank you! Your pledge has been fully paid. The community is grateful. 💙"
+      : "Thank you! Your pledge is back in good standing. Pay more whenever you're able. 💙",
+  });
+});
+
+// ── Hardship / Forgiveness Request — requester self-service ──────────────────
+// POST /requests/:id/hardship
+// Lets a requester proactively say "I can't pay this right now." Creates an
+// admin-visible queue item. Replaces the "awkward silent non-payment" model
+// with a transparent self-serve forgiveness request.
+//
+// Rules:
+//   - Only the original requester can submit
+//   - Only on active or defaulted pledges (forgiven/written_off don't need it)
+//   - One submission per request (hardship_requested_at not null = already filed)
+router.post("/requests/:id/hardship", requireAuth, requestCreationLimiter, async (req, res) => {
+  const requesterId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id), 10);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+
+  const [request] = await db
+    .select()
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.requester_id !== requesterId) return res.status(403).json({ error: "Forbidden" });
+  if (!request.pledge_amount || request.pledge_amount <= 0) {
+    return res.status(400).json({ error: "This request has no outstanding pledge." });
+  }
+  // Only allow on active or defaulted pledges — not on already-resolved ones
+  if (request.pledge_status !== "active" && request.pledge_status !== "defaulted") {
+    return res.status(409).json({ error: "This pledge has already been resolved." });
+  }
+  const alreadyFiled = (request as typeof request & { hardship_requested_at?: string | null }).hardship_requested_at;
+  if (alreadyFiled) {
+    return res.status(409).json({ error: "A hardship request has already been submitted for this pledge. An admin will review it." });
+  }
+
+  const { note } = req.body as { note?: string };
+  const safeNote = typeof note === "string" ? note.trim().slice(0, 1000) : null;
+
+  await db
+    .update(requestsTable)
+    .set({ hardship_requested_at: new Date(), hardship_note: safeNote } as Record<string, unknown>)
+    .where(eq(requestsTable.id, requestId));
+
+  logger.info(
+    { request_id: requestId, requester_id: requesterId },
+    "requester filed hardship request — pending admin review",
+  );
+
+  return res.status(200).json({ success: true, message: "Your hardship request has been submitted. No pressure — an admin will review it with care." });
+});
+
+// ── Admin: Dismiss (clear) a hardship request without changing pledge_status ──
+// DELETE /admin/requests/:id/hardship
+// Called when admin reviews but wants to keep the pledge active (no forgiveness
+// yet), or just clear a stale queue entry. Clears hardship_requested_at and
+// hardship_note so the item no longer appears in the admin queue.
+router.delete("/admin/requests/:id/hardship", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const adminId = req.authenticatedUserId!;
+  const requestId = parseInt(String(req.params.id), 10);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid request id" });
+
+  const [updated] = await db
+    .update(requestsTable)
+    .set({ hardship_requested_at: null, hardship_note: null } as Record<string, unknown>)
+    .where(eq(requestsTable.id, requestId))
+    .returning({ id: requestsTable.id, pledge_status: requestsTable.pledge_status });
+
+  if (!updated) return res.status(404).json({ error: "Request not found" });
+
+  logger.info({ request_id: requestId, admin_id: adminId }, "Admin dismissed hardship request (cleared from queue, pledge_status unchanged)");
+  return res.json({ success: true });
+});
+
+// ── Admin: List pending hardship requests ─────────────────────────────────────
+// GET /admin/hardship-requests
+router.get("/admin/hardship-requests", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
+  const rows = await db
+    .select({
+      id: requestsTable.id,
+      title: requestsTable.title,
+      pledge_amount: requestsTable.pledge_amount,
+      pledge_paid: requestsTable.pledge_paid,
+      pledge_status: requestsTable.pledge_status,
+      hardship_note: requestsTable.hardship_note,
+      hardship_requested_at: requestsTable.hardship_requested_at,
+      requester_id: requestsTable.requester_id,
+      requester_name: usersTable.name,
+      requester_email: usersTable.email,
+    })
+    .from(requestsTable)
+    .innerJoin(usersTable, eq(usersTable.id, requestsTable.requester_id))
+    .where(sql`${requestsTable.hardship_requested_at} IS NOT NULL AND ${requestsTable.pledge_status} NOT IN ('forgiven', 'written_off', 'repaid')`)
+    .orderBy(requestsTable.hardship_requested_at);
+
+  return res.json(rows);
+});
+
+// GET /requests/:id/helpers — list all chain members with basic profile info
+router.get("/requests/:id/helpers", requireAuth, async (req, res) => {
+  const requestId = parseInt(req.params.id as string);
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+
+  const members = await db
+    .select({
+      id: requestHelpersTable.id,
+      helper_id: requestHelpersTable.helper_id,
+      joined_at: requestHelpersTable.joined_at,
+      name: usersTable.name,
+      avatar_url: usersTable.avatar_url,
+      trust_score: usersTable.trust_score,
+    })
+    .from(requestHelpersTable)
+    .innerJoin(usersTable, eq(usersTable.id, requestHelpersTable.helper_id))
+    .where(eq(requestHelpersTable.request_id, requestId))
+    .orderBy(requestHelpersTable.joined_at);
+
+  return res.json(members);
+});
+
+export default router;
+
+
+
+
+
+
+
+import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useWebSocket } from "@/lib/useWebSocket";
+import type { WsEvent } from "@/lib/useWebSocket";
+import { TrustTierBadge } from "@/components/TrustTierBadge";
+import { MapPin, Trophy, Flame, Star, TrendingUp, ChevronDown } from "lucide-react";
+import { useLocation } from "wouter";
+import { authHeaders } from "@/lib/auth";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface LeaderboardEntry {
+  id: number;
+  name: string;
+  neighborhood: string | null;
+  city: string | null;
+  help_count: number;
+  trust_score: number;
+  goodwill_score: number;
+  avatar_url: string | null;
+  tier: string;
+  rank: number;
+  monthly_contributions: number;
+  is_neighborhood_top: boolean;
+}
+
+interface TierChangeEvent {
+  user_id: number;
+  name: string;
+  from_tier: string;
+  to_tier: string;
+}
+
+interface LeaderboardPayload {
+  entries: LeaderboardEntry[];
+  changed_user_id: number | null;
+  tier_change: TierChangeEvent | null;
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const RANK_MEDALS = ["🥇", "🥈", "🥉"];
+
+const TIER_DISPLAY: Record<string, string> = {
+  anchor: "Community Anchor",
+  elite: "Elite Helper",
+  trusted: "Trusted",
+  verified: "Verified",
+  member: "Member",
+};
+
+// ── Skeleton ──────────────────────────────────────────────────────────────────
+
+function LeaderboardSkeleton() {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-2">
+        {[0, 1, 2].map(i => (
+          <div key={i} className="h-32 bg-card border border-border rounded-2xl animate-pulse" />
+        ))}
+      </div>
+      {[0, 1, 2, 3, 4].map(i => (
+        <div key={i} className="h-16 bg-card border border-border rounded-2xl animate-pulse" style={{ opacity: 1 - i * 0.12 }} />
+      ))}
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export default function LiveLeaderboard() {
+  const [, setLocation] = useLocation();
+  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const [changedId, setChangedId] = useState<number | null>(null);
+  const [tierChange, setTierChange] = useState<TierChangeEvent | null>(null);
+  const [cities, setCities] = useState<string[]>([]);
+  const [selectedCity, setSelectedCity] = useState<string>("");
+  const [cityOpen, setCityOpen] = useState(false);
+
+  // Initial HTTP fetch — requireAuth gates these endpoints so we must send the
+  // bearer token. Use authHeaders() from @/lib/auth for consistency with all
+  // other authenticated fetch calls in the codebase.
+  useEffect(() => {
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    const cityParam = selectedCity ? `?city=${encodeURIComponent(selectedCity)}` : "";
+    setLoading(true);
+    fetch(`${base}/api/leaderboard${cityParam}`, { headers: authHeaders() })
+      .then(r => (r.ok ? r.json() : null))
+      .then((data: LeaderboardEntry[] | null) => {
+        if (data) setEntries(data);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [selectedCity]);
+
+  // Fetch cities list once
+  useEffect(() => {
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/leaderboard/cities`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : [])
+      .then((data: string[]) => setCities(data))
+      .catch(() => {});
+  }, []);
+
+  // Live WebSocket updates
+  useWebSocket((event: WsEvent) => {
+    if (event.type !== "leaderboard_update") return;
+    const payload = event.payload as LeaderboardPayload;
+
+    // Filter by city if one is selected (payload entries are global)
+    const filtered = selectedCity
+      ? payload.entries.filter(
+          e =>
+            e.neighborhood?.toLowerCase().includes(selectedCity.toLowerCase()) ||
+            e.city?.toLowerCase().includes(selectedCity.toLowerCase())
+        )
+      : payload.entries;
+
+    setEntries(filtered.length > 0 ? filtered : payload.entries);
+    setLastUpdate(
+      new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    );
+
+    if (payload.changed_user_id != null) {
+      setChangedId(payload.changed_user_id);
+      setTimeout(() => setChangedId(null), 4000);
+    }
+    if (payload.tier_change) {
+      setTierChange(payload.tier_change);
+      setTimeout(() => setTierChange(null), 7000);
+    }
+  });
+
+  const topThree = entries.slice(0, 3);
+  const rest = entries.slice(3);
+
+  // Monthly totals for the selected city view
+  const totalMonthlyHelps = entries.reduce((s, e) => s + e.monthly_contributions, 0);
+
+  if (loading) return <LeaderboardSkeleton />;
+
+  return (
+    <div className="space-y-4">
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Flame className="w-4 h-4 text-primary" />
+          <span className="font-black text-sm uppercase tracking-widest">
+            {selectedCity ? `Top Helpers — ${selectedCity}` : "Top Helpers"}
+          </span>
+          <div className="flex items-center gap-1.5 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded-full">
+            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-[10px] font-black text-red-400 uppercase tracking-wider">Live</span>
+          </div>
+        </div>
+        {lastUpdate && (
+          <span className="text-[10px] text-muted-foreground tabular-nums">{lastUpdate}</span>
+        )}
+      </div>
+
+      {/* City filter */}
+      {cities.length > 0 && (
+        <div className="relative">
+          <button
+            onClick={() => setCityOpen(!cityOpen)}
+            className="flex items-center gap-2 text-xs bg-card border border-border rounded-xl px-3 py-2 font-semibold w-full max-w-[200px]"
+          >
+            <MapPin className="w-3 h-3 text-primary shrink-0" />
+            <span className="truncate flex-1 text-left">{selectedCity || "All Neighborhoods"}</span>
+            <ChevronDown className={`w-3 h-3 text-muted-foreground shrink-0 transition-transform ${cityOpen ? "rotate-180" : ""}`} />
+          </button>
+          <AnimatePresence>
+            {cityOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="absolute top-full left-0 mt-1 bg-card border border-border rounded-xl shadow-xl z-20 w-56 overflow-hidden"
+              >
+                <button
+                  onClick={() => { setSelectedCity(""); setCityOpen(false); }}
+                  className={`w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-muted transition-colors ${!selectedCity ? "text-primary bg-primary/10" : ""}`}
+                >
+                  All Neighborhoods
+                </button>
+                {cities.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => { setSelectedCity(c); setCityOpen(false); }}
+                    className={`w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-muted transition-colors ${selectedCity === c ? "text-primary bg-primary/10" : ""}`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* Monthly summary pill */}
+      {totalMonthlyHelps > 0 && (
+        <div className="flex items-center gap-2 bg-primary/10 border border-primary/25 rounded-full px-4 py-2">
+          <TrendingUp className="w-3.5 h-3.5 text-primary shrink-0" />
+          <span className="text-xs font-bold text-primary">
+            {totalMonthlyHelps} helps this month
+            {selectedCity ? ` in ${selectedCity}` : " in your community"}
+          </span>
+        </div>
+      )}
+
+      {/* Tier-up banner */}
+      <AnimatePresence>
+        {tierChange && (
+          <motion.div
+            key="tier-banner"
+            initial={{ opacity: 0, y: -16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -16, scale: 0.96 }}
+            transition={{ type: "spring", damping: 22, stiffness: 280 }}
+            className="bg-gradient-to-r from-primary/20 via-primary/10 to-transparent border border-primary/40 rounded-2xl p-3.5 flex items-center gap-3"
+          >
+            <motion.div
+              animate={{ rotate: [0, -15, 15, -10, 10, 0] }}
+              transition={{ duration: 0.6, delay: 0.1 }}
+              className="text-2xl shrink-0"
+            >
+              🎉
+            </motion.div>
+            <div>
+              <div className="font-black text-sm text-primary">
+                {tierChange.name} reached {TIER_DISPLAY[tierChange.to_tier] ?? tierChange.to_tier}!
+              </div>
+              <div className="text-[10px] text-muted-foreground">
+                Upgraded from {TIER_DISPLAY[tierChange.from_tier] ?? tierChange.from_tier}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Podium — Top 3 */}
+      {topThree.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {topThree.map((entry, i) => {
+            const isChanged = changedId === entry.id;
+            return (
+              <motion.div
+                key={entry.id}
+                layout
+                layoutId={`lb-${entry.id}`}
+                transition={{ type: "spring", damping: 30, stiffness: 300 }}
+                onClick={() => setLocation(`/helper/${entry.id}`)}
+                className={`relative flex flex-col items-center p-3 rounded-2xl border transition-colors cursor-pointer active:scale-95 ${
+                  isChanged
+                    ? "bg-primary/15 border-primary/60 shadow-[0_0_20px_rgba(0,212,255,0.18)]"
+                    : i === 0
+                    ? "bg-yellow-500/5 border-yellow-500/20"
+                    : "bg-card border-border"
+                }`}
+              >
+                <div className="text-xl mb-1">{RANK_MEDALS[i]}</div>
+
+                {/* Avatar */}
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-1 overflow-hidden border-2 ${
+                  i === 0 ? "border-yellow-500/40" : "border-border"
+                } bg-muted`}>
+                  {entry.avatar_url ? (
+                    <img src={entry.avatar_url} alt={entry.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-sm font-black text-muted-foreground">{entry.name[0]}</span>
+                  )}
+                </div>
+
+                <div className="text-[11px] font-black text-center truncate w-full leading-tight">
+                  {entry.name.split(" ")[0]}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5 tabular-nums">
+                  {entry.help_count} helped
+                </div>
+
+                {/* Monthly contributions */}
+                {entry.monthly_contributions > 0 && (
+                  <div className="text-[10px] text-primary font-bold mt-0.5 tabular-nums">
+                    +{entry.monthly_contributions} this month
+                  </div>
+                )}
+
+                <div className="mt-1.5 scale-[0.88] origin-center">
+                  <TrustTierBadge trustScore={entry.trust_score} helpCount={entry.help_count} size="sm" />
+                </div>
+
+                {/* #1 in neighborhood badge */}
+                {entry.is_neighborhood_top && entry.neighborhood && (
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="mt-1.5 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-[10px] font-black px-1.5 py-0.5 rounded-full text-center leading-tight"
+                  >
+                    #1 in {entry.neighborhood.length > 10 ? entry.neighborhood.slice(0, 10) + "…" : entry.neighborhood}
+                  </motion.div>
+                )}
+
+                <AnimatePresence>
+                  {isChanged && (
+                    <motion.div
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0, opacity: 0 }}
+                      className="mt-1.5 bg-primary/20 text-primary text-[10px] font-black px-1.5 py-0.5 rounded-full"
+                    >
+                      ⚡ Just helped!
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Ranks 4–25 */}
+      {rest.length > 0 && (
+        <div className="space-y-1.5">
+          <AnimatePresence initial={false}>
+            {rest.map(entry => {
+              const isChanged = changedId === entry.id;
+              return (
+                <motion.div
+                  key={entry.id}
+                  layout
+                  layoutId={`lb-${entry.id}`}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ type: "spring", damping: 28, stiffness: 260 }}
+                  onClick={() => setLocation(`/helper/${entry.id}`)}
+                  className={`flex items-center gap-3 p-3 rounded-2xl border transition-colors cursor-pointer active:scale-95 ${
+                    isChanged
+                      ? "bg-primary/12 border-primary/50"
+                      : "bg-card border-border hover:border-primary/30"
+                  }`}
+                >
+                  {/* Rank number */}
+                  <div className="w-7 shrink-0 text-center font-black text-sm text-muted-foreground tabular-nums">
+                    #{entry.rank}
+                  </div>
+
+                  {/* Avatar */}
+                  <div className="w-9 h-9 rounded-full bg-muted border border-border flex items-center justify-center shrink-0 overflow-hidden">
+                    {entry.avatar_url ? (
+                      <img src={entry.avatar_url} alt={entry.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-xs font-black text-muted-foreground">{entry.name[0]}</span>
+                    )}
+                  </div>
+
+                  {/* Name + location + monthly */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <div className="font-black text-sm truncate leading-tight">{entry.name}</div>
+                      {entry.is_neighborhood_top && entry.neighborhood && (
+                        <div className="bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-[10px] font-black px-1 py-px rounded-full shrink-0">
+                          #1
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 mt-0.5 text-[10px] text-muted-foreground">
+                      <MapPin className="w-2.5 h-2.5 shrink-0" />
+                      <span className="truncate">{entry.neighborhood ?? entry.city ?? "Community"}</span>
+                      <span className="text-muted-foreground/40 mx-0.5">·</span>
+                      <span className="tabular-nums">{entry.help_count} helped</span>
+                      {entry.monthly_contributions > 0 && (
+                        <>
+                          <span className="text-muted-foreground/40 mx-0.5">·</span>
+                          <Star className="w-2.5 h-2.5 text-primary shrink-0" />
+                          <span className="text-primary font-semibold tabular-nums">{entry.monthly_contributions}/mo</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Tier + live indicator */}
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <TrustTierBadge trustScore={entry.trust_score} helpCount={entry.help_count} size="sm" />
+                    <AnimatePresence>
+                      {isChanged && (
+                        <motion.span
+                          initial={{ scale: 0, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          exit={{ scale: 0, opacity: 0 }}
+                          className="text-[10px] font-black text-primary bg-primary/10 px-1.5 py-0.5 rounded-full"
+                        >
+                          ⚡ Just helped!
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {entries.length === 0 && (
+        <div className="text-center py-12">
+          <Trophy className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
+          <div className="font-bold text-sm text-muted-foreground">
+            {selectedCity ? `No helpers found in ${selectedCity} yet` : "No helpers yet"}
+          </div>
+          <div className="text-xs text-muted-foreground mt-1">
+            {selectedCity
+              ? "Try a different neighborhood or view all."
+              : "Enable Helper Mode on the map to appear here."}
+          </div>
+          {selectedCity && (
+            <button
+              onClick={() => setSelectedCity("")}
+              className="mt-3 text-xs text-primary font-bold underline"
+            >
+              Show all neighborhoods
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Footer */}
+      <div className="flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground py-1">
+        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse inline-block" />
+        Live updates · Rankings by jobs + trust score · Monthly totals reset on the 1st
+      </div>
+    </div>
+  );
+}
+
+
+
+
+
+import { createRoot } from "react-dom/client";
+import App from "./App";
+import "./index.css";
+import "./i18n";
+import { setAuthTokenGetter } from "@workspace/api-client-react";
+import { getToken } from "@/lib/auth";
+
+// Wire the Niakofa auth token into every customFetch call so generated
+// API client hooks automatically send Authorization: Bearer <token>.
+// This must run before any component is mounted so the first query from
+// React Query already has credentials attached.
+setAuthTokenGetter(getToken);
+
+// SW registration is now handled by useServiceWorkerUpdate (in App.tsx)
+// so we get the app's Toaster context for the "new version" prompt.
+
+createRoot(document.getElementById("root")!).render(<App />);
+
+
+
+
+
+# Niakofa — Community Help Platform
+
+A map-first, pay-it-forward community mutual aid platform for Tarrant County, TX. Residents can request help with groceries, rides, errands, and more; neighbors volunteer as helpers and earn goodwill; all on a live Mapbox map.
+
+## Replit Workflows
+
+| Workflow | Command | Port |
+|---|---|---|
+| `artifacts/api-server: API Server` | `pnpm --filter @workspace/api-server run dev` | 8080 |
+| `artifacts/pay-it-forward: web` | `pnpm --filter @workspace/pay-it-forward run dev` | 5000 |
+| `artifacts/mockup-sandbox: Component Preview Server` | `pnpm --filter @workspace/mockup-sandbox run dev` | — |
+
+> **Prerequisites before workflows will start:** `DATABASE_URL` secret must be set and migrations applied (`pnpm --filter @workspace/db run migrate`). See `SECRETS_REQUIRED.md` for the full list of required secrets.
+
+## Run & Operate
+
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
+- `pnpm --filter @workspace/pay-it-forward run dev` — run the frontend (port 5000)
+- `pnpm run typecheck` — full typecheck across all packages
+- `pnpm run build` — typecheck + build all packages
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
+- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
+- Required env: `DATABASE_URL` — Postgres connection string
+
+## Stack
+
+- pnpm workspaces, Node.js 24, TypeScript 5.9
+- Frontend: React 19 + Vite + Tailwind + Mapbox (react-map-gl) + Framer Motion
+- API: Express 5
+- DB: PostgreSQL + Drizzle ORM
+- Validation: Zod (`zod/v4`), `drizzle-zod`
+- API codegen: Orval (from OpenAPI spec)
+- Build: esbuild (CJS bundle)
+- Payments: Stripe
+- Push notifications: Web Push API + BullMQ workers
+
+## Where things live
+
+- `lib/api-spec/openapi.yaml` — single source of truth for API contracts
+- `lib/db/src/schema/` — Drizzle ORM schema files
+- `lib/api-client-react/src/generated/` — generated React Query hooks (do not hand-edit)
+- `lib/api-zod/src/generated/` — generated Zod validation schemas (do not hand-edit)
+- `artifacts/api-server/src/routes/` — Express route handlers
+- `artifacts/pay-it-forward/src/pages/` — React page components
+- `artifacts/pay-it-forward/src/components/` — Shared UI components
+
+## Architecture decisions
+
+- Contract-first OpenAPI: spec lives in `lib/api-spec/openapi.yaml`, codegen produces both server Zod schemas and client React Query hooks. Never hand-write types that codegen produces.
+- Admin auth uses an `X-Admin-Token` header checked against `ADMIN_SECRET` env var on the backend. Frontend stores the token in sessionStorage with a login screen at `/admin`.
+- Civic resources are seeded in the DB (not fetched live) for 19 Tarrant County organizations across 8 categories.
+- WebSocket hub (`/ws`) broadcasts live events: new requests, helper location updates, new reports, report reviews. The `/ws` path is listed in `artifact.toml` paths alongside `/api`.
+- BullMQ workers handle payouts and pledge reconciliation when `REDIS_URL` is set; falls back to setInterval-based scheduler otherwise.
+- Community Pool (`community_pool_ledger`, migration 0024): signed-amount ledger, balance = SUM. On pay-it-forward completion the pool fronts the helper's payment immediately; the requester's Stripe repayment replenishes the pool (helper is NOT paid twice). Every completed task gets a guaranteed minimum (default $5, tunable via `system_settings.pool_guaranteed_minimum`; `pool_enabled` toggles the feature). Debits serialized with `pg_advisory_xact_lock(727502)`; partial unique indexes prevent double-front/double-minimum per request. Routes in `artifacts/api-server/src/routes/pool.ts`, service in `lib/community-pool.ts`. `/requests/:id/complete` is idempotent (status guard); the Stripe webhook uses a state-transition guard on `payment_transactions` for retry safety.
+- Pool depletion recovery (migration 0025): `payHelperFromPool` returns a typed outcome (`paid`/`insufficient`/`duplicate`/`error`). Insufficient minimums are queued in `pool_pending_minimums` (unique request_id) and backfilled FIFO by `processPendingMinimums()` — triggered on every pool credit (contributions, pledge repayments) plus a 10-min interval worker. Low-balance admin alert (`pool_low_balance_threshold` setting, default $25): warn log + `pool_low_balance` WS + push to `is_admin` users, deduped 6h. Pool stats expose `pending_minimums_count`/`pending_minimums_total`; Community pool tab shows a "Helpers Waiting on the Pool" banner.
+- Task taxonomy: `help_request_category` pg enum has 23 values (migration 0025 added moving_labor, pet_care, childcare, senior_care, yard_work, tutoring, cleaning, meal_prep, paperwork, business_services). Category lists must stay in sync across: openapi.yaml (2 enums), request-new.tsx, recurring.tsx, community.tsx + helper-dashboard.tsx label maps, i18n.ts (en + es).
+- Legal/tax flags (documented in REPLIT_GODFATHER.md changelog, July 2 2026 — NOT legal advice): pool fronting may look like extension-of-credit under TX lending law (mitigants: no interest/fees/enforcement); 1099s are delegated to Stripe Connect Express for payouts, but direct pool credits to a helper nearing $600/yr may create platform 1099-NEC obligations. Consult a lawyer before scaling.
+
+## Product
+
+- **Map screen** (`/`): Live Mapbox map showing open help requests and online helpers in real time. SOS button for emergency requests.
+- **Request new** (`/request/new`): Create a help request with category, urgency, payment type (immediate/pay-it-forward/goodwill).
+- **Active request** (`/request/:id`): Track a live request — claim, en-route, arrived, complete flow.
+- **Community** (`/community`): Leaderboard, stats, civic resources for Tarrant County. Pool tab: Community Pool live stats, transparency ledger, and contribute flow.
+- **Wallet** (`/wallet`): Benevolence wallet, scheduled payments, pay-it-forward pledges.
+- **Profile** (`/profile`): User profile, helper mode toggle, trust score.
+- **Admin** (`/admin`): Token-gated trust & safety report review queue.
+
+## User preferences
+
+- **Multi-agent family covenant (July 2, 2026):** This project is worked on by multiple AI agents — Claude/Father (`CLAUDE.md`), Replit agent/Godfather (`artifacts/nia-service/REPLIT_GODFATHER.md`), Coworker AI/Grandfather (`GRANDFATHER_COWORKER.md`). Never delete the Replit dev database, the Railway production database, Redis, or any code/infrastructure another agent depends on. Full rules in CLAUDE.md → "Multi-agent family covenant — databases".
+
+## Gotchas
+
+- **Fresh/empty Postgres is bootstrapped with one command:** `pnpm --filter @workspace/db run migrate` — run-migrations.mjs detects a fresh DB (no users table), enables postgis, and executes all migrations from 0000. Then `pnpm --filter @workspace/scripts run seed-if-empty` seeds the 19 civic resources. Never drop-and-recreate the DB.
+- After any OpenAPI spec change, always run `pnpm --filter @workspace/api-spec run codegen` before restarting the server — codegen also runs `typecheck:libs`.
+- The Vite dev server has `fs.allow` set to the workspace root (`../..`) so it can serve `lib/api-client-react` source files via the workspace symlink.
+- Admin token is set via the `ADMIN_SECRET` env var (do NOT hardcode the value here — set it in Railway dashboard or Replit Secrets).
+- Mapbox token and Stripe webhook secret are set as shared env vars (see `.env.railway.example`).
+
+## Pointers
+
+- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details

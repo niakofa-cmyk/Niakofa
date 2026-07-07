@@ -5,6 +5,7 @@ import type { WsEvent } from "@/lib/useWebSocket";
 import { TrustTierBadge } from "@/components/TrustTierBadge";
 import { MapPin, Trophy, Flame, Star, TrendingUp, ChevronDown } from "lucide-react";
 import { useLocation } from "wouter";
+import { authHeaders } from "@/lib/auth";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -83,7 +84,7 @@ export default function LiveLeaderboard() {
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
     const cityParam = selectedCity ? `?city=${encodeURIComponent(selectedCity)}` : "";
     setLoading(true);
-    fetch(`${base}/api/leaderboard${cityParam}`)
+    fetch(`${base}/api/leaderboard${cityParam}`, { headers: authHeaders() })
       .then(r => (r.ok ? r.json() : null))
       .then((data: LeaderboardEntry[] | null) => {
         if (data) setEntries(data);
@@ -95,7 +96,7 @@ export default function LiveLeaderboard() {
   // Fetch cities list once
   useEffect(() => {
     const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-    fetch(`${base}/api/leaderboard/cities`)
+    fetch(`${base}/api/leaderboard/cities`, { headers: authHeaders() })
       .then(r => r.ok ? r.json() : [])
       .then((data: string[]) => setCities(data))
       .catch(() => {});

@@ -582,6 +582,36 @@ export function broadcast(event: WsEvent): void {
 }
 
 /**
+ * Broadcast an event only to WebSocket clients that have completed auth
+ * (i.e. sent a valid "register" message with a verified token).
+ *
+ * Use this instead of broadcast() for any events that carry user-identifiable
+ * data (leaderboard entries with names/cities, etc.) so unauthenticated sockets
+ * cannot receive the payload even though they may be connected.
+ *
+ * Implementation: iterate the userSockets registry (populated on successful
+ * token verification in the "register" handler) rather than wss.clients, so
+ * only verified sockets are reached.
+ */
+export function broadcastToAuthenticated(event: WsEvent): void {
+  const msg = JSON.stringify(event);
+  let sent = 0;
+  for (const sockets of userSockets.values()) {
+    sockets.forEach((sock) => {
+      if (sock.readyState === WebSocket.OPEN) {
+        try {
+          sock.send(msg);
+          sent++;
+        } catch (err) {
+          logger.warn({ err, type: event.type }, "WS broadcastToAuthenticated: send failed for one client — skipped");
+        }
+      }
+    });
+  }
+  if (sent > 0) logger.info({ type: event.type, clients: sent }, "WS broadcastToAuthenticated");
+}
+
+/**
  * Sends the same request event under both the standardized type and the legacy
  * type. When they are the same, only a single message is sent.
  *
