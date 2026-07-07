@@ -1029,19 +1029,7 @@ export default function LoginScreen() {
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col">
-      {/* ── Dormant Nia — resting at the top of the login page ─────────────── */}
-      {/* Nia sleeps here until the user wakes her by logging in.               */}
-      <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1, duration: 0.8, ease: "easeOut" }}
-        className="flex justify-center pointer-events-none"
-        style={{ paddingTop: "max(8px, env(safe-area-inset-top))" }}
-      >
-        <NiaOrb size={44} dormant />
-      </motion.div>
-
-      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-6 pb-8">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 pt-12 pb-8">
         {/* ── NiaOrb Hero Element ─────────────────────────────────────────────── */}
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
@@ -1049,38 +1037,51 @@ export default function LoginScreen() {
           transition={{ type: "spring", stiffness: 200, damping: 20 }}
           className="flex flex-col items-center mb-6"
         >
-          {/* NiaOrb — pulsing animated orb */}
-          <div className="relative mb-4">
+          {/* ── Ghost Moon + Active Nia: side-by-side hero pair ─────────────── */}
+          <div className="flex items-center justify-center gap-4 mb-4">
+
+            {/* Ghost moon — dormant Nia resting beside the active orb */}
+            {/* Constrained to a 96×96 layout box matching the active orb;   */}
+            {/* NiaOrb's glow halo bleeds out via overflow:visible.          */}
             <motion.div
-              animate={{
-                scale: [1, 1.08, 1],
-                opacity: [0.7, 1, 0.7],
-              }}
-              transition={{
-                duration: 3,
-                repeat: Infinity,
-                ease: "easeInOut",
-              }}
-              className="w-24 h-24 rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 blur-md absolute inset-0"
-            />
-            <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 flex items-center justify-center shadow-[0_0_60px_rgba(0,150,255,0.4)] border border-white/20">
-              <Sparkles className="w-10 h-10 text-white drop-shadow-lg" />
+              initial={{ opacity: 0, x: -14 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.25, duration: 0.8, ease: "easeOut" }}
+              className="pointer-events-none flex-shrink-0"
+              style={{ width: 96, height: 96, position: "relative", overflow: "visible" }}
+            >
+              <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}>
+                <NiaOrb size={72} dormant />
+              </div>
+            </motion.div>
+
+            {/* Active Nia — pulsing orb */}
+            <div className="relative flex-shrink-0">
+              <motion.div
+                animate={{ scale: [1, 1.08, 1], opacity: [0.7, 1, 0.7] }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                className="w-24 h-24 rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 blur-md absolute inset-0"
+              />
+              <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 flex items-center justify-center shadow-[0_0_60px_rgba(0,150,255,0.4)] border border-white/20">
+                <Sparkles className="w-10 h-10 text-white drop-shadow-lg" />
+              </div>
+              {/* Orbiting dots */}
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                className="absolute inset-0"
+              >
+                <div className="w-2 h-2 rounded-full bg-cyan-300 absolute -top-1 left-1/2 -translate-x-1/2 shadow-[0_0_8px_rgba(0,255,255,0.8)]" />
+              </motion.div>
+              <motion.div
+                animate={{ rotate: -360 }}
+                transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
+                className="absolute inset-[-8px]"
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-purple-300 absolute bottom-0 left-1/4 shadow-[0_0_6px_rgba(200,100,255,0.8)]" />
+              </motion.div>
             </div>
-            {/* Orbiting dots */}
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
-              className="absolute inset-0"
-            >
-              <div className="w-2 h-2 rounded-full bg-cyan-300 absolute -top-1 left-1/2 -translate-x-1/2 shadow-[0_0_8px_rgba(0,255,255,0.8)]" />
-            </motion.div>
-            <motion.div
-              animate={{ rotate: -360 }}
-              transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
-              className="absolute inset-[-8px]"
-            >
-              <div className="w-1.5 h-1.5 rounded-full bg-purple-300 absolute bottom-0 left-1/4 shadow-[0_0_6px_rgba(200,100,255,0.8)]" />
-            </motion.div>
+
           </div>
 
           {/* Animated greeting */}
