@@ -19,13 +19,24 @@ import { logger } from "./logger";
 // does not cause ioredis to attempt a connection to an empty host.
 // Strip any accidental CLI prefix (e.g. "redis-cli --tls -u redis://...") so
 // only the actual redis:// or rediss:// URL is passed to ioredis.
-function parseRedisUrl(raw: string): string | undefined {
+export function parseRedisUrl(raw: string): string | undefined {
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
   // Strip any accidental CLI prefix (e.g. "redis-cli --tls -u redis://...")
   const match = trimmed.match(/(rediss?:\/\/\S+)/);
   const url = match ? match[1] : trimmed;
   if (!url) return undefined;
+  // Reject anything that doesn't look like a redis URL — placeholders like
+  // "${{Redis.REDIS_URL}}", "redis-url", or a bare hostname will pass the
+  // non-empty check above but would make ioredis attempt a nonsense connection,
+  // silently appearing "configured" while jobs pile up unprocessed.
+  if (!url.startsWith("redis://") && !url.startsWith("rediss://")) {
+    logger.warn(
+      { hint: "value does not start with redis:// or rediss://" },
+      "queue: REDIS_URL is set but is not a valid redis URL — BullMQ queues disabled",
+    );
+    return undefined;
+  }
   // Upstash (and many cloud Redis providers) require TLS even when the URL
   // starts with redis:// rather than rediss://. Upgrade to rediss:// so
   // ioredis enables the TLS layer automatically.

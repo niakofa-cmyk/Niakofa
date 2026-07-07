@@ -162,10 +162,16 @@ router.get("/requests/nearby", async (req, res) => {
   // limit: caller can request up to 200 rows; default 100.
   // This prevents a hard ceiling from silently hiding valid nearby requests in
   // dense areas while still bounding payload size.
-  const limit = Math.min(
-    req.query.limit ? parseInt(req.query.limit as string, 10) || 100 : 100,
-    200,
-  );
+  // Bug fixed: parseInt("abc") returns NaN, and NaN || 100 silently returns 100
+  // instead of a 400, giving callers wrong results they can't detect.
+  let limit = 100;
+  if (req.query.limit !== undefined) {
+    const parsedLimit = parseInt(req.query.limit as string, 10);
+    if (isNaN(parsedLimit) || parsedLimit < 1) {
+      return res.status(400).json({ error: "limit must be a positive integer" });
+    }
+    limit = Math.min(parsedLimit, 200);
+  }
 
   const radiusMeters = radius * 1609.344;
 
@@ -1862,6 +1868,23 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
 
   // 'repaid' = system-closed after full self-service repayment (NOT 'forgiven' — that's admin charity)
   const fullyPaid = updated.pledge_status === "repaid";
+
+  // Reward repayment with a visible trust-score boost so repayment history shows
+  // up in trust tiers — not just as protection against the -10 default penalty.
+  // +5 on full repayment; +2 on partial/reinstatement from defaulted.
+  // Both are capped at 100; the 80-cap only applies to the completion-volume bump.
+  if (fullyPaid) {
+    await db
+      .update(usersTable)
+      .set({ trust_score: sql`LEAST(100, COALESCE(${usersTable.trust_score}, 5) + 5)` })
+      .where(eq(usersTable.id, requesterId));
+  } else if (updated.pledge_status === "active") {
+    // Reinstated from defaulted — partial signal, smaller boost
+    await db
+      .update(usersTable)
+      .set({ trust_score: sql`LEAST(100, COALESCE(${usersTable.trust_score}, 5) + 2)` })
+      .where(eq(usersTable.id, requesterId));
+  }
 
   logger.info(
     { request_id: requestId, requester_id: requesterId, amount: safeAmount, new_status: updated.pledge_status, fully_paid: fullyPaid },

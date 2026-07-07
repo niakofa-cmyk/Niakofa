@@ -51,6 +51,7 @@ import { logger } from "../lib/logger";
 import { paymentLimiter } from "../middlewares/rate-limit";
 import { enqueueCashoutRetry } from "../lib/queue";
 import { buildCashoutTransferParams, cashoutIdempotencyKey } from "../lib/stripe-cashout";
+import { getSystemSetting } from "../lib/db-helpers";
 
 const router = Router();
 
@@ -74,8 +75,11 @@ router.post(
     }
 
     const userId = req.authenticatedUserId!;
-    const body = req.body as { amount?: number; description?: string };
+    const body = req.body as { amount?: number; description?: string; method?: string };
     const requestedAmount = typeof body.amount === "number" ? body.amount : null;
+    // method: 'instant' requires instant_payouts_enabled system setting and a
+    // debit card on the helper's Stripe Connect account. Defaults to 'standard'.
+    const requestedMethod = body.method === "instant" ? "instant" : "standard";
 
     if (!requestedAmount || requestedAmount <= 0) {
       return res.status(400).json({ error: "amount must be a positive number (USD)" });
@@ -171,6 +175,34 @@ router.post(
 
     const amountCents = Math.round(requestedAmount * 100);
 
+    // ── Instant payout eligibility check (before Phase 2) ─────────────────────
+    // If the caller requested method='instant', verify the platform setting AND
+    // that the Connect account supports instant payouts. If either check fails
+    // we degrade gracefully to 'standard' rather than rejecting the cashout
+    // entirely — the user's money still moves, just on the regular T+2 schedule.
+    let effectiveMethod = requestedMethod;
+    if (requestedMethod === "instant") {
+      const settingVal = await getSystemSetting("instant_payouts_enabled").catch(() => null);
+      if (settingVal !== "true") {
+        effectiveMethod = "standard";
+        logger.info({ user_id: userId }, "wallet cashout: instant_payouts_enabled=false — degrading to standard");
+      } else {
+        // Verify the connected account has instant payout capability
+        try {
+          const acctDetails = await stripe.accounts.retrieve(stripeAccountId);
+          const supportsInstant = acctDetails.capabilities?.transfers === "active" &&
+            (acctDetails as unknown as Record<string, unknown>)["instant_payouts_enabled"] === true;
+          if (!supportsInstant) {
+            effectiveMethod = "standard";
+            logger.info({ user_id: userId, stripe_account_id: stripeAccountId }, "wallet cashout: Connect account does not support instant payouts — degrading to standard");
+          }
+        } catch {
+          effectiveMethod = "standard";
+          logger.warn({ user_id: userId }, "wallet cashout: could not verify instant payout capability — degrading to standard");
+        }
+      }
+    }
+
     // ── Phase 2: Stripe transfer (outside DB transaction) ─────────────────────
     // Balance is already decremented. If this fails, we must refund it.
     let transfer: Stripe.Transfer;
@@ -238,6 +270,40 @@ router.post(
       });
     }
 
+    // ── Phase 2b: Stripe Instant Payout (optional, non-fatal on failure) ─────────
+    // If the caller requested method='instant' and eligibility checks passed,
+    // create a Stripe Instant Payout on the Connect account to push funds to
+    // the helper's linked debit card (~30 min) instead of T+2 bank transfer.
+    //
+    // Critically: the transfer above already succeeded — money is in the
+    // Connect account. An instant payout failure is non-fatal: the user still
+    // gets their money via the standard T+2 schedule. Never roll back the
+    // transfer because the instant payout failed.
+    let instantPayoutId: string | null = null;
+    if (effectiveMethod === "instant") {
+      try {
+        const payout = await stripe.payouts.create(
+          {
+            method: "instant",
+            amount: amountCents,
+            currency: "usd",
+            description: `Niakofa instant payout — cashout #${cashoutRowId}`,
+            metadata: { cashout_id: String(cashoutRowId), user_id: String(userId) },
+          },
+          { stripeAccount: stripeAccountId }
+        );
+        instantPayoutId = payout.id;
+        logger.info({ user_id: userId, payout_id: payout.id, amount_cents: amountCents }, "wallet cashout: instant payout created");
+      } catch (payoutErr) {
+        // Non-fatal — log for visibility but proceed with standard timing
+        logger.warn(
+          { payoutErr, user_id: userId, stripe_account_id: stripeAccountId, amount_cents: amountCents },
+          "wallet cashout: instant payout failed — funds remain in Connect account on standard T+2 schedule"
+        );
+        effectiveMethod = "standard";
+      }
+    }
+
     // ── Phase 3: Mark completed and record ledger ──────────────────────────────
     // Balance was already decremented in Phase 1 — no balance change here.
     // State guard (WHERE state='pending') makes this idempotent for retries.
@@ -297,7 +363,7 @@ router.post(
     });
 
     logger.info(
-      { user_id: userId, cashout_id: cashoutRowId, transfer_id: transfer.id, amount: requestedAmount },
+      { user_id: userId, cashout_id: cashoutRowId, transfer_id: transfer.id, amount: requestedAmount, method: effectiveMethod, payout_id: instantPayoutId },
       "wallet cashout: completed successfully"
     );
 
@@ -306,6 +372,11 @@ router.post(
       transferId: transfer.id,
       amount: requestedAmount,
       newBalance: Math.max(0, walletBalanceBefore - requestedAmount),
+      // payout_method reflects what actually happened after eligibility checks.
+      // 'instant' means funds reach a linked debit card in ~30 minutes.
+      // 'standard' means funds arrive via normal T+2 bank transfer.
+      payout_method: effectiveMethod,
+      payout_id: instantPayoutId,
     });
   }
 );
