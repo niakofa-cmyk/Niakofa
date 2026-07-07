@@ -8,6 +8,7 @@ import { injectLocation, buildLocationPrefix, buildAppContextPrefix, LocationCon
 import { pino } from "pino";
 import { parseOptionalAuth } from "../lib/auth.js";
 import { getFreshKnowledge } from "../workers/continuous-learning-worker.js";
+import { buildCommunityAwarenessPrefix } from "../lib/community-context.js";
 
 const logger = pino({ level: "info" });
 const router = Router();
@@ -153,6 +154,13 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   const knowledgePrefix = await getFreshKnowledge().catch(() => "");
   const knowledgePrefixBlock = knowledgePrefix ? `${knowledgePrefix}\n\n` : "";
 
+  // Inject live community awareness — open request count + online helpers.
+  // Uses GPS coords if available, falls back to IP geo coords.
+  const communityPrefix = await buildCommunityAwarenessPrefix({
+    lat: gpsLat ?? ((req as any).locationContext as LocationContext | undefined)?.lat ?? null,
+    lon: gpsLon ?? ((req as any).locationContext as LocationContext | undefined)?.lon ?? null,
+  }).catch(() => "");
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -186,6 +194,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
           memoryPrefix +
           softPrefix +
           knowledgePrefixBlock +
+          communityPrefix +
           buildFoodIntentPrefix(foodSignal, foodSignalCount, gpsLat, gpsLon) +
       buildLocationPrefix((req as any).locationContext as LocationContext | undefined) +
           buildAppContextPrefix({
