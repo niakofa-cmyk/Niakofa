@@ -206,9 +206,10 @@ export async function getGuaranteedMinimum(
 }
 
 export async function getPoolBalance(): Promise<number> {
-  const [row] = await db
+  const result = await db
     .select({ balance: sql<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` })
     .from(communityPoolLedgerTable);
+  const row = Array.isArray(result) ? result[0] : undefined;
   return row?.balance ?? 0;
 }
 
@@ -472,10 +473,11 @@ export async function maybeAlertLowBalance(): Promise<void> {
     logger.warn({ balance, threshold }, "COMMUNITY POOL LOW BALANCE — guaranteed minimums at risk");
     broadcast({ type: "pool_low_balance", payload: { balance, threshold } });
 
-    const admins = await db
+    const adminsResult = await db
       .select({ id: usersTable.id })
       .from(usersTable)
       .where(eq(usersTable.is_admin, true));
+    const admins = Array.isArray(adminsResult) ? adminsResult : [];
     // Lazy import avoids a circular dependency (routes/push imports lib modules)
     const { sendPushToUser } = await import("../routes/push");
     for (const admin of admins) {

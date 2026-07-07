@@ -58,6 +58,12 @@ jest.unstable_mockModule("@workspace/db", () => {
     then: jest.fn().mockImplementation((resolve: any, reject: any) =>
       Promise.resolve([]).then(resolve, reject)
     ),
+    // db.transaction is used by community-pool.ts payHelperFromPool. The mock
+    // runs the callback with a proxy of mockDb so advisory-lock and insert/update
+    // chains inside the transaction work the same way as the top-level mock.
+    transaction: jest.fn().mockImplementation(async (cb: (tx: any) => Promise<any>) => {
+      return cb(mockDb);
+    }),
   };
 
   (mockDb.limit as jest.Mock).mockImplementation(() => Promise.resolve([]));
@@ -228,6 +234,8 @@ beforeEach(() => {
     Promise.resolve([]).then(resolve, reject)
   );
   (db.execute as jest.Mock).mockReset().mockResolvedValue({ rows: [] });
+  // Re-establish transaction mock so payHelperFromPool works in every test.
+  (db.transaction as jest.Mock).mockReset().mockImplementation(async (cb: (tx: any) => Promise<any>) => cb(db));
 });
 
 // ── Full Request Lifecycle Integration Tests ──────────────────────────────────

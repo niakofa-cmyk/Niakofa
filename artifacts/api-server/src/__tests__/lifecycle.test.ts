@@ -35,6 +35,13 @@ jest.unstable_mockModule("@workspace/db", () => {
     returning: jest.fn(),
     groupBy: jest.fn().mockReturnValue([]),
     catch: jest.fn().mockResolvedValue([null]),
+    // db.transaction is used by community-pool.ts payHelperFromPool.
+    transaction: jest.fn().mockImplementation(async (cb: (tx: any) => Promise<any>) => cb(mockDb)),
+    // Make the mock thenable so chains ending on .where() can be awaited.
+    then: jest.fn().mockImplementation((resolve: any, reject: any) =>
+      Promise.resolve([]).then(resolve, reject)
+    ),
+    execute: jest.fn().mockResolvedValue({ rows: [] }),
   };
 
   (mockDb.limit as jest.Mock).mockImplementation(() => Promise.resolve([]));
