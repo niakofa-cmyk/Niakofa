@@ -248,7 +248,17 @@ router.get("/requests/nearby", async (req, res) => {
   }));
 });
 
-router.get("/requests", async (req, res) => {
+router.get("/requests", requireAuth, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+
+  // Look up admin flag once — used below to decide whether to unfuzz coordinates.
+  const [callerRow] = await db
+    .select({ is_admin: usersTable.is_admin })
+    .from(usersTable)
+    .where(eq(usersTable.id, callerId))
+    .limit(1);
+  const callerIsAdmin = callerRow?.is_admin === true;
+
   const params = GetRequestsQueryParams.safeParse({
     status: req.query.status,
     lat: req.query.lat ? parseFloat(req.query.lat as string) : undefined,
@@ -316,12 +326,17 @@ router.get("/requests", async (req, res) => {
   const userMap = Object.fromEntries(users.map(u => [u.id, u]));
 
   return res.json(rows.map(r => {
-    // Fuzz coordinates for open requests — claimed/completed rows already
-    // belong to the helper/requester relationship, no need to hide them.
-    const isOpen = r.status === "open";
-    const { lat: fLat, lng: fLng } = isOpen
-      ? fuzzCoordinates(r.lat, r.lng, r.id, r.urgency)
-      : { lat: r.lat, lng: r.lng };
+    // Only the requester, assigned helper, and admins see exact coordinates.
+    // Every other authenticated caller gets the same ~100m jitter regardless
+    // of request status — the old "no fuzzing for claimed/completed" logic was
+    // the data-exposure gap: anyone could query ?status=completed and harvest
+    // real names tied to exact home coordinates.
+    const isParticipant =
+      r.requester_id === callerId ||
+      (r.helper_id != null && r.helper_id === callerId);
+    const { lat: fLat, lng: fLng } = (isParticipant || callerIsAdmin)
+      ? { lat: r.lat, lng: r.lng }
+      : fuzzCoordinates(r.lat, r.lng, r.id, r.urgency);
     return {
       ...r,
       lat: fLat,

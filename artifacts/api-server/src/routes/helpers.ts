@@ -7,6 +7,32 @@ import { eq, and, sql, inArray } from "drizzle-orm";
 import { GetOnlineHelpersQueryParams } from "@workspace/api-zod";
 import { computeMatchScore } from "../lib/matching";
 
+/**
+ * Fuzz helper live-location by ~100 m — same order of magnitude as the
+ * request-coordinate jitter applied in requests.ts.
+ *
+ * Design choice: helpers who opt into "share my live location" expect a
+ * rideshare-style approximate dot, not their exact GPS fix (which is
+ * home-address-precision when they toggle on at home).  The fuzz key is the
+ * helper's user ID so the same helper always maps to the same offset within a
+ * session — the dot doesn't jump around on repeated fetches.
+ *
+ * Product note: if a future trust/verification use case requires exact
+ * precision, add a separate opt-in flag (e.g. privacy_exact_location) rather
+ * than removing this fuzz for everyone.
+ */
+function fuzzHelperCoords(lat: number, lng: number, userId: number): { lat: number; lng: number } {
+  // ~100 m ≈ 0.001 degrees latitude
+  const h1 = Math.abs(Math.sin(userId * 127.1 + 43758.5453) * 43758.5453);
+  const h2 = Math.abs(Math.sin(userId * 311.7 + 78231.1234) * 78231.1234);
+  const fuzzLat = ((h1 % 10000) / 10000 - 0.5) * 0.002;
+  const fuzzLng = ((h2 % 10000) / 10000 - 0.5) * 0.002 / Math.cos(lat * (Math.PI / 180));
+  return {
+    lat: Math.round((lat + fuzzLat) * 1e5) / 1e5,
+    lng: Math.round((lng + fuzzLng) * 1e5) / 1e5,
+  };
+}
+
 const router = Router();
 
 router.get("/helpers/online", requireAuth, async (req, res) => {
@@ -58,12 +84,13 @@ router.get("/helpers/online", requireAuth, async (req, res) => {
       const dist = location ? distanceMiles(location.lat, location.lng, h.lat!, h.lng!) : null;
       // Wait-time estimate: 3 min/mile walking baseline, adjusted by trust score
       const eta_minutes = dist != null ? Math.round(dist * 3) : null;
+      const { lat: fLat, lng: fLng } = fuzzHelperCoords(h.lat!, h.lng!, h.id);
       return {
         id: h.id,
         name: h.name,
         avatar_url: h.avatar_url,
-        lat: h.lat!,
-        lng: h.lng!,
+        lat: fLat,
+        lng: fLng,
         heading: h.heading,
         trust_score: h.trust_score,
         help_count: h.help_count,

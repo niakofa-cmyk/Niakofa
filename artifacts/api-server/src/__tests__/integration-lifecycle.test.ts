@@ -551,9 +551,12 @@ describe("GET /requests Pagination", () => {
       lng: -96.7970,
     }));
 
+    // is_admin lookup (requireAuth has no DB call — it only checks req.authenticatedUserId)
+    (db.limit as jest.Mock).mockResolvedValueOnce([{ is_admin: false }]);
+    // main requests query
     (db.limit as jest.Mock).mockResolvedValueOnce(requests.slice(0, 10));
 
-    const res = await request(app).get("/api/requests");
+    const res = await request(app).get("/api/requests").set("Authorization", bearerToken(10));
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -570,16 +573,22 @@ describe("GET /requests Pagination", () => {
       lng: -96.7970,
     }));
 
+    // is_admin lookup (requireAuth has no DB call)
+    (db.limit as jest.Mock).mockResolvedValueOnce([{ is_admin: false }]);
+    // main requests query
     (db.limit as jest.Mock).mockResolvedValueOnce(requests);
 
-    const res = await request(app).get("/api/requests?limit=5");
+    const res = await request(app).get("/api/requests?limit=5").set("Authorization", bearerToken(10));
 
     expect(res.status).toBe(200);
     expect(res.body.length).toBe(5);
   });
 
   it("enforces maximum limit of 100", async () => {
-    const res = await request(app).get("/api/requests?limit=200");
+    // is_admin lookup runs before the limit validation early-return (requireAuth has no DB call)
+    (db.limit as jest.Mock).mockResolvedValueOnce([{ is_admin: false }]);
+
+    const res = await request(app).get("/api/requests?limit=200").set("Authorization", bearerToken(10));
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/maximum limit/i);

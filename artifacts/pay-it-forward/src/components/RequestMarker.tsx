@@ -4,13 +4,23 @@ import { useState } from "react";
 
 interface RequestMarkerProps {
   request: HelpRequest;
-  /** Whether the helper's skills match this request category */
-  skillMatch?: boolean;
-  /** Whether the request is outside the helper's normal service radius */
+  /**
+   * Whether the request is outside the helper's normal service radius.
+   * When true (and not an emergency) a dashed ring is drawn around the pin
+   * to signal "reachable but outside your usual area."
+   * Computed in map.tsx from the helper's radiusMiles vs haversine distance.
+   */
   outsideServiceArea?: boolean;
+  /**
+   * Skill/category match indicator (reserved for future Local-First Dispatch).
+   * Not yet wired — helper category preferences are not yet returned by the
+   * user-settings API.  Prop is accepted but currently unused so the UI
+   * remains correct when it is eventually wired.
+   */
+  skillMatch?: boolean;
 }
 
-export function RequestMarker({ request, skillMatch: _skillMatch, outsideServiceArea }: RequestMarkerProps) {
+export function RequestMarker({ request, outsideServiceArea, skillMatch: _skillMatch }: RequestMarkerProps) {
   const [tapped, setTapped] = useState(false);
   const getColors = () => {
     switch (request.urgency) {

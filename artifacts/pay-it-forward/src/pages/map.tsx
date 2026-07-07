@@ -36,6 +36,17 @@ import { OrientationToggle } from "@/components/OrientationToggle";
 // giving the full-rich pin UX (icons, tooltips, claim buttons).
 const CLUSTER_MAX_ZOOM = 12;
 
+/** Haversine distance in miles — used for outsideServiceArea computation. */
+function haversineDistanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 3958.8;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function pickBestMatch(requests: HelpRequest[]): HelpRequest | null {
   if (requests.length === 0) return null;
   const urgencyScore: Record<string, number> = { emergency: 100, high: 50, medium: 20, low: 5 };
@@ -218,7 +229,18 @@ export default function MapScreen() {
         return prev.map(h => h.id === loc.id ? { ...h, lat: loc.lat, lng: loc.lng, heading: loc.heading ?? h.heading } : h);
       });
     } else if (event.type === "helper_online") {
-      setWsConnected(true);
+      // Backend broadcasts { id, name, lat, lng } — add/refresh the helper's
+      // dot immediately so the map reflects the real online set without waiting
+      // for the next GET /helpers/online poll.
+      const newHelper = event.payload as HelperLocation;
+      if (newHelper?.id != null && newHelper.lat != null && newHelper.lng != null) {
+        setLiveHelpers(prev => {
+          if (prev.find(h => h.id === newHelper.id)) {
+            return prev.map(h => h.id === newHelper.id ? { ...h, ...newHelper } : h);
+          }
+          return [...prev, newHelper];
+        });
+      }
     } else if (event.type === "helper_offline") {
       const loc = event.payload as { id: number };
       setLiveHelpers(prev => prev.filter(h => h.id !== loc.id));
@@ -580,6 +602,29 @@ export default function MapScreen() {
               }}
               paint={{ "text-color": "#000" }}
             />
+            {/* Unclustered single points — rendered when a request has no
+                neighbor within the cluster radius (typically isolated open
+                requests in quiet areas or when user first loads without GPS).
+                Without this layer these points are invisible below zoom 12
+                because the React <Marker> pins only mount above CLUSTER_MAX_ZOOM. */}
+            <Layer
+              id="unclustered-point"
+              type="circle"
+              filter={["!", ["has", "point_count"]]}
+              paint={{
+                "circle-color": [
+                  "case",
+                  ["==", ["get", "urgency"], "emergency"], "#ef4444",
+                  ["==", ["get", "urgency"], "high"],      "#f97316",
+                  ["==", ["get", "urgency"], "medium"],    "#eab308",
+                  "#22d3ee",
+                ],
+                "circle-radius": 10,
+                "circle-stroke-width": 2.5,
+                "circle-stroke-color": "#fff",
+                "circle-opacity": 0.92,
+              }}
+            />
           </Source>
         )}
 
@@ -595,7 +640,14 @@ export default function MapScreen() {
         {/* duplicate pins — cluster at ≤ 12, React Markers at > 12.           */}
         {showIndividualMarkers && openRequests.map(r => (
           <Marker key={r.id} longitude={r.lng} latitude={r.lat} anchor="bottom">
-            <RequestMarker request={r} />
+            <RequestMarker
+              request={r}
+              outsideServiceArea={
+                helperModeActive &&
+                myLocation != null &&
+                haversineDistanceMiles(myLocation.lat, myLocation.lng, r.lat, r.lng) > radiusMiles
+              }
+            />
           </Marker>
         ))}
 
