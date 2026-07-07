@@ -24,7 +24,7 @@ import { broadcast, broadcastRequestEvent, sendToUser, sendToRequestParticipants
 import { requestCreationLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser, type PushPayload } from "./push";
-import { payHelperFromPool, getGuaranteedMinimum, isPoolEnabled, queuePendingMinimum, maybeAlertLowBalance } from "../lib/community-pool";
+import { payHelperFromPool, getGuaranteedMinimum, isPoolEnabled, queuePendingMinimum, maybeAlertLowBalance, getHourlyMinimumRate } from "../lib/community-pool";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
 import { getTrustTier, getEffectiveTier, meetsQualityGate, TIER_RANK, tierAtLeast, isSensitiveCategory } from "@workspace/trust-tiers";
 import type { TrustTier } from "@workspace/trust-tiers";
@@ -632,7 +632,33 @@ router.post("/requests", requireAuth, requestCreationLimiter, async (req, res) =
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any).returning();
 
-  const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
+  // ── Livable-wage floor transparency ────────────────────────────────────────
+  // Compute the expected pool-backed floor for this request so the frontend
+  // can show a helpful subsidy notice: "The Community Pool will top your
+  // helper's pay up to $X (livable wage floor)." This is non-blocking —
+  // the request is created regardless of whether the offered amount meets
+  // the floor. The pool guarantees the floor at completion time.
+  let livableWageInfo: { floor: number; hourly_rate: number; subsidy_expected: boolean } | null = null;
+  if (parsed.data.payment_type === "pay_it_forward" && estimatedHours && estimatedHours > 0) {
+    try {
+      const hourlyRate = await getHourlyMinimumRate();
+      const floor = Math.round(estimatedHours * hourlyRate * 100) / 100;
+      const offeredAmount = (parsed.data.pledge_amount ?? parsed.data.pay_it_forward_amount) ?? 0;
+      livableWageInfo = { floor, hourly_rate: hourlyRate, subsidy_expected: offeredAmount < floor };
+    } catch {
+      // non-fatal — omit wage info from response
+    }
+  }
+
+  const enriched = {
+    ...request,
+    requester_name: null,
+    requester_avatar: null,
+    helper_name: null,
+    distance_miles: null,
+    estimated_duration_min: null,
+    ...(livableWageInfo ? { livable_wage_info: livableWageInfo } : {}),
+  };
   broadcastRequestEvent("REQUEST_CREATED", "new_request", enriched);
 
   // Push notifications — geolocation-targeted when request has coordinates
@@ -1438,7 +1464,7 @@ router.post("/requests/:id/rate", requireAuth, async (req, res) => {
 
   const bParsed = RateRequestBody.safeParse(req.body);
   if (!bParsed.success) {
-    return res.status(400).json({ error: "Invalid rating", details: bParsed.error.issues });
+    return res.status(400).json({ error: "Invalid rating", details: bParsed.error?.issues });
   }
 
   const raterId = req.authenticatedUserId!;

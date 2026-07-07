@@ -175,6 +175,8 @@ interface PledgePoolData {
   pending: number;
   completion_rate: number;
   daily_volume: Array<{ day: string; count: number }>;
+  avg_effective_hourly_rate: number;
+  hourly_rate_sample_size: number;
 }
 
 interface NiaCostDailyEntry {
@@ -500,6 +502,8 @@ function PledgePoolDashboard() {
               ? Math.round((d.pledge_pool.total_paid / d.pledge_pool.total_pledged) * 100)
               : 0,
             daily_volume: d.daily_request_volume || [],
+            avg_effective_hourly_rate: d.helper_compensation?.avg_effective_hourly_rate ?? 0,
+            hourly_rate_sample_size: d.helper_compensation?.sample_size ?? 0,
           });
         }
         setLoading(false);
@@ -521,7 +525,26 @@ function PledgePoolDashboard() {
 
   return (
     <div className="space-y-4">
-      <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1 mb-2">Pledge Pool Health</div>
+      {/* Helper Economics — livable-wage proof metric */}
+      <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1 mb-2">Helper Economics</div>
+      <div className="grid grid-cols-2 gap-3">
+        <KpiTile
+          label="Avg Effective Rate"
+          value={data.avg_effective_hourly_rate > 0 ? `$${data.avg_effective_hourly_rate.toFixed(2)}/hr` : "—"}
+          sub={data.hourly_rate_sample_size > 0 ? `${data.hourly_rate_sample_size} completed tasks` : "no data yet"}
+          icon={TrendingUp}
+          color={data.avg_effective_hourly_rate >= 15 ? "text-green-500" : data.avg_effective_hourly_rate > 0 ? "text-yellow-500" : "text-muted-foreground"}
+        />
+        <KpiTile
+          label="Livable Wage Target"
+          value="$15.00/hr"
+          sub="TX floor · configurable"
+          icon={DollarSign}
+          color="text-primary"
+        />
+      </div>
+
+      <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1 mb-2 mt-2">Pledge Pool Health</div>
       <div className="grid grid-cols-2 gap-3">
         <KpiTile label="Total Pledged" value={`$${data.total_pledged.toLocaleString()}`} sub="community commitments" icon={HandHeart} color="text-primary" />
         <KpiTile label="Total Paid" value={`$${data.total_paid.toLocaleString()}`} sub="honored contributions" icon={DollarSign} color="text-green-500" />
