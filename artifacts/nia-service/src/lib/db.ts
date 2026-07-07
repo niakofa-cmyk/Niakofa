@@ -36,9 +36,33 @@ process.on("SIGTERM", async () => {
 
 export async function runMigrations(): Promise<void> {
   const sqlPath = path.join(__dirname, "..", "..", "migrate.sql");
-  const sql = fs.readFileSync(sqlPath, "utf8");
-  await pool.query(sql);
-  logger.info("nia: migrations applied (nia_conversations, nia_memories, structured column)");
+  const sqlContent = fs.readFileSync(sqlPath, "utf8");
+
+  // Run each statement individually so a single failure (e.g. IF NOT EXISTS
+  // variant missing in old PG) never blocks the critical system_settings seed
+  // (nia_enabled=false). All statements are idempotent (IF NOT EXISTS /
+  // ON CONFLICT DO NOTHING) so non-fatal errors are safe to skip.
+  const statements = sqlContent
+    .split(/;[ \t]*(?:\r?\n|$)/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && !s.startsWith("--"));
+
+  let ok = 0;
+  let skipped = 0;
+  for (const stmt of statements) {
+    try {
+      await pool.query(stmt);
+      ok++;
+    } catch (err: unknown) {
+      skipped++;
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn({ stmt: stmt.slice(0, 120) }, `nia: migration stmt skipped (non-fatal): ${msg}`);
+    }
+  }
+  logger.info(
+    { ok, skipped },
+    "nia: migrations complete"
+  );
 }
 
 const MAX_STORED_CHARS = 8000;

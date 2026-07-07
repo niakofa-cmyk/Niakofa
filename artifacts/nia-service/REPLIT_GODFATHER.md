@@ -564,3 +564,28 @@ Three privacy / sustainability features shipped and confirmed running clean.
 
 **WS events added:**
 - `wallet_cashout` and `wallet_cashout_reversed` added to `WsEventType` in ws-hub.ts.
+
+---
+
+## Session — July 7, 2026 (Godfather)
+
+### Postgres production errors fixed (critical)
+
+**Bug 1 — `DATE(created_at)` non-IMMUTABLE index crash:**
+- `nia_cost_log_daily_idx` used `DATE(created_at)` in the index expression. PostgreSQL rejects this because `TIMESTAMPTZ → DATE` conversion is timezone-dependent (NOT IMMUTABLE). The entire nia-service `migrate.sql` runs as a single `pool.query()` call — when this statement failed, ALL subsequent statements (including `CREATE TABLE system_settings` and the `INSERT INTO system_settings … VALUES ('nia_enabled','false',…) ON CONFLICT DO NOTHING`) never executed. This means `nia_enabled=false` was never seeded in production. Fixed: index changed to `(created_at DESC, model)`.
+
+**Bug 2 — runMigrations() all-or-nothing execution:**
+- `runMigrations()` in `nia-service/src/lib/db.ts` called `pool.query(entireFile)` — one failure blocked all subsequent idempotent statements. Refactored to split the SQL on `;\n` and run each statement individually with per-statement error handling. Non-fatal errors are warned and skipped; subsequent statements always run.
+
+**Bug 3 — migration 0004 `geography(Point, 4326)` on PostGIS-less Railway:**
+- Railway PostgreSQL 18 does not have PostGIS installed. `lib/db/migrations/0004_slow_may_parker.sql` blindly ran `ALTER TABLE … ADD COLUMN … geography(Point, 4326)` which crashes on fresh DB provisioning. Wrapped in a `DO $$ BEGIN IF EXISTS (pg_available_extensions WHERE name='postgis') … END $$` block so it silently skips when PostGIS is absent. The api-server already falls back to Haversine for distance calculations.
+
+**Bug 4 — duplicate index:**
+- `nia_cost_log_daily_idx` after the DATE() fix was identical to `nia_cost_log_user_idx` — both `(user_id, created_at)`. Changed `daily_idx` to `(created_at DESC, model)` which actually serves the admin daily-cost-by-model grouping queries.
+
+### Other infrastructure hardening (same session)
+- `api-server/build.mjs`: `sourcemap` now conditional — `"linked"` in dev, `false` in production (was always `"linked"`, exposing TypeScript source in every Railway deploy).
+- `pay-it-forward/src/main.tsx`: Added `import "./i18n"` — i18n was never initialized before React rendered, causing `NO_I18NEXT_INSTANCE` warning on every `useTranslation` call.
+- **Ghost moon perch**: `LoginGhostMoon` component repositioned to `absolute z-30 -top-4 -right-4` inside the hero's `relative` container (top-right of the Nia orb); animation delay reduced 1.1s → 0.35s; tooltip opens LEFT (`right-full top-1 mr-2`) since the orb is already at the right side.
+- **Nia community awareness wired**: `artifacts/nia-service/src/lib/community-context.ts` queries live open requests + active helpers; `chat.ts` injects a `communityPrefix` block before every response; `nia.ts` system prompt includes a COMMUNITY WEAVING section.
+- **Nia disabled-by-default fully verified**: `isNiaEnabled()` is fail-closed in both api-server and nia-service (`=== "true"`, no row → false); migration seeds `nia_enabled='false'` via ON CONFLICT DO NOTHING; frontend `niaEnabled` starts as `null`; NiaDrawer/NiaFab gated on `=== true`; all background workers gated; crisis-followup intentionally exempt.

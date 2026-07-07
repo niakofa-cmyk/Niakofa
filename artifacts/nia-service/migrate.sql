@@ -111,4 +111,5 @@ CREATE TABLE IF NOT EXISTS nia_cost_log (
 
 CREATE INDEX IF NOT EXISTS nia_cost_log_user_idx ON nia_cost_log (user_id, created_at);
 CREATE INDEX IF NOT EXISTS nia_cost_log_session_idx ON nia_cost_log (session_id, created_at);
-CREATE INDEX IF NOT EXISTS nia_cost_log_daily_idx ON nia_cost_log (DATE(created_at), user_id);
+-- Daily cost rollup: (created_at, model) supports GROUP BY date + model queries in admin-analytics
+CREATE INDEX IF NOT EXISTS nia_cost_log_daily_idx ON nia_cost_log (created_at DESC, model);

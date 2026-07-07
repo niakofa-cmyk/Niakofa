@@ -1,4 +1,5 @@
 - [Niakofa login ghost moon](niakofa-login-ghost-moon.md) — ghost moon tooltip uses right-full (left-opening); animation delay 0.35s; i18n must be imported in main.tsx or NO_I18NEXT_INSTANCE fires.
+- [Niakofa nia-service migration](niakofa-nia-service-migration.md) — DATE(created_at) in index → IMMUTABLE crash blocks nia_enabled seed; runMigrations must run statements individually; 0004 geography columns need PostGIS guard.
 - [Niakofa mock-reset pattern](niakofa-mock-reset-pattern.md) — lifecycle.test.ts beforeEach MUST use mockReset() not mockClear(); mockClear leaves queued once-values that bleed across tests.
 - [Niakofa pool settings](niakofa-pool-settings.md) — all system_settings keys + defaults + migration numbers; 0048 seeds pool_minimum_hourly_rate=$15/hr; 0049 seeds instant_payouts_enabled=false.
 - [Niakofa instant payouts](niakofa-instant-payouts.md) — cashout method='instant': eligibility-check then degrade gracefully; NEVER roll back the transfer if payout fails; response includes payout_method + payout_id.
