@@ -6,52 +6,48 @@
 #   Railway's Metal builder calls fsutil.NewFS(dockerfilePath) expecting a
 #   directory as the build-context root. When dockerfilePath contained a
 #   subdirectory separator (e.g. "artifacts/nia-service/Dockerfile"), the
-#   builder attempted to call NewFS on the full path INCLUDING the filename,
-#   which is a file — not a directory — and the build failed with:
+#   builder treated the full path including filename as a directory → build
+#   failed. A flat filename at the repo root avoids that code path entirely.
+#   See: artifacts/nia-service/railway.toml
 #
-#     "fsutil.NewFS(...artifacts/nia-service/Dockerfile):
-#      stat ...Dockerfile: not a directory"
-#
-#   Placing this file at the repo root and setting dockerfilePath to
-#   "Dockerfile.nia-service" (no subdirectory component) avoids that
-#   code path entirely. The build context is still the full monorepo root
-#   so pnpm-lock.yaml and workspace config remain accessible.
-#
-#   See: artifacts/nia-service/railway.toml for the corresponding config.
+# WHY npm (not pnpm):
+#   nia-service has zero workspace package dependencies — all of its imports
+#   are relative paths within its own src/. Running pnpm --frozen-lockfile
+#   over the full monorepo would trigger the root preinstall (user-agent
+#   enforcement) and postinstall (esbuild native binary download) scripts,
+#   both of which are brittle in Railway's Alpine build environment.
+#   Plain npm install on the service's own package.json avoids all of that.
 
-FROM node:22-alpine
-
-# Pin pnpm to the exact version used by the rest of the monorepo so transitive
-# dependency resolution is identical to what every other workspace package sees.
-RUN corepack enable && corepack prepare pnpm@10.26.1 --activate
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy the full monorepo root so the Dockerfile has access to pnpm-lock.yaml,
-# pnpm-workspace.yaml, and all workspace packages needed to resolve transitive
-# dependencies consistently with every other service in the monorepo.
-# .dockerignore at the repo root excludes node_modules, .git, attached_assets,
-# build outputs, and test files to keep the context lean.
-COPY . .
+# Install all deps (including devDeps for tsc)
+COPY artifacts/nia-service/package.json ./
+RUN npm install
 
-# Install only the nia-service and its workspace dependencies.
-# Note: intentionally NOT using --mount=type=cache here. Railway requires cache
-# mount IDs to be hardcoded with a service-ID prefix (format
-# `id=s/<service-id>-name`) rather than a Dockerfile ARG/variable, and that ID
-# breaks if this service is ever recreated. Plain frozen-lockfile install is
-# more reliable than a fragile cache mount.
-RUN pnpm install --frozen-lockfile --filter nia-service
+# Compile TypeScript
+COPY artifacts/nia-service/tsconfig.json ./
+COPY artifacts/nia-service/src ./src
+RUN npx tsc
 
-RUN pnpm --filter nia-service build
+# ── Runtime image ─────────────────────────────────────────────────────────────
+FROM node:20-alpine
 
-# --legacy: pnpm v10 changed `pnpm deploy`'s default to require
-# inject-workspace-packages=true unless this flag is passed. nia-service
-# resolves deps via the hoisted node_modules layout set in .npmrc, so --legacy
-# keeps the original simpler deploy behavior.
-RUN pnpm --filter nia-service deploy --prod --legacy /app/deploy
+WORKDIR /app
 
-WORKDIR /app/deploy
+ENV NODE_ENV=production
 
-# Port is injected via the PORT env var at runtime by Railway.
+COPY --from=builder /app/dist ./dist
+COPY artifacts/nia-service/package.json ./
+
+# Production deps only in final image
+RUN npm install --omit=dev
+
+# Migrations run at startup via runMigrations() in lib/db.ts
+COPY artifacts/nia-service/migrations ./migrations
+COPY artifacts/nia-service/migrate.sql ./migrate.sql
+
 EXPOSE 3001
+
 CMD ["node", "dist/index.js"]
