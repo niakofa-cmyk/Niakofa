@@ -1,3 +1,6 @@
+- [Niakofa map alignment](niakofa-map-alignment.md) — map controls bottom-24 (96px) overlaps BottomNav on iPhone X (98px with safe area); fix: bottom-32/36/52; stats overlay top-16 overlaps TopBar (~76px); fix: top-20.
+- [Niakofa emergency cluster](niakofa-emergency-cluster.md) — clusterProperties has_emergency sums is_emergency per cluster; circle-stroke-color expression tints red when has_emergency>0; civic suggestion POST needs authHeaders().
+- [Niakofa nia-service supervision](niakofa-nia-service-supervision.md) — railpack.json startCommand wraps nia-service in while-true restart loop; exits 0 and 143 (SIGTERM) break cleanly; other exits = crash → restart after 5s.
 - [Niakofa login ghost moon](niakofa-login-ghost-moon.md) — ghost moon tooltip uses right-full (left-opening); animation delay 0.35s; i18n must be imported in main.tsx or NO_I18NEXT_INSTANCE fires.
 - [Niakofa nia-service migration](niakofa-nia-service-migration.md) — DATE(created_at) in index → IMMUTABLE crash blocks nia_enabled seed; runMigrations must run statements individually; 0004 geography columns need PostGIS guard.
 - [Niakofa mock-reset pattern](niakofa-mock-reset-pattern.md) — lifecycle.test.ts beforeEach MUST use mockReset() not mockClear(); mockClear leaves queued once-values that bleed across tests.

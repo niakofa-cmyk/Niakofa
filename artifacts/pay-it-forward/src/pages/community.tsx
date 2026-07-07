@@ -97,7 +97,7 @@ function CivicResourcesTab() {
       const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
       await fetch(`${base}/api/civic/suggestions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify(suggestion),
       });
     } catch {}

@@ -389,7 +389,7 @@ export default function MapScreen() {
       {/* Live stats overlay */}
       {statsVisible && (
         <div
-          className="absolute top-16 right-4 z-10 flex flex-col gap-1.5 cursor-pointer"
+          className="absolute top-20 right-4 z-10 flex flex-col gap-1.5 cursor-pointer"
           onClick={() => setStatsVisible(false)}
         >
           <div className="flex items-center gap-1.5 bg-card/90 backdrop-blur-md border border-border px-2.5 py-1.5 rounded-full shadow-lg">
@@ -566,8 +566,14 @@ export default function MapScreen() {
             cluster={true}
             clusterMaxZoom={CLUSTER_MAX_ZOOM}
             clusterRadius={55}
+            clusterProperties={{
+              has_emergency: ["+", ["case", ["get", "is_emergency"], 1, 0]],
+            }}
           >
-            {/* Cluster bubble — color steps from green → yellow → red */}
+            {/* Cluster bubble — color steps from green → yellow → red.
+                Emergency-containing clusters get a bright red stroke ring
+                regardless of point_count, so a lone emergency is never
+                buried in a green "quiet area" bubble. */}
             <Layer
               id="request-clusters"
               type="circle"
@@ -585,8 +591,12 @@ export default function MapScreen() {
                   5,  32, /* 5–14  → 32 px */
                   15, 44, /* 15+   → 44 px */
                 ],
-                "circle-stroke-width": 2.5,
-                "circle-stroke-color": "rgba(0,0,0,0.5)",
+                "circle-stroke-width": [
+                  "case", [">", ["get", "has_emergency"], 0], 4, 2.5,
+                ],
+                "circle-stroke-color": [
+                  "case", [">", ["get", "has_emergency"], 0], "#ef4444", "rgba(0,0,0,0.5)",
+                ],
                 "circle-opacity": 0.88,
               }}
             />
@@ -676,7 +686,7 @@ export default function MapScreen() {
           style={{ touchAction: "manipulation" }}
           aria-label="Toggle traffic layer"
           aria-pressed={showTraffic}
-          className={`absolute bottom-24 left-4 z-10 flex items-center gap-1.5 px-3 py-2 rounded-full border text-[10px] font-black backdrop-blur-sm transition-all active:scale-95 ${
+          className={`absolute bottom-32 left-4 z-10 flex items-center gap-1.5 px-3 py-2 rounded-full border text-[10px] font-black backdrop-blur-sm transition-all active:scale-95 ${
             showTraffic
               ? "bg-primary/20 border-primary/40 text-primary"
               : "bg-card/80 border-border text-muted-foreground"
@@ -692,7 +702,7 @@ export default function MapScreen() {
           style={{ touchAction: "manipulation" }}
           aria-label="Toggle demand heatmap"
           aria-pressed={showHeatmap}
-          className={`absolute bottom-24 left-24 z-10 flex items-center gap-1.5 px-3 py-2 rounded-full border text-[10px] font-black backdrop-blur-sm transition-all active:scale-95 ${
+          className={`absolute bottom-32 left-24 z-10 flex items-center gap-1.5 px-3 py-2 rounded-full border text-[10px] font-black backdrop-blur-sm transition-all active:scale-95 ${
             showHeatmap
               ? "bg-yellow-400/20 border-yellow-400/50 text-yellow-400"
               : "bg-card/80 border-border text-muted-foreground"
@@ -703,7 +713,7 @@ export default function MapScreen() {
         </button>
 
         {/* Zoom controls — right edge */}
-        <div className="absolute bottom-28 right-4 z-10 flex flex-col gap-1.5">
+        <div className="absolute bottom-36 right-4 z-10 flex flex-col gap-1.5">
           <button
             onClick={() => mapRef.current?.zoomIn()}
             style={{ touchAction: "manipulation" }}
@@ -727,7 +737,7 @@ export default function MapScreen() {
           <button
             onClick={recenterOnMe}
             style={{ touchAction: "manipulation" }}
-            className="absolute bottom-44 right-4 z-10 w-11 h-11 flex items-center justify-center bg-primary text-background rounded-full shadow-lg active:scale-95 transition-transform animate-bounce"
+            className="absolute bottom-52 right-4 z-10 w-11 h-11 flex items-center justify-center bg-primary text-background rounded-full shadow-lg active:scale-95 transition-transform animate-bounce"
             aria-label="Recenter on my location"
           >
             <LocateFixed className="w-5 h-5" />
@@ -768,7 +778,7 @@ export default function MapScreen() {
       )}
 
       {helperModeActive && openRequests.length === 0 && (
-        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-10 bg-card/90 backdrop-blur-sm border border-border px-6 py-3 rounded-full shadow-lg w-[90%] max-w-sm">
+        <div className="absolute bottom-32 left-1/2 -translate-x-1/2 z-10 bg-card/90 backdrop-blur-sm border border-border px-6 py-3 rounded-full shadow-lg w-[90%] max-w-sm">
           <div className="flex items-center justify-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             <p className="text-sm font-medium">Online — waiting for nearby requests...</p>
