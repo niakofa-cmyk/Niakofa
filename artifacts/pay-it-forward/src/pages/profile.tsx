@@ -947,13 +947,17 @@ export default function ProfileScreen() {
         <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2">
           <UserIcon className="w-5 h-5 text-primary" /> Profile
         </h1>
-        <div className="flex gap-1 mt-3">
+        {/* Profile tabs — min 44px touch targets */}
+        <div className="flex gap-2 mt-3">
           {(["overview", "history", "settings"] as ProfileTab[]).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                tab === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              style={{ touchAction: "manipulation", minHeight: "44px" }}
+              className={`flex-1 flex items-center justify-center py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-[0.98] ${
+                tab === t
+                  ? "bg-primary text-primary-foreground shadow-[0_0_12px_rgba(0,212,255,0.3)]"
+                  : "bg-muted/80 text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted"
               }`}
             >
               {t === "overview" ? "Overview" : t === "history" ? "History" : "Settings"}

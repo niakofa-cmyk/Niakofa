@@ -132,19 +132,20 @@ function CivicResourcesTab() {
 
   return (
     <div className="space-y-4">
-      {/* Category filter */}
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+      {/* Category filter — min 44px touch targets for mobile */}
+      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none -mx-4 px-4">
         {categories.map(cat => (
           <button
             key={cat}
             onClick={() => setCategory(cat)}
-            className={`shrink-0 text-xs font-bold px-3 py-1.5 rounded-full border transition-all capitalize ${
+            style={{ touchAction: "manipulation", minHeight: "44px" }}
+            className={`shrink-0 flex items-center justify-center text-xs font-bold px-4 py-2.5 rounded-2xl border transition-all capitalize active:scale-95 whitespace-nowrap ${
               category === cat
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-muted border-border text-muted-foreground"
+                ? "bg-primary text-primary-foreground border-primary shadow-[0_0_10px_rgba(0,212,255,0.25)]"
+                : "bg-muted/80 border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted"
             }`}
           >
-            {cat === "all" ? "All" : cat.replace("_", " ")}
+            {cat === "all" ? "All" : cat.replace(/_/g, " ")}
           </button>
         ))}
       </div>
@@ -735,13 +736,17 @@ export default function CommunityScreen() {
         <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2">
           <Users className="w-5 h-5 text-primary" /> Community
         </h1>
-        <div className="flex gap-1 mt-3 overflow-x-auto pb-1 scrollbar-none">
+        {/* Scrollable pill tab bar — min 44px touch targets for mobile */}
+        <div className="flex gap-2 mt-3 overflow-x-auto pb-2 scrollbar-none -mx-4 px-4">
           {tabs.map(t => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`shrink-0 py-2 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                tab === t.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              style={{ touchAction: "manipulation", minHeight: "44px" }}
+              className={`shrink-0 flex items-center justify-center py-2.5 px-4 rounded-2xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-95 whitespace-nowrap ${
+                tab === t.key
+                  ? "bg-primary text-primary-foreground shadow-[0_0_14px_rgba(0,212,255,0.35)]"
+                  : "bg-muted/80 text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted"
               }`}
             >
               {t.label}

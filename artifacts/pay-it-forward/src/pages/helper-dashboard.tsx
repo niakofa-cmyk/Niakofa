@@ -200,7 +200,7 @@ export default function HelperDashboardScreen() {
             <Filter className="w-3.5 h-3.5 text-muted-foreground" />
           </div>
 
-          <div className="flex gap-2 mb-3 overflow-x-auto pb-1 scrollbar-none">
+          <div className="flex gap-2 mb-3 overflow-x-auto pb-2 scrollbar-none -mx-4 px-4">
             {([
               { key: "all" as FilterKey,       label: "All" },
               { key: "emergency" as FilterKey, label: "🚨 Urgent" },
@@ -209,8 +209,11 @@ export default function HelperDashboardScreen() {
               <button
                 key={f.key}
                 onClick={() => setFilter(f.key)}
-                className={`shrink-0 text-xs font-bold px-3 py-1.5 rounded-full border transition-all ${
-                  filter === f.key ? "bg-primary text-primary-foreground border-primary" : "bg-muted border-border text-muted-foreground"
+                style={{ touchAction: "manipulation", minHeight: "44px" }}
+                className={`shrink-0 flex items-center justify-center text-xs font-bold px-4 py-2.5 rounded-2xl border transition-all active:scale-95 whitespace-nowrap ${
+                  filter === f.key
+                    ? "bg-primary text-primary-foreground border-primary shadow-[0_0_10px_rgba(0,212,255,0.25)]"
+                    : "bg-muted/80 border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted"
                 }`}
               >
                 {f.label}

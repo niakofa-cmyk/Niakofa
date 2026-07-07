@@ -731,6 +731,7 @@ type SectionComponent = React.ComponentType<{ userId: number }>;
 interface SettingsSection {
   id: string;
   title: string;
+  description?: string;
   icon: React.ComponentType<{ className?: string }>;
   component: SectionComponent | null;
 }
@@ -756,36 +757,42 @@ export default function SettingsPage() {
       title: "Notification Preferences",
       icon: Bell,
       component: NotificationPreferences,
+      description: "Nearby requests, alerts & pledge reminders",
     },
     {
       id: "privacy",
       title: "Account Privacy",
       icon: Lock,
       component: AccountPrivacy,
+      description: "Profile visibility, live location & activity",
     },
     {
       id: "change-password",
       title: "Change Password",
       icon: KeyRound,
       component: ChangePassword,
+      description: "Update your account password",
     },
     {
       id: "language",
       title: "Language / Idioma",
       icon: Globe,
       component: LanguageSwitcher,
+      description: "App language & Nia's response language",
     },
     {
       id: "nia-voice",
       title: "Nia's Voice",
       icon: Mic,
       component: NiaVoiceSettings,
+      description: "Choose how Nia speaks to you",
     },
     {
       id: "delete-account",
       title: "Delete Account",
       icon: Trash2,
       component: null,
+      description: "Permanently remove your account and data",
     },
   ];
 
@@ -796,12 +803,14 @@ export default function SettingsPage() {
         title: "Helper Settings",
         icon: Sliders,
         component: HelperSettings,
+        description: "Service radius & max travel distance",
       },
       {
         id: "payout-setup",
         title: "Payout Setup",
         icon: CreditCard,
         component: PayoutSetup,
+        description: "Connect Stripe to receive payments",
       }
     );
   }
@@ -810,49 +819,66 @@ export default function SettingsPage() {
   const CurrentComponent = activeEntry?.component ?? null;
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center p-4 border-b border-border">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      {/* Header — sticky, safe-area aware */}
+      <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-xl border-b border-border flex items-center p-4 pt-safe gap-2">
         <Button
           variant="ghost"
           size="icon"
           onClick={() =>
             activeSection ? setActiveSection(null) : setLocation("/profile")
           }
-          className="rounded-full"
+          className="rounded-full shrink-0"
+          style={{ touchAction: "manipulation" }}
         >
           <ChevronLeft className="w-5 h-5" />
         </Button>
-        <h1 className="text-lg font-black ml-2">
+        <h1 className="text-lg font-black">
           {activeSection ? (activeEntry?.title ?? "Settings") : "Settings"}
         </h1>
       </div>
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto p-4">
+      {/* Body — pb-28 keeps last card above the bottom nav on all devices */}
+      <div className="flex-1 overflow-y-auto p-4 pb-28 max-w-lg mx-auto w-full">
         {!activeSection ? (
-          /* Section list */
-          <div className="space-y-2">
-            {sections.map((section) => (
-              <Button
-                key={section.id}
-                variant="ghost"
-                className="w-full flex items-center justify-between p-4 h-auto text-sm hover:bg-muted/50 transition-colors rounded-xl"
-                onClick={() => {
-                  if (section.id === "delete-account") {
-                    setActiveSection("delete-account");
-                  } else {
-                    setActiveSection(section.id);
-                  }
-                }}
-              >
-                <div className="flex items-center gap-3">
-                  <section.icon className="w-4 h-4 text-muted-foreground" />
-                  <span>{section.title}</span>
-                </div>
-                <ChevronRight className="w-4 h-4 text-muted-foreground" />
-              </Button>
-            ))}
+          /* Section list — full-height tappable cards with descriptions */
+          <div className="space-y-2 pt-2">
+            {sections.map((section) => {
+              const isDelete = section.id === "delete-account";
+              return (
+                <button
+                  key={section.id}
+                  style={{ touchAction: "manipulation", minHeight: "68px" }}
+                  className={`w-full flex items-center justify-between px-4 py-4 bg-card border rounded-2xl transition-all active:scale-[0.98] text-left ${
+                    isDelete
+                      ? "border-destructive/30 hover:border-destructive/50"
+                      : "border-border hover:border-primary/40 hover:bg-card/80"
+                  }`}
+                  onClick={() => setActiveSection(section.id)}
+                >
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                      isDelete ? "bg-destructive/10" : "bg-muted"
+                    }`}>
+                      <section.icon className={`w-5 h-5 ${
+                        isDelete ? "text-destructive" : "text-muted-foreground"
+                      }`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-sm font-bold leading-tight ${isDelete ? "text-destructive" : ""}`}>
+                        {section.title}
+                      </div>
+                      {section.description && (
+                        <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                          {section.description}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <ChevronRight className={`w-4 h-4 shrink-0 ml-2 ${isDelete ? "text-destructive/50" : "text-muted-foreground"}`} />
+                </button>
+              );
+            })}
           </div>
         ) : (
           /* Active subsection */
@@ -863,16 +889,15 @@ export default function SettingsPage() {
 
             {activeSection === "delete-account" && (
               <div className="space-y-4">
-                <h2 className="text-xl font-bold">Delete Account</h2>
-                <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4">
+                <h2 className="text-xl font-bold text-destructive">Delete Account</h2>
+                <div className="bg-destructive/10 border border-destructive/30 rounded-2xl p-4">
                   <p className="text-sm text-destructive font-bold mb-1">
                     This cannot be undone.
                   </p>
                   <p className="text-xs text-muted-foreground leading-relaxed">
                     Deleting your account will permanently remove your profile,
                     transaction history, goodwill score, and benevolence wallet
-                    balance. Scheduled payments will be cancelled. This action
-                    is irreversible and cannot be recovered.
+                    balance. Scheduled payments will be cancelled.
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
@@ -882,13 +907,13 @@ export default function SettingsPage() {
                 </p>
                 <a
                   href="mailto:privacy@niakofa.community?subject=Account%20Deletion%20Request"
-                  className="block bg-card border border-border rounded-xl p-3 text-sm text-primary hover:border-primary/50 transition-colors"
+                  className="block bg-card border border-border rounded-2xl p-4 text-sm text-primary font-semibold hover:border-primary/50 transition-colors"
                 >
-                  privacy@niakofa.community
+                  📧 privacy@niakofa.community
                 </a>
                 <Button
                   variant="destructive"
-                  className="w-full"
+                  className="w-full h-12 text-sm font-bold"
                   onClick={() => {
                     toast({
                       title: "Deletion request submitted",
@@ -897,7 +922,7 @@ export default function SettingsPage() {
                     });
                   }}
                 >
-                  Request Deletion
+                  Request Account Deletion
                 </Button>
               </div>
             )}
