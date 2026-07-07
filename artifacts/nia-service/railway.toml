@@ -1,13 +1,5 @@
 [build]
-builder = "dockerfile"
-# WHY this points to a flat filename at the repo root (no subdirectory separator):
-#   Railway's Metal builder calls fsutil.NewFS(dockerfilePath) expecting a
-#   directory as the build-context root. When dockerfilePath contained a "/"
-#   (e.g. "artifacts/nia-service/Dockerfile"), the builder used the full path
-#   including the filename as a directory root → "not a directory" / "no such
-#   file". A flat filename at the repo root avoids that code path.
-#   The build context is still the full monorepo root.
-dockerfilePath = "Dockerfile.nia-service"
+builder = "railpack"
 
 [deploy]
 startCommand = "node dist/index.js"
