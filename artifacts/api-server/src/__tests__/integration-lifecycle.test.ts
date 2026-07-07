@@ -44,6 +44,8 @@ jest.unstable_mockModule("@workspace/db", () => {
     catch: jest.fn().mockResolvedValue([null]),
     leftJoin: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    onConflictDoNothing: jest.fn().mockResolvedValue([]),
+    onConflictDoUpdate: jest.fn().mockResolvedValue([]),
     // db.execute is used by GET /healthz (SELECT 1 connectivity check) and
     // several admin routes. Default to resolving so health tests can control
     // the happy-path vs failure-path via mockResolvedValueOnce/mockRejectedValueOnce.
@@ -236,6 +238,8 @@ beforeEach(() => {
   (db.execute as jest.Mock).mockReset().mockResolvedValue({ rows: [] });
   // Re-establish transaction mock so payHelperFromPool works in every test.
   (db.transaction as jest.Mock).mockReset().mockImplementation(async (cb: (tx: any) => Promise<any>) => cb(db));
+  (db.onConflictDoNothing as jest.Mock).mockReset().mockResolvedValue([]);
+  (db.onConflictDoUpdate as jest.Mock).mockReset().mockResolvedValue([]);
 });
 
 // ── Full Request Lifecycle Integration Tests ──────────────────────────────────

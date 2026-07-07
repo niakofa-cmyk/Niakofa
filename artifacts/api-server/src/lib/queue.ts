@@ -17,7 +17,26 @@ import { logger } from "./logger";
 // Trim whitespace and treat blank strings as absent so that an accidentally
 // set-but-empty environment variable (e.g. `REDIS_URL=` in a Railway config)
 // does not cause ioredis to attempt a connection to an empty host.
-const REDIS_URL = (process.env["REDIS_URL"] ?? "").trim() || undefined;
+// Strip any accidental CLI prefix (e.g. "redis-cli --tls -u redis://...") so
+// only the actual redis:// or rediss:// URL is passed to ioredis.
+function parseRedisUrl(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  // Strip any accidental CLI prefix (e.g. "redis-cli --tls -u redis://...")
+  const match = trimmed.match(/(rediss?:\/\/\S+)/);
+  const url = match ? match[1] : trimmed;
+  if (!url) return undefined;
+  // Upstash (and many cloud Redis providers) require TLS even when the URL
+  // starts with redis:// rather than rediss://. Upgrade to rediss:// so
+  // ioredis enables the TLS layer automatically.
+  const hostname = url.replace(/rediss?:\/\/[^@]*@/, "").split(":")[0] ?? "";
+  const needsTls =
+    hostname.endsWith(".upstash.io") ||
+    hostname.endsWith(".redis.cache.windows.net") ||
+    hostname.endsWith(".redis.amazonaws.com");
+  return needsTls ? url.replace(/^redis:\/\//, "rediss://") : url;
+}
+const REDIS_URL = parseRedisUrl(process.env["REDIS_URL"] ?? "");
 
 let _connection: IORedis | null = null;
 
