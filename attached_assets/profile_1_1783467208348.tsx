@@ -56,7 +56,17 @@ function ModalShell({ title, icon: Icon, onClose, children }: {
 }) {
   return (
     <AnimatePresence>
-      {/* Backdrop — z-[100] beats BottomNav z-50, so the sheet is never obscured */}
+      {/*
+        BUG FIX (Settings → Support & Safety cards hidden under bottom nav):
+        This sheet and <BottomNav> both used z-50. Because <BottomNav> is
+        mounted as a sibling *after* the page's <Switch> in App.tsx, it wins
+        ties in the paint order and physically covered the bottom of every
+        dialog built on ModalShell — Support & Safety items, Delete Account,
+        Notification Prefs, Account Privacy, Helper Settings, Payout Setup.
+        Bumping both layers here to z-[100] (above BottomNav's z-50) puts the
+        sheet — and its backdrop, so the nav can't peek through the sides —
+        unambiguously on top regardless of DOM order.
+      */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -72,7 +82,6 @@ function ModalShell({ title, icon: Icon, onClose, children }: {
         className="fixed bottom-0 left-0 right-0 z-[100] bg-card border-t border-border rounded-t-3xl max-h-[85dvh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
-        {/* Pinned header — never scrolls away */}
         <div className="flex items-center justify-between p-5 pb-3 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
             <Icon className="w-5 h-5 text-primary" />
@@ -1057,6 +1066,14 @@ export default function ProfileScreen() {
 
   const closeDialog = () => setOpenDialog(null);
 
+  // BUG FIX: pb-24 (96px) was cutting it close against <BottomNav>'s real
+  // footprint (icon row + label + its own padding + safe-area inset on
+  // notched phones), so on many devices the last settings card — and the
+  // bottom row of the second-to-last one, which is where "Support & Safety"
+  // often landed depending on helper/business flags — rendered partially
+  // behind the nav. Note: pb-40 and pb-safe would conflict if combined
+  // (both set padding-bottom, so only one would win) — using one arbitrary
+  // value that adds them gives consistent breathing room on every device.
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col pb-[calc(10rem+env(safe-area-inset-bottom,0px))]">
       {/* Header */}

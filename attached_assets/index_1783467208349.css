@@ -4,9 +4,14 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Safe-area utilities — used throughout the codebase for notched/home-indicator phones.
-   Defined here so Tailwind v4 actually emits the CSS; without this definition
-   pb-safe / pt-safe were silently dropped and did nothing on any device. */
+/*
+ * `pb-safe` / `pt-safe` were being used throughout the app (BottomNav,
+ * BottomSheet, etc.) but were never actually defined anywhere — Tailwind
+ * silently dropped them, so the bottom nav and bottom sheets got zero
+ * safe-area padding on notched/home-indicator devices. Defining them here
+ * makes every existing usage in the codebase start working, in addition to
+ * the fixed-modal overlap fix in profile.tsx.
+ */
 @utility pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }

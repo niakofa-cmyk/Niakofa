@@ -838,8 +838,8 @@ export default function SettingsPage() {
         </h1>
       </div>
 
-      {/* Body — pb-28 keeps last card above the bottom nav on all devices */}
-      <div className="flex-1 overflow-y-auto p-4 pb-28 max-w-lg mx-auto w-full">
+      {/* Body — combined calc() keeps last card clear of nav + notch on all devices */}
+      <div className="flex-1 overflow-y-auto p-4 max-w-lg mx-auto w-full" style={{ paddingBottom: "calc(7rem + env(safe-area-inset-bottom))" }}>
         {!activeSection ? (
           /* Section list — full-height tappable cards with descriptions */
           <div className="space-y-2 pt-2">

@@ -4690,6 +4690,366 @@ function SystemTab() {
   );
 }
 
+// ── Communities Tab ───────────────────────────────────────────────────────────
+interface AdminCommunity {
+  id: number;
+  name: string;
+  description: string | null;
+  target_reserve_amount: number;
+  pool_enabled: boolean;
+  is_default: boolean;
+  created_at: string;
+  member_count?: number;
+  pool_balance?: number;
+}
+
+function CommunitiesTab() {
+  const [communities, setCommunities] = useState<AdminCommunity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<number | "new" | null>(null);
+  const [editing, setEditing] = useState<number | "new" | null>(null);
+  const [form, setForm] = useState({ name: "", description: "", target_reserve_amount: "5000", pool_enabled: true });
+  const [reassignUserId, setReassignUserId] = useState("");
+  const [reassignCommunityId, setReassignCommunityId] = useState("");
+  const [reassignMsg, setReassignMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [reassigning, setReassigning] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/communities`, {
+        headers: { "Authorization": `Bearer ${getToken()}` },
+      });
+      if (res.ok) {
+        const j = await res.json();
+        setCommunities(j.communities ?? []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const openNew = () => {
+    setForm({ name: "", description: "", target_reserve_amount: "5000", pool_enabled: true });
+    setEditing("new");
+  };
+
+  const openEdit = (c: AdminCommunity) => {
+    setForm({
+      name: c.name,
+      description: c.description ?? "",
+      target_reserve_amount: String(c.target_reserve_amount),
+      pool_enabled: c.pool_enabled,
+    });
+    setEditing(c.id);
+  };
+
+  const saveNew = async () => {
+    setSaving("new");
+    try {
+      const res = await fetch(`${BASE}/api/admin/communities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          description: form.description.trim() || null,
+          target_reserve_amount: parseFloat(form.target_reserve_amount) || 5000,
+          pool_enabled: form.pool_enabled,
+        }),
+      });
+      if (res.ok) {
+        toast({ title: "Community created" });
+        setEditing(null);
+        load();
+      } else {
+        const j = await res.json().catch(() => ({}));
+        toast({ title: "Error", description: j.error ?? "Failed", variant: "destructive" });
+      }
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const saveEdit = async (id: number) => {
+    setSaving(id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/communities/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          description: form.description.trim() || null,
+          target_reserve_amount: parseFloat(form.target_reserve_amount) || 5000,
+          pool_enabled: form.pool_enabled,
+        }),
+      });
+      if (res.ok) {
+        toast({ title: "Community updated" });
+        setEditing(null);
+        load();
+      } else {
+        const j = await res.json().catch(() => ({}));
+        toast({ title: "Error", description: j.error ?? "Failed", variant: "destructive" });
+      }
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const doReassign = async () => {
+    const uid = parseInt(reassignUserId);
+    const cid = parseInt(reassignCommunityId);
+    if (!uid || !cid) { setReassignMsg({ ok: false, text: "Enter valid user ID and community ID" }); return; }
+    setReassigning(true);
+    setReassignMsg(null);
+    try {
+      const res = await fetch(`${BASE}/api/admin/users/${uid}/community`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getToken()}` },
+        body: JSON.stringify({ community_id: cid }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setReassignMsg({ ok: true, text: `User ${uid} reassigned to community ${cid}` });
+        setReassignUserId("");
+        setReassignCommunityId("");
+      } else {
+        setReassignMsg({ ok: false, text: j.error ?? "Reassignment failed" });
+      }
+    } finally {
+      setReassigning(false);
+    }
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-16 text-muted-foreground">
+      <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading communities…
+    </div>
+  );
+
+  const healthColor = (ratio: number) =>
+    ratio >= 0.9 ? "text-green-400" : ratio >= 0.7 ? "text-yellow-400" : "text-orange-400";
+  const healthLabel = (ratio: number) =>
+    ratio >= 0.9 ? "Fully Funded" : ratio >= 0.7 ? "Healthy" : "Building";
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-black text-base flex items-center gap-2">
+            <Globe className="w-4 h-4 text-primary" /> Communities
+          </h2>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Manage county pools, set targets, and reassign members.</p>
+        </div>
+        <button
+          onClick={openNew}
+          style={{ touchAction: "manipulation" }}
+          className="text-[11px] font-black px-3 py-2 rounded-xl bg-primary text-primary-foreground active:opacity-80"
+        >
+          + New
+        </button>
+      </div>
+
+      {/* Create / Edit form */}
+      <AnimatePresence>
+        {editing !== null && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="bg-card border border-primary/30 rounded-2xl p-4 space-y-3"
+          >
+            <div className="text-[11px] font-black uppercase tracking-widest text-primary">
+              {editing === "new" ? "New Community" : `Editing Community #${editing}`}
+            </div>
+            <div className="space-y-2">
+              <input
+                placeholder="Name (e.g. Tarrant County)"
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                style={{ fontSize: "16px" }}
+                className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+              />
+              <input
+                placeholder="Description (optional)"
+                value={form.description}
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                style={{ fontSize: "16px" }}
+                className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+              />
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">Target Reserve ($)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="5000"
+                    value={form.target_reserve_amount}
+                    onChange={e => setForm(f => ({ ...f, target_reserve_amount: e.target.value }))}
+                    style={{ fontSize: "16px" }}
+                    className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div className="flex flex-col justify-end pb-0.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">Pool Active</label>
+                  <button
+                    onClick={() => setForm(f => ({ ...f, pool_enabled: !f.pool_enabled }))}
+                    style={{ touchAction: "manipulation" }}
+                    className={`px-4 py-2.5 rounded-xl text-[11px] font-black border transition-all ${
+                      form.pool_enabled
+                        ? "bg-green-500/15 border-green-500/40 text-green-400"
+                        : "bg-muted border-border text-muted-foreground"
+                    }`}
+                  >
+                    {form.pool_enabled ? "ON" : "OFF"}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setEditing(null)}
+                style={{ touchAction: "manipulation" }}
+                className="flex-1 py-2.5 text-xs font-black rounded-xl bg-muted border border-border text-muted-foreground active:opacity-70"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => editing === "new" ? saveNew() : saveEdit(editing as number)}
+                disabled={!form.name.trim() || saving !== null}
+                style={{ touchAction: "manipulation" }}
+                className="flex-1 py-2.5 text-xs font-black rounded-xl bg-primary text-primary-foreground disabled:opacity-50 active:opacity-80"
+              >
+                {saving !== null ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Community cards */}
+      {communities.length === 0 && (
+        <div className="text-center py-10 text-muted-foreground text-sm">
+          No communities yet. Click <span className="font-black text-foreground">+ New</span> to create one.
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {communities.map(c => {
+          const balance = c.pool_balance ?? 0;
+          const target = c.target_reserve_amount || 1;
+          const ratio = Math.min(balance / target, 1);
+          const pct = Math.round(ratio * 100);
+          return (
+            <div key={c.id} className="bg-card border border-border rounded-2xl p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-black text-sm">{c.name}</span>
+                    {c.is_default && (
+                      <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30">Default</span>
+                    )}
+                    <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                      c.pool_enabled
+                        ? "bg-green-500/10 text-green-400 border-green-500/30"
+                        : "bg-muted text-muted-foreground border-border"
+                    }`}>
+                      {c.pool_enabled ? "Pool ON" : "Pool OFF"}
+                    </span>
+                  </div>
+                  {c.description && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{c.description}</p>}
+                  <div className="text-[10px] text-muted-foreground mt-1">
+                    ID #{c.id} · {(c.member_count ?? 0).toLocaleString()} members · Created {new Date(c.created_at).toLocaleDateString()}
+                  </div>
+                </div>
+                <button
+                  onClick={() => openEdit(c)}
+                  style={{ touchAction: "manipulation" }}
+                  className="shrink-0 px-3 py-1.5 text-[10px] font-black rounded-xl border border-border bg-muted active:opacity-70"
+                >
+                  Edit
+                </button>
+              </div>
+
+              {/* Pool balance bar */}
+              <div>
+                <div className="flex justify-between text-[10px] mb-1">
+                  <span className={`font-black ${healthColor(ratio)}`}>${balance.toFixed(2)} · {healthLabel(ratio)}</span>
+                  <span className="text-muted-foreground">target ${target.toLocaleString()}</span>
+                </div>
+                <div className="h-2 bg-black/20 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${
+                      ratio >= 0.9 ? "bg-gradient-to-r from-green-400 to-emerald-500"
+                      : ratio >= 0.7 ? "bg-gradient-to-r from-yellow-400 to-amber-500"
+                      : "bg-gradient-to-r from-orange-400 to-orange-500"
+                    }`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <div className={`text-right text-[10px] font-black mt-0.5 ${healthColor(ratio)}`}>{pct}%</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* User reassignment */}
+      <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+        <h3 className="font-black text-sm flex items-center gap-2">
+          <Users className="w-4 h-4 text-primary" /> Reassign User to Community
+        </h3>
+        <p className="text-[11px] text-muted-foreground">Move a user to a different community pool. Use the user ID from the Users tab.</p>
+        <div className="flex gap-2">
+          <input
+            type="number"
+            placeholder="User ID"
+            value={reassignUserId}
+            onChange={e => setReassignUserId(e.target.value)}
+            style={{ fontSize: "16px" }}
+            className="flex-1 px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+          />
+          <input
+            type="number"
+            placeholder="Community ID"
+            value={reassignCommunityId}
+            onChange={e => setReassignCommunityId(e.target.value)}
+            style={{ fontSize: "16px" }}
+            className="flex-1 px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+          />
+        </div>
+        {reassignMsg && (
+          <div className={`text-[11px] font-bold px-3 py-2 rounded-xl border ${
+            reassignMsg.ok ? "bg-green-500/10 text-green-400 border-green-500/30" : "bg-destructive/10 text-destructive border-destructive/30"
+          }`}>
+            {reassignMsg.text}
+          </div>
+        )}
+        <button
+          onClick={doReassign}
+          disabled={reassigning}
+          style={{ touchAction: "manipulation" }}
+          className="w-full py-2.5 text-xs font-black rounded-xl bg-primary text-primary-foreground disabled:opacity-50 active:opacity-80"
+        >
+          {reassigning ? "Reassigning…" : "Reassign"}
+        </button>
+      </div>
+
+      {/* Refresh */}
+      <button
+        onClick={load}
+        style={{ touchAction: "manipulation" }}
+        className="flex items-center gap-1.5 text-[11px] text-muted-foreground active:opacity-60 mx-auto"
+      >
+        <RefreshCw className="w-3 h-3" /> Refresh
+      </button>
+    </div>
+  );
+}
+
 // ── Main Admin Screen ─────────────────────────────────────────────────────────
 export default function AdminScreen() {
   const [authed, setAuthed] = useState(false);
@@ -4703,7 +5063,7 @@ export default function AdminScreen() {
   }, [currentUser?.is_admin]);
 
   const [, setLocation] = useLocation();
-  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics" | "orgs" | "civic" | "disputes" | "settings" | "system">("reports");
+  const [activeTab, setActiveTab] = useState<"reports" | "helpers" | "users" | "pledges" | "audit" | "nia" | "analytics" | "orgs" | "civic" | "disputes" | "settings" | "system" | "communities">("reports");
 
   // Global auto-refresh tick every 30s — tabs that care subscribe to this
   const [refreshTick, setRefreshTick] = useState(0);
@@ -4866,7 +5226,7 @@ export default function AdminScreen() {
   // Groups: 1 = Trust & Safety, 2 = Finance, 3 = Intelligence, 4 = Configure
   const TAB_GROUPS: Record<string, number> = {
     reports: 1, disputes: 1, users: 1, helpers: 1,
-    pledges: 2, orgs: 2,
+    pledges: 2, orgs: 2, communities: 2,
     nia: 3, analytics: 3, audit: 3,
     civic: 4, settings: 4, system: 4,
   };
@@ -4876,8 +5236,9 @@ export default function AdminScreen() {
     { key: "disputes",  label: "Disputes",  icon: Gavel },
     { key: "users",     label: "Users",     icon: Users },
     { key: "helpers",   label: "Helpers",   icon: UserIcon },
-    { key: "pledges",   label: "Pledges",   icon: HandHeart },
-    { key: "orgs",      label: "Orgs",      icon: Landmark },
+    { key: "pledges",      label: "Pledges",      icon: HandHeart },
+    { key: "orgs",         label: "Orgs",         icon: Landmark },
+    { key: "communities",  label: "Communities",  icon: Globe },
     { key: "nia",       label: "Nia AI",    icon: Bot },
     { key: "analytics", label: "Stats",     icon: BarChart2 },
     { key: "audit",     label: "Audit",     icon: FileText },
@@ -4972,9 +5333,10 @@ export default function AdminScreen() {
         )}
         {activeTab === "users"     && <UsersTab refreshTick={refreshTick} />}
         {activeTab === "reports"   && <ReportsTab authed={authed} refreshTick={refreshTick} />}
-        {activeTab === "disputes"  && <DisputesTab />}
-        {activeTab === "settings"  && <SettingsTab onNavigate={(tab) => setActiveTab(tab as typeof activeTab)} />}
-        {activeTab === "system"    && <SystemTab />}
+        {activeTab === "disputes"    && <DisputesTab />}
+        {activeTab === "communities" && <CommunitiesTab />}
+        {activeTab === "settings"   && <SettingsTab onNavigate={(tab) => setActiveTab(tab as typeof activeTab)} />}
+        {activeTab === "system"     && <SystemTab />}
       </div>
 
       {/* ── Bottom tab bar — logically grouped, animated active pill ──────── */}
