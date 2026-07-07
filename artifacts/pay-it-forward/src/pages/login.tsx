@@ -310,35 +310,36 @@ function LoginGhostMoon() {
   const [open, setOpen] = useState(false);
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.7 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay: 0.8, type: "spring", stiffness: 160, damping: 18 }}
-      className="fixed z-50 right-4 pointer-events-auto"
-      style={{ bottom: "max(24px, env(safe-area-inset-bottom))" }}
+      initial={{ opacity: 0, scale: 0.4, rotate: -30 }}
+      animate={{ opacity: 1, scale: 1, rotate: 0 }}
+      transition={{ delay: 0.35, type: "spring", stiffness: 220, damping: 18 }}
+      className="absolute z-30 -top-4 -right-4 pointer-events-auto"
+      style={{ overflow: "visible" }}
     >
       <button
         onClick={() => setOpen((o) => !o)}
         className="relative focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 rounded-full"
         aria-label="Nia AI — currently resting. Tap to learn more."
       >
-        <NiaOrb size={68} dormant />
+        <NiaOrb size={38} dormant />
 
         <AnimatePresence>
           {open && (
             <motion.div
               key="ghost-tip"
-              initial={{ opacity: 0, y: 10, scale: 0.93 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.93 }}
-              transition={{ duration: 0.18 }}
-              className="absolute bottom-full right-0 mb-2 w-56 bg-background/95 backdrop-blur border border-border rounded-2xl p-3 text-left shadow-2xl pointer-events-none"
+              initial={{ opacity: 0, x: 6, scale: 0.93 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 6, scale: 0.93 }}
+              transition={{ duration: 0.16 }}
+              className="absolute top-1 right-full mr-2 w-44 bg-background/95 backdrop-blur border border-border rounded-2xl p-3 text-left shadow-2xl pointer-events-none"
+              style={{ minWidth: 160 }}
             >
               <p className="text-sm font-bold text-foreground mb-1">Sawubona 💙</p>
               <p className="text-xs text-muted-foreground leading-snug">
-                I'm Nia — your AI neighbor. Sign in and I'll be here whenever you need me.
+                I'm Nia. Sign in and I'll be here for you.
               </p>
-              <p className="text-[11px] text-muted-foreground/60 mt-1.5 italic">
-                Nia AI · currently resting
+              <p className="text-[10px] text-muted-foreground/50 mt-1.5 italic">
+                Nia AI · resting
               </p>
             </motion.div>
           )}
@@ -1073,8 +1074,6 @@ export default function LoginScreen() {
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col">
-      {/* Ghost moon floats outside the page content — fixed, always accessible */}
-      <LoginGhostMoon />
       <div className="flex-1 flex flex-col items-center justify-center px-6 pt-12 pb-8">
         {/* ── NiaOrb Hero Element ─────────────────────────────────────────────── */}
         <motion.div
@@ -1085,6 +1084,8 @@ export default function LoginScreen() {
         >
           {/* NiaOrb — pulsing animated orb — center hero */}
           <div className="relative mb-4">
+            {/* Ghost moon — Nia rests at top-right of the center logo */}
+            <LoginGhostMoon />
             <motion.div
               animate={{
                 scale: [1, 1.08, 1],

@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import "./i18n";
 
 // SW registration is now handled by useServiceWorkerUpdate (in App.tsx)
 // so we get the app's Toaster context for the "new version" prompt.
