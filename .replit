@@ -69,7 +69,9 @@ externalPort = 8080
 [userenv.shared]
 NODE_ENV = "development"
 PORT = "8080"
-VAPID_PUBLIC_KEY = "BFLzCRNCIrfsaMnansSg5H1OtEA5NvqLuV4GtqM0KGoIjOwqmauEnuW4csMpZl_qzBuJ0IozxQULymRA-eCAMpI"
+VAPID_PUBLIC_KEY = "BN11Rwzt8F6YTH0c9hyOW_tYjk5zHEKgcwk4wGxfVopSJpbWDdgPBUSfD_2XRcNQZOyxiwjvl6CZcFMoguUQnFs"
+VITE_MAPBOX_TOKEN = "pk.eyJ1IjoiaGYxMDEiLCJhIjoiY2tjYzVqNmFhMDFmMTJwcWUza2pmZzVtMSJ9.THxYY3Ic2MFylIONeZI_Xw"
+VITE_STRIPE_PUBLISHABLE_KEY = "pk_live_51Ti2TuDJiXJaxeqOmFmGhs1yhKiXGjB8gLo6yZzgHEHQJpwHDV62Wtjfc6nUDUZez2t12cL8GnX0LUajMPdbvnsb004iJO8iIn"
 
 [nix]
 channel = "stable-25_05"
