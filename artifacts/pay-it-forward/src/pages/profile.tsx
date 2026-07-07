@@ -5,7 +5,7 @@ import {
   User as UserIcon, Shield, MapPin, Settings, Wallet, Heart, Star,
   DollarSign, Gift, Clock, ChevronRight, AlertCircle, CheckCircle2,
   ExternalLink, BookOpen, Bell, Lock, Trash2, X, Phone, FileText,
-  Eye, Users, Info, ChevronLeft, Flag,
+  Eye, Users, Info, ChevronLeft, Flag, Plus,
   Camera, Sliders, CreditCard, Activity, Loader2, Building2, Award, Wrench
 } from "lucide-react";
 import { ReportModal } from "@/components/ReportModal";
@@ -130,7 +130,7 @@ function DeleteAccountDialog({ onClose, userId }: { onClose: () => void; userId:
               if (!userId) return;
               try {
                 const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-                const res = await fetch(`${base}/api/users/${userId}`, {
+                const res = await fetch(`${base}/api/users/me`, {
                   method: "DELETE",
                   headers: { "Content-Type": "application/json", ...authHeaders() },
                 });
@@ -377,6 +377,122 @@ function AccountPrivacyDialog({ onClose, userId }: { onClose: () => void; userId
   );
 }
 
+function EmergencyContactsManager() {
+  const { currentUser } = useAppContext();
+  const [contacts, setContacts] = useState<string[]>([]);
+  const [newContact, setNewContact] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/users/${currentUser.id}`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then((u: { panic_contacts?: string[] } | null) => {
+        setContacts(Array.isArray(u?.panic_contacts) ? u!.panic_contacts : []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [currentUser?.id]);
+
+  const save = async (updated: string[]) => {
+    if (!currentUser?.id) return;
+    setSaving(true);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const res = await fetch(`${base}/api/verification/panic-contacts/${currentUser.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ contacts: updated }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json() as { contacts: string[] };
+      setContacts(data.contacts);
+      toast({ title: "Emergency contacts saved" });
+    } catch {
+      toast({ title: "Failed to save contacts", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addContact = () => {
+    const trimmed = newContact.trim();
+    if (!trimmed || contacts.length >= 5) return;
+    const updated = [...contacts, trimmed];
+    setNewContact("");
+    save(updated);
+  };
+
+  const removeContact = (idx: number) => {
+    const updated = contacts.filter((_, i) => i !== idx);
+    save(updated);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-6">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground leading-relaxed">
+        Add up to 5 trusted people who will be notified by SMS when you activate an SOS alert.
+        Phone numbers only — include country code (e.g. +1 817 555 0100).
+      </p>
+      <div className="space-y-2">
+        {contacts.length === 0 && (
+          <div className="text-center py-4 text-sm text-muted-foreground bg-muted/30 rounded-xl border border-dashed border-border">
+            No emergency contacts added yet
+          </div>
+        )}
+        {contacts.map((c, i) => (
+          <div key={i} className="flex items-center gap-2 bg-background border border-border rounded-xl px-3 py-2.5">
+            <Phone className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span className="flex-1 text-sm font-mono">{c}</span>
+            <button
+              onClick={() => removeContact(i)}
+              disabled={saving}
+              className="p-1 rounded-lg text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+              aria-label="Remove contact"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+      {contacts.length < 5 && (
+        <div className="flex gap-2">
+          <input
+            type="tel"
+            placeholder="+1 817 555 0100"
+            value={newContact}
+            onChange={e => setNewContact(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") addContact(); }}
+            style={{ fontSize: "16px" }}
+            className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+          <button
+            onClick={addContact}
+            disabled={!newContact.trim() || saving}
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-bold disabled:opacity-40 transition-opacity"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            Add
+          </button>
+        </div>
+      )}
+      {contacts.length >= 5 && (
+        <p className="text-xs text-muted-foreground text-center">Maximum of 5 contacts reached</p>
+      )}
+    </div>
+  );
+}
+
 function SafetyDialog({ item, onClose, setShowReportModal }: { item: string; onClose: () => void; setShowReportModal: (v: boolean) => void }) {
   const content: Record<string, { icon: React.ComponentType<{className?: string}>; body: React.ReactNode }> = {
     "Report unsafe behavior": {
@@ -399,18 +515,7 @@ function SafetyDialog({ item, onClose, setShowReportModal }: { item: string; onC
     },
     "Emergency contacts": {
       icon: Phone,
-      body: (
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            Emergency contacts are trusted people who can be notified if you activate an SOS alert. This feature is being built — available soon.
-          </p>
-          <div className="bg-muted/50 border border-border rounded-xl p-4 text-center">
-            <div className="text-2xl mb-2">🔒</div>
-            <div className="font-bold text-sm">Coming Soon</div>
-            <div className="text-xs text-muted-foreground mt-1">Emergency contact management will be available in the next update</div>
-          </div>
-        </div>
-      ),
+      body: <EmergencyContactsManager />,
     },
     "Community guidelines": {
       icon: FileText,

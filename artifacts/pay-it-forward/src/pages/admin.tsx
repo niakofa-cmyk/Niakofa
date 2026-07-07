@@ -377,7 +377,10 @@ function PoolBalanceBanner() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/pool/stats");
+      const tok = getToken();
+      const res = await fetch("/api/pool/stats", {
+        headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+      });
       if (res.ok) {
         const d = await res.json() as PoolStats;
         setStats(d);
@@ -2255,7 +2258,10 @@ function UserReportsSection({ authed }: { authed: boolean }) {
     setLoading(true);
     try {
       const url = status && status !== "all" ? `${BASE}/api/reports?status=${status}` : `${BASE}/api/reports`;
-      const res = await fetch(url);
+      const tok = getToken();
+      const res = await fetch(url, {
+        headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+      });
       if (!res.ok) throw new Error("Failed");
       setReports(await res.json() as Report[]);
     } catch { toast({ title: "Could not load reports", variant: "destructive" }); }

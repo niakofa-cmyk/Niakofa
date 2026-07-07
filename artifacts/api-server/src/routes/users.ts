@@ -793,6 +793,24 @@ router.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(
 // frontend callers and zero test coverage; removed rather than left as dead
 // code that could silently drift from the real one.
 
+// Self-delete: authenticated user deletes their own account. Uses the token
+// subject (authenticatedUserId) as the canonical source — never a path param —
+// so there is no way to delete another user's account via this route.
+router.delete("/users/me", requireAuth, async (req, res) => {
+  const userId = (req as any).authenticatedUserId as number;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    await db.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
+    await db.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
+    await db.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
+    await db.delete(usersTable).where(eq(usersTable.id, userId));
+    return res.json({ ok: true, message: "Account deleted successfully" });
+  } catch (error) {
+    logger.error({ err: error }, "self-delete: failed");
+    return res.status(500).json({ error: "Failed to delete account" });
+  }
+});
+
 // BUG-H03: Account deletion is admin-only. requireOwnership() would let any
 // authenticated user delete any other account by crafting the path parameter.
 router.delete("/users/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
