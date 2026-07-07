@@ -257,7 +257,15 @@ router.get("/requests", async (req, res) => {
   if (requesterIdRaw !== null && isNaN(requesterIdRaw)) return res.status(400).json({ error: "requester_id must be a valid integer" });
   const helperId = helperIdRaw;
   const requesterId = requesterIdRaw;
-  const limitParam = req.query.limit ? parseInt(req.query.limit as string) : 200;
+  const limitParam = req.query.limit ? parseInt(req.query.limit as string) : 100;
+  // Reject out-of-range limits explicitly rather than silently clamping, so
+  // callers get a clear error instead of truncated results they didn't expect.
+  if (isNaN(limitParam) || limitParam < 1) {
+    return res.status(400).json({ error: "limit must be a positive integer" });
+  }
+  if (limitParam > 100) {
+    return res.status(400).json({ error: "maximum limit is 100; use offset for pagination" });
+  }
 
   // Build WHERE conditions in the DB — never load the full table.
   const conditions = [];
@@ -282,7 +290,7 @@ router.get("/requests", async (req, res) => {
     .from(requestsTable)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(sql`${requestsTable.created_at} DESC`)
-    .limit(Math.min(limitParam > 0 ? limitParam : 200, 500));
+    .limit(limitParam); // already validated to be 1–100 above
 
   // Exact radius filter in JS (bounding box above is a fast pre-filter)
   if (params.success && params.data.lat && params.data.lng) {

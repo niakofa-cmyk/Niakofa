@@ -44,6 +44,20 @@ jest.unstable_mockModule("@workspace/db", () => {
     catch: jest.fn().mockResolvedValue([null]),
     leftJoin: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    // db.execute is used by GET /healthz (SELECT 1 connectivity check) and
+    // several admin routes. Default to resolving so health tests can control
+    // the happy-path vs failure-path via mockResolvedValueOnce/mockRejectedValueOnce.
+    execute: jest.fn().mockResolvedValue({ rows: [] }),
+    // Make the mock object itself thenable so that query chains which terminate
+    // directly on .where() (without a trailing .limit() or .returning()) can be
+    // awaited safely. Without this, `await db.select().from(t).where(...)` gets
+    // back the mock object (a plain non-Promise value), and destructuring
+    // `const [row] = ...` yields undefined, which causes a 500 in the route.
+    // Chains that call .limit() or .returning() ignore this .then because those
+    // methods return their own native Promises, not the mock object.
+    then: jest.fn().mockImplementation((resolve: any, reject: any) =>
+      Promise.resolve([]).then(resolve, reject)
+    ),
   };
 
   (mockDb.limit as jest.Mock).mockImplementation(() => Promise.resolve([]));
@@ -87,7 +101,14 @@ jest.unstable_mockModule("drizzle-orm", () => ({
   and: jest.fn(),
   or: jest.fn(),
   not: jest.fn(),
-  sql: jest.fn(),
+  // sql is a tagged template literal function AND has static methods (sql.join,
+  // sql.raw, etc.). Plain jest.fn() lacks the methods, causing "sql.join is not
+  // a function" when GET /requests builds a dynamic ANY(ARRAY[...]) user lookup.
+  sql: Object.assign(jest.fn().mockReturnValue({}), {
+    join: jest.fn().mockReturnValue({}),
+    raw: jest.fn().mockReturnValue({}),
+    empty: jest.fn().mockReturnValue({}),
+  }),
   inArray: jest.fn(),
   notInArray: jest.fn(),
   asc: jest.fn(),
@@ -187,24 +208,26 @@ function bearerToken(userId: number): string {
 
 // ── Reset mocks between tests ─────────────────────────────────────────────────
 beforeEach(() => {
-  (db.select as jest.Mock).mockClear().mockReturnThis();
-  (db.update as jest.Mock).mockClear().mockReturnThis();
-  (db.insert as jest.Mock).mockClear().mockReturnThis();
-  (db.delete as jest.Mock).mockClear().mockReturnThis();
-  (db.from as jest.Mock).mockClear().mockReturnThis();
-  (db.where as jest.Mock).mockClear().mockReturnThis();
-  (db.set as jest.Mock).mockClear().mockReturnThis();
-  (db.values as jest.Mock).mockClear().mockReturnThis();
-  (db.limit as jest.Mock).mockClear();
-  (db.returning as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
-  (db.leftJoin as jest.Mock).mockClear().mockReturnThis();
-  (db.orderBy as jest.Mock).mockClear().mockReturnThis();
-
-  // NOTE: none of the lifecycle routes under test run requireApproved, so
-  // parseAuth's HMAC check needs no DB lookup here — no token-version
-  // preload required. Each test below queues exactly the DB calls its own
-  // route path makes, in order.
-  (db.limit as jest.Mock).mockImplementation(() => Promise.resolve([]));
+  // mockReset clears both call history AND queued mockResolvedValueOnce values,
+  // preventing stale queue entries from earlier tests bleeding into later ones.
+  // After reset, each mock needs its default implementation re-established.
+  (db.select as jest.Mock).mockReset().mockReturnThis();
+  (db.update as jest.Mock).mockReset().mockReturnThis();
+  (db.insert as jest.Mock).mockReset().mockReturnThis();
+  (db.delete as jest.Mock).mockReset().mockReturnThis();
+  (db.from as jest.Mock).mockReset().mockReturnThis();
+  (db.where as jest.Mock).mockReset().mockReturnThis();
+  (db.set as jest.Mock).mockReset().mockReturnThis();
+  (db.values as jest.Mock).mockReset().mockReturnThis();
+  (db.leftJoin as jest.Mock).mockReset().mockReturnThis();
+  (db.orderBy as jest.Mock).mockReset().mockReturnThis();
+  (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
+  (db.returning as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
+  // Re-establish the thenable default so chains ending on .where() still resolve to [].
+  (db.then as jest.Mock).mockReset().mockImplementation((resolve: any, reject: any) =>
+    Promise.resolve([]).then(resolve, reject)
+  );
+  (db.execute as jest.Mock).mockReset().mockResolvedValue({ rows: [] });
 });
 
 // ── Full Request Lifecycle Integration Tests ──────────────────────────────────
@@ -253,10 +276,12 @@ describe("Full Request Lifecycle", () => {
     expect(createRes.body.status).toBe("open");
 
     // 2. Claim request
-    // Call order: existingFull -> userSettings (none -> default 15mi) ->
-    // helperUser (location) -> [update+returning] -> final helper-name lookup.
+    // Call order: requireApproved (1 db.limit) -> existingFull -> userSettings
+    // (none -> default 15mi) -> helperUser (location) -> [update+returning]
+    // -> final helper-name lookup.
     const claimedRequest = { ...newRequest, status: "claimed", helper_id: helperId, claimed_at: new Date() };
     (db.limit as jest.Mock)
+      .mockResolvedValueOnce([{ is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0 }]) // requireApproved
       .mockResolvedValueOnce([{ requester_id: requesterId, urgency: "medium", lat: 32.7767, lng: -96.7970, category: "groceries" }]) // existingFull
       .mockResolvedValueOnce([])                                 // no userSettings (default 15 miles)
       .mockResolvedValueOnce([{ id: helperId, lat: 32.78, lng: -96.80 }]) // helper location
@@ -272,8 +297,9 @@ describe("Full Request Lifecycle", () => {
     expect(claimRes.status).toBe(200);
     expect(claimRes.body.status).toBe("claimed");
 
-    // 3. Mark en-route (atomic UPDATE ... WHERE guard, no separate SELECT)
+    // 3. Mark en-route — requireApproved runs first (1 db.limit), then atomic UPDATE.
     const enRouteRequest = { ...claimedRequest, status: "en_route", en_route_at: new Date() };
+    (db.limit as jest.Mock).mockResolvedValueOnce([{ is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0 }]);
     (db.returning as jest.Mock).mockResolvedValueOnce([enRouteRequest]);
 
     const enRouteRes = await request(app)
@@ -284,8 +310,9 @@ describe("Full Request Lifecycle", () => {
     expect(enRouteRes.status).toBe(200);
     expect(enRouteRes.body.status).toBe("en_route");
 
-    // 4. Mark arrived (atomic UPDATE ... WHERE guard, no separate SELECT)
+    // 4. Mark arrived — requireApproved runs first (1 db.limit), then atomic UPDATE.
     const arrivedRequest = { ...enRouteRequest, status: "arrived", arrived_at: new Date() };
+    (db.limit as jest.Mock).mockResolvedValueOnce([{ is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0 }]);
     (db.returning as jest.Mock).mockResolvedValueOnce([arrivedRequest]);
 
     const arrivedRes = await request(app)
@@ -296,11 +323,14 @@ describe("Full Request Lifecycle", () => {
     expect(arrivedRes.status).toBe(200);
     expect(arrivedRes.body.status).toBe("arrived");
 
-    // 5. Complete request
+    // 5. Complete request — requireApproved runs first (1 db.limit), then
+    // helperBefore lookup (1 db.limit), then the completion UPDATE.
     const completedRequest = { ...arrivedRequest, status: "completed", completed_at: new Date() };
     const helperBefore = { help_count: 5, trust_score: 85, name: "Helper Name" };
 
-    (db.limit as jest.Mock).mockResolvedValueOnce([helperBefore]); // helperBefore lookup
+    (db.limit as jest.Mock)
+      .mockResolvedValueOnce([{ is_suspended: false, trust_score: 50, approval_status: "approved", token_version: 0 }]) // requireApproved
+      .mockResolvedValueOnce([helperBefore]); // helperBefore lookup
 
     (db.returning as jest.Mock)
       .mockResolvedValueOnce([completedRequest])                             // request update
@@ -316,6 +346,9 @@ describe("Full Request Lifecycle", () => {
   });
 
   it("prevents duplicate rating for the same request", async () => {
+    // The rating route enforces uniqueness via the DB's unique constraint on
+    // (request_id, rater_id), NOT with a prior SELECT. It inserts and catches
+    // error code 23505. Simulate that here by making db.values() reject.
     const existingRequest = {
       id: requestId,
       status: "completed",
@@ -323,11 +356,10 @@ describe("Full Request Lifecycle", () => {
       helper_id: helperId,
     };
 
-    const existingRating = { id: 1, request_id: requestId, rater_id: requesterId };
-
-    (db.limit as jest.Mock)
-      .mockResolvedValueOnce([existingRequest])   // find request
-      .mockResolvedValueOnce([existingRating]);    // existing rating check
+    (db.limit as jest.Mock).mockResolvedValueOnce([existingRequest]); // get request
+    (db.values as jest.Mock).mockImplementationOnce(() =>
+      Promise.reject(Object.assign(new Error("duplicate key"), { code: "23505" }))
+    );
 
     const res = await request(app)
       .post(`/api/requests/${requestId}/rate`)
@@ -338,31 +370,32 @@ describe("Full Request Lifecycle", () => {
     expect(res.body.error).toMatch(/already rated/i);
   });
 
-  it("prevents duplicate gratitude post for the same request", async () => {
+  it("returns 403 when a non-participant tries to rate a completed request", async () => {
+    // requesterId=10 is neither the requester (99) nor the helper (88) of this
+    // request, so the route returns 403 "You weren't part of this request."
     const existingRequest = {
       id: requestId,
       status: "completed",
-      requester_id: requesterId,
-      helper_id: helperId,
+      requester_id: 99,
+      helper_id: 88,
     };
 
-    const existingGratitude = { id: 1, request_id: requestId };
-
-    (db.limit as jest.Mock)
-      .mockResolvedValueOnce([existingRequest])   // find request
-      .mockResolvedValueOnce([])                   // no existing rating
-      .mockResolvedValueOnce([existingGratitude]); // existing gratitude check
+    (db.limit as jest.Mock).mockResolvedValueOnce([existingRequest]);
 
     const res = await request(app)
       .post(`/api/requests/${requestId}/rate`)
       .set("Authorization", bearerToken(requesterId))
       .send({ stars: 5, review: "Great help!" });
 
-    expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/gratitude post already exists/i);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/weren't part of this request/i);
   });
 
-  it("recalculates trust score after rating", async () => {
+  it("submits a valid rating and returns success", async () => {
+    // The rating route returns { success: true } (200) on success. The trust-
+    // score update is fire-and-forget via .catch() — it does not affect the
+    // response. The allRatings query ends on .where() (no .limit), so the
+    // thenable mock resolves it to [] — the route still completes successfully.
     const existingRequest = {
       id: requestId,
       status: "completed",
@@ -370,34 +403,27 @@ describe("Full Request Lifecycle", () => {
       helper_id: helperId,
     };
 
-    const newRating = { id: 1, request_id: requestId, rater_id: requesterId, ratee_id: helperId, stars: 5, review: "Excellent!", role: "requester" };
-    const allRatings = [{ stars: 5 }, { stars: 4 }, { stars: 5 }];
-
-    (db.limit as jest.Mock)
-      .mockResolvedValueOnce([existingRequest])   // find request
-      .mockResolvedValueOnce([])                   // no existing rating
-      .mockResolvedValueOnce([]);                  // no existing gratitude
-
-    (db.returning as jest.Mock).mockResolvedValueOnce([newRating]);
-
-    // Mock the allRatings query for trust score recalculation
-    (db.from as jest.Mock).mockReturnValueOnce({
-      where: jest.fn().mockReturnValueOnce(allRatings),
-    });
+    (db.limit as jest.Mock).mockResolvedValueOnce([existingRequest]);
 
     const res = await request(app)
       .post(`/api/requests/${requestId}/rate`)
       .set("Authorization", bearerToken(requesterId))
       .send({ stars: 5, review: "Excellent!" });
 
-    expect(res.status).toBe(201);
-    expect(res.body.stars).toBe(5);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
   });
 });
 
 // ── Gratitude Duplication Prevention Tests ────────────────────────────────────
 
 describe("Gratitude Duplication Prevention", () => {
+  // POST /api/gratitude requires requireAuth — every request must carry a
+  // Bearer token. The route also does a db.limit author lookup BEFORE the
+  // duplication check, so the preload order is:
+  //   [0] author row  (db.select().from(usersTable).where(...).limit(1))
+  //   [1] existing-post check  (db.select().from(gratitudePostsTable).where(...).limit(1))
+
   it("returns 409 when creating duplicate gratitude within 24 hours", async () => {
     const existingPost = {
       id: 1,
@@ -408,18 +434,17 @@ describe("Gratitude Duplication Prevention", () => {
       created_at: new Date(Date.now() - 1000 * 60 * 60), // 1 hour ago
     };
 
-    (db.limit as jest.Mock).mockResolvedValueOnce([existingPost]);
+    (db.limit as jest.Mock)
+      .mockResolvedValueOnce([{ name: "Requester", avatar_url: null }]) // author lookup
+      .mockResolvedValueOnce([existingPost]);                            // duplicate check
 
     const res = await request(app)
       .post("/api/gratitude")
+      .set("Authorization", bearerToken(10))
       .send({
         request_id: 1,
-        author_id: 10,
-        author_name: "Requester",
         helper_id: 20,
-        helper_name: "Helper",
         message: "Thanks again!",
-        request_title: "Help with groceries",
       });
 
     expect(res.status).toBe(409);
@@ -434,21 +459,21 @@ describe("Gratitude Duplication Prevention", () => {
       helper_id: 20,
       message: "Thanks again!",
       created_at: new Date(),
+      moderation_status: "approved",
     };
 
-    (db.limit as jest.Mock).mockResolvedValueOnce([]); // No posts within 24h
+    (db.limit as jest.Mock)
+      .mockResolvedValueOnce([{ name: "Requester", avatar_url: null }]) // author lookup
+      .mockResolvedValueOnce([]);                                        // no duplicate
     (db.returning as jest.Mock).mockResolvedValueOnce([newPost]);
 
     const res = await request(app)
       .post("/api/gratitude")
+      .set("Authorization", bearerToken(10))
       .send({
         request_id: 1,
-        author_id: 10,
-        author_name: "Requester",
         helper_id: 20,
-        helper_name: "Helper",
         message: "Thanks again!",
-        request_title: "Help with groceries",
       });
 
     expect(res.status).toBe(201);
@@ -477,24 +502,27 @@ describe("Leaderboard Recalculation", () => {
 // ── Health Endpoint Tests ─────────────────────────────────────────────────────
 
 describe("Health Endpoint", () => {
-  it("returns 200 when database is connected", async () => {
-    (db.limit as jest.Mock).mockResolvedValueOnce([{ 1: 1 }]);
+  // GET /healthz uses db.execute(sql`SELECT 1`) — not db.select().limit().
+  // The response field is "db" (not "database"); see health.ts for the shape.
 
+  it("returns 200 when database is connected", async () => {
+    // Default beforeEach already sets execute to mockResolvedValue({rows:[]}).
+    // No override needed for the happy path.
     const res = await request(app).get("/api/healthz");
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ok");
-    expect(res.body.database).toBe("connected");
+    expect(res.body.db).toBe("connected");
   });
 
   it("returns 503 when database is disconnected", async () => {
-    (db.limit as jest.Mock).mockRejectedValueOnce(new Error("Connection refused"));
+    (db.execute as jest.Mock).mockRejectedValueOnce(new Error("Connection refused"));
 
     const res = await request(app).get("/api/healthz");
 
     expect(res.status).toBe(503);
     expect(res.body.status).toBe("degraded");
-    expect(res.body.database).toBe("disconnected");
+    expect(res.body.db).toBe("disconnected");
   });
 });
 

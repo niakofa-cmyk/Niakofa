@@ -156,8 +156,13 @@ beforeEach(() => {
   (db.where as jest.Mock).mockClear().mockReturnThis();
   (db.set as jest.Mock).mockClear().mockReturnThis();
   (db.values as jest.Mock).mockClear().mockReturnThis();
-  (db.limit as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
-  (db.returning as jest.Mock).mockClear().mockImplementation(() => Promise.resolve([]));
+  // mockReset (not mockClear) is required here: mockClear only clears call
+  // history, but leaves queued mockResolvedValueOnce values intact. Those
+  // stale queued values bleed into the next test and shift the DB-response
+  // queue by one, turning a 403 into a 409 (or vice-versa). mockReset wipes
+  // both history AND all queued return-value overrides.
+  (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
+  (db.returning as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
   // requireApproved (used on claim/en-route/arrived/complete) makes one DB
   // lookup before each route handler runs. Pre-seed it here so every test
   // that sends a valid auth token gets past requireApproved automatically.

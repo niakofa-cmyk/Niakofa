@@ -14,7 +14,10 @@ import { Queue, type JobsOptions } from "bullmq";
 import { logger } from "./logger";
 
 // ── Redis connection ──────────────────────────────────────────────────────────
-const REDIS_URL = process.env["REDIS_URL"];
+// Trim whitespace and treat blank strings as absent so that an accidentally
+// set-but-empty environment variable (e.g. `REDIS_URL=` in a Railway config)
+// does not cause ioredis to attempt a connection to an empty host.
+const REDIS_URL = (process.env["REDIS_URL"] ?? "").trim() || undefined;
 
 let _connection: IORedis | null = null;
 

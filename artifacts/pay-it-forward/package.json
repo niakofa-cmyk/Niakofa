@@ -57,6 +57,7 @@
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.6.0",
     "expect": "^29.7.0",
+    "tsx": "catalog:",
     "framer-motion": "catalog:",
     "input-otp": "^1.4.2",
     "lucide-react": "catalog:",
