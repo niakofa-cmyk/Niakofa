@@ -156,22 +156,31 @@ function bearerToken(userId: number): string {
 }
 
 // ── Reset mocks between tests to avoid state bleed ───────────────────────────
+// ALL chain-method mocks use mockReset() (not mockClear()). mockClear() only
+// clears call history but leaves queued mockResolvedValueOnce() values intact,
+// which bleed into the next test and shift the DB response queue by one
+// (e.g. the "403 own-request" test gets 409 when run after another test).
+// mockReset() wipes both call history AND all queued return-value overrides.
 beforeEach(() => {
-  (db.select as jest.Mock).mockClear().mockReturnThis();
-  (db.update as jest.Mock).mockClear().mockReturnThis();
-  (db.insert as jest.Mock).mockClear().mockReturnThis();
-  (db.delete as jest.Mock).mockClear().mockReturnThis();
-  (db.from as jest.Mock).mockClear().mockReturnThis();
-  (db.where as jest.Mock).mockClear().mockReturnThis();
-  (db.set as jest.Mock).mockClear().mockReturnThis();
-  (db.values as jest.Mock).mockClear().mockReturnThis();
-  // mockReset (not mockClear) is required here: mockClear only clears call
-  // history, but leaves queued mockResolvedValueOnce values intact. Those
-  // stale queued values bleed into the next test and shift the DB-response
-  // queue by one, turning a 403 into a 409 (or vice-versa). mockReset wipes
-  // both history AND all queued return-value overrides.
+  (db.select as jest.Mock).mockReset().mockReturnThis();
+  (db.update as jest.Mock).mockReset().mockReturnThis();
+  (db.insert as jest.Mock).mockReset().mockReturnThis();
+  (db.delete as jest.Mock).mockReset().mockReturnThis();
+  (db.from as jest.Mock).mockReset().mockReturnThis();
+  (db.where as jest.Mock).mockReset().mockReturnThis();
+  (db.set as jest.Mock).mockReset().mockReturnThis();
+  (db.values as jest.Mock).mockReset().mockReturnThis();
   (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
   (db.returning as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
+  // Restore thenable so chains ending on .where() can be awaited (no .limit()).
+  (db.then as jest.Mock).mockReset().mockImplementation((resolve: any, reject: any) =>
+    Promise.resolve([]).then(resolve, reject)
+  );
+  // Restore transaction, execute, and conflict-handling mocks each test.
+  (db.transaction as jest.Mock).mockReset().mockImplementation(async (cb: (tx: any) => Promise<any>) => cb(db));
+  (db.execute as jest.Mock).mockReset().mockResolvedValue({ rows: [] });
+  (db.onConflictDoNothing as jest.Mock).mockReset().mockResolvedValue([]);
+  (db.onConflictDoUpdate as jest.Mock).mockReset().mockResolvedValue([]);
   // requireApproved (used on claim/en-route/arrived/complete) makes one DB
   // lookup before each route handler runs. Pre-seed it here so every test
   // that sends a valid auth token gets past requireApproved automatically.

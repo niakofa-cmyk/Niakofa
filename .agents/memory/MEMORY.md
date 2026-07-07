@@ -1,3 +1,5 @@
+- [Niakofa mock-reset pattern](niakofa-mock-reset-pattern.md) — lifecycle.test.ts beforeEach MUST use mockReset() not mockClear(); mockClear leaves queued once-values that bleed across tests.
+- [Niakofa pool settings](niakofa-pool-settings.md) — all system_settings keys + defaults + migration numbers; 0048 seeds pool_minimum_hourly_rate=$15/hr.
 - [Niakofa shared-lib builds](niakofa-lib-builds.md) — tsc --build fixes TS6305 errors; lib packages have no "build" script, use tsc directly.
 - [Niakofa civic portal](niakofa-civic-portal.md) — gov-sponsor self-serve request dispatch; GET /users/:id/public public profile route; government_sponsor_id column on requestsTable (migration 0042).
 - [Niakofa code-review fixes](niakofa-code-review.md) — bugs fixed across admin.tsx, users.ts, leaderboard.ts, profile.tsx during full line-by-line review.

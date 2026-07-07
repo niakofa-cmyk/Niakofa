@@ -1,0 +1,37 @@
+
+I haven't yet verified the newest commits (community pool request routing + Nia proxy trust-tier validation, both from the last few hours) — those are additive on top of what I just confirmed, not contradicting it.
+1. The previous bug is fixed ✅
+lib/trust-tiers/package.json now declares "@types/node": "catalog:". Full pnpm install + pnpm run build (typecheck of all 4 libs, then api-server esbuild build + pay-it-forward vite build) completes clean, exit code 0, no TypeScript errors anywhere in the monorepo.
+2. New bug: pay-it-forward test script is broken
+
+json
+"test": "node --import tsx/esm --test src/lib/__tests__/heading-math.test.ts"
+This update switched the test runner from vitest to Node's built-in node:test + tsx (documented in vitest.config.ts — vitest 2.x is blocked by the Replit package firewall). But tsx was never added to pay-it-forward/package.json's devDependencies — only expect was added. Result: node --import tsx/esm fails immediately with ERR_MODULE_NOT_FOUND: Cannot find package 'tsx', even though tsx sits in the pnpm catalog (^4.21.0) and other packages (scripts, nia-service) already use it.
+Fix confirmed: add "tsx": "catalog:" to pay-it-forward's devDependencies, reinstall → all 19 heading-math tests pass.
+3. api-server test suite: 12 failing Jest tests
+Running pnpm run test in artifacts/api-server shows 2 failed suites / 12 failed tests out of 71. I traced these to two distinct causes — not a single bug:
+a) One test fails only due to test-order pollution, not an app bug. lifecycle.test.ts › "returns 403 when requester tries to claim own request" fails (gets 409 instead of 403) when the full suite runs, but passes when run in isolation. The route code itself is correct (it checks "is this your own request" before anything else). The test file's beforeEach uses mockClear() instead of mockReset(), which clears call history but not queued mockResolvedValueOnce() values — so leftover queued mock responses from an earlier test in the file leak into this one and shift its DB-response queue by one. This is a test-hygiene bug, not a production bug.
+b) 11 tests in integration-lifecycle.test.ts fail even in isolation — traced to a gap in that test file's hand-rolled DB mock. Several real query chains in requests.ts are perfectly valid under real Drizzle/Postgres because they end directly on .where(...) without a trailing .limit() — e.g. the "max 5 active requests" cap check and the "PIF pledge cap" check. But this test's mock only wires a resolvable promise onto .limit() and .returning(); anything that awaits a chain ending on plain .where() gets back the mock object itself (not an array), and destructuring [activeCount] = ... throws, which the route's error handler turns into a 500. That single 500 on request-creation is why "Full Request Lifecycle" and its dependent assertions collapse.
+c) One real behavior mismatch worth flagging separately: "enforces maximum limit of 100" expects GET /requests?limit=200 to return 400, but the actual route just silently clamps the limit to Math.min(limitParam, 500) — it never rejects an over-limit request with 400 at all. Either the test encodes an intended contract (reject over-limit) that was never implemented, or the cap was deliberately raised from 100→500 and the test wasn't updated. Worth a decision either way — right now the code and the test disagree about what "maximum limit" should do.
+Summary
+Issue	Type	Status
+lib/trust-tiers missing @types/node	Build-breaking	Already fixed in this upload
+pay-it-forward missing tsx dependency	Test-script breaking	New — fix identified & verified
+lifecycle.test.ts own-request test	Test-suite bug (mock leakage)	Not an app bug
+11 integration-lifecycle.test.ts failures	Test-mock coverage gap	Likely not real, but worth confirming against a real Postgres instance
+Pagination "max limit" 400 vs. clamp	Real spec/implementation mismatch	Needs a decision
+* Read the two newest commits (community pool request routing, Nia proxy trust-tier validation) to confirm they build cleanly on top of what's now verified
+* Pull the actual live values from system_settings (pool_guaranteed_minimum, pool_minimum_hourly_rate) to confirm the dollar amounts in production match what you'd call "livable"
+
+
+During the passing run, two errors get logged and silently swallowed:
+
+TypeError: db.transaction is not a function
+    at payHelperFromPool (src/lib/community-pool.ts:240:21)
+TypeError: (intermediate value) is not iterable
+    at getPoolBalance (src/lib/community-pool.ts:209:17)
+The test's DB mock never implements db.transaction(...), so any code path that goes through the community-pool "guaranteed minimum floor" top-up (payHelperFromPool, getPoolBalance) throws inside the mock, gets caught by the route's own error handling, and just logs a warning instead of failing the test. That's fine for now — nothing is broken — but it does mean the pool-payment/guaranteed-minimum-wage logic isn't actually exercised by this test suite; it's silently no-op'ing every time it's hit. If that code path matters (it looks like the "livable wage" guarantee feature), it'd be worth adding db.transaction to the mock so those assertions are real rather than accidentally-passing.
+
+
+Fix, Verify all Nia AI wiring end to end.
+Verify all Migrations have landing in repo
