@@ -11,15 +11,32 @@ description: Critical bugs in nia-service/migrate.sql and runMigrations() that b
 
 **Why it's catastrophic:** `runMigrations()` ran the ENTIRE `migrate.sql` as one `pool.query()` call. When the index statement failed, ALL subsequent statements never ran — including `CREATE TABLE system_settings` and the `INSERT INTO system_settings VALUES ('nia_enabled','false',…) ON CONFLICT DO NOTHING`. This means `nia_enabled` was never seeded, leaving its status undefined (fail-closed code defaults to false, so Nia was disabled, but the admin toggle had no row to update against).
 
-## Fix: runMigrations() statement-by-statement execution
+## Fix: runMigrations() statement-by-statement execution — CRITICAL FILTER BUG
 
 `nia-service/src/lib/db.ts::runMigrations()` now:
 1. Reads the SQL file
 2. Splits on `/;[ \t]*(?:\r?\n|$)/` to get individual statements
-3. Runs each statement with its own `pool.query()` in a try/catch
-4. Logs non-fatal errors and continues — never blocks subsequent idempotent statements
+3. **Filters using `replace(/--[^\n]*/g,'').trim().length > 0`** — do NOT use `!s.startsWith("--")`
+4. Runs each statement with its own `pool.query()` in a try/catch
+5. Logs non-fatal errors and continues — never blocks subsequent idempotent statements
 
 All statements in `migrate.sql` are idempotent (`IF NOT EXISTS` / `ON CONFLICT DO NOTHING`), so this is always safe.
+
+**CRITICAL BUG — `!s.startsWith("--")` silently drops 7 statements:**
+When migrate.sql has a SQL comment block BEFORE a statement (e.g. `-- Seed nia_enabled...` then `INSERT INTO system_settings`), after splitting on `;`, the segment STARTS with `--`. The original filter `!s.startsWith("--")` then DROP that entire statement. This caused:
+- `ALTER TABLE nia_conversations ADD COLUMN is_crisis` — dropped
+- `ALTER TABLE nia_memories ADD COLUMN structured` — dropped
+- `CREATE TABLE system_settings` — dropped
+- `INSERT INTO system_settings (nia_enabled=false)` seed — dropped (nia kill-switch has no row!)
+- `CREATE TABLE nia_knowledge` — dropped → index on it fails "relation does not exist"
+- `CREATE TABLE push_notification_queue` — dropped → index fails
+- `CREATE TABLE nia_cost_log` — dropped → all 3 indexes fail
+
+**The correct filter:** Strip comments first, then check if any actual SQL remains:
+```typescript
+.filter(s => { if(!s.length) return false; return s.replace(/--[^\n]*/g,'').trim().length > 0; })
+```
+This keeps leading-comment statements (passes full text including comments to pool.query(), which PostgreSQL handles correctly) and drops only pure-comment or empty segments.
 
 ## Fix: migration 0004 geography columns — PostGIS guard
 

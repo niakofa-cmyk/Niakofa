@@ -45,7 +45,16 @@ export async function runMigrations(): Promise<void> {
   const statements = sqlContent
     .split(/;[ \t]*(?:\r?\n|$)/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 0 && !s.startsWith("--"));
+    .filter((s) => {
+      if (!s.length) return false;
+      // Strip all single-line comments, then check if any actual SQL remains.
+      // Do NOT filter on startsWith("--") — many statements have leading block
+      // comments (e.g. the system_settings seed, all three nia_cost_log tables)
+      // and would be silently dropped, causing "relation does not exist" errors
+      // when their indexes try to run later.
+      const stripped = s.replace(/--[^\n]*/g, "").trim();
+      return stripped.length > 0;
+    });
 
   let ok = 0;
   let skipped = 0;
