@@ -182,7 +182,7 @@ function overdueRow(overrides: Record<string, unknown> = {}) {
 // ── Test setup ────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  jest.resetAllMocks();
   whereCallCount = 0;
   _overdueRows = [];
   _updateReturning = [{ id: 1 }];

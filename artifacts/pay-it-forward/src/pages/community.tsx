@@ -53,7 +53,33 @@ const CATEGORY_LABELS: Record<string, string> = {
   other: "💙 Other",
 };
 
-type Tab = "feed" | "heroes" | "pool" | "impact" | "resources" | "circles" | "skills";
+type Tab = "feed" | "heroes" | "pool" | "county" | "impact" | "resources" | "circles" | "skills";
+
+interface CommunityStats {
+  id: number;
+  name: string;
+  target_reserve_amount: number;
+  pool_balance: number;
+  pool_health_ratio: number;
+  pool_pct: number;
+  member_count: number;
+  total_contributed: number;
+  total_paid_to_helpers: number;
+  total_repaid: number;
+  helpers_paid: number;
+  sponsor_count: number;
+  inflow_30d: number;
+  outflow_30d: number;
+  created_at: string;
+}
+
+interface LedgerEntry {
+  id: number;
+  entry_type: string;
+  amount: number;
+  notes: string | null;
+  created_at: string;
+}
 
 
 interface CivicResource {
@@ -625,6 +651,44 @@ export default function CommunityScreen() {
     query: { queryKey: getGetRequestStatsQueryKey(), staleTime: 30000 }
   });
 
+  // ── County portal: default community stats + ledger ──────────────────────
+  const [countyData, setCountyData] = useState<CommunityStats | null>(null);
+  const [countyLedger, setCountyLedger] = useState<LedgerEntry[]>([]);
+  const [countyLoading, setCountyLoading] = useState(false);
+  const [countyLoaded, setCountyLoaded] = useState(false);
+
+  const loadCountyData = useCallback(async () => {
+    if (countyLoading) return;
+    setCountyLoading(true);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const res = await fetch(`${base}/api/communities/default`);
+      if (res.ok) {
+        const json = await res.json();
+        const community: CommunityStats | null = json.community ?? null;
+        setCountyData(community);
+        if (community) {
+          const lr = await fetch(`${base}/api/communities/${community.id}/ledger`);
+          if (lr.ok) {
+            const lj = await lr.json();
+            setCountyLedger(lj.entries ?? []);
+          }
+        }
+      }
+    } catch {
+      // swallow — county portal is non-critical
+    } finally {
+      setCountyLoading(false);
+      setCountyLoaded(true);
+    }
+  }, [countyLoading]);
+
+  useEffect(() => {
+    if (tab === "county" && !countyLoaded) {
+      loadCountyData();
+    }
+  }, [tab, countyLoaded, loadCountyData]);
+
   // ── Community Pool: live stats, transparency ledger, contribute flow ──────
   const { data: poolStats, refetch: refetchPoolStats } = useGetPoolStats({
     query: { queryKey: getGetPoolStatsQueryKey(), staleTime: 15000 }
@@ -729,8 +793,9 @@ export default function CommunityScreen() {
     { key: "skills",    label: "🔧 Skills" },
     { key: "heroes",    label: "⭐ Heroes" },
     { key: "pool",      label: "🏦 Pool" },
+    { key: "county",    label: "🏛️ County" },
     { key: "impact",    label: "📊 Impact" },
-    { key: "resources", label: "🏛️ Resources" },
+    { key: "resources", label: "📋 Resources" },
   ];
 
   return (
@@ -1490,6 +1555,201 @@ export default function CommunityScreen() {
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {tab === "county" && (
+          <div className="space-y-4">
+            {countyLoading && !countyData && (
+              <div className="flex items-center justify-center py-16 text-muted-foreground">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading county portal…
+              </div>
+            )}
+
+            {countyLoaded && !countyData && (
+              <div className="text-center py-16 text-muted-foreground text-sm">
+                No county pool has been set up yet. Check back soon.
+              </div>
+            )}
+
+            {countyData && (() => {
+              const hRatio = countyData.pool_health_ratio;
+              const healthColor =
+                hRatio >= 0.9 ? "text-green-400"
+                : hRatio >= 0.7 ? "text-yellow-400"
+                : "text-orange-400";
+              const healthLabel =
+                hRatio >= 0.9 ? "Fully Funded"
+                : hRatio >= 0.7 ? "Healthy"
+                : "Building Up";
+              const healthBg =
+                hRatio >= 0.9 ? "from-green-500/15 via-green-500/5 border-green-500/30"
+                : hRatio >= 0.7 ? "from-yellow-500/15 via-yellow-500/5 border-yellow-500/30"
+                : "from-orange-500/15 via-orange-500/5 border-orange-500/30";
+
+              return (
+                <>
+                  {/* County hero card */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`bg-gradient-to-br ${healthBg} border rounded-3xl p-6 shadow-lg`}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">County Fund</div>
+                        <h2 className="text-2xl font-black mt-0.5">{countyData.name}</h2>
+                        <div className="text-[11px] text-muted-foreground mt-1">
+                          Open community fund · {countyData.member_count.toLocaleString()} neighbors
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-[10px] font-bold uppercase tracking-widest ${healthColor}`}>{healthLabel}</div>
+                        <div className={`text-3xl font-black ${healthColor} mt-0.5`}>
+                          {Math.round(hRatio * 100)}%
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">of target</div>
+                      </div>
+                    </div>
+
+                    {/* Balance vs target */}
+                    <div className="mb-3">
+                      <div className="flex justify-between text-xs mb-1.5">
+                        <span className="font-black text-lg">${countyData.pool_balance.toFixed(2)}</span>
+                        <span className="text-muted-foreground text-[11px] self-end">target ${countyData.target_reserve_amount.toLocaleString()}</span>
+                      </div>
+                      <div className="h-3 bg-black/20 rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${countyData.pool_pct}%` }}
+                          transition={{ duration: 1.2, ease: "easeOut" }}
+                          className={`h-full rounded-full ${
+                            hRatio >= 0.9 ? "bg-gradient-to-r from-green-400 to-emerald-500"
+                            : hRatio >= 0.7 ? "bg-gradient-to-r from-yellow-400 to-amber-500"
+                            : "bg-gradient-to-r from-orange-400 to-orange-500"
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Every dollar in this fund goes directly to helpers — no platform cut, no waiting. When you complete a task, the county fund pays you right away at a livable wage floor.
+                    </p>
+                  </motion.div>
+
+                  {/* Livable wage framing */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/40 rounded-2xl p-5"
+                  >
+                    <h3 className="font-black text-sm flex items-center gap-2 mb-3">
+                      <DollarSign className="w-4 h-4 text-primary" /> Wake Up. Help Neighbors. Earn a Living.
+                    </h3>
+                    <p className="text-[12px] text-muted-foreground leading-relaxed mb-3">
+                      Helping your community pays real money — not tips, not points. The {countyData.name} fund guarantees every completed task earns a livable-wage floor, paid immediately when you finish. No invoices, no chasing payment, no waiting.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { icon: "⚡", label: "Paid Instantly", desc: "Pool pays helpers the moment a task completes" },
+                        { icon: "📈", label: "Wage Scales with You", desc: "Higher trust tier = bigger minimum guarantee" },
+                        { icon: "🔄", label: "Self-Replenishing", desc: "Requesters pay it forward, refilling the pool" },
+                        { icon: "🏛️", label: "County-Backed", desc: "Local sponsors keep the fund healthy" },
+                      ].map(item => (
+                        <div key={item.label} className="bg-background/60 rounded-xl p-3">
+                          <div className="text-lg mb-0.5">{item.icon}</div>
+                          <div className="text-[11px] font-black">{item.label}</div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{item.desc}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+
+                  {/* Impact stats */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className="bg-card border border-border rounded-2xl p-4"
+                  >
+                    <h3 className="font-black text-sm flex items-center gap-2 mb-3">
+                      <Activity className="w-4 h-4 text-primary" /> What This Fund Has Done
+                    </h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { label: "Contributed", value: `$${countyData.total_contributed.toFixed(2)}`, desc: "From sponsors & neighbors", color: "text-green-400" },
+                        { label: "Paid to Helpers", value: `$${countyData.total_paid_to_helpers.toFixed(2)}`, desc: "Instantly on task completion", color: "text-primary" },
+                        { label: "Helpers Paid", value: countyData.helpers_paid.toString(), desc: "Unique neighbors compensated", color: "text-yellow-400" },
+                        { label: "30-Day Inflow", value: `$${countyData.inflow_30d.toFixed(2)}`, desc: "Repayments + contributions", color: "text-cyan-400" },
+                      ].map(item => (
+                        <div key={item.label} className="bg-background/60 rounded-xl px-3 py-2.5">
+                          <div className={`text-xl font-black ${item.color}`}>{item.value}</div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider">{item.label}</div>
+                          <div className="text-[9px] text-muted-foreground mt-0.5">{item.desc}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+
+                  {/* Recent ledger */}
+                  {countyLedger.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2 }}
+                      className="bg-card border border-border rounded-2xl p-4"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-black text-sm flex items-center gap-2">
+                          <Shield className="w-4 h-4 text-primary" /> Public Ledger
+                        </h3>
+                        <button
+                          onClick={loadCountyData}
+                          className="text-[11px] text-primary flex items-center gap-1 active:opacity-60"
+                        >
+                          <RefreshCw className="w-3 h-3" /> Refresh
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {countyLedger.slice(0, 10).map((entry) => {
+                          const isCredit = entry.amount > 0;
+                          const typeLabel: Record<string, string> = {
+                            sponsor_contribution: "🏛️ Sponsor contributed",
+                            helper_front: "⚡ Helper paid",
+                            guaranteed_minimum: "💙 Min guarantee paid",
+                            pledge_repayment: "🔄 Pledge repaid",
+                          };
+                          return (
+                            <div key={entry.id} className="flex items-center justify-between text-xs py-1.5 border-b border-border/50 last:border-0">
+                              <div>
+                                <div className="font-medium">{typeLabel[entry.entry_type] ?? entry.entry_type}</div>
+                                {entry.notes && (
+                                  <div className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[200px]">{entry.notes}</div>
+                                )}
+                              </div>
+                              <div className={`font-black tabular-nums ${isCredit ? "text-green-400" : "text-primary"}`}>
+                                {isCredit ? "+" : "−"}${Math.abs(entry.amount).toFixed(2)}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {countyLedger.length === 0 && countyLoaded && (
+                    <div className="bg-card border border-border rounded-2xl p-6 text-center">
+                      <div className="text-3xl mb-2">🌱</div>
+                      <div className="font-black text-sm">Fund is getting started</div>
+                      <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                        The {countyData.name} community fund is new. Be one of the first contributors — your donation goes directly to compensating helpers in your county.
+                      </p>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
 

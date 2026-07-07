@@ -231,14 +231,18 @@ router.post(
         res.setHeader("Content-Type", "text/event-stream");
         res.setHeader("Cache-Control", "no-cache");
       }
-      if (!res.writableEnded) {
-        res.write(
-          `data: ${JSON.stringify({
-            type: "error",
-            message: "Nia is having trouble connecting. In an emergency: 112 (global/Europe/Africa) · 999 (UK) · 911 (US/Canada). Crisis support: findahelpline.com",
-          })}\n\n`
-        );
-        res.end();
+      if (!res.writableEnded && !res.destroyed) {
+        try {
+          res.write(
+            `data: ${JSON.stringify({
+              type: "error",
+              message: "Nia is having trouble connecting. In an emergency: 112 (global/Europe/Africa) · 999 (UK) · 911 (US/Canada). Crisis support: findahelpline.com",
+            })}\n\n`
+          );
+          res.end();
+        } catch {
+          // Socket already closed mid-stream — swallow silently
+        }
       }
       return;
     }
