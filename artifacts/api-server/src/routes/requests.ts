@@ -113,16 +113,55 @@ router.get("/requests/nearby", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "lat and lng are required" });
   const { lat, lng, radius_miles } = parsed.data;
   const radius = radius_miles ?? 5;
-  const requests = await db.select().from(requestsTable).where(eq(requestsTable.status, "open"));
-  const nearby = requests
-    .map(r => ({ ...r, distance_miles: distanceMiles(lat, lng, r.lat, r.lng) }))
-    .filter(r => r.distance_miles <= radius)
-    .sort((a, b) => {
-      const urgencyOrder: Record<string, number> = { emergency: 0, high: 1, medium: 2, low: 3 };
-      const urgencyDiff = (urgencyOrder[a.urgency] ?? 2) - (urgencyOrder[b.urgency] ?? 2);
-      if (urgencyDiff !== 0) return urgencyDiff;
-      return a.distance_miles - b.distance_miles;
-    });
+  const radiusMeters = radius * 1609.344;
+
+  // PostGIS ST_DWithin against the indexed geog column (kept in sync with
+  // lat/lng by trg_help_requests_sync_geog, migration 0052; indexed by
+  // help_requests_geog_gix, a GiST index) — pushes the radius filter and
+  // sort into the DB instead of pulling every open request and computing
+  // Haversine distance in JS for each one. Falls back to the old JS
+  // Haversine path if PostGIS/geog isn't available (e.g. a dev DB without
+  // the extension), so this endpoint never hard-fails on missing PostGIS.
+  let nearby: (typeof requestsTable.$inferSelect & { distance_miles: number })[];
+  try {
+    const nearbyRows = await db.execute(sql`
+      SELECT
+        hr.*,
+        ST_Distance(
+          ST_MakePoint(${lng}, ${lat})::geography,
+          hr.geog
+        ) / 1609.344 AS distance_miles
+      FROM help_requests hr
+      WHERE hr.status = 'open'
+        AND hr.geog IS NOT NULL
+        AND ST_DWithin(
+          ST_MakePoint(${lng}, ${lat})::geography,
+          hr.geog,
+          ${radiusMeters}
+        )
+      ORDER BY
+        CASE hr.urgency
+          WHEN 'emergency' THEN 0
+          WHEN 'high'      THEN 1
+          WHEN 'medium'    THEN 2
+          ELSE                  3
+        END,
+        distance_miles
+    `);
+    nearby = nearbyRows.rows as (typeof requestsTable.$inferSelect & { distance_miles: number })[];
+  } catch (geoErr) {
+    logger.warn({ err: geoErr }, "requests/nearby: PostGIS unavailable, falling back to Haversine");
+    const requests = await db.select().from(requestsTable).where(eq(requestsTable.status, "open"));
+    nearby = requests
+      .map(r => ({ ...r, distance_miles: distanceMiles(lat, lng, r.lat, r.lng) }))
+      .filter(r => r.distance_miles <= radius)
+      .sort((a, b) => {
+        const urgencyOrder: Record<string, number> = { emergency: 0, high: 1, medium: 2, low: 3 };
+        const urgencyDiff = (urgencyOrder[a.urgency] ?? 2) - (urgencyOrder[b.urgency] ?? 2);
+        if (urgencyDiff !== 0) return urgencyDiff;
+        return a.distance_miles - b.distance_miles;
+      });
+  }
 
   const userIds = [...new Set(nearby.map(r => r.requester_id))];
   const users = userIds.length > 0
