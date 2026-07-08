@@ -118,12 +118,32 @@ router.post("/admin/communities", requireAuth, requireAdmin(), adminLimiter, asy
   return res.status(201).json(created);
 });
 
-// PATCH /admin/communities/:id — update name and/or target_reserve_amount
+// PATCH /admin/communities/:id — update name, target_reserve_amount, hourly_rate,
+// and/or county branding fields (description, sponsor_name, sponsor_logo_url,
+// county, state). All fields are optional — only provided fields are updated.
 router.patch("/admin/communities/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const id = parseInt(req.params.id as string);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
-  const { name, target_reserve_amount } = req.body as { name?: string; target_reserve_amount?: number };
+  const {
+    name,
+    target_reserve_amount,
+    hourly_rate,
+    description,
+    sponsor_name,
+    sponsor_logo_url,
+    county,
+    state,
+  } = req.body as {
+    name?: string;
+    target_reserve_amount?: number;
+    hourly_rate?: number | null;
+    description?: string | null;
+    sponsor_name?: string | null;
+    sponsor_logo_url?: string | null;
+    county?: string | null;
+    state?: string | null;
+  };
 
   let trimmedName: string | undefined;
   if (name !== undefined) {
@@ -136,18 +156,37 @@ router.patch("/admin/communities/:id", requireAuth, requireAdmin(), adminLimiter
   if (target_reserve_amount !== undefined && !isValidTargetReserve(target_reserve_amount)) {
     return res.status(400).json({ error: "target_reserve_amount must be a positive number" });
   }
+  // hourly_rate: null clears county override (falls back to global rate); positive number sets it.
+  if (hourly_rate !== undefined && hourly_rate !== null &&
+      (typeof hourly_rate !== "number" || !Number.isFinite(hourly_rate) || hourly_rate <= 0)) {
+    return res.status(400).json({ error: "hourly_rate must be a positive number or null" });
+  }
+
+  const patch: Record<string, unknown> = {};
+  if (trimmedName !== undefined) patch.name = trimmedName;
+  if (target_reserve_amount !== undefined) patch.target_reserve_amount = target_reserve_amount;
+  if (hourly_rate !== undefined) patch.hourly_rate = hourly_rate;
+  if (description !== undefined) patch.description = description;
+  if (sponsor_name !== undefined) patch.sponsor_name = sponsor_name;
+  if (sponsor_logo_url !== undefined) patch.sponsor_logo_url = sponsor_logo_url;
+  if (county !== undefined) patch.county = county;
+  if (state !== undefined) patch.state = state;
+
+  if (Object.keys(patch).length === 0) {
+    return res.status(400).json({ error: "No updatable fields provided" });
+  }
 
   const [updated] = await db
     .update(communitiesTable)
-    .set({
-      ...(trimmedName !== undefined ? { name: trimmedName } : {}),
-      ...(target_reserve_amount !== undefined ? { target_reserve_amount } : {}),
-    })
+    .set(patch as Partial<typeof communitiesTable.$inferInsert>)
     .where(eq(communitiesTable.id, id))
     .returning();
 
   if (!updated) return res.status(404).json({ error: "Not found" });
-  logger.info({ community_id: id }, "admin-communities: updated community");
+  logger.info(
+    { community_id: id, fields: Object.keys(patch) },
+    "admin-communities: updated community"
+  );
   return res.json(updated);
 });
 

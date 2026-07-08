@@ -53,11 +53,32 @@ export async function isPoolEnabled(): Promise<boolean> {
 
 /**
  * Per-hour minimum wage used to scale the guaranteed minimum by estimated task
- * duration. Stored in system_settings as `pool_minimum_hourly_rate`.
- * Default $15/hr — approximate Texas livable wage floor.
+ * duration.
+ *
+ * Resolution order (per-county livable wage override):
+ *   1. communities.hourly_rate for the given communityId (county-level override)
+ *   2. system_settings pool_minimum_hourly_rate (global platform default)
+ *   3. Hard-coded $15/hr (DB unavailable fallback)
+ *
+ * This lets sponsoring counties set their own livable wage floor at onboarding
+ * via POST /admin/communities/:id (sets communities.hourly_rate) rather than
+ * being locked to the single global $15/hr default.
  */
-export async function getHourlyMinimumRate(): Promise<number> {
+export async function getHourlyMinimumRate(communityId?: number | null): Promise<number> {
   try {
+    // 1. Check for a community-level override when a communityId is provided.
+    if (communityId != null) {
+      const [community] = await db
+        .select({ hourly_rate: communitiesTable.hourly_rate })
+        .from(communitiesTable)
+        .where(eq(communitiesTable.id, communityId))
+        .limit(1);
+      if (community?.hourly_rate != null && community.hourly_rate > 0) {
+        return community.hourly_rate;
+      }
+    }
+
+    // 2. Fall back to the global system setting.
     const [row] = await db
       .select({ value: systemSettingsTable.value })
       .from(systemSettingsTable)
@@ -165,9 +186,22 @@ export async function getGuaranteedMinimum(
     const flatFloor = Number.isFinite(parsed) && parsed >= 0 ? parsed : GUARANTEED_MINIMUM_FALLBACK;
 
     // Hours-scaled floor: take the GREATER of flat floor and hours × rate.
+    // Pass helperId-resolved communityId so the per-county rate is used when set.
     let base = flatFloor;
     if (estimatedHours && estimatedHours > 0) {
-      const hourlyRate = await getHourlyMinimumRate();
+      // Peek at the helper's community to honour their county's livable-wage rate.
+      let helperCommunityId: number | null = null;
+      if (helperId != null) {
+        try {
+          const [h] = await db
+            .select({ community_id: usersTable.community_id })
+            .from(usersTable)
+            .where(eq(usersTable.id, helperId))
+            .limit(1);
+          helperCommunityId = h?.community_id ?? null;
+        } catch { /* non-fatal: fall through to global rate */ }
+      }
+      const hourlyRate = await getHourlyMinimumRate(helperCommunityId);
       const hoursFloor = roundMoney(estimatedHours * hourlyRate);
       base = Math.max(flatFloor, hoursFloor);
     }

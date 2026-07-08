@@ -29,6 +29,7 @@ import walletRouter from "./wallet";
 import googleAuthRouter from "./google-auth";
 import checkinRouter from "./checkin";
 import disputesRouter from "./disputes";
+import impactRouter from "./impact";
 
 const router: IRouter = Router();
 
@@ -62,5 +63,6 @@ router.use(walletRouter);
 router.use(googleAuthRouter);
 router.use("/checkin", checkinRouter);
 router.use(disputesRouter);
+router.use(impactRouter);
 
 export default router;

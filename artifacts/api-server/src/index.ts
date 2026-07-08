@@ -2,7 +2,7 @@ import http from "http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
-import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker, startCashoutReconciliation } from "./lib/scheduler";
+import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker, startCashoutReconciliation, startLedgerDriftMonitor } from "./lib/scheduler";
 import { isRedisConfigured, getRedisUrlStatus, closeRedis } from "./lib/queue";
 import {
   workerStarted,
@@ -100,6 +100,7 @@ server.listen(port, async () => {
   registerWorker("pledge-defaults",     "Pledge Default Sweeper", false);
   registerWorker("cashout-recon",       "Cashout Reconciliation", false);
   registerWorker("recurring-requests",  "Recurring Requests",     false);
+  registerWorker("ledger-drift",        "Ledger/Stripe Drift",    false);
 
   if (isRedisConfigured()) {
     logger.info("redis: configured — starting BullMQ workers");
@@ -143,6 +144,8 @@ server.listen(port, async () => {
   startPledgeDefaultWorker(); workerStarted("pledge-defaults", "Pledge Default Sweeper", false);
   // Cashout reconciliation — refunds stale pending/failed cashouts with no Stripe transfer
   startCashoutReconciliation(); workerStarted("cashout-recon", "Cashout Reconciliation", false);
+  // Ledger/Stripe drift monitor — runs daily, alerts on > $10 gap
+  startLedgerDriftMonitor(); workerStarted("ledger-drift", "Ledger/Stripe Drift", false);
   // Recurring requests — fire any due recurring requests every hour
   processRecurringRequests().catch((err: unknown) =>
     logger.error({ err }, "recurring-worker: initial run failed — non-fatal")

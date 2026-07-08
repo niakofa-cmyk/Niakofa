@@ -42,6 +42,7 @@ const GovSponsorApplyScreen = lazy(() => import("@/pages/gov-sponsor-apply"));
 const CivicPortalPage      = lazy(() => import("@/pages/civic-portal"));
 const StatusPage           = lazy(() => import("@/pages/status"));
 const RequestsBrowsePage   = lazy(() => import("@/pages/requests-browse"));
+const CountyImpactPage     = lazy(() => import("@/pages/county-impact"));
 
 // Minimal spinner shown while a lazy chunk is loading.
 // Kept intentionally simple — just a centred, low-opacity dot so the
@@ -236,6 +237,14 @@ function AppContent() {
     return (
       <Suspense fallback={<PageFallback />}>
         <StatusPage />
+      </Suspense>
+    );
+  }
+  // Public county impact dashboard — accessible without authentication
+  if (pathname === "/impact" || pathname.startsWith("/impact/")) {
+    return (
+      <Suspense fallback={<PageFallback />}>
+        <CountyImpactPage />
       </Suspense>
     );
   }

@@ -598,3 +598,98 @@ export function startCashoutReconciliation(): () => void {
     logger.info("cashout-reconciliation: cron stopped");
   };
 }
+
+// ─── Ledger/Stripe Drift Monitor ─────────────────────────────────────────────
+// Runs once per day. Compares the Community Pool ledger balance against the
+// actual Stripe platform balance. Drift > $10 triggers a structured WARN log
+// so monitoring tooling and admin dashboards can surface it.
+//
+// This automates the previously manual-only GET /admin/pool/stripe-balance
+// endpoint (which was a silent on-demand check — the audit flagged that
+// silent ledger drift is the failure mode you most want to catch early once
+// real money and real counties are involved).
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const DRIFT_ALERT_THRESHOLD = 10; // dollars
+
+async function checkLedgerStripeDrift(): Promise<void> {
+  const STRIPE_SECRET_KEY = process.env["STRIPE_SECRET_KEY"];
+  if (!STRIPE_SECRET_KEY) {
+    logger.debug("ledger-drift: STRIPE_SECRET_KEY not configured — skipping daily drift check");
+    return;
+  }
+
+  try {
+    const { db, communityPoolLedgerTable } = await import("@workspace/db");
+    const { sql: sqlTag } = await import("drizzle-orm");
+
+    const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" as Stripe.LatestApiVersion });
+
+    // Ledger balance
+    const [balRow] = await db
+      .select({ balance: sqlTag<number>`COALESCE(SUM(${communityPoolLedgerTable.amount}), 0)::float8` })
+      .from(communityPoolLedgerTable);
+    const ledgerBalance = balRow?.balance ?? 0;
+
+    // Stripe balance
+    const stripeBalance = await stripe.balance.retrieve();
+    const available = stripeBalance.available
+      .filter((b: { currency: string }) => b.currency === "usd")
+      .reduce((s: number, b: { amount: number }) => s + b.amount, 0) / 100;
+    const pending = stripeBalance.pending
+      .filter((b: { currency: string }) => b.currency === "usd")
+      .reduce((s: number, b: { amount: number }) => s + b.amount, 0) / 100;
+    const stripeTotal = available + pending;
+
+    const drift = Math.abs(stripeTotal - ledgerBalance);
+
+    if (drift > DRIFT_ALERT_THRESHOLD) {
+      logger.warn(
+        {
+          ledger_balance: ledgerBalance,
+          stripe_available: available,
+          stripe_pending: pending,
+          stripe_total: stripeTotal,
+          drift,
+          threshold: DRIFT_ALERT_THRESHOLD,
+        },
+        "ledger-drift: DAILY CHECK — ledger vs Stripe gap exceeds $10. " +
+        "Review the pool ledger and Stripe dashboard. " +
+        "Possible causes: missed webhook, unrecorded fee, ledger bug. " +
+        "Also visible at GET /api/admin/pool/stripe-balance."
+      );
+    } else {
+      logger.info(
+        { ledger_balance: ledgerBalance, stripe_total: stripeTotal, drift },
+        "ledger-drift: daily check OK — ledger and Stripe within $10"
+      );
+    }
+  } catch (err) {
+    logger.error({ err }, "ledger-drift: daily check failed — non-fatal, will retry tomorrow");
+  }
+}
+
+/** Start the daily ledger/Stripe drift monitor. Returns a cleanup function. */
+export function startLedgerDriftMonitor(): () => void {
+  // Run once at a short delay after startup so it doesn't block boot,
+  // then daily thereafter.
+  const startupDelay = setTimeout(() => {
+    checkLedgerStripeDrift().catch((err: unknown) =>
+      logger.error({ err }, "ledger-drift: startup run failed")
+    );
+  }, 5 * 60 * 1000); // 5 min after boot
+
+  const interval = setInterval(() => {
+    checkLedgerStripeDrift().catch((err: unknown) =>
+      logger.error({ err }, "ledger-drift: daily run failed")
+    );
+  }, ONE_DAY_MS);
+
+  logger.info({ intervalMs: ONE_DAY_MS }, "ledger-drift: daily monitor started");
+
+  return () => {
+    clearTimeout(startupDelay);
+    clearInterval(interval);
+    logger.info("ledger-drift: monitor stopped");
+  };
+}
