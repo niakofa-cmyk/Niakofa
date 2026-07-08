@@ -5,14 +5,14 @@
  * All routes require authentication + admin role.
  */
 import { Router } from "express";
-import { db, requestsTable, usersTable, reportsTable, niaMemoriesTable, niaConversationsTable } from "@workspace/db";
-import { eq, sql, and, gte } from "drizzle-orm";
+import { db, requestsTable, usersTable, reportsTable, niaMemoriesTable, niaConversationsTable, niaToggleAuditTable } from "@workspace/db";
+import { eq, sql, and, gte, desc } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter, authLimiter, generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { broadcast } from "../lib/ws-hub";
-import { getSystemSettings, setSystemSettings } from "../lib/db-helpers";
+import { getSystemSettings, setSystemSettings, getUserById } from "../lib/db-helpers";
 
 const router = Router();
 
@@ -403,16 +403,28 @@ router.get("/admin/nia-status", generalApiLimiter, async (_req, res) => {
   }
 });
 
-// POST /admin/nia-toggle — admin only. Body: { enabled: boolean }
+// POST /admin/nia-toggle — admin only. Body: { enabled: boolean, reason?: string }
 // Both DB writes run inside withTransaction so the WS broadcast only fires
 // after a confirmed atomic commit — partial writes never trigger a broadcast
 // with inconsistent state.
+//
+// Every toggle also writes an append-only row to nia_toggle_audit (who, when,
+// why) so admins have a verifiable paper trail — see replit.md → "Legal/tax
+// flags" for why this matters. The audit write is best-effort: a failure here
+// must never block the actual kill-switch flip, since the toggle itself is
+// the safety-critical action.
+const MAX_REASON_LENGTH = 500;
+
 router.post("/admin/nia-toggle", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
-  const { enabled } = req.body as { enabled?: boolean };
+  const { enabled, reason: rawReason } = req.body as { enabled?: boolean; reason?: string };
   if (typeof enabled !== "boolean") {
     return res.status(400).json({ error: "enabled (boolean) is required" });
   }
+  const reason = typeof rawReason === "string" && rawReason.trim()
+    ? rawReason.trim().slice(0, MAX_REASON_LENGTH)
+    : null;
   const now = new Date().toISOString();
+  const adminUserId = req.authenticatedUserId;
 
   try {
     // setSystemSettings atomically upserts all keys inside a single transaction.
@@ -425,14 +437,53 @@ router.post("/admin/nia-toggle", requireAuth, requireAdmin(), adminLimiter, asyn
     return res.status(500).json({ error: "Failed to save Nia setting — toggle not applied" });
   }
 
+  // Best-effort audit trail write — never blocks or fails the toggle itself.
+  if (adminUserId) {
+    try {
+      const admin = await getUserById(adminUserId);
+      await db.insert(niaToggleAuditTable).values({
+        enabled,
+        admin_user_id: adminUserId,
+        admin_email: admin?.email ?? "unknown",
+        reason,
+      });
+    } catch (err) {
+      logger.error({ err, enabled, adminUserId }, "admin: nia_toggle_audit insert failed — toggle still applied");
+    }
+  }
+
   // Broadcast only after the transaction committed successfully.
   // Kill-switch fires on all connected clients instantly, no 60s poll wait.
   broadcast({
     type: "nia_status",
     payload: { enabled, source: "admin_toggle", toggled_at: now },
   });
-  logger.info({ enabled }, "admin: Nia AI toggled — broadcast sent to all clients");
+  logger.info({ enabled, adminUserId, reason }, "admin: Nia AI toggled — broadcast sent to all clients");
   return res.json({ ok: true, enabled, toggled_at: now });
+});
+
+// GET /admin/nia-audit-log — admin only. Returns recent kill-switch history.
+// Query: ?limit=50 (default 50, max 200).
+router.get("/admin/nia-audit-log", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "50"), 10) || 50, 1), 200);
+  try {
+    const rows = await db
+      .select({
+        id: niaToggleAuditTable.id,
+        enabled: niaToggleAuditTable.enabled,
+        admin_user_id: niaToggleAuditTable.admin_user_id,
+        admin_email: niaToggleAuditTable.admin_email,
+        reason: niaToggleAuditTable.reason,
+        created_at: niaToggleAuditTable.created_at,
+      })
+      .from(niaToggleAuditTable)
+      .orderBy(desc(niaToggleAuditTable.created_at))
+      .limit(limit);
+    return res.json({ entries: rows });
+  } catch (err) {
+    logger.error({ err }, "admin: nia-audit-log fetch failed");
+    return res.status(500).json({ error: "Failed to load audit log" });
+  }
 });
 
 // ── AI Cost Monitoring ────────────────────────────────────────────────────────

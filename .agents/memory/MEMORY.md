@@ -121,3 +121,5 @@
 - [Niakofa nia-service crash supervision](niakofa-nia-supervision.md) — railway.toml startCommand wraps nia-service in `while true; do ...; sleep 3; done &` restart loop; crash goes to Railway logs + restarts in 3s.
 - [Niakofa admin refreshTick real polling](niakofa-admin-refreshtick.md) — refreshTick must be passed as prop to UsersTab+ReportsTab/UserReportsSection and added to their useEffect dep arrays; without this the LIVE dot is cosmetic only.
 - [Niakofa XSS sanitization](niakofa-xss-sanitize.md) — lib/sanitize.ts: stripTags() removes HTML tags+null-bytes; applied to requests.ts title/description on create+update; escapeHtml in mailer.ts is for HTML email templates only.
+- [Niakofa Nia toggle audit](niakofa-nia-toggle-audit.md) — nia_toggle_audit table + GET /admin/nia-audit-log; best-effort insert never blocks the kill-switch flip itself.
+- [Niakofa seed-test-accounts prod guard](niakofa-seed-prod-guard.md) — Replit dev DB host is "helium", not localhost/127.0.0.1; guard regex doesn't match it, needs --i-know-this-is-production flag even on dev.

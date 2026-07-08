@@ -9,7 +9,7 @@ import {
   LineChart, FileText, Gavel, Sparkles, RotateCcw, Landmark, Building2,
   SlidersHorizontal, Save, Loader2, Server, LifeBuoy, Cpu, CheckCircle, WifiOff,
   Siren, MapPin, Globe, Fingerprint, Banknote, BadgeCheck, Inbox,
-  ShieldAlert, ThumbsUp, ThumbsDown, Megaphone, Map, Link, Navigation2
+  ShieldAlert, ThumbsUp, ThumbsDown, Megaphone, Map, Link, Navigation2, ShieldCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -186,6 +186,15 @@ interface NiaCostDailyEntry {
   totalOutputTokens: number;
   estimatedCostUsd: number;
   failedCalls: number;
+}
+
+interface NiaAuditEntry {
+  id: number;
+  enabled: boolean;
+  admin_user_id: number;
+  admin_email: string;
+  reason: string | null;
+  created_at: string;
 }
 
 interface NiaCostData {
@@ -1632,6 +1641,10 @@ function NiaTab() {
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [wsReceived, setWsReceived] = useState<{ enabled: boolean; at: string } | null>(null);
+  const [toggleReason, setToggleReason] = useState("");
+  const [auditLog, setAuditLog] = useState<NiaAuditEntry[] | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
 
   const hdrs = useCallback(() => {
     const t = getToken();
@@ -1688,6 +1701,23 @@ function NiaTab() {
     return unsub;
   }, []);
 
+  const loadAuditLog = useCallback(async () => {
+    setAuditLoading(true);
+    setAuditError(null);
+    try {
+      const r = await fetch(`${BASE}/api/admin/nia-audit-log?limit=25`, { headers: hdrs() });
+      if (!r.ok) throw new Error(`Error ${r.status}`);
+      const data = await r.json() as { entries: NiaAuditEntry[] };
+      setAuditLog(data.entries ?? []);
+    } catch {
+      setAuditError("Could not load audit history");
+    } finally {
+      setAuditLoading(false);
+    }
+  }, [hdrs]);
+
+  useEffect(() => { loadAuditLog(); }, [loadAuditLog]);
+
   const submitToggle = async (enabled: boolean) => {
     setConfirmPending(null);
     setToggling(true);
@@ -1696,7 +1726,7 @@ function NiaTab() {
       const res = await fetch(`${BASE}/api/admin/nia-toggle`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...hdrs() },
-        body: JSON.stringify({ enabled }),
+        body: JSON.stringify({ enabled, reason: toggleReason.trim() || undefined }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string };
@@ -1712,6 +1742,8 @@ function NiaTab() {
       );
       setTimeout(() => setBroadcastConfirm(null), 7_000);
       toast({ title: data.enabled ? "✅ Nia enabled" : "🔴 Nia disabled" });
+      setToggleReason("");
+      loadAuditLog();
     } catch (err) {
       toast({ title: (err as Error).message ?? "Toggle failed", variant: "destructive" });
     } finally {
@@ -2070,6 +2102,19 @@ function NiaTab() {
                   </div>
                 </div>
               </div>
+              <div className="mb-2">
+                <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">
+                  Reason (optional, logged for compliance)
+                </label>
+                <textarea
+                  value={toggleReason}
+                  onChange={e => setToggleReason(e.target.value.slice(0, 500))}
+                  placeholder="e.g. cost spike, safety incident, scheduled maintenance…"
+                  rows={2}
+                  style={{ fontSize: "16px" }}
+                  className="w-full mt-1 rounded-xl border border-border bg-background p-2.5 text-sm resize-none"
+                />
+              </div>
               <div className="flex gap-3 mt-4">
                 <button
                   onClick={() => setConfirmPending(null)}
@@ -2092,6 +2137,50 @@ function NiaTab() {
           </>
         )}
       </AnimatePresence>
+
+      {/* Kill-switch audit history — legal/compliance paper trail */}
+      <div className="bg-card border border-border rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-muted-foreground" />
+            <span className="font-black text-sm">Kill-Switch Audit Log</span>
+          </div>
+          <button
+            onClick={() => loadAuditLog()}
+            disabled={auditLoading}
+            style={{ touchAction: "manipulation" }}
+            className="text-[11px] font-bold text-muted-foreground active:text-foreground disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${auditLoading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+        {auditLoading && !auditLog ? (
+          <div className="text-[11px] text-muted-foreground text-center py-3">Loading history…</div>
+        ) : auditError ? (
+          <div className="text-[11px] text-destructive text-center py-3">{auditError}</div>
+        ) : !auditLog || auditLog.length === 0 ? (
+          <div className="text-[11px] text-muted-foreground text-center py-3">No toggle history yet</div>
+        ) : (
+          <div className="flex flex-col gap-2 max-h-72 overflow-y-auto">
+            {auditLog.map(entry => (
+              <div key={entry.id} className="flex items-start gap-2.5 border-b border-border/60 pb-2 last:border-0 last:pb-0">
+                <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${entry.enabled ? "bg-green-500" : "bg-destructive"}`} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold">{entry.enabled ? "Enabled" : "Disabled"} by {entry.admin_email}</span>
+                    <span className="text-[10px] text-muted-foreground shrink-0">
+                      {new Date(entry.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                  {entry.reason && (
+                    <div className="text-[11px] text-muted-foreground mt-0.5 break-words">“{entry.reason}”</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
