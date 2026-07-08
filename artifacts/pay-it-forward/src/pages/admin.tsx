@@ -9,7 +9,8 @@ import {
   LineChart, FileText, Gavel, Sparkles, RotateCcw, Landmark, Building2,
   SlidersHorizontal, Save, Loader2, Server, LifeBuoy, Cpu, CheckCircle, WifiOff,
   Siren, MapPin, Globe, Fingerprint, Banknote, BadgeCheck, Inbox,
-  ShieldAlert, ThumbsUp, ThumbsDown, Megaphone, Map, Link, Navigation2, ShieldCheck
+  ShieldAlert, ThumbsUp, ThumbsDown, Megaphone, Map, Link, Navigation2, ShieldCheck,
+  Download
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -732,10 +733,15 @@ interface AuditApiUser {
 // This is the best available audit trail given there is no dedicated audit_log
 // table. If a future migration adds one, replace the fetches below with a single
 // GET /api/admin/audit-log call.
+function csvEscapeField(val: string) {
+  return `"${val.replace(/"/g, '""')}"`;
+}
+
 function AuditLogTable() {
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     const tok = getToken();
@@ -790,9 +796,49 @@ function AuditLogTable() {
     e.details.toLowerCase().includes(filter.toLowerCase())
   );
 
+  const exportCsv = () => {
+    setExporting(true);
+    try {
+      const header = ["id", "action", "target_user_id", "admin_name", "details", "timestamp_iso"];
+      const rows = filtered.map(e => [
+        String(e.id),
+        e.action,
+        e.target_user_id != null ? String(e.target_user_id) : "",
+        e.admin_name ?? "",
+        e.details,
+        e.created_at,
+      ]);
+      const csv = [header, ...rows].map(row => row.map(csvEscapeField).join(",")).join("\r\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: `Exported ${filtered.length} audit entries` });
+    } catch (err) {
+      toast({ title: (err as Error).message ?? "Export failed", variant: "destructive" });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
-      <div className="text-xs font-black uppercase tracking-wider text-muted-foreground px-1 mb-2">Audit Log</div>
+      <div className="flex items-center justify-between px-1 mb-2">
+        <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Audit Log</div>
+        <button
+          onClick={exportCsv}
+          disabled={exporting || loading || filtered.length === 0}
+          className="flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          <Download className="w-3.5 h-3.5" />
+          {exporting ? "Exporting…" : "Export CSV"}
+        </button>
+      </div>
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input
