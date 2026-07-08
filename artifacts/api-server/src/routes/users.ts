@@ -974,8 +974,14 @@ router.get("/users", requireAuth, requireAdmin(), adminLimiter, async (req, res)
   // Case-insensitive full-table search so an admin can find any user regardless
   // of insertion order — previously the list was hard-capped at the first 200 rows
   // with no way to reach anyone past that cutoff, and search happened only client-side.
+  // A purely-numeric query also matches the user's ID directly, so admin tools
+  // (e.g. the community reassignment form) can resolve a raw ID to a name/email
+  // for confirmation before performing a destructive action.
+  const qAsId = /^\d+$/.test(q) ? parseInt(q, 10) : null;
   const whereClause = q
-    ? sql`(lower(${usersTable.name}) LIKE ${"%" + q.toLowerCase() + "%"} OR lower(${usersTable.email}) LIKE ${"%" + q.toLowerCase() + "%"})`
+    ? (qAsId !== null
+        ? sql`(${usersTable.id} = ${qAsId} OR lower(${usersTable.name}) LIKE ${"%" + q.toLowerCase() + "%"} OR lower(${usersTable.email}) LIKE ${"%" + q.toLowerCase() + "%"})`
+        : sql`(lower(${usersTable.name}) LIKE ${"%" + q.toLowerCase() + "%"} OR lower(${usersTable.email}) LIKE ${"%" + q.toLowerCase() + "%"})`)
     : undefined;
 
   const baseQuery = db.select({

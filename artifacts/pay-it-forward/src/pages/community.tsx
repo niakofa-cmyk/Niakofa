@@ -77,7 +77,7 @@ interface LedgerEntry {
   id: number;
   entry_type: string;
   amount: number;
-  notes: string | null;
+  description: string | null;
   created_at: string;
 }
 
@@ -1724,8 +1724,8 @@ export default function CommunityScreen() {
                             <div key={entry.id} className="flex items-center justify-between text-xs py-1.5 border-b border-border/50 last:border-0">
                               <div>
                                 <div className="font-medium">{typeLabel[entry.entry_type] ?? entry.entry_type}</div>
-                                {entry.notes && (
-                                  <div className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[200px]">{entry.notes}</div>
+                                {entry.description && (
+                                  <div className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[200px]">{entry.description}</div>
                                 )}
                               </div>
                               <div className={`font-black tabular-nums ${isCredit ? "text-green-400" : "text-primary"}`}>

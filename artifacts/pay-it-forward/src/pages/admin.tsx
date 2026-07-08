@@ -4906,6 +4906,10 @@ function CommunitiesTab() {
   const [reassignMsg, setReassignMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [reassigning, setReassigning] = useState(false);
   const [reassignPending, setReassignPending] = useState(false);
+  // Name/email lookup so an admin can see WHO they're about to move before
+  // confirming, instead of blindly trusting a typed-in numeric ID.
+  const [reassignLookup, setReassignLookup] = useState<{ id: number; name: string; email: string } | "not_found" | null>(null);
+  const [reassignLookupLoading, setReassignLookupLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -4925,6 +4929,41 @@ function CommunitiesTab() {
   };
 
   useEffect(() => { load(); }, []);
+
+  // Debounced lookup: resolve the typed user ID to a name/email so the admin
+  // can confirm identity before reassigning. Cancelled/ignored if the ID
+  // field changes again before the request resolves.
+  useEffect(() => {
+    const uid = parseInt(reassignUserId, 10);
+    if (!reassignUserId || isNaN(uid) || uid <= 0) {
+      setReassignLookup(null);
+      setReassignLookupLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setReassignLookupLoading(true);
+    setReassignLookup(null);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`${BASE}/api/users?q=${uid}&limit=5`, {
+          headers: { "Authorization": `Bearer ${getToken()}` },
+        });
+        if (cancelled) return;
+        if (res.ok) {
+          const j = await res.json();
+          const match = (j.users ?? []).find((u: { id: number }) => u.id === uid);
+          setReassignLookup(match ? { id: match.id, name: match.name, email: match.email } : "not_found");
+        } else {
+          setReassignLookup("not_found");
+        }
+      } catch {
+        if (!cancelled) setReassignLookup("not_found");
+      } finally {
+        if (!cancelled) setReassignLookupLoading(false);
+      }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [reassignUserId]);
 
   const openNew = () => {
     setForm({ name: "", target_reserve_amount: "5000" });
@@ -4995,6 +5034,22 @@ function CommunitiesTab() {
       setReassignMsg({ ok: false, text: "Select a community" });
       return;
     }
+    // Require a resolved name/email match for THIS exact ID before allowing
+    // the confirm step — this is the whole point of the lookup: an admin
+    // should never be able to reassign a user they can't identify by
+    // name/email, just a raw ID. Checking object identity alone isn't enough:
+    // the lookup result is set asynchronously (after debounce + fetch), so if
+    // the admin edits the ID field again the effect that clears/refreshes
+    // reassignLookup hasn't necessarily run yet by the time this click
+    // handler fires. Comparing reassignLookup.id === uid closes that window.
+    if (reassignLookupLoading) {
+      setReassignMsg({ ok: false, text: "Still looking up that user — wait a moment and try again" });
+      return;
+    }
+    if (reassignLookup === "not_found" || reassignLookup === null || reassignLookup.id !== uid) {
+      setReassignMsg({ ok: false, text: `No confirmed user found for ID #${uid} — double-check the ID before continuing` });
+      return;
+    }
     const community = communities.find(c => c.id === cid);
     if (!community) {
       setReassignMsg({ ok: false, text: "Unknown community — refresh and try again" });
@@ -5012,6 +5067,15 @@ function CommunitiesTab() {
   const doReassign = async () => {
     const uid = parseInt(reassignUserId);
     const cid = parseInt(reassignCommunityId);
+    // Defensive re-check: requestReassignConfirm already enforces this before
+    // entering the confirmation step, but re-verifying here means a stale
+    // lookup can never slip through even if the pending state is somehow
+    // reached with a mismatched ID (e.g. future code paths).
+    if (!reassignLookup || typeof reassignLookup !== "object" || reassignLookup.id !== uid) {
+      setReassignMsg({ ok: false, text: "User identity could not be re-confirmed — please try again" });
+      setReassignPending(false);
+      return;
+    }
     setReassigning(true);
     setReassignMsg(null);
     try {
@@ -5022,10 +5086,12 @@ function CommunitiesTab() {
       });
       const j = await res.json().catch(() => ({}));
       const communityName = communities.find(c => c.id === cid)?.name ?? `#${cid}`;
+      const identity = reassignLookup && typeof reassignLookup === "object" ? reassignLookup.name : `User #${uid}`;
       if (res.ok) {
-        setReassignMsg({ ok: true, text: `User #${uid} reassigned to ${communityName}` });
+        setReassignMsg({ ok: true, text: `${identity} reassigned to ${communityName}` });
         setReassignUserId("");
         setReassignCommunityId("");
+        setReassignLookup(null);
         setReassignPending(false);
         load();
       } else {
@@ -5264,6 +5330,21 @@ function CommunitiesTab() {
                 ))}
               </select>
             </div>
+            {/* Live identity lookup — an admin should always see WHO they're
+                about to move, not just trust a typed-in numeric ID. */}
+            {reassignUserId && (
+              <div className="text-[11px] px-3 py-2 rounded-xl border bg-muted/40 border-border">
+                {reassignLookupLoading ? (
+                  <span className="text-muted-foreground flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" /> Looking up user #{reassignUserId}…</span>
+                ) : reassignLookup === "not_found" ? (
+                  <span className="text-destructive font-bold">⚠ No user found with ID #{reassignUserId}</span>
+                ) : reassignLookup && typeof reassignLookup === "object" ? (
+                  <span className="text-foreground">
+                    <span className="font-black text-primary">{reassignLookup.name}</span> · {reassignLookup.email}
+                  </span>
+                ) : null}
+              </div>
+            )}
             {reassignMsg && (
               <div className={`text-[11px] font-bold px-3 py-2 rounded-xl border ${
                 reassignMsg.ok ? "bg-green-500/10 text-green-400 border-green-500/30" : "bg-destructive/10 text-destructive border-destructive/30"
@@ -5286,7 +5367,14 @@ function CommunitiesTab() {
             <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-1">
               <div className="text-[11px] font-black text-amber-400 uppercase tracking-widest">Confirm Reassignment</div>
               <div className="text-sm font-bold">
-                Move User <span className="text-primary">#{reassignUserId}</span> → <span className="text-primary">{communities.find(c => c.id === parseInt(reassignCommunityId))?.name ?? `Community #${reassignCommunityId}`}</span>
+                Move{" "}
+                <span className="text-primary">
+                  {reassignLookup && typeof reassignLookup === "object"
+                    ? `${reassignLookup.name} (${reassignLookup.email})`
+                    : `User #${reassignUserId}`}
+                </span>
+                {" "}→{" "}
+                <span className="text-primary">{communities.find(c => c.id === parseInt(reassignCommunityId))?.name ?? `Community #${reassignCommunityId}`}</span>
               </div>
               <div className="text-[11px] text-muted-foreground">
                 This changes which community pool the user belongs to and which wage multiplier applies to them. Double-check the user ID before confirming.
