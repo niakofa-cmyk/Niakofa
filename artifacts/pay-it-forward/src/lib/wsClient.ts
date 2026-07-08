@@ -56,6 +56,8 @@ export type WsEventType =
   | "new_account_pending"
   | "new_helper_application"
   | "admin_summary_update"
+  // Fired when an admin approves/denies a pending account
+  | "account_approval_decided"
   | "connected"
   | "pong"
   | "ping";

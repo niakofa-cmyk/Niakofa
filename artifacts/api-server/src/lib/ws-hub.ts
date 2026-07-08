@@ -69,7 +69,11 @@ export type WsEventType =
   // Admin real-time notifications — new accounts / applications needing review
   | "new_account_pending"
   | "new_helper_application"
-  | "admin_summary_update";
+  | "admin_summary_update"
+  // Fired when an admin approves/denies a pending account — lets the user's
+  // own client react instantly if they still have the pending-approval
+  // screen open, instead of relying purely on the poll button.
+  | "account_approval_decided";
 
 export interface WsEvent {
   type: WsEventType;

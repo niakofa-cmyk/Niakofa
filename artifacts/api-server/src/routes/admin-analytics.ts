@@ -622,6 +622,39 @@ router.patch("/admin/accounts/:id/approval", requireAuth, requireAdmin(), adminL
     .returning();
 
   if (!updated) return res.status(404).json({ error: "User not found" });
+
+  // Notify the user by email the moment an admin approves or denies their
+  // account, so they know immediately whether they can log in — without
+  // needing to keep polling the pending-approval screen. Non-blocking:
+  // email failures must never break the admin approval action itself.
+  if (status === "approved" || status === "denied") {
+    import("../lib/mailer.js").then(({ sendAlertEmail }) => {
+      if (status === "approved") {
+        sendAlertEmail({
+          to: updated.email,
+          subject: `You're approved, ${updated.name}! Welcome to Niakofa 🎉`,
+          title: "Your account has been approved",
+          body: `Hi ${updated.name},\n\nGreat news — your Niakofa account has been reviewed and approved. You can log in right now and start requesting help or offering it to your neighbors.`,
+          ctaText: "Log In to Niakofa",
+          ctaUrl: process.env["APP_URL"] ?? "https://niakofa.app",
+        }).catch(err => logger.error({ err, userId }, "approval email failed"));
+      } else {
+        sendAlertEmail({
+          to: updated.email,
+          subject: `Update on your Niakofa account application`,
+          title: "Your account was not approved",
+          body: `Hi ${updated.name},\n\nAfter review, we were unable to approve your Niakofa account at this time. If you believe this was a mistake or would like to learn more, please reply to this email or contact support@niakofa.app.`,
+        }).catch(err => logger.error({ err, userId }, "denial email failed"));
+      }
+    }).catch(err => logger.error({ err, userId }, "mailer import failed for approval decision email"));
+
+    // WS push so the user's app updates instantly if they still have a tab open
+    broadcast({
+      type: "account_approval_decided",
+      payload: { user_id: updated.id, status },
+    });
+  }
+
   const { password_hash, ...safe } = updated;
   return res.json(safe);
 });
