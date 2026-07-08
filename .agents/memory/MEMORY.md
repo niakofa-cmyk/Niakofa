@@ -123,3 +123,4 @@
 - [Niakofa XSS sanitization](niakofa-xss-sanitize.md) — lib/sanitize.ts: stripTags() removes HTML tags+null-bytes; applied to requests.ts title/description on create+update; escapeHtml in mailer.ts is for HTML email templates only.
 - [Niakofa Nia toggle audit](niakofa-nia-toggle-audit.md) — nia_toggle_audit table + GET /admin/nia-audit-log; best-effort insert never blocks the kill-switch flip itself.
 - [Niakofa seed-test-accounts prod guard](niakofa-seed-prod-guard.md) — Replit dev DB host is "helium", not localhost/127.0.0.1; guard regex doesn't match it, needs --i-know-this-is-production flag even on dev.
+- [Niakofa REDIS_URL & CSV export hardening](niakofa-redis-csv-hardening.md) — prefix check alone insufficient for REDIS_URL, use new URL(); production runs on Railway not Replit so Replit env vars can't verify it; CSV exports need formula-injection sanitizer, not just quote-escaping.
