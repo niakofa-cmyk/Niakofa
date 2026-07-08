@@ -1,7 +1,7 @@
 import { Router } from "express";
 import webpush from "web-push";
 import { db, pushSubscriptionsTable, usersTable, userSettingsTable } from "@workspace/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { sendAlertEmail } from "../lib/mailer";
 import { logger } from "../lib/logger";
 import { requireAuth } from "../middlewares/auth";
@@ -281,16 +281,38 @@ export async function sendPushToNearbyHelpers(
     return;
   }
 
-  // Fetch all active helpers that have a stored lat/lng
-  const helpers = await db
-    .select({ id: usersTable.id, lat: usersTable.lat, lng: usersTable.lng, email: usersTable.email })
-    .from(usersTable)
-    .where(eq(usersTable.helper_mode_active, true));
-
-  // Filter to those within radius
-  const nearbyHelpers = helpers
-    .filter(h => h.lat != null && h.lng != null)
-    .filter(h => haversineMiles(lat, lng, h.lat!, h.lng!) <= radiusMiles);
+  // Push the radius filter into the DB instead of pulling every active
+  // helper and filtering in JS — as the helper base grows, a full-table
+  // scan here becomes the slow path on every new request. ST_DWithin
+  // against users.geog (kept in sync with lat/lng by trg_users_sync_geog,
+  // migration 0052, and indexed by users_geog_gix, a GiST index) turns
+  // this into an index scan. Falls back to the old JS Haversine filter
+  // if PostGIS/geog isn't available (dev DB without the extension).
+  const radiusMeters = radiusMiles * 1609.344;
+  let nearbyHelpers: { id: number; lat: number | null; lng: number | null; email: string }[];
+  try {
+    const rows = await db.execute(sql`
+      SELECT id, lat, lng, email
+      FROM users
+      WHERE helper_mode_active = true
+        AND geog IS NOT NULL
+        AND ST_DWithin(
+          ST_MakePoint(${lng}, ${lat})::geography,
+          geog,
+          ${radiusMeters}
+        )
+    `);
+    nearbyHelpers = rows.rows as { id: number; lat: number | null; lng: number | null; email: string }[];
+  } catch (geoErr) {
+    logger.warn({ err: geoErr }, "sendPushToNearbyHelpers: PostGIS unavailable, falling back to Haversine");
+    const helpers = await db
+      .select({ id: usersTable.id, lat: usersTable.lat, lng: usersTable.lng, email: usersTable.email })
+      .from(usersTable)
+      .where(eq(usersTable.helper_mode_active, true));
+    nearbyHelpers = helpers
+      .filter(h => h.lat != null && h.lng != null)
+      .filter(h => haversineMiles(lat, lng, h.lat!, h.lng!) <= radiusMiles);
+  }
 
   if (nearbyHelpers.length === 0) return;
 

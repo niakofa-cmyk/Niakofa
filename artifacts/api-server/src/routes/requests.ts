@@ -153,21 +153,11 @@ router.get("/requests/nearby", async (req, res) => {
   const { lat, lng, radius_miles } = parsed.data;
   const radius = radius_miles ?? 5;
 
-  // PostGIS ST_DWithin: push the radius filter into the DB so we only
-  // transfer matching rows — critical at scale and for global deployments
-  // where a full-table JS Haversine scan over thousands of open requests
-  // would be unacceptably slow. ST_DWithin uses geography (meters on the
-  // spheroid) so it is accurate anywhere on Earth, including equatorial
-  // cities like Kampala (lat ≈ 0) and polar regions.
-  //
-  // Distance is computed once in the SELECT list, reused in ORDER BY via CTE.
-  // The index on (status, lat, lng) or a PostGIS GIST index on the geography
-  // column makes this sub-millisecond even with many rows.
-  // limit: caller can request up to 200 rows; default 100.
-  // This prevents a hard ceiling from silently hiding valid nearby requests in
-  // dense areas while still bounding payload size.
-  // Bug fixed: parseInt("abc") returns NaN, and NaN || 100 silently returns 100
-  // instead of a 400, giving callers wrong results they can't detect.
+  // limit: caller can request up to 200 rows; default 100. This prevents a
+  // hard ceiling from silently hiding valid nearby requests in dense areas
+  // while still bounding payload size. Bug fixed: parseInt("abc") returns
+  // NaN, and NaN || 100 silently returns 100 instead of a 400, giving
+  // callers wrong results they can't detect.
   let limit = 100;
   if (req.query.limit !== undefined) {
     const parsedLimit = parseInt(req.query.limit as string, 10);
@@ -179,11 +169,13 @@ router.get("/requests/nearby", async (req, res) => {
 
   const radiusMeters = radius * 1609.344;
 
-  // Attempt PostGIS ST_DWithin first for accurate global geo-filtering (all of
-  // Earth, spheroidal distance, indexed when a GIST index exists).
-  // If PostGIS is not available (e.g. extension not installed on a dev DB),
-  // fall back to in-memory Haversine with a warning so the endpoint keeps
-  // working — never throw an opaque 500 to callers.
+  // PostGIS ST_DWithin against the indexed geog column (kept in sync with
+  // lat/lng by trg_help_requests_sync_geog, migration 0052; indexed by
+  // help_requests_geog_gix, a GiST index) — pushes the radius filter and
+  // sort into the DB instead of pulling every open request and computing
+  // Haversine distance in JS for each one. Falls back to the old JS
+  // Haversine path if PostGIS/geog isn't available (e.g. a dev DB without
+  // the extension), so this endpoint never hard-fails on missing PostGIS.
   let nearby: (typeof requestsTable.$inferSelect & { distance_miles: number })[];
   try {
     const nearbyRows = await db.execute(sql`
@@ -191,13 +183,14 @@ router.get("/requests/nearby", async (req, res) => {
         hr.*,
         ST_Distance(
           ST_MakePoint(${lng}, ${lat})::geography,
-          ST_MakePoint(hr.lng, hr.lat)::geography
+          hr.geog
         ) / 1609.344 AS distance_miles
       FROM help_requests hr
       WHERE hr.status = 'open'
+        AND hr.geog IS NOT NULL
         AND ST_DWithin(
           ST_MakePoint(${lng}, ${lat})::geography,
-          ST_MakePoint(hr.lng, hr.lat)::geography,
+          hr.geog,
           ${radiusMeters}
         )
       ORDER BY
