@@ -4,6 +4,11 @@ const TWILIO_SID = process.env["TWILIO_ACCOUNT_SID"];
 const TWILIO_AUTH = process.env["TWILIO_AUTH_TOKEN"];
 const TWILIO_FROM = process.env["TWILIO_PHONE_NUMBER"];
 
+// BUG-9-E02: the Twilio fetch had no timeout — a hung/slow Twilio API call
+// would block the caller (e.g. SMS fallback on a failed push notification)
+// indefinitely instead of failing fast and letting the caller move on.
+const TWILIO_TIMEOUT_MS = 10_000;
+
 export async function sendSms(to: string, body: string): Promise<boolean> {
   if (!TWILIO_SID || !TWILIO_AUTH || !TWILIO_FROM) {
     logger.warn("Twilio not configured — SMS skipped");
@@ -21,6 +26,7 @@ export async function sendSms(to: string, body: string): Promise<boolean> {
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: params.toString(),
+      signal: AbortSignal.timeout(TWILIO_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`Twilio ${res.status}`);
     logger.info({ to }, "sms: sent");

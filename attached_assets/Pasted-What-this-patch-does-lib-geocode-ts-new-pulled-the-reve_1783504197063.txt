@@ -1,0 +1,13 @@
+What this patch does:
+
+lib/geocode.ts (new) — pulled the reverse-geocode logic out of civic.ts into a shared, cached lib (resolvePlace()), so it's reusable instead of locked to one route.
+routes/geo.ts (new) — GET /geo/detect-place?lat=&lng=, a general-purpose endpoint any part of the app can call. No auth required, since location detection needs to work pre-login too.
+civic.ts — now calls the shared lib instead of its own private copy. Same behavior, less duplication.
+community-pool.ts — new resolveCommunityForRegistration(detectedCounty): normalizes and matches a detected county name ("Tarrant") against your communities table ("Tarrant County"), falling back to getDefaultCommunityId() if there's no match or nothing detected.
+users.ts + google-auth.ts — both registration paths now pass the client's detected county through to that matcher, instead of always defaulting.
+AppContext.tsx — the actual fix: a new effect that watches myLocation, waits until you've moved ~1.5km (no point re-geocoding every GPS jitter), calls /api/geo/detect-place, and finally calls setUserPlace(...).
+login.tsx — sends userPlace.county along with both registration and Google Sign-In.
+
+End to end: GPS fix → server resolves county → userPlace populates → TopBar/Nia/onboarding show it → and now, at signup, it also matches you to the right community pool instead of guessing.
+One dependency to flag: all of this rides on Mapbox. If MAPBOX_TOKEN (or VITE_MAPBOX_TOKEN) isn't set on Railway, resolvePlace() logs a warning and returns null — nothing breaks, but county detection silently does nothing. Worth a quick check that it's actually set in your Railway env vars.
+Also worth knowing: this only fully "works" for county-differentiation once you've got more than one community row — right now everything outside Tarrant County will fall through to the default. That's expected, not a bug, given where the admin CRUD from last patch leaves you: you can add new counties any time via POST /admin/communities, and new signups from those counties will start matching automatically once they exist.
