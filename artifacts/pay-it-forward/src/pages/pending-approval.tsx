@@ -70,7 +70,7 @@ export default function PendingApprovalScreen() {
     accountType === "business" ? "1–3 business days"
     : accountType === "sponsor" ? "2–5 business days"
     : accountType === "organization" ? "2–4 business days"
-    : "1–2 business days";
+    : "within 24 hours";
 
   const NIA_PROMPTS = isDenied
     ? ["Why was my account denied?", "How do I appeal?", "Can I re-apply?"]
@@ -106,19 +106,17 @@ export default function PendingApprovalScreen() {
           <p className="text-sm text-muted-foreground leading-relaxed">
             {isDenied
               ? t("pending_approval.not_approved_body", { defaultValue: "Your account application was not approved at this time. You can contact us to learn more or appeal the decision." })
-              : t("pending_approval.under_review_body", { defaultValue: "Your account is being reviewed by the Niakofa team. We verify all non-individual accounts to keep the community safe." })
+              : t("pending_approval.under_review_body", { defaultValue: "Your account is being reviewed by the Niakofa team. All accounts require admin approval to keep the community safe and welcoming. You'll get full access as soon as you're approved." })
             }
           </p>
         </div>
 
-        {/* Account info pill */}
-        {accountType !== "individual" && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-xl px-4 py-3 justify-center">
-            <ShieldCheck className="w-3.5 h-3.5 text-primary shrink-0" />
-            <span className="capitalize font-semibold">{accountType}</span>
-            {orgName && <span>· {orgName}</span>}
-          </div>
-        )}
+        {/* Account info pill — shown for all account types */}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-xl px-4 py-3 justify-center">
+          <ShieldCheck className="w-3.5 h-3.5 text-primary shrink-0" />
+          <span className="capitalize font-semibold">{accountType} account</span>
+          {orgName && <span>· {orgName}</span>}
+        </div>
 
         {/* Timeline — only for pending */}
         {!isDenied && (

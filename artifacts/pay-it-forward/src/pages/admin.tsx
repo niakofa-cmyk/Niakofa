@@ -1226,25 +1226,32 @@ function HardDeleteUserButton({ userId, userName, onDeleted }: {
 
 // ── Users Tab ─────────────────────────────────────────────────────────────────
 // ── Pending Account Approvals ─────────────────────────────────────────────────
-// BUG-CRIT-01: individual accounts now auto-approve at registration (see
-// CLAUDE.md Incident #19), but organization accounts still require real
-// admin review. This is the UI for that — previously GET /admin/accounts
-// could list pending accounts but no UI surfaced them and no endpoint could
-// act on them at all.
-function PendingAccountsCard() {
+// ALL new registrations (individual, org, business, sponsor, Google OAuth) now
+// start as approval_status='pending' and land here for admin review before the
+// account can be used. The card re-fetches whenever refreshTick changes (driven
+// by the 30s admin auto-refresh) and when a WS new_account_pending event fires.
+function PendingAccountsCard({ refreshTick = 0 }: { refreshTick?: number }) {
   const [pending, setPending] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState<number | null>(null);
 
   const load = useCallback(() => {
     const tok = getToken();
-    fetch(`${BASE}/api/admin/accounts?approval_status=pending`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} })
+    setLoading(true);
+    fetch(`${BASE}/api/admin/accounts?approval_status=pending&limit=200`, {
+      headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+    })
       .then(r => r.ok ? r.json() : [])
-      .then((data: AdminUser[]) => { if (Array.isArray(data)) setPending(data); setLoading(false); })
+      .then((data: unknown) => {
+        // The endpoint returns a raw array (not { users, total }) unlike GET /users
+        if (Array.isArray(data)) setPending(data as AdminUser[]);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Re-fetch on admin panel's global 30s tick and on initial mount
+  useEffect(() => { load(); }, [load, refreshTick]);
 
   const decide = async (userId: number, status: "approved" | "denied") => {
     setProcessing(userId);
@@ -1257,7 +1264,7 @@ function PendingAccountsCard() {
       });
       if (!res.ok) throw new Error("Failed");
       setPending(prev => prev.filter(u => u.id !== userId));
-      toast({ title: status === "approved" ? "Account approved ✅" : "Account denied" });
+      toast({ title: status === "approved" ? "✅ Account approved — user can now log in" : "Account denied" });
     } catch {
       toast({ title: "Action failed", variant: "destructive" });
     } finally {
@@ -1265,36 +1272,104 @@ function PendingAccountsCard() {
     }
   };
 
-  if (loading || pending.length === 0) return null;
+  const ACCOUNT_TYPE_LABEL: Record<string, { label: string; color: string }> = {
+    individual:   { label: "Individual", color: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
+    organization: { label: "Organization", color: "bg-purple-500/15 text-purple-400 border-purple-500/30" },
+    business:     { label: "Business", color: "bg-orange-500/15 text-orange-400 border-orange-500/30" },
+    sponsor:      { label: "Sponsor", color: "bg-yellow-500/15 text-yellow-500 border-yellow-500/30" },
+  };
 
+  // Always render the card even when empty so the admin can see "all clear"
   return (
-    <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 space-y-3">
-      <div className="text-xs font-black uppercase tracking-wider text-yellow-600 flex items-center gap-1.5">
-        <Clock className="w-3.5 h-3.5" /> Pending Account Approvals ({pending.length})
-      </div>
-      {pending.map(u => (
-        <div key={u.id} className="bg-card border border-border rounded-xl p-3 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-sm font-bold truncate">{u.name}</div>
-            <div className="text-xs text-muted-foreground truncate">{u.email}</div>
-            {(u as AdminUser & { organization_name?: string }).organization_name && (
-              <div className="text-[10px] text-primary mt-0.5">{(u as AdminUser & { organization_name?: string }).organization_name}</div>
-            )}
-          </div>
-          <div className="flex gap-2 shrink-0">
-            <button
-              onClick={() => decide(u.id, "denied")}
-              disabled={processing === u.id}
-              className="h-9 px-3 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive text-xs font-black disabled:opacity-50"
-            >Deny</button>
-            <button
-              onClick={() => decide(u.id, "approved")}
-              disabled={processing === u.id}
-              className="h-9 px-3 rounded-lg bg-green-500 text-white text-xs font-black disabled:opacity-50"
-            >Approve</button>
-          </div>
+    <div className={`border rounded-2xl p-4 space-y-3 transition-colors ${
+      pending.length > 0
+        ? "bg-yellow-500/10 border-yellow-500/30"
+        : "bg-card border-border"
+    }`}>
+      <div className="flex items-center justify-between">
+        <div className={`text-xs font-black uppercase tracking-wider flex items-center gap-1.5 ${
+          pending.length > 0 ? "text-yellow-500" : "text-muted-foreground"
+        }`}>
+          <Clock className="w-3.5 h-3.5" />
+          New User Applications
+          {pending.length > 0 && (
+            <span className="ml-1 bg-yellow-500 text-black text-[10px] font-black px-1.5 py-0.5 rounded-full">
+              {pending.length}
+            </span>
+          )}
         </div>
-      ))}
+        <button
+          onClick={load}
+          disabled={loading}
+          className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+        >
+          <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
+      </div>
+
+      {loading && pending.length === 0 && (
+        <div className="text-xs text-muted-foreground py-2 flex items-center gap-2">
+          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Loading applications…
+        </div>
+      )}
+
+      {!loading && pending.length === 0 && (
+        <div className="text-xs text-muted-foreground py-1 flex items-center gap-1.5">
+          <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+          No pending applications — all accounts reviewed.
+        </div>
+      )}
+
+      {pending.map(u => {
+        const ext = u as AdminUser & { organization_name?: string; account_type?: string; created_at?: string };
+        const typeInfo = ACCOUNT_TYPE_LABEL[ext.account_type ?? "individual"] ?? ACCOUNT_TYPE_LABEL.individual;
+        const joinedAt = ext.created_at ? new Date(ext.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+        return (
+          <div key={u.id} className="bg-background border border-border rounded-xl p-3 space-y-2.5">
+            {/* User info row */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="text-sm font-bold truncate">{u.name}</div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${typeInfo.color}`}>
+                    {typeInfo.label}
+                  </span>
+                  {u.is_helper && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-primary/15 text-primary border-primary/30">
+                      Helper
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground truncate mt-0.5">{u.email}</div>
+                {ext.organization_name && (
+                  <div className="text-[10px] text-primary mt-0.5 font-semibold">{ext.organization_name}</div>
+                )}
+                {joinedAt && (
+                  <div className="text-[10px] text-muted-foreground mt-1">Applied {joinedAt}</div>
+                )}
+              </div>
+            </div>
+            {/* Action buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => decide(u.id, "denied")}
+                disabled={processing === u.id}
+                className="flex-1 h-9 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive text-xs font-black disabled:opacity-50 active:opacity-70"
+              >
+                Deny
+              </button>
+              <button
+                onClick={() => decide(u.id, "approved")}
+                disabled={processing === u.id}
+                className="flex-1 h-9 rounded-lg bg-green-500 hover:bg-green-600 text-white text-xs font-black disabled:opacity-50 active:opacity-70 transition-colors"
+              >
+                {processing === u.id ? "Processing…" : "Approve ✓"}
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1451,7 +1526,7 @@ function UsersTab({ refreshTick = 0 }: { refreshTick?: number }) {
 
   return (
     <div className="space-y-3">
-      <PendingAccountsCard />
+      <PendingAccountsCard refreshTick={refreshTick} />
       <PendingBusinessesCard />
       {/* Search + filter row */}
       <div className="flex gap-2">
@@ -1542,6 +1617,15 @@ function UsersTab({ refreshTick = 0 }: { refreshTick?: number }) {
                 <span className="text-[10px] text-muted-foreground">{user.help_count} helps</span>
                 {user.is_suspended && (
                   <span className="text-[10px] bg-destructive/10 text-destructive border border-destructive/20 px-2 py-0.5 rounded-full font-bold">Suspended</span>
+                )}
+                {(user as AdminUser & { approval_status?: string }).approval_status === "pending" && (
+                  <span className="text-[10px] bg-yellow-500/10 text-yellow-600 border border-yellow-500/30 px-2 py-0.5 rounded-full font-bold">Pending</span>
+                )}
+                {(user as AdminUser & { approval_status?: string }).approval_status === "denied" && (
+                  <span className="text-[10px] bg-destructive/10 text-destructive border border-destructive/20 px-2 py-0.5 rounded-full font-bold">Denied</span>
+                )}
+                {(user as AdminUser & { account_type?: string }).account_type && (user as AdminUser & { account_type?: string }).account_type !== "individual" && (
+                  <span className="text-[10px] text-muted-foreground capitalize px-2 py-0.5 rounded-full border border-border">{(user as AdminUser & { account_type?: string }).account_type}</span>
                 )}
               </div>
             </div>

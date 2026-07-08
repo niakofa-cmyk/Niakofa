@@ -598,12 +598,11 @@ router.get("/admin/nia-memory-stats", requireAuth, requireAdmin(), adminLimiter,
 });
 
 // PATCH /admin/accounts/:id/approval — approve or deny a pending account.
-// BUG-CRIT-01 (see CLAUDE.md Incident #19 and routes/users.ts register
-// route): GET /admin/accounts could list pending accounts but nothing could
-// ever change their status — there was no admin-side way to unblock anyone.
-// Individual accounts are now auto-approved at registration (see users.ts),
-// so in practice this exists for organization accounts requiring real
-// review, but works for any account_type an admin needs to act on.
+// ALL new registrations (individual, organization, business, sponsor, Google
+// OAuth) start as approval_status='pending'. This endpoint is how admins
+// advance or reverse that status. The Admin → Users tab lists pending
+// accounts in PendingAccountsCard and the PATCH here moves them to
+// 'approved' (unblocks app access) or 'denied' (keeps them blocked).
 router.patch("/admin/accounts/:id/approval", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
   const userId = parseInt(req.params.id as string);
   if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });

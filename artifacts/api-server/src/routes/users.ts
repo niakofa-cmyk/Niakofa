@@ -218,23 +218,19 @@ router.post("/users/register", authLimiter, async (req, res) => {
   // bcrypt hash is AFTER validation so we only pay the cost for valid attempts.
   const password_hash = await bcrypt.hash(password, 12);
 
-  // BUG-CRIT-01 (continued): approval_status defaults to "pending" at the DB
-  // level for every row, and — until this fix — NOTHING in the codebase ever
-  // set it to "approved". App.tsx gates the entire app on this field
-  // (pending-approval.tsx), and no admin endpoint existed to advance it
-  // (see CLAUDE.md Incident #19) — meaning every single person who ever
-  // registered was permanently stuck on the pending-approval screen with no
-  // way out. Individual accounts (the overwhelming majority — this is a
-  // community help app, not an org directory) are auto-approved at
-  // registration since there's no legitimate reason to gate a person asking
-  // for or offering help. Organization accounts still require admin review
-  // via the new PATCH /admin/accounts/:id/approval endpoint, since vetting a
-  // claimed nonprofit/business identity is a real, intentional checkpoint.
-  // Individual accounts auto-approved (no vetting needed for someone asking
-  // for or offering community help). Organization/business/sponsor accounts
-  // stay pending until an admin explicitly approves them.
-  const REQUIRES_REVIEW = ["organization", "business", "sponsor"];
-  const approval_status = REQUIRES_REVIEW.includes(account_type) ? "pending" : "approved";
+  // POLICY: ALL new accounts start as approval_status='pending' regardless of
+  // account_type. Every person who registers — whether individual, organization,
+  // business, or sponsor — must be explicitly approved by an admin before they
+  // can use the app. This:
+  //   1. Keeps the community safe (admin vets every account).
+  //   2. Allows the admin to review applications in the Admin → Users tab.
+  //   3. Shows the user a "pending approval" screen until they're approved.
+  //   4. Prevents spam/bot accounts from immediately accessing the platform.
+  // Admins approve via PATCH /api/admin/accounts/:id/approval.
+  // The pending-approval screen (pages/pending-approval.tsx) gives users a
+  // "Check My Status" button that polls /api/users/me so they get unblocked
+  // as soon as the admin acts.
+  const approval_status = "pending";
 
   // Assign every new user to a real community row (defaults to the seeded
   // "Tarrant County" pool, or whichever community an admin has designated via
@@ -263,23 +259,20 @@ router.post("/users/register", authLimiter, async (req, res) => {
   const { password_hash: _ph, password_reset_code: _prc, password_reset_expires_at: _pre, google_id: _gid, ...safeUser } = user;
 
   // ── Post-registration side-effects (non-blocking) ─────────────────────────
-  // Notify admin in real-time when a non-individual account or helper
-  // application is created — they need to review/approve it.
-  const needsAdminReview = REQUIRES_REVIEW.includes(account_type) || !!(is_helper);
-  if (needsAdminReview) {
-    const eventType = is_helper ? "new_helper_application" : "new_account_pending";
-    broadcast({
-      type: eventType,
-      payload: {
-        user_id: user.id,
-        name: user.name,
-        email: user.email,
-        account_type,
-        is_helper: user.is_helper,
-        created_at: user.created_at,
-      },
-    });
-  }
+  // ALL new registrations now require admin approval, so always notify the
+  // admin via WS so the "Pending Account Approvals" card in the Admin Users
+  // tab updates in real-time without a manual page refresh.
+  broadcast({
+    type: is_helper ? "new_helper_application" : "new_account_pending",
+    payload: {
+      user_id: user.id,
+      name: user.name,
+      email: user.email,
+      account_type,
+      is_helper: user.is_helper,
+      created_at: user.created_at,
+    },
+  });
 
   // Send welcome email (non-blocking — failures must never break registration)
   import("../lib/mailer.js").then(({ sendAlertEmail }) => {

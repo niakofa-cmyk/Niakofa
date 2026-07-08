@@ -7,7 +7,7 @@
  * Verifies the Google ID token server-side (google-auth-library), then:
  *   1. Finds by google_id  → repeat sign-in (fastest path)
  *   2. Finds by email      → account linking (email+password account gains Google)
- *   3. Creates new account → individual, auto-approved, no password needed
+ *   3. Creates new account → individual, starts as pending, no password needed
  *
  * Returns { user, token, created: boolean, linked: boolean }
  *   created = true  → new account was just created (route to onboarding)
@@ -171,7 +171,10 @@ router.post("/auth/google", authLimiter, async (req: Request, res: Response) => 
             google_id:       googleSub,
             oauth_provider:  "google",
             avatar_url:      googlePicture,
-            approval_status: "approved", // Google-verified email = trusted identity
+            // POLICY: ALL new accounts start as 'pending' and require explicit
+            // admin approval before they can use the app — including Google
+            // sign-in. Admin approves via PATCH /api/admin/accounts/:id/approval.
+            approval_status: "pending",
             account_type:    "individual",
             community_id,
             // password_hash intentionally NULL — OAuth accounts never need a password

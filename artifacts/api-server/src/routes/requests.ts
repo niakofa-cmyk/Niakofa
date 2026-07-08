@@ -356,7 +356,7 @@ router.get("/requests", requireAuth, async (req, res) => {
 // is not a URL param; it is derived from the auth token inside the handler.
 // Ownership is enforced at the DB level: requester_id is always set to
 // req.authenticatedUserId regardless of what the client sends.
-router.post("/requests", requireAuth, requestCreationLimiter, async (req, res) => {
+router.post("/requests", requireAuth, requireApproved, requestCreationLimiter, async (req, res) => {
   const parsed = CreateRequestBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
 
