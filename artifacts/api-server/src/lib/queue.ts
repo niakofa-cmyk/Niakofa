@@ -40,13 +40,14 @@ export function parseRedisUrl(raw: string): string | undefined {
   // A redis:// / rediss:// prefix alone isn't enough — values like
   // "redis://" or "redis://${{Redis.REDIS_URL}}" (an unresolved template
   // placeholder) pass the prefix check but are not connectable. Parse with
-  // the URL constructor to confirm there's an actual hostname, and that the
-  // string doesn't contain characters (e.g. "{", "}", "$") that indicate an
-  // unresolved template rather than a real connection string.
+  // the URL constructor to confirm there's an actual hostname, and reject
+  // unresolved `${{...}}` / `${...}` template placeholders specifically —
+  // NOT bare "$", which is a legal character in Redis userinfo credentials
+  // (e.g. "redis://user:pa$@host:6379" is a valid URL and must pass).
   try {
     const parsed = new URL(url);
-    if (!parsed.hostname || /[{}$]/.test(url)) {
-      throw new Error("missing hostname or contains template placeholder characters");
+    if (!parsed.hostname || /\$\{[^}]*\}/.test(url) || /[{}]/.test(parsed.hostname)) {
+      throw new Error("missing hostname or contains an unresolved template placeholder");
     }
   } catch {
     logger.warn(

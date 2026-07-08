@@ -1,12 +1,11 @@
 ---
 name: Niakofa REDIS_URL validation & audit CSV export
-description: Where REDIS_URL format validation lives and the shared CSV-export sanitizer pattern for admin widgets.
+description: Lessons on validating REDIS_URL format and sanitizing admin CSV exports.
 ---
 
-**REDIS_URL validation** (`artifacts/api-server/src/lib/queue.ts` `parseRedisUrl`):
-- Prefix check (`redis://`/`rediss://`) alone is insufficient — values with the right prefix but no real host (`redis://`, `redis://${{Redis.REDIS_URL}}`) still fail; validated with `new URL()` + a check for missing hostname or leftover `{}$` template chars.
-- Production actually deploys to Railway (external), not Replit deployments — Replit's `viewEnvVars` cannot see Railway's env vars, so REDIS_URL correctness there must be verified by checking Railway's dashboard directly, not from the Replit env.
+**REDIS_URL validation:** a `redis://`/`rediss://` prefix check alone is not enough — an unresolved template placeholder (e.g. `${{Redis.REDIS_URL}}`) or a missing hostname can still pass it. Validate structurally with `new URL()`, and only reject actual unresolved-template syntax (`${...}` / `${{...}}`) — do not reject on a bare `$` character, since `$` is legal in Redis userinfo credentials and banning it produces false-negative rejections of valid provider URLs.
+**Why:** an earlier hardening pass banned any `$` in the URL, which would have silently disabled BullMQ queues (reminders/retries) for any real-world Redis credential containing `$`.
 
-**Admin CSV exports** (`artifacts/pay-it-forward/src/pages/admin.tsx`):
-- Two independent CSV export buttons exist: the generic `AuditLogTable` (Audit tab) and the Nia kill-switch audit widget. Both must use the same `csvEscapeField` sanitizer.
-- `csvEscapeField` prefixes cells starting with `=`, `+`, `-`, or `@` with a leading apostrophe before quoting, to prevent CSV/Excel formula-injection when an admin opens the exported file in a spreadsheet app. Quoting alone (escaping only `"`) is not sufficient.
+**Production visibility gap:** this project's actual production deploy runs on Railway, not Replit Deployments — Replit's env var tools cannot see Railway's real environment, so REDIS_URL correctness there must be confirmed via the Railway dashboard, not assumed from a clean Replit check.
+
+**Admin CSV exports:** any CSV export of admin/audit data needs a formula-injection-safe cell sanitizer (prefix cells starting with `=+-@` with a leading apostrophe before quoting) — plain quote-escaping is not sufficient protection against spreadsheet formula execution.

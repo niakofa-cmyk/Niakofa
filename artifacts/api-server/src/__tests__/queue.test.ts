@@ -87,4 +87,14 @@ describe("parseRedisUrl", () => {
   it("returns undefined for a redis:// scheme with only a port, no host", () => {
     expect(parseRedisUrl("redis://:6379")).toBeUndefined();
   });
+
+  it("accepts a valid redis:// URL whose password contains a literal $ character", () => {
+    const input = "redis://user:pa$word@host:6379";
+    expect(parseRedisUrl(input)).toBe(input);
+  });
+
+  it("accepts a valid rediss:// URL whose password contains a literal $ character", () => {
+    const input = "rediss://user:pa$word@host:6380";
+    expect(parseRedisUrl(input)).toBe(input);
+  });
 });
