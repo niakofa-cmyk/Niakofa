@@ -4695,7 +4695,8 @@ interface AdminCommunity {
   id: number;
   name: string;
   target_reserve_amount: number;
-  is_default: boolean;
+  /** Server-computed pool health, clamped [0.5, 1.0] — matches wage multiplier floor */
+  pool_health_ratio?: number;
   created_at: string;
   member_count?: number;
   pool_balance?: number;
@@ -4703,6 +4704,9 @@ interface AdminCommunity {
 
 function CommunitiesTab() {
   const [communities, setCommunities] = useState<AdminCommunity[]>([]);
+  const [unassigned, setUnassigned] = useState<{ pool_balance: number; member_count: number } | null>(null);
+  const [defaultCommunityId, setDefaultCommunityId] = useState<number | null>(null);
+  const [settingDefault, setSettingDefault] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<number | "new" | null>(null);
   const [editing, setEditing] = useState<number | "new" | null>(null);
@@ -4711,6 +4715,7 @@ function CommunitiesTab() {
   const [reassignCommunityId, setReassignCommunityId] = useState("");
   const [reassignMsg, setReassignMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [reassigning, setReassigning] = useState(false);
+  const [reassignPending, setReassignPending] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -4721,6 +4726,8 @@ function CommunitiesTab() {
       if (res.ok) {
         const j = await res.json();
         setCommunities(j.communities ?? []);
+        setUnassigned(j.unassigned ?? null);
+        if (j.default_community_id != null) setDefaultCommunityId(j.default_community_id);
       }
     } finally {
       setLoading(false);
@@ -4787,10 +4794,34 @@ function CommunitiesTab() {
     }
   };
 
+  const requestReassignConfirm = () => {
+    const uid = parseInt(reassignUserId);
+    const cid = parseInt(reassignCommunityId);
+    if (!uid || isNaN(uid) || uid <= 0) {
+      setReassignMsg({ ok: false, text: "Enter a valid numeric user ID" });
+      return;
+    }
+    if (!cid || isNaN(cid)) {
+      setReassignMsg({ ok: false, text: "Select a community" });
+      return;
+    }
+    const community = communities.find(c => c.id === cid);
+    if (!community) {
+      setReassignMsg({ ok: false, text: "Unknown community — refresh and try again" });
+      return;
+    }
+    setReassignMsg(null);
+    setReassignPending(true);
+  };
+
+  const cancelReassign = () => {
+    setReassignPending(false);
+    setReassignMsg(null);
+  };
+
   const doReassign = async () => {
     const uid = parseInt(reassignUserId);
     const cid = parseInt(reassignCommunityId);
-    if (!uid || !cid) { setReassignMsg({ ok: false, text: "Enter valid user ID and community ID" }); return; }
     setReassigning(true);
     setReassignMsg(null);
     try {
@@ -4800,15 +4831,38 @@ function CommunitiesTab() {
         body: JSON.stringify({ community_id: cid }),
       });
       const j = await res.json().catch(() => ({}));
+      const communityName = communities.find(c => c.id === cid)?.name ?? `#${cid}`;
       if (res.ok) {
-        setReassignMsg({ ok: true, text: `User ${uid} reassigned to community ${cid}` });
+        setReassignMsg({ ok: true, text: `User #${uid} reassigned to ${communityName}` });
         setReassignUserId("");
         setReassignCommunityId("");
+        setReassignPending(false);
+        load();
       } else {
         setReassignMsg({ ok: false, text: j.error ?? "Reassignment failed" });
+        setReassignPending(false);
       }
     } finally {
       setReassigning(false);
+    }
+  };
+
+  const setDefaultCommunity = async (id: number) => {
+    setSettingDefault(id);
+    try {
+      const res = await fetch(`${BASE}/api/admin/communities/${id}/set-default`, {
+        method: "PATCH",
+        headers: { "Authorization": `Bearer ${getToken()}` },
+      });
+      if (res.ok) {
+        setDefaultCommunityId(id);
+        toast({ title: "Default community updated", description: communities.find(c => c.id === id)?.name });
+      } else {
+        const j = await res.json().catch(() => ({}));
+        toast({ title: "Error", description: j.error ?? "Failed", variant: "destructive" });
+      }
+    } finally {
+      setSettingDefault(null);
     }
   };
 
@@ -4907,15 +4961,18 @@ function CommunitiesTab() {
         {communities.map(c => {
           const balance = c.pool_balance ?? 0;
           const target = c.target_reserve_amount || 1;
-          const ratio = Math.min(balance / target, 1);
+          // Use the server-computed ratio (clamped [0.5,1.0] matching wage-multiplier floor).
+          // Fall back to raw ratio only if the API field is absent.
+          const ratio = c.pool_health_ratio ?? Math.min(Math.max(0.5, balance / target), 1);
           const pct = Math.round(ratio * 100);
+          const isDefault = c.id === defaultCommunityId;
           return (
             <div key={c.id} className="bg-card border border-border rounded-2xl p-4 space-y-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-black text-sm">{c.name}</span>
-                    {c.is_default && (
+                    {isDefault && (
                       <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30">Default</span>
                     )}
                   </div>
@@ -4923,16 +4980,28 @@ function CommunitiesTab() {
                     ID #{c.id} · {(c.member_count ?? 0).toLocaleString()} members · Created {new Date(c.created_at).toLocaleDateString()}
                   </div>
                 </div>
-                <button
-                  onClick={() => openEdit(c)}
-                  style={{ touchAction: "manipulation" }}
-                  className="shrink-0 px-3 py-1.5 text-[10px] font-black rounded-xl border border-border bg-muted active:opacity-70"
-                >
-                  Edit
-                </button>
+                <div className="flex gap-1.5 shrink-0">
+                  {!isDefault && (
+                    <button
+                      onClick={() => setDefaultCommunity(c.id)}
+                      disabled={settingDefault !== null}
+                      style={{ touchAction: "manipulation" }}
+                      className="px-2.5 py-1.5 text-[10px] font-black rounded-xl border border-primary/40 bg-primary/10 text-primary active:opacity-70 disabled:opacity-50"
+                    >
+                      {settingDefault === c.id ? "…" : "Set Default"}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => openEdit(c)}
+                    style={{ touchAction: "manipulation" }}
+                    className="px-3 py-1.5 text-[10px] font-black rounded-xl border border-border bg-muted active:opacity-70"
+                  >
+                    Edit
+                  </button>
+                </div>
               </div>
 
-              {/* Pool balance bar */}
+              {/* Pool balance bar — uses server ratio (0.5 floor = same as wage multiplier) */}
               <div>
                 <div className="flex justify-between text-[10px] mb-1">
                   <span className={`font-black ${healthColor(ratio)}`}>${balance.toFixed(2)} · {healthLabel(ratio)}</span>
@@ -4955,45 +5024,111 @@ function CommunitiesTab() {
         })}
       </div>
 
+      {/* Unassigned / legacy global bucket */}
+      {unassigned && unassigned.member_count > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-black text-amber-400 uppercase tracking-widest">⚠ Unassigned Members</span>
+          </div>
+          <div className="text-[11px] text-muted-foreground">
+            <span className="font-black text-foreground">{unassigned.member_count.toLocaleString()}</span> user{unassigned.member_count !== 1 ? "s" : ""} are still in the legacy global pool (community_id = NULL) and will not benefit from county-specific funding.
+          </div>
+          <div className="text-[11px] text-muted-foreground">
+            Legacy pool balance: <span className="font-black text-foreground">${Number(unassigned.pool_balance).toFixed(2)}</span>
+          </div>
+          <div className="text-[10px] text-amber-400/70 mt-1">Reassign users below or set a Default community so new signups are auto-assigned.</div>
+        </div>
+      )}
+
       {/* User reassignment */}
       <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
         <h3 className="font-black text-sm flex items-center gap-2">
           <Users className="w-4 h-4 text-primary" /> Reassign User to Community
         </h3>
-        <p className="text-[11px] text-muted-foreground">Move a user to a different community pool. Use the user ID from the Users tab.</p>
-        <div className="flex gap-2">
-          <input
-            type="number"
-            placeholder="User ID"
-            value={reassignUserId}
-            onChange={e => setReassignUserId(e.target.value)}
-            style={{ fontSize: "16px" }}
-            className="flex-1 px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
-          />
-          <input
-            type="number"
-            placeholder="Community ID"
-            value={reassignCommunityId}
-            onChange={e => setReassignCommunityId(e.target.value)}
-            style={{ fontSize: "16px" }}
-            className="flex-1 px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
-          />
-        </div>
-        {reassignMsg && (
-          <div className={`text-[11px] font-bold px-3 py-2 rounded-xl border ${
-            reassignMsg.ok ? "bg-green-500/10 text-green-400 border-green-500/30" : "bg-destructive/10 text-destructive border-destructive/30"
-          }`}>
-            {reassignMsg.text}
+        <p className="text-[11px] text-muted-foreground">
+          Move a user to a different community pool. Find the user ID in the Users tab.
+        </p>
+
+        {!reassignPending ? (
+          <>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                placeholder="User ID"
+                value={reassignUserId}
+                onChange={e => { setReassignUserId(e.target.value); setReassignMsg(null); }}
+                style={{ fontSize: "16px" }}
+                className="flex-1 px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+              />
+              <select
+                value={reassignCommunityId}
+                onChange={e => { setReassignCommunityId(e.target.value); setReassignMsg(null); }}
+                style={{ fontSize: "16px" }}
+                className="flex-1 px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+              >
+                <option value="">— Select community —</option>
+                {communities.map(c => (
+                  <option key={c.id} value={String(c.id)}>
+                    {c.name} (#{c.id}){c.id === defaultCommunityId ? " ★" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {reassignMsg && (
+              <div className={`text-[11px] font-bold px-3 py-2 rounded-xl border ${
+                reassignMsg.ok ? "bg-green-500/10 text-green-400 border-green-500/30" : "bg-destructive/10 text-destructive border-destructive/30"
+              }`}>
+                {reassignMsg.text}
+              </div>
+            )}
+            <button
+              onClick={requestReassignConfirm}
+              disabled={!reassignUserId || !reassignCommunityId}
+              style={{ touchAction: "manipulation" }}
+              className="w-full py-2.5 text-xs font-black rounded-xl bg-primary text-primary-foreground disabled:opacity-50 active:opacity-80"
+            >
+              Review &amp; Confirm
+            </button>
+          </>
+        ) : (
+          /* Confirmation step — shows exactly what will happen before committing */
+          <div className="space-y-3">
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-1">
+              <div className="text-[11px] font-black text-amber-400 uppercase tracking-widest">Confirm Reassignment</div>
+              <div className="text-sm font-bold">
+                Move User <span className="text-primary">#{reassignUserId}</span> → <span className="text-primary">{communities.find(c => c.id === parseInt(reassignCommunityId))?.name ?? `Community #${reassignCommunityId}`}</span>
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                This changes which community pool the user belongs to and which wage multiplier applies to them. Double-check the user ID before confirming.
+              </div>
+            </div>
+            {reassignMsg && (
+              <div className={`text-[11px] font-bold px-3 py-2 rounded-xl border ${
+                reassignMsg.ok ? "bg-green-500/10 text-green-400 border-green-500/30" : "bg-destructive/10 text-destructive border-destructive/30"
+              }`}>
+                {reassignMsg.text}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={cancelReassign}
+                disabled={reassigning}
+                style={{ touchAction: "manipulation" }}
+                className="flex-1 py-2.5 text-xs font-black rounded-xl bg-muted border border-border text-muted-foreground active:opacity-70 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={doReassign}
+                disabled={reassigning}
+                style={{ touchAction: "manipulation" }}
+                className="flex-1 py-2.5 text-xs font-black rounded-xl bg-destructive text-destructive-foreground disabled:opacity-50 active:opacity-80"
+              >
+                {reassigning ? "Reassigning…" : "Yes, Reassign"}
+              </button>
+            </div>
           </div>
         )}
-        <button
-          onClick={doReassign}
-          disabled={reassigning}
-          style={{ touchAction: "manipulation" }}
-          className="w-full py-2.5 text-xs font-black rounded-xl bg-primary text-primary-foreground disabled:opacity-50 active:opacity-80"
-        >
-          {reassigning ? "Reassigning…" : "Reassign"}
-        </button>
       </div>
 
       {/* Refresh */}

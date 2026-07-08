@@ -186,7 +186,11 @@ router.get("/communities/:id", generalApiLimiter, async (req, res) => {
 
 /**
  * GET /communities/:id/ledger — recent public ledger entries for a community.
- * Shows the last 20 entries (no sensitive user data).
+ * Shows the last 20 entries. The raw `notes` field is intentionally omitted:
+ * it contains free-text request titles (e.g. "Helper paid for: <title>") which
+ * may include sensitive personal details from categories like medical,
+ * mental_health_peer, senior_care, and legal_aid. A generic description is
+ * derived from entry_type instead.
  */
 router.get("/communities/:id/ledger", generalApiLimiter, async (req, res) => {
   const id = parseInt(req.params.id as string, 10);
@@ -198,7 +202,6 @@ router.get("/communities/:id/ledger", generalApiLimiter, async (req, res) => {
         id:         communityPoolLedgerTable.id,
         entry_type: communityPoolLedgerTable.entry_type,
         amount:     communityPoolLedgerTable.amount,
-        notes:      communityPoolLedgerTable.notes,
         created_at: communityPoolLedgerTable.created_at,
       })
       .from(communityPoolLedgerTable)
@@ -206,7 +209,23 @@ router.get("/communities/:id/ledger", generalApiLimiter, async (req, res) => {
       .orderBy(desc(communityPoolLedgerTable.created_at))
       .limit(20);
 
-    return res.json({ entries: rows });
+    // Derive a safe, generic description from entry_type so the frontend
+    // has something human-readable without exposing requester-supplied text.
+    // Keys must match the canonical entry_type values written by community-pool.ts.
+    const ENTRY_LABELS: Record<string, string> = {
+      sponsor_contribution: "Community contribution received",
+      helper_front:         "Helper paid for a completed task",
+      guaranteed_minimum:   "Guaranteed minimum for a completed task",
+      pledge_repayment:     "Pay-it-forward repayment received",
+      adjustment:           "Pool balance adjustment",
+    };
+
+    const entries = rows.map(r => ({
+      ...r,
+      description: ENTRY_LABELS[r.entry_type] ?? "Pool activity",
+    }));
+
+    return res.json({ entries });
   } catch (err) {
     return res.status(500).json({ error: "Failed to load ledger" });
   }

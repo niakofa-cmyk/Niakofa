@@ -1,3 +1,6 @@
+- [Niakofa communities-tab fixes](niakofa-communities-tab.md) — pool_health_ratio must come from server (clamped 0.5–1.0); default badge uses defaultCommunityId state; unassigned bucket shown; reassign uses dropdown + confirm step.
+- [Niakofa ip-geo provider](niakofa-ip-geo-provider.md) — ip-api.com free tier is HTTP-only; switched to ipwho.is (HTTPS free); response shape: success/city/region/country/postal/latitude/longitude/timezone.id.
+- [Niakofa ledger entry types](niakofa-ledger-entry-types.md) — canonical entry_type values: sponsor_contribution / helper_front / guaranteed_minimum / pledge_repayment / adjustment.
 - [Niakofa map alignment](niakofa-map-alignment.md) — map controls bottom-24 (96px) overlaps BottomNav on iPhone X (98px with safe area); fix: bottom-32/36/52; stats overlay top-16 overlaps TopBar (~76px); fix: top-20.
 - [Niakofa emergency cluster](niakofa-emergency-cluster.md) — clusterProperties has_emergency sums is_emergency per cluster; circle-stroke-color expression tints red when has_emergency>0; civic suggestion POST needs authHeaders().
 - [Niakofa nia-service supervision](niakofa-nia-service-supervision.md) — railpack.json startCommand wraps nia-service in while-true restart loop; exits 0 and 143 (SIGTERM) break cleanly; other exits = crash → restart after 5s.

@@ -33,21 +33,26 @@ export async function injectLocation(
       ip === "";
 
     if (!isPrivate && ip) {
+      // ipwho.is supports HTTPS on the free tier (unlike ip-api.com which
+      // requires a paid plan for TLS). Response shape differs slightly.
       const geo = await fetch(
-        `http://ip-api.com/json/${ip}?fields=status,city,regionName,country,zip,lat,lon,timezone`
+        `https://ipwho.is/${ip}`
       )
         .then((r) => r.json())
         .catch(() => null);
 
-      if (geo?.status === "success") {
+      if (geo?.success === true) {
+        // ipwho.is returns lat/lon as `latitude`/`longitude` and timezone as
+        // an object `{ id, abbreviation, ... }`.
+        const [lat, lon] = [geo.latitude, geo.longitude];
         (req as any).locationContext = {
           city: geo.city,
-          region: geo.regionName,
+          region: geo.region,
           country: geo.country,
-          zip: geo.zip,
-          lat: geo.lat,
-          lon: geo.lon,
-          timezone: geo.timezone,
+          zip: geo.postal,
+          lat: typeof lat === "number" ? lat : undefined,
+          lon: typeof lon === "number" ? lon : undefined,
+          timezone: typeof geo.timezone?.id === "string" ? geo.timezone.id : undefined,
         } as LocationContext;
       }
     }

@@ -21,6 +21,7 @@ import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
+import { getSystemSetting, setSystemSetting } from "../lib/db-helpers";
 
 const router = Router();
 
@@ -33,9 +34,15 @@ function isValidTargetReserve(value: unknown): value is number {
 // GET /admin/communities — list all communities with live pool balance,
 // member count, and current pool-health ratio (same clamp used by
 // getGuaranteedMinimum). Also surfaces the legacy global/NULL bucket so
-// admins can see how many users are still unassigned.
+// admins can see how many users are still unassigned, and the current
+// default_community_id so the UI can highlight which county new signups land in.
 router.get("/admin/communities", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
-  const communities = await db.select().from(communitiesTable).orderBy(communitiesTable.id);
+  const [communities, defaultIdSetting] = await Promise.all([
+    db.select().from(communitiesTable).orderBy(communitiesTable.id),
+    getSystemSetting("default_community_id"),
+  ]);
+
+  const defaultCommunityId = defaultIdSetting ? parseInt(defaultIdSetting, 10) : null;
 
   const [balances, memberCounts] = await Promise.all([
     db
@@ -80,6 +87,7 @@ router.get("/admin/communities", requireAuth, requireAdmin(), adminLimiter, asyn
       pool_balance: balanceByCommunity.get(null) ?? 0,
       member_count: membersByCommunity.get(null) ?? 0,
     },
+    default_community_id: isNaN(defaultCommunityId as number) ? null : defaultCommunityId,
   });
 });
 
@@ -141,6 +149,24 @@ router.patch("/admin/communities/:id", requireAuth, requireAdmin(), adminLimiter
   if (!updated) return res.status(404).json({ error: "Not found" });
   logger.info({ community_id: id }, "admin-communities: updated community");
   return res.json(updated);
+});
+
+// PATCH /admin/communities/:id/set-default — set the default community that
+// new registrations land in (writes system_settings.default_community_id).
+router.patch("/admin/communities/:id/set-default", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const id = parseInt(req.params.id as string);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+  const [exists] = await db
+    .select({ id: communitiesTable.id })
+    .from(communitiesTable)
+    .where(eq(communitiesTable.id, id))
+    .limit(1);
+  if (!exists) return res.status(404).json({ error: "Community not found" });
+
+  await setSystemSetting("default_community_id", String(id));
+  logger.info({ community_id: id }, "admin-communities: set default community");
+  return res.json({ default_community_id: id });
 });
 
 // PATCH /admin/users/:id/community — assign/reassign a single user's community.

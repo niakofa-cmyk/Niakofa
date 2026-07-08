@@ -123,9 +123,10 @@ app.use(
 
 // Stripe webhooks require the raw request body (Buffer) for signature verification.
 // This MUST come before express.json() so the /stripe/webhook route gets the raw body.
-app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
-app.use("/api/verification/identity/webhook", express.raw({ type: "application/json" }));
-app.use("/api/background-checks/webhook", express.raw({ type: "application/json" }));
+// 1 MB cap prevents memory exhaustion from oversized webhook payloads.
+app.use("/api/stripe/webhook", express.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/verification/identity/webhook", express.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/background-checks/webhook", express.raw({ type: "application/json", limit: "1mb" }));
 // Voice STT endpoint needs raw audio bytes before express.json() runs
 app.use("/api/nia/voice/transcribe", voiceAudioRawParser);
 
