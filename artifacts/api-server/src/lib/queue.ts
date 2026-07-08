@@ -49,6 +49,20 @@ export function parseRedisUrl(raw: string): string | undefined {
 }
 const REDIS_URL = parseRedisUrl(process.env["REDIS_URL"] ?? "");
 
+/**
+ * Distinguishes "not set at all" from "set but malformed" so ops tooling
+ * (GET /api/admin/global-ops config_status, startup logs) can tell operators
+ * exactly what's wrong instead of a single ambiguous boolean. This matters in
+ * production: a malformed REDIS_URL silently disables pledge reminders,
+ * payout retries, and cashout workers with no visible symptom besides a log
+ * line that's easy to miss.
+ */
+export function getRedisUrlStatus(): "not_set" | "invalid_format" | "valid" {
+  const raw = (process.env["REDIS_URL"] ?? "").trim();
+  if (!raw) return "not_set";
+  return REDIS_URL ? "valid" : "invalid_format";
+}
+
 let _connection: IORedis | null = null;
 
 export function getRedisConnection(): IORedis | null {

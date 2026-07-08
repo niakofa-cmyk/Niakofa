@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { getWorkerHealth, areAllCriticalWorkersRunning } from "../lib/worker-registry";
-import { isRedisConfigured } from "../lib/queue";
+import { isRedisConfigured, getRedisUrlStatus } from "../lib/queue";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
@@ -92,11 +92,13 @@ router.get("/admin/worker-health", requireAuth, adminLimiter, async (req, res, n
       const workers = getWorkerHealth();
       const critical = areAllCriticalWorkersRunning();
       const redisOk = isRedisConfigured();
+      const redisUrlStatus = getRedisUrlStatus();
       // Hub metrics are O(n) in-memory reads — no DB call, no async needed.
       const hub = getHubMetrics();
       res.json({
         status: critical && redisOk ? "ok" : "degraded",
         redis_configured: redisOk,
+        redis_url_status: redisUrlStatus,
         process_started_at: PROCESS_STARTED_AT,
         workers,
         websocket_hub: hub,
@@ -205,11 +207,15 @@ router.get("/admin/global-ops", requireAuth, adminLimiter, async (req, res, next
         { key: "ANTHROPIC_API_KEY",                ok: niaConfigured },
         { key: "INTERNAL_SECRET",                  ok: internalSecretSet },
       ];
+      const redisUrlStatus = getRedisUrlStatus();
       const optionalSecrets = [
         { key: "VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY", ok: pushConfigured },
         { key: "STRIPE_SECRET_KEY",                    ok: stripeConfigured },
         { key: "CHECKR_API_KEY",                       ok: checkrConfigured },
-        { key: "REDIS_URL",                            ok: isRedisConfigured() },
+        {
+          key: redisUrlStatus === "invalid_format" ? "REDIS_URL (set but INVALID FORMAT)" : "REDIS_URL",
+          ok: isRedisConfigured(),
+        },
       ];
       const missingCritical = criticalSecrets.filter(s => !s.ok).map(s => s.key);
       const missingOptional = optionalSecrets.filter(s => !s.ok).map(s => s.key);
@@ -228,6 +234,7 @@ router.get("/admin/global-ops", requireAuth, adminLimiter, async (req, res, next
           nia_ai:           niaConfigured,
           internal_secret:  internalSecretSet,
           redis:            isRedisConfigured(),
+          redis_url_status: redisUrlStatus,
           push_vapid:       pushConfigured,
           stripe:           stripeConfigured,
           background_checks: checkrConfigured,

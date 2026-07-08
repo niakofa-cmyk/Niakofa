@@ -1645,6 +1645,7 @@ function NiaTab() {
   const [auditLog, setAuditLog] = useState<NiaAuditEntry[] | null>(null);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
+  const [auditExporting, setAuditExporting] = useState(false);
 
   const hdrs = useCallback(() => {
     const t = getToken();
@@ -1717,6 +1718,42 @@ function NiaTab() {
   }, [hdrs]);
 
   useEffect(() => { loadAuditLog(); }, [loadAuditLog]);
+
+  const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
+
+  const exportAuditCsv = async () => {
+    setAuditExporting(true);
+    try {
+      const r = await fetch(`${BASE}/api/admin/nia-audit-log?limit=200`, { headers: hdrs() });
+      if (!r.ok) throw new Error(`Error ${r.status}`);
+      const data = await r.json() as { entries: NiaAuditEntry[] };
+      const entries = data.entries ?? [];
+      const header = ["id", "action", "admin_email", "admin_user_id", "reason", "timestamp_iso"];
+      const rows = entries.map(e => [
+        String(e.id),
+        e.enabled ? "enabled" : "disabled",
+        e.admin_email,
+        String(e.admin_user_id),
+        e.reason ?? "",
+        e.created_at,
+      ]);
+      const csv = [header, ...rows].map(row => row.map(csvEscape).join(",")).join("\r\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `nia-kill-switch-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: `Exported ${entries.length} audit entries` });
+    } catch (err) {
+      toast({ title: (err as Error).message ?? "Export failed", variant: "destructive" });
+    } finally {
+      setAuditExporting(false);
+    }
+  };
 
   const submitToggle = async (enabled: boolean) => {
     setConfirmPending(null);
@@ -2145,14 +2182,27 @@ function NiaTab() {
             <ShieldCheck className="w-4 h-4 text-muted-foreground" />
             <span className="font-black text-sm">Kill-Switch Audit Log</span>
           </div>
-          <button
-            onClick={() => loadAuditLog()}
-            disabled={auditLoading}
-            style={{ touchAction: "manipulation" }}
-            className="text-[11px] font-bold text-muted-foreground active:text-foreground disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${auditLoading ? "animate-spin" : ""}`} />
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={exportAuditCsv}
+              disabled={auditExporting || auditLoading}
+              style={{ touchAction: "manipulation" }}
+              className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground active:text-foreground disabled:opacity-50"
+            >
+              {auditExporting
+                ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                : <FileText className="w-3.5 h-3.5" />}
+              CSV
+            </button>
+            <button
+              onClick={() => loadAuditLog()}
+              disabled={auditLoading}
+              style={{ touchAction: "manipulation" }}
+              className="text-[11px] font-bold text-muted-foreground active:text-foreground disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${auditLoading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
         </div>
         {auditLoading && !auditLog ? (
           <div className="text-[11px] text-muted-foreground text-center py-3">Loading history…</div>

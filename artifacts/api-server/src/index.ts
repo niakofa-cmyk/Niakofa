@@ -3,7 +3,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
 import { startScheduledPaymentReminder, startPifNudgeWorker, startPledgeDefaultWorker, startCashoutReconciliation } from "./lib/scheduler";
-import { isRedisConfigured, closeRedis } from "./lib/queue";
+import { isRedisConfigured, getRedisUrlStatus, closeRedis } from "./lib/queue";
 import {
   workerStarted,
   workerNoRedis,
@@ -67,11 +67,20 @@ server.listen(port, async () => {
   }
 
   if (process.env["NODE_ENV"] === "production" && !isRedisConfigured()) {
+    const redisStatus = getRedisUrlStatus();
     logger.error(
-      "FATAL: REDIS_URL is required in production. " +
-      "BullMQ workers handle push notifications, payout retries, and pledge reconciliation. " +
-      "Set REDIS_URL in your environment variables. " +
-      "The server will continue but background jobs will NOT run — this is unsafe for production."
+      { redis_url_status: redisStatus },
+      redisStatus === "invalid_format"
+        ? "FATAL: REDIS_URL is set in production but is NOT a valid redis:// or rediss:// URL — " +
+          "it will be silently ignored. BullMQ workers handle push notifications, payout retries, " +
+          "and pledge reconciliation. Check the exact value in your production environment (Railway " +
+          "dashboard → Variables) — a common cause is an unresolved template placeholder like " +
+          "\"${{Redis.REDIS_URL}}\" or a bare hostname. The server will continue but background jobs " +
+          "will NOT run — this is unsafe for production."
+        : "FATAL: REDIS_URL is required in production. " +
+          "BullMQ workers handle push notifications, payout retries, and pledge reconciliation. " +
+          "Set REDIS_URL in your environment variables. " +
+          "The server will continue but background jobs will NOT run — this is unsafe for production."
     );
   }
 
