@@ -18,31 +18,13 @@ import { parseAuth, requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
 import { crisisAwareChatLimiter, niaChatHistoryLimiter, adminLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
-import { db, systemSettingsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { isNiaEnabled } from "../lib/db-helpers";
 import { sendNiaEventToUser, broadcastNiaEvent } from "../lib/ws-hub";
 
 const router = Router();
 
 const getNiaUrl = () =>
   (process.env.NIA_SERVICE_URL ?? "http://localhost:3001").replace(/\/$/, "");
-
-// ── DB-backed Nia enabled check ───────────────────────────────────────────────
-async function isNiaEnabled(): Promise<boolean> {
-  try {
-    const [row] = await db
-      .select({ value: systemSettingsTable.value })
-      .from(systemSettingsTable)
-      .where(eq(systemSettingsTable.key, "nia_enabled"))
-      .limit(1);
-    // Nia is disabled by default. Must be explicitly "true" — any other value
-    // (row missing, "false", empty string) means disabled. This is a fail-closed
-    // posture: a missing DB row never accidentally enables AI on all users.
-    return row?.value === "true";
-  } catch {
-    return false; // fail-closed: DB error → Nia disabled
-  }
-}
 
 // ── Sanitize message input ────────────────────────────────────────────────────
 const MAX_MESSAGE_LENGTH = 2000;

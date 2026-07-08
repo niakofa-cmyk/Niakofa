@@ -25,27 +25,11 @@
  * Uses pool.query() directly because push_notification_queue is a nia-service
  * raw pg table, not in the Drizzle schema.
  */
-import { pool, db, systemSettingsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { pool } from "@workspace/db";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
 import { sendNiaEventToUser } from "../lib/ws-hub";
-
-// ── Nia kill-switch check ─────────────────────────────────────────────────────
-// Push-queue worker must also honour the admin kill-switch so AI push
-// notifications stop immediately when Nia is disabled. Fail-closed.
-async function isNiaEnabled(): Promise<boolean> {
-  try {
-    const [row] = await db
-      .select({ value: systemSettingsTable.value })
-      .from(systemSettingsTable)
-      .where(eq(systemSettingsTable.key, "nia_enabled"))
-      .limit(1);
-    return row?.value === "true";
-  } catch {
-    return false;
-  }
-}
+import { isNiaEnabled } from "../lib/db-helpers";
 
 const BATCH_SIZE = 100;
 const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes

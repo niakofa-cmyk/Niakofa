@@ -29,27 +29,9 @@ import {
   ELEVENLABS_API_KEY,
   ELEVENLABS_BASE,
 } from "../lib/voiceProfiles";
-import { db, systemSettingsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { isNiaEnabled } from "../lib/db-helpers";
 
 const router = Router();
-
-// ── Nia kill-switch check (same as nia-proxy.ts) ─────────────────────────────
-// Voice TTS is part of Nia — disabling Nia from the admin panel also gates
-// voice synthesis, so a completely disabled Nia doesn't produce audio.
-async function isNiaEnabled(): Promise<boolean> {
-  try {
-    const [row] = await db
-      .select({ value: systemSettingsTable.value })
-      .from(systemSettingsTable)
-      .where(eq(systemSettingsTable.key, "nia_enabled"))
-      .limit(1);
-    // Fail-closed: must be explicitly "true". Missing row, "false", or empty → disabled.
-    return row?.value === "true";
-  } catch {
-    return false; // fail-closed: DB error → Nia voice disabled
-  }
-}
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024; // 10MB — generous for a single voice message

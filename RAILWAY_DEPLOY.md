@@ -81,6 +81,34 @@ Set all of these in Railway → Service → Variables:
 
 ---
 
+## ⚠️ Critical: PostgreSQL Must Have PostGIS Extension
+
+Niakofa uses **PostGIS** for all location queries (`ST_DWithin`, geographic distance, helper/request proximity). Standard Postgres **will not work** — migrations will fail with `extension "postgis" does not exist`.
+
+### How to verify your Postgres service has PostGIS
+
+Run in Railway Shell or via psql:
+```sql
+SELECT PostGIS_Version();
+```
+If this errors, your Postgres image does not have PostGIS.
+
+### Switching to a PostGIS-enabled image
+
+1. **Back up your data first** (Railway → Postgres service → Backups tab, or `pg_dump`)
+2. Delete the current Postgres service (Railway → Service → Settings → Delete)
+3. Create a new Postgres service using the custom image: `postgis/postgis:16-3.4`
+   - In Railway: **New Service → Custom Image** → `postgis/postgis:16-3.4`
+   - Enable Private Networking so it gets `postgres.railway.internal`
+4. Update `DATABASE_URL` in your api-server variables to the new connection string
+5. Redeploy api-server — migrations will run automatically and create the PostGIS extension
+
+> **Important**: The current Railway Postgres plugin image (`ghcr.io/railwayapp-templates/postgres-ssl:18`)
+> is standard Postgres without PostGIS. The API will fail migrations on a fresh DB if
+> the PostGIS extension is not available.
+
+---
+
 ## Database
 
 Railway's Postgres plugin auto-sets `DATABASE_URL`. The migration script:

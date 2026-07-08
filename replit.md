@@ -60,6 +60,14 @@ A map-first, pay-it-forward community mutual aid platform for Tarrant County, TX
 
 - **Multi-agent family covenant (July 2, 2026):** This project is worked on by multiple AI agents — Claude/Father (`CLAUDE.md`), Replit agent/Godfather (`artifacts/nia-service/REPLIT_GODFATHER.md`), Coworker AI/Grandfather (`GRANDFATHER_COWORKER.md`). Never delete the Replit dev database, the Railway production database, Redis, or any code/infrastructure another agent depends on. Full rules in CLAUDE.md → "Multi-agent family covenant — databases".
 
+## Nia AI
+
+- **Nia is disabled by default for all users.** The `system_settings` table is seeded with `nia_enabled = 'false'`. An admin must explicitly enable it via `POST /api/admin/nia-toggle { "enabled": true }` or via the admin dashboard.
+- **Kill-switch is fail-closed everywhere:** if the DB row is missing, empty, or any value other than `"true"`, Nia is treated as disabled. DB errors also default to disabled — the system can never accidentally enable Nia due to infrastructure failures.
+- **Kill-switch is enforced at every layer:** nia-proxy.ts (all /api/nia/* routes), nia-context.ts, nia-voice.ts, nia-checkin-worker.ts, nia-push-queue-worker.ts, and the nia-service itself each check isNiaEnabled() before any AI work.
+- **Frontend confirms state before showing anything:** AppContext polls `/api/admin/nia-status` every 60 seconds and subscribes to the WS `nia_status` event for instant toggle propagation. `NiaGlobal` in App.tsx renders `null` while loading and hides the FAB + Drawer when `niaEnabled !== true`.
+- **Shared cached isNiaEnabled():** All api-server routes and workers import `isNiaEnabled` from `../lib/db-helpers`. This function has a 10-second TTL cache and is invalidated immediately (via `resetNiaEnabledCache()`) when an admin toggles Nia.
+
 ## Gotchas
 
 - **Fresh/empty Postgres is bootstrapped with one command:** `pnpm --filter @workspace/db run migrate` — run-migrations.mjs detects a fresh DB (no users table), enables postgis, and executes all migrations from 0000. Then `pnpm --filter @workspace/scripts run seed-if-empty` seeds the 19 civic resources. Never drop-and-recreate the DB.

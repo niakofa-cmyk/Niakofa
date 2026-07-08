@@ -17,7 +17,7 @@
  *   const user = await getUserById(id);
  *   if (!user) return res.status(404).json({ error: "User not found" });
  *
- *   const enabled = await getSystemSetting("nia_enabled", "true");
+ *   const enabled = await getSystemSetting("nia_enabled") === "true";
  */
 
 import { eq, inArray, sql } from "drizzle-orm";
@@ -252,3 +252,94 @@ export { db };
 // without importing drizzle-orm directly.
 export type { DrizzleTransaction, NodePgDatabase };
 export type { schema };
+
+// ── Nia Kill-switch (shared, TTL-cached) ─────────────────────────────────────
+// Single source of truth for the Nia AI enabled/disabled state in api-server.
+// All routes and workers MUST import from here — never duplicate this query.
+//
+// Design: fail-closed with 10-second TTL cache (mirrors nia-service/src/lib/db.ts).
+// A missing row, DB error, or any value other than "true" returns false — Nia
+// must be explicitly enabled; it is never accidentally turned on by failures.
+//
+// Race-condition fix (generation counter):
+// resetNiaEnabledCache() increments _niaGeneration before clearing the cache.
+// isNiaEnabled() captures the generation before the DB query. The result is only
+// written to the cache if the generation hasn't changed while the query was
+// in-flight. This prevents a pre-toggle DB read from silently overwriting the
+// cache with a stale value after resetNiaEnabledCache() has already been called.
+//
+// In-flight deduplication: concurrent isNiaEnabled() calls share one pending
+// DB query via _niaInflight, preventing a query storm when the cache is cold
+// (e.g., immediately after a reset). resetNiaEnabledCache() clears _niaInflight
+// so new requests after a toggle always start a fresh query.
+
+let _niaCachedEnabled: boolean | null = null;
+let _niaCacheTs = 0;
+let _niaGeneration = 0; // incremented on every reset to detect stale writes
+let _niaInflight: Promise<boolean> | null = null;
+const NIA_CACHE_TTL_MS = 10_000; // 10 seconds — same TTL as nia-service
+
+/**
+ * Expire the Nia enabled cache immediately.
+ * Call this after an admin toggle so the next isNiaEnabled() call reads fresh
+ * data without waiting for TTL expiry.
+ *
+ * Bumps the internal generation counter so any DB query that was already
+ * in-flight before the toggle cannot overwrite the (now-invalidated) cache with
+ * a stale value.
+ */
+export function resetNiaEnabledCache(): void {
+  _niaGeneration++;        // invalidate any in-flight refresh
+  _niaCachedEnabled = null;
+  _niaCacheTs = 0;
+  _niaInflight = null;     // force next caller to start a fresh query
+}
+
+/**
+ * Check whether Nia AI is enabled in system_settings.
+ *
+ * Fail-closed: returns false on any error (DB down, row missing, wrong value).
+ * Results are cached for 10 seconds to avoid a DB round-trip on every request.
+ * Call resetNiaEnabledCache() immediately after an admin toggle — it invalidates
+ * the cache and ensures the next call reads the updated value from the DB.
+ *
+ * All api-server routes and workers MUST use this function. Never duplicate the
+ * raw DB query — the shared cache and in-flight deduplication are essential to
+ * shield the DB under high request rates.
+ */
+export async function isNiaEnabled(): Promise<boolean> {
+  const now = Date.now();
+  // Fast path: valid cached value within TTL
+  if (_niaCachedEnabled !== null && now - _niaCacheTs < NIA_CACHE_TTL_MS) {
+    return _niaCachedEnabled;
+  }
+  // Coalesce concurrent cold-cache requests into one DB query
+  if (_niaInflight) return _niaInflight;
+
+  const genAtStart = _niaGeneration;
+  _niaInflight = (async (): Promise<boolean> => {
+    let result: boolean;
+    try {
+      const [row] = await db
+        .select({ value: systemSettingsTable.value })
+        .from(systemSettingsTable)
+        .where(eq(systemSettingsTable.key, "nia_enabled"))
+        .limit(1);
+      // Only "true" enables Nia. Missing row, "false", or empty string → disabled.
+      result = row?.value === "true";
+    } catch {
+      result = false; // fail-closed: DB error → Nia disabled
+    }
+    // Only commit to cache if no reset() happened while we were querying.
+    // A generation mismatch means an admin toggled Nia during our DB round-trip;
+    // writing the stale result would silently hide the toggle for up to TTL seconds.
+    if (_niaGeneration === genAtStart) {
+      _niaCachedEnabled = result;
+      _niaCacheTs = Date.now();
+      _niaInflight = null;
+    }
+    return result;
+  })();
+
+  return _niaInflight;
+}

@@ -291,18 +291,22 @@ router.get("/status", async (_req, res) => {
   } catch { /* fall through */ }
   checks.push({ name: "database", ok: dbOk, latency_ms: Date.now() - dbStart });
 
-  // 2. Nia AI — check kill-switch setting via db-helpers (no external API call)
+  // 2. Map / Geolocation — check env key presence (no external call)
+  const mapOk = !!(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
+  checks.push({ name: "map", ok: mapOk });
+
+  // NOTE: Nia AI enabled/disabled is an admin-controlled setting, NOT a health
+  // indicator. Including it in `allOk` would cause the status endpoint to return
+  // HTTP 503 "degraded" whenever Nia is intentionally disabled (which is the
+  // default state — Nia must be explicitly enabled by an admin). A 503 from the
+  // status page falsely signals the platform is broken when it is fully operational.
+  // Nia's state is reported separately as an informational field so status-page
+  // consumers can display it without conflating "Nia off" with "app down".
   let niaEnabled = false;
   try {
     const val = await getSystemSetting("nia_enabled");
-    // fail-closed: only an explicit "true" counts as enabled, matching every other Nia gate
     niaEnabled = dbOk && val === "true";
-  } catch { /* fall through */ }
-  checks.push({ name: "nia_ai", ok: niaEnabled });
-
-  // 3. Map / Geolocation — check env key presence (no external call)
-  const mapOk = !!(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
-  checks.push({ name: "map", ok: mapOk });
+  } catch { /* fall through — default to false (informational only) */ }
 
   const allOk = checks.every(c => c.ok);
   // NOTE: commit and started_at are intentionally omitted here. They are
@@ -311,6 +315,8 @@ router.get("/status", async (_req, res) => {
   res.status(allOk ? 200 : 503).json({
     status: allOk ? "operational" : "degraded",
     checks,
+    // nia is informational — disabled by admin ≠ platform degraded
+    nia: { enabled: niaEnabled, note: niaEnabled ? "active" : "disabled by admin (default)" },
     timestamp: new Date().toISOString(),
   });
 });

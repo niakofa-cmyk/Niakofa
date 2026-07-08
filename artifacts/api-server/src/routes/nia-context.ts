@@ -23,29 +23,13 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
-import { db, usersTable, requestsTable, userSettingsTable, systemSettingsTable } from "@workspace/db";
+import { db, usersTable, requestsTable, userSettingsTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { distanceMiles } from "../lib/geo";
 import { logger } from "../lib/logger";
+import { isNiaEnabled } from "../lib/db-helpers";
 
 const router = Router();
-
-/**
- * Fail-closed kill-switch check — mirrors the one in nia-proxy.ts.
- * Any error (DB down, row missing, wrong value) defaults to DISABLED.
- */
-async function isNiaEnabled(): Promise<boolean> {
-  try {
-    const [row] = await db
-      .select({ value: systemSettingsTable.value })
-      .from(systemSettingsTable)
-      .where(eq(systemSettingsTable.key, "nia_enabled"))
-      .limit(1);
-    return row?.value === "true";
-  } catch {
-    return false; // fail-closed: DB error → Nia disabled
-  }
-}
 
 const NEARBY_RADIUS_MILES = 2;
 const CACHE_TTL_MS = 30_000; // 30-second cache per user

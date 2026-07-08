@@ -12,7 +12,7 @@ import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter, authLimiter, generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { broadcast } from "../lib/ws-hub";
-import { getSystemSettings, setSystemSettings, getUserById } from "../lib/db-helpers";
+import { getSystemSettings, setSystemSettings, getUserById, resetNiaEnabledCache } from "../lib/db-helpers";
 
 const router = Router();
 
@@ -432,6 +432,9 @@ router.post("/admin/nia-toggle", requireAuth, requireAdmin(), adminLimiter, asyn
       nia_enabled: enabled ? "true" : "false",
       nia_last_toggled_at: now,
     });
+    // Expire the 10-second TTL cache immediately so every subsequent request
+    // on this process sees the new state without waiting for cache expiry.
+    resetNiaEnabledCache();
   } catch (err) {
     logger.error({ err, enabled }, "admin: Nia AI toggle DB write failed");
     return res.status(500).json({ error: "Failed to save Nia setting — toggle not applied" });
