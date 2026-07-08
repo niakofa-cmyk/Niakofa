@@ -125,6 +125,7 @@ jest.unstable_mockModule("drizzle-orm", () => ({
 jest.unstable_mockModule("../lib/queue.js", () => ({
   getRedisConnection: jest.fn().mockReturnValue(null),
   isRedisConfigured: jest.fn().mockReturnValue(false),
+  getRedisUrlStatus: jest.fn().mockReturnValue("not_set"),
   QUEUE: { PLEDGE_RECONCILIATION: "pledge-reconciliation" },
   pledgeQueue: null,
 }));

@@ -110,6 +110,8 @@ jest.unstable_mockModule("../lib/ws-hub.js", () => ({
 
 jest.unstable_mockModule("../lib/queue.js", () => ({
   enqueuePayoutRetry: jest.fn().mockResolvedValue(undefined),
+  isRedisConfigured: jest.fn().mockReturnValue(false),
+  getRedisUrlStatus: jest.fn().mockReturnValue("not_set"),
 }));
 
 jest.unstable_mockModule("../routes/push.js", () => ({
