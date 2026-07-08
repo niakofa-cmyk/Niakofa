@@ -733,8 +733,15 @@ interface AuditApiUser {
 // This is the best available audit trail given there is no dedicated audit_log
 // table. If a future migration adds one, replace the fetches below with a single
 // GET /api/admin/audit-log call.
+// Shared CSV cell sanitizer for all admin CSV exports.
+// Neutralizes spreadsheet formula injection (Excel/Sheets execute a cell
+// starting with =, +, -, or @ as a formula when the CSV is opened) by
+// prefixing those cells with a leading apostrophe before quoting — the
+// apostrophe forces the cell to be treated as text in every major
+// spreadsheet app without altering the visible value.
 function csvEscapeField(val: string) {
-  return `"${val.replace(/"/g, '""')}"`;
+  const safe = /^[=+\-@]/.test(val) ? `'${val}` : val;
+  return `"${safe.replace(/"/g, '""')}"`;
 }
 
 function AuditLogTable() {
@@ -1765,8 +1772,6 @@ function NiaTab() {
 
   useEffect(() => { loadAuditLog(); }, [loadAuditLog]);
 
-  const csvEscape = (val: string) => `"${val.replace(/"/g, '""')}"`;
-
   const exportAuditCsv = async () => {
     setAuditExporting(true);
     try {
@@ -1783,7 +1788,7 @@ function NiaTab() {
         e.reason ?? "",
         e.created_at,
       ]);
-      const csv = [header, ...rows].map(row => row.map(csvEscape).join(",")).join("\r\n");
+      const csv = [header, ...rows].map(row => row.map(csvEscapeField).join(",")).join("\r\n");
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

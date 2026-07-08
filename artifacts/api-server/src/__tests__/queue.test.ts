@@ -75,4 +75,16 @@ describe("parseRedisUrl", () => {
   it("returns undefined for a Railway template literal that was never substituted", () => {
     expect(parseRedisUrl("${{Redis.REDIS_PRIVATE_URL}}")).toBeUndefined();
   });
+
+  it("returns undefined for a redis:// URL with an unresolved template placeholder as the host", () => {
+    expect(parseRedisUrl("redis://${{Redis.REDIS_URL}}")).toBeUndefined();
+  });
+
+  it("returns undefined for a redis:// scheme with no hostname", () => {
+    expect(parseRedisUrl("redis://")).toBeUndefined();
+  });
+
+  it("returns undefined for a redis:// scheme with only a port, no host", () => {
+    expect(parseRedisUrl("redis://:6379")).toBeUndefined();
+  });
 });

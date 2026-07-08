@@ -37,6 +37,24 @@ export function parseRedisUrl(raw: string): string | undefined {
     );
     return undefined;
   }
+  // A redis:// / rediss:// prefix alone isn't enough — values like
+  // "redis://" or "redis://${{Redis.REDIS_URL}}" (an unresolved template
+  // placeholder) pass the prefix check but are not connectable. Parse with
+  // the URL constructor to confirm there's an actual hostname, and that the
+  // string doesn't contain characters (e.g. "{", "}", "$") that indicate an
+  // unresolved template rather than a real connection string.
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname || /[{}$]/.test(url)) {
+      throw new Error("missing hostname or contains template placeholder characters");
+    }
+  } catch {
+    logger.warn(
+      { hint: "value has a redis:// prefix but is not a structurally valid URL (missing/invalid host, or an unresolved template placeholder)" },
+      "queue: REDIS_URL is set but is not a valid redis URL — BullMQ queues disabled",
+    );
+    return undefined;
+  }
   // Upstash (and many cloud Redis providers) require TLS even when the URL
   // starts with redis:// rather than rediss://. Upgrade to rediss:// so
   // ioredis enables the TLS layer automatically.
