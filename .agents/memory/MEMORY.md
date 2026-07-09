@@ -1,3 +1,6 @@
 - [Nia kill-switch architecture](nia-kill-switch.md) — Nia is disabled by default; all gates are fail-closed; shared TTL-cached isNiaEnabled() lives in db-helpers.ts.
 - [Health endpoint /status design](health-status-design.md) — nia_ai is informational (not in allOk); disabled Nia must never cause 503.
 - [PostGIS requirement](postgis-requirement.md) — standard Railway Postgres image lacks PostGIS; must use postgis/postgis:16-3.4.
+- [Vite HMR on Replit](vite-hmr-replit.md) — must set hmr.clientPort:443 (gated on REPL_ID) so HMR WebSocket goes through Replit's HTTPS proxy, not the raw dev port.
+- [API client schema drift](api-client-schema-drift.md) — orval-generated User type is missing helper_skills; use (user as any).helper_skills with length-check fallback, not ?? which ignores empty arrays.
+- [CSP surface](csp-surface.md) — app uses Mapbox (not Google Maps); maps.googleapis.com/scriptSrc, maps.gstatic.com/imgSrc, googlevideo.com/imgSrc removed; Google Sign-In paths remain.
