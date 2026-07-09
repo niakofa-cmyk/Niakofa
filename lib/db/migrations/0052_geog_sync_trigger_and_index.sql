@@ -22,9 +22,13 @@
 -- Wrapped the same way as 0004: a no-op (with a NOTICE) when PostGIS is
 -- not installed, so this never blocks subsequent migrations on an
 -- environment running the Haversine fallback.
-DO $$
+DO $
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'postgis') THEN
+  -- Use pg_extension (installed) not pg_available_extensions (can be installed).
+  -- Migration 0050 runs CREATE EXTENSION IF NOT EXISTS postgis, so by the time
+  -- this migration executes, the extension entry is in pg_extension if and only
+  -- if PostGIS is actually installed and usable on this cluster.
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis') THEN
 
     -- One trigger function, reused by both tables' triggers.
     BEGIN

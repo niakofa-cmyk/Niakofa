@@ -77,19 +77,25 @@ router.get("/helpers/online", requireAuth, async (req, res) => {
   if (location) {
     try {
       const radiusMeters = radius * 1609.344;
+      // COALESCE(u.geog, ST_SetSRID(ST_MakePoint(lng,lat),4326)::geography) is used
+      // in place of a bare u.geog reference so that helpers with valid lat/lng but
+      // geog=NULL (inserted before trigger 0052, or during a migration race window)
+      // are still distance-evaluated rather than silently excluded. For the vast
+      // majority of rows geog is populated and the GiST index is used; the
+      // ST_SetSRID fallback only activates for the null-geog edge cases.
       const nearbyRows = await db.execute(sql`
         SELECT u.*,
           ST_Distance(
             ST_MakePoint(${location.lng}, ${location.lat})::geography,
-            u.geog
+            COALESCE(u.geog, ST_SetSRID(ST_MakePoint(u.lng, u.lat), 4326)::geography)
           ) / 1609.344 AS distance_miles
         FROM users u
         WHERE u.helper_mode_active = true
           AND u.id = ANY(${optedInIdSet})
-          AND u.geog IS NOT NULL
+          AND u.lat IS NOT NULL AND u.lng IS NOT NULL
           AND ST_DWithin(
             ST_MakePoint(${location.lng}, ${location.lat})::geography,
-            u.geog,
+            COALESCE(u.geog, ST_SetSRID(ST_MakePoint(u.lng, u.lat), 4326)::geography),
             ${radiusMeters}
           )
       `);

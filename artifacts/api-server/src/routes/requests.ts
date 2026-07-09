@@ -188,14 +188,14 @@ router.get("/requests/nearby", async (req, res) => {
         hr.*,
         ST_Distance(
           ST_MakePoint(${lng}, ${lat})::geography,
-          hr.geog
+          COALESCE(hr.geog, ST_SetSRID(ST_MakePoint(hr.lng, hr.lat), 4326)::geography)
         ) / 1609.344 AS distance_miles
       FROM help_requests hr
       WHERE hr.status = 'open'
-        AND hr.geog IS NOT NULL
+        AND hr.lat IS NOT NULL AND hr.lng IS NOT NULL
         AND ST_DWithin(
           ST_MakePoint(${lng}, ${lat})::geography,
-          hr.geog,
+          COALESCE(hr.geog, ST_SetSRID(ST_MakePoint(hr.lng, hr.lat), 4326)::geography),
           ${radiusMeters}
         )
       ORDER BY
