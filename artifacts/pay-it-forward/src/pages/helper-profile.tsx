@@ -67,7 +67,12 @@ export default function HelperProfileScreen() {
     );
   }
 
-  const specialties: string[] = (helper as any).specialties ?? [];
+  // Prefer helper_skills (set at onboarding/re-application); fall back to the
+  // legacy specialties TEXT[] column for accounts created before the migration.
+  // Uses explicit length check (not ??) so that helper_skills=[] (empty after
+  // migration) doesn't block the fallback to the populated specialties column.
+  const hk: string[] | null | undefined = (helper as any).helper_skills;
+  const specialties: string[] = (hk && hk.length > 0) ? hk : ((helper as any).specialties ?? []);
   const tier = helper.trust_score != null && helper.help_count != null
     ? { trust: helper.trust_score, helps: helper.help_count }
     : null;

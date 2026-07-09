@@ -24,19 +24,22 @@ app.use(
         scriptSrc: [
           "'self'", "'unsafe-inline'",
           "https://js.stripe.com",
-          "https://maps.googleapis.com",
-          // Google Identity Services (GSI) — Google Sign-In button + token issuance
+          // Google Identity Services (GSI) — Google Sign-In button + token issuance.
+          // NOTE: maps.googleapis.com is intentionally excluded — Niakofa uses Mapbox,
+          // not Google Maps. Google Maps JS was never loaded; that entry was leftover
+          // from an earlier draft and has been removed to tighten the CSP surface.
           "https://accounts.google.com",
         ],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        // Mapbox GL JS loads tile images and its own glyphs/sprites from *.mapbox.com
-        // lh3.googleusercontent.com = Google profile pictures returned by Google OAuth
+        // Mapbox GL JS loads tile images and its own glyphs/sprites from *.mapbox.com.
+        // lh3.googleusercontent.com = Google profile pictures returned by Google OAuth.
+        // maps.gstatic.com and googlevideo.com are Google Maps/video CDNs — removed
+        // because Niakofa uses Mapbox exclusively; these domains were leftover from
+        // an earlier Google Maps draft and unnecessarily broadened the CSP allowlist.
         imgSrc: [
           "'self'", "data:", "blob:",
           "https://*.stripe.com",
-          "https://maps.gstatic.com",
-          "https://*.googlevideo.com",
           "https://*.mapbox.com",
           "https://lh3.googleusercontent.com", // Google profile avatars
         ],

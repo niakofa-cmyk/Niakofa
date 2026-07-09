@@ -111,6 +111,16 @@ export default defineConfig({
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
+    // ── Replit proxy HMR fix ──────────────────────────────────────────────────
+    // Replit proxies all traffic (including WebSocket) through its own HTTPS/WSS
+    // gateway on port 443. Without this, Vite's HMR client tries to open a raw
+    // WebSocket to the dev server port (e.g. :5000 or :18848), which the browser
+    // blocks because the Replit proxy is the only reachable address.
+    // Setting clientPort: 443 tells the browser to connect HMR on port 443
+    // (the proxied HTTPS port) so the Replit gateway can forward the upgrade.
+    ...(process.env.REPL_ID !== undefined && {
+      hmr: { clientPort: 443 },
+    }),
     fs: {
       strict: true,
       allow: [path.resolve(import.meta.dirname, "..", "..")],

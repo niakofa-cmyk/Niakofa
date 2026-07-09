@@ -625,6 +625,9 @@ const SPECIALTY_OPTIONS = [
 ];
 
 function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId: number }) {
+  // Read helper_skills from context so we can pre-populate when the user has
+  // gone through onboarding but never opened the helper settings dialog.
+  const { currentUser } = useAppContext();
   const [radius, setRadius] = useState(5);
   const [specialties, setSpecialties] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -634,10 +637,28 @@ function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId
     fetchSettings(userId).then(data => {
       if (data) {
         setRadius(data.service_radius_miles ?? 5);
-        try { setSpecialties(JSON.parse(data.specialties ?? "[]")); } catch { setSpecialties([]); }
+        // user_settings.specialties is a JSON-encoded string of skill IDs.
+        // If it's empty or missing, fall back to users.helper_skills (set at
+        // onboarding) then users.specialties (legacy pre-migration accounts).
+        // This ensures the dialog shows real skills on first open rather than
+        // a blank slate even when the helper never explicitly saved settings.
+        const fromSettings: string[] = (() => {
+          try { return JSON.parse(data.specialties ?? "[]") as string[]; } catch { return []; }
+        })();
+        // helper_skills is in the backend response but not yet in the generated User type
+        // (orval schema is stale); cast via any until the spec is regenerated.
+        // Use explicit length-check fallback (not ??) so an empty helper_skills array
+        // doesn't silently block the populated specialties column.
+        const hk: string[] | null | undefined = (currentUser as any)?.helper_skills;
+        const fallback: string[] = (hk && hk.length > 0) ? hk : (currentUser?.specialties ?? []);
+        setSpecialties(fromSettings.length > 0 ? fromSettings : fallback);
+      } else {
+        // No user_settings row yet — seed from onboarding skills with same fallback logic.
+        const hk2: string[] | null | undefined = (currentUser as any)?.helper_skills;
+        setSpecialties((hk2 && hk2.length > 0) ? hk2 : (currentUser?.specialties ?? []));
       }
     }).finally(() => setLoading(false));
-  }, [userId]);
+  }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleSpecialty = (id: string) =>
     setSpecialties(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
@@ -645,7 +666,17 @@ function HelperSettingsDialog({ onClose, userId }: { onClose: () => void; userId
   const handleSave = async () => {
     setSaving(true);
     try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      // 1. Save to user_settings.specialties (JSON string) for backward compat.
       await saveSettings(userId, { service_radius_miles: radius, specialties: JSON.stringify(specialties) });
+      // 2. Sync to users.specialties (TEXT[]) so helper-dashboard, helper-profile,
+      //    and the matching engine all read the same set without a dual-source lookup.
+      //    Best-effort: never block the success toast on this secondary write.
+      fetch(`${base}/api/users/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ specialties }),
+      }).catch(() => { /* non-fatal — primary save already succeeded */ });
       toast({ title: "Helper settings saved" });
       onClose();
     } catch {

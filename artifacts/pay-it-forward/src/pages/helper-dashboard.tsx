@@ -145,24 +145,32 @@ export default function HelperDashboardScreen() {
           </div>
         </div>
 
-        {/* Skills */}
-        {(currentUser.specialties?.length ?? 0) > 0 && (
-          <div className="bg-card border border-border rounded-2xl p-4">
-            <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
-              <Wrench className="w-3.5 h-3.5 text-primary" /> Your Skills
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {currentUser.specialties!.map(skill => {
-                const match = ALL_SKILLS.find(s => s.id === skill.toLowerCase().replace(/\s+/g, "_"));
-                return (
-                  <span key={skill} className="flex items-center gap-1 text-xs font-bold bg-primary/10 text-primary border border-primary/20 px-3 py-1.5 rounded-full">
-                    {match?.emoji ?? "✦"} {match?.label ?? skill}
-                  </span>
-                );
-              })}
+        {/* Skills — prefer helper_skills (onboarding), fall back to specialties (profile settings).
+            Uses length-check fallback (not ?? which ignores empty arrays) so that a user
+            who was migrated and has helper_skills=[] still sees their specialties.
+            helper_skills is in the backend response but not yet in the generated User type
+            (orval schema is stale); cast via any until the spec is regenerated. */}
+        {(() => {
+          const hk: string[] | null | undefined = (currentUser as any).helper_skills;
+          const skills = (hk && hk.length > 0) ? hk : (currentUser.specialties ?? []);
+          return skills.length > 0 ? (
+            <div className="bg-card border border-border rounded-2xl p-4">
+              <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-1.5">
+                <Wrench className="w-3.5 h-3.5 text-primary" /> Your Skills
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {skills.map((skill: string) => {
+                  const match = ALL_SKILLS.find(s => s.id === skill.toLowerCase().replace(/\s+/g, "_"));
+                  return (
+                    <span key={skill} className="flex items-center gap-1 text-xs font-bold bg-primary/10 text-primary border border-primary/20 px-3 py-1.5 rounded-full">
+                      {match?.emoji ?? "✦"} {match?.label ?? skill}
+                    </span>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        )}
+          ) : null;
+        })()}
 
         {/* Active claims */}
         {myActiveRequests.length > 0 && (
