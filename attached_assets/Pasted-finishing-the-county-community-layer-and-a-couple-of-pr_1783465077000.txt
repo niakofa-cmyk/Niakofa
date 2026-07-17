@@ -1,0 +1,24 @@
+finishing the county/community layer and a couple of presentation/positioning gaps:
+1. Community assignment at signup (above) — without this, "county" is just a label on one seeded row, not a real multi-county system.
+2. No admin surface for communities — you can't create a new county's pool, set its target_reserve_amount, or see its individual balance anywhere in the admin UI today.
+3. No public-facing "county portal" branding — the sponsor endpoint exists, but there's nothing that reads like "Tarrant County: here's what your community fund has done" — which is central to your framing of counties as a visible partner, not just a backend contributor.
+4. Nothing yet ties "livable wage" to real-world numbers — the hourly minimum rate is a system setting, but there's no messaging anywhere (helper dashboard, onboarding) that frames earnings in terms of "wake up, help your neighbors, earn a living" the way you're describing it. That's a product-copy gap, not a code gap.
+
+1. Add per-client try/catch in ws-hub.ts broadcast functions (BUG-5-C02)
+2. Add SSE mid-stream error handling in nia-proxy.ts (BUG-5-C01)
+3. Fix test suite — pledge-default-parity.test.ts needs static import for jest.mock (BUG-4-M03)
+4. Reduce 'as any' casts (304 instances) across the codebase (BUG-4-B04 / BUG-6-B01)
+5. Fix requestCreationLimiter to key on req.authenticatedUserId (NEW-02)
+6. Add DB-level aggregations for /requests/stats (NEW-03)
+
+
+
+
+❌ Still not wired: community_id is never set anywhere. I checked every write path — users/register, admin routes, onboarding UI — nothing assigns a user to a communities row. The column exists (NULL = not yet assigned; falls back to global pool), the pool-health-ratio math in getGuaranteedMinimum() is correct and well-guarded, but every single helper today resolves to the global NULL bucket. So the "richer county pools pay bigger bonuses, thinner ones scale back" feature is built but inert — every helper effectively gets the same global ratio no matter what county they're in. There's also no admin CRUD for the communities table itself beyond the seeded "Tarrant County" row — no way to create a new county pool or move a user into one, even manually.
+This is the single highest-leverage gap in the app right now, because it's the one feature that's architecturally done but does nothing until it's connected.
+
+My recommendation, in order
+1. Wire community_id at registration (even a simple "pick your county" dropdown defaulting to Tarrant County) and build the minimal admin CRUD for communities — this single change activates a feature you've already built.
+2. Add a county/community dashboard view (balance, target, contributors) so sponsors and users can see the "open portal" concept, not just fund it invisibly.
+3. Fix the rec.lang empty string in useNiaStory.ts.
+4. Consider a "livable wage" framing pass on the helper-facing copy — the mechanics already support your vision; the UI doesn't yet say it out loud.

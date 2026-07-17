@@ -1,0 +1,38 @@
+
+Postgres
+/
+1b22bb69
+Active
+
+Jul 7, 2026 at 12:03 PM CDT
+Details
+Build Logs
+Deploy Logs
+Network Flow Logs
+Filter and search logs
+
+You reached the start of the range
+Jul 7, 2026 at 12:03 PM
+wrapper: removing stale /var/lib/postgresql/data/pgdata/postmaster.pid (no postgres running at container start)
+Certificate will not expire
+pgbackrest: volume 4614 MiB; sized wal-drop= MiB queue-max=2307 MiB
+pgbackrest: restore-gate WAL_RECOVER_FROM_BUCKET= POSTGRES_RECOVERY_TARGET_TIME= PG_VERSION=present PG_CONTROL=present RESTORED_MARKER=missing PGDATA=/var/lib/postgresql/data/pgdata
+PostgreSQL Database directory appears to contain a database; Skipping initialization
+2026-07-07 17:04:04.661 UTC [18] LOG:  starting PostgreSQL 18.4 (Debian 18.4-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-07-07 17:04:04.661 UTC [18] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-07-07 17:04:04.661 UTC [18] LOG:  listening on IPv6 address "::", port 5432
+2026-07-07 17:04:04.665 UTC [18] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-07-07 17:04:04.675 UTC [51] LOG:  database system was interrupted; last known up at 2026-07-07 16:58:17 UTC
+2026-07-07 17:04:05.155 UTC [51] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-07 17:04:05.160 UTC [51] LOG:  redo starts at 0/25508E8
+2026-07-07 17:04:05.160 UTC [51] LOG:  invalid record length at 0/25509F0: expected at least 24, got 0
+2026-07-07 17:04:05.160 UTC [51] LOG:  redo done at 0/25509B8 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-07 17:04:05.166 UTC [49] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-07 17:04:05.188 UTC [49] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.007 s, sync=0.003 s, total=0.025 s; sync files=2, longest=0.002 s, average=0.002 s; distance=0 kB, estimate=0 kB; lsn=0/25509F0, redo lsn=0/25509F0
+2026-07-07 17:04:05.198 UTC [18] LOG:  database system is ready to accept connections
+Mounting volume on: /var/lib/containers/railwayapp/bind-mounts/17824b0b-591a-46bd-94a2-4e5f3d18a4d9/vol_vnft0e25id7kprl3
+Starting Container
+collation-refresh: psql: error: /tmp/collation-refresh.sKBwWj.sql: Permission denied
+2026-07-07 17:04:23.696 UTC [75] ERROR:  extension "postgis" is not available
+2026-07-07 17:04:23.696 UTC [75] HINT:  The extension must first be installed on the system where PostgreSQL is running.
+2026-07-07 17:04:23.696 UTC [75] STATEMENT:  CREATE EXTENSION IF NOT EXISTS postgis

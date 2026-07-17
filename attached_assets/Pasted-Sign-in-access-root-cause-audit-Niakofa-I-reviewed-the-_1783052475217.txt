@@ -1,0 +1,23 @@
+Sign-in / access root-cause audit — Niakofa
+I reviewed the current auth middleware, route mounting, CORS, Vite proxy, Railway deploy config, and the repo's own incident memory docs. Here's what's confirmed fixed, what's still open, and the most likely live-outage causes.
+What's already fixed (rule these out first)
+* Email-based token bug — users.ts login used to issue ${userId}.${base64(email)} tokens incompatible with the HMAC verifier, silently failing every authenticated call. Fixed via signTokenById() [niakofa-cmyk/Niakofa/CLAUDE.md].
+* Token format mismatch between api-server and nia-service — api-server used to issue a bare <userId>.<sig> token while nia-service's parser expected a 4-part <userId>.<expiresAt>.<tokenVersion>.<sig> format, so nia-service treated every logged-in user as anonymous. Fixed 2026-06-30, formats now aligned niakofa-cmyk/Niakofa/CLAUDE.md.
+* Broken logout clearing wrong localStorage keys — profile.tsx cleared token/user instead of the actual niakofa_token/niakofa_user keys, leaving stale sessions. Centralized logout() on AppContext now owns this niakofa-cmyk/Niakofa/CLAUDE.md.
+* Vite dev proxy for /api and /ws — correctly configured, not a factor in production (production serves the built SPA directly from api-server, not through Vite).
+Two live candidates that would explain "sign-in not working, users can't access the app" right now
+1. SESSION_SECRET mismatch or unset between the two Railway services (most likely) Both api-server and nia-service hard-fail at boot if SESSION_SECRET is missing:
+"FATAL: SESSION_SECRET environment variable is not set on nia-service. It must match the SESSION_SECRET configured on api-server" niakofa-cmyk/Niakofa/CLAUDE.md
+If the two services have different values for SESSION_SECRET (e.g. one was rotated without updating the other), every token signed by api-server fails HMAC verification on nia-service, and if it's missing entirely on either service, that service won't even boot — presenting as "users can't access the app" (500s / service unavailable) rather than a login-form error.
+Action: In Railway, open both zesty-ambition (api-server) and Niakofa (nia-service) → Variables, confirm SESSION_SECRET is set on both and is byte-for-byte identical. Check deploy logs for the fatal throw message on either service.
+2. Database schema never pushed (historical precedent for exactly this symptom) The repo's own incident notes describe this exact failure mode previously:
+"Root Cause of 'Registration Failed': Database tables didn't exist... The DB was provisioned (DATABASE_URL set) but schema was never pushed." niakofa-cmyk/Niakofa/CLAUDE.md
+railway.toml's startCommand includes a migrate step, but if a recent deploy skipped or failed that step (e.g. migration error swallowed, or a new migration file added without the start command being re-triggered), login/register queries against users table would 500 out uniformly — again presenting as total inaccessibility, not a bad-credentials error.
+Action: Check Railway deploy logs for the migration step output on the most recent zesty-ambition deploy; confirm no migration errors were swallowed.
+3. CORS (ALLOWED_ORIGIN) misconfiguration — secondary candidate ALLOWED_ORIGIN must be a comma-separated list including the exact frontend domain(s):
+ALLOWED_ORIGIN=https://niakofa.com,https://zesty-ambition-production-f6a1.up.railway.app
+
+niakofa-cmyk/Niakofa/CLAUDE.md
+Since production serves the frontend from the same origin as the API (SERVE_FRONTEND=true), same-origin requests aren't blocked — so this is lower-probability than the two above, but worth confirming if the domain was recently changed or a custom domain was added without updating this var.
+
+add a real-time pool balance banner to the admin Pledges tab so admins can see runway days and current balance alongside the pledge management controls — without switching to the Analytics tab

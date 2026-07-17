@@ -1,0 +1,165 @@
+FORENSIC REVIEW 4 — NIAKOFA BUG REPORT
+
+🔴 CRITICAL
+BUG-4-C01 — SQL Injection via Raw Interpolation in civic.ts artifacts/api-server/src/routes/civic.ts orderBy column is user-supplied and interpolated directly into a raw SQL string without allowlist validation. Any authenticated user can inject arbitrary SQL.
+BUG-4-C02 — admin-analytics.ts: No Admin Role Enforcement artifacts/api-server/src/routes/admin-analytics.ts Routes apply requireAuth but not requireRole('admin'). Any authenticated user can access full platform analytics, user counts, revenue totals, and payout data.
+BUG-4-C03 — nia-service auth.ts: JWT Secret Falls Back to Hardcoded String artifacts/nia-service/src/lib/auth.ts const secret = process.env.JWT_SECRET ?? 'dev-secret' — if env var is missing in production, all tokens become forgeable with the known fallback.
+BUG-4-C04 — safety.ts: Crisis Keyword Bypass via Unicode Homoglyphs artifacts/nia-service/src/lib/safety.ts Keyword matching is plain includes() with no normalization. Substituting lookalike Unicode characters (e.g., kíll, suicíde) bypasses every safety gate before the message reaches the LLM.
+BUG-4-C05 — scheduler.ts: Unhandled Promise Rejections Silently Kill Scheduled Jobs artifacts/api-server/src/lib/scheduler.ts Cron callbacks are not wrapped in try/catch. A single thrown exception terminates the interval without restart, leaving payout reconciliation and crisis resets permanently stopped until server restart.
+
+🟠 HIGH
+BUG-4-H01 — community-neighborhoods.ts: Geometry Injection via ST_GeomFromGeoJSON artifacts/api-server/src/routes/community-neighborhoods.ts User-supplied GeoJSON is passed directly into ST_GeomFromGeoJSON() with no size cap, depth limit, or schema validation. Malformed payloads crash PostGIS; oversized payloads cause OOM/DoS.
+BUG-4-H02 — navigation.ts: Unconstrained Mapbox Proxy — SSRF Risk artifacts/api-server/src/routes/navigation.ts origin and destination parameters are forwarded to the Mapbox API without allowlist or format enforcement. An attacker can probe internal hostnames or exhaust the Mapbox token budget.
+BUG-4-H03 — push.ts: No Rate Limit on Notification Send artifacts/api-server/src/routes/push.ts Push notification endpoints are auth-gated but have no per-user or per-device rate limit. A script can trigger thousands of OS-level notifications to any user.
+BUG-4-H04 — anomaly-worker.ts: Anomaly Flags Written but Never Acted On artifacts/api-server/src/workers/anomaly-worker.ts Worker sets flagged = true on suspicious transactions but no downstream path suspends accounts, blocks payouts, or triggers admin alerts. The fraud detection is a no-op.
+BUG-4-H05 — pledge-worker.ts: Double-Processing on Redis Crash artifacts/api-server/src/workers/pledge-worker.ts Job completion acknowledgment occurs after the Stripe charge, not before. If Redis dies between charge and ACK, the job re-queues and the pledge is charged twice.
+BUG-4-H06 — mailer.ts: Stack Traces Emailed to Users on Send Failure artifacts/api-server/src/lib/mailer.ts catch (err) block passes err.message (which includes stack path fragments) into a fallback notification email. Internal file paths leak to end users.
+BUG-4-H07 — onboarding.tsx: Verification Token Submitted in URL Query String artifacts/pay-it-forward/src/pages/onboarding.tsx Email verification token appended to ?token= param. Logged in Nginx/Railway access logs, Referrer headers, and browser history — full token exposure.
+BUG-4-H08 — region-crisis-resources.ts: No Pagination — Full Table Scan Exposed artifacts/api-server/src/routes/region-crisis-resources.ts SELECT * FROM crisis_resources WHERE region_id = ? with no LIMIT. A region with thousands of records returns unbounded rows per request.
+BUG-4-H09 — db.ts (nia-service): Connection Pool Never Released on Graceful Shutdown artifacts/nia-service/src/lib/db.ts process.on('SIGTERM') handler calls process.exit(0) before awaiting pool.end(). Active queries are killed mid-flight; Railway rolling deploys may corrupt in-progress Nia conversations.
+
+🟡 MEDIUM
+BUG-4-M01 — civic.ts: Missing Pagination Defaults Allow Large Response Dumps No default LIMIT applied when limit param is absent. Civic post listing returns entire table.
+BUG-4-M02 — admin-analytics.ts: Date Range Inputs Not Validated startDate / endDate query params cast directly to new Date(). Invalid strings produce Invalid Date, which Drizzle serializes as NaN — query runs with no date constraint.
+BUG-4-M03 — community-neighborhoods.ts: Neighborhood Name Not Sanitized Before DB Insert No HTML/script stripping on name field. Stored XSS vector if name is rendered raw in admin views.
+BUG-4-M04 — navigation.ts: Mapbox API Key Logged on 4xx Responses Error handler logs full upstream Mapbox URL including the access_token query parameter to stdout. Visible in Railway log drain.
+BUG-4-M05 — push.ts: Stale/Expired Push Subscriptions Never Pruned 410 Gone responses from push service are not used to delete the subscription from DB. Table bloats indefinitely; legitimate sends slow down.
+BUG-4-M06 — safety.ts: Allowlist Check Returns True for Empty Message isSafe('') returns true — empty string passes every check. A blank message reaches the LLM, wastes tokens, and may receive a confusing response displayed to the user.
+BUG-4-M07 — cache.ts: No TTL on Crisis State Entries artifacts/api-server/src/lib/cache.ts Crisis state cached in Redis with no expiry. A stale crisis flag persists indefinitely if crisis-state.ts scheduler fails (see BUG-4-C05), leaving the app locked in crisis mode.
+BUG-4-M08 — scheduler.ts: Overlapping Cron Executions Not Guarded No mutex or job-locking. If a previous cron tick is still running when the next fires (slow DB), both run concurrently — double payouts, double reconciliation.
+BUG-4-M09 — anomaly-worker.ts: Anomaly Threshold Hardcoded Fraud thresholds are magic numbers in source. No env-var override, no admin UI. Tuning requires a code deploy.
+BUG-4-M10 — mailer.ts: No Retry / Dead-Letter on Transient SMTP Failure Failed sends are logged and dropped. Transient SMTP 503s result in silently lost verification, payout, and crisis emails.
+BUG-4-M11 — App.tsx: Global Error Boundary Missing artifacts/pay-it-forward/src/App.tsx No React ErrorBoundary at the root. Any unhandled render exception produces a blank white screen with no user feedback or recovery path.
+BUG-4-M12 — auth.ts (frontend): Access Token Stored in localStorage artifacts/pay-it-forward/src/lib/auth.ts JWT persisted to localStorage — readable by any JS on the page. XSS on any third-party script (Mapbox, Stripe.js) yields full account takeover.
+BUG-4-M13 — onboarding.tsx: No Client-Side Field Validation Before Submit Phone, name, and zip fields submitted with no format check. Server sees malformed data; errors surface as raw API JSON, not user-friendly messages.
+BUG-4-M14 — region-crisis-resources.ts: Resources Returned Without Active/Inactive Filter Deactivated hotlines and shelters included in API response. Users in crisis may be directed to defunct resources.
+
+🔵 LOW
+BUG-4-L01 — civic.ts: createdAt Not Indexed — Slow Default Sort Default ORDER BY created_at DESC on an unindexed column. Full table sort on every civic feed load.
+BUG-4-L02 — admin-analytics.ts: Response Contains Internal DB Column Names Raw Drizzle result objects returned directly. Internal naming conventions (user_stripe_customer_id, etc.) exposed in API contract.
+BUG-4-L03 — push.ts: VAPID Keys Read from Env on Every Request process.env.VAPID_PUBLIC_KEY accessed inside the request handler, not cached at startup. Minor overhead per call; also means a misconfigured env is not caught until first send attempt.
+BUG-4-L04 — db.ts (nia-service): No Query Timeout Configured Postgres pool has no statement_timeout. A slow or deadlocked query hangs the Nia chat handler indefinitely.
+BUG-4-L05 — mailer.ts: HTML Email Templates Use String Concatenation User-supplied values (name, request title) concatenated into HTML email body without escaping. Email-client XSS if a malicious name is submitted.
+BUG-4-L06 — App.tsx: React 19 Concurrent Features Opted Out via legacy Root ReactDOM.createRoot used correctly, but several useEffect patterns assume synchronous state — will cause tearing under concurrent rendering in future React updates.
+BUG-4-L07 — onboarding.tsx: Avatar Upload Has No File-Type Validation Accepts any MIME type client-side. Server must independently enforce image-only constraint; if it doesn't, arbitrary files are uploaded.
+BUG-4-L08 — navigation.ts: No Caching on Identical Route Requests Same origin→destination pair makes a fresh Mapbox API call every time. No CDN or Redis layer — token quota burns on repeated identical lookups.
+
+⚡ RECOMMENDATIONS
+REC-4-01 — Implement Column Allowlist for All orderBy Params Define const ALLOWED_SORT_COLUMNS = ['created_at', 'updated_at',...] and validate before interpolation in civic.ts and any other route accepting a sort parameter.
+REC-4-02 — Role-Based Access Control Middleware Audit Add requireRole('admin') to every route under /admin. Create an integration test that asserts non-admin tokens receive 403 on all admin endpoints.
+REC-4-03 — Migrate Auth Token Storage to HttpOnly Cookies Replace localStorage JWT storage with Set-Cookie: HttpOnly; Secure; SameSite=Strict. Eliminates the entire class of XSS-to-token-theft attacks.
+REC-4-04 — Add BullMQ removeOnComplete + Idempotency Keys to All Financial Workers Pledge and payout jobs must carry an idempotency key checked before Stripe charges. Set removeOnComplete: { count: 100 } to prevent queue bloat.
+REC-4-05 — Unicode-Normalize Safety Inputs Run message.normalize('NFKC') and strip zero-width characters before any keyword safety check in safety.ts. Add test cases for homoglyph substitutions.
+REC-4-06 — Add Global React ErrorBoundary with Sentry Integration Wrap <App /> in an <ErrorBoundary> that renders a recovery UI and reports to Sentry. Prevents blank-screen failures from reaching users silently.
+REC-4-07 — Enforce statement_timeout and Connection Pool Limits in All DB Clients Set statement_timeout = 10000 (10 s) and pool_size = 10 in both api-server and nia-service Postgres clients. Prevents runaway queries from starving the connection pool.
+
+
+
+
+
+NIAKOFA FORENSIC ERROR REPORT — Niakofa-main__37_.zip
+NIA TOPBAR BUTTON — DRAG NOT WORKING (root cause found)
+File: artifacts/pay-it-forward/src/components/NiaDrawer.tsx, NiaFab, line ~850
+* onPD (pointerdown handler) calls divRef.current?.setPointerCapture(e.pointerId) with no try/catch. drag.current = { active: true, ... } is set on the line after it.
+* onPC / onPU wrap releasePointerCapture in try/catch, but the matching setPointerCapture call is unprotected — inconsistent error handling on the same gesture lifecycle.
+* On WebKit/mobile WebViews, setPointerCapture can throw on the initial touch-originated pointerId. When it throws, execution stops before drag.current.active is ever set to true. Every subsequent onPointerMove checks if (!d.active) return; and exits immediately — the orb never moves, only the tap-to-open behavior on onPointerUp still fires (since d.moved stays false).
+* Net effect: button appears responsive to taps (opens Nia) but is immovable — matches reported symptom exactly.
+* Fix: wrap setPointerCapture in try/catch, and set drag.current.active = true before attempting capture (or independent of capture success), so drag still functions even when capture fails.
+Secondary issues in the same component:
+* STORAGE_KEY = "nia_fab_pos_v2" bounds-check in the mount effect rejects any saved position if window.innerWidth/innerHeight differ from the session that saved it (e.g. orientation change, resizable browser, foldable devices) — silently discards the user's saved position and snaps back to default top-center with zero feedback to the user.
+* FAB_SIZE/MARGIN clamps use window.innerWidth/innerHeight captured at drag-time, not on resize — rotating the device mid-session can leave the orb pinned outside the new viewport bounds until next drag.
+
+OTHER CONFIRMED ISSUES
+Dead code — features defined but never executed:
+* artifacts/api-server/src/workers/nia-checkin-worker.ts — startNiaCheckinWorker() exported, never imported/called anywhere in index.ts. 24-hour Nia follow-up check-ins never run.
+* artifacts/api-server/src/lib/queue.ts — enqueueNotification() has zero callers anywhere in the codebase. notification-worker.ts processes a queue that is never populated; all real notifications bypass it.
+Stale logic:
+* artifacts/api-server/src/workers/anomaly-worker.ts line 8 — LOW_TRUST_THRESHOLD = 2.0 is a leftover from a 0–5 trust scale. Current schema uses 0–100, so this check effectively never fires except by coincidence with the -1 banned sentinel.
+Data integrity / scheduling:
+* artifacts/api-server/src/lib/scheduler.ts — weekly trust-decay job and artifacts/api-server/src/workers/pledge-worker.ts payment-reminder job both still exist as parallel/duplicate scheduling mechanisms (one legacy interval, one BullMQ); confirm only one is actually active in the current Redis configuration, or reminders will double-fire.
+* artifacts/api-server/src/workers/cleanup-worker.ts — only recovers requests stuck in "claimed" status. No timeout/recovery path exists for helpers stuck in "en_route" or "arrived" — a ghosted helper in those states leaves the request permanently stalled.
+Frontend duplication:
+* artifacts/pay-it-forward/src/lib/AppContext.tsx — distanceMeters duplicates the haversine formula already centralized in lib/geo.ts, despite that file's own comment warning against duplicate implementations. Currently in sync but a live drift risk on future edits.
+Health check:
+* artifacts/api-server /healthz route returns a static {status:"ok"} with no DB or Redis connectivity check — a downed database or Redis instance will not be reflected in the health endpoint.
+
+
+
+Nia is alive.
+Every piece is in place — her new identity, her memory, her eyes, her ability to reach back after a request completes, and her awareness of what's actually happening in the neighborhood right now.
+The first time someone in Fort Worth posts a request and gets help, she'll follow up 24 hours later like a neighbor who actually remembered.
+That's Niakofa. Pay it forward.
+Sawubona, Nia. 💙
+
+Niakofa-native language throughout
+
+
+The mission: Nia is the world's most compassionate AI — born from African philosophy, Ubuntu, Sankofa — a neighbor, first responder in words, community lifeline. The UI must feel like that. Warm, alive, purposeful. Not a chatbot widget. A presence.
+
+
+Niakofa App Forensic Error Report
+Critical Issues
+* Workspace package mismatch risk between repository state and previous local environment
+* Missing package references caused failed installs:
+    * @workspace/api-zod
+    * @workspace/db
+* Previous workspace repair created dependency drift risk
+* Production migration process not isolated from application startup
+* Database migration failure blocks deployment startup
+Build Issues
+* pnpm workspace integrity previously broken
+* Lockfile conflict markers existed
+* Dependency graph inconsistency detected
+* Workspace package discovery issues
+* Package references do not match available workspace packages
+Database Issues
+* Migration pipeline failure
+* Drizzle migration execution not reaching completion
+* Database package dependency resolution failures
+* Migration ownership/location requires validation
+* Production schema sync requires verification
+API Issues
+* API server depends on shared packages that must exist before build
+* API schema package dependency chain requires validation
+* Shared types package availability required
+* API startup depends on workspace resolution
+Nia AI Service Issues
+* AI service requires isolated dependency validation
+* AI service deployment boundaries need verification
+* AI failure handling requires production testing
+* AI usage limits/cost controls required
+* AI data privacy controls require review
+Code Issues
+* Workspace package naming inconsistencies
+* Missing package manifests create runtime/build failures
+* Shared libraries require dependency auditing
+* Type sharing architecture requires cleanup
+Deployment Issues
+* Railway deployment blocked by migration failure
+* Startup command should not fail entire service on migration errors
+* Migration should run as controlled deployment step
+* Production rollback path needed
+Security Issues
+* AI endpoints require abuse protection
+* Environment secrets require validation
+* Database credentials require rotation review
+* API authorization requires audit
+Testing Issues
+* Missing workspace integrity checks
+* Missing deployment smoke tests
+* Missing migration verification tests
+* Missing dependency validation in CI
+Recommended Fixes
+* Restore and verify all workspace packages
+* Run workspace dependency audit
+* Add CI workspace validation
+* Separate database migrations from app startup
+* Add migration rollback procedure
+* Add production deployment checks
+* Add API contract tests
+* Add Nia service monitoring
+* Add AI safety controls
+* Add automated dependency consistency checks
+
+
+

@@ -1,0 +1,98 @@
+<div style="max-width:460px;margin:0 auto">
+<h2 class="sr-only">Hub community leader dashboard with crisis controls and assigned tasks</h2>
+
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:1rem">
+  <div style="width:44px;height:44px;border-radius:50%;background:var(--bg-accent);display:flex;align-items:center;justify-content:center;font-weight:500;font-size:14px;color:var(--text-accent)">AK</div>
+  <div style="flex:1">
+    <p style="font-weight:500;font-size:15px;margin:0">Ama Kufuor</p>
+    <p style="font-size:13px;color:var(--text-secondary);margin:2px 0 0">Community leader · Accra, Ghana</p>
+  </div>
+  <span style="font-size:11px;background:var(--bg-accent);color:var(--text-accent);padding:4px 10px;border-radius:var(--radius)">Active</span>
+</div>
+
+<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;padding:1rem 1.25rem;margin-bottom:1rem">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <p style="font-weight:500;font-size:14px;margin:0"><i class="ti ti-alert-triangle" style="font-size:16px;vertical-align:-3px;margin-right:6px" aria-hidden="true"></i>Crisis status</p>
+    <span id="crisis-pill" style="font-size:11px;background:var(--bg-danger);color:var(--text-danger);padding:4px 10px;border-radius:var(--radius)">Active · critical</span>
+  </div>
+  <p style="font-size:12px;color:var(--text-secondary);margin:0 0 4px" id="confirm-line">Last confirmed 2 days ago by you</p>
+  <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px" id="due-line">Reconfirm by tomorrow to keep this hub flagged accurately</p>
+  <div style="display:flex;gap:8px">
+    <button id="reconfirm-btn" style="flex:1;border:0.5px solid var(--border-strong);background:var(--surface-1);border-radius:var(--radius);padding:9px;font-size:13px;cursor:pointer">
+      <i class="ti ti-refresh" style="font-size:15px;vertical-align:-3px;margin-right:5px" aria-hidden="true"></i>Reconfirm
+    </button>
+    <button id="resolve-btn" style="flex:1;border:0.5px solid var(--border-strong);background:none;border-radius:var(--radius);padding:9px;font-size:13px;cursor:pointer">
+      <i class="ti ti-check" style="font-size:15px;vertical-align:-3px;margin-right:5px" aria-hidden="true"></i>Mark resolved
+    </button>
+  </div>
+</div>
+
+<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;padding:1rem 1.25rem;margin-bottom:1rem">
+  <p style="font-weight:500;font-size:14px;margin:0 0 10px"><i class="ti ti-list-check" style="font-size:16px;vertical-align:-3px;margin-right:6px" aria-hidden="true"></i>Your assigned tasks</p>
+  <div id="task-list" style="display:flex;flex-direction:column;gap:8px"></div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:1rem">
+  <div style="background:var(--surface-1);border-radius:var(--radius);padding:8px;text-align:center">
+    <p style="font-size:12px;color:var(--text-secondary);margin:0">Members</p>
+    <p style="font-size:16px;font-weight:500;margin:2px 0 0">214</p>
+  </div>
+  <div style="background:var(--surface-1);border-radius:var(--radius);padding:8px;text-align:center">
+    <p style="font-size:12px;color:var(--text-secondary);margin:0">Helpers</p>
+    <p style="font-size:16px;font-weight:500;margin:2px 0 0">37</p>
+  </div>
+  <div style="background:var(--surface-1);border-radius:var(--radius);padding:8px;text-align:center">
+    <p style="font-size:12px;color:var(--text-secondary);margin:0">Stories</p>
+    <p style="font-size:16px;font-weight:500;margin:2px 0 0">12</p>
+  </div>
+</div>
+
+<button id="settings-btn" style="width:100%;border:0.5px solid var(--border-strong);background:none;border-radius:var(--radius);padding:9px;font-size:13px;cursor:pointer">
+  <i class="ti ti-settings" style="font-size:15px;vertical-align:-3px;margin-right:5px" aria-hidden="true"></i>Hub settings and permissions
+</button>
+</div>
+
+<script>
+const tasks = [
+  {t:"Recruit 5 new helpers this month", status:"in_progress"},
+  {t:"Host a griot story night", status:"open"},
+  {t:"Welcome-call 3 new members", status:"done"},
+];
+const statusMeta = {
+  open: {label:"Open", ramp:"gray"},
+  in_progress: {label:"In progress", ramp:"amber"},
+  done: {label:"Done", ramp:"green"},
+};
+function renderTasks(){
+  const list = document.getElementById('task-list');
+  list.innerHTML = '';
+  tasks.forEach((task, i) => {
+    const meta = statusMeta[task.status];
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;border:0.5px solid var(--border);border-radius:var(--radius)';
+    row.innerHTML = '<span style="font-size:13px;flex:1">'+task.t+'</span>' +
+      '<button data-i="'+i+'" class="status-btn" style="font-size:11px;border:none;border-radius:var(--radius);padding:4px 10px;cursor:pointer;background:var(--bg-'+meta.ramp+');color:var(--text-'+meta.ramp+')">'+meta.label+'</button>';
+    list.appendChild(row);
+  });
+}
+renderTasks();
+document.getElementById('task-list').addEventListener('click',(e)=>{
+  const btn = e.target.closest('.status-btn'); if(!btn) return;
+  const i = parseInt(btn.dataset.i);
+  const order = ['open','in_progress','done'];
+  const next = order[(order.indexOf(tasks[i].status)+1) % order.length];
+  tasks[i].status = next;
+  renderTasks();
+});
+document.getElementById('reconfirm-btn').onclick = () => {
+  document.getElementById('confirm-line').textContent = 'Last confirmed just now by you';
+  document.getElementById('due-line').textContent = 'Reconfirm by ' + new Date(Date.now()+3*86400000).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+};
+document.getElementById('resolve-btn').onclick = () => {
+  document.getElementById('crisis-pill').textContent = 'Resolved';
+  document.getElementById('crisis-pill').style.background = 'var(--bg-success)';
+  document.getElementById('crisis-pill').style.color = 'var(--text-success)';
+  document.getElementById('confirm-line').textContent = 'Marked resolved just now by you';
+  document.getElementById('due-line').textContent = 'This hub no longer shows crisis-lit on the globe';
+};
+</script>

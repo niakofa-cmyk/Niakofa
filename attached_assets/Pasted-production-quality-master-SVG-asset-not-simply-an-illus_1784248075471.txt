@@ -1,0 +1,153 @@
+production-quality master SVG asset, not simply an illustration. A true asset matching the reference would consist of thousands of Bézier control points, hundreds of feather paths, gradients, masks, clipping paths, filters, symbols, and a complete animation-ready layer hierarchy. That is far beyond what can fit in a single ChatGPT response.
+
+The specification you've written is already an excellent production blueprint. The best way to build it is as a modular vector asset rather than trying to generate one enormous SVG in one message.
+
+The finished deliverable should include:
+
+Master SVG (100% vector)
+Layered Illustrator (.AI)
+SVG with preserved layer names
+Figma version
+Animation-ready SVG
+Separate feather symbols
+Gradient library
+Color palette
+Motion pivots
+Bone hierarchy
+LOD versions
+JSON animation rig
+Flutter-ready asset
+Rive-ready asset
+Lottie-ready asset
+
+Using exactly this hierarchy:
+
+SankofaBird
+
+Root
+├── Body
+│   ├── Chest
+│   ├── Back
+│   ├── Belly
+├── Neck
+├── Head
+│   ├── CrownFeathers
+│   ├── Eye
+│   ├── EyelidUpper
+│   ├── EyelidLower
+│   ├── UpperBeak
+│   ├── LowerBeak
+│   └── Egg
+├── LeftWing
+│   ├── Shoulder
+│   ├── UpperWing
+│   ├── SecondaryFeathers
+│   ├── PrimaryFeathers
+│   └── WingTip
+├── RightWing
+│   ├── Shoulder
+│   ├── UpperWing
+│   ├── SecondaryFeathers
+│   ├── PrimaryFeathers
+│   └── WingTip
+├── Tail
+│   ├── TailCenter
+│   ├── TailLeft01
+│   ├── TailLeft02
+│   ├── TailRight01
+│   └── TailRight02
+├── LeftLeg
+├── RightLeg
+├── Shadow
+├── Glow
+└── Particles
+
+With pivots:
+
+Head → Behind Eye
+Neck → Base
+LeftWing → Shoulder Joint
+RightWing → Shoulder Joint
+Tail → Tail Root
+Egg → Center
+UpperBeak → Skull Base
+LowerBeak → Jaw Hinge
+
+Bone chains:
+
+Neck
+Base
+↓
+Middle
+↓
+Head
+
+Wing
+Shoulder
+↓
+UpperWing
+↓
+ForeWing
+↓
+WingTip
+
+Tail
+TailRoot
+↓
+Middle
+↓
+Tips
+
+Animation states:
+
+Idle
+Hover
+Takeoff
+Cruise
+Glide
+BankLeft
+BankRight
+Landing
+Perch
+Stretch
+Helping
+Celebrate
+Notification
+Blink
+Chirp
+
+Flutter inputs:
+
+heading
+speed
+gpsBearing
+gpsVelocity
+isNavigating
+isHelping
+hasNotification
+batterySaver
+
+Animation rules:
+
+Primary feathers move first.
+Secondary feathers lag.
+Coverts lag behind secondaries.
+Body moves last.
+Egg remains upright using neck compensation.
+Tail bends independently.
+Body never rotates the egg.
+
+Visual effects:
+
+Idle → teal glow
+Helping → gold shimmer
+Celebrate → gold particles + egg pulse
+Notification → teal pulse
+Walking → teal dust particles
+
+LOD system:
+
+LOD0 — Full feather detail
+LOD1 — Reduced feather groups
+LOD2 — Simplified wing shapes
+LOD3 — Minimal silhouette

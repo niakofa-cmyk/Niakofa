@@ -1,0 +1,31 @@
+🔴 Highest priority — Redis is a silent single point of failure
+
+Your own SECRETS_REQUIRED.md says it plainly: without REDIS_URL set, the pledge-reminder worker and the payout-retry worker fail to start silently, with no error surfaced anywhere. That means:
+
+
+Repayment reminders (the mechanism that nudges someone at 2 weeks / 2 months / before the 2-year default) simply never fire.
+If a helper's Stripe payout fails, it never automatically retries.
+
+
+This directly undermines the "pay whenever, no pressure" promise — because "no pressure" only works if the system gently reminds people; without Redis, it's not "no pressure," it's "nothing happens, ever." Recommendation: add a startup health check that refuses to boot (or loudly pages an admin) if REDIS_URL is missing/invalid in production, rather than degrading silently. This is a 30-minute fix with outsized safety value.
+
+🟠 Ledger/Stripe drift monitoring exists but isn't automated
+
+GET /admin/pool/stripe-balance compares your ledger to actual Stripe balance and logs a warning if drift exceeds $10 — but it's a manual/on-demand admin endpoint, not a scheduled check. Recommendation: wire this into the same cron cadence as your other schedulers (e.g., daily) and pipe drift alerts to Slack/email, not just structured logs. Once real money and real counties are involved, silent ledger drift is the failure mode you most want to catch early.
+
+🟠 Category taxonomy is a free-text default, not a governed list
+
+requestsTable.category is a plain text column defaulting to "other". For "almost any legal task," this is fine for MVP but will get messy as volume grows (duplicate/near-duplicate categories, no analytics consistency, no way to say "we don't cover X category"). Recommendation: before wider launch, move to a constrained enum or an admin-managed category table, and use it to explicitly encode what's out of scope — this matters for the "any legal task" framing, since you'll want a clean, auditable way to say what Niakofa will not intermediate (anything requiring licensure — electrical, plumbing, childcare, elder care, medical — needs its own review, insurance, and liability posture separate from casual help).
+
+🟡 Trust layer exists but should be load-bearing before scaling payouts
+
+Background checks and identity verification routes exist (background-checks.ts, verification.ts), but I'd want to confirm — separately from this pass — whether helper approval actually requires passing these before they can claim paid requests, versus being optional/soft-gated. Given real money and vulnerable requesters are involved, this is worth a dedicated policy review, not just a code review.
+
+🟡 "Livable wage" is currently a static $15/hr default
+
+It's configurable, which is good, but a genuinely livable wage varies a lot by county/region (this is Fort Worth-seeded data). Recommendation: if the county-portal model matures, let sponsoring counties set their own guaranteed-minimum rate as part of onboarding, rather than one global default — that would also give counties a concrete lever tied to their contribution, which strengthens the "county open portal" story you're telling.
+
+🟡 Anonymous pool donations are Stripe-only, by design
+
+POST /pool/donate intentionally has no dev-mode fallback and requires Stripe, to prevent abuse of an unauthenticated endpoint. That's the right call — flagging only so it's a documented tradeoff, not an oversight, in case you were wondering why anonymous donation "doesn't work" in a local dev environment without Stripe keys.
+

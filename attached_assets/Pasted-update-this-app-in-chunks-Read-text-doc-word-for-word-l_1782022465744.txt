@@ -1,0 +1,27 @@
+update this app in chunks. Read text doc word for word, line by line. Fix, and address each and every issue. Provide me a zip file downloadable link of this app when you finish. Think carefully before editing. Understand the App and the vision and mission before you edit code. Review the code line by line before you edit code. We are using Mapbox my token: pk.eyJ1IjoiaGYxMDEiLCJhIjoiY2tjYzVqNmFhMDFmMTJwcWUza2pmZzVtMSJ9.THxYY3Ic2MFylIONeZI_Xw Update the zip with enhancements or adjustments when you finish. My Stripe Webhook: whsec_qqbiczOqlCgNj8l2StmwfDWYfghWpcb2 Do not Keep Tokes or Secrets!
+
+The most urgent new bug introduced in v7 is Issue 1 — the pledge dedup blocks any second user from pledging the same amount on the same request within 10 seconds. On active requests with multiple community members contributing, this is a hard failure for legitimate payments.
+
+
+  Error Report - Niakofa App Issues
+* Build/Deploy inconsistencies: railpack.json and railway.toml have mismatched build commands (typecheck:libs vs full build). .build-cache-bust outdated. SERVE_FRONTEND logic in app.ts assumes specific dist/public path that may fail on Railway.
+* Frontend serving: Production static serve uses import.meta.dirname which can be unreliable in ESM bundles; potential 404s on SPA routes.
+* CORS: ALLOWED_ORIGIN comma-split assumes no trailing spaces; same-origin bypass incomplete for subpaths.
+* Auth/Rate limiting: authLimiter only on login/register; no general protection on other endpoints. parseAuth middleware non-blocking but many routes assume req.authenticatedUserId always present.
+* DB Schema: Missing explicit exports in lib/db/src/schema/index.ts for new tables (e.g. recurring, push). push DB schema changes required manually.
+* OpenAPI/Codegen: Duplicate keys or null properties in openapi.yaml silently break orval codegen. Generated types (User, etc.) miss fields like helper_status, identity_verified leading to TS casts (as any).
+* Helper Application: TopBar gating and WS listener in AppContext out of sync with backend PATCH. useCallback token bug in admin.tsx HelpersTab.
+* Map/Navigation: useDeviceHeading requests permission but no fallback/error handling on iOS/Safari. OrientationToggle/TurnArrowHUD inline styles conflict with Tailwind. Terrain/3D layers added without cleanup on unmount.
+* Push Notifications: In-memory fallback risks loss on restart. sendPushToNearbyHelpers haversine may be inaccurate at scale; no rate limiting on broadcasts.
+* Payments/Stripe: Webhook raw body middleware order critical but fragile. No retry queue for failed payouts in some paths.
+* Scheduler/Workers: Recurring and scheduled reminders use setInterval fallback without Redis guard in prod. processRecurringRequests imported from routes creates potential circular deps.
+* Tests: DB mocks incomplete (e.g. no full lifecycle coverage for tip/claim edge cases). Jest ESM config fragile with ts-jest.
+* Security: ADMIN_SECRET header check; no rotation/expiry. SESSION_SECRET HMAC but token formats mixed in legacy paths. No input sanitization on user-generated request titles/descriptions.
+* Performance: No pagination on leaderboard/civic resources. Full map re-renders on every WS update. Large Vite bundle with all Mapbox terrain.
+* i18n/Accessibility: Partial Spanish support; missing ARIA on map controls, HUD, toggles. No keyboard nav for orientation/turns.
+* Mobile: 100dvh + pb-safe partial; TurnArrowHUD overlaps on small screens. No PWA manifest/service worker.
+* Env/Overrides: .replit [userenv.shared] placeholders still risk overriding secrets. VITE_* build-time vars not always set at Railway build.
+* Code Quality: Multiple (as any) casts. Inline styles mixed with Tailwind. HMR warnings in AppContext hook order. No error boundaries around map/WS.
+* Recurring Requests: requireAdmin() factory call inconsistency. No validation on next_fire_at.
+* Lifecycle Endpoints: Ownership pre-fetch patterns good but incomplete 409/403 messages; no idempotency keys.
+* Mailer: SMTP config silent fail; no queue for emails. HTML templates inline and unescaped in some places.

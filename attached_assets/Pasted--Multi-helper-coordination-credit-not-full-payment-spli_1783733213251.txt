@@ -1,0 +1,42 @@
+
+Multi-helper coordination credit — not full payment splitting yet (still open, see below), but co-helpers on a completed request now get a +1 goodwill credit, fire-and-forget, isolated from the primary payment chain so it can't break anything if it fails.
+
+The attached_assets note in this upload claims "Real Whisper STT wiring" and "Voice wake-word/TTS wiring" are "not yet started." I checked the actual files — both are still fully wired and correct, exactly as I verified in my last review. That note is stale, probably carried over from an earlier planning pass before those fixes landed in the previous upload. I'm flagging this because it's the second time a self-audit note in this repo has been wrong about something I could verify directly in code — worth treating these attached_assets notes as a lead to check, not as ground truth, especially across sessions.
+Similarly, another pasted note in this same folder said "replace help_requests with requests" as a critical bug — but your own memory file (niakofa-help-requests-tablename.md) documents that help_requests is the correct real table name, and I confirmed every query across the codebase consistently uses it correctly. That "bug" appears to be a misdiagnosis from whichever pass wrote that note?
+
+OpenAPI documentation gap on Stripe/verification/admin routes
+Full payment-splitting for multi-helper requests (coordination credits are a lighter stand-in)
+Stripe institutional billing for civic invoices (still manual admin mark-paid)
+Admin auth still a shared static secret
+The pay-it-forward-as-credit legal question — still unaddressed and still the one item that isn't a coding task
+
+one real structural feature (payment splitting)
+
+The hub-leader unified dashboard, and Nia actually acting (posting a request, checking a hub's pledge total) rather than just being linked around from other pages. Given the pace here, both look reachable soon — but at this point I'd also suggest a slightly different next move: with this many workers now running (daily-kindness, NET30 reminders, pledge, payout, pool-minimums, check-ins, crisis-followup, ambient-presence...), it may be worth a session dedicated to a worker health dashboard for admins — last-run timestamp, success/failure counts, next-scheduled-run — so a silently-stalled worker doesn't go unnoticed the way the cashouts/hardship UI gap did a few rounds back.?
+
+
+Pay It Forward" deferred payment	❌ Not implemented
+Does This App Encompass Your Vision?
+Partially—approximately 30-40% implemented.
+Vision Element	Implementation Status
+Community service platform	✅ Basic structure exists
+"Pay It Forward" deferred payment	❌ Not implemented
+2 days/2 weeks/2 months/2 years deferr	❌ Not implemented
+Helpers paid livable wage	❌ Not implemented
+Daily wage guarantee	❌ Not implemented
+Local real-time help network	⚠️ Partial (matching exists, real-time dispatch missing)
+Global diaspora connectivity	⚠️ UI only, no backend matching
+Nia AI voice assistant	⚠️ Built but not activated
+Cultural Griot translation	⚠️ Stubs exist, pipeline incomplete
+Files Requiring Immediate Deep Audit
+Based on github_code_search and big_file_grep results, these files need line-by-line verification:
+* artifacts/api-server/src/routes/requests.ts — Payment logic missing
+* artifacts/api-server/src/lib/community-pool.ts — Wage distribution logic incomplete
+* artifacts/pay-it-forward/src/pages/wallet.tsx — No deferred payment UI
+* artifacts/nia-service/src/routes/griot-translate.ts — Translation pipeline incomplete
+* artifacts/api-server/src/routes/nia-proxy.ts — AI backend unverified
+
+
+Recommended immediate action: Prioritize the deferred payment state machine and wage guarantee pool—these are the differentiating features that make Niakofa more than a generic task-rabbit clone. Without them, the platform cannot deliver on its community-service mission.
+
+The Niakofa app has solid foundational architecture but fails to implement the core economic and AI mechanisms that define your vision. The "Pay It Forward" system, livable wage guarantees, and functional Nia AI are either absent or inactive. The codebase appears to have started many features (voice, Griot, globe visualization) but completed few?

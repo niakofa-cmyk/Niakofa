@@ -1,0 +1,52 @@
+* Speed-adaptive behavior, matching Root Cause #4 above: GPS course-over-ground when moving, magnetometer only when stopped, with a smooth cross-fade between the two rather than a hard cutover — this single change is what separates "map that jumps around" from "map that feels like a real nav system."
+* Sensor fusion / dead reckoning between GPS fixes. GPS updates once a second or so; gyroscope (DeviceMotionEvent.rotationRate, widely available) can integrate rotational movement between fixes, so the heading updates at 60fps even though GPS only ticks once a second. This is the technique behind Google Maps' buttery-smooth blue-arrow rotation — a lightweight complementary filter (gyro for instant response + GPS/compass for long-term drift correction) rather than a raw sensor read.
+
+The Fix 
+1. Blend GPS course with compass, GPS-primary while moving. In useMapOrientation, when myLocation.speed (already tracked in AppContext) exceeds ~0.5 m/s, use the GPS-derived heading (already smoothed via EMA in AppContext.calcHeading). Only fall back to the magnetometer (useDeviceHeading) when speed is near zero or GPS heading is unavailable. This alone eliminates most of the "jumping in a car" complaint since GPS course doesn't drift with magnetic interference.
+2. Stop stacking easeTo calls. Replace the per-event easeTo(300ms) with a single requestAnimationFrame-driven interpolation loop that reads the latest target heading and steps the bearing smoothly every frame — never re-triggering a new tween mid-animation. This is the standard pattern for camera-follow in Mapbox GL.
+3. Add circular smoothing to the raw compass signal. Headings wrap at 360°, so a plain EMA breaks at the wrap boundary. Use a circular-mean EMA (average via sin/cos components) before ever calling setHeading, with a variable-alpha filter: heavy smoothing (slow response) when the rate of change is small, lighter smoothing (fast response) when the user is clearly turning — this is exactly the adaptive-filter trick nav apps use to feel both stable and responsive.
+4. Widen the dead-band and debounce the trigger, not the render: raise the "ignore" threshold from 1.5° to ~4-5° for triggering a new animation target, while still rendering every frame smoothly toward whatever the current target is.
+5. Fix the iOS permission flow. Move DeviceOrientationEvent.requestPermission() out of the mount-time useEffect and into the OrientationToggle's onToggle handler itself — request it the moment the user taps to switch into Heading-Up mode, which is a real user gesture and will actually succeed on iOS.
+
+The fix (5 files, ready to drop in)
+* heading-math.ts — shared, wrap-safe angle math (everything broke at the 359°/0° boundary before)
+* useDeviceHeading.ts — latches onto one sensor source instead of racing two, compensates for screen rotation, smooths output
+* useMapOrientation.ts — replaces "new animation per sensor tick" with a single requestAnimationFrame loop that steps the camera at a capped angular speed; also detects when you manually rotate the map and pauses auto-follow instead of fighting your fingers
+* map.tsx — wiring, plus a "Resume Compass" button matching the Google Maps/Waze pattern
+
+
+
+Fix Lane-level guidance and off-route detection/rerouting on the existing route line
+
+Fix A critically-damped pitch/zoom "drive mode" that auto-tilts to ~60° and zooms in when speed crosses a threshold, then eases back when stopped
+
+Fix Predictive heading (extrapolate a few hundred ms ahead using recent angular velocity) to kill perceived latency on sharp turns
+
+Fix Dead-reckoning through GPS dropouts (tunnels/urban canyon) using compass + accelerometer step-detection
+
+
+
+Root Cause #1 — No smoothing on raw compass data (the "jumping")
+useDeviceHeading.ts reads webkitCompassHeading / alpha straight off deviceorientation events and calls setHeading() on every single event — no filtering at all [Github Repo niakofa-cmyk/Niakofa]. Phone magnetometers are inherently noisy: metal in the car/pocket, nearby electronics, and even device tilt cause the raw reading to swing several degrees frame-to-frame even when the phone isn't moving. With zero smoothing, that raw jitter goes straight to the map.
+Root Cause #2 — Animation-stacking (the "malfunctioning")
+useMapOrientation.ts's applyHeading() fires map.easeTo({ bearing: headingDeg, duration: 300 }) any time the new heading differs from the current bearing by more than 1.5° [Github Repo niakofa-cmyk/Niakofa]. deviceorientation on most phones fires far faster than once per 300ms (often 30-60Hz). Each new event cancels the in-flight easeTo and starts a new one — Mapbox's own docs warn against calling easeTo repeatedly in quick succession for exactly this reason. The result is the map perpetually restarting a rotation animation mid-flight, which reads as stutter/jump rather than smooth rotation. A 1.5° threshold is also too tight — ordinary compass noise routinely exceeds that even standing still, so nearly every event re-triggers the animation.
+Root Cause #3 — iOS permission is very likely silently failing
+start() in useDeviceHeading.ts calls DeviceOrientationEvent.requestPermission() automatically inside a useEffect on mount [Github Repo niakofa-cmyk/Niakofa] — but iOS Safari requires that permission prompt to be triggered directly inside a user-gesture handler (a tap), or it silently resolves to "denied". Since this fires on component mount with no gesture, iOS users very likely never get heading data at all, which would explain "doesn't work well" independent of the jitter issue — North-Up needs no permission at all (bearing is always 0), so it "just works" while Heading-Up quietly fails to even get sensor data on iOS.
+Root Cause #4 — Best available heading signal isn't even being used
+AppContext.tsx already computes a clean, GPS-derived course-over-ground heading (calcHeading() between successive GPS fixes, already EMA-smoothed for the location dot) [Github Repo niakofa-cmyk/Niakofa] — but map.tsx never feeds that into applyHeading. Only the raw magnetometer heading from useDeviceHeading drives the map rotation. Every serious turn-by-turn app (Google Maps, Waze, Apple Maps) uses GPS course-over-ground as primary heading while moving, and only falls back to the magnetometer when nearly stationary — because GPS course is immune to magnetic interference and device tilt, which are the #1 cause of "map heading jumps around in the car."
+
+
+Why it was actually jumping — four real bugs, all in artifacts/pay-it-forward/src:
+1. useDeviceHeading.ts listened to deviceorientationabsolute and deviceorientation at once. On Android/Chrome both fire for the same movement but from different reference frames (one true-north-locked, one arbitrary-drift) — the reported heading was alternating between two different "norths" every other event.
+2. Zero smoothing on raw magnetometer data, which is noisy even in your hand and much worse in a car mount.
+3. useMapOrientation.ts fired a brand-new map.easeTo() on every heading update. Since events can arrive faster than the 300ms tween, each call interrupted the last one mid-rotation — that's the visible snap/stutter.
+4. The big one: AppContext.tsx already computes a clean GPS course-over-ground in myLocation.heading (with a derived fallback from consecutive fixes), but the map's heading-up mode never touched it — it relied solely on the noisy compass.
+What I changed:
+* useDeviceHeading.ts — once a true absolute reading shows up, the relative listener is permanently ignored (no more reference-frame whiplash), plus circular smoothing and a 20fps update cap.
+* useMapOrientation.ts — replaced the stacked easeTo() calls with one continuous requestAnimationFrame loop that exponentially eases the bearing toward the latest target every frame, always via the shortest angular path. No more animation restarts — this is the same technique Waze/Google Maps use for their camera.
+* useFusedHeading.ts (new) — a complementary filter that blends GPS course (dominant while moving — immune to magnetometer interference) with compass (dominant while stationary, since GPS course is undefined at near-zero speed). This alone should make Heading Up feel like a different feature.
+* LocationPuck.tsx (new) — replaced the plain glowing dot with a directional cone (heading - mapBearing), so it always points "up" in heading-up mode and points your actual facing direction in north-up mode — the detail every serious nav app has and yours was missing.
+* map.tsx — wired it all together, tracking live map bearing off the rotate event.
+
+
+

@@ -1,0 +1,147 @@
+
+#2 - Business Goodwill-Default Bug Fix
+What & Why
+When a user switches the request composer to post as a business, the app currently auto-changes their payment type to goodwill (free volunteer work). For a business, defaulting to free is the wrong direction — a business should default to immediate (pay now). This bug is live and user-facing right now. The server already rejects pay_it_forward for business requests, so the only wrong behavior is the client-side default.
+Done looks like
+* Selecting a business in the "posting as" switcher defaults the payment type to immediate (pay now), not goodwill.
+* A business poster can still choose goodwill deliberately if they want, but it is no longer the forced default.
+* Personal (non-business) posting behavior is unchanged.
+Out of scope
+* Any server-side payment enforcement (already correct).
+* Owner dashboards, spending caps, or approval gates (separate task).
+Steps
+1. Correct the business default — In the request composer, change the effect that fires when a business is selected so it moves the payment type to immediate instead of goodwill, while still allowing the user to manually pick another option afterward.
+Relevant files
+* artifacts/pay-it-forward/src/pages/request-new.tsx:173-178
+
+
+
+#3 - Business Account Governance
+What & Why
+The business-account feature lets staff post requests under a business, but there is no way for an owner to see or control what's being spent in their name. Three gaps must close: (1) an owner has no dashboard of all requests posted under the business, (2) any active staff member can post unlimited paid requests with no per-staff spending cap, and (3) staff posts go live immediately with no owner sign-off. This adds owner visibility and two real guardrails. Per the repo's own rule (OpenAPI is the source of truth), build in order: schema → contract → codegen → server → client. The real enforcement must live in the request-creation route on the server, not the frontend.
+Done looks like
+* A business owner can open a dashboard showing every request posted under the business, who posted it, its status, and amount — enough to track spend.
+* Each staff member can be given a spending cap; once their spend under the business reaches the cap, the server rejects further paid posts with a clear error, and the UI reflects it.
+* New staff posts require owner approval before they go live; owners see a pending-approval queue for their business and can approve or reject; approved requests then become active.
+* All new endpoints are defined in the OpenAPI spec first and the generated client/Zod types are regenerated so server and frontend stay in sync.
+* Owner-only actions are rejected for non-owners/non-members server-side, matching the existing membership-check pattern.
+Out of scope
+* The goodwill-default client bug (handled in its dependency task).
+* Livable-wage payout changes and government/county onboarding (separate tasks).
+* Billing/invoicing of business spend beyond the cap enforcement.
+Steps
+1. Schema — Add a per-member spending cap field to business_members and a status field on requests (or reuse existing status) to represent "pending owner approval" for business posts. Write a new migration and apply it via the documented run-migrations bootstrap; do not hand-edit an applied migration.
+2. OpenAPI contract + codegen — Add a GET /businesses/:id/requests endpoint (owner/member scoped), endpoints for setting a member's spending cap, and endpoints for an owner to list/approve/reject pending business requests. Extend the member schema with the cap field. Then run the api-spec codegen so Zod validators and React Query hooks regenerate.
+3. Server: owner request dashboard — Implement listing of all requests under a business, restricted to active members/owners (and admin), returning poster, status, and amount.
+4. Server: per-staff spending cap — In the request-creation route's business guardrail, sum the member's existing business spend and reject a new paid post that would exceed their cap with a clear coded error. Add owner-only endpoints to set/update a member's cap.
+5. Server: owner approval gate — When a staff member (non-owner) creates a business request, mark it pending owner approval instead of going live; add owner-only approve/reject endpoints that transition it to active or cancel it. Owner posts skip the gate.
+6. Frontend: owner dashboard & controls — In the business management screen, add the spend dashboard, per-staff cap controls, and a pending-approval queue with approve/reject. Surface cap-exceeded and pending-approval states to staff in the composer/feedback.
+Relevant files
+* lib/db/migrations/0027_businesses.sql
+* lib/db/src/schema/businesses.ts
+* lib/api-spec/openapi.yaml
+* artifacts/api-server/src/routes/businesses.ts
+* artifacts/api-server/src/routes/requests.ts:275-337
+* artifacts/pay-it-forward/src/pages/business-apply.tsx
+* artifacts/pay-it-forward/src/pages/request-new.tsx
+Dependencies
+Business Goodwill-Default Bug Fix
+* 
+#5 - County Generalization & Gov Onboarding
+What & Why
+Civic resource queries are already county-parameterized (resolved from Mapbox geocoding), but the seed data is hardcoded to Tarrant County, and there is no onboarding path for a government/county entity to sponsor the community pool (only individual/business sponsors exist implicitly). This generalizes the civic seed model beyond a single county and adds a government/county sponsor onboarding flow so a county can become a named pool sponsor and, optionally, contribute civic resources for its own region.
+Done looks like
+* Civic resource seeding is no longer Tarrant-only: new counties/regions can be added as data without code assuming "Tarrant County" as a constant, and unseeded regions still fall back gracefully (national resources) as they do today.
+* A government/county entity can apply to sponsor the community pool through a dedicated onboarding flow, distinct from individual/business sponsorship, entering an admin approval queue.
+* Approved government sponsors' contributions appear in the pool as a named government sponsor, reusing the existing signed-ledger sponsor-contribution path.
+* Admins can review and approve/reject government sponsor applications, reusing the existing approval-queue pattern rather than a parallel screen.
+Out of scope
+* Live integration with external county/211 systems or government APIs (future work) — this is internal onboarding + generalized seed data only.
+* Livable-wage payout changes and business governance (separate tasks).
+Steps
+1. Generalize civic seed model — Refactor the seed so region data (state/county/city resources) is data-driven and additional counties can be seeded without Tarrant-specific assumptions; keep the empty-DB seed-if-empty bootstrap working and the graceful national fallback for unseeded regions.
+2. Schema for government sponsors — Add whatever is needed to represent a government/county sponsor entity and its approval status, following the existing business/sponsor patterns; add and apply a migration via the documented bootstrap.
+3. Contract + server: gov onboarding — Define spec-first endpoints for submitting a government/county sponsor application, admin listing/approval, and recording an approved sponsor's contribution through the existing pool signed-ledger sponsor path; regenerate the client/Zod types.
+4. Frontend: onboarding + admin — Add a government/county sponsor application flow distinct from individual/business sponsorship, and extend the admin approval queue to review these alongside existing applications.
+Relevant files
+* scripts/src/seed-fort-worth.ts
+* scripts/src/seed-if-empty.ts
+* lib/db/src/schema/civic-resources.ts
+* artifacts/api-server/src/routes/civic.ts
+* artifacts/api-server/src/routes/pool.ts
+* artifacts/api-server/src/routes/businesses.ts:293-330
+* artifacts/pay-it-forward/src/pages/admin.tsx
+* lib/api-spec/openapi.yaml
+
+
+
+#6 - Niakofa Security Hardening
+What & Why
+A read-only audit of the Niakofa api-server found real security gaps that are live: missing ownership checks that leak/allow-overwrite of user data, unprotected mutating/expensive endpoints with no rate limiting, a Stripe payout route that trusts a client-supplied amount, and admin business endpoints that do manual is_admin checks instead of the standard middleware. These are defensive fixes to existing routes — no new features. Per project memory, every admin endpoint must include the admin rate limiter after requireAdmin().
+Done looks like
+* Submitting or reading another user's helper application or sponsor history is rejected — these endpoints enforce ownership so a user can only act on their own record.
+* Business endpoints and public pool endpoints are rate limited, closing the spam/DOS vectors, using the existing limiter pattern.
+* The Stripe payout route verifies the payout amount against the authoritative request/DB record instead of trusting the client-sent amount; a mismatched amount is rejected.
+* Admin business endpoints use the shared requireAdmin() middleware plus the admin rate limiter instead of ad-hoc is_admin checks.
+* No behavior change for legitimate, correctly-scoped requests.
+Out of scope
+* Business governance features (separate task).
+* Any Nia-service secret changes (separate task).
+* Rewriting the payment architecture beyond the amount-verification fix.
+Steps
+1. Ownership enforcement — Add ownership checks to the helper-application update and sponsor-history read endpoints so only the record's owner (or admin) can access them.
+2. Rate limiting — Apply the existing rate limiters to the business endpoints and the public pool stats/ledger endpoints (and the unlimited Stripe GET status endpoints), following the established limiter usage.
+3. Stripe payout amount verification — In the payout route, validate the requested amount against the authoritative request/DB record and reject mismatches, mirroring the amount-verification already done in the payment-intent route.
+4. Admin middleware consistency — Replace the manual is_admin checks on the admin business endpoints with the shared requireAdmin() middleware plus the admin rate limiter.
+Relevant files
+* artifacts/api-server/src/routes/users.ts:729
+* artifacts/api-server/src/routes/users.ts:768
+* artifacts/api-server/src/routes/businesses.ts:294-330
+* artifacts/api-server/src/routes/pool.ts:27
+* artifacts/api-server/src/routes/pool.ts:106
+* artifacts/api-server/src/routes/stripe.ts:520
+* artifacts/api-server/src/middlewares/auth.ts
+
+
+#7 - Nia Service Secret Hardening
+What & Why
+REPLIT_GODFATHER.md requires that INTERNAL_SECRET (service-to-service auth) and SESSION_SECRET (user token signing) be distinct, and that internal routes fail closed if the secret is missing. Two nia-service internal routes violate this: one falls back to SESSION_SECRET when INTERNAL_SECRET is unset (conflating the two secrets), and another falls back to an empty string (which would let any caller with an empty header bypass auth). The correct pattern already exists in crisis-resources.ts, which fails fast with a FATAL error if INTERNAL_SECRET is missing. This aligns the two weak routes with that pattern.
+Done looks like
+* The neighborhoods internal route no longer falls back to SESSION_SECRET; it requires INTERNAL_SECRET and refuses to authenticate with any other secret.
+* The checkin internal route no longer accepts an empty/missing secret; a missing INTERNAL_SECRET fails closed rather than allowing bypass.
+* Both routes match the fail-fast pattern already used in the crisis-resources internal route.
+* Legitimate api-server → nia-service internal calls (which send the correct INTERNAL_SECRET) continue to work unchanged.
+Out of scope
+* Rotating or changing the actual secret values (infrastructure concern).
+* Any api-server changes or new endpoints.
+Steps
+1. Harden the neighborhoods internal route — Remove the SESSION_SECRET fallback so only INTERNAL_SECRET authenticates the route, failing fast if it is missing, matching the crisis-resources pattern.
+2. Harden the checkin internal route — Remove the empty-string fallback so a missing INTERNAL_SECRET fails closed and can never be satisfied by an empty header.
+Relevant files
+* artifacts/nia-service/src/routes/neighborhoods.ts:21
+* artifacts/nia-service/src/routes/checkin.ts:32
+* artifacts/nia-service/src/routes/crisis-resources.ts:23-31
+
+
+#8 - Grandfather Doc & Repo Hygiene
+What & Why
+The user (as Grandfather / Coworker AI) asked for two durable things. First, the GRANDFATHER_COWORKER.md covenant must record, in the Grandfather's own voice, a standing commitment: (a) push all Niakofa/Nia improvements directly to the repo, and (b) always "clean out the closet" — prune stale data/files each session so the doc and repo don't get overloaded — and keep updating the file so Grandfather stays capable of these duties. Second, act on that hygiene commitment now: the repo root and attached_assets/ are heavily cluttered with one-off audit reports, hotpatch scripts, and dumps that signal out-of-sync shipping. This cleans the closet while respecting the multi-agent no-clobber covenant. The Planner cannot edit this file or delete these files itself; this task carries out both.
+Done looks like
+* GRANDFATHER_COWORKER.md contains a new, clearly dated section in Grandfather's voice committing to push all improvements/enhancements directly to the repo and to routinely prune stale data so the file and repo stay lean and Grandfather stays capable — an explicit self-note as the user requested.
+* The doc stays readable and is not itself bloated: any obsolete/duplicated content is trimmed as part of the same pass, and the file remains internally consistent with CLAUDE.md and REPLIT_GODFATHER.md.
+* Obsolete clutter is removed: the one-off hotpatch scripts and stale forensic/audit reports at the repo root, and the accumulated dumps/pasted logs/hotpatch fragments in attached_assets/, are pruned — keeping anything still referenced by code or active docs.
+* Nothing another agent's code depends on is deleted (no-clobber covenant honored); the removals are limited to genuinely dead artifacts.
+Out of scope
+* Any functional code changes to the app or workers.
+* Editing CLAUDE.md or REPLIT_GODFATHER.md beyond what's needed to keep cross-references consistent.
+* The security/separation fixes (separate tasks).
+Steps
+1. Add the Grandfather self-note — Append a dated section to GRANDFATHER_COWORKER.md, in Grandfather's voice, committing to (a) pushing all improvements/enhancements directly to the repo and (b) routinely cleaning out stale data so the doc/repo don't overload and Grandfather stays capable of the role.
+2. Trim the doc itself — In the same pass, remove any clearly obsolete/duplicated content so the file stays lean, verifying it still reads coherently and its cross-references to CLAUDE.md / REPLIT_GODFATHER.md hold.
+3. Prune root clutter — Remove the stale one-off hotpatch scripts and dated forensic/audit reports at the repo root that are no longer referenced by code or active docs.
+4. Prune attached_assets — Remove the accumulated zips, pasted logs, and timestamped hotpatch fragments in attached_assets/ that are dead artifacts, confirming none are imported or referenced before deleting.
+Relevant files
+* GRANDFATHER_COWORKER.md
+* REPLIT_GODFATHER.md
+* CLAUDE.md
+* attached_assets/

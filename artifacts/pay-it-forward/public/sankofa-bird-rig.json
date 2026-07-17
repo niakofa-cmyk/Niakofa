@@ -1,0 +1,153 @@
+{
+  "_comment": "Sankofa Bird — JSON Animation Rig. Machine-readable counterpart to SANKOFA_BIRD_RIVE_SPEC.md. Use this to drive programmatic animation, Lottie export, or server-side pose calculation.",
+  "name": "SankofaBird",
+  "version": "2.0.0",
+  "artboard": { "width": 200, "height": 200 },
+
+  "layers": [
+    { "id": "shadow",     "zIndex": 0,  "class": "sankofa-shadow" },
+    { "id": "tail",       "zIndex": 1,  "class": "sankofa-bird-tail",
+      "pivot": { "x": 100, "y": 155 }, "children": ["tailCenter","tailLeft01","tailLeft02","tailRight01","tailRight02","tailFarLeft","tailFarRight"] },
+    { "id": "wingRightBtm", "zIndex": 2,  "class": "sankofa-bird-wing-right-btm" },
+    { "id": "wingLeftBtm",  "zIndex": 3,  "class": "sankofa-bird-wing-left-btm" },
+    { "id": "wingRight",  "zIndex": 4,  "class": "sankofa-bird-wing-right",
+      "pivot": { "x": 110, "y": 105 }, "comment": "Shoulder joint — right wing rotates around here" },
+    { "id": "wingLeft",   "zIndex": 5,  "class": "sankofa-bird-wing-left",
+      "pivot": { "x": 90,  "y": 105 }, "comment": "Shoulder joint — left wing" },
+    { "id": "wingRightFeathers", "zIndex": 6,
+      "subLayers": ["r5","r0","r1","r2","r3","r4","rs1","rs2","rs3","rc1"],
+      "comment": "Primary r5→r0 move first; secondary rs1→rs3 lag 35%; coverts rc1 lag 52%" },
+    { "id": "wingLeftFeathers", "zIndex": 7,
+      "subLayers": ["l5","l0","l1","l2","l3","l4","ls1","ls2","ls3","lc1"] },
+    { "id": "scapulars",  "zIndex": 8,  "class": "sankofa-wing-scap",
+      "subLayers": ["scapL1","scapL2","scapR1","scapR2"] },
+    { "id": "body",       "zIndex": 9,  "pivot": { "x": 100, "y": 128 },
+      "subLayers": ["chest","back","belly","breastSheen","bodyFeather1","bodyFeather2","bodyFeather3","bodyFeature4","bodyFeature5","bodyFeature6","bodyFeature7","bodyFeature8","bodyFeature9","bodyFeature10","bodyFeature11"] },
+    { "id": "legs",       "zIndex": 10, "subLayers": ["legLeft","legRight"],
+      "pivot": { "x": 100, "y": 145 } },
+    { "id": "neck",       "zIndex": 11, "class": "sankofa-bird-neck",
+      "pivot": { "x": 90,  "y": 100 }, "comment": "Base of neck — S-curve bone chain" },
+    { "id": "head",       "zIndex": 12, "class": "sankofa-bird-head",
+      "pivot": { "x": 40,  "y": 78  }, "comment": "Behind eye — Sankofa backward pose" },
+    { "id": "crownFeathers", "zIndex": 13,
+      "subLayers": ["crown4","crown1","crown2","crown3","crown5"],
+      "comment": "crown-2 (center) is most prominent; outer feathers (4/5) sway most" },
+    { "id": "eye",        "zIndex": 14, "pivot": { "x": 35,  "y": 73  } },
+    { "id": "eyelids",    "zIndex": 15, "subLayers": ["eyelidUpper","eyelidLower"] },
+    { "id": "beak",       "zIndex": 16,
+      "subLayers": ["beakUpper","beakLower"],
+      "pivots": {
+        "beakUpper": { "x": 22, "y": 68, "comment": "Skull base" },
+        "beakLower": { "x": 22, "y": 74, "comment": "Jaw hinge" }
+      } },
+    { "id": "egg",        "zIndex": 17, "pivot": { "x": 15, "y": 82  },
+      "comment": "Counter-rotated to remain level during banking. Body-bank drives +bankDeg; egg compensates with -bankDeg." },
+    { "id": "trailParticles", "zIndex": 18, "class": "sankofa-trail" },
+    { "id": "burstParticles", "zIndex": 19, "class": "sankofa-particle" },
+    { "id": "glow",       "zIndex": 20, "class": "sankofa-bird-glow" }
+  ],
+
+  "inputs": {
+    "number": [
+      { "name": "heading",    "range": [0, 359], "unit": "deg",  "description": "Compass heading 0=N, drives on-screen rotation and iridescence hue-shift" },
+      { "name": "speed",      "range": [0, 300], "unit": "m/s",  "description": "Ground speed; drives flap-period, lean angle, trail opacity, speed tier" },
+      { "name": "mapZoom",    "range": [0, 22],  "unit": "zoom", "description": "Mapbox zoom level; drives LOD tier: <10=low, 10-14=mid, 15-16=high, >=17=street" },
+      { "name": "mapBearing", "range": [0, 359], "unit": "deg",  "description": "Camera bearing; heading-mapBearing = on-screen rotation angle" }
+    ],
+    "boolean": [
+      { "name": "navigating",        "description": "Turn-by-turn active; triggers takeoff/landing chain" },
+      { "name": "celebrating",       "description": "Help completed; teal shimmer + heart pulse + 8 burst particles" },
+      { "name": "newNotification",   "description": "Nearby request appeared; head tilt + wing flick + crown spike" },
+      { "name": "accepted",          "description": "Request claimed; hop + wing stretch × 2" },
+      { "name": "donated",           "description": "Pledge paid; gold egg glow + 6 diamond sparkles × 4" },
+      { "name": "nearbyUser",        "description": "Another helper within 200m; wing salute × 2" },
+      { "name": "upcomingTurnLeft",  "description": "Next nav instruction = left; head glances left" },
+      { "name": "upcomingTurnRight", "description": "Next nav instruction = right; head glances right" },
+      { "name": "approaching",       "description": "Within 50m of destination; descent bob + slower flap + egg glow intensifies" },
+      { "name": "isHelping",         "description": "Active accepted request en-route; warm-gold body shimmer + mission egg glow" },
+      { "name": "batterySaver",      "description": "Low power mode; forces LOD3 silhouette, suppresses all effects" }
+    ]
+  },
+
+  "speedTiers": [
+    { "name": "idle",    "maxSpeed": 0.3,  "flapPeriodMs": 1400, "leanDeg": 0,  "trailCount": 0 },
+    { "name": "walking", "maxSpeed": 1.8,  "flapPeriodMs": 1400, "leanDeg": 2,  "trailCount": 3, "trailShape": "dot" },
+    { "name": "running", "maxSpeed": 4.0,  "flapPeriodMs": 800,  "leanDeg": 8,  "trailCount": 5, "trailShape": "oval" },
+    { "name": "driving", "maxSpeed": 16,   "flapPeriodMs": 450,  "leanDeg": 18, "trailCount": 5, "trailShape": "streak" },
+    { "name": "highway", "maxSpeed": 50,   "flapPeriodMs": 280,  "leanDeg": 28, "trailCount": 7, "trailShape": "streak" },
+    { "name": "airplane","maxSpeed": 9999, "flapPeriodMs": 180,  "leanDeg": 38, "trailCount": 7, "trailShape": "wisp", "glideMode": true }
+  ],
+
+  "lodTiers": [
+    { "name": "LOD3", "minZoom": 0,  "maxZoom": 9,  "dataZoom": "low",    "visible": ["body","wingLeft","wingRight","head","tail","shadow"] },
+    { "name": "LOD2", "minZoom": 10, "maxZoom": 13, "dataZoom": "mid",    "visible": ["LOD3", "featherTips","secondaries","scapulars","legs","crown","iris","glow"] },
+    { "name": "LOD1", "minZoom": 14, "maxZoom": 16, "dataZoom": "high",   "visible": ["LOD2", "coverts","bodyFeathers","belly","back","breastSheen","jointHighlights","iridescence","crownSway"] },
+    { "name": "LOD0", "minZoom": 17, "maxZoom": 22, "dataZoom": "street", "visible": ["LOD1", "bodyFeatures4to11","eyelids","neckScurve","enhancedIridescence","wingBottomSurfaces","ls3rs3"] }
+  ],
+
+  "animationStates": {
+    "Idle":         { "dataLanding": "idle",    "dataFlying": false, "durationMs": "loop" },
+    "Takeoff":      { "dataLanding": "takeoff", "dataFlying": false, "durationMs": 1200, "next": "Cruise" },
+    "Cruise":       { "dataLanding": null,       "dataFlying": true,  "durationMs": "loop" },
+    "Glide":        { "dataGliding": true,       "dataFlying": true,  "durationMs": "loop", "minSpeed": 50 },
+    "Dive":         { "dataLanding": "dive",     "dataFlying": true,  "durationMs": 600,  "next": "SlowFlap" },
+    "SlowFlap":     { "dataLanding": "slowflap", "dataFlying": false, "durationMs": 800,  "next": "Hover" },
+    "Hover":        { "dataLanding": "hover",    "dataFlying": false, "durationMs": 1400, "next": "Perch" },
+    "Perch":        { "dataLanding": "perch",    "dataFlying": false, "durationMs": 2000, "next": "Idle" },
+    "BankLeft":     { "bankDegMin": -25, "bankDegMax": -8,  "continuous": true },
+    "BankRight":    { "bankDegMin": 8,   "bankDegMax": 25,  "continuous": true }
+  },
+
+  "microReactions": {
+    "Celebrate":        { "trigger": "celebrating",       "loopWhileActive": true,   "exits": "on-input-false" },
+    "Notification":     { "trigger": "newNotification",   "repeatCount": 3,          "exits": "after-repeats" },
+    "Accepted":         { "trigger": "accepted",          "repeatCount": 2,          "exits": "after-repeats" },
+    "Donated":          { "trigger": "donated",           "repeatCount": 4,          "exits": "after-repeats" },
+    "WingSalute":       { "trigger": "nearbyUser",        "repeatCount": 2,          "exits": "after-repeats" },
+    "AnticipateLeft":   { "trigger": "upcomingTurnLeft",  "loopWhileActive": true,   "exits": "on-input-false" },
+    "AnticipateRight":  { "trigger": "upcomingTurnRight", "loopWhileActive": true,   "exits": "on-input-false" },
+    "Approaching":      { "trigger": "approaching",       "loopWhileActive": true,   "exits": "on-input-false", "flapSlowFactor": 1.45 },
+    "Helping":          { "trigger": "isHelping",         "loopWhileActive": true,   "exits": "on-input-false", "colorShift": "warm-gold" },
+    "Chirp":            { "trigger": "newNotification",   "durationMs": 300,         "layer": "beak" },
+    "Blink":            { "periodMs": 7000,               "automatic": true,         "layer": "eyelids" },
+    "IdleStretch":      { "periodMs": 14000,              "automatic": true,         "layer": "wings" }
+  },
+
+  "eggCounterRotation": {
+    "description": "Egg must remain perfectly upright at all times — the central visual metaphor of the Sankofa (carrying wisdom regardless of journey). Body rotation by bankDeg is compensated by an equal-and-opposite egg group rotation.",
+    "formula": "eggGroup.rotation = -rig.rotation",
+    "pivotInArtboard": { "x": 15, "y": 82 }
+  },
+
+  "iridescenceModel": {
+    "description": "Wing and chest iridescence mimics structural coloration (hummingbird/kingfisher). Hue shifts with heading so colors change as the bird rotates — like real feather micro-structure.",
+    "cycleMs": 3200,
+    "headingFactor": 0.08,
+    "stops": [
+      { "offset": "0%",   "color": "hsl(160, 80%, 45%)", "label": "emerald" },
+      { "offset": "25%",  "color": "hsl(180,100%, 50%)", "label": "turquoise" },
+      { "offset": "50%",  "color": "hsl(190,100%, 65%)", "label": "aqua" },
+      { "offset": "75%",  "color": "hsl(200, 30%, 80%)", "label": "silver" },
+      { "offset": "100%", "color": "hsl(195, 90%, 38%)", "label": "deep-teal" }
+    ],
+    "blendMode": "screen",
+    "opacity": 0.3
+  },
+
+  "cssCustomProperties": {
+    "--lean-deg":        { "type": "angle", "description": "Body forward lean; 0=upright, max 38=airplane" },
+    "--tail-bend":       { "type": "angle", "description": "Tail lateral bend direction" },
+    "--left-wing-extra": { "type": "angle", "description": "Extra flap arc for left wing during right bank" },
+    "--right-wing-extra":{ "type": "angle", "description": "Extra flap arc for right wing during left bank" },
+    "--head-lead-deg":   { "type": "angle", "description": "Head looks ahead of turn direction" },
+    "--heading-deg":     { "type": "angle", "description": "Compass heading for iridescence calc" },
+    "--flap-period":     { "type": "duration", "description": "Wing beat period in ms; drives all animation cascade" },
+    "--speed-factor":    { "type": "number", "description": "0-1 normalized speed for lean/particle interpolation" },
+    "--deg":             { "type": "angle",   "description": "Per-particle burst direction (--deg CSS var pattern)" },
+    "--bank-deg":        { "type": "angle",   "description": "Current banking angle; drives wing-extra and tail-bend" },
+    "--approach-sway":   { "type": "length",  "description": "Descent bob amplitude during approaching state" },
+    "--lighting-factor": { "type": "number",  "description": "0-1 directional highlight based on heading vs NW sun" },
+    "--crown-sway":      { "type": "angle",   "description": "Crown feather sway angle; registered @property" },
+    "--help-shimmer":    { "type": "number",  "description": "Gold shimmer intensity for isHelping state" }
+  }
+}

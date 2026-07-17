@@ -1,0 +1,49 @@
+Not yet started (explicitly deprioritized given time/effort constraints, per your original ask to prioritize the concrete schema-specified items first):
+* OpenAPI spec gaps on Stripe/verification/admin routes
+* Real Whisper STT wiring for Griot voice stories
+* Voice wake-word/TTS wiring
+* Globe↔mutual-aid engine connectivity
+* Nia↔crisis bridge for diaspora hubs
+
+Verify Payments, Nia's kill-switch, trust tiers, matching, hardship resolution
+deploy/ops configuration and two structural items (Stripe institutional billing, payment splitting)
+
+API keys are a deploy-config step, not a code gap — Whisper/ElevenLabs wiring is real, but needs OPENAI_API_KEY (and optionally ELEVENLABS_API_KEY) actually set in your environment to light up. Worth confirming those are set in production.
+Invoice payment for civic needs is manual admin action — no Stripe institutional billing (Invoice API or PaymentIntent against a sponsor's Customer ID) yet. Noted as the natural next step in your own memory file.
+OpenAPI documentation gap on Stripe/verification/admin routes — unchanged, still worth closing.
+Payment-splitting for multi-helper requests — still not built.
+Admin auth is still a shared static secret, not per-admin login.
+
+
+add a reminder notification to sponsors a few days before their NET30 invoice comes due, so nothing slips through the cracks.
+
+Minor gaps remain (structured Nia memory, full voice I/O, payment splitting). Prioritize these without clobbering:
+1. Enhance Diaspora Globe for Global Kindness:
+    * Story-to-Action Flows: One-tap from Griot stories → create local PIF request (pre-filled with cultural context).
+    * Hub Impact Dashboard: Live ripples (repayments, claims across hubs), kindness chain visualizer on globe.
+    * Diaspora Helper Matching: Filter by heritage/language with PIF priority and hub ring-fencing.
+    * Voice Griot Sessions: Nia-facilitated live/shared stories (addresses voice gap).
+2. Deepen PIF & Helper Livable Wage:
+    * Flexible Repay Portal: Track "pay when able" schedules, impact stories ("Your $5 helped 3 more neighbors").
+    * Daily Kindness Engine: Nia "Good Morning" with personalized nearby tasks + projected earnings.
+    * Multi-Helper Coordination: Light coordination credits (goodwill, not full split yet) while preserving single-claimer payment.
+3. Nia AI – Compassionate Global Heart:
+    * Structured memory fields + diaspora awareness.
+    * Full voice I/O with community voices.
+    * Proactive "Pay It Forward" suggestions tied to stories/requests.
+4. County/Global Polish:
+    * Civic marketplace enhancements (auto-invoice reminders, sponsor dashboard).
+    * Accessibility: AR Globe preview, larger mobile taps.
+    * Safety: Expand multilingual patterns.
+Covenant Notes: Stick to migrations (generate first), idempotency, no-clobber rule. Update CLAUDE.md/MEMORY.md on changes. Test seeds, pool health, Redis.
+
+1. Fix BUG-CRIT-01 & BUG-CRIT-02: Replace help_requests with requests in nia-service/src/lib/db.ts — this unblocks Nia's contextual awareness and check-ins
+2. Activate voice features: Wire useVoiceWakeWord in App.tsx, render VoiceWakeWordIndicator in NiaDrawer, connect useNiaTTS.speak() to Nia's chat response stream
+3. Add deferred payment quick-selects: 
+
+4. Implement real STT: Add Whisper API call in nia-voice.ts or browser SpeechRecognition fallback for Griot story recording
+5. Connect globe to mutual aid: Add hub_id to request creation flow; allow cross-hub request routing with currency/translation layer
+6. Nia-crisis bridge: When Nia detects crisis intent, auto-create a sensitive category request with is_emergency=true and broadcast to nearest helpers
+
+7. Per-hub ledger visibility: Show hub-specific pool balance and helper earnings in the Diaspora Globe UI
+8. County portal civic needs: The civicNeedsTable schema exists (migration 0057) but UI for government sponsors to post needs is not verified in the frontend audit

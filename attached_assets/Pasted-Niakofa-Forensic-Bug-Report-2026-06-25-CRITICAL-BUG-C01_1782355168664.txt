@@ -1,0 +1,110 @@
+Niakofa Forensic Bug Report — 2026-06-25
+CRITICAL
+BUG-C01 — POST /users/register: Duplicate email returns full user row without issuing a token users.ts line ~60: When a duplicate email is detected, the route returns res.json(safeExisting) with HTTP 200 — no token, no { user, token } envelope. The frontend client expects { user, token } on register success. A returning user who hits this path gets a 200 with no token and is silently not logged in. Additionally, returning the existing user row to an arbitrary registrant leaks profile data (name, avatar, neighborhood, trust_score, help_count, etc.) to anyone who knows or guesses another user's email address.
+
+Fix: Return 409 on duplicate email. Do not return the existing user row to the caller.
+BUG-C02 — PATCH /users/:id: password_hash leaked in response users.ts PATCH /users/:id: The .returning() result is returned directly as res.json(user) without stripping password_hash. Every profile update response exposes the bcrypt hash.
+
+Fix: Destructure const { password_hash,...safeUser } = user before returning.
+BUG-C03 — PATCH /users/:id/location: Full user row returned including password_hash users.ts PATCH /users/:id/location: Same pattern — res.json(user) without stripping password_hash.
+
+Fix: Strip password_hash before returning.
+BUG-C04 — PATCH /users/:id/helper-mode: Full user row returned including password_hash users.ts PATCH /users/:id/helper-mode: res.json(user) without stripping password_hash.
+
+Fix: Strip password_hash before returning.
+BUG-C05 — PATCH /users/:id/panic-contacts: Full user row returned including password_hash users.ts PATCH /users/:id/panic-contacts: res.json(user) without stripping password_hash.
+
+Fix: Strip password_hash before returning.
+BUG-C06 — POST /users/:id/avatar: Full user row returned including password_hash users.ts POST /users/:id/avatar: res.json(user) without stripping password_hash.
+
+Fix: Strip password_hash before returning.
+BUG-C07 — POST /users/:id/pledge: Benevolence wallet credited before payment is confirmed users.ts POST /users/:id/pledge: benevolence_wallet is incremented and a pledge_received transaction is written immediately when the pledge POST arrives — before any Stripe PaymentIntent is created or confirmed. A user can call this endpoint repeatedly to inflate a helper's wallet balance and transaction history with no real money attached. The paymentTransactions row is inserted with state: "pending_contribution" but the wallet credit happens unconditionally at that same moment.
+
+Fix: Do not credit benevolence_wallet or insert pledge_received at pledge POST time. Credit only on payment_intent.succeeded webhook, mirroring what the Stripe webhook handler already does for the same event. The current code double-credits on Stripe confirmation because both paths write to benevolence_wallet.
+BUG-C08 — Double-credit on Stripe payment_intent.succeeded for pay-it-forward pledges stripe.ts webhook handler for payment_intent.succeeded: Increments benevolence_wallet and inserts pledge_received + pledge_sent transactions. users.ts POST /users/:id/pledge does the same thing immediately at pledge creation. Both paths fire for the same pledge. The helper receives double the wallet credit and double the transaction entries.
+
+Fix: Remove the premature wallet credit from users.ts. The webhook is the only authoritative confirmation path.
+HIGH
+BUG-H01 — POST /requests/:id/tip: Tip credits benevolence_wallet but never actually moves real money requests.ts POST /requests/:id/tip: The tip endpoint increments the helper's benevolence_wallet and inserts a tip_received transaction, but makes no Stripe call. There is no PaymentIntent created, no charge to the requester, and no transfer to the helper. Tips are purely fictional wallet entries.
+
+Fix: The tip endpoint must create a Stripe PaymentIntent (charge the requester) and a Stripe Transfer (to the helper's connected account) before crediting benevolence_wallet. Follow the same pattern as /stripe/payment-intent + completion payout.
+BUG-H02 — PATCH /users/:id/helper-application: Route defined after export default router — unreachable users.ts: The PATCH /users/:id/helper-application route is registered after the export default router statement. In TypeScript/ESM, export default router does not terminate execution, but the route is appended to the router instance after the module has been exported and consumed by routes/index.ts. Whether this route is reachable depends on module evaluation order. In practice, because the exported router object is mutated after export, the route is registered — but this is brittle, architecturally wrong, and will break if the code is ever bundled with tree-shaking. The route should be moved before export default router.
+
+BUG-H03 — DELETE /users/:id: Missing requireOwnership — any authenticated user can delete any account users.ts DELETE /users/:id: The route has requireAuth but NOT requireOwnership(). Any authenticated user can delete any other user's account by supplying that user's ID in the path parameter.
+
+Fix: Add requireOwnership() (or requireAdmin() if account deletion should be admin-only).
+BUG-H04 — GET /requests/nearby: Loads all open requests into Node.js memory requests.ts GET /requests/nearby: db.select().from(requestsTable).where(eq(requestsTable.status, "open")) fetches every open request in the database before applying the haversine filter in JavaScript. As the platform grows this is an unbounded memory load and will OOM or time out. GET /requests has a bounding-box SQL pre-filter; /requests/nearby does not.
+
+Fix: Apply the same bounding-box SQL pre-filter used in GET /requests before the in-JS haversine pass.
+BUG-H05 — GET /leaderboard: Loads all helpers into Node.js memory before filtering leaderboard.ts fetchLeaderboard(): db.select().from(usersTable).where(...) fetches up to 50 helpers, then applies a city/neighborhood .filter() in JS. The monthly contributions query is separate. No index on city or neighborhood for leaderboard use. With large user bases this is slow and memory-intensive. The city filter should be a SQL WHERE clause.
+
+BUG-H06 — nia-service/src/index.ts: No auth validation on /chat — nia-service is directly reachable nia-service/src/index.ts registers routes with a network-level rate limiter (60 req/min) but zero auth validation. The nia-proxy.ts in the api-server validates auth before forwarding, but if NIA_SERVICE_URL is reachable from the public internet (Railway services are public by default), anyone can call /chat directly, bypassing auth, rate limits, and input sanitization entirely.
+
+Fix: Add INTERNAL_SECRET header validation to the nia-service /chat route (same pattern already used on /checkin), or configure Railway to make the nia-service internal-only.
+BUG-H07 — POST /users/:id/scheduled-payment: No ownership check on request_id users.ts: A user can schedule a payment for any request_id, including requests they did not create. The route verifies the user exists but never checks request.requester_id === userId.
+
+Fix: Fetch the request and verify request.requester_id === userId before inserting.
+BUG-H08 — recurring.ts worker: Recurring requests fire regardless of approval status processRecurringRequests(): Inserts a new open request for every due recurring subscription without checking if the requester's account is still approval_status = "approved" or unbanned (trust_score !== -1). A banned or pending user's recurring requests silently keep firing.
+
+Fix: Join with usersTable and gate on approval_status = 'approved' and trust_score != -1.
+BUG-H09 — recurring.ts schema: Category enum mismatch processRecurringRequests(): The createRecurringSchema accepts categories ["groceries", "ride", "errand", "tech", "meal", "moving", "childcare", "other"] but requestsTable.category enum uses ["groceries", "transportation", "errands", "home_repair", "medical", "emergency", "other", "stock_shelves", "event_setup", "delivery_run", "tech_support"]. The recurring insert casts via as to bypass the type mismatch. Categories "ride", "errand", "tech", "meal", "moving", "childcare" are invalid values for requestsTable.category and will throw a Postgres constraint violation at fire time.
+
+Fix: Align createRecurringSchema's category enum to the requestsTable enum exactly.
+MEDIUM
+BUG-M01 — nia-context.ts: In-process cache grows unbounded for first 1000 users nia-context.ts: The eviction logic only fires when contextCache.size > 1000 and evicts entries older than CACHE_TTL_MS * 10 (5 minutes). For deployments with fewer than 1000 active users the cache never evicts. On a long-running server with >1000 users it batches a potentially expensive loop inside a request handler. Use a time-based TTL eviction on a separate setInterval instead.
+
+BUG-M02 — ws-hub.ts: ipConnectionCount never decrements correctly when same IP has multiple disconnects ws-hub.ts close handler: Math.max(0, (ipConnectionCount.get(ip) ?? 1) - 1) — when count reaches 0 it deletes the key but also deletes ipLastConnectTime. A subsequent connection from the same IP has no cooldown applied because ipLastConnectTime was deleted. An IP that fully disconnects and immediately reconnects bypasses the RECONNECT_COOLDOWN_MS guard.
+
+Fix: Only delete ipLastConnectTime after the cooldown window has expired, not when the connection count hits zero.
+BUG-M03 — map.tsx: Crisis status fetch uses no auth header map.tsx useEffect for crisis status: fetch(${base}/api/crisis/status) has no Authorization header. GET /crisis/status requires requireAuth. The fetch will return 401 silently and crisis state will never be set, meaning the crisis banner never appears.
+
+Fix: Add headers: token ? { Authorization: Bearer ${token} } : {} to the crisis status fetch (same pattern used for the crisis resources fetch already in the same effect).
+BUG-M04 — NiaDrawer.tsx: sendMessage called inside useEffect without being in the dependency array NiaDrawer.tsx line ~useEffect for initialMessage: The effect calls sendMessage(initialMessage) but sendMessage is not in the dependency array. If sendMessage is recreated (its deps change), the stale closure is used. sendMessage is memoized via useCallback with a large dependency array including liveContext, so this is a real stale-closure risk on the first auto-send when liveContext changes between drawer-open and history-load.
+
+Fix: Add sendMessage to the dependency array of that useEffect.
+BUG-M05 — NiaDrawer.tsx: getSessionId() generates IDs that fail the proxy's SESSION_ID_PATTERN NiaDrawer.tsx getSessionId(): Generates IDs like nia_1719280000000_abc123. The proxy's SESSION_ID_PATTERN is /^[\w-]{6,128}$/. The _ character is a \w character, so IDs pass. However the generated format nia_${Date.now()}_${Math.random().toString(36).slice(2)} produces strings like nia_1719280000000_3k9z which are valid. No bug in current form — but if the timestamp portion plus prefix exceeds 128 chars it will be rejected. At 13-digit timestamps this is 4 + 13 + 1 + ~10 = ~28 chars — currently safe. Document the max length assumption.
+
+BUG-M06 — reports.ts GET /users/:id/reports: Returns only reports filed by the user, not reports against the user reports.ts GET /users/:id/reports: The route is documented as "get all reports filed by or against a user" but only queries WHERE reporter_id = userId. Reports filed against the user (reported_user_id = userId) are not returned.
+
+Fix: Use OR across both columns, or add a separate query and combine results.
+BUG-M07 — stripe.ts: POST /stripe/connect/onboard does not handle the case where user is null stripe.ts: const [user] = await db.select()... — if the user is not found, user is undefined. The Stripe account creation call uses email: user?.email (safe), but there is no 404 guard. The account is created in Stripe with no email. Add a null check and return 404 before proceeding.
+
+BUG-M08 — payout-worker.ts: Retry worker can insert a duplicate paymentTransactions row on the first retry payout-worker.ts: On success, it inserts into paymentTransactionsTable with .onConflictDoNothing(). However, requests.ts POST /requests/:id/complete may have already attempted (and failed) to insert a paymentTransactions row before enqueuing the retry. If that first attempt partially succeeded (row exists in state: "authorized" or "pending") the worker's insert silently does nothing, leaving the row in a non-"completed" state. The onConflictDoNothing silently loses the transfer ID and state update.
+
+Fix: Use onConflictDoUpdate to set state = "completed" and stripe_transfer_id on the conflicting row.
+BUG-M09 — AppContext.tsx: GPS stationary suppression skips broadcast even during active request AppContext.tsx GPS broadcast loop: if (loc.speed != null && loc.speed < 0.5) return fires regardless of activeRequestId. A helper who has arrived and is stationary at the requester's location will never broadcast their final position. The requester's map pin for the helper freezes at the last-moving position, not the actual arrival point. The code comment acknowledges this was an intentional fix (MED-010) but it introduces the new problem of suppressing the arrival-position broadcast entirely.
+
+Fix: Skip stationary suppression only when activeRequestId is set and the helper status is en_route or arrived.
+BUG-M10 — helpers.ts POST /helpers/auto-assign/:requestId: Endpoint description says "suggests" but callers may treat it as a write helpers.ts: The route comment explicitly notes "this endpoint only SUGGESTS the nearest helper — it never writes to the database." If any frontend or worker calls this endpoint expecting an assignment to have occurred, it will proceed with a phantom assignment. The response shape { helper_id, helper_name, distance_miles } looks like a confirmed assignment. Rename the endpoint to GET /helpers/suggest/:requestId or add a clear assigned: false field to the response body.
+
+BUG-M11 — gratitude.ts POST /gratitude/:id/like: Race condition allows double-like gratitude.ts: On unique constraint violation from db.insert(gratitudeLikesTable), the handler catches the error and returns the current like count without incrementing. This is correct. But between the failed insert and the select for the current count, another request could increment the count. More critically, the outer catch catches ALL errors from the insert, not just constraint violations. A transient DB error (connection drop, timeout) is silently swallowed and returns a 200 with whatever the current like count happens to be.
+
+Fix: Check err.code === '23505' (PostgreSQL unique violation) before treating as already-liked. Re-throw all other errors.
+LOW
+BUG-L01 — users.ts GET /users: Hard limit of 200 users with no pagination Admin route returns at most 200 users with no cursor/offset pagination. On a production platform this will silently truncate results without any indication.
+
+BUG-L02 — leaderboard.ts: fetchLeaderboard run twice on every broadcastLeaderboardUpdate call broadcastLeaderboardUpdate calls fetchLeaderboard() AND runs a separate db.select() for the updated user — two separate DB round-trips, one of which loads up to 50 users. On every request completion, this fires. The leaderboard should be read from cache.
+
+BUG-L03 — recurring.ts computeNextFireAt: Weekly recurrence without day_of_week advances by 7 days but is not day-of-week aligned A weekly subscription with no day_of_week set will fire exactly 7 days after creation regardless of what day of the week it was created. If created on a Wednesday it fires every Wednesday. This is correct behavior but is undocumented and may surprise users who expect a "every week" subscription to fire on a specific day.
+
+BUG-L04 — nia-service/src/index.ts: purgeExpiredConversations runs on a 1-hour setInterval with no initial run on boot The purge runs 1 hour after server start. If the server was down for an extended period, stale conversations accumulate until the first interval fires. Run once at startup before the interval begins.
+
+BUG-L05 — nia-service/src/routes/chat.ts: Memory extraction model name claude-haiku-4-5-20251001 is non-standard The memory extraction call uses model "claude-haiku-4-5-20251001". The standard Anthropic model ID for Claude Haiku is "claude-haiku-4-5" or the dated variant "claude-haiku-4-5-20250714". "claude-haiku-4-5-20251001" does not match any published Anthropic model ID and will result in API errors when the memory extraction runs.
+
+Fix: Verify the correct model ID against the Anthropic API and update.
+BUG-L06 — app.ts: SPA fallback route app.get("*path",...) will also match /api/* and /ws in some Express 5 configurations app.ts: The catch-all SPA route has an explicit if (!req.path.startsWith("/api") && !req.path.startsWith("/ws")) guard, which is correct. However, Express 5 changed wildcard parameter matching — "*path" captures path as a named param. This is functional but should be confirmed against the actual Express 5 behavior for the deployed version to ensure no edge cases (e.g. paths like /api/ with trailing slash) slip through.
+
+BUG-L07 — verification.ts POST /verification/identity/start: return_url points to /profile?verified=1 — no base URL The Stripe Identity session return_url is ${APP_URL}/profile?verified=1. APP_URL defaults to http://localhost:5000. If APP_URL is not set in Railway production environment variables, all identity verification sessions return to localhost instead of the production domain.
+
+BUG-L08 — nia-context.ts: Context cache not invalidated when user moves to a new neighborhood The in-process cache keys on userId and has a 30-second TTL. A user who moves more than 2 miles during those 30 seconds receives stale community context (open requests and helpers from their old location). The cache is per-user rather than per-(user, coordinates). Consider keying on userId + rounded(lat) + rounded(lng) or reducing TTL for moving users.
+
+RECOMMENDATIONS
+REC-01 — Consolidate helper_skills and specialties columns Two separate skill columns exist (helper_skills from the new application flow, specialties legacy). map.tsx acknowledges this with a TODO. The dual-lookup workaround in map.tsx, helpers.ts, and the matching engine adds complexity and risks divergence. Migrate specialties data into helper_skills and drop the column.
+
+REC-02 — Add STRIPE_WEBHOOK_SECRET startup guard stripe.ts: If STRIPE_WEBHOOK_SECRET is unset, the webhook endpoint returns 400 on every Stripe event. This is silent data loss in production. Add a startup warning (not a fatal crash — Stripe is optional) that logs clearly when webhook verification is unconfigured.
+
+REC-03 — Rate-limit POST /reports reports.ts enforces a max-5-reports-per-24h limit via a SQL COUNT query on every submission. This is a DB query on every unauthenticated (well, auth-gated) call. Move this to a rate-limit middleware (existing rateLimit pattern) to avoid the DB round-trip on every report attempt.
+
+REC-04 — POST /requests: Validate pay_it_forward_amount > 0 when payment_type === "immediate" requests.ts POST /requests: A request with payment_type: "immediate" and pay_it_forward_amount: 0 or null will pass creation validation, reach completion, and trigger the Stripe payout path — which then silently skips payment because request.pay_it_forward_amount > 0 is false. Add a validation rule: if payment_type === "immediate", pay_it_forward_amount must be a positive number.
+
+REC-05 — Add X-Request-ID to all API responses for tracing No request correlation ID is attached to responses. With multiple Railway instances and BullMQ workers, correlating a client error to a server log entry requires timestamp matching. Add a short UUID as X-Request-ID response header in app.ts.

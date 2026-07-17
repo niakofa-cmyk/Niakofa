@@ -1,0 +1,21 @@
+<div style="max-width:340px;margin:0 auto;background:var(--surface-1);border-radius:24px;padding:10px;">
+<h2 class="sr-only">Proposed redesign of the Niakofa mobile map screen, consolidating four filter buttons and stray toggles into one filter button, a single control cluster, and a status pill</h2>
+<div style="position:relative;width:100%;aspect-ratio:9/17;background:var(--surface-2);border-radius:18px;overflow:hidden;border:0.5px solid var(--border);">
+<div style="position:absolute;inset:0;background:linear-gradient(135deg,var(--surface-2) 0%,var(--surface-1) 100%);"></div>
+<div style="position:absolute;top:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;background:var(--surface-2);border:0.5px solid var(--border);padding:6px 12px;border-radius:20px;font-size:11px;color:var(--text-secondary);">
+<span style="width:6px;height:6px;border-radius:50%;background:var(--fill-success);"></span>Online, waiting for requests
+</div>
+<div style="position:absolute;bottom:64px;right:12px;display:flex;flex-direction:column;gap:8px;">
+<button style="width:40px;height:40px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;"><i class="ti ti-locate" style="font-size:18px;color:var(--text-accent);" aria-hidden="true"></i></button>
+</div>
+<div style="position:absolute;bottom:16px;left:12px;right:12px;display:flex;align-items:center;gap:8px;">
+<button style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border-radius:20px;background:var(--surface-2);border:0.5px solid var(--border);font-size:12px;font-weight:500;">
+<i class="ti ti-adjustments" style="font-size:16px;" aria-hidden="true"></i>Filters
+</button>
+<button style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border-radius:20px;background:var(--surface-2);border:0.5px solid var(--border);font-size:12px;font-weight:500;">
+<i class="ti ti-layers-intersect" style="font-size:16px;" aria-hidden="true"></i>Layers
+</button>
+</div>
+</div>
+<p style="font-size:12px;color:var(--text-secondary);text-align:center;margin:10px 0 2px;">1 filter button + 1 layers button + 1 recenter control, everything else moves into a bottom sheet on tap</p>
+</div>

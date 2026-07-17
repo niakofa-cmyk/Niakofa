@@ -1,0 +1,260 @@
+NIAKOFA FORENSIC REVIEW 8 — COMPLETE BUG & ISSUE REPORT
+Repo: niakofa-cmyk/Niakofa
+
+CRITICAL BUGS
+BUG-CRIT-01 — nia-service Dockerfile: wrong table name in getActiveRequest()
+File: artifacts/nia-service/src/lib/db.ts Line: FROM help_requests WHERE id = $1 The nia-service queries help_requests directly via raw SQL, but the actual Drizzle-managed table is requests (from requestsTable). This causes every getActiveRequest() call to return null, meaning Nia never has live request context during active jobs. Every helper/requester conversation while on a job is context-blind.
+
+BUG-CRIT-02 — nia-service Dockerfile: wrong table name in getCompletedRequestsForCheckin()
+File: artifacts/nia-service/src/lib/db.ts Same file — FROM help_requests hr LEFT JOIN users u ON u.id = hr.helper_id. Table is requests not help_requests. The 24-hour check-in worker never fires because this query always returns 0 rows. Nia's follow-up feature is completely broken in production.
+
+BUG-CRIT-03 — reports.ts missing sos in CreateReportBody enum
+File: artifacts/api-server/src/routes/reports.ts CreateReportBody enum does NOT include "sos" as a valid type, but verification.ts inserts rows with type: "sos" directly via db.insert(reportsTable). This works at the DB level (the schema allows it) but means the public POST /reports route cannot be used to file an SOS-type report. The two code paths are inconsistent — the safety endpoint bypasses validation while the general reports endpoint blocks the type.
+
+BUG-CRIT-04 — Stripe webhook: transfer.created handler matches by stripe_transfer_id on a row that hasn't been set yet
+File: artifacts/api-server/src/routes/stripe.ts In the transfer.created case: db.update(paymentTransactionsTable).set(...).where(eq(paymentTransactionsTable.stripe_transfer_id, transfer.id)). The stripe_transfer_id on the row is only set AFTER the transfer fires — so this WHERE clause matches 0 rows. The update is a no-op, the row stays in authorized state forever. The transfer.created webhook handler silently does nothing.
+
+BUG-CRIT-05 — nia-service: model string "claude-haiku-4-5-20251001" is not a valid Anthropic model ID
+File: artifacts/nia-service/src/routes/chat.ts Memory extraction uses model: "claude-haiku-4-5-20251001". The correct model ID is claude-haiku-4-5 or claude-haiku-4-20240307. The malformed ID will throw an Anthropic API error on every memory extraction call. Memory never updates — every user's Nia starts fresh every conversation.
+
+BUG-CRIT-06 — nia-service: model: "claude-sonnet-4-6" is not a valid Anthropic model ID
+File: artifacts/nia-service/src/routes/chat.ts streamNiaResponse() uses model: "claude-sonnet-4-6". Correct IDs are claude-sonnet-4-5 or claude-3-5-sonnet-20241022. Invalid model ID means every Nia chat call fails with a 400 from Anthropic. Nia is entirely broken in production.
+
+BUG-CRIT-07 — nia-service is NOT in the pnpm workspace
+File: pnpm-workspace.yaml Workspace includes artifacts/* and lib/* — but artifacts/nia-service has its own standalone package.json with no workspace dependencies. However nia-service does NOT import @workspace/db, @workspace/api-zod, etc. It uses its own raw pg pool. This means the nia-service has a completely separate, drift-prone DB schema from the main app. Any schema change in lib/db is invisible to nia-service unless manually duplicated in migrate.sql.
+
+BUG-CRIT-08 — nia-service/src/routes/chat.ts: /checkin route uses wrong INTERNAL_SECRET env var
+File: artifacts/nia-service/src/routes/chat.ts The check-in route checks process.env.INTERNAL_SECRET, but community-neighborhoods.ts and region-crisis-resources.ts in the api-server send X-Internal-Secret: SESSION_SECRET. The env var names differ — INTERNAL_SECRET vs SESSION_SECRET. Either the checkin worker will fail auth silently (returning 401) or the region/neighborhood routes will fail. Both paths use the same secret but different env var names across services.
+
+BUG-CRIT-09 — Race condition: POST /requests/:id/complete is not wrapped in a transaction
+File: artifacts/api-server/src/routes/requests.ts The completion flow does: UPDATE requests SET status=completed → UPDATE users SET help_count+1 → INSERT transactions → stripe.transfers.create → INSERT paymentTransactions. If any step between the status update and the Stripe transfer fails, the request is marked completed with no payout record and no way to retry via the normal flow. No DB transaction wraps any of this. The enqueuePayoutRetry fallback only triggers if Stripe throws, not if the DB insert fails.
+
+HIGH SEVERITY
+BUG-HIGH-01 — push.ts: sendPushToUsers() fetches ALL users to build email map
+File: artifacts/api-server/src/routes/push.ts
+
+const users = await db.select({ id: usersTable.id, email: usersTable.email }).from(usersTable);
+
+No WHERE clause. Loads the entire users table into memory to build an email fallback map. Will cause OOM or extreme latency at scale.
+
+BUG-HIGH-02 — admin-analytics.ts: /admin/accounts has no pagination
+File: artifacts/api-server/src/routes/admin-analytics.ts GET /admin/accounts does db.select(...).from(usersTable).orderBy(usersTable.created_at) with no LIMIT. Full table scan returned to the browser on every admin page load.
+
+BUG-HIGH-03 — leaderboard.ts: in-process cache keys for city filter are never evicted
+File: artifacts/api-server/src/routes/leaderboard.ts Leaderboard uses cacheGet/cacheSet for the main key and city-specific keys. invalidateLeaderboardCache() only deletes "leaderboard:all". City-specific cache keys ("leaderboard:city:*") are never invalidated after a request completes. City leaderboards can show stale data indefinitely.
+
+BUG-HIGH-04 — nia-context.ts: in-process contextCache Map grows unbounded in multi-instance deployments
+File: artifacts/api-server/src/routes/nia-context.ts The cache is a module-level Map — not Redis-backed. On Railway with multiple instances, each instance maintains its own isolated cache. The eviction logic only runs when contextCache.size > 1000, which is per-instance. On low-traffic deployments the map never evicts. On high-traffic multi-instance, each instance caches redundantly with no shared invalidation.
+
+BUG-HIGH-05 — recurring.ts: processRecurringRequests() uses dynamic import("drizzle-orm") inside a worker loop
+File: artifacts/api-server/src/routes/recurring.ts
+
+const { lte } = await import("drizzle-orm");
+
+Dynamic import inside a hot path is a performance anti-pattern and can cause unexpected module initialization behavior. Should be a static top-level import.
+
+BUG-HIGH-06 — users.ts: PATCH /users/:id uses (updates as any).city etc. for extended fields
+File: artifacts/api-server/src/routes/users.ts
+
+if (city !== undefined) (updates as any).city = city;
+
+The comment says "Extended profile fields — validated by UpdateUserBody Zod schema" but the cast to any on the Drizzle update object bypasses TypeScript's column validation. If city, specialties, phone_masked, or quick_replies don't exist as columns in usersTable, Drizzle will silently ignore the update — no error, no feedback to the caller.
+
+BUG-HIGH-07 — nia-proxy.ts: session ID ownership validation is bypassable
+File: artifacts/api-server/src/routes/nia-proxy.ts
+
+if (userId !== undefined && !sessionId.startsWith(`${userId}-`) && !sessionId.startsWith(`anon-`))
+
+Any authenticated user can read any other user's history by using a session ID prefixed with anon-. The anon bypass has no further validation.
+
+BUG-HIGH-08 — stripe.ts: POST /stripe/payout (admin) has TOCTOU on payout state
+File: artifacts/api-server/src/routes/stripe.ts State check: if (pt.state === "completed") return 409 — then later: await stripe.transfers.create(...) — then UPDATE SET state='completed'. Two concurrent admin calls can both pass the state check and create duplicate Stripe transfers before either updates the row.
+
+BUG-HIGH-09 — sw.js: service worker precaches /offline.html but file doesn't exist in public/
+File: artifacts/pay-it-forward/public/sw.js PRECACHE_ASSETS includes /offline.html. There is no offline.html in public/. The install event's cache.addAll(PRECACHE_ASSETS) will throw, causing the service worker install to fail entirely. PWA offline support is broken — no caching, no push notifications.
+
+BUG-HIGH-10 — manifest.json: only SVG icons, no PNG fallback
+File: artifacts/pay-it-forward/public/manifest.json Both icons are "src": "/favicon.svg". Android and some iOS/Chrome versions require raster PNG icons (192×192, 512×512) for PWA installation, splash screens, and maskable icons. SVG-only manifests fail "Add to Home Screen" prompts on most Android devices.
+
+BUG-HIGH-11 — nia-service/package.json: @anthropic-ai/sdk version ^0.24.0 is severely outdated
+File: artifacts/nia-service/package.json SDK 0.24.0 predates streaming improvements, tool-use finalization, and claude-sonnet-4-x model identifiers. The current SDK is ^0.53+. This version mismatch is likely contributing to the malformed model IDs and streaming bugs.
+
+BUG-HIGH-12 — pnpm-workspace.yaml: duplicate orval in minimumReleaseAgeExclude
+File: pnpm-workspace.yaml
+
+minimumReleaseAgeExclude:
+  - orval
+  - orval   # duplicate
+
+Minor but indicates the file has not been reviewed carefully.
+
+BUG-HIGH-13 — NiaFab component file does not exist at expected path
+Files referenced: artifacts/pay-it-forward/src/components/NiaFab.tsx App.tsx imports { NiaFab, NiaDrawer } from "@/components/NiaDrawer" — not NiaFab.tsx. But the previous forensic identified NiaFab.tsx as the drag source. The actual component is NiaDrawer.tsx. Cannot verify NiaFab drag fix was applied without reading NiaDrawer.tsx.
+
+MEDIUM SEVERITY
+BUG-MED-01 — users.ts: delete cascade is incomplete
+File: artifacts/api-server/src/routes/users.ts The delete handler manually deletes from scheduledPaymentsTable, stripeAccountsTable, userSettingsTable — then says "requestsTable and transactionsTable should handle CASCADE DELETE if configured." This is speculative. If FK cascades aren't configured, orphaned requests and transactions remain after user deletion, causing broken references throughout the app.
+
+BUG-MED-02 — requests.ts: GET /requests has unbounded limitParam bypass
+File: artifacts/api-server/src/routes/requests.ts
+
+const limitParam = req.query.limit ? parseInt(req.query.limit as string) : 200;
+
+Default is 200, max is capped at 500 — but parseInt with no radix can behave unexpectedly on strings like "0x1000" (parses as 4096). Use parseInt(val, 10).
+
+BUG-MED-03 — nia-service: no input length validation on message at the nia-service layer
+File: artifacts/nia-service/src/routes/chat.ts The api-server proxy caps messages at 2000 chars, but the nia-service /chat route does no such validation. Direct calls to nia-service (internal or misconfigured) can send arbitrarily long messages directly to Anthropic, causing token overuse and unexpected costs.
+
+BUG-MED-04 — nia-service/src/routes/chat.ts: /analyze-image route has hardcoded "Fort Worth, TX" in system prompt
+File: artifacts/nia-service/src/routes/chat.ts
+
+"You are Nia, the Niakofa community assistant for Fort Worth, TX."
+
+The main Nia system prompt (nia.ts) correctly avoids hardcoding a region. The image analysis endpoint hardcodes Fort Worth. Niakofa is a global platform — this breaks the deployment model for any non-Fort Worth city.
+
+BUG-MED-05 — recurring.ts: computeNextFireAt() — weekly recurrence without day_of_week fires after 7 days from NOW, ignoring scheduled time_of_day
+File: artifacts/api-server/src/routes/recurring.ts When recurrence="weekly" and dayOfWeek is null, the function advances 7 days from "now" if next <= from. But the initial next is set to today at time_of_day. If time_of_day is in the past today, it adds 7 days — which gives the correct next occurrence. However, on a server restart or re-fire, the new from date is the current time, not the original schedule anchor. Recurring jobs drift over time.
+
+BUG-MED-06 — push.ts: VAPID mailto hardcoded
+File: artifacts/api-server/src/routes/push.ts
+
+webpush.setVapidDetails("mailto:hello@payitforward.community",...)
+
+Email is a Niakofa placeholder that doesn't match the actual domain (niakofa.com). Web Push spec requires this to be a valid contact address. Some push providers validate this.
+
+BUG-MED-07 — nia-service/src/lib/db.ts: getRecentHistory() hardcoded limit=12 ignores caller param default
+File: artifacts/nia-service/src/lib/db.ts getRecentHistory(sessionId, limit=12) — the parameter exists but is always called without a limit argument from chat.ts. 12 turns of history (6 exchanges) is very shallow for a community crisis-support AI. Should be at least 20.
+
+BUG-MED-08 — admin-analytics.ts /admin/helper-applications has no pagination
+File: artifacts/api-server/src/routes/admin-analytics.ts Returns all helper applications with no LIMIT or pagination. Could return thousands of rows.
+
+BUG-MED-09 — gratitude.ts: gratitudeLikesTable unique constraint error handling is fragile
+File: artifacts/api-server/src/routes/gratitude.ts
+
+} catch (err) {
+  // Unique constraint violation = already liked
+  const [existing] = await db.select(...)
+
+All DB errors are caught and treated as "already liked." Any other Postgres error (network, timeout, deadlock) will silently return { alreadyLiked: true } instead of a 500.
+
+BUG-MED-10 — community-neighborhoods.ts: admin/city-neighborhoods GET has no pagination
+File: artifacts/api-server/src/routes/community-neighborhoods.ts Full table scan with no LIMIT when verified param is not provided. As the neighborhood cache grows globally, this becomes a DoS vector.
+
+BUG-MED-11 — vite.config.ts: VITE_MAPBOX_TOKEN used server-side in navigation.ts
+File: artifacts/api-server/src/routes/navigation.ts
+
+const token = process.env.VITE_MAPBOX_TOKEN;
+
+VITE_ prefixed env vars are a Vite convention for frontend-only vars. Using them in the api-server (Node.js) is an anti-pattern and means two different env vars might be needed — VITE_MAPBOX_TOKEN for the frontend and MAPBOX_TOKEN for the server. civic.ts already uses MAPBOX_TOKEN ?? VITE_MAPBOX_TOKEN, but navigation.ts only checks VITE_MAPBOX_TOKEN.
+
+BUG-MED-12 — i18n.ts is 62KB — loaded synchronously on app boot
+File: artifacts/pay-it-forward/src/i18n.ts The entire translation file is bundled synchronously. With multiple languages inline, this adds 62KB+ to the initial JS bundle parse time on low-end mobile devices. Should use i18next-http-backend with lazy-loaded JSON files.
+
+BUG-MED-13 — App.tsx: NiaWrapper renders outside AppProvider children position — NiaFab always visible even on admin-only paths
+File: artifacts/pay-it-forward/src/App.tsx <NiaWrapper /> is rendered as a sibling of <WouterRouter> inside <AppProvider>. The hideNia logic only hides on /onboarding. But AppShell can return <AdminScreen /> directly — and NiaWrapper still renders a floating button over the admin UI. Should also hide on /admin.
+
+BUG-MED-14 — App.tsx: AdminScreen bypasses approval gate entirely
+File: artifacts/pay-it-forward/src/App.tsx
+
+if (isAdmin) return <AdminScreen />;
+
+This fires BEFORE the !currentUser check. If isAdmin route matches and there is no logged-in user, AdminScreen renders without any auth. The admin panel is responsible for its own auth via ADMIN_SECRET, but the frontend renders the shell without requiring currentUser.
+
+LOW SEVERITY / CODE QUALITY
+BUG-LOW-01 — requests.ts: distanceMiles() function is duplicated from push.ts (haversineMiles)
+Three separate Haversine implementations exist: requests.ts (distanceMiles), push.ts (haversineMiles), and lib/geo.ts (distanceMiles). Should all import from lib/geo.ts.
+
+BUG-LOW-02 — users.ts: is_admin flag used as admin check but moderation endpoint uses trust_score: -1 as ban flag
+File: artifacts/api-server/src/routes/users.ts Ban sets trust_score = -1. Admin check uses is_admin column. Trust tier logic in lib/trust-tiers uses >= 0 checks. A banned user with trust_score = -1 breaks leaderboard queries that filter COALESCE(trust_score, 0) >= 0 (they're excluded, which is correct), but getTierName(-1, 0) may return unexpected tier names depending on implementation.
+
+BUG-LOW-03 — nia-proxy.ts: duplex: "half" cast is fragile
+File: artifacts/api-server/src/routes/nia-proxy.ts
+
+} as RequestInit & { duplex: "half" }
+
+This is a known TypeScript workaround for Node.js 18+ fetch body streaming. It works but is fragile — a future TypeScript/Node upgrade may break it. Should use an explicit type declaration.
+
+BUG-LOW-04 — package.json root: i18next and react-i18next in root workspace dependencies
+File: package.json
+
+"dependencies": {
+  "i18next": "^26.3.1",
+  "react-i18next": "^17.0.8"
+}
+
+These are frontend-only packages but hoisted to root. They should be in artifacts/pay-it-forward/package.json only. Having them at root can cause version conflicts with workspace packages.
+
+BUG-LOW-05 — nia-service/src/routes/chat.ts: web_search_20250305 tool type uses @ts-expect-error
+File: artifacts/nia-service/src/routes/chat.ts
+
+// @ts-expect-error — web_search_20250305 is a special Anthropic tool type
+
+This indicates the installed SDK version (^0.24.0) doesn't know about this tool type. Another confirmation that the SDK is critically outdated.
+
+BUG-LOW-06 — NiaFab drag fix from previous forensics — cannot verify applied
+The previous forensic (commit 30e56596) prescribed: React Portal + touch-action:none + setPointerCapture + safe-area accounting + localStorage try/catch + useEffect cleanup. NiaFab.tsx and NiaDrawer.tsx were not readable (file not found at expected paths). Cannot confirm fix was applied. Must verify NiaFab dragging works in production.
+
+BUG-LOW-07 — recurring.ts: category enum and main schema must stay in sync manually
+File: artifacts/api-server/src/routes/recurring.ts The z.enum([...category list...]) is manually duplicated from the DB pgEnum. Any new category added to the DB schema requires manual update here. Comment notes this: // BUG-H09: must match requestCategoryEnum exactly. Should import the enum from @workspace/db.
+
+BUG-LOW-08 — leaderboard.ts: is_neighborhood_top logic is position-based, not score-based
+File: artifacts/api-server/src/routes/leaderboard.ts The first helper seen per neighborhood is marked is_neighborhood_top regardless of their score relative to others in that neighborhood. If the leaderboard already filters/sorts by score, this is usually correct, but only if filtered.slice(0, 25) preserves that sort — which it does. Low risk but brittle.
+
+BUG-LOW-09 — index.css: .pb-safe uses env(safe-area-inset-bottom) but no safe-area-inset-* env vars are declared in CSS
+File: artifacts/pay-it-forward/src/index.css Works in Safari/iOS natively, but on Android WebView this often returns 0. For true safe-area support, <meta name="viewport" content="viewport-fit=cover"> must be set in the HTML <head>. Cannot verify this is present without reading index.html.
+
+WHAT'S MISSING TO FINISH NIAKOFA + COMPLETE NIA'S EVOLUTION
+1. Fix the broken AI core (blockers)
+Update @anthropic-ai/sdk to ^0.53+ in nia-service/package.json
+Fix both model IDs: claude-sonnet-4-5 and claude-haiku-4-5
+Fix the raw SQL table names (help_requests → requests, users stays users)
+2. Database transactions
+Wrap POST /requests/:id/complete in a single Drizzle transaction
+Wrap POST /stripe/payout state check + transfer + update in a transaction
+3. NiaFab drag — verify and ship
+Read NiaDrawer.tsx to confirm drag fix (Portal + pointer capture + touch-action) was applied
+If not, apply the fix per the previous forensic
+4. PWA completion
+Create public/offline.html (required by sw.js precache — currently breaks SW install)
+Add PNG icons (192×192, 512×512 + maskable) to public/ and update manifest.json
+Add viewport-fit=cover to index.html
+5. Nia memory system
+Fix extractAndUpdateMemory() (broken by bad model ID)
+Increase getRecentHistory default from 12→20 turns
+Consider migrating nia-memories to a vector store for semantic retrieval (RAG)
+6. Nia's evolution — remaining capabilities to build
+Vision analysis UI: POST /analyze-image exists in nia-service but no frontend component calls it
+Check-in notifications: The scheduler fires but there is no frontend component to receive/display Nia's check-in message when user opens app
+Nia voice mode: Not present anywhere — would require a TTS/STT integration
+Nia proactive suggestions: The system prompt references this but Nia only responds, never initiates
+Nia crisis escalation flow: Crisis mode is detected via checkSafety() but the frontend has no SOS button component (SOSButton.tsx — not found)
+Nia neighborhood-aware responses: liveContext is passed but the context window prefix is only injected when the frontend sends liveContext — connection must be verified in NiaDrawer.tsx
+7. Frontend pages that don't exist yet (404 in nav)
+Based on what was NOT found:
+
+pages/Dashboard.tsx — referenced but missing
+pages/Admin.tsx — referenced but missing
+pages/Login.tsx — referenced but missing (may be pages/login.tsx lowercase)
+pages/Profile.tsx — referenced but missing
+pages/Wallet.tsx — referenced but missing
+pages/Crisis.tsx — referenced but missing
+pages/CreateRequest.tsx — referenced but missing
+components/NiaFab.tsx / NiaChat.tsx — may be inside NiaDrawer.tsx
+hooks/useAuth.ts, useNia.ts, useWebSocket.ts, useGeolocation.ts, usePayment.ts, useStripe.ts, useRequests.ts, usePushNotifications.ts — all missing or may use different filenames
+The frontend's page routing in App.tsx uses lowercase paths (@/pages/map, @/pages/login, @/pages/wallet, etc.) — the filesystem uses lowercase. The 404s for Login.tsx, Admin.tsx, etc. are because those paths don't match. These likely exist as login.tsx, admin.tsx, etc. Cannot confirm without a directory listing.
+
+8. Redis is optional but required for full feature set
+BullMQ payout retry, notification queue, leaderboard cache, crisis-mode flag — all degrade silently without Redis
+For production reliability, REDIS_URL must be set on Railway
+9. Environment variables that must be set for full production
+Missing or unverified:
+
+ANTHROPIC_API_KEY — required (nia-service will log FATAL if missing)
+VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY — push notifications disabled without these
+STRIPE_WEBHOOK_SECRET — webhook verification fails without this
+STRIPE_IDENTITY_WEBHOOK_SECRET — identity verification webhook silently rejects
+CRISIS_DEFAULT_REGION — crisis banner shows no region name
+INTERNAL_SECRET + SESSION_SECRET — must match across api-server and nia-service
+ALLOWED_ORIGIN — CORS blocks all cross-origin requests if unset on nia-service
+NIA_SERVICE_URL — api-server cannot reach nia-service (falls back to localhost:3001, which fails on Railway)
+APP_URL — Stripe return/refresh URLs use localhost:5000 as fallback

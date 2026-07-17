@@ -1,0 +1,14 @@
+A few refinements I'd still recommend
+Improve and enhance the Sankofa Bird icon. There should be no background in the Logo, The Logo background should be transparent.
+I think you can make it even stronger before a public launch:
+1. Increase the icon size slightly (about 8–12%). Right now there's a bit more padding than necessary. Making the bird slightly larger will improve visibility on mobile home screens.
+2. Brighten the wood texture a little. On OLED displays and in dark mode, the darker portions of the carving can blend into the navy background. A small increase in contrast would help.
+3. Simplify the smallest favicon versions. At 16×16 pixels, the carved feather details won't be visible. Consider using a simplified silhouette or slightly thicker carving lines for those tiny assets.
+4. Create an official SVG master logo. If you haven't already, a clean vector version will ensure the logo scales perfectly for websites, print, and marketing materials.
+
+But I found one real miss, and it's the most visible one of all: favicon.svg — the file most browsers actually show in the tab — was still the original placeholder, a plain orange square with no bird on it. Modern browsers (Chrome, Firefox, Edge) prefer an SVG favicon over the PNG fallbacks when both exist, so the actual thing showing in most people's browser tabs was still the old orange square, even though every other icon context (phone home screen, app switcher, install prompt) correctly showed the new mark. I fixed it — replaced with the real bird, using the same colors already established in the generated icons, and checked it at actual 16px and 32px render size (not just eyeballed at a comfortable large size) before finalizing.
+
+
+One small thing worth a look, not a bug: sw.js's precache list adds icon-192.png/icon-512.png but I didn't check whether favicon-16/32.png and apple-touch-icon.png are also precached — worth confirming those are in the cache list too so the full icon set works offline, not just the two largest sizes.
+
+Add the Zoom in and Zoom out + - features back in the Map at the right corner of the screen with the rest of the navigational Map buttons. Move the Sankofa bird icon on the bottom bar with the rest of the button.
