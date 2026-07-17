@@ -1,0 +1,31 @@
+Verify Gaps vs. the doc (not yet built): that you have implemented this into the Niakofa app. Ensure and Verify that you have Wired every route and GPS, and Navigation, Geo triangulated directions all wired end to end for the Sankofa Bird Marker.  Verify, Fix, Improve and enhance and address all issues in the document. Read documents in full. . Read all zips in full. Verify that you have used these documents and zip files to improve and enhance the Niakofa app. Make the Niakofa app production ready! update this app Now. Review the app . Fix, and address each and every issue. . Think carefully before editing. Understand the App and the vision and mission before you edit code. Review the code before you edit code. We are using Mapbox . Verify and Ensure your work! Improve and enhance the infrastructure of the Niakofa app.  Review your work and Verify That you Finish and checkpoint this edition of improvements before your usage rate or session percentage runs out! Verify you finish before your session time runs out!Read Verify each and every issue. Ensure you address each and every issue. And Fix, improve and enhance the code if you can. Fix, Improve and enhance and Close each and every and all remaining Gaps end to end, and issues. Fix, Improve and enhance, address all remaining Bugs end to end. Push all improvements and enhancements to repo and verify landing. Verify and ensure that you push all improvements and enhancements to repo. Push and independently confirmed via gitPull that GitHub's main now matches local main exactly. https://github.com/niakofa-cmyk/Niakofa GitHub is confirmed — origin/main 
+
+
+Verify  sankofa-bird-gap-close-july-2026 migrated into repo
+
+The audit reveals one real physics bug: the lighting factor uses screenRotationDeg (bird's screen-relative rotation) instead of the raw heading (bird's actual real-world facing direction). Since the "sun" is fixed in the real world at NW (315°), it must use raw heading. Also found a missing label in bird-test, and a few more quality opportunities.
+
+
+1. Import computeHeadLeadDeg (and getSpeedTier if not already there)
+2. Add headLeadDeg computation after tailBendDeg
+3. Update rig style (add --head-lead-deg) + data-speed attr
+4. Update navigating useEffect (add dive phase)
+5. Add egg orbit SVG element
+6. Update sankofa-glide keyframe
+7. Add big CSS additions block (replace closing section)
+
+1. Speed-tier trails — no walk/run/drive/airplane differentiation for trail length or density
+2. NavigationOverlay disconnection — has own GPS+arrived state that never propagates to the bird
+3. Approach animation — no distance-to-destination reaching the bird for gradual deceleration
+4. fusedHeading — need to verify GPS+compass fusion is correct
+5. Bird curiosity for new map requests — birdNewNotification fires on WS notifs but not on new request pin appearing
+6. NavigationOverlay — add onArrived + onDistanceUpdate callbacks
+7. request-active.tsx — wire callbacks + arrival bird celebrating + approach distance tracking
+8. SankofaBirdSvg.tsx — speed-tier trail differentiation (walking/running/driving/airplane)
+9. SankofaBirdSvg.tsx — wire a data-approaching state for near-destination deceleration
+10. map.tsx — SankofaBird navigating prop cleanup and approach wiring
+
+
+1. NavigationOverlay — onArrived + onDistanceUpdate callbacks
+2. request-active — wire callbacks + approaching state
+3. SankofaBirdSvg — approaching prop + speed-tier trail JSX + enhanced CSS

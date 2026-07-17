@@ -1,0 +1,18 @@
+Bugs I found in earlier passes that are now actually fixed
+(Verified in current code, not just claimed in docs — since your own history shows commit messages here haven't always been trustworthy)
+
+The dead /rate endpoint now exists and works — ratings actually write to the DB.
+trust_score used to only ever go down (no path up existed) — it now rises from repayments and completions.
+GET /requests was leaking exact home coordinates + real names for any claimed/completed request to any caller, authenticated or not — now requires auth and only unfuzzes coordinates for the actual requester/helper/admin.
+Helper live-location was returned at full GPS precision — now fuzzed the same way requester locations are.
+Map used to go blank for isolated open requests below zoom 12 (hit anyone without GPS permission) — an "unclustered-point" layer now exists.
+A helper going online didn't appear live on others' maps — helper_online event is now handled.
+WebSocket broadcast lacked per-socket error isolation — now has try/catch per client so one bad connection can't break broadcasting to everyone else.
+
+What's still genuinely worth your attention
+
+Test suite health — a prior note flagged 35/55 backend tests failing due to dynamic imports bypassing jest.mock. I didn't re-run the suite (no network in this environment), so I can't confirm current pass rate — worth running pnpm --filter @workspace/api-server run test yourself before your next deploy.
+Single global community pool in practice — the communities table exists and is wired into the wage multiplier, but only one "Tarrant County" row is seeded. If you want multiple counties competing/cooperating soon, the schema's ready; the seed data and county-selection UX aren't built yet.
+Helper marker visual distinction for emergencies — cluster bubbles are colored purely by count, so a single emergency request in a quiet area can hide inside a "green" (low-urgency-looking) cluster. Worth a visual override.
+No staleness indicator on "My Location" — if a helper's GPS goes stale in a dead zone, there's no visual cue, which matters for trust in a real-time dispatch app.
+Duplicate check-in logic between api-server's worker and nia-service's own worker — functional today but architecturally redundant; worth consolidating eventually.

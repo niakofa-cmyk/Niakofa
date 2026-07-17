@@ -1,0 +1,1204 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Niakofa - Map-First Community Help Platform
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: users
+    description: User management
+  - name: requests
+    description: Help request operations
+  - name: helpers
+    description: Helper dispatch and tracking
+  - name: navigation
+    description: GPS routing and navigation
+  - name: reports
+    description: Trust and safety reporting
+  - name: civic
+    description: Location-aware civic and community resources
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /users/{id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get user profile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update user profile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{id}/location:
+    patch:
+      operationId: updateUserLocation
+      tags: [users]
+      summary: Update user GPS location
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocationUpdate"
+      responses:
+        "200":
+          description: Location updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{id}/helper-mode:
+    patch:
+      operationId: updateHelperMode
+      tags: [users]
+      summary: Toggle helper mode on/off
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelperModeUpdate"
+      responses:
+        "200":
+          description: Helper mode updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{id}/pledge:
+    post:
+      operationId: makePledgePayment
+      tags: [users]
+      summary: Make a contribution toward a Niakofa pledge
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PledgePayment"
+      responses:
+        "200":
+          description: Pledge payment recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HelpRequest"
+
+  /users/register:
+    post:
+      operationId: registerUser
+      tags: [users]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRegistration"
+      responses:
+        "201":
+          description: Registered user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /requests:
+    get:
+      operationId: getRequests
+      tags: [requests]
+      summary: List all help requests
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, cancelled]
+        - name: lat
+          in: query
+          schema:
+            type: number
+        - name: lng
+          in: query
+          schema:
+            type: number
+        - name: radius_miles
+          in: query
+          schema:
+            type: number
+      responses:
+        "200":
+          description: List of requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HelpRequest"
+    post:
+      operationId: createRequest
+      tags: [requests]
+      summary: Create a help request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelpRequestInput"
+      responses:
+        "201":
+          description: Created request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HelpRequest"
+
+  /requests/nearby:
+    get:
+      operationId: getNearbyRequests
+      tags: [requests]
+      summary: Get help requests near a GPS location
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: lng
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: radius_miles
+          in: query
+          schema:
+            type: number
+            default: 5
+      responses:
+        "200":
+          description: Nearby requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HelpRequest"
+
+  /requests/stats:
+    get:
+      operationId: getRequestStats
+      tags: [requests]
+      summary: Get platform-wide request statistics
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestStats"
+
+  /requests/{id}:
+    get:
+      operationId: getRequest
+      tags: [requests]
+      summary: Get a single help request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Help request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HelpRequest"
+    patch:
+      operationId: updateRequest
+      tags: [requests]
+      summary: Update a help request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelpRequestUpdate"
+      responses:
+        "200":
+          description: Updated request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HelpRequest"
+
+  /requests/{id}/claim:
+    post:
+      operationId: claimRequest
+      tags: [requests]
+      summary: Helper claims a request to fulfill
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimInput"
+      responses:
+        "200":
+          description: Claimed request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HelpRequest"
+
+  /requests/{id}/en-route:
+    post:
+      operationId: markEnRoute
+      tags: [requests]
+      summary: Helper marks themselves as en route to the request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelperIdInput"
+      responses:
+        "200":
+          description: Updated request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HelpRequest"
+
+  /requests/{id}/arrived:
+    post:
+      operationId: markArrived
+      tags: [requests]
+      summary: Helper marks arrival at the request location
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelperIdInput"
+      responses:
+        "200":
+          description: Updated request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HelpRequest"
+
+  /requests/{id}/complete:
+    post:
+      operationId: completeRequest
+      tags: [requests]
+      summary: Mark a request as completed
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteInput"
+      responses:
+        "200":
+          description: Completed request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HelpRequest"
+
+  /users/{id}/transactions:
+    get:
+      operationId: getUserTransactions
+      tags: [users]
+      summary: Get transaction history for a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Transaction list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Transaction"
+
+  /users/{id}/scheduled-payment:
+    post:
+      operationId: createScheduledPayment
+      tags: [users]
+      summary: Schedule a future repayment for a Niakofa pledge
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduledPaymentInput"
+      responses:
+        "201":
+          description: Scheduled payment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledPayment"
+    get:
+      operationId: getScheduledPayments
+      tags: [users]
+      summary: Get scheduled payments for a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Scheduled payments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduledPayment"
+
+  /users/{id}/outstanding-pledges:
+    get:
+      operationId: getUserOutstandingPledges
+      tags: [users]
+      summary: Get user's requests with outstanding pledge balances
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Requests with outstanding pledges
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HelpRequest"
+
+  /helpers/online:
+    get:
+      operationId: getOnlineHelpers
+      tags: [helpers]
+      summary: Get all currently online helpers
+      parameters:
+        - name: lat
+          in: query
+          schema:
+            type: number
+        - name: lng
+          in: query
+          schema:
+            type: number
+        - name: radius_miles
+          in: query
+          schema:
+            type: number
+            default: 10
+      responses:
+        "200":
+          description: Online helpers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HelperLocation"
+
+  /navigation/route:
+    get:
+      operationId: getRoute
+      tags: [navigation]
+      summary: Get driving route between two coordinates
+      parameters:
+        - name: start_lat
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: start_lng
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: end_lat
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: end_lng
+          in: query
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Route data with turn-by-turn steps
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteData"
+
+  /civic/resources:
+    get:
+      operationId: getCivicResources
+      tags: [civic]
+      summary: Get location-aware civic and community resources
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: lng
+          in: query
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Civic resources matched to the location
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CivicResourcesResponse"
+        "400":
+          description: Missing or invalid lat/lng
+
+  /reports:
+    post:
+      operationId: createReport
+      tags: [reports]
+      summary: File a trust & safety report
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReportInput"
+      responses:
+        "201":
+          description: Report created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Report"
+        "400":
+          description: Validation error
+        "429":
+          description: Rate limit exceeded
+    get:
+      operationId: getReports
+      tags: [reports]
+      summary: Admin — list all reports
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, under_review, resolved_dismissed, resolved_warned, resolved_banned]
+      responses:
+        "200":
+          description: List of reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Report"
+
+  /reports/{id}:
+    get:
+      operationId: getReport
+      tags: [reports]
+      summary: Admin — get a single report with enriched user info
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Report detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportDetail"
+        "404":
+          description: Not found
+
+  /reports/{id}/review:
+    patch:
+      operationId: reviewReport
+      tags: [reports]
+      summary: Admin — update report status and add notes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminReviewInput"
+      responses:
+        "200":
+          description: Updated report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Report"
+        "404":
+          description: Not found
+
+  /users/{id}/reports:
+    get:
+      operationId: getUserReports
+      tags: [reports]
+      summary: Get reports filed by a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Reports list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Report"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    User:
+      type: object
+      required: [id, name, email, is_helper, helper_mode_active, help_count, benevolence_wallet, goodwill_score]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        avatar_url:
+          type: ["string", "null"]
+        is_helper:
+          type: boolean
+        helper_mode_active:
+          type: boolean
+        lat:
+          type: ["number", "null"]
+        lng:
+          type: ["number", "null"]
+        trust_score:
+          type: ["number", "null"]
+        help_count:
+          type: integer
+        neighborhood:
+          type: ["string", "null"]
+        benevolence_wallet:
+          type: number
+          description: Accumulated helper earnings and contributions
+        goodwill_score:
+          type: integer
+          description: Community reputation score
+        created_at:
+          type: string
+
+    UserUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        avatar_url:
+          type: string
+        neighborhood:
+          type: string
+        is_helper:
+          type: boolean
+
+    UserRegistration:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        avatar_url:
+          type: string
+        is_helper:
+          type: boolean
+        neighborhood:
+          type: string
+
+    LocationUpdate:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat:
+          type: number
+        lng:
+          type: number
+        heading:
+          type: ["number", "null"]
+        speed:
+          type: ["number", "null"]
+
+    HelperModeUpdate:
+      type: object
+      required: [active]
+      properties:
+        active:
+          type: boolean
+
+    PledgePayment:
+      type: object
+      required: [request_id, amount]
+      properties:
+        request_id:
+          type: integer
+        amount:
+          type: number
+          description: Contribution amount (any amount accepted)
+
+    HelpRequest:
+      type: object
+      required: [id, title, category, status, payment_type, requester_id, lat, lng, created_at, pledge_paid]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        category:
+          type: string
+          enum: [groceries, transportation, errands, home_repair, medical, emergency, other]
+        urgency:
+          type: string
+          enum: [low, medium, high, emergency]
+        status:
+          type: string
+          enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, cancelled]
+        payment_type:
+          type: string
+          enum: [immediate, pay_it_forward, goodwill]
+          description: immediate=pay now, pay_it_forward=pay when able, goodwill=volunteer
+        requester_id:
+          type: integer
+        requester_name:
+          type: ["string", "null"]
+        requester_avatar:
+          type: ["string", "null"]
+        helper_id:
+          type: ["integer", "null"]
+        helper_name:
+          type: ["string", "null"]
+        lat:
+          type: number
+        lng:
+          type: number
+        neighborhood:
+          type: ["string", "null"]
+        distance_miles:
+          type: ["number", "null"]
+        estimated_duration_min:
+          type: ["integer", "null"]
+        pay_it_forward_amount:
+          type: ["number", "null"]
+        pledge_amount:
+          type: ["number", "null"]
+        pledge_paid:
+          type: number
+          default: 0
+        created_at:
+          type: string
+        claimed_at:
+          type: ["string", "null"]
+        en_route_at:
+          type: ["string", "null"]
+        arrived_at:
+          type: ["string", "null"]
+        completed_at:
+          type: ["string", "null"]
+
+    HelpRequestInput:
+      type: object
+      required: [title, category, requester_id, lat, lng]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+          enum: [groceries, transportation, errands, home_repair, medical, emergency, other]
+        urgency:
+          type: string
+          enum: [low, medium, high, emergency]
+        payment_type:
+          type: string
+          enum: [immediate, pay_it_forward, goodwill]
+        requester_id:
+          type: integer
+        lat:
+          type: number
+        lng:
+          type: number
+        neighborhood:
+          type: string
+        pay_it_forward_amount:
+          type: number
+        pledge_amount:
+          type: number
+
+    HelpRequestUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [open, claimed, en_route, arrived, completed, pay_it_forward_pending, cancelled]
+        description:
+          type: string
+        urgency:
+          type: string
+          enum: [low, medium, high, emergency]
+
+    ClaimInput:
+      type: object
+      required: [helper_id]
+      properties:
+        helper_id:
+          type: integer
+
+    HelperIdInput:
+      type: object
+      required: [helper_id]
+      properties:
+        helper_id:
+          type: integer
+
+    CompleteInput:
+      type: object
+      required: [helper_id]
+      properties:
+        helper_id:
+          type: integer
+        notes:
+          type: string
+
+    RequestStats:
+      type: object
+      required: [total_open, total_completed, total_helpers_online, requests_by_category]
+      properties:
+        total_open:
+          type: integer
+        total_completed:
+          type: integer
+        total_helpers_online:
+          type: integer
+        requests_by_category:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryCount"
+        recent_completions:
+          type: integer
+        total_pledge_volume:
+          type: number
+          description: Total dollars pledged/paid forward across all requests
+
+    ScheduledPaymentInput:
+      type: object
+      required: [request_id, amount, scheduled_date]
+      properties:
+        request_id:
+          type: integer
+        amount:
+          type: number
+          description: Amount to pay on the scheduled date
+        scheduled_date:
+          type: string
+          description: ISO date string for when to process the payment
+        note:
+          type: string
+
+    ScheduledPayment:
+      type: object
+      required: [id, user_id, request_id, amount, scheduled_date, status, created_at]
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        request_id:
+          type: integer
+        amount:
+          type: number
+        scheduled_date:
+          type: string
+        status:
+          type: string
+          enum: [pending, paid, cancelled]
+        note:
+          type: ["string", "null"]
+        created_at:
+          type: string
+
+    CategoryCount:
+      type: object
+      required: [category, count]
+      properties:
+        category:
+          type: string
+        count:
+          type: integer
+
+    HelperLocation:
+      type: object
+      required: [id, name, lat, lng, is_online]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        avatar_url:
+          type: ["string", "null"]
+        lat:
+          type: number
+        lng:
+          type: number
+        heading:
+          type: ["number", "null"]
+        trust_score:
+          type: ["number", "null"]
+        help_count:
+          type: integer
+        is_online:
+          type: boolean
+        active_request_id:
+          type: ["integer", "null"]
+        distance_miles:
+          type: ["number", "null"]
+
+    RouteData:
+      type: object
+      required: [geometry, distance_meters, duration_seconds, steps]
+      properties:
+        geometry:
+          type: object
+          description: GeoJSON LineString geometry
+        distance_meters:
+          type: number
+        duration_seconds:
+          type: number
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/RouteStep"
+        eta_text:
+          type: string
+        distance_text:
+        initial_bearing:
+          type: number
+          description: Compass bearing (0-359) from start toward first waypoint
+        speed_mph:
+          type: number
+        waypoints:
+          type: integer
+          type: string
+
+    Transaction:
+      type: object
+      required: [id, user_id, type, amount, created_at]
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        request_id:
+          type: ["integer", "null"]
+        type:
+          type: string
+          enum: [earned, pledge_received, pledge_sent, goodwill]
+          description: earned=immediate pay, pledge_received=niakofa payment received, pledge_sent=contribution made, goodwill=volunteer act
+        amount:
+          type: number
+        description:
+          type: ["string", "null"]
+        created_at:
+          type: string
+
+    RouteStep:
+      type: object
+      required: [instruction, distance_meters, duration_seconds]
+      properties:
+        instruction:
+          type: string
+        distance_meters:
+          type: number
+        duration_seconds:
+          type: number
+        maneuver_type:
+          type: ["string", "null"]
+        maneuver_direction:
+          type: ["string", "null"]
+
+
+    CreateReportInput:
+      type: object
+      required: [reporter_id, type, description]
+      properties:
+        reporter_id:
+          type: integer
+        reported_user_id:
+          type: ["integer", "null"]
+        reported_request_id:
+          type: ["integer", "null"]
+        type:
+          type: string
+          enum: [suspicious_request, suspicious_helper, fraud, harassment, fake_profile, dangerous_behavior, spam, other]
+        description:
+          type: string
+          minLength: 10
+          maxLength: 2000
+
+    AdminReviewInput:
+      type: object
+      required: [status, reviewed_by]
+      properties:
+        status:
+          type: string
+          enum: [under_review, resolved_dismissed, resolved_warned, resolved_banned]
+        admin_notes:
+          type: ["string", "null"]
+        reviewed_by:
+          type: integer
+
+    Report:
+      type: object
+      required: [id, reporter_id, type, description, status, created_at]
+      properties:
+        id:
+          type: integer
+        reporter_id:
+          type: integer
+        reported_user_id:
+          type: ["integer", "null"]
+        reported_request_id:
+          type: ["integer", "null"]
+        type:
+          type: string
+          enum: [suspicious_request, suspicious_helper, fraud, harassment, fake_profile, dangerous_behavior, spam, other]
+        description:
+          type: string
+        status:
+          type: string
+          enum: [pending, under_review, resolved_dismissed, resolved_warned, resolved_banned]
+        admin_notes:
+          type: ["string", "null"]
+        reviewed_by:
+          type: ["integer", "null"]
+        reviewed_at:
+          type: ["string", "null"]
+        created_at:
+          type: string
+        updated_at:
+          type: string
+
+    ReportDetail:
+      allOf:
+        - $ref: "#/components/schemas/Report"
+        - type: object
+          properties:
+            reporter_name:
+              type: ["string", "null"]
+            reporter_email:
+              type: ["string", "null"]
+            reported_user_name:
+              type: ["string", "null"]
+
+    CivicResource:
+      type: object
+      required: [id, state, county, org_name, url]
+      properties:
+        id:
+          type: integer
+        state:
+          type: string
+          description: Two-letter state code, e.g. "TX"
+        county:
+          type: string
+          description: County name without the word "County", e.g. "Tarrant"
+        city:
+          type: ["string", "null"]
+          description: City name, optional for county-level orgs
+        org_name:
+          type: string
+        description:
+          type: ["string", "null"]
+        url:
+          type: string
+        phone:
+          type: ["string", "null"]
+        category:
+          type: ["string", "null"]
+          description: "social_services | shelter | food | medical | housing"
+
+    CivicResourcesResponse:
+      type: object
+      required: [resources, place_name, match_level]
+      properties:
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/CivicResource"
+        place_name:
+          type: string
+          description: Human-readable detected place name
+        city:
+          type: ["string", "null"]
+        county:
+          type: ["string", "null"]
+        state:
+          type: ["string", "null"]
+        match_level:
+          type: string
+          enum: [city, county, state, fallback]
+          description: How specifically the resources were matched

@@ -1,0 +1,13 @@
+update this app Now. Review the app . Fix, and address each and every issue. . Think carefully before editing. Understand the App and the vision and mission before you edit code. Review the code before you edit code. We are using Mapbox . Verify and Ensure your work! Improve and enhance the infrastructure of the Niakofa app. Verify that you have verified each and every issue. And have addressed each and every issue. Verify and Ensure that Nia ai is Disable to all users by default to the Niakofa app. Review your work and Verify That you Finish and checkpoint this edition of improvements before your usage rate or session percentage runs out! Verify you finish before your session time runs out!Read Verify each and every issue. Ensure you address each and every issue. And Fix, improve and enhance the code if you can. Fix, Improve and enhance and Close each and every and all remaining Gaps end to end, and issues. Fix, Improve and enhance, address all remaining Bugs end to end.
+
+Six files, four real changes:
+1. Dockerfile — the actually-correct final version (no cache mount, --legacy flag, whole-repo copy). Re-sending because your last upload showed it hadn't landed yet.
+2. requests.ts — the guaranteed-minimum wage floor now covers every payment type, including immediate-pay tasks. This was gap #2 from the vision audit: a requester paying immediately could previously set any price with zero floor enforcement; now the Community Pool tops up the gap the same way it already does for underfunded pledges, without double-paying on top of what the requester already sent via Stripe.
+3. request-active.tsx — removed the dead fallback effect I flagged last time (confirmed unreachable, verified against useFusedHeading's actual branching logic).
+4. heading-math.test.ts + pay-it-forward-package.json — real test coverage for the 359°/0° wraparound math, which is the exact bug class your own project notes say caused every prior heading issue. I hand-verified every assertion against the actual implementation in a scratch Node script before including it, so it should pass clean on first run rather than needing a debug cycle. This package had zero test tooling before, so vitest + a test script are now wired in.
+APPLY_BATCH_2026-07-05.md has exact paths and a single commit sequence for all of it.
+
+Verify The livable-wage tenure-tier system (Neighbor/Pillar/Anchor/Elder) is still design-only in ROADMAP.md — this remains the one substantive gap between your vision and the shipped code. Everything else — Pay Now/Pay It Forward, real-time matching, the live map, Nia AI, dispute resolution, request lifecycle security — is built and actively being hardened
+
+Fix, Verifyall Nia AI wiring end to end.
+

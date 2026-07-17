@@ -1,0 +1,34 @@
+That single bug blocks the entire build/typecheck pipeline right at the start. Let me apply the actual missing-dependency fix (not just a symlink) and run the full pnpm run build end-to-end to see if anything else is hiding behind it.
+Diagnosed single missing dependency cascading build failures downstream
+
+Diagnosed single missing dependency cascading build failures downstream
+
+I pulled the full monorepo (pnpm workspace with lib/db, lib/trust-tiers, lib/api-client-react, lib/api-zod, and the artifacts/api-server, artifacts/nia-service, artifacts/pay-it-forward, artifacts/mockup-sandbox apps), installed dependencies, and ran the project's own typecheck/build pipeline (tsc --build for the libs, then tsc --noEmit for each app, then the actual esbuild/vite builds).
+Result: there is exactly one real bug, but it's a total build-blocker.
+The error
+
+error TS2688: Cannot find type definition file for 'node'.
+  The file is in the program because:
+    Entry point of type library 'node' specified in compilerOptions
+This fires while building lib/trust-tiers, and it kills the entire pipeline immediately — pnpm run build and pnpm run typecheck both exit with code 2 before ever reaching api-server, pay-it-forward, nia-service, or scripts.
+Root cause: lib/trust-tiers/tsconfig.json sets "types": ["node"] (same as lib/db), but unlike lib/db, lib/trust-tiers/package.json declares no devDependencies at all — so it never gets its own @types/node package linked into node_modules. Compare:
+* lib/db/package.json → "devDependencies": { "@types/node": "catalog:", ... } ✅
+* lib/trust-tiers/package.json → no devDependencies key at all ❌
+Because pnpm uses strict, per-package node_modules, TypeScript can't resolve @types/node for that package, and the whole tsc --build chain aborts there.
+Downstream impact
+Since api-server imports from @workspace/trust-tiers (in src/lib/community-pool.ts, src/routes/leaderboard.ts, src/routes/requests.ts), once the libs build fails, api-server's typecheck also fails with cascading TS6305 errors ("Output file ... has not been built from source file ...") — but that's just fallout from the same root cause, not a separate bug.
+Verification
+I added the one missing line to lib/trust-tiers/package.json:
+
+json
+"devDependencies": { "@types/node": "catalog:" }
+reinstalled, and reran everything from scratch. Result: full clean build, exit code 0 across the board —
+* tsc --build (all 4 libs) ✅
+* api-server typecheck ✅ + esbuild build ✅
+* pay-it-forward typecheck ✅ + vite build ✅
+* nia-service typecheck ✅
+* scripts typecheck ✅
+* mockup-sandbox typecheck ✅
+No other type errors anywhere in the codebase. The only remaining output is non-fatal build warnings (not errors):
+* Sourcemap-resolution warnings for tooltip.tsx, select.tsx, label.tsx during the pay-it-forward vite build — cosmetic, harmless.
+* "Chunk larger than 500kB" warning for the built pay-it-forward bundle (mapbox-gl + main bundle are ~1.8MB each) — a performance suggestion to code-split, not a bug.

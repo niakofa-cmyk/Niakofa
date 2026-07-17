@@ -1,0 +1,25 @@
+--- a/artifacts/api-server/src/routes/audio-circles.ts
++++ b/artifacts/api-server/src/routes/audio-circles.ts
+@@ -499,6 +499,13 @@
+   const circleId = parseInt(String(req.params.id ?? ""), 10);
+   if (isNaN(circleId)) return res.status(400).json({ error: "Invalid id" });
+ 
++  // FIX (data-loss audit, follow-up): host_id is now onDelete "set null"
++  // (see lib/db/migrations/0068_fix_content_cascade_deletes.sql) — a
++  // completed session whose host later deleted their account has
++  // host_id = NULL. The old INNER JOIN silently excluded that entire
++  // recording from the archive, which is exactly the kind of disappearance
++  // the migration was meant to prevent. LEFT JOIN keeps the recording;
++  // host_name just comes back null for an orphaned host.
+   const recordings = await db
+     .select({
+       id: audioCircleSessionsTable.id,
+@@ -510,7 +517,7 @@
+       ended_at: audioCircleSessionsTable.ended_at,
+     })
+     .from(audioCircleSessionsTable)
+-    .innerJoin(usersTable, eq(usersTable.id, audioCircleSessionsTable.host_id))
++    .leftJoin(usersTable, eq(usersTable.id, audioCircleSessionsTable.host_id))
+     .where(
+       and(
+         eq(audioCircleSessionsTable.circle_id, circleId),

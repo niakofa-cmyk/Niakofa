@@ -1,0 +1,56 @@
+Recommended Final Layout (Clean, Thumb-Friendly)
+Goal: Maximize map real estate, reduce cognitive load, support both Requester + Helper modes seamlessly.
+1. Top Layer (Always Visible, Minimal)
+
+Translucent TopBar (logo + current mode badge + search toggle).
+Collapsible status pill (e.g., "12 Helpers Nearby • 3 Urgent") at top-center — auto-hides on map interaction.
+
+2. Central Floating Controls (Consolidated Panel)
+Create/replace scattered buttons with one MapControlsPanel (fixed bottom-right, above BottomNav):
+
+Default collapsed state: Horizontal row of 4 compact icon buttons (backdrop blur, rounded-2xl, shadow).
+Expanded state: Bottom sheet (Vaul/Radix) with full filters, layers, recenter, etc.
+
+Panel Contents (conditional on helperModeActive):
+
+Recenter GPS (always)
+Filter Toggle → opens sheet (Category, Language/Diaspora, Radius, Urgency)
+Mode-specific primary action:
+Requester: "Request Help Here" (uses map center or long-press)
+Helper: Large "I'm Available" toggle + quick nearby requests peek
+
+Layers toggle (cluster vs heatmap)
+Nia quick access (smaller FAB that can dock to panel)
+
+3. BottomNav Integration
+
+Ensure bottom-[env(safe-area-inset-bottom)] padding on map container.
+Update offsets per niakofa-map-alignment.md (e.g., panel at bottom-20 or dynamic).
+
+4. Interaction Polish
+
+Auto-hide on interaction: Use onMove / onZoom to collapse non-essential UI.
+Gestures: Long-press map pin → quick request/accept preview.
+Address search: Keep in request-new.tsx but make it expandable from TopBar on map view.
+Brazil/Diaspora: Prioritize language filter in sheet + highlight diaspora hubs.
+
+Implementation Steps (Low-Risk, Incremental)
+
+Create MapControlsPanel.tsx (new file in components/).
+Update main map.tsx:
+Import panel + pass mapRef, helperModeActive.
+Remove old scattered absolute buttons (language picker, etc.).
+Add safe-area handling.
+
+Filter Sheet: Reuse existing Vaul pattern from bottom sheets.
+Test:
+iOS/Android safe areas.
+Requester vs Helper mode.
+Cluster/heatmap z-order (heatmap before clusters).
+
+
+Expected Impact:
+
+~40% more usable map space on mobile.
+Fewer accidental taps.
+Better scalability for future features (navigation, AR).

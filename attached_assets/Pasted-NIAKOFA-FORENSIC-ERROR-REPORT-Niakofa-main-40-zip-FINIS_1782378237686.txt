@@ -1,0 +1,28 @@
+NIAKOFA FORENSIC ERROR REPORT — Niakofa-main__40_.zip
+"FINISHING TOUCHES" — REMAINING GAPS BEFORE THIS IS DEPLOY-READY
+/healthz still not a real health check
+
+routes/health.ts now reports a correct dynamic version/built timestamp, but the endpoint still returns a static {status:"ok"} with zero DB or Redis connectivity check. A downed Postgres or Redis instance will not show up here — this was flagged two releases ago and still isn't addressed.
+Migration 0009 doesn't match its own schema change
+
+lib/db/src/schema/crisis-state.ts changed created_at from timestamp to timestamp({ withTimezone: true }), but migrations/0009_schema_hardening.sql only adds the crisis_level_values CHECK and the helper_availability UNIQUE constraint — it never runs ALTER TABLE crisis_state ALTER COLUMN created_at TYPE timestamptz. On any already-provisioned database, the live column stays plain timestamp while the Drizzle schema/ORM now assumes timestamptz. This is schema drift that will silently misrepresent timezone offsets on every crisis_state read until someone runs the missing ALTER manually.
+lib/db/src/index.ts — test-env DB skip doesn't actually behave as commented
+
+When DATABASE_URL is unset and NODE_ENV === "test", the code now warns and continues instead of throwing, but new Pool({ connectionString: undefined }) doesn't make subsequent queries "throw at runtime" as the comment claims — pg falls back to PGHOST/PGUSER/default-localhost env vars and will attempt a real (likely hanging/timing-out) connection instead of failing fast. Test suites relying on the comment's stated behavior will get a hang, not a clean throw.
+users.ts extended-profile fields still bypass the Zod schema
+
+Unchanged from last release: city, specialties, phone_masked, quick_replies on PATCH /users/:id are still read from raw req.body with ad-hoc inline checks rather than bParsed.data (the validated object). No privilege-escalation risk remains, but these four fields still skip the single schema-validation point the rest of the route uses.
+nia-service build still installs outside the monorepo lockfile
+
+Dockerfile runs npm install against a local package.json with no package-lock.json present anywhere in that service directory, while the rest of the repo is a pnpm workspace with a root pnpm-lock.yaml. This service's dependency versions are not pinned to or reproducible from the same lockfile governing every other package — a npm install here can silently pull different transitive versions than what was tested in pay-it-forward/api-server.
+
+CONFIRMED FIXES THIS RELEASE
+
+Global Express error-handling middleware added as the true last app.use() in app.ts (after API routes and SPA static fallback) — unhandled exceptions now return a clean JSON error instead of a hung/blank response, with stack details suppressed in production.
+notification-worker.ts — the no-op defaultJobOptions block on the BullMQ Worker (flagged last review as silently ignored) has been removed; the comment now correctly documents that retry config lives on the Queue in lib/queue.ts.
+vite.config.ts — sourcemap: false added for production builds, preventing original source exposure via DevTools.
+main.tsx — admin sessions are no longer exempted from the 401 → re-login redirect; a stale/expired admin JWT now surfaces a clear re-auth prompt instead of failing silently forever.
+crisis_state.level now has a DB-level CHECK constraint (info/warning/critical only) — typo values can no longer be written.
+helper_availability now has a composite UNIQUE constraint on (user_id, day_of_week, start_min), closing a double-submit/race-condition duplicate-row path.
+users.ts account-deletion error path now uses the structured logger instead of console.error.
+Deprecated NiaChat.tsx stub component removed; confirmed no remaining imports reference it.

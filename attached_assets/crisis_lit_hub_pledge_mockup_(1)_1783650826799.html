@@ -1,0 +1,91 @@
+<div style="max-width:420px;margin:0 auto;background:var(--surface-2);border:0.5px solid var(--border-danger);border-radius:12px;padding:1rem 1.25rem;position:relative">
+  <h2 class="sr-only">Crisis-lit diaspora hub card with a direct pledge flow</h2>
+  <div style="display:flex;align-items:center;gap:8px;background:var(--bg-danger);color:var(--text-danger);border-radius:var(--radius);padding:6px 10px;font-size:12px;font-weight:500;margin-bottom:12px">
+    <i class="ti ti-alert-triangle" style="font-size:16px" aria-hidden="true"></i>
+    Active crisis · critical
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+    <div>
+      <p style="font-weight:500;font-size:16px;margin:0">Accra, Ghana</p>
+      <p style="font-size:13px;color:var(--text-secondary);margin:2px 0 0">Continental — Akan</p>
+    </div>
+    <i class="ti ti-map-pin" style="font-size:20px;color:var(--text-danger)" aria-hidden="true"></i>
+  </div>
+  <p style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin:0 0 12px">Flooding has displaced several families in this hub. Local helpers are covering essentials, and the community pool is running low.</p>
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:14px">
+    <div style="background:var(--surface-1);border-radius:var(--radius);padding:8px;text-align:center">
+      <p style="font-size:12px;color:var(--text-secondary);margin:0">Members</p>
+      <p style="font-size:16px;font-weight:500;margin:2px 0 0" id="stat-members">214</p>
+    </div>
+    <div style="background:var(--surface-1);border-radius:var(--radius);padding:8px;text-align:center">
+      <p style="font-size:12px;color:var(--text-secondary);margin:0">Helpers active</p>
+      <p style="font-size:16px;font-weight:500;margin:2px 0 0" id="stat-helpers">37</p>
+    </div>
+    <div style="background:var(--surface-1);border-radius:var(--radius);padding:8px;text-align:center">
+      <p style="font-size:12px;color:var(--text-secondary);margin:0">Raised today</p>
+      <p style="font-size:16px;font-weight:500;margin:2px 0 0" id="stat-raised">$640</p>
+    </div>
+  </div>
+  <button id="open-btn" style="width:100%;background:var(--fill-danger);color:var(--on-danger);border:none;border-radius:var(--radius);padding:10px;font-size:14px;font-weight:500;cursor:pointer">
+    <i class="ti ti-heart" style="font-size:16px;vertical-align:-3px;margin-right:6px" aria-hidden="true"></i>Send help to this hub
+  </button>
+  <p style="font-size:11px;color:var(--text-muted);text-align:center;margin:8px 0 0">Funds go straight into Accra's community pool</p>
+</div>
+
+<div id="modal-overlay" style="display:none;min-height:100vh;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;padding:1rem;position:absolute;inset:0">
+  <div style="background:var(--surface-2);border-radius:12px;padding:1.25rem;max-width:360px;width:100%;border:0.5px solid var(--border)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <p style="font-weight:500;font-size:15px;margin:0">Support Accra, Ghana</p>
+      <button id="close-btn" aria-label="Close" style="background:none;border:none;cursor:pointer;padding:4px"><i class="ti ti-x" style="font-size:18px;color:var(--text-secondary)" aria-hidden="true"></i></button>
+    </div>
+    <div id="pick-step">
+      <p style="font-size:13px;color:var(--text-secondary);margin:0 0 10px">Choose an amount</p>
+      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:12px" id="amount-grid">
+        <button class="amt-btn" data-amt="10">$10</button>
+        <button class="amt-btn" data-amt="25">$25</button>
+        <button class="amt-btn" data-amt="50">$50</button>
+        <button class="amt-btn" data-amt="custom">Other</button>
+      </div>
+      <input id="custom-amt" type="number" min="1" placeholder="Enter amount" style="display:none;width:100%;margin-bottom:12px">
+      <textarea id="msg" rows="2" placeholder="Add a message of support (optional)" style="width:100%;font-size:13px;padding:8px;border-radius:var(--radius);border:0.5px solid var(--border);background:var(--fill-field);color:var(--text-primary);resize:none;margin-bottom:14px"></textarea>
+      <button id="confirm-btn" style="width:100%;background:var(--fill-danger);color:var(--on-danger);border:none;border-radius:var(--radius);padding:10px;font-size:14px;font-weight:500;cursor:pointer">Confirm pledge</button>
+    </div>
+    <div id="done-step" style="display:none;text-align:center;padding:8px 0">
+      <i class="ti ti-check" style="font-size:28px;color:var(--text-success)" aria-hidden="true"></i>
+      <p style="font-weight:500;font-size:14px;margin:10px 0 4px" id="done-amt">Pledge sent</p>
+      <p style="font-size:12px;color:var(--text-secondary);margin:0 0 14px">This funds Accra's community pool and pays a helper directly.</p>
+      <button id="ok-btn" style="width:100%;border:0.5px solid var(--border-strong);background:none;border-radius:var(--radius);padding:9px;font-size:13px;cursor:pointer">Done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.amt-btn').forEach(b=>{
+  b.style.cssText='border:0.5px solid var(--border-strong);background:var(--surface-1);border-radius:var(--radius);padding:8px 0;font-size:13px;cursor:pointer';
+});
+let chosen=25;
+document.getElementById('open-btn').onclick=()=>{document.getElementById('modal-overlay').style.display='flex';};
+document.getElementById('close-btn').onclick=()=>{document.getElementById('modal-overlay').style.display='none';};
+document.getElementById('ok-btn').onclick=()=>{
+  document.getElementById('modal-overlay').style.display='none';
+  document.getElementById('pick-step').style.display='block';
+  document.getElementById('done-step').style.display='none';
+};
+document.getElementById('amount-grid').addEventListener('click',(e)=>{
+  const btn=e.target.closest('.amt-btn'); if(!btn) return;
+  document.querySelectorAll('.amt-btn').forEach(b=>b.style.borderColor='var(--border-strong)');
+  btn.style.borderColor='var(--text-danger)';
+  const custom=document.getElementById('custom-amt');
+  if(btn.dataset.amt==='custom'){ custom.style.display='block'; custom.focus(); chosen=null; }
+  else { custom.style.display='none'; chosen=parseInt(btn.dataset.amt); }
+});
+document.getElementById('confirm-btn').onclick=()=>{
+  const custom=document.getElementById('custom-amt');
+  const amt = chosen || parseInt(custom.value) || 25;
+  document.getElementById('pick-step').style.display='none';
+  document.getElementById('done-step').style.display='block';
+  document.getElementById('done-amt').textContent='$'+amt+' pledged to Accra';
+  const raised=document.getElementById('stat-raised');
+  raised.textContent='$'+(640+amt);
+};
+</script>

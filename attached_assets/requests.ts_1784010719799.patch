@@ -1,0 +1,27 @@
+--- a/artifacts/api-server/src/routes/requests.ts
++++ b/artifacts/api-server/src/routes/requests.ts
+@@ -2177,6 +2177,15 @@
+ // ── Admin: List pending hardship requests ─────────────────────────────────────
+ // GET /admin/hardship-requests
+ router.get("/admin/hardship-requests", requireAuth, requireAdmin(), adminLimiter, async (_req, res) => {
++  // FIX (data-loss audit, follow-up): requestsTable.requester_id has no FK
++  // constraint at all (nothing enforces it still points to a real user).
++  // A completed request's requester could be deleted without ever tripping
++  // the active-request block in the account-deletion route (that only
++  // checks ACTIVE_REQUEST_STATUSES), leaving requester_id orphaned. The old
++  // INNER JOIN then silently dropped that request from this admin queue —
++  // a request going missing from view, which is the exact failure mode
++  // this whole audit is meant to close. LEFT JOIN keeps the request visible
++  // with requester_name/email as null instead of hiding it entirely.
+   const rows = await db
+     .select({
+       id: requestsTable.id,
+@@ -2191,7 +2200,7 @@
+       requester_email: usersTable.email,
+     })
+     .from(requestsTable)
+-    .innerJoin(usersTable, eq(usersTable.id, requestsTable.requester_id))
++    .leftJoin(usersTable, eq(usersTable.id, requestsTable.requester_id))
+     .where(sql`${requestsTable.hardship_requested_at} IS NOT NULL AND ${requestsTable.pledge_status} NOT IN ('forgiven', 'written_off', 'repaid')`)
+     .orderBy(requestsTable.hardship_requested_at);
+ 

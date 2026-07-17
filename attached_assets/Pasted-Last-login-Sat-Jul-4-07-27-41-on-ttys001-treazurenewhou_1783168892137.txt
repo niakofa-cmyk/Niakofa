@@ -1,0 +1,78 @@
+Last login: Sat Jul  4 07:27:41 on ttys001
+treazurenewhouse8@Treazures-MacBook-Pro-2 ~ % cd "/Users/treazurenewhouse8/Library/Containers/com.apple.Notes.WidgetExtension/Data/Downloads/Niakofa-main 4" && pnpm install && DATABASE_URL="postgresql://postgres:REWpRxGTwjLQywMCGaROGHnCdyewqszr@ballast.proxy.rlwy.net:48530/railway" pnpm --filter @workspace/db run migrate 2>&1 | tee /tmp/migrate.log; echo "=== MIGRATE DONE ==="; DATABASE_URL="postgresql://postgres:REWpRxGTwjLQywMCGaROGHnCdyewqszr@ballast.proxy.rlwy.net:48530/railway" pnpm --filter @workspace/scripts run seed-test-accounts 2>&1 | tee /tmp/seed.log; echo "=== SEED DONE ==="
+Scope: all 9 workspace projects
+Lockfile is up to date, resolution step is skipped
+Packages: +845
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+   ╭─────────────────────────────────────────╮
+   │                                         │
+   │   Update available! 10.26.1 → 11.9.0.   │
+   │   Changelog: https://pnpm.io/v/11.9.0   │
+   │    To update, run: pnpm add -g pnpm     │
+   │                                         │
+   ╰─────────────────────────────────────────╯
+
+Progress: resolved 0, reused 833, downloaded 0, added 845, done
+. preinstall$ sh -c 'rm -f package-lock.json yarn.lock; case "$npm_config_use…
+└─ Done in 62ms
+Done in 17.5s using pnpm v10.26.1
+None of the selected packages has a "migrate" script
+=== MIGRATE DONE ===
+None of the selected packages has a "seed-test-accounts" script
+=== SEED DONE ===
+treazurenewhouse8@Treazures-MacBook-Pro-2 Niakofa-main 4 % cd "/Users/treazurenewhouse8/Library/Containers/com.apple.Notes.WidgetExtension/Data/Downloads/Niakofa-main 4"
+unzip -o ~/Downloads/niakofa-seed-final.zip -d .
+cat scripts/package.json | grep seed-test-accounts
+Archive:  /Users/treazurenewhouse8/Downloads/niakofa-seed-final.zip
+  inflating: ./scripts/package.json  
+  inflating: ./scripts/src/seed-test-accounts.ts  
+    "seed-test-accounts": "tsx ./src/seed-test-accounts.ts"
+treazurenewhouse8@Treazures-MacBook-Pro-2 Niakofa-main 4 % pnpm install
+DATABASE_URL="postgresql://postgres:REWpRxGTwjLQywMCGaROGHnCdyewqszr@ballast.proxy.rlwy.net:48530/railway" pnpm --filter @workspace/db run migrate 2>&1 | tee /tmp/migrate.log; echo "=== MIGRATE DONE ==="; DATABASE_URL="postgresql://postgres:REWpRxGTwjLQywMCGaROGHnCdyewqszr@ballast.proxy.rlwy.net:48530/railway" pnpm --filter @workspace/scripts run seed-test-accounts 2>&1 | tee /tmp/seed.log; echo "=== SEED DONE ==="
+Scope: all 9 workspace projects
+artifacts/api-server                     |  WARN  deprecated @types/bcryptjs@3.0.0
+artifacts/mockup-sandbox                 |  WARN  deprecated recharts@2.15.4
+ WARN  4 deprecated subdependencies found: glob@10.5.0, glob@7.2.3, inflight@1.0.6, scmp@2.1.0
+ WARN  Issues with peer dependencies found
+artifacts/api-server
+└─┬ rate-limit-redis 5.0.0
+  └── ✕ unmet peer express-rate-limit@">= 8.5.0": found 7.5.1
+
+artifacts/pay-it-forward
+└─┬ @stripe/react-stripe-js 2.9.0
+  ├── ✕ unmet peer react@"^16.8.0 || ^17.0.0 || ^18.0.0": found 19.1.0
+  ├── ✕ unmet peer react-dom@"^16.8.0 || ^17.0.0 || ^18.0.0": found 19.1.0
+  └── ✕ unmet peer @stripe/stripe-js@"^1.44.1 || ^2.0.0 || ^3.0.0 || ^4.0.0": found 7.9.0
+Packages: +2 -37
+++-------------------------------------
+Progress: resolved 869, reused 38, downloaded 0, added 2, done
+. preinstall$ sh -c 'rm -f package-lock.json yarn.lock; case "$npm_config_use…
+└─ Done in 41ms
+Done in 11.9s using pnpm v10.26.1
+None of the selected packages has a "migrate" script
+=== MIGRATE DONE ===
+
+> @workspace/scripts@0.0.0 seed-test-accounts /Users/treazurenewhouse8/Downloads/Niakofa-main 4/scripts
+> tsx ./src/seed-test-accounts.ts
+
+
+▶ seed-test-accounts — connecting to database…
+  ✔ created   admin  admin@niakofa.app  (id 2)
+  ✔ created   helper helper@niakofa.app  (id 3)
+  ✔ created   user   user@niakofa.app  (id 4)
+
+✅ All three test accounts are ready.
+
+  Role    Email                    Password
+  ──────  ───────────────────────  ─────────────────────
+  Admin   admin@niakofa.app         NiakofaAdmin2026!
+  Helper  helper@niakofa.app        NiakofaHelper2026!
+  User    user@niakofa.app           NiakofaUser2026!
+
+  ℹ  Admin account:  /admin panel, Nia kill-switch, all management tabs.
+  ℹ  Helper account: helper mode, dispatch, navigation, rating flows.
+  ℹ  User account:   standard requester flow end-to-end.
+
+=== SEED DONE ===
+treazurenewhouse8@Treazures-MacBook-Pro-2 Niakofa-main 4 % 

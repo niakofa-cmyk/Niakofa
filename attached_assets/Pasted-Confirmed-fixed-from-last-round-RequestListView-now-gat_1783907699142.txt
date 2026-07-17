@@ -1,0 +1,20 @@
+Confirmed fixed from last round
+
+RequestListView now gates claiming on Helper Mode — RequestCard's Accept button is disabled={isClaiming || !helperModeActive}, and the list shows "Switch to Helper Mode in the top bar to claim requests" when browsing as a non-helper, matching the WebGL-fallback list's pattern.
+The anonymous-tap silent no-op is fixed at the source — handleClaim now does if (!currentUser) { setLocation("/login"); return; }, and the fallback list's own redundant guard was simplified away since it's no longer needed there.
+Search bar now has click-outside + Escape to dismiss, plus a "use my location" button inside the open bar to snap back from a searched address without hunting for the separate Recenter control.
+The two hand-rolled control rows got consolidated into MapControlsPanel — genuinely good move: Filters and Layers are now real Vaul Drawer sheets (the same primitive used elsewhere in the app) instead of custom popovers, and the whole thing moved out of the 1400-line map screen into its own reusable, documented component.
+New long-press gesture: touch-and-hold on the live map (or the "Request Help Here" pill) posts a request pre-pinned to wherever you pressed/are looking, instead of always defaulting to raw GPS — and request-new.tsx correctly prioritizes that URL-provided pin over GPS with a proper !pinLocation guard, so a GPS fix arriving after the fact can't silently override the deliberate pin.
+FAB positioning bug fixed — it was sitting at bottom-64, which turned out to be entirely underneath the new app-wide BottomNav (fixed, z-50, opaque). Good catch; the FAB is also now correctly scoped to only List/fallback view, since the live map view has "Request Help Here" doing the same job without duplicating a button.
+
+One real thing to fix now: the z-index comments are backwards
+BottomSheet.tsx, BestMatchCard.tsx, and MapControlsPanel.tsx all have comments describing the stacking order, and they don't match the actual code:
+
+Comments say BottomSheet is z-30 and BestMatchCard is z-20.
+The actual values are the reverse: BottomSheet.tsx line 97 is z-20, BestMatchCard.tsx line 85 is z-30.
+
+Functionally nothing's broken — MapControlsPanel is z-40, above both either way — but the documentation is actively wrong about the relationship between the other two, and a future change that adds something at, say, z-25 "to sit between BottomSheet and BestMatchCard" would land in the wrong place if someone trusts these comments instead of the code. Worth a quick pass to correct the three comment blocks to match reality.
+Smaller things worth a look
+
+The long-press handler doesn't call e.preventDefault() on the Mapbox contextmenu event — Mapbox's canvas typically has touch-action: none already, which should suppress the native OS long-press menu, but worth confirming on an actual Android/iOS device since a stray native context menu popping up alongside your own navigation would be a jarring double-trigger.
+MapControlsPanel's useEffect cleanup calls onFiltersSheetChange(false) / onLayersSheetChange(false) on unmount — good instinct, but since those are just setState calls in the parent (map.tsx), and map.tsx itself is unmounting at the same time in the case that matters (leaving the Map screen), this cleanup is mostly inert for that case and only actually matters if MapControlsPanel alone unmounts while map.tsx stays mounted (e.g. switching to List view or mapError appearing) — which is exactly right, so this is fine, just noting it's a narrower safety net than the comment implies.

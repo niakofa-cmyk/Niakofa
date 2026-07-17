@@ -1,0 +1,32 @@
+A live bug: push_notification_queue doesn't exist, and something polls it every 5 minutes
+Every ~5 minutes since this deployment started, a worker runs SELECT id, user_id, title, body, data FROM push_notification_queue WHERE sent_at IS NULL ORDER BY created_at ASC LIMIT $1 and Postgres throws relation "push_notification_queue" does not exist. This has been failing continuously for hours in this log. Let me check the codebase for what's supposed to create that table.
+
+
+Why this didn't break everything
+Three of those six tables (nia_conversations, nia_memories, system_settings) are also defined in the separate, properly-running Drizzle migration pipeline (lib/db/migrations/) — so Nia's actual chat history, memory, and the nia_enabled killswitch are all fine. That's why every earlier round of this audit found those working correctly.
+But three tables exist only in the dead migrate.sql: nia_knowledge, push_notification_queue, and nia_cost_log. Since nothing ever creates them:
+* push_notification_queue — confirmed broken by your log. Nia's proactive pushes (ambient-presence-worker, general-checkin-worker, crisis-followup-worker) have been silently failing to queue since deploy.
+* nia_knowledge — very likely broken the same way. This is what continuous-learning-worker writes to — the "Nia learns about the world and never forgets" feature has probably been persisting nothing.
+* nia_cost_log — likely broken too. Anthropic API cost tracking has probably been recording nothing this whole time.
+None of these are fatal — core chat doesn't touch any of the three — but three real features have likely been silently inert since launch.
+The fix
+I traced the exact boot sequence in index.ts and wrote a patch that calls runMigrations() once, before the server starts accepting traffic, wrapped in try/catch so a migration hiccup logs loudly instead of crash-looping the whole service (since core chat doesn't depend on these 3 tables). Tested against your latest zip — applies cleanly, is idempotent, and passes an esbuild syntax check.
+
+
+Why this didn't break everything
+Three of those six tables (nia_conversations, nia_memories, system_settings) are also defined in the separate, properly-running Drizzle migration pipeline (lib/db/migrations/) — so Nia's actual chat history, memory, and the nia_enabled killswitch are all fine. That's why every earlier round of this audit found those working correctly.
+But three tables exist only in the dead migrate.sql: nia_knowledge, push_notification_queue, and nia_cost_log. Since nothing ever creates them:
+* push_notification_queue — confirmed broken by your log. Nia's proactive pushes (ambient-presence-worker, general-checkin-worker, crisis-followup-worker) have been silently failing to queue since deploy.
+* nia_knowledge — very likely broken the same way. This is what continuous-learning-worker writes to — the "Nia learns about the world and never forgets" feature has probably been persisting nothing.
+* nia_cost_log — likely broken too. Anthropic API cost tracking has probably been recording nothing this whole time.
+None of these are fatal — core chat doesn't touch any of the three — but three real features have likely been silently inert since launch.
+The fix
+I traced the exact boot sequence in index.ts and wrote a patch that calls runMigrations() once, before the server starts accepting traffic, wrapped in try/catch so a migration hiccup logs loudly instead of crash-looping the whole service (since core chat doesn't depend on these 3 tables). Tested against your latest zip — applies cleanly, is idempotent, and passes an esbuild syntax check.
+
+
+
+* Wage-floor-across-all-payment-types claim: I ran a fresh targeted search against requests.ts for the guaranteed-minimum logic and got zero matches this pass — I still cannot confirm in code that the floor is applied uniformly across immediate/pool/pledge payment types. Treat this as still unverified, not confirmed fixed, despite the commit message.
+* Tenure tiers (Neighbor/Pillar/Anchor/Elder): another zero-match search — still design-only in ROADMAP.md, no implementation found. The new rating/trust-score endpoint is a plausible on-ramp to this, but the tier multiplier logic itself doesn't exist yet.
+* New category sensitive-gating: found the team's own internal checklist doc (niakofa-category-expansion.md) that spells out every place a new category must be registered, including a conditional step in trust-tiers/src/index.ts for sensitive categories [niakofa-cmyk/Niakofa/artifacts/pay-it-forward/src/pages/request-new.tsx]. I could not confirm whether the newest categories added in commit 9d0dede were actually run through that checklist's sensitive-category step — worth a direct check against that file.
+* 
+Fix, Verifyall Nia AI wiring end to end.

@@ -1,0 +1,68 @@
+Proceed to Build, improve and enhance the svg system beyond rive quality animation complexity with state-machine=style data attribute gating, so the Visual bar far exceeds beyond what a rive file would deliver. Review your work and Verify That you Finish and checkpoint this edition of improvements before your usage rate or session percentage runs out! Verify you finish before your session time runs out!Read Verify each and every issue. Ensure you address each and every issue. And Fix, improve and enhance the code if you can. Fix, Improve and enhance and Close each and every and all remaining Gaps end to end, and issues. Fix, Improve and enhance, address all remaining Bugs end to end. Push all improvements and enhancements to repo and verify landing. Verify and ensure that you push all improvements and enhancements to repo. Push all improvements and enhancements to repo and verify landing. Verify and ensure that you push all improvements and enhancements to repo. Proceed to Verify Gaps vs. the doc (not yet built): Complete end to end the remaining Sankofa Bird vision from the design docs- rive state machine + photorealisitc feather like rig in improved and enhanced Css form! Push all Sankofa Bird improvmets to the github repo and confirm landing. Review your work and Verify That you Finish and checkpoint this edition of improvements before your usage rate or session percentage runs out! Verify you finish before your session time runs out!Read Verify each and every issue. Ensure you address each and every issue. And Fix, improve and enhance the code if you can. Fix, Improve and enhance and Close each and every and all remaining Gaps end to end, and issues. Fix, Improve and enhance, address all remaining Bugs end to end. Push all improvements and enhancements to repo and verify landing. Verify and ensure that you push all improvements and enhancements to repo. Push all improvements and enhancements to repo and verify landing. Verify and ensure that you push all improvements and enhancements to repo. Push and independently confirmed via gitPull that GitHub's main now matches local main exactly. https://github.com/niakofa-cmyk/Niakofa GitHub is confirmed — origin/main
+
+Four real bugs found: --angle-var missing @property declaration, and 5 [data-zoom="high"] rules didn't get the street duplicate. Let me find and fix both simultaneously:
+Bring the sankofa bird to life with a real rive like animation file, And make the bird test visual harness runnable with full backend implementation, Confirm the sankofa bird renders correctly on iOS safari.
+
+I now have a complete audit. The key gaps are:
+1. data-upcoming-turn body/wing anticipation missing (only head turns)
+2. Helping state needs low-zoom rules + flying compound enhancements
+3. Speed-correlated crown sway missing
+4. Gliding thermal lift animation not connected to body
+5. Eye micro-saccades on notification
+6. Per-feather ambient micro-oscillations (each primary independent)
+7. Pre-bank leading-edge feather compression
+8. Shadow state coloring (gold when helping, teal when celebrating)
+9. Legs duplicate keyframe bug (sankofa-legs-dangle defined twice)
+10. Upcoming-turn wing pre-extension missing
+
+Good, the edits are being applied. Let me continue with the large block of beyond-Rive enhancements. I need to add them before the closing </style> tag. Let me find the exact text and add all the remaining enhancements in parallel.
+I need to:
+1. Add speed-correlated crown sway after the crown section
+2. Add eye iris micro-saccades on notification
+3. Add shadow gold/teal state coloring
+4. Add per-feather ambient micro-oscillations (idle at street zoom)
+5. Add helping+flying compound gold cascade
+6. Add helping at low zoom
+7. Add egg phosphorescence on beak at street zoom
+8. Add iris saccade keyframe and new compound state rules
+9. Add @property declarations for the new CSS variables
+All of these go before the closing </style> tag.
+
+Add upcoming turn + thermal - lift states to the / bird test page so new animations can be verified visually.
+
+
+Now I have the full picture. I need to add demo components and page sections for: upcoming-turn full anticipation (body+wing), thermal glide, per-feather micro-oscillations, speed-correlated crown sway, shadow state coloring, and iris saccades. Let me build it all in one edit:
+
+
+2 actions
+Now add the new sections into the page JSX — inserting after the existing "Anticipatory & Social" section and updating the legend:
+
+
+2 actions
+Now update the legend to cover all the new states, then verify:
+
+
+
+Now I have full context. I'll implement all 10 gap fixes and enhancements in parallel — fixing the duplicate legs keyframe and adding all the beyond-Rive CSS enhancements before the closing </style> tag.
+
+
+2 actions
+Now I have everything. Two surgical edits:
+1. Remove the duplicate @keyframes sankofa-legs-dangle (the simple version at line 2296)
+2. Add all 10 gap enhancements before </style>
+
+
+2 actions
+Now add all the enhancement CSS before the closing </style> tag:
+
+
+2 actions
+Good. Let me start the workflows to verify the build, and read the follow-up-tasks skill in parallel:
+
+
+
+
+
+
+15 actions
+The bird-test page renders correctly with all states visible and no build errors. Now let me propose follow-up tasks and mark the task complete:

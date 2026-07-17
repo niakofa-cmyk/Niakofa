@@ -1,0 +1,116 @@
+
+Final Improved Code (Apply These)
+1. AppContext.tsx (Global Cache + Refresh)
+tsx
+
+// artifacts/pay-it-forward/src/lib/AppContext.tsx
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+
+const AppContext = createContext<any>(null);
+
+export const AppProvider = ({ children }: { children: ReactNode }) => {
+  const [requests, setRequests] = useState<any[]>([]);
+  const [circles, setCircles] = useState<any[]>([]); // Audio Circles
+  const [civics, setCivics] = useState<any[]>([]);
+
+  const refreshAll = async () => {
+    try {
+      const token = localStorage.getItem('niakofa_token');
+      const headers = { Authorization: `Bearer ${token}` };
+
+      const [reqRes, circleRes, civicRes] = await Promise.all([
+        fetch('/api/requests?includeAll=true', { headers }),
+        fetch('/api/audio-circles', { headers }),
+        fetch('/api/civic/resources', { headers })
+      ]);
+
+      if (reqRes.ok) setRequests(await reqRes.json());
+      if (circleRes.ok) setCircles(await circleRes.json());
+      if (civicRes.ok) setCivics(await civicRes.json());
+
+      localStorage.setItem('niakofa_cache', JSON.stringify({ requests, circles, civics }));
+    } catch (e) {
+      const cached = localStorage.getItem('niakofa_cache');
+      if (cached) {
+        const data = JSON.parse(cached);
+        setRequests(data.requests || []);
+        setCircles(data.circles || []);
+        setCivics(data.civics || []);
+      }
+    }
+  };
+
+  useEffect(() => {
+    refreshAll();
+    const onFocus = () => refreshAll();
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, []);
+
+  return <AppContext.Provider value={{ requests, circles, civics, refreshAll }}>{children}</AppContext.Provider>;
+};
+
+export const useAppContext = () => useContext(AppContext);
+
+
+2. AudioCircles.tsx (Circles No Longer Vanish)
+tsx
+
+// artifacts/pay-it-forward/src/components/AudioCircles.tsx
+import React, { useEffect } from 'react';
+import { useAppContext } from '@/lib/AppContext';
+
+export default function AudioCircles() {
+  const { circles, refreshAll } = useAppContext();
+
+  useEffect(() => {
+    refreshAll(); // Load + keep alive
+    const interval = setInterval(refreshAll, 15000);
+    return () => clearInterval(interval);
+  }, [refreshAll]);
+
+  return (
+    <div className="p-4">
+      {circles.length === 0 ? <p>No active circles</p> : circles.map(c => (
+        <div key={c.id} className="mb-2 p-3 bg-white rounded shadow">
+          {c.name} — {c.participants} participants
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+3. MapView.tsx (Mobile + Persistent)
+tsx
+
+// artifacts/pay-it-forward/src/components/MapView.tsx
+import React, { useEffect } from 'react';
+import Map from 'react-map-gl';
+import { useAppContext } from '@/lib/AppContext';
+
+export default function MapView() {
+  const { requests, refreshAll } = useAppContext();
+
+  useEffect(() => {
+    refreshAll();
+  }, [refreshAll]);
+
+  return (
+    <div className="relative h-full" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <Map
+        mapStyle="mapbox://styles/mapbox/streets-v12"
+        mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
+        onLoad={refreshAll}
+      >
+        {/* Existing markers from `requests` */}
+      </Map>
+    </div>
+  );
+}
+
+

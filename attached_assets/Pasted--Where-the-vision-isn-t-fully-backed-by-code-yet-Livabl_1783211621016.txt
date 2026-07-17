@@ -1,0 +1,18 @@
+
+Where the vision isn't fully backed by code yet
+"Livable wage" is the biggest gap. The $5-per-task guaranteed minimum floor exists to protect against pool depletion — it is not a wage model. There's no per-hour floor, no tenure-based earnings boost, and no dashboard showing a helper "you earned $X today just for helping," which is the emotional core of your pitch. The roadmap has a fully-specced tenure-tier design (Neighbor → Pillar → Anchor → Elder, scaling the floor by helper tenure) ready to implement but not yet shipped — see ROADMAP.md, section 2.
+Pay-it-forward money doesn't fully become real, withdrawable money. Helper earnings land in a benevolence_wallet integer column in Postgres. I searched the entire codebase for a stripe.transfers.create() call tied to pool-fronted or pay-it-forward earnings and found zero — every real bank transfer (transfers.create) is hard-gated to payment_type === "immediate" only. So "pay now" helpers can cash out to a bank account; pay-it-forward and pool-fronted helpers accumulate a wallet balance with no automatic payout path yet.
+"Legal task" scope is narrower than stated. The category taxonomy was recently expanded (legal_aid, financial_coaching, job_assistance, language_help, mental_health_peer, technology_help were all added — a real, shipped improvement), but there's no legal-task-specific liability/licensing logic, and background checks (background_check_status) are a manual/stub field, not wired to an actual Checkr-style verification provider — worth prioritizing given childcare/senior_care are live categories.
+
+
+New bug I found this round — real, and it'll break in production
+The same session added an admin "Civic" tab to review civic-portal requests across all counties. The backend endpoint (GET /admin/civic/portal/requests) is real and correct. But the frontend component that's supposed to render it, AdminCivicRequestsTab, is referenced in the JSX and never defined anywhere in the file. Clicking that tab would throw AdminCivicRequestsTab is not defined — or fail the TypeScript build outright, depending on your pipeline. This is the exact same "wired the pipes on both ends, forgot to build the middle" pattern as the earlier /checkin bug.
+I went ahead and wrote the missing component (matching your existing OrgsTab style: status-filter pills, sponsor name/county/state, category/urgency/hours) and wired it to the real endpoint. It's in the zip below, dropped in right before CrisisModeSection in admin.tsx.
+
+Fix Still open (from last time, unchanged)
+* Tenure-based wage tiers (Neighbor/Pillar/Anchor/Elder) — designed in ROADMAP.md, not implemented
+* Helper reliability scoring (no-shows, on-time rate)
+* SMS onboarding for people without the app
+* Invoicing/NET-30 payment type for orgs that can't pay by card
+* Duplicate check-in worker decision still undocumented
+* Auth/authz and full frontend wiring still haven't had a dedicated pass
