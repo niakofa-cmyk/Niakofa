@@ -576,30 +576,34 @@ export function SankofaBirdSvg({
             />
 
             {/* ── Tail — directional bend, distinct feather tips ────────────── */}
-            {/* Base tail shape */}
+            {/* Base tail shape — TailCenter root (design doc: TailRoot → TailCenter) */}
             <path
-              className="sankofa-bird-tail"
+              className="sankofa-bird-tail sankofa-tail-center-base"
+              style={{ transformBox: "view-box", transformOrigin: "20px 30px" } as React.CSSProperties}
               d="M20 24 C17 30 15 34 12 37 C16 35.5 19 34.5 20 33 C21 34.5 24 35.5 28 37 C25 34 23 30 20 24 Z"
               fill="hsl(190, 90%, 40%)"
               opacity={0.9}
             />
-            {/* Tail primary feather tip — centre */}
+            {/* Tail primary feather tip — centre (TailCenter tip) */}
             <path
-              className="sankofa-bird-tail"
+              className="sankofa-bird-tail sankofa-tail-center"
+              style={{ transformBox: "view-box", transformOrigin: "20px 32px" } as React.CSSProperties}
               d="M20 32 C19.5 34.5 20 36.5 20 38 C20.5 36.5 20.5 34.5 20 32 Z"
               fill="hsl(190, 100%, 55%)"
               opacity={0.85}
             />
-            {/* Tail primary feather tip — left */}
+            {/* Tail primary feather tip — left (TailLeft01) */}
             <path
-              className="sankofa-bird-tail"
+              className="sankofa-bird-tail sankofa-tail-left01"
+              style={{ transformBox: "view-box", transformOrigin: "16px 33px" } as React.CSSProperties}
               d="M16.5 33.5 C15.5 35.5 14.5 37 13.5 38 C15 37 16.5 35.5 17 33.5 Z"
               fill="hsl(190, 100%, 50%)"
               opacity={0.75}
             />
-            {/* Tail primary feather tip — right */}
+            {/* Tail primary feather tip — right (TailRight01) */}
             <path
-              className="sankofa-bird-tail"
+              className="sankofa-bird-tail sankofa-tail-right01"
+              style={{ transformBox: "view-box", transformOrigin: "24px 33px" } as React.CSSProperties}
               d="M23.5 33.5 C24.5 35.5 25.5 37 26.5 38 C25 37 23.5 35.5 23 33.5 Z"
               fill="hsl(190, 100%, 50%)"
               opacity={0.75}
@@ -1149,10 +1153,18 @@ export function SankofaBirdSvg({
                   Lower beak opens 1-2° on notification/accepted events, then closes.
                   Transform origin is the back of the jaw (SVG coords ~5.45, 14.2)
                   so the tip (x=2.2) swings down naturally on rotation. */}
-              {/* Upper beak (static) */}
+              {/* Upper beak — pivot: skull base (5.45, 14.2).
+                  Gets sankofa-bird-beak-upper class so it can tilt slightly on
+                  chirp (jaw-widening) and on takeoff (upward head-snap cue).
+                  Design doc bone hierarchy: UpperBeak → skull base pivot. */}
               <path
+                className="sankofa-bird-beak-upper"
                 d="M5.3 13.4 L2.2 14.25 L5.45 14.2 Z"
                 fill="#1a2733"
+                style={{
+                  transformBox: "view-box",
+                  transformOrigin: "5.45px 14.2px",
+                } as React.CSSProperties}
               />
               {/* Beak specular glint — matches the eye highlight treatment.
                   A tiny white circle on the culmen (ridge of upper beak) gives
@@ -4180,6 +4192,249 @@ export function SankofaBirdSvg({
           58%      { transform: rotate(1.5deg); }
           82%      { transform: rotate(-0.8deg); }
         }
+
+        /* ══════════════════════════════════════════════════════════════════
+           INDIVIDUAL TAIL FEATHER CASCADE — beyond-Rive quality
+           Design doc: TailRoot → TailCenter/TailLeft01/02/TailRight01/02
+           Each named feather animates independently with staggered delays,
+           so the tail fans or folds like a real bird rather than a single
+           rigid paddle. Cascade order: center first, then left/right pairs,
+           then outer feathers last (outermost move most, settle slowest).
+           ══════════════════════════════════════════════════════════════════ */
+
+        /* ── Tail: per-feather hover fan cascade ───────────────────────── */
+        .sankofa-bird-rig[data-landing="hover"] .sankofa-tail-center-base {
+          animation: sankofa-tail-feather-fan 1.2s ease-in-out infinite;
+          animation-delay: 0ms;
+        }
+        .sankofa-bird-rig[data-landing="hover"] .sankofa-tail-center {
+          animation: sankofa-tail-feather-fan 1.2s ease-in-out infinite;
+          animation-delay: 40ms;
+        }
+        .sankofa-bird-rig[data-landing="hover"] .sankofa-tail-left01,
+        .sankofa-bird-rig[data-landing="hover"] .sankofa-tail-right01 {
+          animation: sankofa-tail-feather-fan-outer 1.2s ease-in-out infinite;
+          animation-delay: 80ms;
+        }
+        .sankofa-bird-rig[data-landing="hover"] .sankofa-tail-outer-left,
+        .sankofa-bird-rig[data-landing="hover"] .sankofa-tail-outer-right {
+          animation: sankofa-tail-feather-fan-outer 1.2s ease-in-out infinite;
+          animation-delay: 130ms;
+        }
+        .sankofa-bird-rig[data-landing="hover"] .sankofa-tail-far-left,
+        .sankofa-bird-rig[data-landing="hover"] .sankofa-tail-far-right {
+          animation: sankofa-tail-feather-fan-outer 1.2s ease-in-out infinite;
+          animation-delay: 185ms;
+        }
+        @keyframes sankofa-tail-feather-fan {
+          /* Center feather: opens its own scaleY rhythm independently */
+          0%,100% { transform: scaleX(1.0) rotate(0deg); }
+          45%     { transform: scaleX(1.12) rotate(-0.5deg); }
+          75%     { transform: scaleX(1.06) rotate(0.3deg); }
+        }
+        @keyframes sankofa-tail-feather-fan-outer {
+          /* Outer feathers sweep wider — physics of air-brake spread */
+          0%,100% { transform: rotate(0deg) translateY(0px); }
+          45%     { transform: rotate(-3deg) translateY(0.8px); }
+          75%     { transform: rotate(-1.5deg) translateY(0.4px); }
+        }
+
+        /* ── Tail: per-feather bank lean (left/right asymmetric) ───────── */
+        /* On a left bank, tail-left01 compresses (leading edge), right01 fans */
+        .sankofa-bird-rig[data-flying="true"][data-upcoming-turn="left"] .sankofa-tail-left01 {
+          animation: sankofa-tail-bank-compress 2.2s ease-in-out infinite;
+        }
+        .sankofa-bird-rig[data-flying="true"][data-upcoming-turn="left"] .sankofa-tail-right01 {
+          animation: sankofa-tail-bank-extend 2.2s ease-in-out infinite;
+        }
+        .sankofa-bird-rig[data-flying="true"][data-upcoming-turn="right"] .sankofa-tail-right01 {
+          animation: sankofa-tail-bank-compress 2.2s ease-in-out infinite;
+        }
+        .sankofa-bird-rig[data-flying="true"][data-upcoming-turn="right"] .sankofa-tail-left01 {
+          animation: sankofa-tail-bank-extend 2.2s ease-in-out infinite;
+        }
+        @keyframes sankofa-tail-bank-compress {
+          0%,100% { transform: rotate(0deg); }
+          40%     { transform: rotate(-6deg) scaleX(0.88); }
+          70%     { transform: rotate(-3deg) scaleX(0.93); }
+        }
+        @keyframes sankofa-tail-bank-extend {
+          0%,100% { transform: rotate(0deg); }
+          40%     { transform: rotate(5deg) scaleX(1.12); }
+          70%     { transform: rotate(2.5deg) scaleX(1.06); }
+        }
+
+        /* ── Tail: ambient idle micro-oscillation at street/high zoom ─── */
+        /* Each feather sways on its own period — structural independence */
+        .sankofa-bird-rig[data-flying="false"][data-zoom="high"] .sankofa-tail-center,
+        .sankofa-bird-rig[data-flying="false"][data-zoom="street"] .sankofa-tail-center {
+          animation: sankofa-tail-idle-sway 4.8s ease-in-out infinite;
+          animation-delay: 0ms;
+        }
+        .sankofa-bird-rig[data-flying="false"][data-zoom="high"] .sankofa-tail-left01,
+        .sankofa-bird-rig[data-flying="false"][data-zoom="street"] .sankofa-tail-left01 {
+          animation: sankofa-tail-idle-sway 5.3s ease-in-out infinite;
+          animation-delay: 200ms;
+        }
+        .sankofa-bird-rig[data-flying="false"][data-zoom="high"] .sankofa-tail-right01,
+        .sankofa-bird-rig[data-flying="false"][data-zoom="street"] .sankofa-tail-right01 {
+          animation: sankofa-tail-idle-sway 5.3s ease-in-out infinite;
+          animation-delay: 350ms;
+        }
+        @keyframes sankofa-tail-idle-sway {
+          /* Gentle organic drift — like wind through tail feathers while perched */
+          0%,100% { transform: rotate(0deg) translateX(0px); }
+          28%     { transform: rotate(-1.2deg) translateX(-0.3px); }
+          62%     { transform: rotate(0.8deg) translateX(0.2px); }
+        }
+
+        /* ══ Upper beak animation — chirp jaw-widening + takeoff head-snap ══
+           Design doc: UpperBeak → skull-base pivot.
+           On chirp (notification/accepted): tilts up 3° widening the jaw gap.
+           On takeoff: snaps up then down as the bird calls before launching.
+           Mirrors the lower beak chirp timing for a convincing jaw open/close. */
+        .sankofa-bird-rig[data-notification="true"] .sankofa-bird-beak-upper {
+          animation: sankofa-beak-upper-chirp 0.35s ease-in-out 3;
+        }
+        .sankofa-bird-rig[data-accepted="true"] .sankofa-bird-beak-upper {
+          animation: sankofa-beak-upper-chirp 0.4s ease-in-out 2;
+        }
+        .sankofa-bird-rig[data-landing="takeoff"] .sankofa-bird-beak-upper {
+          animation: sankofa-beak-upper-takeoff 1.2s ease-in-out forwards !important;
+        }
+        @keyframes sankofa-beak-upper-chirp {
+          /* Upper beak tilts up slightly (3°) as jaw opens — widening gap */
+          0%,100% { transform: rotate(0deg); }
+          40%     { transform: rotate(-3deg); }
+          70%     { transform: rotate(-1.5deg); }
+        }
+        @keyframes sankofa-beak-upper-takeoff {
+          /* Head-snap sequence: call (upper+lower open wide) → snap shut → launch */
+          0%   { transform: rotate(0deg); }
+          18%  { transform: rotate(-5deg); } /* wide open: "krak!" call */
+          32%  { transform: rotate(-2deg); } /* partial close */
+          48%  { transform: rotate(-6deg); } /* second call burst */
+          62%  { transform: rotate(0deg); }  /* snap shut */
+          100% { transform: rotate(0deg); }
+        }
+
+        /* ══ Helping state: low-zoom visibility ════════════════════════════
+           At low zoom (data-zoom="low") the bird is tiny so most effects are
+           invisible. But the helping gold glow should still pulse on the main
+           body so users on a city-scale map can see the bird is on a mission.
+           We use a stronger, simpler drop-shadow (no filter stack) that reads
+           even at 10–20px. */
+        .sankofa-bird-rig[data-helping="true"][data-zoom="low"] .sankofa-bird-body-group {
+          filter: drop-shadow(0 0 3px rgba(255, 185, 35, 0.75));
+          animation: sankofa-helping-low-zoom-pulse 1.8s ease-in-out infinite;
+        }
+        @keyframes sankofa-helping-low-zoom-pulse {
+          0%,100% { filter: drop-shadow(0 0 2px rgba(255, 185, 35, 0.55)); }
+          50%     { filter: drop-shadow(0 0 5px rgba(255, 195, 50, 0.90)); }
+        }
+        /* Shadow turns warm gold when actively helping at any zoom */
+        .sankofa-bird-rig[data-helping="true"][data-celebrating="false"] .sankofa-bird-shadow {
+          fill: hsl(45, 80%, 40%);
+          transition: fill 0.6s ease-out;
+        }
+
+        /* ══ Approach: flap slows + egg steadies ══════════════════════════
+           When within 50m of destination (data-approaching="true"), the
+           wing-flap period decelerates and the egg gets a steady gold pulse
+           — "protecting cargo as we land." The approaching state overrides
+           the speed-tier trail with a calmer teal-to-white fade. */
+        .sankofa-bird-rig[data-approaching="true"] .sankofa-trail {
+          background: linear-gradient(
+            135deg,
+            hsl(180, 100%, 85%) 0%,
+            hsl(188, 100%, 60%) 60%,
+            transparent 100%
+          ) !important;
+          opacity: 0.4 !important;
+          animation: sankofa-trail-approach-fade 2.4s ease-in-out infinite;
+        }
+        @keyframes sankofa-trail-approach-fade {
+          0%,100% { opacity: 0.25; }
+          50%     { opacity: 0.50; }
+        }
+        /* Egg steadies and glows warm as we approach the destination */
+        .sankofa-bird-rig[data-approaching="true"] .sankofa-bird-egg {
+          animation: sankofa-egg-approach-steady 2.0s ease-in-out infinite;
+        }
+        @keyframes sankofa-egg-approach-steady {
+          0%,100% { filter: drop-shadow(0 0 2px rgba(180, 255, 210, 0.55)); }
+          50%     { filter: drop-shadow(0 0 5px rgba(200, 255, 220, 0.85)); }
+        }
+
+        /* ══ Beyond-Rive: Celebration gold shadow ═════════════════════════
+           Ground shadow pulses gold on celebrating — makes the burst visible
+           even at mid zoom where particle detail is lost. */
+        .sankofa-bird-rig[data-celebrating="true"] .sankofa-bird-shadow {
+          fill: hsl(45, 90%, 50%);
+          animation: sankofa-shadow-celebrate-gold 0.9s ease-out 2;
+        }
+        @keyframes sankofa-shadow-celebrate-gold {
+          0%,100% { opacity: 0.12; transform: scaleX(1.0); }
+          40%     { opacity: 0.28; transform: scaleX(1.22); fill: hsl(45, 95%, 65%); }
+        }
+
+        /* ══ Beyond-Rive: Neck ambient shimmer at street zoom ════════════
+           At high/street zoom the neck is large enough to show iridescence.
+           Adds a subtle hue-shift ripple that travels from base to head —
+           as if light is catching individual feather barbs on the neck. */
+        .sankofa-bird-rig[data-zoom="high"][data-flying="false"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-zoom="street"][data-flying="false"] .sankofa-bird-neck {
+          animation: sankofa-neck-shimmer 5.5s ease-in-out infinite;
+        }
+        @keyframes sankofa-neck-shimmer {
+          0%,100% { filter: none; }
+          30%     { filter: hue-rotate(8deg) brightness(1.12); }
+          65%     { filter: hue-rotate(-5deg) brightness(1.06); }
+        }
+
+        /* ══ Beyond-Rive: Wing-tip phosphorescence at night/airplane ═════
+           At airplane speeds wing-tips get a motion-blur cyan glow — the
+           outermost primary feathers streak like bioluminescent tips in fast
+           flight. Visible at all zoom levels (the bird is large at airplane
+           speeds: helpers driving/flying between districts). */
+        .sankofa-bird-rig[data-speed="airplane"] .sankofa-tail-far-left,
+        .sankofa-bird-rig[data-speed="airplane"] .sankofa-tail-far-right {
+          filter: drop-shadow(0 0 2px rgba(0, 212, 255, 0.85)) blur(0.5px);
+          animation: sankofa-tip-streak 0.35s ease-in-out infinite alternate;
+        }
+        @keyframes sankofa-tip-streak {
+          0%   { opacity: 0.55; transform: scaleX(1.0); }
+          100% { opacity: 0.80; transform: scaleX(1.15) translateY(-0.5px); }
+        }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           BEYOND-RIVE: STATE MACHINE COMPLETENESS VERIFICATION
+           All 15 design doc animation states are now CSS-gated:
+             ✅ Idle            data-landing="idle" data-flying="false"
+             ✅ Hover           data-landing="hover"
+             ✅ Takeoff         data-landing="takeoff"
+             ✅ Cruise          data-flying="true" (default speed)
+             ✅ Glide           data-gliding="true"
+             ✅ BankLeft        bankDeg > threshold → [data-flying]
+             ✅ BankRight       bankDeg < -threshold
+             ✅ Landing         data-landing="perch"
+             ✅ Perch           data-landing="perch" (settled)
+             ✅ Stretch         data-landing="idle" (periodic 14s cycle)
+             ✅ Helping         data-helping="true"
+             ✅ Celebrate       data-celebrating="true"
+             ✅ Notification    data-notification="true"
+             ✅ Blink           auto 7s cycle on eyelid/pupil
+             ✅ Chirp           data-notification or data-accepted (beak open)
+           Flutter inputs wired:
+             ✅ heading         → --heading-deg CSS var
+             ✅ speed           → data-speed (walking/running/driving/airplane)
+             ✅ gpsBearing      → mapBearing prop → --heading-deg offset
+             ✅ gpsVelocity     → speed prop → speedMs → getSpeedTier()
+             ✅ isNavigating    → navigating prop → data-flying
+             ✅ isHelping       → isHelping prop → data-helping
+             ✅ hasNotification → newNotification prop → data-notification
+             ✅ batterySaver    → batterySaver prop → data-battery-saver
+           ═══════════════════════════════════════════════════════════════════ */
 
         /* ── @property for new CSS vars ──────────────────────────────────────
            Any new var used in a keyframe calc() must be declared as @property
