@@ -52,3 +52,23 @@ CSS `transition: transform 0.35s ease-out` on scapular elements at high/street w
 - Chirp rings are inside `<g className="sankofa-bird-head">` group — they rotate/translate with the head, which is the correct anatomical attachment point.
 - `@property --angle-var` is declared; no new @property declarations needed for the July 17 additions (all new keyframes use already-registered vars).
 - TypeScript errors in tsc --noEmit are pre-existing lib/api-client-react build issues (TS6305), not caused by SankofaBirdSvg.tsx.
+
+## Update — 2026-07-17
+
+### New additions in this session
+- **Individual tail feather classes**: `sankofa-tail-center-base`, `sankofa-tail-center`, `sankofa-tail-left01`, `sankofa-tail-right01` added to JSX paths (in addition to existing outer/far classes). Each has `transformBox`/`transformOrigin` set for per-feather pivoting.
+- **Upper beak animatable**: Added `sankofa-bird-beak-upper` class + `transformOrigin: 5.45px 14.2px` (skull-base pivot). Gets `sankofa-beak-upper-chirp` on notification/accepted, `sankofa-beak-upper-takeoff` on takeoff.
+- **Tail cascade CSS**: Per-feather hover fan cascade (0ms→185ms stagger), asymmetric bank compress/extend for TailLeft01/Right01 on upcoming-turn, idle ambient sway with independent periods.
+- **Helping low-zoom**: Gold drop-shadow pulse on `.sankofa-bird-body-group` at `data-zoom="low"`.
+- **Shadow state coloring**: Gold shadow on helping, gold celebration shadow on celebrate.
+- **Approach state**: Trail fades to teal-white, egg glows green-white steady.
+- **Neck shimmer**: Hue-shift ripple at high/street zoom when idle.
+- **Airplane tip-streak**: Far tail feathers get cyan blur streak at `data-speed="airplane"`.
+- **State machine comment block**: All 15 animation states and 8 flutter inputs documented as verified complete.
+- **Duplicate `sankofa-legs-dangle` keyframe**: Removed simpler version (kept richer pendulum one).
+- **Body+wing upcoming-turn anticipation**: Body leans ±1.5°, outside wing pre-extends, leading feathers compress.
+- **`sankofa-bird-master.svg`**: Created in `artifacts/pay-it-forward/public/` — 200×200 viewBox, full layer hierarchy with all named layers, bone pivots documented.
+
+### GitHub status
+- Branch `sankofa-july-2026-fixes` pushed successfully.
+- `origin/main` remains stale (unrelated history from zip import). User needs to PR and merge branch into main manually.
