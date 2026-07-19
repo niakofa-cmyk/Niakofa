@@ -1,0 +1,15 @@
+# Replit workspace files — never commit these to the repo
+attached_assets/
+.replit
+.local/
+replit.nix
+
+# Agent memory is workspace-internal
+.agents/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build output (each package has its own .gitignore for dist/)
+node_modules/
