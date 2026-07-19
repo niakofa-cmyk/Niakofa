@@ -312,8 +312,55 @@ export function SankofaBirdSvg({
     isHelping,
     approaching,
   });
-  // Suppress TypeScript "unused" warning — GazeDir8 is used as data attribute value
-  void (gazeDir8 as GazeDir8);
+  // ── Phase 15: Autonomous idle scan ──────────────────────────────────────────
+  // When the bird is perched/idle and not navigating, computeGazeVector always
+  // returns "center" (bankDeg=0, no upcoming turn, speedMs=0). The idle scan
+  // overrides this with a periodic directional cycle — a real avian alertness
+  // behavior (scanning for predators, noticing movement). This makes the perched
+  // bird feel alive without any external input.
+  //
+  // Scan interval: 3.5–6.5 s random — below conscious perception, reads as organic.
+  // Pattern: cycles through all 8 directions + center pauses for natural rhythm.
+  // Battery-saver: scan halted, eye/head returns to center.
+  const [idleScanDir, setIdleScanDir] = useState<GazeDir8>("center");
+  const idleScanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isIdle = !isMoving && (landingPhase === "idle" || landingPhase === "perch");
+
+  useEffect(() => {
+    if (!isIdle || batterySaver) {
+      setIdleScanDir("center");
+      if (idleScanTimerRef.current) clearTimeout(idleScanTimerRef.current);
+      return;
+    }
+    const scanPattern: GazeDir8[] = [
+      "center", "left", "up-left", "up", "center",
+      "up-right", "right", "down-right", "center", "down", "down-left", "center",
+    ];
+    let idx = 0;
+    const schedule = () => {
+      const delay = 3500 + Math.random() * 3000; // 3.5–6.5 s per position
+      idleScanTimerRef.current = setTimeout(() => {
+        idx = (idx + 1) % scanPattern.length;
+        setIdleScanDir(scanPattern[idx]);
+        schedule();
+      }, delay);
+    };
+    schedule();
+    return () => { if (idleScanTimerRef.current) clearTimeout(idleScanTimerRef.current); };
+  }, [isIdle, batterySaver]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Merge idle scan with computed gaze.
+  // Flying/navigating: use computeGazeVector output (bank-reactive + anticipatory).
+  // Perched/idle:      use idle scan direction (autonomous alertness cycle).
+  const effectiveGazeDir8: GazeDir8 = (isIdle && !batterySaver) ? idleScanDir : gazeDir8;
+  // Derive analog X/Y from idle scan direction for smooth eye/iris movement.
+  // These map the discrete GazeDir8 string back to analog [-1, 1] values.
+  const effectiveGazeDirX: number = (isIdle && !batterySaver)
+    ? (idleScanDir.includes("left") ? -0.55 : idleScanDir.includes("right") ? 0.55 : 0)
+    : gazeDirX;
+  const effectiveGazeDirY: number = (isIdle && !batterySaver)
+    ? (idleScanDir.includes("up") ? -0.42 : idleScanDir.includes("down") ? 0.42 : 0)
+    : gazeDirY;
 
   // ── Speed factor CSS var — drives flutter amplitude beyond the base flap ──
   // Walking: 0.0 → minimal turbulence. Driving: 0.8 → visible flutter.
@@ -605,8 +652,8 @@ export function SankofaBirdSvg({
               // X: -1=look left (beak direction), +1=look right.
               // Y: -1=look up (skyward), +1=look down (groundward).
               // CSS uses these to translate eye/iris/catchlight smoothly.
-              "--gaze-x": `${gazeDirX.toFixed(3)}`,
-              "--gaze-y": `${gazeDirY.toFixed(3)}`,
+              "--gaze-x": `${effectiveGazeDirX.toFixed(3)}`,
+              "--gaze-y": `${effectiveGazeDirY.toFixed(3)}`,
               // Normalized bank intensity [0,1] — used by Phase 14 CSS for
               // intensity-scaled wing-sweep and body-commit during hard banking.
               "--turn-intensity": `${turnIntensity.toFixed(3)}`,
@@ -641,7 +688,7 @@ export function SankofaBirdSvg({
           data-activity={activityTier}
           data-nav-lod={(navLodOverride ?? navLod).toString()}
           data-off-screen={isOffScreen ? "true" : "false"}
-          data-gaze={gazeDir8}
+          data-gaze={effectiveGazeDir8}
           data-turning={turningDir}
         >
           <svg
@@ -9160,21 +9207,33 @@ export function SankofaBirdSvg({
            - Tail fans in the opposite direction to the turn as a rudder
            This compounds the existing bank/tail CSS with a neck skew that
            gives a 3D "the whole bird turns" impression. */
-        @supports (skewX: 0deg) {
-          .sankofa-bird-rig[data-flying="true"][data-upcoming-turn="left"][data-zoom="high"] .sankofa-bird-neck,
-          .sankofa-bird-rig[data-flying="true"][data-upcoming-turn="left"][data-zoom="street"] .sankofa-bird-neck {
-            skewX: -1.5deg;
-            transition: skewX 0.70s ease-out;
-          }
-          .sankofa-bird-rig[data-flying="true"][data-upcoming-turn="right"][data-zoom="high"] .sankofa-bird-neck,
-          .sankofa-bird-rig[data-flying="true"][data-upcoming-turn="right"][data-zoom="street"] .sankofa-bird-neck {
-            skewX: 1.5deg;
-            transition: skewX 0.70s ease-out;
-          }
-          .sankofa-bird-rig[data-upcoming-turn="none"] .sankofa-bird-neck {
-            skewX: 0deg;
-            transition: skewX 0.55s ease-out;
-          }
+        /* P12.13 BUG-FIX: Previous version used @supports (skewX: 0deg) which always
+           evaluates FALSE — skewX is not a valid individual CSS property (only rotate:,
+           translate:, scale: exist as individuals; skewX lives inside transform: only).
+           The block was completely dead code. Fixed: use transform: skewX() compounded
+           with the bank-angle term from E8. Higher selector specificity (5 attrs)
+           overrides E8 base rule (4 attrs) when upcoming-turn + zoom both match.
+           Left turn: extra -2.5deg arc INTO the turn; right: +2.5deg. */
+        .sankofa-bird-rig[data-flying="true"][data-upcoming-turn="left"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-upcoming-turn="left"][data-zoom="street"] .sankofa-bird-neck {
+          transform: skewX(calc(var(--bank-angle, 0deg) * 0.52 - 2.5deg));
+          transform-box: view-box; transform-origin: 18px 22px;
+          transition: rotate 0.40s ease-out, transform 0.50s ease-out;
+        }
+        .sankofa-bird-rig[data-flying="true"][data-upcoming-turn="right"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-upcoming-turn="right"][data-zoom="street"] .sankofa-bird-neck {
+          transform: skewX(calc(var(--bank-angle, 0deg) * 0.52 + 2.5deg));
+          transform-box: view-box; transform-origin: 18px 22px;
+          transition: rotate 0.40s ease-out, transform 0.50s ease-out;
+        }
+        /* Mid-zoom: 60% arc — thicker neck path at this LOD reads better with less skew */
+        .sankofa-bird-rig[data-flying="true"][data-upcoming-turn="left"][data-zoom="mid"] .sankofa-bird-neck {
+          transform: skewX(calc(var(--bank-angle, 0deg) * 0.22 - 1.5deg));
+          transition: rotate 0.40s ease-out, transform 0.50s ease-out;
+        }
+        .sankofa-bird-rig[data-flying="true"][data-upcoming-turn="right"][data-zoom="mid"] .sankofa-bird-neck {
+          transform: skewX(calc(var(--bank-angle, 0deg) * 0.22 + 1.5deg));
+          transition: rotate 0.40s ease-out, transform 0.50s ease-out;
         }
 
         /* ── P12.14: Reduced-motion guard for all Phase 12/13 additions ──── */
@@ -9358,42 +9417,26 @@ export function SankofaBirdSvg({
           }
         }
 
-        /* P14.5: Aerodynamic tuck + neck extension at airplane speed
-           At airplane speed (gliding), the bird fully commits to a streamlined
-           posture: neck extends forward (the "dart" profile), body compresses
-           slightly in Y (aerodynamic tuck), and wings lock into a rigid spread.
-           The neck extension uses translateX (forward in SVG space); the body
-           Y-compression uses scaleY on the chest element.
-           Composes with E7 bank, P8.5 glide scale, and F5 helping crane. */
+        /* P14.5: Head forward-dart at airplane speed
+           P8.4 already handles neck dart at airplane speed (translate: -1.15px 0).
+           P8.4 does NOT have a HEAD dart rule — P14.5 fills that gap.
+           Guard: not([data-helping="true"]) — E2 helping-crane already moves the head
+           forward (-0.8px via transform: shorthand). Without the guard, the two would
+           stack (individual translate: composes additively with transform:) creating
+           a double-forward head displacement at airplane speed while helping.
+           Battery-saver: suppressed. Composes with P9.7 rotate: additively. */
         @supports (translate: 0px) {
-          .sankofa-bird-rig[data-flying="true"][data-speed="airplane"][data-zoom="high"] .sankofa-bird-neck,
-          .sankofa-bird-rig[data-flying="true"][data-speed="airplane"][data-zoom="street"] .sankofa-bird-neck {
-            translate: -1.0px -0.2px; /* neck darts forward */
-            transition: translate 0.60s cubic-bezier(0.25, 0.8, 0.25, 1);
-          }
-          .sankofa-bird-rig[data-flying="true"][data-speed="airplane"][data-zoom="high"] .sankofa-bird-head,
-          .sankofa-bird-rig[data-flying="true"][data-speed="airplane"][data-zoom="street"] .sankofa-bird-head {
-            translate: -0.5px -0.1px; /* head follows neck dart */
+          .sankofa-bird-rig[data-flying="true"][data-speed="airplane"]:not([data-helping="true"])[data-zoom="high"] .sankofa-bird-head,
+          .sankofa-bird-rig[data-flying="true"][data-speed="airplane"]:not([data-helping="true"])[data-zoom="street"] .sankofa-bird-head {
+            translate: -0.5px -0.1px;
             transition: translate 0.55s cubic-bezier(0.25, 0.8, 0.25, 1);
           }
-          /* Not airplane speed: reset neck/head translate */
-          .sankofa-bird-rig[data-flying="true"]:not([data-speed="airplane"]) .sankofa-bird-neck {
-            translate: 0 0;
-            transition: translate 0.65s ease-out;
-          }
-          .sankofa-bird-rig[data-flying="true"]:not([data-speed="airplane"]) .sankofa-bird-head {
+          /* Release head dart when speed drops or bird lands */
+          .sankofa-bird-rig[data-flying="true"]:not([data-speed="airplane"]) .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"]) .sankofa-bird-head {
             translate: 0 0;
             transition: translate 0.60s ease-out;
           }
-          .sankofa-bird-rig:not([data-flying="true"]) .sankofa-bird-neck {
-            translate: 0 0;
-            transition: translate 0.70s ease-out;
-          }
-          .sankofa-bird-rig:not([data-flying="true"]) .sankofa-bird-head {
-            translate: 0 0;
-            transition: translate 0.65s ease-out;
-          }
-          .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-neck,
           .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-head {
             translate: 0 0 !important;
           }
@@ -9417,6 +9460,366 @@ export function SankofaBirdSvg({
           html:not([data-bird-anim="enabled"]) .sankofa-bird-rig .sankofa-bird-neck,
           html:not([data-bird-anim="enabled"]) .sankofa-bird-rig .sankofa-bird-head {
             translate: 0 0 !important;
+            transition: none !important;
+          }
+        }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           PHASE 15 — REAL-TIME FULL-BODY DIRECTIONAL AWARENESS
+           July 2026. Core request: "Look right to left, up, down, diagonal
+           in real time. Real-time head AND neck awareness."
+           Sources: user brief + autonomous idle scan added in JS (above).
+
+           P15.1: Gaze-driven neck arc — when data-gaze fires from ANY source
+                  (bank-reactive, anticipatory upcoming-turn, or idle scan),
+                  the neck physically arcs via transform:skewX toward the gaze
+                  direction — the cervical S-curve a real bird shows when turning.
+           P15.2: Mid-zoom gaze head rotation — phones at zoom 10-13 get no head
+                  rotation from P12.2 (only high/street). Added at 60% amplitude.
+           P15.3: Beak vertical pitch — up/down gaze tilts the beak at street zoom.
+           P15.4: Eye alive shimmer — subtle opacity pulse on catchlight between
+                  saccades; "live" eye without conflicting with P12.1 transform.
+           P15.5: Gaze-correlated wing micro-lift — outside wing feathers lift
+                  fractionally when the bird looks in their direction while flying.
+           Battery-saver + reduced-motion guards at end of phase.
+           ═══════════════════════════════════════════════════════════════════ */
+
+        /* ── P15.1: Gaze-driven neck arc ────────────────────────────────────
+           The neck arcs via transform:skewX toward the gaze direction.
+           For FLYING: compounds with E8 bank-skew (both inside transform:).
+           For PERCHED: operates standalone (no bank active at idle).
+           Specificity (0,5,0) overrides E8's base rule (0,4,0) when gaze fires.
+           Amplitude: 4deg pure lateral, 2.5deg diagonals — enough to read without
+           distorting the neck path. Transition 0.55s ease-out matches P12.3 lag. */
+
+        /* ── Flying + high/street zoom: compound bank + gaze arc ───────────── */
+        .sankofa-bird-rig[data-flying="true"][data-gaze="left"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="left"][data-zoom="street"] .sankofa-bird-neck {
+          transform: skewX(calc(var(--bank-angle, 0deg) * 0.52 - 4.0deg));
+          transform-box: view-box; transform-origin: 18px 22px;
+          transition: rotate 0.40s ease-out, transform 0.55s ease-out;
+        }
+        .sankofa-bird-rig[data-flying="true"][data-gaze="right"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="right"][data-zoom="street"] .sankofa-bird-neck {
+          transform: skewX(calc(var(--bank-angle, 0deg) * 0.52 + 4.0deg));
+          transform-box: view-box; transform-origin: 18px 22px;
+          transition: rotate 0.40s ease-out, transform 0.55s ease-out;
+        }
+        .sankofa-bird-rig[data-flying="true"][data-gaze="up-left"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="up-left"][data-zoom="street"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="down-left"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="down-left"][data-zoom="street"] .sankofa-bird-neck {
+          transform: skewX(calc(var(--bank-angle, 0deg) * 0.52 - 2.5deg));
+          transform-box: view-box; transform-origin: 18px 22px;
+          transition: rotate 0.40s ease-out, transform 0.55s ease-out;
+        }
+        .sankofa-bird-rig[data-flying="true"][data-gaze="up-right"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="up-right"][data-zoom="street"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="down-right"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="down-right"][data-zoom="street"] .sankofa-bird-neck {
+          transform: skewX(calc(var(--bank-angle, 0deg) * 0.52 + 2.5deg));
+          transform-box: view-box; transform-origin: 18px 22px;
+          transition: rotate 0.40s ease-out, transform 0.55s ease-out;
+        }
+        /* center/up/down gaze while flying: release gaze skew, keep bank-only skew */
+        .sankofa-bird-rig[data-flying="true"][data-gaze="center"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="center"][data-zoom="street"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="up"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="up"][data-zoom="street"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="down"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="down"][data-zoom="street"] .sankofa-bird-neck {
+          transform: skewX(calc(var(--bank-angle, 0deg) * 0.52));
+          transform-box: view-box; transform-origin: 18px 22px;
+          transition: rotate 0.40s ease-out, transform 0.42s ease-out;
+        }
+
+        /* ── Flying + mid-zoom: lighter arc (2.4deg lateral, 1.5deg diagonal) ── */
+        .sankofa-bird-rig[data-flying="true"][data-gaze="left"][data-zoom="mid"] .sankofa-bird-neck {
+          transform: skewX(calc(var(--bank-angle, 0deg) * 0.22 - 2.4deg));
+          transition: rotate 0.40s ease-out, transform 0.55s ease-out;
+        }
+        .sankofa-bird-rig[data-flying="true"][data-gaze="right"][data-zoom="mid"] .sankofa-bird-neck {
+          transform: skewX(calc(var(--bank-angle, 0deg) * 0.22 + 2.4deg));
+          transition: rotate 0.40s ease-out, transform 0.55s ease-out;
+        }
+        .sankofa-bird-rig[data-flying="true"][data-gaze="up-left"][data-zoom="mid"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="down-left"][data-zoom="mid"] .sankofa-bird-neck {
+          transform: skewX(calc(var(--bank-angle, 0deg) * 0.22 - 1.5deg));
+          transition: rotate 0.40s ease-out, transform 0.55s ease-out;
+        }
+        .sankofa-bird-rig[data-flying="true"][data-gaze="up-right"][data-zoom="mid"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="down-right"][data-zoom="mid"] .sankofa-bird-neck {
+          transform: skewX(calc(var(--bank-angle, 0deg) * 0.22 + 1.5deg));
+          transition: rotate 0.40s ease-out, transform 0.55s ease-out;
+        }
+
+        /* ── Perched/idle: standalone gaze arc (no bank term) ───────────────── */
+        /* Fires from idle scan cycle and any other non-flying gaze driver.
+           This is what makes the perched bird visually turn its neck when it
+           looks sideways — the key "real-time neck awareness" behavior. */
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="left"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="left"][data-zoom="street"] .sankofa-bird-neck {
+          transform: skewX(-4.0deg);
+          transform-box: view-box; transform-origin: 18px 22px;
+          transition: rotate 0.55s ease-out, transform 0.65s ease-out;
+        }
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="right"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="right"][data-zoom="street"] .sankofa-bird-neck {
+          transform: skewX(4.0deg);
+          transform-box: view-box; transform-origin: 18px 22px;
+          transition: rotate 0.55s ease-out, transform 0.65s ease-out;
+        }
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up-left"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up-left"][data-zoom="street"] .sankofa-bird-neck,
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down-left"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down-left"][data-zoom="street"] .sankofa-bird-neck {
+          transform: skewX(-2.5deg);
+          transform-box: view-box; transform-origin: 18px 22px;
+          transition: rotate 0.55s ease-out, transform 0.65s ease-out;
+        }
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up-right"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up-right"][data-zoom="street"] .sankofa-bird-neck,
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down-right"][data-zoom="high"] .sankofa-bird-neck,
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down-right"][data-zoom="street"] .sankofa-bird-neck {
+          transform: skewX(2.5deg);
+          transform-box: view-box; transform-origin: 18px 22px;
+          transition: rotate 0.55s ease-out, transform 0.65s ease-out;
+        }
+        /* Center/up/down perched: return neck to neutral (no lateral arc) */
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="center"] .sankofa-bird-neck,
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up"] .sankofa-bird-neck,
+        .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down"] .sankofa-bird-neck {
+          transform: skewX(0deg);
+          transition: rotate 0.55s ease-out, transform 0.65s ease-out;
+        }
+        /* Battery-saver: suppress all P15.1 neck arcs */
+        .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-neck {
+          transform: skewX(0deg) !important;
+        }
+
+        /* ── P15.2: Mid-zoom gaze head rotation ─────────────────────────────
+           P12.2 only rotates the head at high/street zoom (zoom 14+).
+           Phones typically navigate at zoom 10-13 (mid) — the bird's head
+           was completely static there despite active gaze. Added at 60% amplitude.
+           Uses @supports (rotate) like P12.2 for identical browser compatibility. */
+        @supports (rotate: 0deg) {
+          .sankofa-bird-rig[data-gaze="left"][data-zoom="mid"] .sankofa-bird-head {
+            rotate: -4.8deg;
+            transition: rotate 0.42s cubic-bezier(0.34, 1.1, 0.64, 1);
+          }
+          .sankofa-bird-rig[data-gaze="right"][data-zoom="mid"] .sankofa-bird-head {
+            rotate: 4.8deg;
+            transition: rotate 0.42s cubic-bezier(0.34, 1.1, 0.64, 1);
+          }
+          .sankofa-bird-rig[data-gaze="up"][data-zoom="mid"] .sankofa-bird-head {
+            rotate: -1.5deg;
+            transition: rotate 0.52s ease-out;
+          }
+          .sankofa-bird-rig[data-gaze="down"][data-zoom="mid"] .sankofa-bird-head {
+            rotate: 1.5deg;
+            transition: rotate 0.52s ease-out;
+          }
+          .sankofa-bird-rig[data-gaze="up-left"][data-zoom="mid"] .sankofa-bird-head {
+            rotate: -3.9deg;
+            transition: rotate 0.40s cubic-bezier(0.34, 1.1, 0.64, 1);
+          }
+          .sankofa-bird-rig[data-gaze="up-right"][data-zoom="mid"] .sankofa-bird-head {
+            rotate: 3.9deg;
+            transition: rotate 0.40s cubic-bezier(0.34, 1.1, 0.64, 1);
+          }
+          .sankofa-bird-rig[data-gaze="down-left"][data-zoom="mid"] .sankofa-bird-head {
+            rotate: -3.0deg;
+            transition: rotate 0.44s ease-out;
+          }
+          .sankofa-bird-rig[data-gaze="down-right"][data-zoom="mid"] .sankofa-bird-head {
+            rotate: 3.0deg;
+            transition: rotate 0.44s ease-out;
+          }
+          .sankofa-bird-rig[data-gaze="center"][data-zoom="mid"] .sankofa-bird-head {
+            rotate: 0deg;
+            transition: rotate 0.45s ease-out;
+          }
+          /* Mid-zoom neck follows head at 55% (same ratio as P12.3) */
+          .sankofa-bird-rig[data-gaze="left"][data-zoom="mid"] .sankofa-bird-neck {
+            rotate: -2.7deg;
+            transition: rotate 0.58s ease-out 0.12s;
+          }
+          .sankofa-bird-rig[data-gaze="right"][data-zoom="mid"] .sankofa-bird-neck {
+            rotate: 2.7deg;
+            transition: rotate 0.58s ease-out 0.12s;
+          }
+          .sankofa-bird-rig[data-gaze="up-left"][data-zoom="mid"] .sankofa-bird-neck {
+            rotate: -2.1deg;
+            transition: rotate 0.54s ease-out 0.12s;
+          }
+          .sankofa-bird-rig[data-gaze="up-right"][data-zoom="mid"] .sankofa-bird-neck {
+            rotate: 2.1deg;
+            transition: rotate 0.54s ease-out 0.12s;
+          }
+          .sankofa-bird-rig[data-gaze="down-left"][data-zoom="mid"] .sankofa-bird-neck {
+            rotate: -1.6deg;
+            transition: rotate 0.58s ease-out 0.14s;
+          }
+          .sankofa-bird-rig[data-gaze="down-right"][data-zoom="mid"] .sankofa-bird-neck {
+            rotate: 1.6deg;
+            transition: rotate 0.58s ease-out 0.14s;
+          }
+          .sankofa-bird-rig[data-gaze="up"][data-zoom="mid"] .sankofa-bird-neck,
+          .sankofa-bird-rig[data-gaze="down"][data-zoom="mid"] .sankofa-bird-neck {
+            rotate: 0deg; /* vertical gaze: no lateral neck lean at mid zoom */
+            transition: rotate 0.60s ease-out;
+          }
+          /* Battery-saver: suppress mid-zoom gaze rotation */
+          .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-head,
+          .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-neck {
+            rotate: 0deg !important;
+          }
+        }
+
+        /* ── P15.3: Beak vertical pitch from vertical gaze ──────────────────
+           When the bird looks up or down, the beak naturally tilts with the
+           head — a real anatomical result of cervical flexion. Subtle (±2.5deg)
+           so it reads as organic not exaggerated. Street zoom only (beak is a
+           few pixels wide at high zoom — too small for this detail to register).
+           Fires from all vertical gaze sources: idle scan, takeoff, hover, dive.
+           Uses rotate: individual property. Composes with P5.5 beak-chirp. */
+        @supports (rotate: 0deg) {
+          .sankofa-bird-rig[data-gaze="up"][data-zoom="street"] .sankofa-bird-beak-upper,
+          .sankofa-bird-rig[data-gaze="up-left"][data-zoom="street"] .sankofa-bird-beak-upper,
+          .sankofa-bird-rig[data-gaze="up-right"][data-zoom="street"] .sankofa-bird-beak-upper {
+            rotate: -2.5deg;
+            transform-box: view-box; transform-origin: 2px 14px;
+            transition: rotate 0.45s ease-out;
+          }
+          .sankofa-bird-rig[data-gaze="down"][data-zoom="street"] .sankofa-bird-beak-upper,
+          .sankofa-bird-rig[data-gaze="down-left"][data-zoom="street"] .sankofa-bird-beak-upper,
+          .sankofa-bird-rig[data-gaze="down-right"][data-zoom="street"] .sankofa-bird-beak-upper {
+            rotate: 2.0deg;
+            transform-box: view-box; transform-origin: 2px 14px;
+            transition: rotate 0.45s ease-out;
+          }
+          .sankofa-bird-rig[data-gaze="center"][data-zoom="street"] .sankofa-bird-beak-upper,
+          .sankofa-bird-rig[data-gaze="left"][data-zoom="street"] .sankofa-bird-beak-upper,
+          .sankofa-bird-rig[data-gaze="right"][data-zoom="street"] .sankofa-bird-beak-upper {
+            rotate: 0deg;
+            transition: rotate 0.50s ease-out;
+          }
+          /* Also tilt beak lower jaw with same direction (beak moves as a unit) */
+          .sankofa-bird-rig[data-gaze="up"][data-zoom="street"] .sankofa-bird-beak-lower,
+          .sankofa-bird-rig[data-gaze="up-left"][data-zoom="street"] .sankofa-bird-beak-lower,
+          .sankofa-bird-rig[data-gaze="up-right"][data-zoom="street"] .sankofa-bird-beak-lower {
+            rotate: -2.0deg;
+            transform-box: view-box; transform-origin: 2px 14px;
+            transition: rotate 0.48s ease-out;
+          }
+          .sankofa-bird-rig[data-gaze="down"][data-zoom="street"] .sankofa-bird-beak-lower,
+          .sankofa-bird-rig[data-gaze="down-left"][data-zoom="street"] .sankofa-bird-beak-lower,
+          .sankofa-bird-rig[data-gaze="down-right"][data-zoom="street"] .sankofa-bird-beak-lower {
+            rotate: 1.5deg;
+            transform-box: view-box; transform-origin: 2px 14px;
+            transition: rotate 0.48s ease-out;
+          }
+          .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-beak-upper,
+          .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-beak-lower {
+            rotate: 0deg !important;
+          }
+        }
+
+        /* ── P15.4: Eye alive shimmer ────────────────────────────────────────
+           P12.1 uses !important on transform: to lock eye position to gaze.
+           This means CSS animation on transform: is overridden. Instead, animate
+           the catchlight's opacity — a slow irregular pulse that reads as the
+           corneal surface reflecting shifting ambient light. Period tied to
+           --blink-period so activity level drives the shimmer rate (busy bird
+           = faster shimmer = more alert eye appearance).
+           This is additive to P10.1 night-mode shimmer (different keyframe,
+           different scope — daytime-only). */
+        @keyframes sankofa-eye-alive-shimmer {
+          0%,  100% { opacity: 0.88; }
+          18%        { opacity: 0.65; }
+          38%        { opacity: 0.95; }
+          58%        { opacity: 0.72; }
+          78%        { opacity: 0.90; }
+        }
+        .sankofa-bird-rig:not([data-night-mode="true"]):not([data-battery-saver="true"]):not([data-notification="true"])[data-zoom="street"] .sankofa-bird-eye-catchlight,
+        .sankofa-bird-rig:not([data-night-mode="true"]):not([data-battery-saver="true"]):not([data-notification="true"])[data-zoom="high"] .sankofa-bird-eye-catchlight {
+          animation: sankofa-eye-alive-shimmer calc(var(--blink-period, 7000ms) * 0.55) ease-in-out infinite !important;
+        }
+        /* Override: during notification, P12.8 alert animation takes full control */
+        .sankofa-bird-rig[data-notification="true"] .sankofa-bird-eye-catchlight {
+          animation-name: sankofa-eye-alert-enhanced !important;
+        }
+
+        /* ── P15.5: Gaze-correlated wing micro-lift during flight ────────────
+           When banking left (bird looks left via gaze), the RIGHT wing (outside)
+           should show a fractional leading-edge lift — the outside wing "opens"
+           toward the gaze direction, completing the visual read that the whole
+           body is committed to looking/turning in that direction.
+           Uses filter:brightness on the wing highlight as a proxy for "wing opened
+           more, catching more light" — avoids adding another transform that could
+           conflict with the banking/flap animation chain.
+           Only at high/street zoom where the wing highlight reads clearly. */
+        .sankofa-bird-rig[data-flying="true"][data-gaze="left"][data-zoom="high"] .sankofa-bird-wing-right-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="left"][data-zoom="street"] .sankofa-bird-wing-right-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="up-left"][data-zoom="high"] .sankofa-bird-wing-right-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="up-left"][data-zoom="street"] .sankofa-bird-wing-right-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="down-left"][data-zoom="high"] .sankofa-bird-wing-right-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="down-left"][data-zoom="street"] .sankofa-bird-wing-right-highlight {
+          filter: brightness(1.35) saturate(1.15);
+          transition: filter 0.35s ease-out;
+        }
+        .sankofa-bird-rig[data-flying="true"][data-gaze="right"][data-zoom="high"] .sankofa-bird-wing-left-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="right"][data-zoom="street"] .sankofa-bird-wing-left-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="up-right"][data-zoom="high"] .sankofa-bird-wing-left-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="up-right"][data-zoom="street"] .sankofa-bird-wing-left-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="down-right"][data-zoom="high"] .sankofa-bird-wing-left-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="down-right"][data-zoom="street"] .sankofa-bird-wing-left-highlight {
+          filter: brightness(1.35) saturate(1.15);
+          transition: filter 0.35s ease-out;
+        }
+        /* Neutral gaze: reset highlight to standard brightness */
+        .sankofa-bird-rig[data-flying="true"][data-gaze="center"] .sankofa-bird-wing-left-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="center"] .sankofa-bird-wing-right-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="up"] .sankofa-bird-wing-left-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="up"] .sankofa-bird-wing-right-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="down"] .sankofa-bird-wing-left-highlight,
+        .sankofa-bird-rig[data-flying="true"][data-gaze="down"] .sankofa-bird-wing-right-highlight {
+          filter: none;
+          transition: filter 0.45s ease-out;
+        }
+        .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-wing-left-highlight,
+        .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-wing-right-highlight {
+          filter: none !important;
+        }
+
+        /* ── P15: Battery-saver guard ────────────────────────────────────────
+           Suppress all P15 animation/transform/filter additions. */
+        .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-eye-catchlight {
+          animation: none !important;
+        }
+
+        /* ── P15: Reduced-motion guard ───────────────────────────────────────
+           Suppress neck arcs, head/neck rotation, beak pitch, and eye shimmer
+           in prefers-reduced-motion mode (unless overridden by data-bird-anim). */
+        @media (prefers-reduced-motion: reduce) {
+          html:not([data-bird-anim="enabled"]) .sankofa-bird-rig .sankofa-bird-neck {
+            transform: skewX(0deg) !important;
+          }
+          html:not([data-bird-anim="enabled"]) .sankofa-bird-rig .sankofa-bird-head {
+            rotate: 0deg !important;
+            transition: none !important;
+          }
+          html:not([data-bird-anim="enabled"]) .sankofa-bird-rig .sankofa-bird-beak-upper,
+          html:not([data-bird-anim="enabled"]) .sankofa-bird-rig .sankofa-bird-beak-lower {
+            rotate: 0deg !important;
+            transition: none !important;
+          }
+          html:not([data-bird-anim="enabled"]) .sankofa-bird-rig .sankofa-bird-eye-catchlight {
+            animation: none !important;
+          }
+          html:not([data-bird-anim="enabled"]) .sankofa-bird-rig .sankofa-bird-wing-left-highlight,
+          html:not([data-bird-anim="enabled"]) .sankofa-bird-rig .sankofa-bird-wing-right-highlight {
+            filter: none !important;
             transition: none !important;
           }
         }
