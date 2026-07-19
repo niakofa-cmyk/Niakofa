@@ -1,28 +1,21 @@
 /**
- * Audio Circle WebRTC mesh manager.
+ * Audio Circle WebRTC mesh manager — full-mesh peer-to-peer voice/video.
  *
- * Architecture: full mesh among everyone currently in the room (host +
- * speakers) publish their mic/camera; every OTHER participant (speaker or
- * listener) opens a receive connection to each publisher. The server (WS
- * hub, see circle_signal in ws-hub.ts) only relays signaling — offers,
- * answers, and ICE candidates — never audio/video itself.
+ * Architecture: every speaker/host publishes their mic (and optionally camera).
+ * Every other participant opens a receive-only connection to each publisher.
+ * The server (ws-hub.ts circle_signal) only relays SDP and ICE — it never
+ * touches audio/video payloads.
  *
- * Scaling note: this is a genuine, working peer-to-peer mesh with no extra
- * infrastructure to stand up, which is why it's what ships here — but a
- * mesh's connection count grows as publishers × total participants, so it's
- * well suited to the "up to 13 speakers" cap this feature already enforces,
- * plus however many listeners a browser/network can comfortably sustain
- * (dozens, not thousands). If a circle regularly needs to serve very large
- * listener counts, swapping this module for a real SFU (e.g. a self-hosted
- * LiveKit server) is the intended upgrade path — the REST/WS lifecycle
- * (join/leave/roles/recording) in routes/audio-circles.ts does not need to
- * change to make that swap, since it never touches media itself either.
- *
- * Recording: mixed client-side via Web Audio API (every remote + local
- * audio track summed into one MediaStreamDestination) and captured with
- * MediaRecorder. This only captures what the CURRENT client can hear, which
- * in a mesh is everyone — so having the host record produces a real,
- * complete recording of the room.
+ * Key fixes in this version:
+ *   - Per-peer ICE candidate buffering: candidates that arrive before
+ *     setRemoteDescription are queued and applied immediately after. This is
+ *     the #1 real-world cause of WebRTC connection failures in mesh setups.
+ *   - onLocalStream callback so the room UI can show a local camera preview.
+ *   - addStreamToMixIfRecording() so new speakers who join mid-recording are
+ *     automatically added to the mixed recording.
+ *   - setRecording(enabled) unified method — calls startRecording/stopRecording
+ *     and returns the recorded Blob when stopping.
+ *   - Additional public STUN servers for better NAT traversal diversity.
  */
 import { wsSend } from "./wsClient";
 import type { WsEvent } from "./wsClient";
@@ -38,9 +31,15 @@ interface CircleSignalPayload {
   signal: { kind: "offer" | "answer" | "ice"; data: unknown };
 }
 
+// Free public STUN servers from Google and Cloudflare — diverse providers
+// improve the chance of a working path through NAT.
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun2.l.google.com:19302" },
+  { urls: "stun:stun3.l.google.com:19302" },
+  { urls: "stun:stun4.l.google.com:19302" },
+  { urls: "stun:stun.cloudflare.com:3478" },
 ];
 
 export class AudioCircleMesh {
@@ -48,8 +47,12 @@ export class AudioCircleMesh {
   private selfUserId: number;
   private localStream: MediaStream | null = null;
   private peers = new Map<number, RTCPeerConnection>();
+  // Per-peer ICE candidate buffer: candidates that arrive before
+  // setRemoteDescription is called are queued here and applied right after.
+  private pendingIce = new Map<number, RTCIceCandidateInit[]>();
   private onRemoteStream: (handle: RemoteStreamHandle) => void;
   private onRemoteStreamEnded: (userId: number) => void;
+  private onLocalStream: ((stream: MediaStream | null) => void) | null;
   private wsUnsubscribe: (() => void) | null = null;
 
   // Recording (mixed via Web Audio, see startRecording/stopRecording)
@@ -57,7 +60,6 @@ export class AudioCircleMesh {
   private mixDestination: MediaStreamAudioDestinationNode | null = null;
   private mediaRecorder: MediaRecorder | null = null;
   private recordedChunks: Blob[] = [];
-  private connectedSourceUserIds = new Set<number>();
   private videoExpected: boolean;
 
   constructor(opts: {
@@ -66,6 +68,7 @@ export class AudioCircleMesh {
     videoEnabled: boolean;
     onRemoteStream: (handle: RemoteStreamHandle) => void;
     onRemoteStreamEnded: (userId: number) => void;
+    onLocalStream?: (stream: MediaStream | null) => void;
     subscribeToCircleSignal: (handler: (event: WsEvent) => void) => () => void;
   }) {
     this.sessionId = opts.sessionId;
@@ -73,6 +76,7 @@ export class AudioCircleMesh {
     this.videoExpected = opts.videoEnabled;
     this.onRemoteStream = opts.onRemoteStream;
     this.onRemoteStreamEnded = opts.onRemoteStreamEnded;
+    this.onLocalStream = opts.onLocalStream ?? null;
     this.wsUnsubscribe = opts.subscribeToCircleSignal((event) => this.handleSignal(event));
   }
 
@@ -80,14 +84,15 @@ export class AudioCircleMesh {
   async publishLocalMedia(opts: { video: boolean }): Promise<MediaStream> {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: opts.video ? { width: 320, height: 240 } : false,
+      video: opts.video ? { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24, max: 30 } } : false,
     });
     this.localStream = stream;
-    // Add tracks to any peer connections that already exist (e.g. a
-    // listener who's mid-connection when they get promoted to speaker).
-    // Prefer upgrading an existing recvonly transceiver in place (reusing
-    // its already-negotiated m-line) over addTrack, which would try to
-    // create a brand new m-line and require a full renegotiation dance.
+    this.onLocalStream?.(stream);
+
+    // Add local tracks to any peer connections that already exist (e.g. a
+    // listener who's mid-connection when promoted to speaker). Prefer
+    // upgrading an existing recvonly transceiver to sendrecv rather than
+    // addTrack — avoids unnecessary renegotiation round-trips.
     for (const pc of this.peers.values()) {
       for (const track of stream.getTracks()) {
         const transceiver = pc.getTransceivers().find(
@@ -101,25 +106,34 @@ export class AudioCircleMesh {
         }
       }
     }
+
+    // If we're already recording, add the local mic to the mix immediately.
+    if (this.audioContext && this.mixDestination) this.addStreamToMix(stream);
+
     return stream;
   }
 
   stopLocalMedia(): void {
     this.localStream?.getTracks().forEach(t => t.stop());
     this.localStream = null;
+    this.onLocalStream?.(null);
   }
 
-  /** Mutes/unmutes the outgoing mic by disabling the track (cheaper than tearing down and re-publishing). */
+  /** Mutes/unmutes the outgoing mic by disabling the track (cheaper than teardown). */
   setMicEnabled(enabled: boolean): void {
     this.localStream?.getAudioTracks().forEach(t => { t.enabled = enabled; });
   }
 
-  /** Enables/disables the outgoing camera track, if this room has video on. */
+  /** Enables/disables the outgoing camera track. */
   setVideoEnabled(enabled: boolean): void {
     this.localStream?.getVideoTracks().forEach(t => { t.enabled = enabled; });
   }
 
-  /** Opens (or re-opens) a peer connection to another participant and starts signaling. isInitiator decides who sends the offer — always the lower user id, so both sides agree without extra coordination. */
+  /**
+   * Opens (or re-opens) a peer connection to another participant and starts
+   * signaling. The lower user_id is always the offerer so both sides agree
+   * on who initiates without extra coordination.
+   */
   connectToPeer(remoteUserId: number): void {
     if (this.peers.has(remoteUserId)) return;
     const pc = this.createPeerConnection(remoteUserId);
@@ -133,7 +147,7 @@ export class AudioCircleMesh {
           await pc.setLocalDescription(offer);
           this.sendSignal(remoteUserId, { kind: "offer", data: offer });
         } catch (err) {
-          console.error("audioCircleWebRTC: failed to create offer", err);
+          console.error("[CircleMesh] failed to create offer", err);
         }
       };
     }
@@ -145,7 +159,7 @@ export class AudioCircleMesh {
       pc.close();
       this.peers.delete(remoteUserId);
     }
-    this.connectedSourceUserIds.delete(remoteUserId);
+    this.pendingIce.delete(remoteUserId);
     this.onRemoteStreamEnded(remoteUserId);
   }
 
@@ -155,55 +169,90 @@ export class AudioCircleMesh {
     this.stopLocalMedia();
     this.stopRecording();
     this.wsUnsubscribe?.();
+    this.pendingIce.clear();
   }
 
-  // ── Recording (client-side Web Audio mix) ─────────────────────────────────
+  // ── Recording (client-side Web Audio mix) ──────────────────────────────────
 
-  /** Starts mixing every currently-heard stream (local + remote) into one recording. Call again if new speakers join mid-recording — it picks up whatever is connected at call time and keeps mixing as streams change via addRemoteAudioToMix. */
+  /**
+   * Unified toggle — starts or stops recording and returns the Blob on stop.
+   * Call this in response to the toggleRecording UI action.
+   */
+  setRecording(enabled: boolean): Blob | null {
+    if (enabled) {
+      this.startRecording();
+      return null;
+    }
+    return this.stopRecording();
+  }
+
+  /** Starts mixing every currently-heard stream into one recording. */
   startRecording(): void {
     if (this.mediaRecorder) return; // already recording
     this.audioContext = new AudioContext();
     this.mixDestination = this.audioContext.createMediaStreamDestination();
 
+    // Mix local mic (if we're a speaker)
     if (this.localStream) this.addStreamToMix(this.localStream);
+
+    // Mix every remote audio track currently connected
     for (const pc of this.peers.values()) {
       pc.getReceivers().forEach(r => {
-        if (r.track && r.track.kind === "audio") {
-          const stream = new MediaStream([r.track]);
-          this.addStreamToMix(stream);
+        if (r.track?.kind === "audio") {
+          this.addStreamToMix(new MediaStream([r.track]));
         }
       });
     }
 
     this.recordedChunks = [];
-    this.mediaRecorder = new MediaRecorder(this.mixDestination.stream, { mimeType: "audio/webm" });
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : "audio/webm";
+    this.mediaRecorder = new MediaRecorder(this.mixDestination.stream, { mimeType });
     this.mediaRecorder.ondataavailable = (e) => {
       if (e.data.size > 0) this.recordedChunks.push(e.data);
     };
-    this.mediaRecorder.start(1000);
+    this.mediaRecorder.start(1000); // 1-second chunks for resilience
   }
 
-  /** Stops recording and returns the final audio Blob (webm) — caller uploads it and calls POST /audio-circle-sessions/:id/recording-url with the resulting URL. */
+  /** Stops recording and returns the mixed audio Blob. */
   stopRecording(): Blob | null {
     if (!this.mediaRecorder) return null;
+
+    // Flush any buffered data before stopping
+    if (this.mediaRecorder.state === "recording") this.mediaRecorder.requestData();
     this.mediaRecorder.stop();
     this.mediaRecorder = null;
     this.audioContext?.close().catch(() => {});
     this.audioContext = null;
     this.mixDestination = null;
+
     if (this.recordedChunks.length === 0) return null;
     const blob = new Blob(this.recordedChunks, { type: "audio/webm" });
     this.recordedChunks = [];
     return blob;
   }
 
+  /**
+   * Adds a new remote stream to the active recording mix.
+   * Called automatically when a new speaker arrives mid-recording so their
+   * audio is captured without needing to stop and restart recording.
+   */
+  addStreamToMixIfRecording(stream: MediaStream): void {
+    if (this.audioContext && this.mixDestination) {
+      this.addStreamToMix(stream);
+    }
+  }
+
   private addStreamToMix(stream: MediaStream): void {
     if (!this.audioContext || !this.mixDestination) return;
-    const source = this.audioContext.createMediaStreamSource(stream);
+    const audioStream = new MediaStream(stream.getAudioTracks());
+    if (audioStream.getAudioTracks().length === 0) return;
+    const source = this.audioContext.createMediaStreamSource(audioStream);
     source.connect(this.mixDestination);
   }
 
-  // ── Internal ───────────────────────────────────────────────────────────────
+  // ── Internal ────────────────────────────────────────────────────────────────
 
   private createPeerConnection(remoteUserId: number): RTCPeerConnection {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -211,12 +260,9 @@ export class AudioCircleMesh {
     if (this.localStream) {
       for (const track of this.localStream.getTracks()) pc.addTrack(track, this.localStream);
     } else {
-      // Listeners publish nothing, but still need a reserved audio (and
-      // video, if this room has it on) m-line to receive the speaker's
-      // media on — without this, an offer created by a listener (whenever
-      // they happen to have the lower user id, since that's who initiates)
-      // would contain no media sections at all, and the far side couldn't
-      // add tracks to a renegotiated answer without a second round trip.
+      // Listeners publish nothing, but need recvonly transceivers so an offer
+      // they create (when they have the lower user_id) still has media sections
+      // that a speaker can attach tracks to without a full renegotiation.
       pc.addTransceiver("audio", { direction: "recvonly" });
       if (this.videoExpected) pc.addTransceiver("video", { direction: "recvonly" });
     }
@@ -226,11 +272,20 @@ export class AudioCircleMesh {
     };
 
     pc.ontrack = (e) => {
-      this.onRemoteStream({ userId: remoteUserId, stream: e.streams[0] ?? new MediaStream([e.track]) });
+      // e.streams[0] is the canonical stream for this peer — using it means
+      // both audio and video tracks share the same MediaStream object, so a
+      // single <video> element can display both.
+      const stream = e.streams[0] ?? new MediaStream([e.track]);
+      this.onRemoteStream({ userId: remoteUserId, stream });
+
+      // Automatically add new audio to recording mix if in progress
+      if (e.track.kind === "audio") this.addStreamToMixIfRecording(stream);
     };
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+      const state = pc.connectionState;
+      if (state === "failed") {
+        console.warn(`[CircleMesh] peer ${remoteUserId} connection failed — disconnecting`);
         this.disconnectFromPeer(remoteUserId);
       }
     };
@@ -259,16 +314,42 @@ export class AudioCircleMesh {
     try {
       if (signal.kind === "offer") {
         await pc.setRemoteDescription(new RTCSessionDescription(signal.data as RTCSessionDescriptionInit));
+        // Flush any ICE candidates that arrived before the remote description
+        const queued = this.pendingIce.get(from_user_id) ?? [];
+        for (const c of queued) {
+          await pc.addIceCandidate(new RTCIceCandidate(c)).catch(err =>
+            console.warn("[CircleMesh] queued ICE candidate failed after offer", err));
+        }
+        this.pendingIce.delete(from_user_id);
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         this.sendSignal(from_user_id, { kind: "answer", data: answer });
+
       } else if (signal.kind === "answer") {
         await pc.setRemoteDescription(new RTCSessionDescription(signal.data as RTCSessionDescriptionInit));
+        // Flush queued ICE candidates
+        const queued = this.pendingIce.get(from_user_id) ?? [];
+        for (const c of queued) {
+          await pc.addIceCandidate(new RTCIceCandidate(c)).catch(err =>
+            console.warn("[CircleMesh] queued ICE candidate failed after answer", err));
+        }
+        this.pendingIce.delete(from_user_id);
+
       } else if (signal.kind === "ice") {
-        await pc.addIceCandidate(new RTCIceCandidate(signal.data as RTCIceCandidateInit));
+        // ICE candidates sometimes arrive before the remote description is set.
+        // Buffer them and apply once we have a remote description, otherwise
+        // addIceCandidate throws InvalidStateError and the connection never forms.
+        if (pc.remoteDescription) {
+          await pc.addIceCandidate(new RTCIceCandidate(signal.data as RTCIceCandidateInit));
+        } else {
+          const q = this.pendingIce.get(from_user_id) ?? [];
+          q.push(signal.data as RTCIceCandidateInit);
+          this.pendingIce.set(from_user_id, q);
+        }
       }
     } catch (err) {
-      console.error("audioCircleWebRTC: failed to handle signal", signal.kind, err);
+      console.error("[CircleMesh] signal handling failed:", signal.kind, err);
     }
   }
 }

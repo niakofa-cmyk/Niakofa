@@ -63,6 +63,7 @@ jest.unstable_mockModule("../lib/ws-hub.js", () => ({
   addCircleParticipant: jest.fn(),
   removeCircleParticipant: jest.fn(),
   clearCircleSession: jest.fn(),
+  broadcastToAuthenticated: jest.fn(),
 }));
 
 let app: Express;
