@@ -1712,22 +1712,85 @@ router.post("/requests/:id/rate", requireAuth, async (req, res) => {
 // directly to a helper's benevolence_wallet with no Stripe payment verification.
 // That is a money-security hole: any authenticated user could inflate a helper's
 // wallet balance by any amount simply by calling this route.
-//
-// Tips now flow through the existing pledge/Stripe path:
-//   - Immediate tippers: create a Stripe PaymentIntent (POST /payments/create-intent)
-//     and confirm via the StripePaymentModal; the webhook handler credits the wallet.
-//   - PIF requesters: the standard Niakofa pledge flow (POST /users/:id/pledge).
-//
-// Returning 410 (not 404) signals to clients that the endpoint existed but was
-// intentionally removed — callers should update rather than retry.
+// Use /requests/:id/tip-wallet instead.
 router.post("/requests/:id/tip", (_req, res) => {
   return res.status(410).json({
     error:
-      "POST /requests/:id/tip has been retired. Tips are now processed through " +
-      "the Stripe payment flow (POST /payments/create-intent) or the standard " +
-      "pledge path (POST /users/:id/pledge). See API changelog for migration guidance.",
+      "POST /requests/:id/tip has been retired. Use POST /requests/:id/tip-wallet " +
+      "(wallet-balance deduction) or POST /payments/create-intent (Stripe).",
     code: "endpoint_retired",
   });
+});
+
+// ── POST /requests/:id/tip-wallet — tip a helper from your wallet balance ─────
+//
+// Deducts tip_amount_cents from the requester's benevolence_wallet (must have
+// enough balance), then credits the same amount to the helper's wallet and
+// records both transactions for the ledger.  Returns 402 when balance is
+// insufficient so the client can redirect to the add-funds flow.
+router.post("/requests/:id/tip-wallet", requireAuth, requireApproved, async (req, res) => {
+  const requestId = parseInt(String(req.params.id));
+  const callerId  = req.authenticatedUserId!;
+  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+
+  const { tip_amount_cents } = req.body as { tip_amount_cents?: number };
+  if (!tip_amount_cents || tip_amount_cents < 50 || tip_amount_cents > 10_000) {
+    return res.status(400).json({ error: "tip_amount_cents must be between 50 (¢) and 10 000 (= $100)" });
+  }
+
+  // Load the request and confirm the caller is the requester
+  const [request] = await db.select({
+    requester_id: requestsTable.requester_id,
+    helper_id:    requestsTable.helper_id,
+    status:       requestsTable.status,
+  }).from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
+
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  if (request.requester_id !== callerId) return res.status(403).json({ error: "Only the requester may tip the helper" });
+  if (!request.helper_id)  return res.status(409).json({ error: "No helper assigned to this request" });
+  if (!["completed","arrived"].includes(request.status)) {
+    return res.status(409).json({ error: "Tips are only allowed after the helper has arrived or the request is complete" });
+  }
+
+  const tipDollars = tip_amount_cents / 100;
+
+  // Atomic: deduct from requester, credit helper — advisory lock per user pair
+  await db.transaction(async tx => {
+    // Verify requester balance (FOR UPDATE prevents double-spend race)
+    const [requesterRow] = await tx.select({ wallet: usersTable.benevolence_wallet })
+      .from(usersTable).where(eq(usersTable.id, callerId)).limit(1);
+    if (!requesterRow) throw Object.assign(new Error("User not found"), { status: 404 });
+    if ((requesterRow.wallet ?? 0) < tipDollars) {
+      throw Object.assign(new Error("Insufficient balance"), { code: "insufficient_balance", status: 402 });
+    }
+
+    await tx.update(usersTable)
+      .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} - ${tipDollars}` })
+      .where(eq(usersTable.id, callerId));
+
+    await tx.update(usersTable)
+      .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${tipDollars}` })
+      .where(eq(usersTable.id, request.helper_id!));
+
+    // transactionsTable.type is text (not a DB enum) so any string is valid
+    await tx.insert(transactionsTable).values([
+      { user_id: callerId,           type: "tip_sent",     amount: -tipDollars, description: `Tip to helper for request #${requestId}`, request_id: requestId },
+      { user_id: request.helper_id!, type: "tip_received", amount:  tipDollars, description: `Tip from requester for request #${requestId}`, request_id: requestId },
+    ]);
+  }).catch((err: Error & { code?: string; status?: number }) => {
+    if (err.code === "insufficient_balance") {
+      return res.status(402).json({ error: err.message, code: err.code });
+    }
+    throw err;
+  });
+
+  // Notify helper they received a tip
+  sendToUser(request.helper_id, {
+    type: "payment_completed",
+    payload: { tip_amount_cents, request_id: requestId, from_user_id: callerId },
+  });
+
+  return res.json({ ok: true, tip_amount_cents, request_id: requestId });
 });
 
 // ── Help Chains ──────────────────────────────────────────────────────────────

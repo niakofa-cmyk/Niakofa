@@ -744,14 +744,35 @@ router.post("/users/:id/pledge", requireAuth, requireApproved, requireOwnership(
   return res.json({ ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null });
 });
 
-// GET /users/:id/transactions — real activity history
+// GET /users/:id/transactions — real activity history with pagination
+// Supports ?limit (1-100, default 50) and ?offset (default 0) for "Load more".
 router.get("/users/:id/transactions", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
   const id = parseInt(String(req.params.id));
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
-  const txns = await db.select().from(transactionsTable)
-    .where(eq(transactionsTable.user_id, id))
-    .orderBy(sql`${transactionsTable.created_at} DESC`)
-    .limit(50);
+
+  const rawLimit  = parseInt(String(req.query.limit  ?? "50"));
+  const rawOffset = parseInt(String(req.query.offset ?? "0"));
+  const limit  = Math.min(Math.max(1,  isNaN(rawLimit)  ? 50 : rawLimit),  100);
+  const offset = Math.max(0, isNaN(rawOffset) ? 0 : rawOffset);
+
+  const [txns, countRows] = await Promise.all([
+    db.select().from(transactionsTable)
+      .where(eq(transactionsTable.user_id, id))
+      .orderBy(sql`${transactionsTable.created_at} DESC`)
+      .limit(limit)
+      .offset(offset),
+    db.select({ count: sql<number>`COUNT(*)::int` })
+      .from(transactionsTable)
+      .where(eq(transactionsTable.user_id, id)),
+  ]);
+  const total = (countRows[0]?.count ?? 0) as number;
+  const hasMore = offset + txns.length < total;
+
+  // Backward-compatible: always return array at root so the generated client
+  // (which expects Transaction[]) still works on the default call.
+  // Pagination metadata is available as headers for callers that need it.
+  res.setHeader("X-Total-Count", String(total));
+  res.setHeader("X-Has-More", String(hasMore));
   return res.json(txns);
 });
 
@@ -1041,6 +1062,25 @@ router.delete("/users/:id", requireAuth, requireAdmin(), adminLimiter, async (re
     logger.error({ err: error }, "delete-account: failed");
     return res.status(500).json({ error: "Failed to delete account" });
   }
+});
+
+// PATCH /users/:id/toggle-admin — grant or revoke admin access (admin only)
+// Uses the is_admin boolean flag as the single source of truth (RBAC.md).
+// An admin cannot revoke their OWN admin status to prevent lockout.
+router.patch("/users/:id/toggle-admin", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const targetId = parseInt(String(req.params.id));
+  const callerId = req.authenticatedUserId!;
+  if (isNaN(targetId)) return res.status(400).json({ error: "Invalid id" });
+  if (targetId === callerId) return res.status(409).json({ error: "Cannot modify your own admin status" });
+
+  const [target] = await db.select({ is_admin: usersTable.is_admin }).from(usersTable).where(eq(usersTable.id, targetId)).limit(1);
+  if (!target) return res.status(404).json({ error: "User not found" });
+
+  const newValue = !target.is_admin;
+  await db.update(usersTable).set({ is_admin: newValue }).where(eq(usersTable.id, targetId));
+
+  logger.info({ caller: callerId, target: targetId, granted: newValue }, "admin: is_admin toggled");
+  return res.json({ ok: true, user_id: targetId, is_admin: newValue });
 });
 
 router.patch("/users/:id/moderation", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {

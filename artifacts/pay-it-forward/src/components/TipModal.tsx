@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Heart, X, DollarSign } from "lucide-react";
+import { Heart, X, DollarSign, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
 
 interface TipModalProps {
   requestId: number;
@@ -16,6 +17,7 @@ const TIP_AMOUNTS = [1, 2, 5, 10, 20];
 
 export function TipModal({ requestId, helperName, onClose }: TipModalProps) {
   const { currentUser } = useAppContext();
+  const [, setLocation] = useLocation();
   const [selected, setSelected] = useState<number | null>(null);
   const [custom, setCustom] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -26,17 +28,31 @@ export function TipModal({ requestId, helperName, onClose }: TipModalProps) {
     if (!amount || !currentUser || submitting) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/requests/${requestId}/tip`, {
+      // Tip via wallet balance deduction → helper credit
+      const res = await fetch(`/api/requests/${requestId}/tip-wallet`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ requester_id: currentUser.id, tip_amount: amount }),
+        body: JSON.stringify({ tip_amount_cents: Math.round(amount * 100) }),
       });
+
       if (res.ok) {
-        toast({ title: `💚 $${amount.toFixed(2)} tip sent to ${helperName}!` });
+        toast({ title: `💚 $${amount.toFixed(2)} tip sent to ${helperName}!`, description: "Sent from your wallet balance." });
         onClose();
-      } else {
-        toast({ title: "Tip failed", variant: "destructive" });
+        return;
       }
+
+      // If balance is insufficient (402) or any other failure → redirect to
+      // the wallet page with the tip amount pre-filled so the user can add
+      // funds via Stripe and retry.
+      const errData = await res.json().catch(() => ({})) as { code?: string };
+      if (res.status === 402 || errData?.code === "insufficient_balance") {
+        toast({ title: "Not enough balance", description: "Redirecting to wallet to add funds…" });
+        onClose();
+        setLocation(`/wallet?tip_amount=${amount}&tip_request=${requestId}&tip_helper=${encodeURIComponent(helperName)}`);
+        return;
+      }
+
+      toast({ title: "Tip failed — try again", variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -95,6 +111,7 @@ export function TipModal({ requestId, helperName, onClose }: TipModalProps) {
               value={custom}
               onChange={e => { setCustom(e.target.value); setSelected(null); }}
               className="w-full bg-muted border border-border rounded-xl pl-9 pr-4 py-3 text-sm outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
+              style={{ fontSize: "16px" }}
               min="0.50"
               step="0.50"
             />
@@ -105,8 +122,17 @@ export function TipModal({ requestId, helperName, onClose }: TipModalProps) {
             disabled={!amount || amount < 0.5 || submitting}
             onClick={handleTip}
           >
-            {submitting ? "Sending…" : amount ? `Send $${amount.toFixed(2)} tip` : "Select an amount"}
+            {submitting
+              ? "Sending…"
+              : amount
+                ? `Send $${amount.toFixed(2)} tip`
+                : "Select an amount"}
           </Button>
+
+          <p className="text-center text-[10px] text-muted-foreground mt-3 flex items-center justify-center gap-1">
+            <ExternalLink className="w-3 h-3" />
+            Deducted from your wallet balance. Insufficient funds? We'll take you to add more.
+          </p>
         </motion.div>
       </>
     </AnimatePresence>

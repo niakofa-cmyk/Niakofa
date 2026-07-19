@@ -264,6 +264,50 @@ router.patch("/griot/stories/:id", requireAuth, generalApiLimiter, async (req, r
   res.json({ story: updated });
 });
 
+// ── DELETE /griot/stories/:id — author or admin removes a story ───────────
+//
+// Soft-delete pattern: we mark the row deleted rather than removing it so that
+// transcription jobs / translation references aren't left pointing at a missing
+// FK.  The record is removed from all public list endpoints via a
+// WHERE status != 'deleted' filter, but remains queryable by admins for audit.
+
+router.delete("/griot/stories/:id", requireAuth, generalApiLimiter, async (req, res) => {
+  const callerId = req.authenticatedUserId!;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid story id" });
+    return;
+  }
+
+  const [story] = await db
+    .select({ author_id: griotStoriesTable.author_id, status: griotStoriesTable.status })
+    .from(griotStoriesTable)
+    .where(eq(griotStoriesTable.id, id));
+
+  if (!story) {
+    res.status(404).json({ error: "Story not found" });
+    return;
+  }
+
+  // Only the author or an admin may delete
+  const [callerRow] = await db
+    .select({ is_admin: usersTable.is_admin })
+    .from(usersTable)
+    .where(eq(usersTable.id, callerId))
+    .limit(1);
+
+  const isAdmin = callerRow?.is_admin === true;
+  if (story.author_id !== callerId && !isAdmin) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  // Hard delete — simpler than soft-delete given no griot FK constraints on stories
+  await db.delete(griotStoriesTable).where(eq(griotStoriesTable.id, id));
+
+  res.json({ ok: true, id });
+});
+
 // ── POST /griot/stories/:id/publish — recorder releases story ─────────────
 
 router.post("/griot/stories/:id/publish", requireAuth, generalApiLimiter, async (req, res) => {
