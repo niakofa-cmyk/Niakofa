@@ -264,6 +264,37 @@ export function SankofaBirdSvg({
     [isMoving, isGliding, speedMs, landingPhase],
   );
 
+  // ── Wingbeat variability (Phase 16) — Niakofa doc §1 ────────────────────────
+  // Real birds never flap at a perfectly constant rhythm. Introduce ±12% random
+  // timing variation that cycles every 3–8 flap periods — below conscious
+  // perception, reads as organic (Niakofa doc: "tiny variations make it alive").
+  // Battery-saver and idle states: jitter suppressed (jitter = 1.0, steady rhythm).
+  // The jitter is a multiplier on flapPeriodMs; effectiveFlapMs is what CSS sees.
+  const [flapJitter, setFlapJitter] = useState(1.0);
+  const flapJitterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (batterySaver || !isMoving) {
+      setFlapJitter(1.0);
+      if (flapJitterTimerRef.current) clearTimeout(flapJitterTimerRef.current);
+      return;
+    }
+    const schedule = () => {
+      const cyclesUntilNext = 3 + Math.random() * 5; // 3–8 flap cycles
+      flapJitterTimerRef.current = setTimeout(() => {
+        setFlapJitter(0.88 + Math.random() * 0.24); // [0.88, 1.12] = ±12%
+        schedule();
+      }, flapPeriodMs * cyclesUntilNext);
+    };
+    schedule();
+    return () => { if (flapJitterTimerRef.current) clearTimeout(flapJitterTimerRef.current); };
+  }, [isMoving, batterySaver, flapPeriodMs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // effectiveFlapMs: jittered period injected into --flap-period CSS var.
+  // All wing, tail, float, and glow animations read this var, so the entire
+  // body animates at the same jittered rate — no per-element math needed.
+  const effectiveFlapMs = Math.round(flapPeriodMs * flapJitter);
+
   // ── Body lean angle ─────────────────────────────────────────────────────────
   const leanDeg = useMemo(
     () => computeLeanDeg({ isMoving, isGliding, speedMs, landingPhase }),
@@ -619,7 +650,7 @@ export function SankofaBirdSvg({
               // back smoothly — the "everything settles" effect from the doc.
               transition: "transform 0.35s ease-out, --lean-deg 0.45s ease-out, --tail-bend 0.40s ease-out, --bank-angle 0.35s ease-out, --left-wing-extra 0.40s ease-out, --right-wing-extra 0.40s ease-out",
               willChange: "transform",
-              "--flap-period": `${flapPeriodMs}ms`,
+              "--flap-period": `${effectiveFlapMs}ms`,
               "--lean-deg": `${leanDeg}deg`,
               "--left-wing-extra": `${leftWingExtra}deg`,
               "--right-wing-extra": `${rightWingExtra}deg`,
@@ -9821,6 +9852,270 @@ export function SankofaBirdSvg({
           html:not([data-bird-anim="enabled"]) .sankofa-bird-rig .sankofa-bird-wing-right-highlight {
             filter: none !important;
             transition: none !important;
+          }
+        }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           PHASE 16 — LIVE MAP WIRING, CROSS-DEVICE COMPAT & BIOMECHANICS
+           July 2026. Companion to useBirdNavigation.ts + NavigationBird.tsx.
+           Sources: design docs line-by-line — Niakofa doc §1-24, How-to doc
+           §1-16, Build doc asset hierarchy.
+
+           P16.1: Curiosity head tilt — diagonal idle-scan gaze adds a Z-axis
+                  "quizzical" tilt on top of P12.2 gaze rotation (doc §15/§7).
+           P16.2: Egg pendulum physics — egg swings counter-turn on bank,
+                  returns on neutral (Niakofa doc §16, "Bird turns left → Egg
+                  swings slightly → Returns").
+           P16.3: WAIR wing flutter — walking (not flying) gets a subtle upward
+                  wing bounce, mimicking Wing-Assisted Incline Running.
+           P16.4: Performance hardening for iOS Safari + older Android Chrome:
+                  CSS containment, GPU layer promotion hints, will-change gating.
+           P16.5: NavLod escalation guards — stronger suppression at navLod=2
+                  (30 min+ sessions) to protect older GPU memory budgets.
+           P16.6: Wind-compensation posture at headwind speeds (doc §8).
+           All effects guarded: battery-saver, reduced-motion, @supports.
+           ═══════════════════════════════════════════════════════════════════ */
+
+        /* ── P16.1: Curiosity head tilt ──────────────────────────────────────
+           When the idle-scan cycle reaches a diagonal direction (up-left,
+           up-right, down-left, down-right) the head adds a slight Z-tilt —
+           the "quizzical ear-toward-sound" pose every curious bird makes.
+           Uses transform:rotate() which composes additively with P12.2's
+           rotate: individual property. Total visible rotation = P12.2 + P16.1.
+           Only fires when not flying (idle scan active), street/high zoom.
+           Amplitude ±4deg — enough to register without distorting. */
+        @supports (rotate: 0deg) {
+          /* Up-left scan: additional 4deg clockwise tilt (ear toward right) */
+          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up-left"][data-zoom="high"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up-left"][data-zoom="street"] .sankofa-bird-head {
+            transform: rotate(4deg);
+            transition: rotate 0.50s cubic-bezier(0.34, 1.1, 0.64, 1), transform 0.50s cubic-bezier(0.34, 1.1, 0.64, 1);
+          }
+          /* Up-right scan: additional 4deg counter-clockwise tilt (ear toward left) */
+          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up-right"][data-zoom="high"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up-right"][data-zoom="street"] .sankofa-bird-head {
+            transform: rotate(-4deg);
+            transition: rotate 0.50s cubic-bezier(0.34, 1.1, 0.64, 1), transform 0.50s cubic-bezier(0.34, 1.1, 0.64, 1);
+          }
+          /* Down-left: shallower tilt 2deg (looking down is less curious, more watchful) */
+          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down-left"][data-zoom="high"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down-left"][data-zoom="street"] .sankofa-bird-head {
+            transform: rotate(2deg);
+            transition: rotate 0.55s ease-out, transform 0.55s ease-out;
+          }
+          /* Down-right: shallower tilt -2deg */
+          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down-right"][data-zoom="high"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down-right"][data-zoom="street"] .sankofa-bird-head {
+            transform: rotate(-2deg);
+            transition: rotate 0.55s ease-out, transform 0.55s ease-out;
+          }
+          /* Horizontal/vertical/center gaze: no curiosity tilt */
+          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="left"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="right"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="center"] .sankofa-bird-head {
+            transform: rotate(0deg);
+            transition: rotate 0.45s ease-out, transform 0.45s ease-out;
+          }
+          /* Battery-saver: suppress tilt */
+          .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-head {
+            transform: none !important;
+          }
+        }
+
+        /* ── P16.2: Egg pendulum physics ──────────────────────────────────────
+           When the bird banks (data-turning fires at |bankDeg|≥8°), the egg
+           swings slightly in the OPPOSITE direction — pendulum physics.
+           Real pendulums overshoot; cubic-bezier(0.34,1.56,0.64,1) spring easing
+           gives the 1-2px overshoot the Niakofa doc describes ("just a few pixels").
+           Also fires during upcoming-turn anticipation (smaller amplitude, 2deg)
+           so the egg begins moving before the full bank commitment.
+           Composes with existing egg transform: (hover/beak compensation). */
+        @supports (rotate: 0deg) {
+          /* Actual committed bank: egg swings 3.5deg counter to turn direction */
+          .sankofa-bird-rig[data-turning="left"] .sankofa-bird-egg {
+            rotate: 3.5deg;
+            transition: rotate 0.38s cubic-bezier(0.34, 1.56, 0.64, 1);
+          }
+          .sankofa-bird-rig[data-turning="right"] .sankofa-bird-egg {
+            rotate: -3.5deg;
+            transition: rotate 0.38s cubic-bezier(0.34, 1.56, 0.64, 1);
+          }
+          /* Anticipatory: upcoming-turn pre-swings egg 2deg before bank fires */
+          .sankofa-bird-rig[data-turning="none"][data-upcoming-turn="left"] .sankofa-bird-egg {
+            rotate: 2.0deg;
+            transition: rotate 0.55s ease-out;
+          }
+          .sankofa-bird-rig[data-turning="none"][data-upcoming-turn="right"] .sankofa-bird-egg {
+            rotate: -2.0deg;
+            transition: rotate 0.55s ease-out;
+          }
+          /* Neutral: egg returns to upright (gravity wins) */
+          .sankofa-bird-rig[data-turning="none"]:not([data-upcoming-turn="left"]):not([data-upcoming-turn="right"]) .sankofa-bird-egg {
+            rotate: 0deg;
+            transition: rotate 0.60s cubic-bezier(0.34, 1.2, 0.64, 1);
+          }
+          .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-egg {
+            rotate: 0deg !important;
+            transition: none !important;
+          }
+        }
+
+        /* ── P16.3: WAIR wing flutter (Wing-Assisted Incline Running) ─────────
+           When the bird is walking (data-speed="walking" or "running") but NOT
+           flying, give the wings a subtle periodic flutter — like the bird is
+           considering taking off or compensating for uneven ground.
+           Uses a short flutter keyframe at a slow rhythm (1.8s period).
+           This fires from the idle-scan state when speed is low but nonzero,
+           or when the app has walking-speed movement without active navigation.
+           Only at mid+ zoom where wing shape is visible. */
+        @keyframes sankofa-wair-flutter {
+          0%,  100% { transform: translateY(0px)   rotate(0deg);   }
+          18%        { transform: translateY(-1.2px) rotate(-2deg);  }
+          36%        { transform: translateY(0px)   rotate(0.5deg); }
+          55%        { transform: translateY(-0.6px) rotate(-1deg);  }
+          72%        { transform: translateY(0px)   rotate(0.3deg); }
+        }
+        @keyframes sankofa-wair-flutter-right {
+          0%,  100% { transform: translateY(0px)   rotate(0deg);   }
+          20%        { transform: translateY(-1.0px) rotate(2deg);   }
+          38%        { transform: translateY(0px)   rotate(-0.5deg);}
+          57%        { transform: translateY(-0.5px) rotate(1deg);   }
+          74%        { transform: translateY(0px)   rotate(-0.3deg);}
+        }
+        .sankofa-bird-rig[data-speed="walking"]:not([data-flying="true"]):not([data-battery-saver="true"])[data-zoom="mid"] .sankofa-bird-wing-left,
+        .sankofa-bird-rig[data-speed="walking"]:not([data-flying="true"]):not([data-battery-saver="true"])[data-zoom="high"] .sankofa-bird-wing-left,
+        .sankofa-bird-rig[data-speed="walking"]:not([data-flying="true"]):not([data-battery-saver="true"])[data-zoom="street"] .sankofa-bird-wing-left,
+        .sankofa-bird-rig[data-speed="running"]:not([data-flying="true"]):not([data-battery-saver="true"])[data-zoom="mid"] .sankofa-bird-wing-left,
+        .sankofa-bird-rig[data-speed="running"]:not([data-flying="true"]):not([data-battery-saver="true"])[data-zoom="high"] .sankofa-bird-wing-left,
+        .sankofa-bird-rig[data-speed="running"]:not([data-flying="true"]):not([data-battery-saver="true"])[data-zoom="street"] .sankofa-bird-wing-left {
+          animation: sankofa-wair-flutter 1.8s ease-in-out infinite;
+        }
+        .sankofa-bird-rig[data-speed="walking"]:not([data-flying="true"]):not([data-battery-saver="true"])[data-zoom="mid"] .sankofa-bird-wing-right,
+        .sankofa-bird-rig[data-speed="walking"]:not([data-flying="true"]):not([data-battery-saver="true"])[data-zoom="high"] .sankofa-bird-wing-right,
+        .sankofa-bird-rig[data-speed="walking"]:not([data-flying="true"]):not([data-battery-saver="true"])[data-zoom="street"] .sankofa-bird-wing-right,
+        .sankofa-bird-rig[data-speed="running"]:not([data-flying="true"]):not([data-battery-saver="true"])[data-zoom="mid"] .sankofa-bird-wing-right,
+        .sankofa-bird-rig[data-speed="running"]:not([data-flying="true"]):not([data-battery-saver="true"])[data-zoom="high"] .sankofa-bird-wing-right,
+        .sankofa-bird-rig[data-speed="running"]:not([data-flying="true"]):not([data-battery-saver="true"])[data-zoom="street"] .sankofa-bird-wing-right {
+          animation: sankofa-wair-flutter-right 1.8s ease-in-out infinite;
+          animation-delay: 18ms; /* maintain the same left/right asymmetry as flight */
+        }
+
+        /* ── P16.4: Performance hardening — iOS Safari + older Android Chrome ──
+           Goal: smooth 60 FPS through a 20-min navigation session on iPhone 8.
+
+           Strategy:
+           1. CSS containment (contain: layout style) — tells browser the bird's
+              layout is isolated; prevents map repaints from cascading into the
+              bird's composite layer. @supports guarded (Chrome 52+, iOS 14+).
+
+           2. will-change: transform gated to flying-only. Promoting every idle
+              bird to a GPU layer wastes limited VRAM on older devices. Only
+              promote when the transform is actively animated.
+
+           3. transform: translateZ(0) on low zoom — at low detail (< 10) the
+              bird is just a small silhouette. Promote it cheaply to its own
+              layer; the full-detail bird is already promoted via will-change.
+
+           4. overflow: hidden on the rig — prevents the SVG shadow/glow from
+              triggering unnecessary paint rectangles outside the bird bounds.
+
+           5. NavLod=2 (30 min+): aggressive suppression. Most decorative CSS
+              animations are paused. Only core body/wing motion and gaze remain. */
+        @supports (contain: layout style) {
+          .sankofa-bird-rig {
+            contain: layout style;
+          }
+        }
+        /* Promote to composited GPU layer ONLY during active flight */
+        .sankofa-bird-rig[data-flying="true"] {
+          will-change: transform;
+        }
+        /* Release will-change when grounded (prevents stale layers eating VRAM) */
+        .sankofa-bird-rig:not([data-flying="true"]) {
+          will-change: auto;
+        }
+        /* Low-zoom: small silhouette — cheap layer promotion */
+        .sankofa-bird-rig[data-zoom="low"] {
+          transform: translateZ(0);
+        }
+
+        /* ── P16.5: NavLod=2 aggressive suppression (30 min+ sessions) ────────
+           The existing navLod escalation (data-nav-lod attr) already dims
+           decorative layers at LOD1 (10 min) and LOD2 (30 min+). P16.5 adds
+           explicit animation-play-state:paused overrides for the heaviest
+           effects to protect older iPhone GPU memory after long rides.
+           Priority: 1. keep head/eye motion alive, 2. preserve wing beat,
+           3. suppress particles + glow + shimmer + iridescence. */
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-glow-layer,
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-bird-body-shimmer,
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-wing-scap-l1,
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-wing-scap-l2,
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-wing-scap-r1,
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-wing-scap-r2,
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-crown-feather {
+          animation-play-state: paused !important;
+          opacity: 0 !important;
+          transition: opacity 1.5s ease-out !important; /* graceful fade-out */
+        }
+        /* At navLod=2 also mute heavy filter operations */
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-bird-wing-left-highlight,
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-bird-wing-right-highlight,
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-bird-body-highlight {
+          filter: none !important;
+          opacity: 0.4 !important;
+        }
+        /* Battery-saver overrides navLod (already the strongest suppressor) */
+
+        /* ── P16.6: Wind-compensation headwind posture ──────────────────────────
+           Niakofa doc §8: "Strong headwind → Flaps harder → Neck lowers → Tail opens."
+           GPS driving speed > 15 m/s (54 km/h) approximates headwind effects:
+           neck drops 0.8px below neutral, tail spreads slightly.
+           Composes with E7 bank rotation and P8.4 speed neck dart. */
+        @supports (translate: 0px) {
+          .sankofa-bird-rig[data-flying="true"][data-speed="driving"]:not([data-battery-saver="true"])[data-zoom="high"] .sankofa-bird-neck,
+          .sankofa-bird-rig[data-flying="true"][data-speed="driving"]:not([data-battery-saver="true"])[data-zoom="street"] .sankofa-bird-neck {
+            translate: calc(var(--speed-factor, 0) * -0.55px) calc(var(--speed-factor, 0) * 0.4px);
+            transition: translate 0.65s ease-out;
+          }
+        }
+        /* Tail opens slightly at driving speed (rudder-spread for stability) */
+        @supports (rotate: 0deg) {
+          .sankofa-bird-rig[data-flying="true"][data-speed="driving"]:not([data-battery-saver="true"]) .sankofa-tail-outer-left {
+            rotate: calc(-1deg * var(--speed-factor, 0));
+            transition: rotate 0.70s ease-out;
+          }
+          .sankofa-bird-rig[data-flying="true"][data-speed="driving"]:not([data-battery-saver="true"]) .sankofa-tail-outer-right {
+            rotate: calc(1deg * var(--speed-factor, 0));
+            transition: rotate 0.70s ease-out;
+          }
+        }
+
+        /* ── P16: Battery-saver guard ─────────────────────────────────────────
+           All P16 new animations + transforms suppressed in battery-saver mode. */
+        .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-wing-left,
+        .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-wing-right {
+          animation-name: none !important; /* stops WAIR flutter */
+        }
+        .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-egg {
+          rotate: 0deg !important;
+        }
+
+        /* ── P16: Reduced-motion guard ────────────────────────────────────────
+           All P16 motion suppressed when prefers-reduced-motion:reduce is set
+           and data-bird-anim="enabled" has not explicitly overridden it. */
+        @media (prefers-reduced-motion: reduce) {
+          html:not([data-bird-anim="enabled"]) .sankofa-bird-rig .sankofa-bird-head {
+            transform: none !important;
+          }
+          html:not([data-bird-anim="enabled"]) .sankofa-bird-rig .sankofa-bird-egg {
+            rotate: 0deg !important;
+            transition: none !important;
+          }
+          html:not([data-bird-anim="enabled"]) .sankofa-bird-rig .sankofa-bird-wing-left,
+          html:not([data-bird-anim="enabled"]) .sankofa-bird-rig .sankofa-bird-wing-right {
+            animation: none !important;
           }
         }
 
