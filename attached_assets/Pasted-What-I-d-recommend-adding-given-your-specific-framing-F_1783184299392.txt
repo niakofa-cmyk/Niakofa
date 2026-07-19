@@ -1,0 +1,25 @@
+What I'd recommend adding, given your specific framing. Fix, improve and enhance These issues Now!
+A few things you emphasized in your message that aren't fully reflected yet:
+* "Helpers paid a livable wage for thinking of others, every day" — the guaranteed minimum exists per completed task, but there's no daily/weekly aggregate view showing a helper "you earned $X today just for helping," which is the emotional core of your pitch. Consider a dashboard widget that sums today's Community Pool credits + Stripe payouts in one number.
+* County-level "open portal" — right now the Community Pool is one shared pot. If the long-term vision is multiple counties each with their own government sponsors and pool, that needs the schema generalization the docs already flag as unscheduled. Worth deciding now whether Tarrant County is a pilot or the permanent scope, since it changes how much to invest in the current single-county hardcoding.
+* Payment-splitting — if "everyday people helping each other" extends to group efforts (e.g., three neighbors moving furniture together), you'll want that Stripe Connect split-payment design sooner rather than later, since it's flagged as intentionally not supported today.
+* Public "helper of the day/week" or a running livable-wage counter on the community page would reinforce the "you can be paid just by waking up and helping" framing better than the current leaderboard (which is help-count/trust-score based, not earnings-based).
+
+Fix and verify helper-side reliability scoring and a public pool runway metric
+
+
+Real gaps — in the project's own words, verified against code
+The team's own CLAUDE.md is unusually candid, and I spot-checked its claims rather than taking them on faith. These are genuinely open:
+1. 63 of ~100 live API routes have no OpenAPI contract entry — including all of /stripe/*, /verification/*, /admin/*, /nia/*. This means big parts of the frontend call these with hand-written fetch and zero compile-time type safety. Not a bug today, but a landmine for future changes (a route can silently change shape and nothing will catch it at build time).
+2. No payment-splitting across multiple helpers. request_helpers is coordination-only — one helper gets claimed, paid, and rated per job. If your vision includes group tasks where several helpers split a payout, that's an explicit, real gap requiring a dedicated Stripe Connect design pass, not a quick fix.
+3. No voice I/O for Nia yet.
+4. Legal review is still outstanding. The ToS/waiver text (liability, "PIF is a gift not a loan," no-warranty) exists and is enforced server-side, but the docs explicitly flag it as not yet reviewed by a Texas attorney — important before scaling regulated categories like childcare, senior care, and medical.
+5. Single-county only, hard-coded. Civic resources, ToS text, and Nia's context are all Tarrant County/Fort Worth-specific. Expanding to other counties (your "county open portal" language) is called out as a real, unscheduled multi-session schema/contract project — not a toggle.
+6. businesses_enabled feature flag needs a one-time DB setting before the business-request flow is live in any given environment — easy to forget on a fresh deploy.
+7. DB migrations not yet applied in dev as of the last session note — relation does not exist warnings are logged (non-fatally) until pnpm --filter db run migrate is run. Worth confirming this is done in whatever environment you're about to demo or launch from.
+8. No load/performance testing done yet and no APM (Sentry/Datadog/New Relic) wired — fine at low volume, a real risk once real money and real urgent requests are flowing at scale.
+
+* Decide on the livable-wage mechanic. This is the one piece of your original vision with zero code behind it. If it's meant to be real (not just messaging), it needs: a per-hour or per-task floor, a trailing-earnings visibility view for helpers, and a funding source (the Community Pool from gov-sponsors.ts is a plausible backstop).
+* Clarify "county's open portal" direction with your own team. The current build is money-in (county funds pool); if you want counties or residents to post or route requests through the platform, that's new scope, not a bug fix.
+* Consider deleting the stale duplicate 90-day auto-default logic flagged in attached_assets notes (scheduler.ts vs pledge-worker.ts apply different penalties for the same event) — this is a real inconsistency worth consolidating into one worker so a requester's penalty isn't determined by cron race timing.
+

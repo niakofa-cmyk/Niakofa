@@ -1,0 +1,155 @@
+<h2 class="sr-only">Mockup of a griot story feature with a listening view for playing back a recorded oral history and a recording view for adding a new one</h2>
+<div style="font-family: var(--font-sans); max-width:380px; margin:0 auto;">
+  <div style="display:flex; gap:6px; margin-bottom:12px;">
+    <button id="tab-listen" style="flex:1; font-size:13px; padding:7px;">Listen</button>
+    <button id="tab-record" style="flex:1; font-size:13px; padding:7px;">Record a story</button>
+  </div>
+
+  <div style="background:var(--surface-1); border-radius:16px; padding:1.25rem;">
+
+    <div id="view-listen">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+        <div style="width:40px; height:40px; border-radius:50%; background:var(--bg-accent); display:flex; align-items:center; justify-content:center; font-weight:500; font-size:13px; color:var(--text-accent); flex-shrink:0;">FA</div>
+        <div style="min-width:0;">
+          <p style="font-size:14px; font-weight:500; margin:0;">Folake A.</p>
+          <p style="font-size:12px; color:var(--text-secondary); margin:1px 0 0;"><i class="ti ti-map-pin" style="font-size:13px; vertical-align:-2px;" aria-hidden="true"></i> Lagos, Nigeria · Elder</p>
+        </div>
+        <span style="margin-left:auto; font-size:11px; padding:3px 8px; border-radius:var(--radius); background:var(--surface-2); color:var(--text-secondary); white-space:nowrap;">Yorùbá</span>
+      </div>
+
+      <p style="font-size:15px; font-weight:500; margin:0 0 10px; font-family:var(--font-voice);">Why we named the first daughter after her grandmother</p>
+
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+        <button id="play-btn" aria-label="Play" style="width:36px; height:36px; padding:0; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+          <i id="play-icon" class="ti ti-player-play" style="font-size:16px;" aria-hidden="true"></i>
+        </button>
+        <div id="wave" style="flex:1; display:flex; align-items:center; gap:2px; height:32px; cursor:pointer;"></div>
+        <span id="time" style="font-size:12px; color:var(--text-muted); font-family:var(--font-mono); min-width:36px; text-align:right;">0:00</span>
+      </div>
+      <p style="font-size:12px; color:var(--text-muted); margin:0 0 14px;">3:12 · recorded for the Fort Worth community</p>
+
+      <button id="transcript-toggle" style="width:100%; font-size:13px; padding:8px; margin-bottom:6px;">
+        <i class="ti ti-align-left" style="font-size:14px; vertical-align:-2px; margin-right:4px;" aria-hidden="true"></i>Show transcript
+      </button>
+      <div id="transcript" style="display:none; font-size:13px; color:var(--text-secondary); line-height:1.7; padding:10px 2px 0; font-family:var(--font-voice);">
+        In our family, the first daughter always carries her grandmother's name. It is how we keep her voice in the room even after she is gone. When my daughter was born in Texas, far from home, I still called the elders to ask permission for the name...
+      </div>
+
+      <div style="display:flex; gap:6px; margin-top:14px;">
+        <button id="btn-related" style="flex:1; font-size:13px; padding:8px;">More from Lagos ↗</button>
+      </div>
+    </div>
+
+    <div id="view-record" style="display:none;">
+      <p style="font-size:13px; color:var(--text-secondary); margin:0 0 4px;">Today's prompt</p>
+      <p style="font-size:15px; font-weight:500; margin:0 0 16px; font-family:var(--font-voice);">What's a name, place, or memory you want the next generation to know?</p>
+
+      <div style="display:flex; gap:6px; margin-bottom:16px;">
+        <button id="mode-voice" style="flex:1; font-size:13px; padding:6px; background:var(--bg-accent); border-color:var(--border-accent); color:var(--text-accent);"><i class="ti ti-microphone" style="font-size:14px; vertical-align:-2px; margin-right:4px;" aria-hidden="true"></i>Voice</button>
+        <button id="mode-text" style="flex:1; font-size:13px; padding:6px;"><i class="ti ti-typography" style="font-size:14px; vertical-align:-2px; margin-right:4px;" aria-hidden="true"></i>Text</button>
+      </div>
+
+      <div id="record-voice" style="display:flex; flex-direction:column; align-items:center; padding:20px 0;">
+        <button id="rec-btn" aria-label="Start recording" style="width:64px; height:64px; border-radius:50%; background:var(--bg-danger); border:0.5px solid var(--border-danger); display:flex; align-items:center; justify-content:center;">
+          <i id="rec-icon" class="ti ti-microphone" style="font-size:24px; color:var(--text-danger);" aria-hidden="true"></i>
+        </button>
+        <p id="rec-status" style="font-size:13px; color:var(--text-muted); margin:12px 0 0;">Tap to start</p>
+        <p id="rec-timer" style="font-size:20px; font-family:var(--font-mono); margin:4px 0 0; display:none;">0:00</p>
+      </div>
+
+      <textarea id="record-text" style="display:none; width:100%; min-height:120px; padding:10px; font-size:14px; font-family:var(--font-voice); resize:vertical;" placeholder="Write the story here, in whatever language feels most natural..."></textarea>
+
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-top:12px;">
+        <span style="font-size:12px; color:var(--text-muted);"><i class="ti ti-lock" style="font-size:13px; vertical-align:-2px;" aria-hidden="true"></i> Visible to your diaspora tag only</span>
+        <button id="save-btn" style="font-size:13px; padding:6px 14px;">Save story ↗</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const heights = [8,14,10,20,16,24,12,18,9,15,22,11,19,13,17,10,21,14,8,16,12,20,9,18,15,11,23,13,17,10];
+document.getElementById('wave').innerHTML = heights.map((h,i) =>
+  `<div class="bar" data-i="${i}" style="width:3px; height:${h}px; background:var(--border-strong); border-radius:2px; flex-shrink:0;"></div>`
+).join('');
+
+let playing = false, elapsed = 0, total = 192, timer = null;
+const bars = document.querySelectorAll('.bar');
+
+function fmt(s){ const m = Math.floor(s/60); const r = s%60; return m + ':' + String(r).padStart(2,'0'); }
+function updateWave(){
+  const progress = elapsed / total;
+  const activeCount = Math.floor(progress * bars.length);
+  bars.forEach((b,i) => { b.style.background = i < activeCount ? 'var(--text-accent)' : 'var(--border-strong)'; });
+  document.getElementById('time').textContent = fmt(elapsed);
+}
+document.getElementById('play-btn').addEventListener('click', () => {
+  playing = !playing;
+  document.getElementById('play-icon').className = playing ? 'ti ti-player-pause' : 'ti ti-player-play';
+  if (playing){
+    timer = setInterval(() => {
+      elapsed++;
+      if (elapsed >= total){ elapsed = 0; playing = false; clearInterval(timer); document.getElementById('play-icon').className = 'ti ti-player-play'; }
+      updateWave();
+    }, 1000);
+  } else { clearInterval(timer); }
+});
+document.getElementById('transcript-toggle').addEventListener('click', (e) => {
+  const t = document.getElementById('transcript');
+  const open = t.style.display === 'block';
+  t.style.display = open ? 'none' : 'block';
+  e.currentTarget.innerHTML = open ? '<i class="ti ti-align-left" style="font-size:14px; vertical-align:-2px; margin-right:4px;" aria-hidden="true"></i>Show transcript' : '<i class="ti ti-align-left" style="font-size:14px; vertical-align:-2px; margin-right:4px;" aria-hidden="true"></i>Hide transcript';
+});
+document.getElementById('btn-related').addEventListener('click', () => sendPrompt('Show me more griot stories tagged to Lagos, Nigeria'));
+
+function setTab(which){
+  const listen = which === 'listen';
+  document.getElementById('view-listen').style.display = listen ? 'block' : 'none';
+  document.getElementById('view-record').style.display = listen ? 'none' : 'block';
+  document.getElementById('tab-listen').style.background = listen ? 'var(--bg-accent)' : '';
+  document.getElementById('tab-listen').style.borderColor = listen ? 'var(--border-accent)' : '';
+  document.getElementById('tab-listen').style.color = listen ? 'var(--text-accent)' : '';
+  document.getElementById('tab-record').style.background = listen ? '' : 'var(--bg-accent)';
+  document.getElementById('tab-record').style.borderColor = listen ? '' : 'var(--border-accent)';
+  document.getElementById('tab-record').style.color = listen ? '' : 'var(--text-accent)';
+}
+document.getElementById('tab-listen').addEventListener('click', () => setTab('listen'));
+document.getElementById('tab-record').addEventListener('click', () => setTab('record'));
+setTab('listen');
+
+function setMode(which){
+  const voice = which === 'voice';
+  document.getElementById('record-voice').style.display = voice ? 'flex' : 'none';
+  document.getElementById('record-text').style.display = voice ? 'none' : 'block';
+  document.getElementById('mode-voice').style.background = voice ? 'var(--bg-accent)' : '';
+  document.getElementById('mode-voice').style.borderColor = voice ? 'var(--border-accent)' : '';
+  document.getElementById('mode-voice').style.color = voice ? 'var(--text-accent)' : '';
+  document.getElementById('mode-text').style.background = voice ? '' : 'var(--bg-accent)';
+  document.getElementById('mode-text').style.borderColor = voice ? '' : 'var(--border-accent)';
+  document.getElementById('mode-text').style.color = voice ? '' : 'var(--text-accent)';
+}
+document.getElementById('mode-voice').addEventListener('click', () => setMode('voice'));
+document.getElementById('mode-text').addEventListener('click', () => setMode('text'));
+setMode('voice');
+
+let recording = false, recSeconds = 0, recTimer = null;
+document.getElementById('rec-btn').addEventListener('click', (e) => {
+  recording = !recording;
+  const icon = document.getElementById('rec-icon');
+  const status = document.getElementById('rec-status');
+  const timerEl = document.getElementById('rec-timer');
+  if (recording){
+    icon.className = 'ti ti-player-stop';
+    status.textContent = 'Recording...';
+    timerEl.style.display = 'block';
+    recSeconds = 0;
+    recTimer = setInterval(() => { recSeconds++; timerEl.textContent = fmt(recSeconds); }, 1000);
+  } else {
+    icon.className = 'ti ti-microphone';
+    status.textContent = 'Tap to start';
+    clearInterval(recTimer);
+  }
+});
+document.getElementById('save-btn').addEventListener('click', () => sendPrompt('Walk me through what happens after someone saves a griot story - moderation, translation, and how it appears on the globe'));
+</script>

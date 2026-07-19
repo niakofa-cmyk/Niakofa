@@ -1,0 +1,79 @@
+I have a full picture of the current state. Now I'll implement Phase 4 with 15 new effects in one efficient pass — all edits batched in parallel.
+
+Continuing the Phase 4 implementation. I need to:
+1. Add sankofa-svg-root class to the SVG element
+2. Add new SVG markup elements (beak-glint, egg thermal rings, notification-ring, wing-beat-ring, speed-streaks, walk-dust-4/5)
+3. Add Phase 4 CSS block before </style>
+Let me do these edits in parallel where possible.
+
+
+
+Continuing with Phase 4 implementation. I need to add the remaining SVG markup elements (notification-ring, wing-beat-ring, speed-streaks, walk-dust-4/5) and then add the Phase 4 CSS block. Let me do these in parallel.
+Now adding the remaining Phase 4 SVG markup elements and the full CSS block in parallel.
+
+Now I have enough context to implement Phase 4. Let me plan the complete implementation:
+New SVG markup elements to add (before the vortex circles near the end):
+1. .sankofa-wing-beat-ring — circle at cx=20, cy=27, r=2.5 (below body center)
+2. .sankofa-speed-streak, .sankofa-speed-streak-2, .sankofa-speed-streak-3 — horizontal lines behind the bird
+3. .sankofa-walk-dust-4, .sankofa-walk-dust-5 — additional dust circles near feet
+4. .sankofa-beak-glint — tiny circle at the beak tip
+5. .sankofa-egg-thermal-inner, .sankofa-egg-thermal-mid — concentric circles around the egg
+6. .sankofa-notification-ring — large circle for the notification effect
+I'll also need to add a nightMode prop to the component interface and pass it as a data attribute on the rig div to control the night mode styling.
+Now I'm working through the animation layers for the hop bounce and hover turbulence effects. The challenge is that the rig div already has an inline transform for banking, so I need to be careful about animation conflicts. I'm thinking I can target the SVG element itself rather than wrapping all its children, and animate specific groups like the legs for the hop and the body/wing area for the turbulence effect.
+But I'm realizing the class naming is getting confusing — the SVG element is labeled sankofa-bird-body which conflicts with the CSS rules that animate the actual body path inside it. I should add a dedicated class to the SVG element to avoid this ambiguity and make the animation targeting clearer.
+For the NightMode prop, I need to add it to the interface, destructure it in the function signature, pass it as a data attribute to the rig div, and apply the new class to the SVG element for the hop and turbulence animations.
+Now I'm adding the new SVG markup elements like thermal rings, notification ring, wing-beat effects, speed streaks, dust particles, and beak glints before the vortex circles, then inserting the egg thermal circles inside the egg counter-rotation wrapper, and finally writing out the Phase 4 CSS block to handle all these new animations and effects.
+For the transform conflicts, I'm going with the simpler approach of adding a class directly to the SVG element itself rather than wrapping its children in a group, since that avoids restructuring the entire SVG hierarchy.
+Now I'm mapping out where each new animation element needs to go in the SVG—the beak glint goes near the existing beak details, the egg thermal effects go inside the egg's counter-rotation group, and the notification ring, wing beat ring, speed streaks, and walk dust circles all get positioned before the vortex elements to maintain proper layering.
+I'm organizing this into five focused edits: one for the beak glint, one for the egg thermal rings, one for the notification and movement animations, one for the props and function signature updates, and finally a comprehensive Phase 4 CSS block that handles all the new animation keyframes and styling.
+Writing Phase 4 CSS... Writing animation keyframes... Adding dust animation styles... Adding animation keyframes... Adding animation variations... Still writing animation styles... Writing animation keyframes... Writing wing animations... Adding more animation styles... Writing animation keyframes... Writing CSS styles... Adding feather ruffle animations... Adding feather animations... Adding more feather animations... Adding streak animation delays... Writing animation keyframes... Adding thermal effects and beak details... Adding night mode styles... Writing sparkle animations... Adding more feather animations... Adding iris animation keyframes... Writing animation styles... Disabling animations... Writing CSS rules... Adding animation overrides... Adding the remaining edits...
+
+Now I have a clear picture of the codebase. I need to:
+1. Add Phase 4 SVG markup elements (wing-beat-ring, speed-streaks, walk-dust-4/5, beak-glint, egg-thermal layers, notification-ring)
+2. Add Phase 4 CSS block before </style>
+3. Add nightMode prop to interface and rig data attributes
+4. Push to GitHub
+Let me also check what the sankofa-bird-rig-inner is - it doesn't exist yet. I'll need to either: a) Use the .sankofa-bird-rig div itself (the outer div is the rig) b) Wrap the SVG in a new inner <g> element for per-element transforms
+Looking at the rig structure, the .sankofa-bird-rig div has the bank transform and all CSS variables, with the SVG element inside using a viewBox of 0 0 40 40. For the hover turbulence and accepted hop effects, I need an element between the rig div and the SVG content to handle those transforms.
+I could use a <g> inside the SVG as the inner rig, but that won't work with CSS selectors targeting data-attributes the way the current setup does. The SVG element itself has the sankofa-bird-body class which is already handling body animations, so I can't reuse that. The better approach is to add a <g> wrapper inside the SVG with its own class like sankofa-rig-inner that contains all the content, then target that wrapper with .sankofa-bird-rig .sankofa-rig-inner for the hop and turbulence animations. Or even simpler, I could just add a new class directly to the SVG element itself to handle these specific transforms. The issue is that the inline bank rotation style on the div will conflict with any CSS animation transforms I add. I need to create an inner <g> wrapper to separate concerns — the outer div handles bank rotation via inline styles, while the inner group element handles the hop and turbulence animations through CSS, and I'll need to set transform-box to make the transforms work properly on the group. I'm realizing the simpler path is to skip the whole-rig transforms and instead animate individual elements—the body, legs, and shadow can each move independently for the hop bounce, and the body parts can shift slightly for the hover turbulence effect.
+Using transform-box: view-box on SVG elements lets me work in SVG coordinate space with translateY(), which keeps things cleaner. Now I'm mapping out the Phase 4 implementation and identifying the new SVG elements I need to add, like the wing-beat ring and speed streak effects.
+
+
+Now I have a clear picture of the current state. Let me plan Phase 4 enhancements. I'll create a comprehensive set of new effects that go beyond Phase 3:
+Phase 4 — "Conscious Intelligence Layer" — 15+ new effects:
+1. Walk-dust lateral puff animation — the existing sankofa-idle-dust particles already exist in markup but only have idle behavior; add walk-dust CSS rules for data-speed="walking" that moves them sideways (left/right) as the bird "steps"
+2. Hover turbulence micro-oscillation — when data-landing="hover" (approaching destination, decelerating), the entire rig has a high-frequency random-feel oscillation (CSS: stepping through 8 keyframe offsets)
+3. Wing-beat air pressure ring — at street zoom, during active flapping, a faint teal ring radiates downward from under the wing body at the downstroke peak, using the existing shadow element to briefly expand then contract
+4. Crown feather heading-aware iridescence — crown feathers get a hue rotation tied to the heading angle at street zoom, independent from the body and tail coloring
+5. Celebrating wing-spread full hold — during celebration mode, the wings spread wide and hold that position for 0.8 seconds before returning to normal
+6. Accepted hop bounce — acceptance triggers a quick 3-hop jump sequence across the entire rig
+7. Asymmetric tail banking spread — while flying and banking, the bank angle modulates how the outer tail feathers spread, with outside-turn feathers expanding and inside feathers compressing
+8. Approach deceleration feather ruffle — when approaching, body feathers get a brief forward ruffle sequenced from front to back to simulate wind resistance
+9. Speed streaks at airplane zoom — at airplane zoom with low or mid altitude, speed streaks appear as motion-blurred lines trailing from the feather tips, adding to the existing contrail effect
+10. Egg thermal inner glow layers — the egg gets multiple concentric depth layers pulsing at different frequencies to create a 3D effect
+11. Night mode color shift — a new night mode attribute shifts all colors toward dark blue-teal and removes specular highlights
+12. Rain reaction — rain weather triggers micro-trembles on feathers to simulate water rolling off, squints the eye, and darkens the body
+13. Wing tip sparkle trail on donation — during donation while flying, tiny gold sparkles trail from each wing tip
+14. Pupil rapid dilation on accepted — acceptance triggers the iris and pupil to dilate rapidly in a quick scale burst
+I'm finishing up the remaining effects: beak moisture glint at street zoom level, then I'll add all these as a Phase 4 CSS block before the closing style tag. Since the stylesheet is already quite large, I need to carefully add new SVG elements like circles for the thermal layers and lines for the speed streaks. Adding SVG elements and guards... Writing Phase 4 CSS... Writing walk animation keyframes... Adding more animation rules... Writing hover turbulence animation... Adding animation keyframes... Adding crown iridescence styles... Writing animation keyframes... Finishing the wing animation keyframes... Adding wing animations for high zoom... Finishing the hop animation keyframes and applying it to the bird rig with a cubic-bezier easing curve, then moving on to define the tail feather spread behavior during banked turns.
+Writing tail animation styles... Adding tail feather animations... Adding feather animations... Adding more feather animations... Still writing styles... Writing thermal glow animations... Adding thermal effects for donated state...
+Now I'm working on the beak glint animation, a subtle specular highlight that pulses on the beak tip to simulate the wet sheen of a real bird's beak, with very low opacity for a delicate effect.
+Moving into night mode styling, where I'll shift the color palette toward deep blue-teal tones and mute the specular highlights. Writing CSS styles... Still writing animation styles... Adding more feather animations... Writing animation styles... Adding CSS rules for low-zoom notification visibility and battery-saver mode optimizations... Adding motion accessibility rules... Disabling more animations... Now I need to check if the rig-inner element exists and how it's structured so I can properly add the new class to it.
+
+Now I understand the full current state. Let me plan Phase 4 enhancements. I need to look at:
+1. What props the SankofaBirdSvg accepts (check line 16 of the interface)
+2. What SVG elements are available for new CSS targets
+3. What gaps remain
+Let me read the props interface and a few key sections to understand what I can add.
+From what I've seen:
+* Phase 3 is complete with 15 effects
+* I need to add Phase 4 with new beyond-Rive effects
+Let me read the interface and the beginning of the rig to understand all current data attributes.
+
+
+const result = await gitPush({
+message: "feat(sankofa-bird): Phase 4 — 15 new Conscious Intelligence Layer effects\n\nEffects 16–30 (all compound data-attribute state-machine gated):\n16. Walk-dust lateral puff — feet kick sideways at walking speed\n17. Hover turbulence — 10-keyframe body shudder during approach deceleration\n18. Wing-beat air pressure ring — teal stroke-circle pulses under body per downstroke\n19. Crown heading-aware iridescence — +45° phase offset from body, 0.25× heading rate\n20. Celebrating wing-spread triumph posture — elastic cubic-bezier overshoot\n21. Accepted 3-hop bounce — strong→medium→micro spring choreography\n22. Asymmetric tail banking spread — CSS calc() bank-angle differential per feather\n23. Approach wind-resistance ruffle — 11 feathers at 60ms stagger front-to-back\n24. Airplane speed-streak motion blur — 3-layer parallax at low/mid zoom only\n25. Egg thermal inner-glow depth — inner 1.65s + mid 2.45s never phase-sync\n26. Beak moisture glint — sub-pixel wet specular at beak tip, street zoom only\n27. Night-mode ambient color shift — data-night-mode prop, blanket CSS filter\n28. Donated wing-tip sparkle trail — gold launch sparks from l5/r5 primary tips\n29. Iris pupil dilation on accepted — scale 1.0→1.44→1.0 with pupil darkening\n30. Notification arrival ring — body-center ring readable at all zoom levels\n\nNew SVG markup elements:\n- sankofa-beak-glint (cx=2.4, cy=14.15)\n- sankofa-egg-thermal-inner / sankofa-egg-thermal-mid (cx=3.4, cy=15.6 egg)\n- sankofa-walk-dust-4 / sankofa-walk-dust-5 (lateral step dust)\n- sankofa-wing-beat-ring (cx=20, cy=27)\n- sankofa-speed-streak-1/2/3 (horizontal lines y=14/18/22)\n- sankofa-notification-ring (cx=20, cy=20)\n\nNew prop: nightMode?: boolean → data-night-mode on rig div\nsvg root gets sankofa-svg-root class for hop/turbulence targeting\nAll effects: battery-saver + prefers-reduced-motion guarded"
+});
+console.log(JSON.stringify(result));
+

@@ -1,0 +1,107 @@
+add a validation step that runs the Jest safety/lifecycle/lifecycle tests on every API server build so regressions like the updated_at write are caught before the server starts.
+
+13 minutes ago
+
+7 messages & 19 actions
+
+Checkpoint made
+11 minutes ago
+
+Worked for 1 minute
+add a typecheck step (tsc --noEmit) to the same build → test → typecheck → start chain so TypeScript type errors are also caught before the server starts
+
+10 minutes ago
+
+9 messages & 25 actions
+
+Checkpoint made
+7 minutes ago
+
+Worked for 3 minutes
+apply the same build → test → typecheck gate to the nia-service so its Anthropic/AI routes are also covered before that process starts
+
+6 minutes ago
+
+Analyzing package configuration
+Let me read the nia-service package.json, tsconfig, and check for existing tests all at once.
+
+
+2 actions
+No tests exist yet and no workspace lib deps (so no TS6305 risk). Let me check the nia-service source layout and whether there's a Replit workflow for it before writing anything.
+
+
+
+
+
+
+6 actions
+No nia-service workflow in .replit — it only runs in Railway. The dev script uses tsx watch (live reload, no build step). I need to read the kill-switch, safety, and internal-secret middleware to know exactly what's worth testing, then set up Jest and wire the gate.
+
+
+
+3 actions
+Good. I have enough context. Let me read the remaining critical files in parallel — the auth lib (kill-switch), safety exports, and community-context middleware — then I'll set up everything in one pass.
+
+
+2 actions
+I have everything I need. The plan:
+1. Install Jest + ts-jest in nia-service
+2. Write tests for the three pure-function modules: verifyToken (auth), checkSafety (safety), buildLocationPrefix (location)
+3. Add typecheck/test scripts, update dev, add a Replit workflow
+4. Register validation steps and verify
+Let me first check the exact checkSafety signature and what safety.ts exports, then do all writes in parallel.
+
+
+2 actions
+checkSafety(message: string): SafetyResult — clean. Installing Jest now, then writing all files in parallel.
+
+
+2 actions
+Now write all files in parallel — jest config, setup, three test files, updated package.json, updated tsconfig, and the new Replit workflow entry.
+
+
+
+
+4 actions
+Now write all three test files in parallel.
+
+
+
+
+4 actions
+The location test has a wrong import path — it's inside src/__tests__/ so it needs ../middleware/location.js not ../../src/middleware/location.js. Fixing that alongside the package.json scripts, tsconfig exclude, and .replit workflow entry — all in parallel.
+
+
+
+
+
+5 actions
+Now update package.json scripts, tsconfig.json exclude, and .replit — all in parallel.
+
+
+
+
+4 actions
+Now add the nia-service workflows to .replit and run the tests dry to verify they pass — in parallel.
+
+Planning workflow addition
+Direct .replit edits are blocked — I need the workflows skill for that. Let me read it and run the nia tests dry-run in parallel.
+
+
+But I found a real regression this round, and it's a more serious version of the pattern I flagged last time: the safety-ping endpoint's actual production code was reverted to an older state — it now contains a comment claiming "help_requests does NOT have an updated_at column" and skips the database write entirely. That's factually wrong in this codebase: migration 0061 (already in your own migrations folder) added that column two rounds ago. So the code was quietly rolled back to solve a problem that had already been fixed, undoing real functionality (the admin dashboard's "last seen live" tracking). I've restored the correct version, along with the test fix that goes with it.
+One thing worth calling out plainly: this makes it four rounds in a row where a fix I made got reverted by the next upload — the daily-kindness-worker bug, the Web Speech types, the Brazil migration naming (twice), the safety.test.ts mock (three times now), and this round, actual production logic. The pattern points to whatever's generating these zips saving from a branch or checkpoint that doesn't include the most recent work. I'd genuinely recommend having someone check that pipeline before the next round — I'll keep catching and fixing these, but each one is a real feature quietly working, then quietly not, without anyone noticing until it's audited.
+Nia AI and all core functions: verified working through the full test suite.
+Still open, unchanged: no automated cost-of-living data source for wage floors, multi-helper payout-sum verification, and a cross-county default backstop policy.
+
+Verify at least one county has actually set a custom hourly_rate — otherwise every helper is on the global default and the "county sets its own livable wage" feature is theoretically there but untested in practice.
+Confirm the Nia enable toggle is flipped on in your live deployment (still open from before).
+
+Fix the regression: restore the updated_at write in the safety-ping route — it's not writing to a nonexistent column, it's writing to a real one, and removing it silently breaks liveness tracking.
+
+Brazil Hubs
+Current: Solid via Griot Globe (diaspora_hubs, stories, language matching, globe UI). Northeast Brazil (Salvador/Bahia) is ideal. Multilingual safety + PT patterns exist.
+Missing: Dedicated seeds for Brazilian hubs/crisis resources (add parallel to seed-regional-crisis.ts). Prioritize Salvador, Recife, etc.
+
+Polish: Run codegen/typecheck; update MEMORY.md; test Nia share-story/voice.
+
+Seed Brazil hubs, then helper earnings card.

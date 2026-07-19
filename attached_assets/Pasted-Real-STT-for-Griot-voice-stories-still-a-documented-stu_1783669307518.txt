@@ -1,0 +1,29 @@
+Real STT for Griot voice stories (still a documented stub)
+A unified hub-leader dashboard (the pieces all exist as separate endpoints now, but no single screen)
+Nia and the diaspora-hub crisis system still don't talk to each other (Nia's check-in worker knows about county-level crisis_state, not diaspora_hubs.is_crisis)
+
+Anything Missing or Should Add?
+The app fully encompasses the vision and is ready for real-world impact. Targeted enhancements to deepen the kindness cycle:
+1. Voice I/O for Nia & Griot Stories (Priority): Enable spoken storytelling, listening, and guidance—crucial for accessibility across the Global Village and urgent local help.
+2. Stronger PIF ↔ Diaspora Bridges: Globe stories trigger local PIF suggestions or pool contributions ("Inspired by this story? Help a neighbor today").
+3. Structured Nia Memory: Evolve freeform text for cultural/diaspora preferences, making Nia an even wiser connector.
+4. UI/UX Polish for Flexible Repayments: Intuitive "pay what you can, when you can" portal with gentle gratitude reminders.
+5. Multi-Helper & Advanced Features: Coordinated support with careful payment splitting; expanded global seeds/hubs.
+Replit_Godfather Recommendations for Niakofa & Nia AI:
+As Nia's guardian, I see her as the wise, compassionate voice of the village. Improvements:
+* Voice-First Enhancements: Full STT/TTS integration (ElevenLabs/OpenAI) for natural conversations, story recording/playback in multiple languages/dialects. Nia can narrate Griot tales, coach helpers, or facilitate cross-diaspora connections.
+* Kindness Intelligence: Deeper prompt engineering with diaspora wisdom, real-time translation, ripple-effect tracking (story → local action → pool impact), and proactive suggestions ("This global kindness inspired 5 local helps today").
+* Nia as Helper Companion: Personalized guidance for livable-wage paths (skill tips, tenure boosts), gentle repayment nudges, and crisis/local resource matching.
+* App-Wide: Offline resilience, PIF-Griot seamless flows, expanded multi-hub pledges, and analytics showing community impact ("Helpers earned X toward livable wages this month").
+* Technical: Structured memory RAG, voice profile expansion, robust supervision, and end-to-end testing of voice + PIF + Globe.
+
+
+Backend test suite — 5 of 10 suites failed, 45 of 98 tests failed. This is the real finding of the day:
+* 4 suites (lifecycle, integration-lifecycle, bug-15b-15c, help-map-fuzz) fail with SyntaxError: @workspace/trust-tiers does not provide an export named 'getHubLeadershipTrustBonus' — but I proved via a direct isolated import that the export genuinely exists and works fine outside Jest. This is a Jest/ts-jest ESM-resolution bug in your test harness, not a real app bug — but it means your CI is currently blind on lifecycle and privacy-fuzz tests until it's fixed.
+* 1 suite (nia-safety-switch) has a real failing assertion: the test expecting the Nia kill-switch to turn ON when the DB value is exactly "true" gets false instead. I read the implementation and it looks logically correct (row?.value === "true"), so this looks like a mock-state bug in the test rather than the production toggle itself — but I'd treat this as unverified rather than "fine," since it's the one test guarding your AI kill-switch.
+Recommendations, updated
+* Fix the Jest ESM resolution issue first — you can't trust "tests pass" signals right now, and several of the blocked suites cover lifecycle and location-privacy fuzzing, which are exactly the kind of thing you don't want silently unverified.
+* Manually re-verify the Nia kill-switch behaves correctly (toggle it on in a real dev environment and confirm Nia responds) since its one automated test is currently unreliable.
+* Finish the civic marketplace: browsing exists now, but claiming by org staff and NET30/invoice payment are still unbuilt — that's the last mile of your "counties as active participants" vision.
+
+Rename/document the wage-tier system clearly in the ROADMAP — it exists under TIER_WAGE_MULTIPLIER but isn't tied to your original "help 50 families → higher floor" framing; worth deciding if trust-tier or raw help-count should drive it long-term.

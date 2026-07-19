@@ -1,0 +1,32 @@
+
+Still standing, in priority order:
+1. Confirm REDIS_URL is a valid redis:// or rediss:// URL in production. The test suite output today still shows the exact warning I flagged yesterday (REDIS_URL is set but is not a valid redis URL — BullMQ queues disabled) — that's expected in a test environment, but it's worth explicitly checking prod, since this is what silently disables pledge reminders.
+2. Add test coverage for nia-service and pay-it-forward. Still the only package without any automated tests is everything except api-server.
+3. A real background-check provider integration (e.g. Checkr) — still optional/stub, still relevant given childcare and senior_care are live claimable categories.
+4. Build the county-branded public dashboard. The data's all there now (/communities/:id, /communities/:id/ledger) — what's missing is a page that reads like a specific county's own transparency report, which is central to your "counties as a visible partner" framing.
+5. A "livable wage" copy pass on helper-facing screens — the mechanics (tenure multiplier × pool-health ratio) are real; nothing currently says it out loud to a helper deciding whether to open the app today.
+
+
+What’s Missing or Should Be Added (Prioritized Recommendations)
+The app is ~90% there. Focus on these for fuller vision:
+1. Enhanced Flexible Repayment UX (High Priority):
+    * Current: Pledge amounts, scheduled payments, partials via pool repayments.
+    * Add: Simple "Pay What You Can" micro-payments UI in wallet/active-requests (e.g., $1–$5 buttons + custom, with "Pay It Forward" motivational messaging). Auto-reminders tuned kindly. Public "My Impact" story sharing (Nia already supports share-story).
+2. Helper Livable Wage Visibility:
+    * Add projected earnings dashboard (based on local activity + pool health). "Daily Helping Streak" rewards (badges, small pool bonuses). Tenure multipliers already exist—surface in profile.
+3. County Portal Polish:
+    * Dedicated /county or /civic dashboard for local gov integration (already partial via gov-sponsors). Bulk request import for officials. Public PIF stats per county.
+4. Nia AI Enhancements (Verify & Expand):
+    * Verified Working: Proxy routes, history/memory, crisis, voice (nia-voice.ts), context (live match reasons, location).
+    * Recommendations: Deeper PIF coaching ("How to repay comfortably"), helper matching suggestions in chat, multilingual voice consistency. Test end-to-end (chat → complete → repayment prompt). Add "benevolence impact" summaries.
+5. Other Gaps:
+    * Multi-Helper Coordination: Help Chains exist but payment is single-helper. Future split logic noted as big project.
+    * Voice I/O Full: Partial (Nia voice routes).
+    * Offline/Resilience: Map works offline-ish; enhance PIF pledges for low-connectivity.
+    * Monetization/Sustainability: More sponsor tools, optional premium for businesses.
+    * Testing: Run pnpm test and manual flows (seed accounts, post PIF request, claim/complete, repay).
+No critical security/functional breaks in audited paths. Schema/migrations solid; Railway deploy hardened.
+
+Next Features: "Pay What You Can" UI, helper earnings projections, expanded Nia benevolence prompts.
+Community Growth: Onboard campaigns emphasizing "Help today, repay kindness tomorrow." Local ambassador program.
+Metrics: Track pool runway, helper retention, PIF repayment rates.

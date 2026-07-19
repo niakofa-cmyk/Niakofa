@@ -1,0 +1,77 @@
+
+Verity all enhancements are cohesive with the esthetics of the niakofa app
+
+update this app in chunks. Read text doc word for word, line by line. Fix, and address each and every issue.  Think carefully before editing. Understand the App and the vision and mission before you edit code. Review the code line by line before you edit code
+
+
+
+Database migrations workflow
+There's no db/migrations directory or migration runner — schema changes go directly to the dev DB with drizzle push. Before launch you need a proper migration file history (drizzle-kit generate + migrate) so production schema changes are auditable, reversible, and safe.
+Before launch
+Error monitoring (Sentry)
+Currently errors log to console only. Add Sentry (or equivalent) to both the API server and the frontend. You need to know about crashes in production before your users tell you. The VITE_SENTRY_DSN env var pattern is easy to add.
+Soon
+Redis as a hard requirement, not optional
+The setInterval fallback for BullMQ works but means push notifications, payout retries, and pledge reminders are unreliable in production without Redis. Make Redis required in production (check at startup) and only allow the fallback in development.
+Soon
+Geospatial index on requests table
+Nearby request queries currently compute distance in-application after fetching rows. At scale this becomes expensive. Add a PostGIS extension or a generated column with a btree index on (lat, lng) and push the distance filter into the DB query.
+Soon
+Accessibility audit
+No aria-labels on icon-only buttons, no keyboard navigation tested, no color-contrast audit run. A mutual aid platform for all of Fort Worth must be usable by people with disabilities. Run axe-core and fix the critical violations before launch.
+
+
+Onboarding flow
+New users land on a map with no orientation. There's no welcome screen, no explanation of what Niakofa is, no "post your first request" prompt, no helper mode explainer. First impressions define retention — this is the single highest-priority missing piece.
+register → tutorial → first action
+progress indicator
+empty state copy
+Missing
+Rating / review system
+After a request completes, neither the requester nor the helper can rate each other. The trust score exists in the DB but nothing feeds it after completion. Without bidirectional ratings, the trust tier system is a static number — not a living signal.
+star rating modal on complete
+written review optional
+trust score delta logic
+Missing
+Helper cancellation + requester withdrawal flows
+What happens when a helper claims a request and then can't follow through? There's no cancel/withdraw endpoint or UI. This creates ghost claimed requests that block other helpers and frustrate requesters. Critical for launch.
+PATCH /requests/:id/cancel
+cooldown penalty
+re-open to pool
+Missing
+Helper earnings / payout dashboard
+Helpers can earn money (Stripe Connect is configured) but there's no clear screen showing their earnings, pending payouts, or payout history. The wallet page is requester-focused. Helpers need their own financial view to feel the economic loop close.
+earnings tab in wallet
+payout schedule
+bank account status
+Missing
+Email notifications
+mailer.ts exists but is only wired to the receipt flow. No "your request was claimed", "your helper is en route", "your pledge is due" emails. Push notifications alone miss users who haven't granted permission or are on desktop. Email is a critical retention and trust signal.
+transactional emails
+weekly impact digest
+pledge reminder
+Incomplete
+i18n is scaffolded but not wired
+i18n.ts has English + Spanish strings but most pages still use hardcoded English. Backend error messages (e.g. "Email already registered") are English strings that can't be translated client-side. Fort Worth is ~35% Hispanic — fully wiring i18n is mission-critical, not a nice-to-have.
+replace all hardcoded strings
+error codes on API responses
+language picker in settings
+Incomplete
+Civic resources are seeded, not community-grown
+The 19 Tarrant County organizations are static seed data. The suggestion form exists but suggestions go nowhere actionable. There's no admin workflow to review and approve civic resource suggestions, so the "community-grown" vision isn't realized yet.
+suggestion review queue in admin
+verified badge on resources
+community upvoting
+Incomplete
+Legacy account password migration has no deadline
+Accounts with no password_hash can still log in indefinitely. The password_reset_required flag is returned but the enforcement path is unclear. This is a security debt that needs a sunset date and a forced-reset flow.
+force reset after 30 days
+email prompt to legacy accounts
+
+
+Immediate Critical Fixes (Priority 1)
+1.Secure Authentication: Immediately modify the login endpoint to correctly verify passwords for all users. For legacy accounts, enforce a mandatory password reset flow via email link rather than allowing unauthenticated access.
+2.Lock Down Admin Routes: Apply requireAuth and requireAdmin middleware to all sensitive routes in reports.ts, users.ts, and admin-analytics.ts. Ensure the frontend admin UI always sends the correct authorization headers.
+3.Synchronize API Spec: Update the openapi.yaml to include the missing /gratitude, /chat, and /verification endpoints, and ensure the category enums match between the frontend and backend.
+
+

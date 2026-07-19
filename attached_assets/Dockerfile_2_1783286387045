@@ -1,0 +1,45 @@
+# syntax=docker/dockerfile:1
+FROM node:22-alpine
+
+# Pin pnpm to the exact version used by the rest of the monorepo so transitive
+# dependency resolution is identical to what every other workspace package sees.
+RUN corepack enable && corepack prepare pnpm@10.26.1 --activate
+
+WORKDIR /app
+
+# FIX (2026-07-05): every previous version of this Dockerfile copied
+# `artifacts/nia-service/` as its own scoped subdirectory COPY layer. That
+# pattern repeatedly failed on Railway's Metal builder with:
+#   "failed to calculate checksum of ref ...: /artifacts/nia-service: not found"
+# This was NOT a stale-cache issue (confirmed: bumping CACHE_BUST to force a
+# fresh cache key still hit the identical error) and NOT a misconfigured
+# Railway "Root Directory" setting (confirmed empty). It's a real bug in how
+# that builder resolves a scoped, never-before-cached per-subdirectory COPY
+# path inside a monorepo. Copying the entire repo root in a single COPY
+# avoids that code path entirely, at the cost of losing the old two-stage
+# caching optimization (any source change now busts the install layer too,
+# not just the app layer) — see the pnpm store cache mount below, which
+# keeps repeat installs fast regardless of that layer-cache tradeoff.
+#
+# See .dockerignore at the repo root for what's excluded from this context
+# (node_modules, .git, attached_assets, etc.) so this stays reasonably lean.
+COPY . .
+
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --filter nia-service
+
+RUN pnpm --filter nia-service build
+
+# Prune dev-only packages for a leaner runtime image
+# --legacy: pnpm v10 changed `pnpm deploy`'s default to require
+# inject-workspace-packages=true unless this flag is passed. nia-service
+# doesn't need injected workspace packages (it resolves deps normally via
+# the hoisted node_modules layout already set in .npmrc), so --legacy keeps
+# the original, simpler deploy behavior instead of opting into that.
+RUN pnpm --filter nia-service deploy --prod --legacy /app/deploy
+
+WORKDIR /app/deploy
+
+# Expose default port for documentation; actual port injected via PORT env var at runtime
+EXPOSE 3001
+CMD ["node", "dist/index.js"]

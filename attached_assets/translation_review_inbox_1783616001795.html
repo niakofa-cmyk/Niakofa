@@ -1,0 +1,75 @@
+<h2 class="sr-only">Mockup of a recorder's translation review inbox, listing pending Nia translations of their stories, expandable into a side-by-side review panel with approve and edit actions</h2>
+<div style="font-family: var(--font-sans); max-width:420px; margin:0 auto;">
+
+  <div id="view-list">
+    <p style="font-size:13px; color:var(--text-secondary); margin:0 0 10px;">3 translations waiting for your review</p>
+
+    <div class="item" data-id="1" style="border:0.5px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:8px; cursor:pointer;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <p style="font-size:14px; font-weight:500; margin:0;">Why we named the first daughter...</p>
+        <span style="font-size:11px; padding:2px 8px; border-radius:var(--radius); background:var(--surface-1); color:var(--text-secondary); white-space:nowrap;">Português</span>
+      </div>
+      <p style="font-size:12px; color:var(--text-muted); margin:4px 0 0;">Waiting 2 days</p>
+    </div>
+
+    <div class="item" data-id="2" style="border:0.5px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:8px; cursor:pointer;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <p style="font-size:14px; font-weight:500; margin:0;">Why we named the first daughter...</p>
+        <span style="font-size:11px; padding:2px 8px; border-radius:var(--radius); background:var(--surface-1); color:var(--text-secondary); white-space:nowrap;">Kreyòl</span>
+      </div>
+      <p style="font-size:12px; color:var(--text-muted); margin:4px 0 0;">Waiting 2 days</p>
+    </div>
+
+    <div class="item" data-id="3" style="border:0.5px solid var(--border); border-radius:12px; padding:12px 14px; cursor:pointer;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <p style="font-size:14px; font-weight:500; margin:0;">The market at Balogun</p>
+        <span style="font-size:11px; padding:2px 8px; border-radius:var(--radius); background:var(--surface-1); color:var(--text-secondary); white-space:nowrap;">Español</span>
+      </div>
+      <p style="font-size:12px; color:var(--text-muted); margin:4px 0 0;">Waiting 5 hours</p>
+    </div>
+  </div>
+
+  <div id="view-detail" style="display:none;">
+    <button id="back-btn" style="font-size:13px; padding:5px 10px; margin-bottom:12px;">
+      <i class="ti ti-arrow-left" style="font-size:14px; vertical-align:-2px; margin-right:4px;" aria-hidden="true"></i>Back to inbox
+    </button>
+
+    <p style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.03em; margin:0 0 4px;">Your original · Yorùbá</p>
+    <div style="background:var(--surface-1); border-radius:12px; padding:12px 14px; margin-bottom:14px; font-size:13px; line-height:1.7; font-family:var(--font-voice);">
+      Ninu ìdílé wa, ọmọbìnrin àkọ́kọ́ máa ń jogún orúkọ ìyá ìyá rẹ̀...
+    </div>
+
+    <p style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.03em; margin:0 0 4px;">Nia's draft · Português <span style="text-transform:none; letter-spacing:0; background:var(--surface-1); color:var(--text-secondary); padding:2px 8px; border-radius:var(--radius); margin-left:6px;">Pending review</span></p>
+    <textarea id="draft-text" style="width:100%; min-height:110px; padding:10px; font-size:13px; font-family:var(--font-voice); line-height:1.7; resize:vertical; margin-bottom:14px;">Em nossa família, a primeira filha sempre carrega o nome da avó. É assim que mantemos sua voz na sala mesmo depois que ela se foi...</textarea>
+
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+      <span style="font-size:12px; color:var(--text-muted);"><i class="ti ti-globe" style="font-size:13px; vertical-align:-2px;" aria-hidden="true"></i> Publishes publicly once approved</span>
+      <div style="display:flex; gap:6px;">
+        <button id="save-edit-btn" style="font-size:13px; padding:6px 12px;">Save changes</button>
+        <button id="approve-btn" style="font-size:13px; padding:6px 12px; background:var(--bg-success); border-color:var(--border-success); color:var(--text-success);">
+          <i class="ti ti-check" style="font-size:14px; vertical-align:-2px; margin-right:4px;" aria-hidden="true"></i>Looks right
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+document.querySelectorAll('.item').forEach(el => {
+  el.addEventListener('click', () => {
+    document.getElementById('view-list').style.display = 'none';
+    document.getElementById('view-detail').style.display = 'block';
+  });
+});
+document.getElementById('back-btn').addEventListener('click', () => {
+  document.getElementById('view-detail').style.display = 'none';
+  document.getElementById('view-list').style.display = 'block';
+});
+document.getElementById('approve-btn').addEventListener('click', () => {
+  sendPrompt('What happens right after a recorder approves a translation - does it publish immediately or follow their release timing settings?');
+});
+document.getElementById('save-edit-btn').addEventListener('click', () => {
+  sendPrompt('If a recorder edits Nia\\'s translation before approving, should that correction get fed back to improve future translations for that language?');
+});
+</script>

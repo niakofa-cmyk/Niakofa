@@ -1,0 +1,116 @@
+Improved & Enhanced Code Snippets (Data Persistence + Map Mobile Fixes)
+Apply these targeted replacements. They fix disappearing data (state/WS sync, refresh, mode switch) and enhance mobile Map.
+1. AppContext.tsx — Central Persistent State (Core Fix)
+tsx
+
+// artifacts/pay-it-forward/src/lib/AppContext.tsx — Enhanced persistence
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+
+interface AppContextType {
+  requests: any[];
+  setRequests: (data: any[]) => void;
+  // ... other fields
+  refreshAllData: () => Promise<void>;
+}
+
+const AppContext = createContext<AppContextType | null>(null);
+
+export const AppProvider = ({ children }: { children: ReactNode }) => {
+  const [requests, setRequestsState] = useState<any[]>([]);
+
+  const setRequests = (newData: any[]) => {
+    setRequestsState(newData);
+    localStorage.setItem('niakofa_requests_cache', JSON.stringify(newData)); // Fallback
+  };
+
+  const refreshAllData = async () => {
+    try {
+      const res = await fetch('/api/requests?status=open,claimed,ongoing', {
+        headers: authHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRequests(data.requests || data);
+      }
+    } catch (e) {
+      // Load cache on failure
+      const cached = localStorage.getItem('niakofa_requests_cache');
+      if (cached) setRequests(JSON.parse(cached));
+    }
+  };
+
+  // Auto-refresh on visibility, focus, mode change
+  useEffect(() => {
+    refreshAllData();
+    const handle = () => refreshAllData();
+    document.addEventListener('visibilitychange', handle);
+    window.addEventListener('focus', handle);
+    return () => {
+      document.removeEventListener('visibilitychange', handle);
+      window.removeEventListener('focus', handle);
+    };
+  }, [helperModeActive]); // Re-sync on mode switch
+
+  return (
+    <AppContext.Provider value={{ requests, setRequests, refreshAllData /* ... */ }}>
+      {children}
+    </AppContext.Provider>
+  );
+};
+
+
+2. Enhanced MapView.tsx (Mobile + Persistence)
+tsx
+
+// artifacts/pay-it-forward/src/components/MapView.tsx
+import React, { useEffect, useCallback } from 'react';
+import Map from 'react-map-gl';
+import { useAppContext } from '@/lib/AppContext';
+import { BottomSheet } from './BottomSheet';
+
+export const MapView = ({ mode }: { mode: 'helper' | 'community' }) => {
+  const { requests, refreshAllData, setActiveRequestId } = useAppContext();
+  const mapRef = React.useRef<any>(null);
+
+  // Force sync
+  useEffect(() => {
+    refreshAllData();
+  }, [mode, refreshAllData]);
+
+  const visibleRequests = requests.filter(r => 
+    mode === 'helper' ? r.status === 'open' : true
+  );
+
+  return (
+    <div className="relative h-[calc(100vh-env(safe-area-inset-bottom)-80px)]">
+      <Map
+        ref={mapRef}
+        mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
+        mapStyle="mapbox://styles/mapbox/streets-v12"
+        onLoad={() => refreshAllData()}
+      >
+        {/* Existing markers/clusters with visibleRequests */}
+      </Map>
+
+      <BottomSheet /* enhanced with safe area */>
+        {/* Request cards */}
+      </BottomSheet>
+    </div>
+  );
+};
+
+
+3. DB / API Hardening (requests.ts example)
+TypeScript
+
+// artifacts/api-server/src/routes/requests.ts — Ensure no data loss
+router.get('/requests', requireAuth, async (req, res) => {
+  const { status = 'open,claimed,ongoing' } = req.query;
+  const statuses = (status as string).split(',');
+
+  const data = await db.select().from(requestsTable)
+    .where(inArray(requestsTable.status, statuses))
+    .orderBy(desc(requestsTable.createdAt));
+
+  res.json({ requests: data, timestamp: Date.now() }); // Add timestamp for client sync
+});

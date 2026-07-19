@@ -1,0 +1,63 @@
+build the mode-switch improvements first
+1. A real "Helper Mode" home screen, not just a toggle
+Right now, flipping Helper Mode on changes what you can do, but it doesn't fully change what you see. I'd make it swap the entire primary tab bar:
+* Helper Mode ON → tab bar becomes: Active Job / Nearby Requests (map, filtered to claimable) / Earnings / Circles. Navigation, earnings dashboard, and payout management become the default landing screen instead of something buried in Profile.
+* Helper Mode OFF → tab bar is: Home/Community / Map (browse & request) / Circles / Wallet. No navigation UI, no earnings dashboard, no background-check status anywhere in the nav.
+This is a routing/layout change, not a new app — App.tsx already has all these pages; it's a matter of making the tab bar itself conditional on helperModeActive instead of static.
+2. Scope background GPS to only when it's actually needed
+The document's battery concern is real and worth taking seriously even without two apps. Right now (per what I've seen this session), GPS watch runs continuously whenever the app is open. The fix: only run high-frequency background tracking when helper_mode_active && has an active claimed job. A requester, and a helper who's just browsing with the toggle off, should get low-frequency/foreground-only location — same battery win the document is after, done with one flag check instead of a second binary.
+3. Split the bundle, not the app
+You already have this partially — Vite is already code-splitting by route (I've watched admin.tsx, admin-analytics.tsx, request-new.tsx load as separate chunks all session). Extend that discipline: make sure navigation/turn-by-turn code and the earnings-dashboard code are in their own lazy chunks that never load for a user who's never toggled Helper Mode on. That gets you the document's "app size" benefit without a second binary — the download that matters (what actually hits a phone with limited storage) is what's loaded at runtime, and PWA/app-shell caching can be scoped the same way.
+4. Verification data stays gated, not hidden in a separate app
+Background-check and identity-verification UI already only needs to render inside the "Apply to become a Helper" flow you already built — a requester who never applies never sees it, same practical outcome as a separate app, zero extra maintenance.
+
+
+My recommendation
+Split the frontend into two deployed bundles. Do not split the backend.
+Frontend — yes, split:
+* Pull the helper-only screens (helper-dashboard.tsx, helper-onboarding.tsx, helper-profile.tsx, the nav-mode view of map.tsx) into their own Vite entry point, deployed to something like helper.niakofa.com, and leave the requester/community screens as the main niakofa.com bundle.
+* This gets you the real, legitimate benefits from the doc — a requester never downloads helper-dashboard code, a helper never loads restaurant-menu-browsing code, you can ship a helper-only hotfix without touching the requester bundle — without inventing a second backend or duplicating auth.
+* Share everything else: the same component library, the same lib/api-client-react generated hooks, the same session cookie (set the cookie domain to .niakofa.com so a user who's both a requester and a helper doesn't have to log in twice moving between subdomains).
+Backend — no, keep it one api-server:
+* Splitting the API itself into two services would mean either duplicating your auth/session logic, your ToS-version gate, your Stripe payout guardrails, and your rate limiters across two codebases, or having them call each other over the network for every cross-cutting concern (a helper accepting a request has to touch the same requests table a requester created it in). That's real complexity for no real gain — one Postgres database, one auth boundary, one place your requireAuth/requireAdmin checks live is safer, not less safe.
+* The two-service split you already have — api-server vs nia-service — is the right axis to split on, because those genuinely have different runtime needs (Nia's AI workers, its own migration path). Requester-vs-helper isn't that kind of difference; it's a screen difference, not a service difference.
+Where the doc's argument does become fully correct: if you ever build a real native Helper app — and there's a good case for it, specifically for background GPS turn-by-turn while the phone is locked (browsers kill background location aggressively; native doesn't), reliable push notifications for new nearby requests, and camera-based facial verification for the background-check flow — that's the point where "two separate apps" stops being a web-routing decision and becomes a real second codebase (React Native/Expo, sharing your existing lib/api-client-react hooks against the same api-server). I'd build that only for Helper, and only once you have enough active helpers that background tracking reliability is actually costing you completions — the Requester side has no comparable need and can likely stay a great installable PWA indefinitely.
+Implementation order I'd actually do this in
+1. Split the Vite build into two entries sharing the existing App.tsx route table (filter which routes each bundle registers), still served by the one api-server.
+2. Point helper.niakofa.com at the helper bundle, niakofa.com at the requester bundle, shared cookie domain for SSO.
+3. Leave api-server and nia-service exactly as they are.
+4. Revisit native-Helper-app only once background location reliability is a measured problem, not a hypothetical one.
+
+
+Database security & not losing data — concrete recommendations
+1. Turn on Railway's automated Postgres backups if you haven't (check retention window — the free tier's default is short), and actually test a restore at least once. An untested backup is unverified.
+2. Audit every ON DELETE CASCADE in your schema now that you've found one real bug from it. Historical/audit-relevant tables (transactions, ratings, chat messages) generally shouldn't hard-delete when a user does — SET NULL or a soft-delete flag preserves the record for the other party and for dispute resolution, the way this round's account-delete fix already does for requests.
+3. Add CI that runs your full test suite on every push, and protect the main branch so it can't merge without being current. This is the single highest-leverage fix available to you — it would have caught every one of the seven reversions I've manually found this session, automatically, before they ever reached me.
+4. Add a schema-drift check to CI: a script that runs drizzle-kit generate and fails the build if it produces an ungenerated migration. The missing reports.reported_griot_story_id column this round is exactly the bug that check exists to catch.
+5. Prefer additive migrations over edits to already-shipped ones — you're already doing this well (the 0060→0062→0063 Brazil-hub sequence, the updated_at backfill) — keep that discipline as the team grows.
+
+
+
+Database security / not losing data
+Concrete things I'd prioritize, based on what's actually in lib/db:
+* Backups: I didn't find an automated backup/PITR strategy referenced anywhere in the repo. Railway Postgres supports scheduled backups — turn this on and test a real restore, not just confirm backups exist.
+* Migrations are your biggest actual risk right now — your own memory notes flag this twice (niakofa-reports-griot-fk-migration-gap.md, niakofa-nia-service-migration.md): schema.ts and the SQL migrations have drifted before, and a migration referencing a column that was never actually applied fails at runtime, not at build time. Add a CI check that runs drizzle-kit introspection against migrations and fails the build on drift.
+* Cascades: account-delete-cascade-guard in your notes shows you already caught one dangerous case (help_requests.requester_id ON DELETE CASCADE could silently wipe request history on account deletion) and fixed it with a 409 block. Audit every other ON DELETE CASCADE in lib/db/src/schema/ for the same failure mode — financial tables (transactions, scheduled-payments, repayment-plans, hub-pledges) should almost never cascade-delete; they should be soft-deleted or orphan-preserved for audit trail reasons alone (money and legal/tax records shouldn't vanish because a user deletes their account).
+* Idempotent migrations: good pattern already in place (ON CONFLICT DO NOTHING in your Brazil hub migration, etc.) — keep enforcing that as a house rule.
+* Redis is optional per your README — good, but confirm the BullMQ→setInterval fallback path is actually load-tested, not just present in code, since a silent single point of failure there was already flagged once in your attached-assets history.
+* Secrets: Stripe, Checkr, Twilio, VAPID, Anthropic keys are all env-based, which is right — just confirm none of them ever get committed in a .env example with real values (worth a quick git log -p --all | grep -i sk_live style check on your remote history before this goes further, since these apps have had a lot of AI-assisted patch churn).
+
+Helper & Requester flow
+Helper flow, based on what exists: claim → en-route → arrived → complete, with GPS navigation, earnings dashboard, wage floor. Improvement: your no-show tracking and instant-payout systems exist but are two separate mental models for the helper (get penalized for no-shows, get rewarded for instant cashout) — consider surfacing both in one "reliability + earnings" screen so helpers see the full picture instead of discovering penalties reactively.
+Requester flow: request → helper matched → track → chat → complete → choose pay-now-or-pay-later. Given the gap in #4, the single highest-impact fix to your requester flow is exactly that, Add the flexible "pay what you can, when you can" option your vision describes
+
+
+What's in the zip:
+* Multi-entry vite.config.ts + helper.html/helper-main.tsx/HelperApp.tsx — one vite build, two bundles, sharing everything except the route table
+* Hostname-based serving patch for app.ts (one Railway service, not two — helper.niakofa.com just gets helper.html instead of index.html)
+* The handoff DB table, migration, and API routes
+* A SwitchAppLink component for "Switch to Helper" / "Switch to Requester"
+* A README.md with exact deploy steps
+Three things I deliberately flagged instead of guessing at: BottomNav already has a helper-tab variant that includes /community and /request/new, which aren't in the helper bundle's route table — that'll 404 until you decide which way to resolve it (I laid out both options in the README). The helper PWA manifest reuses the same icon as the requester app for now. And I didn't wire SwitchAppLink into profile.tsx myself since I didn't want to guess your layout.
+
+

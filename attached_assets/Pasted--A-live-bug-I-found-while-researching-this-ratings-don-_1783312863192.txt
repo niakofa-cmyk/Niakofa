@@ -1,0 +1,30 @@
+* A live bug I found while researching this: ratings don't actually work
+* The frontend has a real RatingModal.tsx that calls POST /api/requests/:id/rate. That route doesn't exist anywhere in api-server. The ratings table schema is real, and a test file inserts into it directly, but no HTTP endpoint ever writes to it in production. Right now, any real user who submits a rating gets a 404 — the feature is a dead end. This matters here specifically because "quality" needs something to measure quality by, so I'll fold the fix into the plan below rather than treat it as a separate ticket.
+* Another thing I found that's directly relevant to your answer on question 2
+* trust_score defaults to 5.0 at signup, and the only code that ever touches it decreases it (ban penalties, report penalties). There is currently no path that raises it. Meanwhile the existing tier logic (getTierName in trust-tiers.ts — a member → verified → trusted → elite → anchor system that already exists) requires trust_score >= 85 just to leave "member." So today, literally no one can ever advance past the bottom tier — the "unlock" mechanism you're describing doesn't exist yet. Good news: this means I don't need to invent a new tier system alongside a "tenure tier" — I should extend the one that's already there.
+* Revised plan, incorporating your three answers
+* 1. Fix the dead rating endpoint (prerequisite, not optional) POST /requests/:id/rate — validates the rater actually participated in that request, writes to ratingsTable, one rating per rater per request (unique constraint already exists in schema).
+* 2. Trust score gets a real "up" path — participation-based, exactly as you described On every completion (regardless of how it's rated — this is the "low-quality jobs still count" part), bump the helper's trust_score by a small fixed amount, capped at a ceiling below what a genuinely well-reviewed helper can reach. Volume alone gets someone out of "brand new," it just can't carry them to the top on its own.
+* 3. Tenure-tier advancement is quality-gated — separate from the trust_score bump Reuse member/verified/trusted/elite/anchor. Advancement requires both help_count and trust_score thresholds (already the existing pattern) — but I'll add a floor requiring the helper's average rating on their last N jobs to stay at 4+ stars, once ratings are real. This is where "low-quality jobs don't count toward tenure" lives: they still nudge trust_score up a little, but a string of poorly-rated jobs blocks tier advancement even if the raw count keeps climbing.
+* 4. Community/county-scoped funding multiplier Right now community_pool_ledger is one single global pool — no region concept at all. To make the multiplier actually depend on "the amount of funds in that particular community/county's pool," I'd add:
+* 
+* sql
+* CREATE TABLE communities (
+*   id SERIAL PRIMARY KEY,
+*   name TEXT NOT NULL,               -- e.g. "Tarrant County"
+*   target_reserve_amount REAL NOT NULL  -- admin-set "healthy" pool balance for this community
+* );
+* ...plus a nullable community_id on both usersTable and community_pool_ledger (defaulting to a single seeded "Tarrant County" row so nothing breaks today, but the schema is ready the moment you expand to a second county). The wage multiplier becomes: tier multiplier × that community's pool-health ratio (current balance ÷ target reserve, clamped). A well-funded county gives its tenured helpers a bigger bonus; an underfunded one still gives something, just scaled down so it can't be paid into insolvency.
+* 5. Stickiness A new highest_tier_reached column on usersTable. Effective tier = max(currently computed tier, highest_tier_reached), so it can only go up, permanently — never reassessed downward, removed only when the account itself is deleted (which already cascades correctly, per an earlier audit).
+* 
+* 
+* the community-scoped tenure/multiplier system (bigger migration, touches community-pool.ts, requests.ts, trust-tiers.ts, plus a communities table)
+* Expand to The community/county-scoped tenure-tier multiplier system
+* 
+* no community/county fund-scoping at all?
+* the multiplier should depend on "the amount of funds in that particular community/county Funding Pool" — richer pools give bigger bonuses, thinner pools scale it back to protect solvency. What actually shipped is a flat, hardcoded schedule that pays an Anchor-tier helper 20% more regardless of how much money is actually in the pool. That means right now, a pool running low could theoretically pay out 20% bonuses it can't really sustain, with nothing tying the multiplier to actual pool health.
+* 
+* 
+* "Enhance community pool functionality and add trust tier validation to NIA proxy integration" (64fdc0c, ~5 min ago) — commit message claims trust-tier validation was added to the Nia proxy plus community pool enhancements. I ran targeted searches against both community-pool.ts and nia-proxy.ts for trust-tier validation logic and got zero matches — I cannot verify this claim in code yet. Flagging as unverified, not confirmed.
+* "Fix push notification queue worker and add database migrations with memory documentation" (505f688, ~1 hr ago) — a fix to the notification worker plus new migrations. I couldn't isolate the specific diff in this pass; the search surfaced general project docs instead of the targeted change.
+Fix, Verify all Nia AI wiring end to end.

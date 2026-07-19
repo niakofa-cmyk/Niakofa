@@ -1,0 +1,109 @@
+Niakofa App Forensic Finalization Report — Latest Repo Review
+Nia AI Floating Button
+Nia movable button is not implemented in current production TopBar.tsx
+TopBar.tsx imports motion but only uses it for SOS modal animations
+No Nia launcher component exists in the topbar
+No draggable Nia element exists
+No drag property exists
+No onDragEnd exists
+No pointer/touch movement handlers exist
+No Nia position state exists
+No saved user position exists
+No restore position logic exists
+Root Cause
+TopBar currently renders only:
+SOS button
+Helper mode switch
+Profile avatar
+Nia is not inside the render tree:
+TopBar
+ ├── SOS
+ ├── Helper Status
+ └── Profile
+
+Missing:
+
+TopBar
+ └── Nia Floating Launcher
+Layout Blocker
+
+Current structure:
+
+<div className="absolute top-0 left-0 right-0">
+  <div className="flex items-center justify-between">
+
+Problems:
+
+justify-between forces three fixed positions
+Nia cannot move independently
+Child elements inherit topbar positioning
+No floating layer exists above content
+Nia AI Integration Gaps
+No Nia global launcher
+No Nia quick access button
+No Nia open/close state in AppContext
+No Nia location preference
+No Nia user customization
+No Nia accessibility controls
+Required Finishing Changes
+Add:
+components/
+ └── NiaFloatingButton.tsx
+
+Features:
+
+draggable
+touch support
+desktop mouse support
+screen boundary limits
+snap-to-edge
+reset position
+State Needed
+
+Add:
+
+niaPosition = {
+ x,
+ y
+}
+
+Store:
+
+localStorage
+
+Restore:
+
+on app startup
+Nia Evolution Completion
+
+Missing final pieces:
+
+Nia launcher everywhere
+Nia memory controls
+Nia privacy settings
+Nia voice interface
+Nia app navigation actions
+Nia support escalation
+Nia community intelligence layer
+Production Blockers
+Workspace dependency integrity needs final verification
+Database migration needs successful production run
+Full build required after Nia integration
+Mobile testing required
+Priority
+
+P0:
+
+Add Nia floating launcher
+Add drag system
+Add persistent position
+
+P1:
+
+Connect Nia AI service
+Add Nia global context
+Add user controls
+
+P2:
+
+Complete Nia assistant ecosystem

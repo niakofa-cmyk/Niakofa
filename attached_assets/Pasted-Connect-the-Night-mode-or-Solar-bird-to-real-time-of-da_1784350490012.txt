@@ -1,0 +1,389 @@
+Connect the Night mode or (Solar) bird to real time of day so it goes dark at sunset automatically. Continue verify enhancements can be seen on the phone and new devices, then continue to Review end to end your work and Verify That you Finish and checkpoint this edition of improvements before your usage rate or session percentage runs out! Verify you finish before your session time runs out!Read Verify each and every issue. Ensure you address each and every issue. And Fix, improve and enhance the code if you can. Fix, Improve and enhance and Close each and every and all remaining Gaps end to end, and issues. Fix, Improve and enhance, address all remaining Bugs end to end. Push all improvements and enhancements to repo and verify landing. Verify and ensure that you push all improvements and enhancements to repo. Push all improvements and enhancements to repo and verify landing. Verify and ensure that you push all improvements and enhancements to repo. Push and independently confirmed via gitPull that GitHub's main now matches local main exactly. https://github.com/niakofa-cmyk/Niakofa GitHub is confirmed — origin/main, migrate to github script
+
+11 minutes ago
+Codebase orientation
+
+Codebase orientation
+I'll work through this systematically in parallel. Let me first orient on the current state of the SankofaBird component tree, then wire night-mode, then do a full end-to-end audit.
+
+Show less
+
+Explored component tree
+
+Executed action
+// Explore the SankofaBird component tree and AppContext in parallel
+const [birdExplore, contextExplore] = await Promise.all([
+subagent({
+name: "bird-component-tree",
+task: `In artifacts/pay-it-forward/src, find:
+1. SankofaBird.tsx - list all props it accepts, especially nightMode, and where it is rendered (which parent files import it)
+2. SankofaBirdSvg.tsx - list the nightMode prop signature and data-night-mode attribute usage, and any CSS block with night-mode selector
+3. bird-test.tsx - does it have a nightMode toggle?
+Report file paths, prop signatures, and key line numbers.`,
+config: { $kind: "explore" }
+}),
+subagent({
+name: "app-context-explore",
+task: `In artifacts/pay-it-forward/src:
+1. AppContext.tsx - what state/values does it export? Is there any time-of-day, solar, or night-mode state?
+2. Find where "SankofaBird" is used/rendered - what props are currently passed to it?
+3. Is there a useTimeOfDay or useSolar hook anywhere?
+4. In lib/sankofa-bird-math.ts - what functions are exported?
+Report file paths and line numbers.`,
+config: { $kind: "explore" }
+})
+]);
+console.log("=== BIRD TREE ===\n", birdExplore.text.slice(0, 3000));
+console.log("\n=== APP CONTEXT ===\n", contextExplore.text.slice(0, 3000));
+
+
+Subagent: In artifacts/pay-it-forward/src, find: 1. SankofaBird.tsx - list all props it accepts, especially nightMode, and where it is rendered (which parent files import it) 2. SankofaBirdSvg.tsx - list the nightMode prop signature and data-night-mode attribute usage, and any CSS block with night-mode selector 3. bird-test.tsx - does it have a nightMode toggle? Report file paths, prop signatures, and key line numbers.
+Task
+In artifacts/pay-it-forward/src, find:
+1. SankofaBird.tsx - list all props it accepts, especially nightMode, and where it is rendered (which parent files import it)
+2. SankofaBirdSvg.tsx - list the nightMode prop signature and data-night-mode attribute usage, and any CSS block with night-mode selector
+3. bird-test.tsx - does it have a nightMode toggle?
+Report file paths, prop signatures, and key line numbers.
+In artifacts/pay-it-forward/src, find:
+1. SankofaBird.tsx - list all props it accepts, especially nightMode, and where it is rendered (which parent files import it)
+2. SankofaBirdSvg.tsx - list the nightMode prop signature and data-night-mode attribute usage, and any CSS block with night-mode selector
+3. bird-test.tsx - does it have a nightMode toggle?
+Report file paths, prop signatures, and key line numbers.
+Show more
+
+
+
+
+
+
+8 actions
+2 failed
+Working
+Result
+1. SankofaBird.tsx
+Props: Accepts SankofaBirdProps, which include: heading (number | null), mapBearing, speed, navigating, size, celebrating, newNotification, accepted, donated, upcomingTurnDirection, mapZoom, nearbyUser, approaching, isHelping, batterySaver, and nightMode (boolean). Parent Renderers:
+* artifacts/pay-it-forward/src/pages/map.tsx
+* artifacts/pay-it-forward/src/pages/request-active.tsx
+* artifacts/pay-it-forward/src/pages/bird-test.tsx
+* artifacts/pay-it-forward/src/App.tsx (via routing/global state)
+2. SankofaBirdSvg.tsx
+Prop Signature: nightMode?: boolean; (defined in SankofaBirdProps on line 89; defaulted to false on line 131). Attribute Usage:
+* Line 491: data-night-mode={nightMode ? "true" : "false"} on the root .sankofa-bird-rig element. CSS Blocks:
+* Line 6026: .sankofa-bird-rig[data-night-mode="true"] - Applies a filter for nocturnal palette (hue-rotate +22°, saturate ×0.58, brightness ×0.65).
+* Line 6030: .sankofa-bird-rig[data-night-mode="true"][data-celebrating="true"] - Relaxes filter during celebration.
+* Line 6034: .sankofa-bird-rig[data-night-mode="true"][data-donated="true"] - Relaxes filter during donation reaction.
+* Line 6176: .sankofa-bird-rig[data-night-mode="true"] - Specific transition: none !important rule within a media query.
+3. bird-test.tsx
+NightMode Toggle: No. The file contains no references to nightMode. While it imports SankofaBird and includes numerous demo harnesses (Takeoff, Landing, Banking, LOD, etc.), it does not implement a toggle or state for testing the nightMode prop.
+
+Subagent: In artifacts/pay-it-forward/src: 1. AppContext.tsx - what state/values does it export? Is there any time-of-day, solar, or night-mode state? 2. Find where "SankofaBird" is used/rendered - what props are currently passed to it? 3. Is there a useTimeOfDay or useSolar hook anywhere? 4. In lib/sankofa-bird-math.ts - what functions are exported? Report file paths and line numbers.
+Task
+In artifacts/pay-it-forward/src:
+1. AppContext.tsx - what state/values does it export? Is there any time-of-day, solar, or night-mode state?
+2. Find where "SankofaBird" is used/rendered - what props are currently passed to it?
+3. Is there a useTimeOfDay or useSolar hook anywhere?
+4. In lib/sankofa-bird-math.ts - what functions are exported?
+Report file paths and line numbers.
+In artifacts/pay-it-forward/src:
+1. AppContext.tsx - what state/values does it export? Is there any time-of-day, solar, or night-mode state?
+2. Find where "SankofaBird" is used/rendered - what props are currently passed to it?
+3. Is there a useTimeOfDay or useSolar hook anywhere?
+4. In lib/sankofa-bird-math.ts - what functions are exported?
+Report file paths and line numbers.
+Show more
+
+
+
+
+
+
+7 actions
+2 failed
+Working
+Result
+1. AppContext.tsx Analysis
+File Path: artifacts/pay-it-forward/src/lib/AppContext.tsx Exported State/Values:
+* currentUser (User | null)
+* setCurrentUser
+* helperModeActive (boolean)
+* setHelperModeActive
+* myLocation (Location | null)
+* activeRequestId (number | null)
+* setActiveRequestId
+* userPlace (UserPlace | null)
+* setUserPlace
+* logout (function)
+* niaEnabled (boolean | null)
+* mapNavOpen (boolean)
+* setMapNavOpen
+* mapSettingsOpen (boolean)
+* setMapSettingsOpen
+Time-of-day/Solar/Night-mode: There is no state related to time-of-day, solar, or night-mode in AppContext.tsx.
+2. SankofaBird Usage and Props
+File Paths:
+* artifacts/pay-it-forward/src/pages/map.tsx (Lines 1474, 1590)
+* artifacts/pay-it-forward/src/pages/request-active.tsx (Lines 805, 843)
+* artifacts/pay-it-forward/src/pages/bird-test.tsx (Lines 108, 623, 707, 799)
+Props Currently Passed: The component accepts SankofaBirdProps (defined in SankofaBirdSvg.tsx, line 16). Common props passed include:
+* heading, mapBearing, speed, navigating, size
+* Micro-reactions: celebrating, newNotification, accepted, donated, nearbyUser
+* Environmental/State: mapZoom, upcomingTurnDirection, approaching, isHelping, batterySaver
+* Night Mode: The prop nightMode exists in the interface (observed in SankofaBirdSvg.tsx line 87) but is not currently being passed by any of the parent components in map.tsx or request-active.tsx.
+3. hooks/useTimeOfDay or useSolar
+Result: Neither useTimeOfDay nor useSolar hooks exist in the codebase. A search for these terms returned no results.
+4. lib/sankofa-bird-math.ts Analysis
+File Path: artifacts/pay-it-forward/src/lib/sankofa-bird-math.ts Exported Functions:
+* computeScreenRotation (Line 34)
+* shortestHeadingDelta (Line 51)
+* computeBankAngle (Line 67)
+* computeWingExtras (Line 86)
+* computeTailBend (Line 102)
+* computeHeadLeadDeg (Line 120)
+* computeFlightMode (Line 144)
+* getSpeedTier (Line 165)
+* computeFlapPeriodMs (Line 192)
+* computeLeanDeg (Line 221)
+* Exported Types: LandingPhase, SpeedTier
+Planning SankofaBird enhancements
+
+Planning SankofaBird enhancements
+Now I have a clear picture. Let me plan the work:
+1. Create useTimeOfDay hook - calculates isNight based on GPS coordinates and real solar position
+2. Wire nightMode prop in map.tsx and request-active.tsx
+3. Add nightMode toggle to bird-test.tsx
+4. End-to-end audit of all SankofaBird enhancements for mobile compatibility
+Let me now look at the relevant parts of map.tsx and request-active.tsx to understand how to pass the nightMode prop, and also look at AppContext to understand where myLocation comes from. I'll examine the relevant sections in parallel.
+Good. Now I have the full picture. Let me read the key sections I need to edit, all in parallel:
+
+Show less
+
+Searched for "nightMode|SankofaBird|b…"
+
+$ cd /home/runner/workspace && grep -n "nightMode\|SankofaBird\|batterySaver\|isHelping" artifacts/pay-it-forward/src/pages/map.tsx | head -40
+
+
+
+Searched for "nightMode|SankofaBird|b…"
+
+Searched for "nightMode|SankofaBird|i…"
+
+Searched for "myLocation|useAppContex…"
+
+$ cd /home/runner/workspace && grep -n "myLocation\|useAppContext\|helperMode\|batterySaver" artifacts/pay-it-forward/src/pages/map.tsx | head -30
+
+
+Checking SankofaBird and device state
+
+Checking SankofaBird and device state
+Let me now read the key sections I need to edit. I need to:
+1. See the SankofaBird calls in map.tsx (around lines 1474 and 1590)
+2. See the SankofaBird calls in request-active.tsx (around lines 805 and 843)
+3. See the bird-test.tsx SankofaBird calls (around line 108)
+4. Check what IS_LOW_END_DEVICE is in map.tsx
+Let me read these sections in parallel.
+
+Opened map.tsx
+
+Opened request-active.tsx
+
+Opened bird-test.tsx
+
+Searched for "IS_LOW_END_DEVICE|devic…"
+
+$ cd /home/runner/workspace && grep -n "IS_LOW_END_DEVICE\|deviceMemory\|hardwareConcurrency" artifacts/pay-it-forward/src/pages/map.tsx | head -10
+
+
+Planning next steps
+
+Planning next steps
+Now I have a clear picture of what needs to be done. Let me plan all the work:
+1. Create useTimeOfDay hook - computes isNight from user's GPS coordinates using solar angle math (no external API needed)
+2. Wire nightMode prop in map.tsx (both SankofaBird instances) and request-active.tsx (both instances)
+3. Add nightMode toggle to bird-test.tsx - both in BirdCard and the test page
+4. Mobile/device compatibility audit - check for iOS-specific issues, check the CSS for any remaining problems
+Let me now read the rest of what I need to understand - specifically:
+* Where myLocation is used in map.tsx (to get lat/lng for solar calculation)
+* The top of map.tsx to see imports
+* The top of request-active.tsx imports section
+Then I'll create the hook and wire everything up. For the solar calculation, I'll use a pure math approach - calculate solar elevation from lat/lng/time, and call it night when solar elevation < -6° (civil twilight).
+Now I have everything I need. Let me build the full solution in parallel — create the useTimeOfDay hook, wire it into all callers, update the test harness, and run the full audit simultaneously.
+
+Show less
+
+Opened map.tsx
+
+Opened request-active.tsx
+
+Opened bird-test.tsx
+
+Searched for "data-night-mode|nightMo…"
+
+$ cd /home/runner/workspace && grep -n "data-night-mode\|nightMode\|night_mode\|isNight" artifacts/pay-it-forward/src/components/SankofaBird.tsx | head -20
+
+(no output)
+Implementing time-of-day logic
+
+Implementing time-of-day logic
+Let me continue working. I have all the info I need. Let me now:
+1. Create the useTimeOfDay hook with solar angle math
+2. Wire nightMode into map.tsx (both SankofaBird instances)
+3. Wire nightMode into request-active.tsx (both SankofaBird instances)
+4. Add nightMode toggle section to bird-test.tsx
+5. Look at the end of bird-test.tsx to see where to add the new section
+Let me also check the SankofaBird.tsx wrapper to see how it forwards props, and check the bird-test.tsx structure for more context. I'll batch all the file reads first, then handle the writes together.
+Let me read the remaining pieces I need, all in parallel:
+
+Show less
+
+Opened bird-test.tsx
+
+Opened SankofaBird.tsx
+
+Listed files
+
+$ ls artifacts/pay-it-forward/src/hooks/
+
+
+Generating code
+
+Generating code
+Now I have all the information I need. Let me create all the files and edits in parallel:
+1. Create useTimeOfDay hook at artifacts/pay-it-forward/src/hooks/useTimeOfDay.ts
+    * Pure solar angle math from lat/lng/time
+    * isNight = solar elevation < -6° (civil twilight)
+    * Refreshes every minute
+2. Edit map.tsx - add import + wire nightMode to both SankofaBird instances
+3. Edit request-active.tsx - add import + wire nightMode to both SankofaBird instances
+4. Edit bird-test.tsx - add nightMode toggle section and wire it to BirdCard
+For the solar calculation, I'm using the standard solar position algorithm with Julian date computation, solar declination, hour angle, and the elevation formula to determine if it's night based on civil twilight threshold. Writing the hook now...
+Writing the hook implementation... Calculating the sun's equation of center using multiple sine terms, then deriving its true longitude and apparent longitude with corrections for aberration and nutation, before computing the obliquity of the ecliptic. Calculating solar elevation...
+Now I'm creating a React hook that determines whether it's night or day based on the solar elevation angle, with a fallback to daytime if the location isn't available, and it recalculates every 60 seconds.
+Setting up the effect to handle missing coordinates...
+Computing the solar elevation and checking if we've crossed into night mode...
+Estimating minutes until the next day/night transition...
+Running the computation immediately and then scheduling it to repeat every minute...
+The loop does 720 solar elevation calculations per update, which is fine since it only runs once per minute...
+Actually, I should strip out the transition estimation for now since it's not essential for the MVP. Let me map out the changes I need to make: create the hook file, then update the map component to import and use it, passing the night mode flag to both bird instances, and do the same for the request-active component.
+In request-active, I need to be careful since myLocation is guaranteed to exist there due to a render guard, so I can safely call the hook with those coordinates. Then I'll add the nightMode prop to the bird components in that file too, and finally update the test file to include a night mode section.
+Now I have everything. Let me check where myLocation is used in request-active.tsx for hook placement, then write all 4 files simultaneously:
+
+Show less
+
+Searched for "useAppContext|myLocatio…"
+
+$ cd /home/runner/workspace && grep -n "useAppContext\|myLocation\|const {" artifacts/pay-it-forward/src/pages/request-active.tsx | head -20
+
+
+Parallel file editing
+
+Parallel file editing
+Now I have all the context I need. Let me write all the files in parallel:
+1. Create useTimeOfDay.ts hook
+2. Edit map.tsx - add import + nightMode prop to both SankofaBird instances
+3. Edit request-active.tsx - add import + nightMode prop to both SankofaBird instances
+4. Edit bird-test.tsx - add nightMode to BirdCard + new night-mode section
+Let me do all 4 in parallel.
+All context gathered. Writing all 4 changes simultaneously:
+
+Show less
+
+Created useTimeOfDay.ts
+
+Edited map.tsx
+
+Edited request-active.tsx
+Parallel edits for time-of-day
+
+Parallel edits for time-of-day
+Let me continue with the wiring. I need to:
+1. Add useTimeOfDay hook call in map.tsx after myLocation is destructured
+2. Add nightMode prop to both SankofaBird instances in map.tsx
+3. Add useTimeOfDay hook call in request-active.tsx after myLocation is destructured
+4. Add nightMode prop to both SankofaBird instances in request-active.tsx
+5. Update bird-test.tsx with nightMode toggle section
+Let me do all these edits in parallel.
+Now wire the hook calls and nightMode props in all 3 files simultaneously:
+
+Show less
+
+Edited map.tsx
+
+Edited request-active.tsx
+Adding night mode
+
+Adding night mode
+Now I need to add nightMode={isNight} to all SankofaBird instances in both files. Let me do all edits in parallel.
+Now wire nightMode={isNight} into every SankofaBird call in both files simultaneously:
+
+Show less
+
+Edited map.tsx
+
+Edited map.tsx
+
+Edited request-active.tsx
+
+Edited request-active.tsx
+Updating components and verifying CSS
+
+Updating components and verifying CSS
+Now I need to update bird-test.tsx to add a nightMode toggle section and wire the prop through BirdCard. Let me do that now, then start the workflow and verify everything compiles.
+Let me also check if there's a beak-lower class in the SVG (one of the outstanding TODOs from the session summary), and look at the Phase 5 CSS block to verify the beak chirp targets an existing element.
+I'll do these in parallel:
+1. Update bird-test.tsx - add nightMode to BirdCard props + new night-mode section
+2. Check if sankofa-bird-beak-lower class exists in SankofaBirdSvg.tsx
+3. Start the workflow
+I'm modifying the BirdCard component to accept a nightMode prop and pass it down to SankofaBird, then adding a toggle section in the test file to control this state.
+Now update bird-test.tsx with nightMode support and the new demo section, plus check the beak element existence simultaneously:
+
+Show less
+
+Edited bird-test.tsx
+
+Searched for "beak-lower|beakLower|be…"
+
+$ cd /home/runner/workspace && grep -n "beak-lower\|beakLower\|beak_lower\|sankofa-bird-beak" artifacts/pay-it-forward/src/components/SankofaBirdSvg.tsx | head -20
+
+
+Adding night-mode section
+
+Adding night-mode section
+Good, the beak-lower class exists at line 1262 in SankofaBirdSvg.tsx - so the P5.5 beak chirp CSS is correctly targeting an existing element. That's confirmed.
+Now I need to:
+1. Add the night-mode section to bird-test.tsx (before the legend/footer)
+2. Start the workflows and verify compilation
+3. Do the end-to-end audit
+4. Push to GitHub
+Let me add the night-mode section to bird-test.tsx. I need to insert it before the legend section (around line 999).
+Let me look at what the current file looks like around the legend to find the right spot to insert. I know the structure now - the Phase 3 section closes at line 998, then the Legend starts at line 999. I'll insert the new Night Mode section right before the Legend, and I should also update the Legend to include nightMode and Phase 5 effects.
+The beak-lower class exists at line 1262 — P5.5 is targeting a real element. Now add the night-mode + Phase 5 demo sections to bird-test.tsx, then start all three workflows simultaneously for verification:
+
+Show less
+
+Edit cancelled: bird-test.tsx
+Cancelled: Edit failed: No replacement was performed: old_string did not appear verbatim in artifacts/pay-it-forward/src/pages/bird-test.tsx. Make sure whitespace and indentation match exactly.
+
+Failed to restart workflow artifacts/pay-it-forward: web
+Workflow `artifacts/pay-it-forward: web` failed to restart. Error: workflow "artifacts/pay-it-forward: web" had failing tasks. Check the workflow's logs for the underlying failure.
+
+Failed to restart workflow artifacts/api-server: API Server
+Workflow `artifacts/api-server: API Server` failed to restart. Error: workflow "artifacts/api-server: API Server" had failing tasks. Check the workflow's logs for the underlying failure.
+Investigating failures
+
+Investigating failures
+Let me check the logs to understand the failures, and fix the bird-test.tsx edit issue at the same time.
+
+Refreshed logs
+
+Searched for "Legend|Phase 5|Phase3|P…"
+
+$ cd /home/runner/workspace && grep -n "Legend\|Phase 5\|Phase3\|Phase 4\|Phase5" artifacts/pay-it-forward/src/pages/bird-test.tsx | tail -20
+
+
+Installing dependencies and fixing test
+
+Installing dependencies and fixing test
+
+Installed dependencies
+
+Opened bird-test.tsx

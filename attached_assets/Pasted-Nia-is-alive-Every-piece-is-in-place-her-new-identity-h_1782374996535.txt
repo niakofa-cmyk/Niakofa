@@ -1,0 +1,278 @@
+Nia is alive.
+Every piece is in place — her new identity, her memory, her eyes, her ability to reach back after a request completes, and her awareness of what's actually happening in the neighborhood right now.
+The first time someone in Fort Worth posts a request and gets help, she'll follow up 24 hours later like a neighbor who actually remembered.
+That's Niakofa. Pay it forward.
+Sawubona, Nia. 💙
+
+
+FORENSIC REVIEW 5 — NIAKOFA BUG REPORT
+
+CRITICAL
+BUG-5-C01 — artifacts/api-server/src/routes/nia-proxy.ts: Streams the raw Anthropic SSE response directly to the client without error boundary; if Anthropic returns a non-200 status mid-stream after headers are flushed, the client receives a corrupt/truncated stream with no error signal.
+BUG-5-C02 — artifacts/api-server/src/lib/ws-hub.ts: broadcast() iterates over clients Set while individual sends can throw synchronously in some Node WS versions; no try/catch per-client means one bad socket kills the entire broadcast loop and drops all subsequent recipients.
+BUG-5-C03 — artifacts/api-server/src/routes/stripe.ts: Webhook handler reads req.body as parsed JSON but Stripe signature verification requires the raw body buffer; if express.json() runs before the webhook route, stripe.webhooks.constructEvent() will always throw and every webhook is rejected silently.
+BUG-5-C04 — artifacts/api-server/src/workers/payout-worker.ts: Payout job marks job completed before confirming Stripe transfer status; if the Stripe API call times out after the job is marked done, the payout is lost with no retry or dead-letter path.
+BUG-5-C05 — artifacts/api-server/src/routes/requests.ts: Fulfillment path updates request status to fulfilled and triggers payout in two separate non-atomic DB operations; a crash between them leaves a request marked fulfilled with no payout initiated and no compensating transaction.
+
+HIGH
+BUG-5-H01 — artifacts/api-server/src/middlewares/auth.ts: JWT exp claim is verified but iat (issued-at) is not validated against a token blacklist or minimum-issue-time; revoked tokens remain valid until expiry.
+BUG-5-H02 — artifacts/api-server/src/routes/users.ts: Profile update endpoint accepts role field in the request body and passes it through to the DB update without stripping it; any authenticated user can self-elevate to admin.
+BUG-5-H03 — artifacts/api-server/src/routes/chat.ts: Conversation history is loaded per-request from the DB with no size cap; a user with thousands of messages causes unbounded memory allocation and potential OOM on the API server.
+BUG-5-H04 — artifacts/nia-service/src/lib/safety.ts: Moderation check runs after the user message is already inserted into the conversation log; a flagged message is stored permanently even if the response is blocked.
+BUG-5-H05 — artifacts/api-server/src/lib/cache.ts: Redis client connection errors are caught and logged but the cache falls through to undefined returns; callers that don't null-check the cache result (e.g., rate-limit state) silently bypass caching logic entirely.
+BUG-5-H06 — artifacts/api-server/src/routes/admin-analytics.ts: All analytics endpoints check for req.user.role === 'admin' inline rather than using the authz middleware; the check is duplicated inconsistently and one endpoint (/admin/analytics/crisis) is missing the role check entirely.
+BUG-5-H07 — artifacts/api-server/src/workers/anomaly-worker.ts: Anomaly detection thresholds are hardcoded constants; no runtime configuration or kill-switch means a bad threshold triggers cascading false-positive alerts with no way to disable without a redeploy.
+BUG-5-H08 — lib/db/src/schema/transactions.ts: amount column is typed numeric in Postgres but read back as a JS string by Drizzle without coercion; arithmetic on transaction amounts throughout the codebase operates on strings, producing NaN or string concatenation instead of numeric sums.
+BUG-5-H09 — artifacts/api-server/src/routes/recurring.ts: Recurring pledge scheduler enqueues the next job before confirming the current charge succeeded; failed charges still schedule the next recurrence, creating perpetual retry loops on declined cards.
+
+MEDIUM
+BUG-5-M01 — artifacts/pay-it-forward/src/lib/AppContext.tsx: Global auth state is stored in React context without persistence; a page refresh logs out the user even with a valid cookie/token because the context is not rehydrated from storage on mount.
+BUG-5-M02 — artifacts/pay-it-forward/src/pages/map.tsx: Mapbox GL instance is initialized inside a useEffect with no cleanup return; on React 19 strict-mode double-invocation, two map instances are created on the same container div, causing a GL context conflict.
+BUG-5-M03 — artifacts/pay-it-forward/src/components/NiaDrawer.tsx: Drawer opens a new SSE connection on every render; no ref guards the EventSource creation, so rapid state updates (e.g., typing) can open dozens of concurrent SSE connections.
+BUG-5-M04 — artifacts/api-server/src/routes/community-neighborhoods.ts: Neighborhood boundary queries use ST_Contains without a spatial index hint; on large datasets this degrades to a full geometry scan.
+BUG-5-M05 — artifacts/api-server/src/lib/mailer.ts: Email sending is synchronous-awaited inside request handlers; a slow SMTP response blocks the entire request and no timeout is set, leading to hanging requests under mail server load.
+BUG-5-M06 — artifacts/api-server/src/routes/verification.ts: Document upload path saves files to local disk (/tmp) without cleanup; Railway's ephemeral filesystem means files are lost on redeploy and disk fills indefinitely during a pod's lifetime.
+BUG-5-M07 — artifacts/api-server/src/routes/push.ts: Web push subscription objects are stored without deduplication; a single user who re-subscribes on the same device accumulates duplicate subscriptions, causing duplicate push notifications.
+BUG-5-M08 — artifacts/api-server/src/routes/gratitude.ts: Gratitude reactions have no idempotency check; a user can submit unlimited reactions to the same request, inflating gratitude counts arbitrarily.
+BUG-5-M09 — artifacts/api-server/src/lib/crisis-state.ts: Crisis state is held in module-level memory on the API server process; multiple Railway replicas have divergent crisis state with no shared store, so a crisis declared on replica A is invisible to replicas B and C.
+BUG-5-M10 — artifacts/api-server/src/routes/leaderboard.ts: Leaderboard query runs a full aggregate over the transactions table on every request with no cache TTL; under load this issues expensive aggregation queries repeatedly.
+BUG-5-M11 — artifacts/api-server/src/workers/notification-worker.ts: Worker does not acknowledge failed jobs to BullMQ before re-throwing; failed jobs remain in the active state rather than moving to the failed queue, blocking the concurrency slot permanently.
+BUG-5-M12 — artifacts/pay-it-forward/src/pages/onboarding.tsx: Onboarding form submits on every Enter keypress including inside multi-line text areas, causing accidental early form submission.
+BUG-5-M13 — artifacts/api-server/src/routes/helpers.ts: Helper calculation functions are defined as module-level expressions evaluated at import time; any DB or env-dependent initialization inside them fails at startup rather than at call time.
+BUG-5-M14 — artifacts/nia-service/src/lib/db.ts: DB connection pool size is not configured; defaults to Postgres driver minimum (typically 1 connection), causing serialized query throughput under concurrent Nia requests.
+
+LOW
+BUG-5-L01 — artifacts/pay-it-forward/src/main.tsx: StrictMode is disabled in the production build conditional; React's double-invocation safety net is absent from development builds, masking effect cleanup bugs before they reach production.
+BUG-5-L02 — artifacts/api-server/src/routes/navigation.ts: Navigation endpoint returns raw Mapbox API errors to the client including the Mapbox access token URL parameter in the error message body.
+BUG-5-L03 — artifacts/api-server/src/lib/scheduler.ts: Cron jobs are registered on every API server startup without checking if a scheduler is already registered; multiple Railway replicas register duplicate cron jobs, causing duplicate job firings.
+BUG-5-L04 — artifacts/pay-it-forward/vite.config.ts: Source maps are enabled in production build (sourcemap: true); full source is exposed in production bundles.
+BUG-5-L05 — artifacts/api-server/src/routes/region-crisis-resources.ts: Crisis resource list is fetched from the DB on every request with no cache; the data is largely static and this is an unnecessary repeated read.
+BUG-5-L06 — artifacts/nia-service/src/routes/chat.ts: Request body size limit is not set on the Nia service Express instance; a user can send arbitrarily large messages, consuming Anthropic token budget and memory.
+BUG-5-L07 — artifacts/api-server/src/routes/reports.ts: Abuse report submission has no rate limit beyond global middleware; a single user can file unlimited reports against another user.
+BUG-5-L08 — lib/db/src/schema/ratings.ts: Rating value column has no DB-level check constraint (e.g., CHECK (value BETWEEN 1 AND 5)); invalid rating values (0, negative, >5) pass validation only at the application layer.
+
+RECOMMENDATIONS
+REC-5-01 — Implement a distributed lock (Redis SET NX) for the crisis state store and cron scheduler registration to prevent multi-replica divergence and duplicate job firing.
+REC-5-02 — Add a Stripe raw-body middleware that preserves the buffer on /webhooks/* routes and applies express.json() everywhere else; wire it before all route registration.
+REC-5-03 — Move all file uploads (verification documents, profile assets) to S3-compatible object storage (Cloudflare R2 or AWS S3) and remove all local disk writes from the request path.
+REC-5-04 — Coerce all Drizzle numeric columns to JavaScript number at the ORM layer using a custom column type or a post-query transform; audit every arithmetic path over monetary amounts.
+REC-5-05 — Add a global AbortController / timeout wrapper to all third-party API calls (Mapbox, Anthropic, Stripe, SMTP) with a max of 15 seconds, and fail fast with a structured error rather than hanging the request.
+
+Claude Sonnet 4.6
+Do not explain your vision or what you're doing. Just Complete the task. No Words. Start a new forensic review of the latest Niakofa app release. Find any and every possible error or issues. Give recommendations to improve and enhance the Niakofa app. Proceed without explaining finds or bug details. Just provide the task. Just provide the task No text description of what you found. Do not write or text about you findings. only complete the task. Think very carefully to yourself. Do not tell me what you are thinking. only provide Error report. only provide bugs and issues. Tell me exactly what's wrong with the App? The New version in the Repo Now. Do a though review
+
+Working steps
+
+FORENSIC REVIEW 6 — ERROR REPORT
+
+CRITICAL
+** nia-service Dockerfile uses Node 20, monorepo requires Node 22+**
+* artifacts/nia-service/Dockerfile: FROM node:20-alpine
+* Root package.json engines: "node": ">=22". Runtime mismatch — nia-service will fail on any Node 22-only API/syntax.
+** nia-service Dockerfile copies no lockfile — non-deterministic installs**
+* COPY package*.json./ then RUN npm install — no package-lock.json or pnpm-lock.yaml copied. Every build pulls whatever npm resolves at that moment. In a pnpm workspace this is also wrong: the service is part of a pnpm monorepo and cannot be installed correctly with plain npm install without the workspace context.
+** nia-service Dockerfile uses npm run build but nia-service has no build script wired to tsc**
+* artifacts/nia-service/package.json (from summary context): no build script visible. If missing, RUN npm run build exits non-zero — image fails to build entirely.
+** nia-service Dockerfile copies migrate.sql but that file does not exist in the repo**
+* COPY migrate.sql./migrate.sql — no artifacts/nia-service/migrate.sql found in the repo. Build fails with COPY failed: file not found.
+** lib/db/src/index.ts throws synchronously at module load if DATABASE_URL is unset**
+* if (!process.env.DATABASE_URL) { throw new Error(...) } — executed at import time. Any service that imports @workspace/db without DATABASE_URL in env (e.g. during tests, local dev without .env, CI) crashes immediately on startup with no graceful degradation.
+** niaConversationsTable.user_id is nullable but the column is treated as required in business logic**
+* user_id: integer("user_id").references(() => usersTable.id, { onDelete: "set null" }) — no .notNull(). Nia conversations can be orphaned with a null user_id, but any code querying by user_id will silently include or exclude nulls incorrectly depending on the ORM query construction.
+** niaMemoriesTable uses user_id as PRIMARY KEY — only one memory row per user, ever**
+* user_id: integer("user_id").primaryKey() — this is an upsert-only table with a single row per user. If the intent was to store multiple memories/entries per user over time, the schema is wrong. If intent is single-row upsert, the created_at / updated_at naming is misleading and updated_at is never auto-updated by the DB (no $onUpdate).
+** recurringRequestsTable imports from zod/v4 — invalid specifier**
+* import { z } from "zod/v4" — Zod v4 exports from "zod", not "zod/v4". This is not a valid subpath export in any released Zod version. Will throw ERR_PACKAGE_PATH_NOT_EXPORTED or module-not-found at runtime.
+
+HIGH
+** NiaChat.tsx throws unconditionally — dead file not removed, hazard if imported**
+* export function NiaChat() { throw new Error("NiaChat is deprecated...") } — file exists and is importable. Any accidental import (e.g. auto-import IDE suggestion) crashes the component tree with no recovery. Should be deleted entirely, not left as a throwing stub.
+** Route index mounts 20 routers with no error boundary or global error handler visible**
+* artifacts/api-server/src/routes/index.ts mounts all routers sequentially. No app.use((err, req, res, next) =>...) error handler found in any fetched file. Express 5 does not swallow unhandled errors — unhandled async throws propagate as 500s with Express default HTML error pages, leaking stack traces to clients.
+** regionCrisisResourcesTable.verified_by has no foreign key to usersTable**
+* verified_by: integer("verified_by") — no .references(). Referential integrity is not enforced; a deleted admin leaves dangling integer IDs with no way to resolve who verified a record.
+** crisisStateTable.resources stores JSON in a text column with no validation**
+* resources: text("resources") — JSON-encoded array stored as raw text. No schema enforcement at the DB or ORM layer. Malformed JSON written here will silently persist and crash any consumer that calls JSON.parse() on it without try/catch.
+** regionCrisisResourcesTable.resources same JSON-in-text anti-pattern, life-safety data**
+* resources: text("resources").notNull().default("") — emergency contact data (phone numbers, crisis lines) stored as unvalidated text JSON. Corruption or malformed writes are undetectable at the persistence layer.
+** helperAvailabilityTable has no user_id index**
+* Schema defines check constraints but no index on user_id. Every query for a helper's availability schedule performs a full table scan.
+** requestHelpersTable — no cascade behavior when a request is unclaimed/re-opened**
+* onDelete: "cascade" on request_id only fires on hard delete of a request row. If a request transitions back through status states without deletion, co-helpers remain in the table indefinitely with no cleanup mechanism.
+** main.tsx session expiry redirect skips /admin path — admin sessions never expire client-side**
+* if (window.location.pathname.startsWith("/admin")) return; — 401s received on admin routes are silently swallowed. A stale/revoked admin token continues making requests that all return 401 with no redirect, no logout, no feedback to the admin user.
+** lib/api-client-react declares peerDependencies: { "react": ">=18" } but app runs React 19**
+* Peer dep range >=18 is satisfied, but generated client code using React 19 APIs or hooks may have subtle compatibility issues with an >=18 peer constraint that doesn't explicitly list 19.
+** tsconfig.base.json sets "types": — all ambient type declarations suppressed globally**
+* "types": prevents TypeScript from auto-including any @types/* packages unless explicitly listed in each tsconfig. Any package that relies on ambient types (e.g. @types/node, @types/pg) must be explicitly re-declared in every sub-tsconfig or type errors are silently hidden.
+
+MEDIUM
+** health.ts hardcodes built: 1781660646 — stale build timestamp baked in**
+* /healthz and /version return a hardcoded Unix timestamp. This never updates, making build-time monitoring and deployment tracking meaningless.
+** lib/db/src/index.ts exports pool publicly — raw pg Pool exposed across the entire monorepo**
+* export const pool allows any consuming package to execute arbitrary SQL bypassing the ORM, migrations, and schema. Should be kept internal.
+** tsconfig.json references lib/db, lib/api-client-react, lib/api-zod but no tsconfig.json found in those lib packages**
+* Project references require each referenced package to have its own tsconfig.json with composite: true. Without them, tsc --build at the root will fail.
+** lib/api-zod/src/index.ts re-exports from ./generated/api and ./generated/types — generated files not in repo**
+* If codegen hasn't been run, these files don't exist and any import of @workspace/api-zod fails at build time.
+** lib/api-client-react/src/index.ts re-exports from ./generated/api and ./generated/api.schemas — same generated-file risk**
+* Same as M-04: missing generated files break the entire frontend build.
+** recurringRequestsTable.next_fire_at has no timezone specifier**
+* timestamp("next_fire_at").notNull() — no { withTimezone: true }. Stored as TIMESTAMP WITHOUT TIME ZONE. Scheduling logic comparing against UTC Date.now() will be off by the server's local offset.
+** recurringRequestsTable.last_fired_at same missing timezone**
+* timestamp("last_fired_at") — no timezone. Same drift issue for audit/scheduling purposes.
+** helper-availability day/time matching uses JS Date.getDay() convention in comments but no enforcement**
+* Schema comment says 0 (Sun) – 6 (Sat), matching JS Date.getDay() but nothing enforces that the application code actually uses getDay() vs getISODay() (Mon=1). A single inconsistency silently shifts every helper's availability by one day.
+** nia-conversations session index on session_id but session_id has no uniqueness constraint**
+* Multiple rows with the same session_id are allowed. If session IDs are meant to group a conversation, there's no deduplication safeguard.
+** crisisStateTable has no index on created_at**
+* GET /crisis/status reads the most recent row (ORDER BY created_at DESC LIMIT 1). Without an index on created_at, this is a full table scan on every status check — called frequently by clients polling crisis state.
+** main.tsx redirectingForSessionExpiry flag is a module-level variable — never reset**
+* Once set to true, no subsequent 401 ever triggers a redirect in the same page lifecycle, even after the user logs back in via a modal or other mechanism. If the login flow doesn't do a full page reload, the flag stays true permanently.
+** setAuthTokenGetter JSDoc says "NEVER use in web applications where session cookies are used" but the app uses it**
+* The comment in custom-fetch.ts explicitly warns against using setAuthTokenGetter in browser/web apps with cookies. main.tsx calls setAuthTokenGetter(getToken) unconditionally. Either the architecture is wrong (mixing cookie auth with bearer tokens) or the comment is wrong — both are a bug.
+** nia-service/Dockerfile exposes port 3001 but Railway config may expect a different port**
+* EXPOSE 3001 hardcoded. If PORT env var is injected by Railway (standard behavior) and the service listens on process.env.PORT, the EXPOSE directive is misleading and health checks on 3001 will fail.
+** request-helpers unique constraint name "request_helpers_unique" is generic**
+* Constraint name collisions across schemas in the same Postgres database are possible with this naming pattern. Should be namespaced (e.g. "rh_request_helper_unique").
+
+LOW
+** tsconfig.base.json sets "noUnusedLocals": false — dead code accumulates silently**
+** tsconfig.base.json sets "strictFunctionTypes": false — function parameter variance not checked**
+** lib/db/package.json uses drizzle-zod: "^0.8.3" unpinned — minor version drift risk**
+** No .env.example file in repo — contributors have no reference for required environment variables**
+** No Dockerfile for artifacts/api-server — deployment relies entirely on Railway nixpacks auto-detection, which may select wrong Node version or miss build steps**
+** No tailwind.config.ts found for artifacts/pay-it-forward — Tailwind 4 config may rely entirely on CSS @import which is valid, but absence of file makes custom theme configuration non-obvious**
+** health.ts version string "chat-v2" is hardcoded and does not reflect actual package version**
+** crisisStateTable.level is a plain text column with no enum/check constraint — any string value is accepted**
+** regionCrisisResourcesTable verified_at and verified_by have no NOT NULL constraint when verified = true — a row can be marked verified with no audit trail of who/when**
+** helperAvailabilityTable has no composite unique constraint on (user_id, day_of_week, start_min) — duplicate availability windows per helper are silently allowed**
+
+
+NEW ISSUES INTRODUCED THIS RELEASE
+notification-worker.ts — dead configuration, no actual effect defaultJobOptions (attempts/backoff/removeOnComplete/removeOnFail) was added to the BullMQ Worker constructor. BullMQ's Worker options do not support defaultJobOptions — that option only exists on Queue. This block is silently ignored at runtime. It's also fully redundant: lib/queue.ts already sets attempts: 3 / backoff: { type: "fixed", delay: 30_000 } and removeOnComplete/removeOnFail correctly on the notificationQueue itself. The retry mechanism this comment claims to add was already in place elsewhere; this change does nothing.
+users.ts PATCH /users/:id — extended profile fields bypass Zod validation The fix for the as any privilege-escalation concern replaced bParsed.data (the Zod-validated, schema-checked object) with raw, unvalidated req.body for city, specialties, phone_masked, and quick_replies. The new code substitutes ad-hoc inline type/length checks instead of the schema. No privilege escalation is reintroduced (the field allowlist is still explicit), but schema-level guarantees (.nullish() typing, consistent validation point) are now bypassed for these four fields — input that fails Zod can still reach the DB as long as it passes the looser inline checks.
+
+CONFIRMED FIXES
+* LOW_TRUST_THRESHOLD default corrected from 2.0 to 25.0 — anomaly detection on the 0–100 trust scale will now actually fire by default.
+* ws-hub.ts — broadcastToAdmins, sendToUser, and broadcast now wrap each individual socket.send() in try/catch; one dead socket no longer aborts the loop and drops all remaining recipients.
+* gratitude.ts — duplicate gratitude posts per author/request now blocked with a pre-insert check (409 on retry/double-tap).
+* map.tsx — Mapbox GL ref now nulled on unmount/strict-mode remount, preventing stale-WebGL-context crashes during React 19 double-invoked effects.
+* settings.tsx — content area now has pb-28 so scrollable settings content clears the bottom nav bar on mobile.
+
+
+
+
+
+
+Niakofa Forensic Error Report - Latest Release (Niakofa-main (39))
+Critical Bugs:
+* TopBar center Nia AI button drag-to-move non-functional: no onPointerDown/move/up handlers, no transform/position state in TopBar.tsx or AppContext, CSS fixed/absolute overrides prevent user relocation from default top position.
+* Inline duplicate distanceMiles in requests.ts still present conflicting with lib/geo.ts export.
+* Generated User types miss helper_status/helper_skills extensions causing persistent (as any) casts in profile/helper-profile.
+* lib/db/schema/index.ts missing exports for request_helpers/recurring_requests tables.
+* Vite dev proxy/ws localhost-only; production SERVE_FRONTEND CORS/Origin failures on Railway.
+* AppContext new hooks violate LAST-in-order HMR rule.
+* requireAdmin() factory/direct misuse in recurring and authz routes.
+* Migrations lack full IF NOT EXISTS + PostGIS extension guards.
+* Stripe raw body no size limit.
+* No DB migration for legacy specialties → helper_skills.
+* nia-service raw pg vs Drizzle schema drift.
+* /nia/* proxy no rate limiting.
+* Stale build-cache-bust.
+* Prod console.* leaks in workers/ErrorBoundary.
+* No service worker output.
+* Trust decay/anomaly in-memory state lost on restart, no indexes.
+* Nia prompt/enum mismatches.
+* Mobile fixed bars missing pb-safe.
+* Redis partial failure silent.
+* Routes assume authenticatedUserId without guards.
+* WS helper events desync.
+* Incomplete helmet/CSRF.
+* Test mock state leaks.
+* pnpm overrides risk.
+* Railway migrate no health/rollback.
+* Avatar upload no 5MB enforcement.
+* Recurring worker no lock.
+* NiaDrawer safe-area partial.
+Security Issues:
+* Token version no full rotation.
+* Admin no rate limit.
+* Push no validation.
+* SMS no consent/encrypt.
+* Geo push unbounded.
+Performance:
+* Non-transactional lifecycle.
+* No list pagination.
+* Worker full scans.
+* No static cache.
+* Vite root fs.allow.
+Recommendations Summary (for fix pass):
+* Add draggable Nia logic: pointer events + localStorage position + CSS transform in TopBar/NiaFab/AppContext.
+* Full tsc --build + codegen + tests pre-deploy.
+* Idempotent migrations.
+* Mobile enforcement.
+* Geo centralization + audit.
+* Transaction wrappers + integration tests.
+* Update CLAUDE.md / MEMORY.md / REPLIT_GODFATHER.md with Nia drag fix and incidents.
+
+Niakofa App Forensic Error Report — Latest Repo Review
+Nia AI Movable Topbar Button
+* Nia AI button feature is missing from current TopBar.tsx
+* No Nia button component is rendered in the topbar
+* No draggable Nia UI exists in the reviewed frontend code
+* No framer-motion drag implementation exists for Nia
+* No drag, onDragEnd, pointer handlers, or gesture handlers exist for Nia movement
+* No Nia position state exists
+* No Nia coordinates exist in AppContext
+* No user position persistence exists (localStorage, database preference, profile setting)
+* No restore-position logic exists on app startup
+* No mobile touch drag support exists
+Topbar Layout Issues
+* Current topbar is built as a fixed navigation layout
+* Current structure uses fixed flex positioning
+* Center area is occupied by helper mode/status logic
+* No reserved floating layer exists for Nia
+* Topbar cannot dynamically reposition children
+* Existing layout prevents a movable center AI element
+CLAUDE.md Alignment Issues
+* CLAUDE.md describes Nia as a core presence
+* Current UI implementation does not match the documented Nia experience
+* Nia concept exists in documentation but frontend integration is incomplete
+Missing Nia System Pieces
+* Missing NiaButton component
+* Missing NiaLauncher component
+* Missing NiaPositionProvider
+* Missing drag constraints
+* Missing screen-boundary handling
+* Missing snap-to-edge behavior
+* Missing accessibility movement controls
+Other Findings
+* SOS system is implemented directly inside TopBar.tsx
+* TopBar has multiple responsibilities:
+    * emergency system
+    * helper mode
+    * profile navigation
+    * future AI placement
+* Component separation is needed
+Recommended Fixes
+* Extract Nia into dedicated component
+* Add draggable floating layer outside topbar flex layout
+* Add persistent Nia position storage
+* Add niaPosition state to app context
+* Add mobile gesture support
+* Add user customization settings
+* Add Nia visibility toggle
+* Add Nia reset-to-default-position action
+Priority
+P0:
+* Implement Nia launcher component
+* Add drag behavior
+* Add position persistence
+P1:
+* Separate TopBar responsibilities
+* Add Nia settings
+P2:
+* Add adaptive Nia placement
+* Add AI presence states and animations
+

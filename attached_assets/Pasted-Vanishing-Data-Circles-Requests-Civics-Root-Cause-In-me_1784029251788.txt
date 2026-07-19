@@ -1,0 +1,110 @@
+Vanishing Data (Circles + Requests + Civics)
+Root Cause: In-memory state + missing cache/refresh on page change/refresh/mode switch. Circles (audio-circles) were especially fragile.
+Solution: Centralized refresh + localStorage fallback + WS + server queries.
+1. AppContext.tsx (Global Fix)
+tsx
+
+// artifacts/pay-it-forward/src/lib/AppContext.tsx
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+
+const AppContext = createContext<any>(null);
+
+export const AppProvider = ({ children }: { children: ReactNode }) => {
+  const [requests, setRequests] = useState<any[]>([]);
+  const [circles, setCircles] = useState<any[]>([]); // Audio Circles
+  const [civics, setCivics] = useState<any[]>([]);
+
+  const refreshAll = async () => {
+    try {
+      const [rRes, cRes, ciRes] = await Promise.all([
+        fetch('/api/requests?include=open,claimed,ongoing', { headers: authHeaders() }),
+        fetch('/api/audio-circles/active', { headers: authHeaders() }),
+        fetch('/api/civic/resources', { headers: authHeaders() })
+      ]);
+
+      if (rRes.ok) setRequests(await rRes.json());
+      if (cRes.ok) setCircles(await cRes.json());
+      if (ciRes.ok) setCivics(await ciRes.json());
+
+      // Persistent cache
+      localStorage.setItem('niakofa_persist', JSON.stringify({ requests, circles, civics }));
+    } catch {
+      const cached = localStorage.getItem('niakofa_persist');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        setRequests(parsed.requests || []);
+        setCircles(parsed.circles || []);
+        setCivics(parsed.civics || []);
+      }
+    }
+  };
+
+  useEffect(() => {
+    refreshAll();
+    const handler = () => refreshAll();
+    document.addEventListener('visibilitychange', handler);
+    window.addEventListener('online', handler);
+    return () => {
+      document.removeEventListener('visibilitychange', handler);
+      window.removeEventListener('online', handler);
+    };
+  }, []);
+
+  return <AppContext.Provider value={{ requests, circles, civics, refreshAll }}>{children}</AppContext.Provider>;
+};
+
+export const useAppContext = () => useContext(AppContext);
+
+
+2. Audio Circles Fix (Vanishing Circles)
+tsx
+
+// artifacts/pay-it-forward/src/components/AudioCircles.tsx
+import { useEffect } from 'react';
+import { useAppContext } from '@/lib/AppContext';
+
+export default function AudioCircles() {
+  const { circles, refreshAll } = useAppContext();
+
+  useEffect(() => {
+    refreshAll(); // Force reload circles
+    const interval = setInterval(refreshAll, 30000); // Background poll
+    return () => clearInterval(interval);
+  }, [refreshAll]);
+
+  return (
+    <div>
+      {circles.map(circle => (
+        <div key={circle.id}>{circle.name} — Active Participants: {circle.participants}</div>
+      ))}
+    </div>
+  );
+}
+
+
+3. Map Mobile + Persistence
+tsx
+
+// artifacts/pay-it-forward/src/components/MapView.tsx
+import React, { useEffect } from 'react';
+import Map from 'react-map-gl';
+import { useAppContext } from '@/lib/AppContext';
+
+export default function MapView() {
+  const { requests, refreshAll } = useAppContext();
+
+  useEffect(() => {
+    refreshAll();
+  }, [refreshAll]);
+
+  return (
+    <div className="h-full relative" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <Map /* your existing config */ onLoad={refreshAll}>
+        {/* Markers from requests */}
+      </Map>
+    </div>
+  );
+}
+
+
+

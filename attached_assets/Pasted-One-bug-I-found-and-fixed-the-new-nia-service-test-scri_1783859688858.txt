@@ -1,0 +1,37 @@
+One bug I found and fixed: the new nia-service test script pointed to the wrong path for its jest binary (../../node_modules/... instead of its own local one), so pnpm run test crashed before running a single test — meaning that whole new 34-test suite was actually never executing, despite being present in the repo. Fixed the path; all 34 now genuinely run and pass.
+
+ Prevent every api route that reads user data from leaking other users private details. And Confirm a county has set custom hourly wage in per county livable wage feature us untested in practice., and Prevent Nia from actvationg on fresh replete db run migrations automatically on startup.
+
+Recommendation: Seed diaspora_hubs for these cities if not already done. Prioritize Portuguese TTS/localization.
+
+Recommendations (Prioritized):
+1. Helper Experience: Add earnings forecast + "Ready to Help" toggle in dashboard.
+2. Brazil Polish: Full Portuguese support + hub seeding.
+3. Repayment Flow: One-tap "Pay What You Can" + Nia nudges.
+4. Technical: Run codegen + typecheck; update MEMORY.md; test Nia share-story end-to-end.
+5. Next: Brazil localization push, then helper earnings visibility.
+
+
+Unifying repayment_plans (fixed 2-installment default) with scheduled_payments (true freeform "whatever, whenever") into one flow.
+
+Confirm login , help request and admin  flows still work end to end after security fixes, Stop the griot globe hub panel from showing stale data when the network is slow, and Prevent anonymous users from spamming the map when no Mapbox token is configured. 
+
+Auto update each count pay floor so helpers always earn a real livable wage. Prevent helpers from getting stuck online with no way to take jobs after applying , and Catch sos and safety ping failures before a user in danger gets false reassurance
+
+Niakofs Audio Circles: This is a voice-only feature. It lets you host or join live discussions, share content, and talk with listeners. Real-time engagement and lets users communicate with and directly from their community Let each Neighborhood have their very own audio circle. And allow each user to click, browse and join the conversation of each Neighborhoods circle. Each County will have different Neighborhood, so let each county and each Neighborhood to have their verify own audio circles for their specific county neighborhoods. live audio chat rooms. Think of them like a live podcast or a call-in radio show where you can listen, talk, and interact in real time. 
+
+The Host: You start the room and control the conversation. You can add up to 13 speakers at once.
+The Listeners: Anyone can join as a listener. Listeners can react with emojis or "raise their hand" to ask for a turn to speak.
+Video Option: WhileSpaces are primarily for audio, hosts also have the option to turn on their live video cameras.
+Recording: Hosts can choose to record the Space so people can listen later
+
+On the "coming soon" placeholder: I decided to build it, not drop it — but only the "chat" half. The Circles tab now links straight into a real, live Audio Circle for that neighborhood or the whole city. I left "leaderboards" as still genuinely unbuilt rather than fake it — that's a separate, smaller piece worth its own pass.
+What's actually in this build:
+* Real host controls — start a room, up to 13 speakers, promote/demote from the listener pool, end the session.
+* Raise hand + reactions — listeners request a turn, host brings them up; live emoji reactions float across the screen for everyone.
+* Video option — host can turn on camera for speakers.
+* Recording — host toggles it, and it actually captures the whole room (every voice mixed together via the browser's Web Audio API), not just their own mic.
+* A circle for every neighborhood, and one for the whole city — genuinely per-neighborhood/per-city, not a single hardcoded room.
+One important design decision worth knowing about: I found the app already had a more general, AI-generated neighborhood system (city_neighborhoods) sitting completely unused — built for any city, not just Fort Worth — while the visible Circles tab was still running off a hardcoded Fort Worth-only array. Rather than build a second, competing "neighborhoods per county" system, I built Audio Circles on top of the one that already existed, and finally seeded Fort Worth's real data into it. That means this already works for any city that gets added, not just the one currently live.
+How the audio itself works: peer-to-peer (WebRTC), with your server only relaying the initial handshake — no new infrastructure to stand up, no third-party API keys needed. That's the right call for "up to 13 speakers plus a normal-sized listener crowd." It's not built to serve a room with thousands of simultaneous listeners — I documented that limit clearly in the code, along with the specific, low-effort swap path (a real SFU server) if you ever need that scale.
+Honest gap: I didn't write dedicated automated tests for this feature in this pass — everything existing still passes, but Audio Circles itself doesn't have its own test coverage yet. That's the natural next step before this goes to real users.
