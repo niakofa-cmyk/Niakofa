@@ -1048,6 +1048,24 @@ export default function BirdTestPage() {
         <GazeDirectionDemo />
         <NeckLateralBendDemo />
 
+        {/* ── NavLod (zoom LOD) demo ────────────────────────────────────── */}
+        <SectionLabel>NavLod — Zoom-based LOD transitions (Phase 6)</SectionLabel>
+        <p className="text-xs mb-3" style={{ color: "rgba(255,255,255,0.35)" }}>
+          data-zoom computed from mapZoom: low (&lt;10), mid (10–13), high (14–16), street (≥17).
+          Low hides bottom wings, eye detail, catchlight. Mid shows scap at 32%. Street adds per-feather micro-oscillations.
+        </p>
+        <NavLodSimDemo />
+
+        {/* ── SkyTier demo ──────────────────────────────────────────────── */}
+        <SectionLabel>SkyTier — Time-of-day lighting states (Phase 6)</SectionLabel>
+        <p className="text-xs mb-3" style={{ color: "rgba(255,255,255,0.35)" }}>
+          SkyTier from useSolarTier(lat, lng): "day" | "golden" | "twilight" | "night".
+          Only "night" maps to the nightMode bird prop (Phase 10 plumage). Golden/twilight are
+          solar-position milestones used by the app's map shader — the bird transitions smoothly
+          between day and night at the boundaries via CSS animation duration scaling.
+        </p>
+        <SkyTierDemo />
+
         {/* ── Size comparison ───────────────────────────────────────────── */}
         <SectionLabel>Size comparison (map marker = 34px default, test = 48px)</SectionLabel>
         <div className="flex gap-6 items-end mb-8 flex-wrap">
@@ -1281,6 +1299,108 @@ function NeckLateralBendDemo() {
           </div>
           <p className="text-sm font-semibold text-white">{s.label}</p>
           <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>pitch: {s.pitchNote}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── NavLodSimDemo ─────────────────────────────────────────────────────────
+   Four zoom-level cards side-by-side so the LOD transitions are visible:
+   low (<10) → mid (10–13) → high (14–16) → street (≥17).
+   Both flying and idle are shown per tier so per-feather micro-animations
+   (street+idle only) and wing-bottom visibility gates (hidden at low) are clear. */
+function NavLodSimDemo() {
+  const LOD_TIERS: Array<{ label: string; subLabel: string; mapZoom: number; badge: string }> = [
+    { label: "Low zoom",    subLabel: "city / country scale\nno eye detail, no bottom wings", mapZoom: 7,  badge: "<10" },
+    { label: "Mid zoom",    subLabel: "neighbourhood\nscap at 32% opacity", mapZoom: 12, badge: "10–13" },
+    { label: "High zoom",   subLabel: "street level\nfull wing anatomy", mapZoom: 15, badge: "14–16" },
+    { label: "Street zoom", subLabel: "max detail\nper-feather micro-oscillations", mapZoom: 18, badge: "≥17" },
+  ];
+  return (
+    <div className="mb-8">
+      <p className="text-xs mb-2" style={{ color: "rgba(255,255,255,0.3)" }}>Flying (8 m/s) — watch bottom wing, scap, and eye detail change across zoom tiers</p>
+      <div className="flex gap-4 flex-wrap mb-4">
+        {LOD_TIERS.map(({ label, subLabel, mapZoom, badge }) => (
+          <div
+            key={label}
+            className="flex flex-col items-center gap-2 rounded-xl p-4"
+            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", minWidth: 130 }}
+          >
+            <div style={{ width: 80, height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <SankofaBird
+                heading={0} mapBearing={0} speed={8} navigating={true} size={48} mapZoom={mapZoom}
+              />
+            </div>
+            <p className="text-sm font-semibold text-white text-center">{label}</p>
+            <p className="text-[10px] text-center whitespace-pre-line" style={{ color: "rgba(255,255,255,0.4)" }}>{subLabel}</p>
+            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold"
+              style={{ background: "rgba(0,212,255,0.12)", color: "rgba(0,212,255,0.8)", border: "1px solid rgba(0,212,255,0.2)" }}>
+              zoom {badge}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs mb-2" style={{ color: "rgba(255,255,255,0.3)" }}>Idle — per-feather micro-oscillations visible at street zoom only</p>
+      <div className="flex gap-4 flex-wrap">
+        {LOD_TIERS.map(({ label, mapZoom, badge }) => (
+          <div
+            key={`idle-${label}`}
+            className="flex flex-col items-center gap-2 rounded-xl p-4"
+            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", minWidth: 130 }}
+          >
+            <div style={{ width: 80, height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <SankofaBird
+                heading={null} mapBearing={0} speed={0} navigating={false} size={48} mapZoom={mapZoom}
+              />
+            </div>
+            <p className="text-xs text-white text-center">{label} (idle)</p>
+            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold"
+              style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.45)", border: "1px solid rgba(255,255,255,0.1)" }}>
+              zoom {badge}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── SkyTierDemo ───────────────────────────────────────────────────────────
+   Shows all four solar positions the app tracks. Only "night" maps to a
+   bird prop (nightMode=true). Golden / twilight are intermediate tiers that
+   drive map shader changes but have no separate bird CSS. The demo makes the
+   relationship explicit so it's clear what the bird does (and doesn't) react to. */
+function SkyTierDemo() {
+  const SKY_STATES: Array<{
+    label: string; subLabel: string; nightMode: boolean; badge: string;
+    badgeColor: string; badgeBg: string;
+  }> = [
+    { label: "Day",      subLabel: "sun above horizon\nnormal plumage + iridescence", nightMode: false, badge: "day",     badgeColor: "rgba(255,220,100,0.9)", badgeBg: "rgba(255,200,50,0.12)" },
+    { label: "Golden",   subLabel: "~1h before sunset\nmap warm-amber; bird unchanged", nightMode: false, badge: "golden",  badgeColor: "rgba(255,160,60,0.9)",  badgeBg: "rgba(255,130,30,0.12)" },
+    { label: "Twilight", subLabel: "sun 0°–6° below horizon\nmap deep-blue; bird unchanged", nightMode: false, badge: "twilight", badgeColor: "rgba(160,140,220,0.9)", badgeBg: "rgba(120,100,200,0.12)" },
+    { label: "Night",    subLabel: "sun >6° below horizon\nnightMode=true: Phase 10 plumage", nightMode: true,  badge: "night",   badgeColor: "rgba(120,180,255,0.9)", badgeBg: "rgba(80,120,220,0.12)" },
+  ];
+  return (
+    <div className="flex gap-4 flex-wrap mb-8">
+      {SKY_STATES.map(({ label, subLabel, nightMode, badge, badgeColor, badgeBg }) => (
+        <div
+          key={label}
+          className="flex flex-col items-center gap-2 rounded-xl p-4"
+          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", minWidth: 145 }}
+        >
+          <div style={{ width: 80, height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <SankofaBird
+              heading={0} mapBearing={0} speed={5} navigating={true} size={48}
+              mapZoom={15} nightMode={nightMode}
+            />
+          </div>
+          <p className="text-sm font-semibold text-white text-center">{label}</p>
+          <p className="text-[10px] text-center whitespace-pre-line" style={{ color: "rgba(255,255,255,0.4)" }}>{subLabel}</p>
+          <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold"
+            style={{ background: badgeBg, color: badgeColor, border: `1px solid ${badgeColor.replace("0.9","0.3")}` }}>
+            SkyTier: {badge}
+          </span>
         </div>
       ))}
     </div>
