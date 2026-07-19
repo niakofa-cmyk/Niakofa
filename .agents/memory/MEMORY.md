@@ -1,0 +1,1 @@
+- [Sankofa Bird project](sankofa-bird.md) — architecture, phases 1-14, CSS/TS pipeline, and push workflow.
