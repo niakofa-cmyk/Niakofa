@@ -1505,8 +1505,6 @@ export default function MapScreen() {
                 upcomingTurnDirection={null}
                 isHelping={false}
                 batterySaver={batterySaverActive}
-                skyTier={skyTier}
-                activityLevel={activityLevel}
               />
             </ErrorBoundary>
           </div>
@@ -1633,8 +1631,6 @@ export default function MapScreen() {
                 upcomingTurnDirection={birdUpcomingTurn}
                 isHelping={helperModeActive && !!activeRequestId}
                 batterySaver={batterySaverActive}
-                skyTier={skyTier}
-                activityLevel={activityLevel}
               />
             </ErrorBoundary>
           </Marker>

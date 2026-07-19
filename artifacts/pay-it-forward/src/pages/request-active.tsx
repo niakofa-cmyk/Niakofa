@@ -826,7 +826,7 @@ export default function ActiveRequestScreen() {
               heading={null} mapBearing={0} speed={0} navigating={false} size={56}
               celebrating={false} newNotification={false} accepted={false}
               donated={false} nearbyUser={false} mapZoom={14} upcomingTurnDirection={null}
-              isHelping={false} batterySaver={batterySaverActive} skyTier={skyTier} activityLevel={requestActivityLevel}
+              isHelping={false} batterySaver={batterySaverActive}
             />
           </ErrorBoundary>
           <p className="text-base font-bold text-center">Navigation unavailable</p>
@@ -876,8 +876,6 @@ export default function ActiveRequestScreen() {
               approaching={birdApproaching}
               isHelping={isHelper && !isCompleted && !isArrived}
               batterySaver={batterySaverActive}
-              skyTier={skyTier}
-              activityLevel={requestActivityLevel}
             />
           </ErrorBoundary>
         </Marker>

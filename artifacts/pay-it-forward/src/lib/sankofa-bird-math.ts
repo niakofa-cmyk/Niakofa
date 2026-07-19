@@ -131,29 +131,21 @@ export function computeHeadLeadDeg(
 // ── Flight mode ───────────────────────────────────────────────────────────────
 
 /**
- * Derive `isMoving`, `isGliding`, and `isVisuallyGliding` from speed, navigating flag, and landing phase.
+ * Derive `isMoving` and `isGliding` from speed, navigating flag, and landing phase.
  *
- * isMoving        — true when the bird should flap faster and lean forward.
- * isGliding       — true when speed > 50 m/s (airplane): affects flap cadence (4 s glide period)
- *                   and fixed 12° body posture. Physics-accurate; rarely fires in real navigation.
- * isVisuallyGliding — true when speed > 10 m/s (driving tier): drives CSS body-elongation and
- *                   wing-tip slotted-spread effects that are visible during normal navigation.
- *                   Separated from isGliding so the visual effects don't require airplane speed
- *                   while flap cadence and lean angle remain physically correct.
+ * isMoving  — true when the bird should flap faster and lean forward.
+ * isGliding — true when speed > 50 m/s (airplane): wings spread, barely oscillate.
  */
 export function computeFlightMode(
   speedMs: number,
   navigating: boolean,
   landingPhase: LandingPhase,
-): { isMoving: boolean; isGliding: boolean; isVisuallyGliding: boolean } {
+): { isMoving: boolean; isGliding: boolean } {
   // During "takeoff" we use dedicated CSS keyframes (data-landing="takeoff"),
   // not the generic data-flying="true" rules — so isMoving stays false here.
   const isMoving = (navigating || landingPhase === "flying") && speedMs > 0.3;
   const isGliding = isMoving && speedMs > 50;
-  // Visual glide fires at driving speed so the CSS elongation/wing-tip effects are
-  // reachable during everyday navigation — not just at unreachable airplane speed.
-  const isVisuallyGliding = isMoving && speedMs > 10;
-  return { isMoving, isGliding, isVisuallyGliding };
+  return { isMoving, isGliding };
 }
 
 /**

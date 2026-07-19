@@ -20,7 +20,6 @@
 import { useEffect, useState } from "react";
 import { useRive, useStateMachineInput } from "@rive-app/react-canvas";
 import { SankofaBirdSvg, type SankofaBirdProps } from "./SankofaBirdSvg";
-import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 
 // ── Rive file + state machine constants ────────────────────────────────────
 // These must match what the designer creates in Rive editor exactly.
@@ -46,13 +45,6 @@ export function SankofaBirdRive(props: SankofaBirdProps) {
     isHelping = false,
     batterySaver = false,
   } = props;
-
-  // ── Reduce Motion: mirror the same override logic as the SVG bird ────────
-  // When OS "Reduce Motion" is active and the user has NOT toggled the
-  // in-app override, force batterySaver=true on the Rive state machine and
-  // suppress the CSS pulse rings entirely. The Rive SM itself handles the
-  // rest (static idle pose) via its own batterySaver input.
-  const animSuppressed = useIsAnimationSuppressed();
 
   // ── Load failure state: fall back to SVG if .riv is absent or corrupt ──
   const [loadFailed, setLoadFailed] = useState(false);
@@ -142,11 +134,9 @@ export function SankofaBirdRive(props: SankofaBirdProps) {
     if (isHelpingInput)    isHelpingInput.value    = isHelping;
   }, [isHelping, isHelpingInput]);
 
-  // When OS Reduce Motion is active (and user hasn't overridden), force the
-  // Rive SM into its battery-saver / static-idle state regardless of the prop.
   useEffect(() => {
-    if (batterySaverInput) batterySaverInput.value = batterySaver || animSuppressed;
-  }, [batterySaver, animSuppressed, batterySaverInput]);
+    if (batterySaverInput) batterySaverInput.value = batterySaver;
+  }, [batterySaver, batterySaverInput]);
 
   useEffect(() => {
     if (approachingInput)  approachingInput.value  = approaching;
@@ -168,36 +158,25 @@ export function SankofaBirdRive(props: SankofaBirdProps) {
       className="relative flex items-center justify-center"
       style={{ width: containerSize, height: containerSize }}
     >
-      {/* Ground-presence pulse rings — suppressed when OS Reduce Motion is on
-          and the user hasn't enabled the override, matching the SVG bird's CSS
-          `prefers-reduced-motion` block. Static opacity-15 dot replaces them
-          so the map marker still has a subtle ground-presence indicator. */}
-      {animSuppressed ? (
-        <div
-          className="absolute rounded-full bg-primary opacity-15"
-          style={{ width: size, height: size }}
-        />
-      ) : (
-        <>
-          <div
-            className="absolute rounded-full bg-primary opacity-15 animate-ping"
-            style={{
-              width: size,
-              height: size,
-              animationDuration: (speed ?? 0) > 0.5 ? "1.2s" : "2s",
-            }}
-          />
-          <div
-            className="absolute rounded-full bg-primary opacity-25 animate-ping"
-            style={{
-              width: size * 0.6,
-              height: size * 0.6,
-              animationDuration: (speed ?? 0) > 0.5 ? "1.2s" : "2s",
-              animationDelay: "0.5s",
-            }}
-          />
-        </>
-      )}
+      {/* Ground-presence pulse rings — keep the same ambient glow as the SVG
+          bird so the map marker reads identically whether Rive or SVG renders */}
+      <div
+        className="absolute rounded-full bg-primary opacity-15 animate-ping"
+        style={{
+          width: size,
+          height: size,
+          animationDuration: (speed ?? 0) > 0.5 ? "1.2s" : "2s",
+        }}
+      />
+      <div
+        className="absolute rounded-full bg-primary opacity-25 animate-ping"
+        style={{
+          width: size * 0.6,
+          height: size * 0.6,
+          animationDuration: (speed ?? 0) > 0.5 ? "1.2s" : "2s",
+          animationDelay: "0.5s",
+        }}
+      />
 
       {/* Rive canvas — the bird + all its animations */}
       <RiveComponent
