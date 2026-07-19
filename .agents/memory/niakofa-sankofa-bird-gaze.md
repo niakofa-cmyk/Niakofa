@@ -28,6 +28,13 @@ CSS `transform: translateY(Xpx)` on an SVG `<g>` uses CSS pixels, NOT SVG viewBo
 - Body: `scaleX(0.96/1.04)` inside-of-turn compression on `data-upcoming-turn`.
 - Battery saver suppresses pitch and neck transitions; prefers-reduced-motion guards included.
 
-**Why:** Vertical gaze was missing entirely. neck was inside head group so lateral flex pivoted wrong (around head center not body anchor). No data attribute for CSS state targeting.
+**Why:** Vertical gaze was missing entirely. Neck was inside head group so lateral flex pivoted wrong (around head center not body anchor). No data attribute for CSS state targeting. nightMode prop was missing from SankofaBirdProps entirely despite Phase-10 CSS existing (40+ rules) — the rig never emitted `data-night-mode` before this fix.
 
 **How to apply:** Any new gaze state must update `computeGazePitchSvgUnits` (new landingPhase or flight mode), `computeLookDir` (new yaw threshold), AND CSS rules in Phase 12 block. Do not re-add neck inside sankofa-bird-head — it must stay extracted.
+
+## nightMode wiring (companion fix)
+- `nightMode?: boolean` is now in `SankofaBirdProps` (documented with full Phase-10 effect list)
+- Defaulted to `false` in `SankofaBirdSvg` destructuring
+- `data-night-mode={nightMode ? "true" : "false"}` emitted on the `.sankofa-bird-rig` div
+- `map.tsx` imports `useTimeOfDay` from `@/hooks/useTimeOfDay` and calls `isNight = useTimeOfDay(lat, lng)`; passes `nightMode={isNight}` to BOTH SankofaBird instances (error-state bird + live map marker)
+- Any new call site that renders SankofaBird should pass `nightMode={isNight}` if it has GPS context
