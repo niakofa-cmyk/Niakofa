@@ -282,7 +282,6 @@ export function computeGazeVector(opts: {
 
   const hasDirX  = Math.abs(rawX) > MAJOR;
   const hasDirY  = Math.abs(rawY) > MAJOR;
-  const hasWeakX = Math.abs(rawX) > DIAG;
   const hasWeakY = Math.abs(rawY) > DIAG;
 
   let gazeDir8: GazeDir8 = "center";

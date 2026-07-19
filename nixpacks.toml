@@ -4,7 +4,7 @@ providers = ["node"]
 nixPkgs = ["nodejs_20"]
 
 [phases.build]
-cmds = ["cd artifacts/pay-it-forward && npm install && npm run build"]
+cmds = ["cd artifacts/pay-it-forward && npm ci && npm run build"]
 
 [start]
 cmd = "cd artifacts/pay-it-forward && ./node_modules/.bin/serve dist -p $PORT"

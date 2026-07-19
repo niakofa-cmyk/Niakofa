@@ -683,7 +683,7 @@ export default function BirdTestPage() {
     let offTimer: ReturnType<typeof setTimeout>;
     const id = setInterval(() => {
       const key = keys[i % keys.length];
-      setReactionActive(prev => {
+      setReactionActive(_prev => {
         const next: Record<string, boolean> = {};
         keys.forEach(k => { next[k] = false; });
         next[key] = true;
@@ -2075,7 +2075,7 @@ function Phase11Demo() {
 function GazeDirectionDemo() {
   const [gazeDir, setGazeDir] = useState<"left" | "right" | "up" | "down" | "up-left" | "up-right" | "down-left" | "down-right" | "center">("center");
   const dirs = ["center","left","right","up","down","up-left","up-right","down-left","down-right"] as const;
-  const [idx, setIdx] = useState(0);
+  const [, setIdx] = useState(0);
 
   useEffect(() => {
     const t = setInterval(() => {
