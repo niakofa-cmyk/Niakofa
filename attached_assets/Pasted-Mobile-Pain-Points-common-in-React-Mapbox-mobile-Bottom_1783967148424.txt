@@ -1,0 +1,78 @@
+Mobile Pain Points (common in React + Mapbox + mobile):
+BottomNav / controls overlap with safe-area (iPhone Dynamic Island / notch).
+Touch targets too small for markers/sheets on small screens.
+Keyboard / address search zooms or covers map.
+Performance: too many React markers or heavy clusters on low-end devices.
+Swipe conflicts between map drag, BottomSheet drag, and admin-style swipes.
+Orientation / recenter / filters hidden or hard to reach when sheet is open.
+No explicit mobile-first fallbacks (e.g., reduced cluster radius, fewer layers).
+
+
+Proposed Improvements & Cleanup (Mobile-First)
+1. Safe Area & Layout Hardening (Highest Priority)
+Update map.tsx / wrapper components:
+tsx// Use react-native-safe-area or CSS env() + Tailwind + dynamic padding
+const safeAreaBottom = useSafeAreaInsets().bottom || 0; // or from AppContext
+
+// Map container
+<div 
+  className="relative h-full w-full overflow-hidden"
+  style={{ 
+    paddingBottom: `${Math.max(96 + safeAreaBottom, 120)}px` // BottomSheet + Nav + margin
+  }}
+>
+
+Bump existing fixes (bottom-32/36/52 → use bottom-[env(safe-area-inset-bottom)] or dynamic).
+Controls stack (recenter/orientation/filters) → right-edge vertical stack with bottom-[calc(96px+env(safe-area-inset-bottom)+1rem)].
+Live stats pill & BestMatchCard → respect safe area.
+
+2. BottomSheet Enhancements
+Already good (collapsed peek, drag-handle-only). Add:
+
+Snap points (framer-motion or vaul-like): collapsed (96px) → half → full.
+Gesture priority: dragListener={false} on sheet content; only handle initiates.
+Auto-expand triggers refined: only true emergencies + new requests for the current helper.
+Mobile swipe-to-dismiss for individual cards inside sheet.
+
+3. Controls Redesign (Mobile Optimized)
+From niakofa-map-controls-panel.md — make it even tighter:
+
+Compact mode toggle (helper ↔ community) as a floating pill top-center or integrated into TopBar.
+Filters/Layers button opens a bottom drawer (not inline) on mobile (md: breakpoint).
+FAB-style quick actions: "Request Help" + "I'm Available" floating above sheet.
+Orientation compass + recenter as small stacked buttons on right (with haptic feedback if possible).
+
+4. Performance & Clustering
+
+Dynamic cluster radius already present — make it more aggressive on mobile (useMediaQuery or window.innerWidth).
+Marker virtualization / memoization (already partial — expand React.memo with deep compare for location/status).
+Layer order: Heatmap → Clusters → Individual markers (with beforeId in Mapbox).
+Low-power mode: On battery saver or low-end device detection, disable heatmap + reduce max zoom for clusters.
+Debounce WS location updates for helper markers.
+
+5. Address Search & Interaction Polish
+
+Debounced search already good — add voice input button (ties into Nia wake word).
+Suggestion list as bottom sheet on mobile (not dropdown).
+Clear recenter on search select + subtle animation.
+
+6. Helper / Community Mode Split
+
+Visual distinction: Helper mode = cyan accents + live request highlights. Community = warmer tones + resource pins.
+Persistent mode in AppContext + BottomNav swap (already documented).
+
+7. Accessibility & Polish
+
+Larger hit areas (44×44px minimum) for all interactive map elements.
+ARIA labels on markers, focus management when sheet opens.
+Keyboard navigation fallback (rare on mobile but good for tablets).
+Offline indicator (Mapbox tiles cache + "No network — showing cached view").
+
+8. New Enhancements
+
+Mini-map overview in collapsed BottomSheet for quick context.
+Route preview on BestMatchCard (static Mapbox static image or lightweight polyline).
+Long-press marker → quick claim / details (iOS/Android gesture friendly).
+Dark mode map style toggle (Mapbox has excellent styles).
+Heatmap legend pill that appears on demand.
+Tutorial overlay first-time helper mode ( "Drag map • Tap pins • Swipe sheet" ).

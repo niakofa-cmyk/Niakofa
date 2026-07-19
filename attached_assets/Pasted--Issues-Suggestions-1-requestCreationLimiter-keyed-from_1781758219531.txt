@@ -1,0 +1,26 @@
+⚠️ Issues & Suggestions
+1. requestCreationLimiter keyed from unverified body data
+
+In rate-limit.ts, the key is body.requester_id — but the body hasn't been authenticated yet at the middleware level. An attacker can rotate requester_id values to bypass the per-user rate limit. Fix: key on req.authenticatedUserId (set by parseAuth), not the body.
+2. /requests/stats loads all requests into memory
+tsconst allRequests = await db.select().from(requestsTable);
+This works fine now but will degrade badly at scale. Replace with DB-level aggregations (count(), sum(), etc.) using Drizzle's query builder.
+3. requireOwnership uses (req as any).authenticatedUserId
+
+This as any cast appears in authz.ts. Since parseAuth always attaches authenticatedUserId, you can extend the Express Request type once in a global .d.ts file and drop all the casts. It's a small thing but reduces the risk of the cast masking type errors.
+4. No input sanitization on text fields
+
+title, description, neighborhood in the requests schema are free-form text with no max-length constraints at the DB or Zod level. Worth adding .max(500) etc. on the Zod schemas to prevent oversized inputs.
+5. Admin token in sessionStorage
+
+The replit.md notes the admin frontend stores the token in sessionStorage. This is fine for now but means the token is accessible to any JS on the page. For a trust & safety admin panel, consider httpOnly cookies or at least document the XSS risk.
+6. WebGL check is synchronous but placed oddly
+
+checkWebGL() in map.tsx runs in useState initialization. This is fine functionally, but WebGL availability can change (e.g. GPU process crash). Consider adding a mapError fallback message that's user-friendly rather than just a console state.
+
+💡 Minor Observations
+
+pnpm workspace discipline is excellent — the preinstall script that rejects npm/yarn is a nice touch to prevent lockfile conflicts.
+BullMQ fallback to setInterval is pragmatic for environments without Redis, but worth eventually making the Redis path the default with a clear env var requirement.
+replit.md used as architecture doc — smart pattern. Worth keeping it up to date as the product evolves since it functions as the "onboarding file" for both humans and AI.
+apps/pay-it-forward vs artifacts/pay-it-forward — there appear to be two locations for frontend code. Worth confirming which is the canonical one and whether apps/ is stale.

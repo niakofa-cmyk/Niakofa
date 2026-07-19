@@ -1,0 +1,2959 @@
+
+
+One real regression I found The ledger privacy fix above created a live bug: community.tsx's "Public Ledger" widget still reads entry.notes (community.tsx:1727-1728), but the backend response no longer includes that field — it sends description now. Nothing leaks and nothing crashes, but the descriptive line under each ledger entry silently renders as nothing. The LedgerEntry interface (line 80) is also still typed with a stale notes: string | null instead of description. One item still partially open The "Reassign User to Community" admin form got a confirmation step added (good), but still takes a raw numeric user ID with no name/email lookup — an admin still can't see who they're about to reassign before confirming, just User #. Reduced risk, not eliminated.
+
+
+
+
+import { Router } from "express";
+import bcrypt from "bcryptjs";
+import { db, usersTable, requestsTable, transactionsTable, scheduledPaymentsTable, userSettingsTable, paymentTransactionsTable, stripeAccountsTable, helperAvailabilityTable, communitiesTable } from "@workspace/db";
+import { eq, and, sql } from "drizzle-orm";
+import {
+  GetUserParams,
+  UpdateUserParams,
+  UpdateUserBody,
+  UpdateUserLocationParams,
+  UpdateUserLocationBody,
+  UpdateHelperModeParams,
+  UpdateHelperModeBody,
+  RegisterUserBody,
+  MakePledgePaymentParams,
+  MakePledgePaymentBody,
+  CreateScheduledPaymentParams,
+  CreateScheduledPaymentBody,
+  GetScheduledPaymentsParams,
+} from "@workspace/api-zod";
+import { broadcast } from "../lib/ws-hub";
+import { authLimiter, gpsLimiter, adminLimiter } from "../middlewares/rate-limit";
+import { requireAuth, requireApproved } from "../middlewares/auth";
+import { requireOwnership, requireAdmin, resolveMeParam } from "../middlewares/authz";
+import { signTokenById } from "../middlewares/auth";
+import { logger } from "../lib/logger";
+import { requestSelect } from "../lib/request-select";
+import { userSelect } from "../lib/user-select";
+import { getDefaultCommunityId } from "../lib/community-pool";
+
+// ── Per-account login attempt tracking ────────────────────────────────────────
+// Guards against distributed brute-force attacks where a single account is
+// targeted from many IPs, bypassing the IP-based authLimiter above.
+// IP rate-limiting (authLimiter) blocks high-volume spray attacks; this adds
+// a per-account layer for low-and-slow attacks from rotating IPs.
+//
+// Thresholds (gentler than the NIST SP 800-63B minimum of ≥10 before lockout,
+// to minimize friction for legitimate typos while still blocking automation):
+//   ≥ 5 wrong attempts  → 30-second cooldown
+//   ≥ 10 wrong attempts → 5-minute lockout
+//   ≥ 15 wrong attempts → 30-minute lockout (≈ 3 attempts/hour ceiling)
+//
+// Implementation: in-memory Map keyed by user.id.
+// For multi-instance production deployments, replace with Redis INCR+EXPIRE
+// on keys like `login:fail:${userId}` for shared cross-instance state.
+interface LoginAttemptRecord { count: number; lockedUntil: number; resetAt: number; }
+const _loginAttempts = new Map<number, LoginAttemptRecord>();
+
+function _getAttempts(uid: number): LoginAttemptRecord {
+  const rec = _loginAttempts.get(uid);
+  return (!rec || Date.now() > rec.resetAt) ? { count: 0, lockedUntil: 0, resetAt: 0 } : rec;
+}
+function _recordFailedAttempt(uid: number): { retryAfterSec: number } {
+  const now = Date.now();
+  const rec = _getAttempts(uid);
+  const count = rec.count + 1;
+  const retrySec = count >= 15 ? 30 * 60 : count >= 10 ? 5 * 60 : count >= 5 ? 30 : 0;
+  _loginAttempts.set(uid, {
+    count,
+    // Only extend the lock, never shorten it (monotonically increasing)
+    lockedUntil: retrySec > 0 ? now + retrySec * 1000 : (rec.lockedUntil ?? 0),
+    resetAt: now + 60 * 60 * 1000, // auto-clear after 1 hour
+  });
+  return { retryAfterSec: retrySec };
+}
+function _clearAttempts(uid: number) { _loginAttempts.delete(uid); }
+// Prune expired records every 10 minutes — prevents unbounded Map growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of _loginAttempts) if (now > v.resetAt) _loginAttempts.delete(k);
+}, 10 * 60 * 1000).unref(); // .unref() prevents this timer from keeping the process alive
+
+const router = Router();
+
+
+router.get("/users/register", (_req, res) => {
+  res.json({ message: "Use POST /api/users/register" });
+});
+
+router.post("/users/login", authLimiter, async (req, res) => {
+  const { email, password } = req.body as { email: string; password: string };
+  if (!email) return res.status(400).json({ error: "Email required" });
+  if (!password) return res.status(400).json({ error: "Password required" });
+  // Use sql`lower()` for case-insensitive matching — the eq() operator performs
+  // a byte-level comparison that would miss "Bob@Example.com" vs "bob@example.com"
+  // if somehow a mixed-case email ended up in the DB (legacy data, direct inserts).
+  // lower() guarantees we always find the account regardless of stored casing.
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(sql`lower(${usersTable.email}) = ${email.trim().toLowerCase()}`)
+    .limit(1);
+  if (!user) return res.status(401).json({ error: "No account found with that email" });
+
+  // Legacy accounts created before password auth was added have no
+  // password_hash at all — distinct from "wrong password" so the client
+  // can route them through a password-setup flow instead of a dead end.
+  // Include user_email and user_name so the frontend can pre-populate the
+  // reset form without a separate lookup.
+  // Suspended accounts: reject before doing any password work
+  if (user.is_suspended) {
+    return res.status(403).json({
+      error: "Your account has been suspended. Please contact support@niakofa.app.",
+      error_code: "ACCOUNT_SUSPENDED",
+    });
+  }
+
+  // Google-only accounts have no password_hash. If the user registered via
+  // Google and now tries email+password, guide them back to Google sign-in
+  // rather than routing through the legacy-password setup flow.
+  if (!user.password_hash && user.oauth_provider === "google") {
+    return res.status(403).json({
+      error: "This account was created with Google Sign-In. Please use the \"Continue with Google\" button to sign in.",
+      error_code: "GOOGLE_ACCOUNT_USE_OAUTH",
+    });
+  }
+
+  // Legacy accounts created before password auth was added have no
+  // password_hash — distinct from "wrong password" so the client can
+  // route them through the password-setup flow instead of a dead end.
+  if (!user.password_hash) {
+    return res.status(403).json({
+      error_code: "LEGACY_PASSWORD_REQUIRED",
+      user_id: user.id,
+      user_email: user.email,
+      user_name: user.name,
+    });
+  }
+
+  // Per-account lockout: checked BEFORE bcrypt.compare (expensive hash) so
+  // locked accounts are rejected instantly without doing CPU-intensive work
+  // for the attacker. Lockout state is separate from the IP-based authLimiter —
+  // both layers must be satisfied for a login to proceed.
+  const attemptRec = _getAttempts(user.id);
+  if (attemptRec.lockedUntil > Date.now()) {
+    const waitSec = Math.ceil((attemptRec.lockedUntil - Date.now()) / 1000);
+    const waitLabel = waitSec < 60 ? `${waitSec} seconds` : `${Math.ceil(waitSec / 60)} minutes`;
+    return res.status(429).json({
+      error: `Too many failed sign-in attempts. Please wait ${waitLabel} and try again, or use "Forgot password?" to reset it.`,
+      error_code: "ACCOUNT_LOCKED",
+      retry_after_sec: waitSec,
+    });
+  }
+
+  const passwordMatches = await bcrypt.compare(password, user.password_hash);
+  if (!passwordMatches) {
+    const { retryAfterSec } = _recordFailedAttempt(user.id);
+    const hint = retryAfterSec > 0
+      ? ` Account temporarily locked for ${retryAfterSec < 60 ? retryAfterSec + "s" : Math.ceil(retryAfterSec / 60) + " min"} — use "Forgot password?" to bypass.`
+      : "";
+    return res.status(401).json({ error: `Incorrect password.${hint}` });
+  }
+
+  _clearAttempts(user.id); // successful login — reset the failure counter
+  const token = signTokenById(user.id, user.token_version);
+  // Strip all sensitive fields — including password_reset_* which were previously
+  // leaked in the login response (zip-file fix BUG-SEC-01).
+  const { password_hash, password_reset_code, password_reset_expires_at, google_id: _gid, ...safeUser } = user;
+  return res.json({ user: safeUser, token });
+});
+
+router.post("/users/register", authLimiter, async (req, res) => {
+  const parsed = RegisterUserBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.message });
+  const { name, email, avatar_url, is_helper, neighborhood } = parsed.data;
+  // BUG-CRIT-01: account_type/organization_name/organization_description are
+  // sent by the registration UI (login.tsx) but were never part of the
+  // generated RegisterUserBody zod schema, so zod silently stripped them and
+  // every account — individual or organization — was created with the DB
+  // default account_type="individual". Read them directly off the raw body
+  // (same established pattern as `password` below) until the openapi spec
+  // is updated and codegen re-run to add them properly.
+  const body = req.body as {
+    password?: string;
+    account_type?: string;
+    organization_name?: string;
+    organization_description?: string;
+    tos_accepted?: boolean;
+  };
+  const password = body.password;
+  // "business" and "sponsor" are valid self-reported account types the
+  // frontend presents in the Join form. They require admin review before
+  // the account can be used for their intended purpose (posting on behalf
+  // of a business entity or making pool contributions as a county/gov
+  // sponsor). "organization" is the legacy name for the same concept.
+  const ALLOWED_ACCOUNT_TYPES = ["individual", "organization", "business", "sponsor"];
+  const account_type = ALLOWED_ACCOUNT_TYPES.includes(body.account_type ?? "")
+    ? (body.account_type as string)
+    : "individual";
+
+  // Password strength validated FIRST — before any DB queries or expensive
+  // bcrypt work — so invalid passwords are rejected cheaply. This prevents a
+  // bcrypt CPU-amplification attack where an abuser sends thousands of
+  // registrations with bad passwords, each triggering an expensive hash.
+  if (!password) {
+    return res.status(400).json({ error: "Password is required" });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+  // Server-side ToS enforcement — the frontend gates this too, but defence-in-depth
+  // prevents bypasses via direct API calls. tos_accepted must be explicitly true.
+  if (body.tos_accepted !== true) {
+    return res.status(400).json({ error: "You must accept the Terms of Service to create an account" });
+  }
+
+  // Normalize email to lowercase before any DB operations.
+  // login() always lowercases the input — if we store mixed-case here, users
+  // who register as "Bob@Example.com" can never log in because login searches
+  // for "bob@example.com" and finds nothing.
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const existing = await db.select().from(usersTable).where(sql`lower(${usersTable.email}) = ${normalizedEmail}`).limit(1);
+  if (existing.length > 0) {
+    // BUG-C01: Never return an existing user row to an arbitrary registrant — leaks PII.
+    return res.status(409).json({ error: "An account with that email already exists. Please sign in instead." });
+  }
+
+  // bcrypt hash is AFTER validation so we only pay the cost for valid attempts.
+  const password_hash = await bcrypt.hash(password, 12);
+
+  // BUG-CRIT-01 (continued): approval_status defaults to "pending" at the DB
+  // level for every row, and — until this fix — NOTHING in the codebase ever
+  // set it to "approved". App.tsx gates the entire app on this field
+  // (pending-approval.tsx), and no admin endpoint existed to advance it
+  // (see CLAUDE.md Incident #19) — meaning every single person who ever
+  // registered was permanently stuck on the pending-approval screen with no
+  // way out. Individual accounts (the overwhelming majority — this is a
+  // community help app, not an org directory) are auto-approved at
+  // registration since there's no legitimate reason to gate a person asking
+  // for or offering help. Organization accounts still require admin review
+  // via the new PATCH /admin/accounts/:id/approval endpoint, since vetting a
+  // claimed nonprofit/business identity is a real, intentional checkpoint.
+  // Individual accounts auto-approved (no vetting needed for someone asking
+  // for or offering community help). Organization/business/sponsor accounts
+  // stay pending until an admin explicitly approves them.
+  const REQUIRES_REVIEW = ["organization", "business", "sponsor"];
+  const approval_status = REQUIRES_REVIEW.includes(account_type) ? "pending" : "approved";
+
+  // Assign every new user to a real community row (defaults to the seeded
+  // "Tarrant County" pool, or whichever community an admin has designated via
+  // system_settings.default_community_id). Previously community_id was never
+  // set anywhere, so every user fell into the NULL/global bucket and the
+  // per-community pool-health-ratio wage multiplier in community-pool.ts
+  // never actually differentiated anything. A lookup failure here must never
+  // block registration — fall back to null (legacy global bucket) exactly
+  // like before this change.
+  const community_id = await getDefaultCommunityId().catch(() => null);
+
+  const [user] = await db.insert(usersTable).values({
+    name, email: normalizedEmail,
+    password_hash,
+    avatar_url: avatar_url ?? null,
+    is_helper: is_helper ?? false,
+    neighborhood: neighborhood ?? null,
+    account_type,
+    organization_name: ["organization", "business", "sponsor"].includes(account_type) ? (body.organization_name ?? null) : null,
+    organization_description: ["organization", "business", "sponsor"].includes(account_type) ? (body.organization_description ?? null) : null,
+    approval_status,
+    community_id,
+  }).returning();
+  const token = signTokenById(user.id, user.token_version);
+  // Strip all sensitive fields (zip-file fix BUG-SEC-01 extended to register).
+  const { password_hash: _ph, password_reset_code: _prc, password_reset_expires_at: _pre, google_id: _gid, ...safeUser } = user;
+
+  // ── Post-registration side-effects (non-blocking) ─────────────────────────
+  // Notify admin in real-time when a non-individual account or helper
+  // application is created — they need to review/approve it.
+  const needsAdminReview = REQUIRES_REVIEW.includes(account_type) || !!(is_helper);
+  if (needsAdminReview) {
+    const eventType = is_helper ? "new_helper_application" : "new_account_pending";
+    broadcast({
+      type: eventType,
+      payload: {
+        user_id: user.id,
+        name: user.name,
+        email: user.email,
+        account_type,
+        is_helper: user.is_helper,
+        created_at: user.created_at,
+      },
+    });
+  }
+
+  // Send welcome email (non-blocking — failures must never break registration)
+  import("../lib/mailer.js").then(({ sendAlertEmail }) => {
+    const subject = approval_status === "pending"
+      ? `Welcome to Niakofa, ${user.name}! Your application is under review`
+      : `Welcome to Niakofa, ${user.name}! You're all set 💙`;
+    const pendingNote = approval_status === "pending"
+      ? `\n\nYour ${account_type} account is currently under admin review. We'll let you know once it's approved.`
+      : "";
+    sendAlertEmail({
+      to: user.email,
+      subject,
+      title: "Welcome to Niakofa",
+      body: `Hi ${user.name},\n\nThank you for joining Niakofa — a community where neighbors help neighbors and everyone pays it forward.\n\nYou can now sign in at any time to request help, offer your skills, and connect with your community.${pendingNote}\n\nWith community love,\nThe Niakofa Team`,
+    }).catch(() => {}); // swallow — mailer may not be configured in dev
+  }).catch(() => {});
+
+  return res.status(201).json({ user: safeUser, token });
+});
+
+// POST /users/request-password-reset — emails a 6-digit code, used both for
+// the legacy-account "set your first password" flow (login.tsx redirects
+// here when POST /users/login returns LEGACY_PASSWORD_REQUIRED) and as a
+// general forgot-password flow. BUG-CRIT-02: this endpoint was called by the
+// frontend but never existed server-side at all — every "returning user"
+// whose account predates password auth got a 404 here and never received an
+// email, with no way to ever log in again. Always returns 200 regardless of
+// whether the email exists, to avoid leaking which emails are registered.
+// Registered under two paths: /users/request-password-reset is used by the
+// LEGACY_PASSWORD_REQUIRED auto-redirect (see /users/login above);
+// /users/forgot-password is what login.tsx's general "Forgot password?"
+// link calls. Both need the exact same behavior, so one handler serves both
+// instead of drifting into two copies.
+router.post(["/users/request-password-reset", "/users/forgot-password"], authLimiter, async (req, res) => {
+  const { email } = req.body as { email?: string };
+  if (!email) return res.status(400).json({ error: "Email required" });
+
+  // sql`lower()` for case-insensitive matching — same as login() for consistency
+  const [user] = await db.select().from(usersTable).where(sql`lower(${usersTable.email}) = ${email.trim().toLowerCase()}`).limit(1);
+  if (user) {
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    await db.update(usersTable)
+      .set({ password_reset_code: code, password_reset_expires_at: expiresAt })
+      .where(eq(usersTable.id, user.id));
+
+    const smtpConfigured = Boolean(process.env["SMTP_USER"]);
+    // DEV MODE only: explicit allowlist — only "development" or "test" envs.
+    // Never "not production", which would fire if NODE_ENV is unset in prod.
+    const isDevEnv = process.env["NODE_ENV"] === "development" || process.env["NODE_ENV"] === "test";
+    const useDevFallback = !smtpConfigured && isDevEnv;
+
+    // Log the code ONLY in dev/test environments where SMTP is not configured.
+    // In production, codes must travel exclusively via the email delivery path —
+    // logging them would leak active credentials into server log infrastructure.
+    if (useDevFallback) {
+      logger.warn(
+        { email: user.email, user_id: user.id },
+        `\n${"─".repeat(60)}\n  [DEV MODE] PASSWORD RESET CODE for ${user.email}\n  Code: ${code}  (expires in 15 min)\n  Configure SMTP_HOST/SMTP_USER/SMTP_PASS for real email delivery.\n${"─".repeat(60)}`
+      );
+    } else {
+      // In production, log only the fact that a code was generated — never the code itself.
+      logger.info({ email: user.email, user_id: user.id }, "password-reset: code generated and will be emailed");
+    }
+
+    const { sendAlertEmail } = await import("../lib/mailer.js");
+    await sendAlertEmail({
+      to: user.email,
+      subject: "Your Niakofa sign-in code",
+      title: "Your sign-in code",
+      body: `Hi ${user.name}, use this code to finish setting up sign-in on Niakofa: <strong style="font-size:24px;letter-spacing:4px">${code}</strong><br><br>This code expires in 15 minutes. If you didn't request this, you can ignore this email.`,
+    });
+
+    // DEV MODE fallback: return the code in the response body only when SMTP is
+    // not configured AND we are explicitly in a dev/test environment.
+    // This gate uses a strict allowlist (development|test) rather than
+    // "not production" so a misconfigured prod instance without NODE_ENV=production
+    // never leaks a reset code to the browser.
+    if (useDevFallback) {
+      return res.json({ ok: true, dev_code: code, dev_notice: "SMTP not configured — code shown here for development/test only" });
+    }
+  }
+
+  return res.json({ ok: true });
+});
+
+// POST /users/set-initial-password — verifies the emailed code and writes a
+// real password_hash, completing the legacy-account / reset flow above.
+router.post(["/users/set-initial-password", "/users/reset-password"], authLimiter, async (req, res) => {
+  const { user_id, email, code, new_password } = req.body as {
+    user_id?: number; email?: string; code?: string; new_password?: string;
+  };
+  if (!email || !code || !new_password) {
+    return res.status(400).json({ error: "email, code, and new_password are required" });
+  }
+  if (new_password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+
+  // user_id is only ever sent by the LEGACY_PASSWORD_REQUIRED flow (login.tsx
+  // has it from the /users/login response). The general "Forgot password?"
+  // flow only has email — fall back to an email-only lookup in that case.
+  // Identity is still verified by the random code + expiry check below either way.
+  // sql`lower()` for case-insensitive matching throughout — consistent with login()
+  const [user] = user_id
+    ? await db.select().from(usersTable)
+        .where(and(eq(usersTable.id, user_id), sql`lower(${usersTable.email}) = ${email.trim().toLowerCase()}`))
+        .limit(1)
+    : await db.select().from(usersTable)
+        .where(sql`lower(${usersTable.email}) = ${email.trim().toLowerCase()}`)
+        .limit(1);
+  // All failure paths (no account, wrong code, expired code) use the SAME
+  // HTTP status (403) and the SAME generic message — an attacker must not be
+  // able to distinguish "no account for this email" from "bad/expired code"
+  // via either the status code or the response body.
+  const RESET_FAIL = { status: 403, body: { error: "Invalid or expired code. Please request a new one." } } as const;
+
+  if (!user) return res.status(RESET_FAIL.status).json(RESET_FAIL.body);
+
+  if (!user.password_reset_code || user.password_reset_code !== code.trim()) {
+    return res.status(RESET_FAIL.status).json(RESET_FAIL.body);
+  }
+  if (!user.password_reset_expires_at || user.password_reset_expires_at.getTime() < Date.now()) {
+    return res.status(RESET_FAIL.status).json(RESET_FAIL.body);
+  }
+
+  const password_hash = await bcrypt.hash(new_password, 12);
+  const [updated] = await db.update(usersTable)
+    .set({
+      password_hash,
+      password_reset_code: null,
+      password_reset_expires_at: null,
+      token_version: sql`${usersTable.token_version} + 1`,
+    })
+    .where(eq(usersTable.id, user.id))
+    .returning();
+
+  const token = signTokenById(updated.id, updated.token_version);
+  const { password_hash: _ph2, password_reset_code: _prc, ...safeUser } = updated;
+  return res.json({ user: safeUser, token });
+});
+
+// POST /users/:id/change-password — authenticated password change.
+// Requires the current password as proof of possession, distinct from the
+// email-code reset flow above (which is for users who've lost access).
+router.post("/users/:id/change-password", requireAuth, resolveMeParam, requireOwnership(), authLimiter, async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+  const { current_password, new_password } = req.body as {
+    current_password?: string; new_password?: string;
+  };
+  if (!current_password || !new_password) {
+    return res.status(400).json({ error: "current_password and new_password are required" });
+  }
+  if (new_password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+  if (new_password === current_password) {
+    return res.status(400).json({ error: "New password must be different from current password" });
+  }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  if (!user.password_hash) {
+    return res.status(403).json({ error_code: "LEGACY_PASSWORD_REQUIRED", user_id: user.id });
+  }
+
+  const matches = await bcrypt.compare(current_password, user.password_hash);
+  if (!matches) return res.status(401).json({ error: "Current password is incorrect" });
+
+  const password_hash = await bcrypt.hash(new_password, 12);
+  const [updatedPw] = await db.update(usersTable)
+    .set({
+      password_hash,
+      token_version: sql`${usersTable.token_version} + 1`,
+      updated_at: new Date(),
+    })
+    .where(eq(usersTable.id, id))
+    .returning();
+
+  const pwToken = signTokenById(updatedPw.id, updatedPw.token_version);
+  const { password_hash: _ph3, ...safePwUser } = updatedPw;
+  return res.json({ user: safePwUser, token: pwToken });
+});
+
+// GET /users/:id/public — public helper profile, no ownership required.
+// Returns only the fields safe for any authenticated user to see.
+// helper-profile.tsx calls this to render another helper's profile card.
+router.get("/users/:id/public", requireAuth, resolveMeParam, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  // Return only public-safe fields — never email, password, lat/lng, tokens,
+  // or any admin/moderation field.
+  return res.json({
+    id: user.id,
+    name: user.name,
+    avatar_url: user.avatar_url,
+    is_helper: user.is_helper,
+    neighborhood: user.neighborhood,
+    city: user.city,
+    trust_score: user.trust_score,
+    specialties: user.specialties,
+    quick_replies: user.quick_replies,
+    created_at: user.created_at,
+  });
+});
+
+router.get("/users/:id", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
+  const parsed = GetUserParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, parsed.data.id)).limit(1);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
+});
+
+router.patch("/users/:id", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
+  const pParsed = UpdateUserParams.safeParse({ id: parseInt(String(req.params.id)) });
+  const bParsed = UpdateUserBody.safeParse(req.body);
+  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
+  const { name, avatar_url, neighborhood, is_helper, city, specialties, phone_masked, quick_replies } = bParsed.data;
+
+  // BUG-5-H02: Build the update object from an explicit allowlist of safe
+  // fields only. Never allow is_admin, role, trust_score, token_version, or
+  // any other privileged column to be set via this user-facing endpoint, even
+  // if they somehow appear in the Zod-parsed body (the `as any` cast below
+  // was a potential vector for privilege escalation if the schema drifted).
+  const updates: Partial<typeof usersTable.$inferInsert> = {};
+  if (name !== undefined) updates.name = name;
+  if (avatar_url !== undefined) updates.avatar_url = avatar_url;
+  if (neighborhood !== undefined) updates.neighborhood = neighborhood;
+  if (is_helper !== undefined) updates.is_helper = is_helper;
+
+  // Extended profile fields — validated by UpdateUserBody Zod schema above,
+  // read from bParsed.data so they go through the single schema-validation point.
+  if (city !== undefined) (updates as any).city = city;
+  if (specialties !== undefined) (updates as any).specialties = specialties;
+  if (phone_masked !== undefined) (updates as any).phone_masked = phone_masked;
+  if (quick_replies !== undefined) (updates as any).quick_replies = quick_replies;
+
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No fields to update" });
+  const [user] = await db.update(usersTable).set(updates).where(eq(usersTable.id, pParsed.data.id)).returning();
+  if (!user) return res.status(404).json({ error: "User not found" });
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
+});
+
+router.patch("/users/:id/location", requireAuth, resolveMeParam, requireOwnership(), gpsLimiter, async (req, res) => {
+  const pParsed = UpdateUserLocationParams.safeParse({ id: parseInt(req.params.id as string) });
+  const bParsed = UpdateUserLocationBody.safeParse(req.body);
+  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
+  const { lat, lng, heading, speed } = bParsed.data;
+  const [user] = await db.update(usersTable)
+    .set({ lat, lng, heading: heading ?? null, speed: speed ?? null })
+    .where(eq(usersTable.id, pParsed.data.id))
+    .returning();
+  if (!user) return res.status(404).json({ error: "User not found" });
+  if (user.helper_mode_active) {
+    broadcast({
+      type: "helper_location",
+      payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng, heading: user.heading },
+    });
+  }
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
+});
+
+router.patch("/users/:id/helper-mode", requireAuth, resolveMeParam, requireApproved, requireOwnership(), async (req, res) => {
+  const pParsed = UpdateHelperModeParams.safeParse({ id: parseInt(String(req.params.id)) });
+  const bParsed = UpdateHelperModeBody.safeParse(req.body);
+  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
+
+  // The Settings/Profile screens already hide the "Go Online" toggle from
+  // anyone who isn't an approved helper, but that's a client-side
+  // convenience, not enforcement — without this check, a direct API call
+  // could flip helper_mode_active on for an unapproved account, and every
+  // other system (push targeting, the map's online-helpers query,
+  // auto-assign) trusts that flag alone with no second check of
+  // helper_status. This is the actual enforcement boundary.
+  if (bParsed.data.active) {
+    const [existing] = await db.select({ helper_status: usersTable.helper_status })
+      .from(usersTable).where(eq(usersTable.id, pParsed.data.id)).limit(1);
+    if (existing?.helper_status !== "approved") {
+      return res.status(403).json({ error: "Only approved helpers can go online. Apply to become a helper in your profile first." });
+    }
+  }
+
+  const [user] = await db.update(usersTable)
+    .set({ helper_mode_active: bParsed.data.active })
+    .where(eq(usersTable.id, pParsed.data.id))
+    .returning();
+  if (!user) return res.status(404).json({ error: "User not found" });
+  broadcast({
+    type: bParsed.data.active ? "helper_online" : "helper_offline",
+    payload: { id: user.id, name: user.name, lat: user.lat, lng: user.lng },
+  });
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
+});
+
+router.post("/users/:id/pledge", requireAuth, requireApproved, requireOwnership(), async (req, res) => {
+  const pParsed = MakePledgePaymentParams.safeParse({ id: parseInt(String(req.params.id)) });
+  const bParsed = MakePledgePaymentBody.safeParse(req.body);
+  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
+  const { request_id, amount } = bParsed.data;
+  const [request] = await db.select(requestSelect).from(requestsTable)
+    .where(and(eq(requestsTable.id, request_id), eq(requestsTable.requester_id, pParsed.data.id)))
+    .limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found or unauthorized" });
+
+  // Dedup check: prevent double-submission from the same user on the same request
+  // within a 10-second window (e.g. accidental double-tap). Must include user_id so
+  // that User A's pledge doesn't block User B pledging the same amount on the same
+  // request — a cross-user denial-of-service that a missing user_id filter would cause.
+  const [recentDup] = await db.select({ id: transactionsTable.id })
+    .from(transactionsTable)
+    .where(and(
+      eq(transactionsTable.user_id, pParsed.data.id),
+      eq(transactionsTable.request_id, request_id),
+      eq(transactionsTable.type, "pledge_sent"),
+      eq(transactionsTable.amount, -amount),
+      sql`${transactionsTable.created_at} > NOW() - INTERVAL '10 seconds'`,
+    ))
+    .limit(1);
+  if (recentDup) return res.status(409).json({ error: "Duplicate pledge — please wait a moment before pledging again." });
+
+  // Atomic increment — never read-then-write pledge_paid; two concurrent pledges
+  // on the same request reading the same original value and writing back would
+  // make the second write silently overwrite the first. COALESCE handles NULL.
+  const [updated] = await db.update(requestsTable)
+    .set({ pledge_paid: sql`COALESCE(${requestsTable.pledge_paid}, 0) + ${amount}` })
+    .where(eq(requestsTable.id, request_id))
+    .returning();
+
+  // BUG-C07/C08: Do NOT credit benevolence_wallet or insert pledge_received here.
+  // The Stripe webhook (payment_intent.succeeded) is the sole authoritative path
+  // for crediting the helper's wallet. Doing it here causes double-credit when
+  // the webhook fires for the same payment.
+  await db.insert(transactionsTable).values({
+    user_id: pParsed.data.id,
+    request_id: request_id,
+    type: "pledge_sent",
+    amount: -amount,
+    description: request.title,
+  });
+
+  // Record payment_transactions row so this pledge appears in the financial ledger.
+  // state = "pending_contribution" — a real Stripe charge may have already been confirmed
+  // by the frontend (PaymentIntent flow) or will be fulfilled on the honor system.
+  await db.insert(paymentTransactionsTable).values({
+    request_id: request_id,
+    helper_id: request.helper_id ?? null,
+    requester_id: pParsed.data.id,
+    amount,
+    state: "pending_contribution",
+    payment_type: "pay_it_forward",
+    notes: "Pay It Forward pledge",
+  });
+
+  broadcast({ type: "request_updated", payload: { ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null } });
+  broadcast({ type: "pledge_paid", payload: { user_id: pParsed.data.id, request_id, amount, request_title: request.title } });
+  return res.json({ ...updated, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null });
+});
+
+// GET /users/:id/transactions — real activity history
+router.get("/users/:id/transactions", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const txns = await db.select().from(transactionsTable)
+    .where(eq(transactionsTable.user_id, id))
+    .orderBy(sql`${transactionsTable.created_at} DESC`)
+    .limit(50);
+  return res.json(txns);
+});
+
+// POST /users/:id/scheduled-payment — save a future repayment intent
+router.post("/users/:id/scheduled-payment", requireAuth, requireApproved, requireOwnership(), async (req, res) => {
+  const pParsed = CreateScheduledPaymentParams.safeParse({ id: parseInt(String(req.params.id)) });
+  const bParsed = CreateScheduledPaymentBody.safeParse(req.body);
+  if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid request" });
+  const { request_id, amount, scheduled_date, note } = bParsed.data;
+  const userId = pParsed.data.id;
+  const [user] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  // BUG-H07: Verify the requester owns the request they're scheduling a payment for
+  const [requestRow] = await db.select({ requester_id: requestsTable.requester_id })
+    .from(requestsTable).where(eq(requestsTable.id, request_id)).limit(1);
+  if (!requestRow) return res.status(404).json({ error: "Request not found" });
+  if (requestRow.requester_id !== userId) return res.status(403).json({ error: "You can only schedule payments for your own requests" });
+  const [scheduled] = await db.insert(scheduledPaymentsTable).values({
+    user_id: userId,
+    request_id,
+    amount,
+    scheduled_date: new Date(scheduled_date),
+    status: "pending",
+    note: note ?? null,
+  }).returning();
+  broadcast({
+    type: "pledge_scheduled",
+    payload: { user_id: userId, request_id, amount, scheduled_date },
+  });
+  return res.status(201).json({ ...scheduled, scheduled_date: scheduled.scheduled_date.toISOString() });
+});
+
+// GET /users/:id/scheduled-payment — list future payment intents
+router.get("/users/:id/scheduled-payment", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
+  const parsed = GetScheduledPaymentsParams.safeParse({ id: parseInt(String(req.params.id)) });
+  if (!parsed.success) return res.status(400).json({ error: "Invalid id" });
+  const rows = await db.select().from(scheduledPaymentsTable)
+    .where(eq(scheduledPaymentsTable.user_id, parsed.data.id))
+    .orderBy(scheduledPaymentsTable.scheduled_date);
+  return res.json(rows.map((r: (typeof rows)[number]) => ({ ...r, scheduled_date: r.scheduled_date.toISOString() })));
+});
+
+// DELETE /users/:id/scheduled-payment/:paymentId — cancel a scheduled payment
+router.delete("/users/:id/scheduled-payment/:paymentId", requireAuth, requireOwnership(), async (req, res) => {
+  const userId = parseInt(String(req.params.id));
+  const paymentId = parseInt(String(req.params.paymentId));
+  if (isNaN(userId) || isNaN(paymentId)) return res.status(400).json({ error: "Invalid id" });
+  const [deleted] = await db.delete(scheduledPaymentsTable)
+    .where(and(
+      eq(scheduledPaymentsTable.id, paymentId),
+      eq(scheduledPaymentsTable.user_id, userId)
+    ))
+    .returning();
+  if (!deleted) return res.status(404).json({ error: "Scheduled payment not found or does not belong to this user" });
+  return res.json({ ok: true, deleted_id: paymentId });
+});
+
+// GET /users/:id/outstanding-pledges — requests with unpaid pledge balance
+router.get("/users/:id/outstanding-pledges", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const requests = await db.select(requestSelect).from(requestsTable)
+    .where(
+      and(
+        eq(requestsTable.requester_id, id),
+        eq(requestsTable.payment_type, "pay_it_forward"),
+        eq(requestsTable.status, "completed"),
+      )
+    );
+  const outstanding = requests.filter((r: (typeof requests)[number]) => (r.pledge_amount ?? 0) > (r.pledge_paid ?? 0));
+  return res.json(outstanding.map((r: (typeof outstanding)[number]) => ({
+    ...r,
+    requester_name: null,
+    requester_avatar: null,
+    helper_name: null,
+    distance_miles: null,
+    estimated_duration_min: null,
+  })));
+});
+
+// POST /users/:id/avatar — update profile photo (base64 data URL)
+router.post("/users/:id/avatar", requireAuth, resolveMeParam, requireApproved, requireOwnership(), async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const { dataUrl } = req.body as { dataUrl?: string };
+  if (!dataUrl || !dataUrl.startsWith("data:image/")) {
+    return res.status(400).json({ error: "Invalid image data — must be a base64 data URL starting with data:image/" });
+  }
+  // Enforce reasonable size limit (~5 MB base64)
+  if (dataUrl.length > 7 * 1024 * 1024) {
+    return res.status(413).json({ error: "Image too large — max 5 MB" });
+  }
+  const [user] = await db
+    .update(usersTable)
+    .set({ avatar_url: dataUrl, updated_at: new Date() })
+    .where(eq(usersTable.id, id))
+    .returning();
+  if (!user) return res.status(404).json({ error: "User not found" });
+  const { password_hash, ...safeUser } = user;
+  return res.json(safeUser);
+});
+
+// GET /users/:id/settings — fetch user notification + privacy prefs (upserts defaults if first visit)
+router.get("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const [existing] = await db.select().from(userSettingsTable).where(eq(userSettingsTable.user_id, id)).limit(1);
+  if (existing) return res.json(existing);
+  // First visit — create defaults
+  const [created] = await db.insert(userSettingsTable).values({ user_id: id }).returning();
+  return res.status(201).json(created);
+});
+
+// PUT /users/:id/settings — persist notification + privacy prefs
+router.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const allowed = [
+    "notif_nearby_requests", "notif_emergency", "notif_task_accepted",
+    "notif_wallet_updates", "notif_community_activity", "notif_pledge_reminders",
+    "privacy_profile_visible", "privacy_live_location", "privacy_activity_sharing",
+    "privacy_anonymous_giving", "service_radius_miles", "max_travel_miles", "specialties",
+    "preferred_language",
+  ];
+  const VALID_LANGUAGES = ["en", "sw", "zu", "tw", "yo", "ha", "am", "so", "pcm", "lg"];
+  const updates: Record<string, unknown> = { updated_at: new Date() };
+  for (const key of allowed) {
+    if (req.body[key] === undefined) continue;
+    if (key === "preferred_language" && !VALID_LANGUAGES.includes(req.body[key])) continue;
+    updates[key] = req.body[key];
+  }
+  // Upsert
+  const [existing] = await db.select().from(userSettingsTable).where(eq(userSettingsTable.user_id, id)).limit(1);
+  if (existing) {
+    const [updated] = await db.update(userSettingsTable).set(updates).where(eq(userSettingsTable.user_id, id)).returning();
+    return res.json(updated);
+  } else {
+    const [created] = await db.insert(userSettingsTable).values({ user_id: id, ...updates }).returning();
+    return res.json(created);
+  }
+});
+
+
+// Note: panic contacts are managed via PATCH /verification/panic-contacts/:userId
+// (the route the frontend actually calls — see verification.ts). A duplicate
+// PATCH /users/:id/panic-contacts route previously lived here with zero
+// frontend callers and zero test coverage; removed rather than left as dead
+// code that could silently drift from the real one.
+
+// Self-service community picker — lets a user choose which community pool will
+// back their future requests. Community is validated to exist; null clears the
+// assignment back to the global/unassigned bucket.
+router.put("/users/me/community", requireAuth, async (req, res) => {
+  const userId = (req as any).authenticatedUserId as number;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const { community_id } = req.body as { community_id?: number | null };
+  if (community_id !== null && community_id !== undefined && typeof community_id !== "number") {
+    return res.status(400).json({ error: "community_id must be a number or null" });
+  }
+
+  if (typeof community_id === "number") {
+    const [exists] = await db
+      .select({ id: communitiesTable.id })
+      .from(communitiesTable)
+      .where(eq(communitiesTable.id, community_id))
+      .limit(1);
+    if (!exists) return res.status(400).json({ error: "No community with that id" });
+  }
+
+  const [updated] = await db
+    .update(usersTable)
+    .set({ community_id: community_id ?? null, updated_at: new Date() })
+    .where(eq(usersTable.id, userId))
+    .returning({ id: usersTable.id, community_id: usersTable.community_id });
+
+  if (!updated) return res.status(404).json({ error: "User not found" });
+  return res.json({ ok: true, community_id: updated.community_id });
+});
+
+// Self-delete: authenticated user deletes their own account. Uses the token
+// subject (authenticatedUserId) as the canonical source — never a path param —
+// so there is no way to delete another user's account via this route.
+router.delete("/users/me", requireAuth, async (req, res) => {
+  const userId = (req as any).authenticatedUserId as number;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    await db.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
+    await db.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
+    await db.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
+    await db.delete(usersTable).where(eq(usersTable.id, userId));
+    return res.json({ ok: true, message: "Account deleted successfully" });
+  } catch (error) {
+    logger.error({ err: error }, "self-delete: failed");
+    return res.status(500).json({ error: "Failed to delete account" });
+  }
+});
+
+// BUG-H03: Account deletion is admin-only. requireOwnership() would let any
+// authenticated user delete any other account by crafting the path parameter.
+router.delete("/users/:id", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const userId = parseInt(String(req.params.id));
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+
+  try {
+    // Delete user from all related tables
+    await db.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
+    await db.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
+    await db.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
+    // requestsTable and transactionsTable should handle CASCADE DELETE if configured in schema
+    // Otherwise, explicit deletion would be needed here.
+    await db.delete(usersTable).where(eq(usersTable.id, userId));
+
+    return res.json({ ok: true, message: "Account deleted successfully" });
+  } catch (error) {
+    logger.error({ err: error }, "delete-account: failed");
+    return res.status(500).json({ error: "Failed to delete account" });
+  }
+});
+
+router.patch("/users/:id/moderation", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const userId = parseInt(String(req.params.id));
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+  const { action } = req.body as { action: "warn" | "ban" | "suspend" };
+  if (!["warn", "ban", "suspend"].includes(action)) return res.status(400).json({ error: "Invalid action" });
+
+  if (action === "ban") {
+    // Set trust_score to -1 as banned flag + hard suspension
+    await db.update(usersTable)
+      .set({ trust_score: -1, helper_mode_active: false, is_suspended: true, suspended_at: new Date(), suspended_reason: "Banned by admin" })
+      .where(eq(usersTable.id, userId));
+  } else if (action === "suspend") {
+    // Soft suspension
+    await db.update(usersTable)
+      .set({ is_suspended: true, suspended_at: new Date(), suspended_reason: req.body.reason ?? "Suspended by admin", helper_mode_active: false })
+      .where(eq(usersTable.id, userId));
+  } else {
+    // Reduce trust score by 10 for a warning
+    await db.update(usersTable)
+      .set({ trust_score: sql`GREATEST(0, ${usersTable.trust_score} - 10)` })
+      .where(eq(usersTable.id, userId));
+  }
+  return res.json({ ok: true, action, user_id: userId });
+});
+
+// PUT /users/:id/availability
+router.put("/users/:id/availability", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
+  const userId = parseInt(req.params.id as string);
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+  const { windows } = req.body as { windows: Array<{ day_of_week: number; start_min: number; end_min: number }> };
+  if (!Array.isArray(windows)) return res.status(400).json({ error: "windows must be an array" });
+  for (const w of windows) {
+    if (w.day_of_week < 0 || w.day_of_week > 6) return res.status(400).json({ error: "day_of_week must be 0-6" });
+    if (w.start_min < 0 || w.start_min > 1439) return res.status(400).json({ error: "start_min must be 0-1439" });
+    if (w.end_min < 1 || w.end_min > 1440) return res.status(400).json({ error: "end_min must be 1-1440" });
+    if (w.start_min >= w.end_min) return res.status(400).json({ error: "start_min must be less than end_min" });
+  }
+  await db.delete(helperAvailabilityTable).where(eq(helperAvailabilityTable.user_id, userId));
+  if (windows.length > 0) {
+    await db.insert(helperAvailabilityTable).values(
+      windows.map(w => ({ user_id: userId, day_of_week: w.day_of_week, start_min: w.start_min, end_min: w.end_min }))
+    );
+  }
+  return res.json({ ok: true, count: windows.length });
+});
+
+// GET /users/:id/availability
+router.get("/users/:id/availability", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
+  const userId = parseInt(req.params.id as string);
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+  const windows = await db
+    .select()
+    .from(helperAvailabilityTable)
+    .where(eq(helperAvailabilityTable.user_id, userId))
+    .orderBy(helperAvailabilityTable.day_of_week, helperAvailabilityTable.start_min);
+  return res.json(windows);
+});
+
+// POST /users/:id/logout — client-side sign-out signal only.
+// NOT server-side token revocation, despite bumping token_version below.
+// Auth tokens are stateless HMAC(userId) (see middlewares/auth.ts —
+// signTokenById/verifyToken never read token_version, by deliberate design,
+// to avoid a DB lookup on every authenticated request). Bumping
+// token_version here does not invalidate any previously issued token; a
+// token issued before this call remains valid until SESSION_SECRET itself
+// changes. This endpoint exists so the client has a server round-trip to
+// confirm before discarding its local token, and so token_version keeps
+// incrementing for potential future use, but it provides no actual
+// "log out everywhere" or stolen-token-revocation guarantee today.
+router.post("/users/:id/logout", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
+  const userId = parseInt(String(req.params.id));
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+  await db.update(usersTable)
+    .set({ token_version: sql`${usersTable.token_version} + 1` })
+    .where(eq(usersTable.id, userId));
+  return res.json({ ok: true });
+});
+
+// GET all users (admin)
+// Returns approval_status and account_type so admins can see pending/denied
+// accounts and distinguish individual vs. organization vs. business accounts
+// from the user list without needing separate fetches.
+//
+// Supports server-side search (?q=) and pagination (?limit=&offset=).
+// Always returns { users, total, limit, offset } — never a raw array —
+// so the admin UI can display "Showing X of Y" accurately even when total
+// users exceed the page limit. Previously returned a raw array capped at 200,
+// causing the admin Users tab count to silently plateau and show wrong numbers.
+router.get("/users", requireAuth, requireAdmin(), adminLimiter, async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const limitParam  = parseInt(String(req.query.limit  ?? "200"), 10);
+  const offsetParam = parseInt(String(req.query.offset ?? "0"),   10);
+  const limit  = Number.isFinite(limitParam)  ? Math.min(Math.max(limitParam,  1), 500) : 200;
+  const offset = Number.isFinite(offsetParam) && offsetParam > 0 ? offsetParam : 0;
+
+  // Case-insensitive full-table search so an admin can find any user regardless
+  // of insertion order — previously the list was hard-capped at the first 200 rows
+  // with no way to reach anyone past that cutoff, and search happened only client-side.
+  // A purely-numeric query also matches by exact id, so admin flows that only
+  // have a raw user ID (e.g. the community reassignment form) can resolve it
+  // to a name/email for confirmation before acting on it.
+  const qAsId = /^\d+$/.test(q) ? parseInt(q, 10) : undefined;
+  const whereClause = q
+    ? qAsId !== undefined
+      ? sql`(${usersTable.id} = ${qAsId} OR lower(${usersTable.name}) LIKE ${"%" + q.toLowerCase() + "%"} OR lower(${usersTable.email}) LIKE ${"%" + q.toLowerCase() + "%"})`
+      : sql`(lower(${usersTable.name}) LIKE ${"%" + q.toLowerCase() + "%"} OR lower(${usersTable.email}) LIKE ${"%" + q.toLowerCase() + "%"})`
+    : undefined;
+
+  const baseQuery = db.select({
+    id: usersTable.id,
+    name: usersTable.name,
+    email: usersTable.email,
+    is_helper: usersTable.is_helper,
+    helper_status: usersTable.helper_status,
+    helper_skills: usersTable.helper_skills,
+    trust_score: usersTable.trust_score,
+    help_count: usersTable.help_count,
+    is_suspended: usersTable.is_suspended,
+    suspended_at: usersTable.suspended_at,
+    suspended_reason: usersTable.suspended_reason,
+    created_at: usersTable.created_at,
+    approval_status: usersTable.approval_status,
+    account_type: usersTable.account_type,
+    is_admin: usersTable.is_admin,
+    // Background check fields — used by BackgroundCheckAdmin in the admin UI
+    background_check_status: usersTable.background_check_status,
+    background_check_completed_at: usersTable.background_check_completed_at,
+  }).from(usersTable);
+
+  const [users, [{ total }]] = await Promise.all([
+    (whereClause ? baseQuery.where(whereClause) : baseQuery)
+      .orderBy(usersTable.id)
+      .limit(limit)
+      .offset(offset),
+    whereClause
+      ? db.select({ total: sql<number>`COUNT(*)::int` }).from(usersTable).where(whereClause)
+      : db.select({ total: sql<number>`COUNT(*)::int` }).from(usersTable),
+  ]);
+
+  // Return both the page of users AND the true total so the admin UI can
+  // show "Showing X of Y" instead of silently implying the list is complete.
+  return res.json({ users, total, limit, offset });
+});
+
+// PATCH /users/:id/helper-application
+// Two modes:
+//   1. User submitting their own application (sends helper_skills, helper_bio, etc.) — requireOwnership
+//   2. Admin reviewing an application (sends status: approved|denied|rejected) — requireAdmin
+//      "rejected" is accepted as an alias for "denied" since the admin UI's bulk-action
+//      buttons send "rejected" while the single-review flow sends "denied" — both are
+//      normalized to the same stored value.
+router.patch("/users/:id/helper-application", requireAuth, async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid user id" });
+
+  const {
+    status,
+    helper_skills,
+    helper_languages,
+    helper_qualifications,
+    helper_bio,
+    helper_vehicle,
+    helper_social_links,
+  } = req.body as {
+    status?: string;
+    helper_skills?: string[];
+    helper_languages?: string[];
+    helper_qualifications?: string[];
+    helper_bio?: string;
+    helper_vehicle?: string;
+    helper_social_links?: string[];
+  };
+
+  const authenticatedUserId = req.authenticatedUserId;
+  if (!authenticatedUserId) return res.status(401).json({ error: "Authentication required" });
+
+  // Admin status review path
+  if (status !== undefined) {
+    const [admin] = await db.select({ is_admin: usersTable.is_admin }).from(usersTable).where(eq(usersTable.id, authenticatedUserId)).limit(1);
+    if (!admin?.is_admin) return res.status(403).json({ error: "Forbidden: Admin access required" });
+
+    const normalizedStatus = status === "rejected" ? "denied" : status;
+    if (!["pending", "approved", "denied"].includes(normalizedStatus)) {
+      return res.status(400).json({ error: "status must be pending | approved | denied" });
+    }
+
+    const [updated] = await db
+      .update(usersTable)
+      .set({
+        helper_status: normalizedStatus,
+        is_helper: normalizedStatus === "approved",
+        updated_at: new Date(),
+      })
+      .where(eq(usersTable.id, id))
+      .returning();
+
+    if (!updated) return res.status(404).json({ error: "User not found" });
+    const { password_hash, ...safe } = updated;
+    return res.json(safe);
+  }
+
+  // User submitting their own helper application
+  if (authenticatedUserId !== id) return res.status(403).json({ error: "Forbidden: You can only update your own application" });
+
+  const [applicant] = await db
+    .select({ is_suspended: usersTable.is_suspended, approval_status: usersTable.approval_status })
+    .from(usersTable)
+    .where(eq(usersTable.id, authenticatedUserId))
+    .limit(1);
+  if (applicant?.is_suspended) {
+    return res.status(403).json({ error: "Account suspended — contact support" });
+  }
+  if (applicant?.approval_status !== "approved") {
+    return res.status(403).json({ error: "Account pending approval", approval_status: applicant?.approval_status ?? "pending" });
+  }
+
+  if (!helper_skills || helper_skills.length === 0) {
+    return res.status(400).json({ error: "At least one skill is required" });
+  }
+
+  const [updated] = await db
+    .update(usersTable)
+    .set({
+      helper_skills,
+      helper_languages: helper_languages ?? [],
+      helper_qualifications: helper_qualifications ?? [],
+      helper_bio: helper_bio ?? null,
+      helper_vehicle: helper_vehicle ?? null,
+      helper_social_links: helper_social_links ?? null,
+      helper_status: "pending",
+      updated_at: new Date(),
+    })
+    .where(eq(usersTable.id, id))
+    .returning();
+
+  if (!updated) return res.status(404).json({ error: "User not found" });
+  const { password_hash, ...safe } = updated;
+
+  // Notify admin in real time that a new helper application needs review.
+  // (The register-time is_helper=true path also broadcasts this, but most
+  // users submit their full application through this PATCH after registration.)
+  broadcast({
+    type: "new_helper_application",
+    payload: {
+      user_id: updated.id,
+      name: updated.name,
+      email: updated.email,
+      helper_skills: updated.helper_skills,
+      created_at: new Date().toISOString(),
+    },
+  });
+
+  return res.json(safe);
+});
+
+// GET /users/:id/sponsor-history — contribution and payment history for a user.
+// Owners only (requireOwnership). Returns up to 50 most recent payment transactions,
+// joined with the request title/category so the UI can render meaningful rows.
+router.get("/users/:id/sponsor-history", requireAuth, resolveMeParam, requireOwnership(), async (req, res) => {
+  const userId = parseInt(String(req.params.id), 10);
+  if (isNaN(userId)) return res.status(400).json({ error: "Invalid id" });
+
+  const history = await db
+    .select({
+      id: paymentTransactionsTable.id,
+      request_id: paymentTransactionsTable.request_id,
+      amount: paymentTransactionsTable.amount,
+      state: paymentTransactionsTable.state,
+      payment_type: paymentTransactionsTable.payment_type,
+      sponsored_by: paymentTransactionsTable.sponsored_by,
+      notes: paymentTransactionsTable.notes,
+      created_at: paymentTransactionsTable.created_at,
+      request_title: requestsTable.title,
+      request_category: requestsTable.category,
+    })
+    .from(paymentTransactionsTable)
+    .leftJoin(requestsTable, eq(requestsTable.id, paymentTransactionsTable.request_id))
+    .where(eq(paymentTransactionsTable.requester_id, userId))
+    .orderBy(sql`${paymentTransactionsTable.created_at} DESC`)
+    .limit(50);
+
+  return res.json(history);
+});
+
+// ── POST /users/me/accept-tos — record liability/community ToS acceptance ─────
+// Called by the WaiverModal after the user scrolls through and checks all boxes.
+// Stores the version string so future ToS updates can require re-acceptance.
+// This is a best-effort server record — the frontend already shows and enforces
+// the full ToS text, so a network failure here does NOT block the request post.
+router.post("/users/me/accept-tos", requireAuth, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const { version } = req.body as { version?: string };
+
+  if (!version) return res.status(400).json({ error: "version is required" });
+
+  await db
+    .update(usersTable)
+    .set({
+      tos_waiver_accepted_at: new Date(),
+      tos_waiver_version: version,
+    })
+    .where(eq(usersTable.id, userId));
+
+  return res.json({ ok: true, accepted_at: new Date().toISOString(), version });
+});
+
+export default router;
+
+
+
+
+
+
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useNiaStory } from "@/hooks/useNiaStory";
+import { authHeaders } from "@/lib/auth";
+import { useAppContext } from "@/lib/AppContext";
+import LiveLeaderboard from "@/components/LiveLeaderboard";
+import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, MapPin, Award, Wrench, Globe, Mic, MicOff, Loader2, CheckCircle2, RefreshCw, Clock, AlertTriangle } from "lucide-react";
+import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey, useGetPoolStats, getGetPoolStatsQueryKey, useGetPoolLedger, getGetPoolLedgerQueryKey, useContributeToPool } from "@workspace/api-client-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useWebSocket } from "@/lib/useWebSocket";
+import { useGetSponsorHistory } from "@/hooks/useGetSponsorHistory";
+import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
+
+interface GratitudePost {
+  id: number;
+  author_name: string;
+  author_avatar?: string | null;
+  helper_name?: string | null;
+  message: string;
+  request_title?: string | null;
+  likes: number;
+  created_at: string;
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  groceries: "🛒 Groceries",
+  transportation: "🚗 Transportation",
+  errands: "📦 Errands",
+  home_repair: "🔧 Home Repair",
+  medical: "🏥 Medical",
+  emergency: "🚨 Emergency",
+  moving_labor: "📦 Moving & Labor",
+  pet_care: "🐾 Pet Care",
+  childcare: "🧸 Childcare",
+  senior_care: "🧓 Senior Care",
+  yard_work: "🌿 Yard Work",
+  tutoring: "📚 Tutoring",
+  cleaning: "🧹 Cleaning",
+  meal_prep: "🍲 Meal Prep",
+  paperwork: "📄 Paperwork",
+  local_farm: "🌾 Local Farm",
+  food_pantry: "🥫 Food Pantry",
+  stock_shelves: "📦 Stock Shelves",
+  event_setup: "🎪 Event Setup",
+  delivery_run: "🚚 Delivery Run",
+  tech_support: "💻 Tech Support",
+  business_services: "💼 Business Services",
+  legal_aid: "⚖️ Legal Aid",
+  financial_coaching: "💰 Financial Help",
+  job_assistance: "👔 Job Search Help",
+  language_help: "🌐 Translation / Interpretation",
+  mental_health_peer: "💜 Peer Support",
+  technology_help: "📱 Technology Help",
+  other: "💙 Other",
+};
+
+type Tab = "feed" | "heroes" | "pool" | "county" | "impact" | "resources" | "circles" | "skills";
+
+interface CommunityStats {
+  id: number;
+  name: string;
+  target_reserve_amount: number;
+  pool_balance: number;
+  pool_health_ratio: number;
+  pool_pct: number;
+  member_count: number;
+  total_contributed: number;
+  total_paid_to_helpers: number;
+  total_repaid: number;
+  helpers_paid: number;
+  sponsor_count: number;
+  inflow_30d: number;
+  outflow_30d: number;
+  created_at: string;
+}
+
+interface LedgerEntry {
+  id: number;
+  entry_type: string;
+  amount: number;
+  description: string;
+  created_at: string;
+}
+
+
+interface CivicResource {
+  id: number;
+  name: string;
+  category: string;
+  description: string | null;
+  address: string | null;
+  phone: string | null;
+  website: string | null;
+  hours: string | null;
+}
+
+const CIVIC_ICONS: Record<string, string> = {
+  shelter: "🏠", food: "🍱", medical: "💊", mental_health: "🧠",
+  legal: "⚖️", financial: "💰", employment: "💼", transportation: "🚌",
+  childcare: "👶", education: "📚", local_farm: "🍎", other: "💙",
+};
+
+interface SuggestionForm {
+  name: string;
+  category: string;
+  description: string;
+  phone: string;
+  website: string;
+}
+
+function CivicResourcesTab() {
+  const [resources, setResources] = useState<CivicResource[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [category, setCategory] = useState("all");
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [suggestionSent, setSuggestionSent] = useState(false);
+  const [suggestion, setSuggestion] = useState<SuggestionForm>({
+    name: "", category: "other", description: "", phone: "", website: "",
+  });
+
+  const submitSuggestion = async () => {
+    if (!suggestion.name.trim()) return;
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      await fetch(`${base}/api/civic/suggestions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(suggestion),
+      });
+    } catch {}
+    setSuggestionSent(true);
+    setTimeout(() => { setShowSuggest(false); setSuggestionSent(false); setSuggestion({ name: "", category: "other", description: "", phone: "", website: "" }); }, 2000);
+  };
+
+  useEffect(() => {
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/civic/resources`)
+      .then(r => r.json())
+      .then((data) => { if (Array.isArray(data)) setResources(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const categories = ["all", ...Array.from(new Set(resources.map(r => r.category)))];
+  const filtered = category === "all" ? resources : resources.filter(r => r.category === category);
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
+      <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  if (resources.length === 0) return (
+    <div className="text-center py-16 px-4">
+      <div className="text-4xl mb-3">🏛️</div>
+      <div className="font-bold text-sm text-muted-foreground">No resources listed yet</div>
+      <div className="text-xs text-muted-foreground/60 mt-1">Community resources will appear here</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Category filter — min 44px touch targets for mobile */}
+      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none -mx-4 px-4">
+        {categories.map(cat => (
+          <button
+            key={cat}
+            onClick={() => setCategory(cat)}
+            style={{ touchAction: "manipulation", minHeight: "44px" }}
+            className={`shrink-0 flex items-center justify-center text-xs font-bold px-4 py-2.5 rounded-2xl border transition-all capitalize active:scale-95 whitespace-nowrap ${
+              category === cat
+                ? "bg-primary text-primary-foreground border-primary shadow-[0_0_10px_rgba(0,212,255,0.25)]"
+                : "bg-muted/80 border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            {cat === "all" ? "All" : cat.replace(/_/g, " ")}
+          </button>
+        ))}
+      </div>
+
+      {filtered.map(r => (
+        <div key={r.id} className="bg-card border border-border rounded-2xl p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-lg shrink-0">
+              {CIVIC_ICONS[r.category] ?? "💙"}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-black text-sm">{r.name}</div>
+              {r.description && <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{r.description}</p>}
+              <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+                {r.address && <span className="text-[10px] text-muted-foreground">📍 {r.address}</span>}
+                {r.hours && <span className="text-[10px] text-muted-foreground">🕐 {r.hours}</span>}
+              </div>
+              <div className="flex gap-2 mt-3">
+                {r.phone && (
+                  <a href={`tel:${r.phone}`} className="flex items-center gap-1 text-xs text-primary font-bold bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-full active:scale-95 transition-all">
+                    📞 Call
+                  </a>
+                )}
+                {r.website && (
+                  <a href={r.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-muted-foreground font-bold bg-muted border border-border px-3 py-1.5 rounded-full active:scale-95 transition-all">
+                    🌐 Website
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Suggest a resource — §3.3.2 */}
+      <button
+        onClick={() => setShowSuggest(true)}
+        className="w-full flex items-center justify-center gap-2 p-3 border border-dashed border-primary/30 rounded-2xl text-sm text-primary/70 hover:text-primary hover:border-primary/60 transition-all"
+      >
+        <PlusCircle className="w-4 h-4" />
+        Know a resource we're missing? Suggest it
+      </button>
+
+      {/* Suggestion modal */}
+      <AnimatePresence>
+        {showSuggest && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 z-50 backdrop-blur-sm"
+              onClick={() => setShowSuggest(false)}
+            />
+            <motion.div
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 26, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl max-h-[80dvh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-5 pb-3 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <PlusCircle className="w-5 h-5 text-primary" />
+                  <h3 className="font-black text-lg">Suggest a Resource</h3>
+                </div>
+                <button onClick={() => setShowSuggest(false)} className="p-2 rounded-full hover:bg-muted transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                {suggestionSent ? (
+                  <div className="text-center py-8">
+                    <div className="text-4xl mb-3">🙏</div>
+                    <div className="font-black text-lg">Thank you!</div>
+                    <p className="text-sm text-muted-foreground mt-1">Your suggestion will be reviewed by the Niakofa team.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Organization Name *</label>
+                      <input
+                        className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                        placeholder="e.g. Tarrant County Food Bank"
+                        value={suggestion.name}
+                        onChange={e => setSuggestion(s => ({ ...s, name: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Category</label>
+                      <select
+                        className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                        value={suggestion.category}
+                        onChange={e => setSuggestion(s => ({ ...s, category: e.target.value }))}
+                      >
+                        {Object.entries(CIVIC_ICONS).map(([k, icon]) => (
+                          <option key={k} value={k}>{icon} {k.replace(/_/g, " ")}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Description</label>
+                      <textarea
+                        className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors min-h-[80px] resize-none"
+                        placeholder="What services do they provide?"
+                        value={suggestion.description}
+                        onChange={e => setSuggestion(s => ({ ...s, description: e.target.value }))}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Phone</label>
+                        <input
+                          className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                          placeholder="(817) 555-0000"
+                          value={suggestion.phone}
+                          onChange={e => setSuggestion(s => ({ ...s, phone: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Website</label>
+                        <input
+                          className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                          placeholder="https://..."
+                          value={suggestion.website}
+                          onChange={e => setSuggestion(s => ({ ...s, website: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={submitSuggestion}
+                      disabled={!suggestion.name.trim()}
+                      className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground font-bold py-3.5 rounded-xl disabled:opacity-40 transition-all active:scale-[0.98]"
+                    >
+                      <Send className="w-4 h-4" />
+                      Submit Suggestion
+                    </button>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+const FORT_WORTH_NEIGHBORHOODS = [
+  { id: "southside",       name: "Southside",         emoji: "🏘️", description: "Historic community south of downtown" },
+  { id: "near_southside",  name: "Near Southside",    emoji: "🌳", description: "Creative district near Magnolia Ave" },
+  { id: "polytechnic",     name: "Polytechnic",       emoji: "🎓", description: "Home of Texas Wesleyan University" },
+  { id: "riverside",       name: "Riverside",         emoji: "🌊", description: "Diverse neighborhood along the Trinity River" },
+  { id: "downtown",        name: "Downtown",          emoji: "🏙️", description: "Urban core of Fort Worth" },
+  { id: "east_fort_worth", name: "East Fort Worth",   emoji: "🌅", description: "Working-class roots and tight-knit community" },
+  { id: "north_fort_worth",name: "North Fort Worth",  emoji: "🤠", description: "Stockyards district and growing suburbs" },
+  { id: "stop_six",        name: "Stop Six",          emoji: "✊", description: "Resilient community with deep history" },
+  { id: "wedgwood",        name: "Wedgwood",          emoji: "🏡", description: "Family-friendly neighborhood in southwest FW" },
+];
+
+function NeighborhoodCirclesTab() {
+  const [selected, setSelected] = useState<string | null>(null);
+  const { currentUser } = useAppContext();
+  const userHood = currentUser?.neighborhood?.toLowerCase().replace(/\s+/g, "_");
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
+        <h3 className="font-black text-sm flex items-center gap-2 mb-1">
+          <MapPin className="w-4 h-4 text-primary" /> Neighborhood Circles
+        </h3>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Your circle connects you with neighbors. Requests from your circle appear first on the map. "My neighbors helped me" — that's the power of local belonging.
+        </p>
+      </div>
+
+      {FORT_WORTH_NEIGHBORHOODS.map(hood => {
+        const isYours = userHood === hood.id || currentUser?.neighborhood?.toLowerCase() === hood.name.toLowerCase();
+        const isOpen = selected === hood.id;
+        return (
+          <motion.div
+            key={hood.id}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`bg-card border rounded-2xl p-4 cursor-pointer transition-all ${
+              isYours ? "border-primary/60 bg-primary/5" : "border-border hover:border-primary/30"
+            }`}
+            onClick={() => setSelected(isOpen ? null : hood.id)}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl shrink-0">
+                {hood.emoji}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="font-black text-sm">{hood.name}</div>
+                  {isYours && (
+                    <span className="text-[10px] font-black text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
+                      Your Circle
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">{hood.description}</div>
+              </div>
+              <Users className="w-4 h-4 text-muted-foreground shrink-0" />
+            </div>
+          </motion.div>
+        );
+      })}
+
+      <div className="bg-card/50 border border-dashed border-border rounded-2xl p-4 text-center">
+        <Globe className="w-6 h-6 text-primary/40 mx-auto mb-2" />
+        <div className="text-sm font-bold text-muted-foreground">Circle chat &amp; leaderboards coming soon</div>
+        <div className="text-xs text-muted-foreground/60 mt-1">Your neighborhood, your impact, your leaderboard</div>
+      </div>
+    </div>
+  );
+}
+
+const SKILLS_DIRECTORY = [
+  { id: "bilingual",            label: "Bilingual",    emoji: "🌐", desc: "Spanish, Vietnamese, or other language support", cats: ["groceries","errands","medical"] },
+  { id: "truck_owner",          label: "Truck Owner",  emoji: "🚛", desc: "Move furniture, haul supplies, or transport large items", cats: ["transportation","errands","stock_shelves"] },
+  { id: "medical_background",   label: "Medical",      emoji: "🏥", desc: "Healthcare worker, EMT, nurse, or caregiver experience", cats: ["medical","emergency"] },
+  { id: "licensed_electrician", label: "Electrician",  emoji: "⚡", desc: "Safe assistance with electrical needs and home repairs", cats: ["home_repair"] },
+  { id: "licensed_plumber",     label: "Plumber",      emoji: "🔧", desc: "Pipe repairs, leak fixes, and plumbing emergencies", cats: ["home_repair"] },
+  { id: "carpenter",            label: "Carpenter",    emoji: "🪚", desc: "Woodworking, furniture assembly, and construction", cats: ["home_repair","event_setup"] },
+  { id: "tech_support",         label: "Tech Support", emoji: "💻", desc: "Computer setup, smartphone help, device troubleshooting", cats: ["tech_support"] },
+  { id: "cdl_driver",           label: "CDL Driver",   emoji: "🚚", desc: "Commercial driver's license — large vehicle expertise", cats: ["transportation","delivery_run"] },
+  { id: "food_handler",         label: "Food Handler", emoji: "🍽️", desc: "Safe food preparation and handling certified", cats: ["errands","event_setup"] },
+  { id: "childcare",            label: "Childcare",    emoji: "👶", desc: "Experienced in caring for children", cats: ["other"] },
+];
+
+const CAT_LABELS: Record<string, string> = {
+  groceries: "Groceries", transportation: "Transport", errands: "Errands",
+  home_repair: "Home Repair", medical: "Medical", emergency: "Emergency",
+  stock_shelves: "Stocking", event_setup: "Events", delivery_run: "Delivery",
+  tech_support: "Tech", other: "General",
+};
+
+function SkillsMarketplaceTab() {
+  const [active, setActive] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
+        <h3 className="font-black text-sm flex items-center gap-2 mb-1">
+          <Wrench className="w-4 h-4 text-primary" /> Skills Directory
+        </h3>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Helpers tag their specialties so requesters find the right person. Skill-matched requests get dispatch priority.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        {SKILLS_DIRECTORY.map(skill => (
+          <motion.button
+            key={skill.id}
+            onClick={() => setActive(active === skill.id ? null : skill.id)}
+            whileTap={{ scale: 0.97 }}
+            className={`text-left rounded-2xl border p-3 transition-all ${
+              active === skill.id ? "border-primary/60 bg-primary/10" : "border-border bg-card hover:border-primary/30"
+            }`}
+          >
+            <div className="text-2xl mb-1.5">{skill.emoji}</div>
+            <div className="font-black text-xs">{skill.label}</div>
+            <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{skill.desc}</div>
+          </motion.button>
+        ))}
+      </div>
+
+      <AnimatePresence>
+        {active && SKILLS_DIRECTORY.find(s => s.id === active) && (() => {
+          const skill = SKILLS_DIRECTORY.find(s => s.id === active)!;
+          return (
+            <motion.div
+              key={skill.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="bg-card border border-primary/30 rounded-2xl p-4"
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-2xl">{skill.emoji}</span>
+                <div>
+                  <div className="font-black text-sm">{skill.label}</div>
+                  <div className="text-xs text-muted-foreground">{skill.desc}</div>
+                </div>
+              </div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Helps With</div>
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {skill.cats.map(cat => (
+                  <span key={cat} className="text-[10px] font-bold bg-muted border border-border px-2 py-1 rounded-full">
+                    {CAT_LABELS[cat] ?? cat}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                Add this skill in Profile → Settings to get matched with relevant requests automatically.
+              </p>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+
+      <div className="bg-card/50 border border-dashed border-border rounded-2xl p-4 text-center">
+        <Award className="w-5 h-5 text-primary/40 mx-auto mb-2" />
+        <div className="text-sm font-bold text-muted-foreground">Add skills in Profile Settings</div>
+        <div className="text-xs text-muted-foreground/60 mt-1">Skill-matched helpers get priority in dispatch</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Phase 7c: NiaStoryModal ────────────────────────────────────────────────
+function NiaStoryModal({ onClose, onPosted }: { onClose: () => void; onPosted: (story: string) => void }) {
+  const { currentUser } = useAppContext();
+  const userName = currentUser?.name ?? "A neighbor";
+  const { state, story, error, transcript, startRecording, stopAndSubmit, reset } = useNiaStory(userName);
+
+  const [posting, setPosting] = React.useState(false);
+  const [postError, setPostError] = React.useState<string | null>(null);
+
+  const handlePost = async () => {
+    if (!story || !currentUser) return;
+    setPosting(true);
+    setPostError(null);
+    try {
+      const res = await fetch("/api/gratitude", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          message: story.story,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as any;
+        throw new Error(data.error ?? `Post failed (${res.status})`);
+      }
+      onPosted(story.story);
+      onClose();
+    } catch (err: any) {
+      setPostError(err.message ?? "Failed to post story. Try again.");
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-lg bg-background rounded-t-3xl p-6 pb-10 space-y-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-black text-base">Share Your Story</div>
+            <div className="text-xs text-muted-foreground">Nia will polish your words into a community post</div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-muted"><X className="w-4 h-4" /></button>
+        </div>
+
+        {state === "idle" && (
+          <button
+            onClick={startRecording}
+            className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground rounded-2xl py-4 font-bold text-sm"
+          >
+            <Mic className="w-5 h-5" /> Tap to Record
+          </button>
+        )}
+
+        {state === "recording" && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-primary font-semibold">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              Recording… speak naturally
+            </div>
+            {transcript && <p className="text-xs text-muted-foreground italic leading-relaxed">"{transcript}"</p>}
+            <button
+              onClick={() => stopAndSubmit()}
+              className="w-full flex items-center justify-center gap-2 bg-muted border border-border rounded-2xl py-3 font-bold text-sm"
+            >
+              <MicOff className="w-4 h-4" /> Done — let Nia craft it
+            </button>
+          </div>
+        )}
+
+        {state === "processing" && (
+          <div className="flex items-center justify-center gap-2 py-6 text-muted-foreground text-sm">
+            <Loader2 className="w-5 h-5 animate-spin" /> Nia is crafting your story…
+          </div>
+        )}
+
+        {state === "done" && story && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5 text-xs text-green-400 font-semibold">
+              <CheckCircle2 className="w-4 h-4" /> Nia crafted your story
+            </div>
+            <div className="bg-muted rounded-2xl p-4 text-sm leading-relaxed text-foreground">
+              "{story.story}"
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={reset}
+                className="flex-1 border border-border rounded-2xl py-3 text-sm font-bold text-muted-foreground hover:bg-muted"
+              >
+                Re-record
+              </button>
+              <button
+                onClick={handlePost}
+                disabled={posting}
+                className="flex-2 bg-primary text-primary-foreground rounded-2xl px-6 py-3 text-sm font-bold flex items-center gap-2 disabled:opacity-70"
+              >
+                {posting ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Posting…</>
+                ) : (
+                  <><Send className="w-4 h-4" /> Post to Community</>
+                )}
+              </button>
+              {postError && <p className="text-xs text-destructive mt-1">{postError}</p>}
+            </div>
+          </div>
+        )}
+
+        {state === "error" && (
+          <div className="space-y-3">
+            <div className="text-xs text-destructive">{error ?? "Something went wrong."}</div>
+            <button onClick={reset} className="w-full border border-border rounded-2xl py-3 text-sm font-bold">Try Again</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+export default function CommunityScreen() {
+  const [tab, setTab] = useState<Tab>("feed");
+  const [showNiaStory, setShowNiaStory] = useState(false);
+  const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
+  const [posts, setPosts] = useState<GratitudePost[]>([]);
+  const [postsLoading, setPostsLoading] = useState(true);
+
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
+  const { currentUser, niaEnabled } = useAppContext();
+  const sponsorHistory = useGetSponsorHistory(currentUser?.id ?? null);
+
+  // Load initial gratitude posts from API
+  useEffect(() => {
+    fetch(`${base}/api/gratitude`)
+      .then(r => r.json())
+      .then((data: unknown) => {
+        // Defensive: API should return GratitudePost[] but guard against shape drift
+        setPosts(Array.isArray(data) ? (data as GratitudePost[]) : []);
+        setPostsLoading(false);
+      })
+      .catch(() => setPostsLoading(false));
+  }, []);
+
+  // Real-time: new gratitude post arrives
+  useWebSocket("new_gratitude", (event) => {
+    const post = event.payload as GratitudePost;
+    setPosts(prev => [post, ...prev.slice(0, 49)]);
+  });
+
+  // Real-time: like count update
+  useWebSocket("gratitude_liked", (event) => {
+    const { id, likes } = event.payload as { id: number; likes: number };
+    setPosts(prev => prev.map(p => p.id === id ? { ...p, likes } : p));
+  });
+
+  const { data: rawRecentCompleted } = useGetRequests(
+    { status: "completed" },
+    { query: { queryKey: getGetRequestsQueryKey({ status: "completed" }), staleTime: 60000 } }
+  );
+  // Defensive: useGetRequests is typed HelpRequest[] but guard against API shape drift
+  const recentCompleted = Array.isArray(rawRecentCompleted) ? rawRecentCompleted : [];
+
+  const { data: stats } = useGetRequestStats({
+    query: { queryKey: getGetRequestStatsQueryKey(), staleTime: 30000 }
+  });
+
+  // ── County portal: default community stats + ledger ──────────────────────
+  const [countyData, setCountyData] = useState<CommunityStats | null>(null);
+  const [countyLedger, setCountyLedger] = useState<LedgerEntry[]>([]);
+  const [countyLoading, setCountyLoading] = useState(false);
+  const [countyLoaded, setCountyLoaded] = useState(false);
+
+  const loadCountyData = useCallback(async () => {
+    if (countyLoading) return;
+    setCountyLoading(true);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const res = await fetch(`${base}/api/communities/default`);
+      if (res.ok) {
+        const json = await res.json();
+        const community: CommunityStats | null = json.community ?? null;
+        setCountyData(community);
+        if (community) {
+          const lr = await fetch(`${base}/api/communities/${community.id}/ledger`);
+          if (lr.ok) {
+            const lj = await lr.json();
+            setCountyLedger(lj.entries ?? []);
+          }
+        }
+      }
+    } catch {
+      // swallow — county portal is non-critical
+    } finally {
+      setCountyLoading(false);
+      setCountyLoaded(true);
+    }
+  }, [countyLoading]);
+
+  useEffect(() => {
+    if (tab === "county" && !countyLoaded) {
+      loadCountyData();
+    }
+  }, [tab, countyLoaded, loadCountyData]);
+
+  // ── Community Pool: live stats, transparency ledger, contribute flow ──────
+  const { data: poolStats, refetch: refetchPoolStats } = useGetPoolStats({
+    query: { queryKey: getGetPoolStatsQueryKey(), staleTime: 15000 }
+  });
+  const { data: poolLedger, refetch: refetchPoolLedger } = useGetPoolLedger(
+    { limit: 15 },
+    { query: { queryKey: getGetPoolLedgerQueryKey({ limit: 15 }), staleTime: 15000 } }
+  );
+  const contributeMutation = useContributeToPool();
+  const [contributeAmount, setContributeAmount] = useState("");
+  const [contributeMsg, setContributeMsg] = useState<string | null>(null);
+  const [contributeSecret, setContributeSecret] = useState<string | null>(null);
+
+  // Anonymous donation state (no login required — POST /pool/donate)
+  const [anonAmount, setAnonAmount] = useState("");
+  const [anonMsg, setAnonMsg] = useState<string | null>(null);
+  const [anonSecret, setAnonSecret] = useState<string | null>(null);
+  const [anonPending, setAnonPending] = useState(false);
+
+  useWebSocket("pool_updated", () => { refetchPoolStats(); refetchPoolLedger(); });
+  useWebSocket("pool_front_paid", () => { refetchPoolStats(); refetchPoolLedger(); });
+  useWebSocket("pool_low_balance", () => { refetchPoolStats(); });
+
+  const submitContribution = async () => {
+    const amt = parseFloat(contributeAmount);
+    if (!Number.isFinite(amt) || amt < 1) {
+      setContributeMsg("Enter an amount of $1 or more.");
+      return;
+    }
+    setContributeMsg(null);
+    try {
+      const result = await contributeMutation.mutateAsync({ data: { amount: amt } });
+      if (result.mode === "stripe" && result.client_secret) {
+        setContributeSecret(result.client_secret);
+      } else {
+        setContributeMsg(`Thank you! ${amt.toFixed(2)} added to the pool. 💙`);
+        setContributeAmount("");
+        refetchPoolStats();
+        refetchPoolLedger();
+      }
+    } catch {
+      setContributeMsg("Contribution failed. Please try again.");
+    }
+  };
+
+  // Anonymous donation — no account required (POST /pool/donate, Stripe-only)
+  const submitAnonDonation = async () => {
+    const amt = parseFloat(anonAmount);
+    if (!Number.isFinite(amt) || amt < 1) {
+      setAnonMsg("Enter an amount of $1 or more.");
+      return;
+    }
+    setAnonMsg(null);
+    setAnonPending(true);
+    try {
+      const res = await fetch(`${base}/api/pool/donate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: amt }),
+      });
+      const data = await res.json() as { mode?: string; client_secret?: string; error?: string; setup?: string };
+      if (!res.ok) {
+        setAnonMsg(data.setup ?? data.error ?? "Donation failed. Please try again.");
+        return;
+      }
+      if (data.mode === "stripe" && data.client_secret) {
+        setAnonSecret(data.client_secret);
+      } else {
+        setAnonMsg("Thank you for supporting the community! 💙");
+        setAnonAmount("");
+      }
+    } catch {
+      setAnonMsg("Network error. Please try again.");
+    } finally {
+      setAnonPending(false);
+    }
+  };
+
+  const poolBalance = poolStats?.balance ?? 0;
+  const poolTarget = 500;
+  const poolPct = Math.min(Math.round((poolBalance / poolTarget) * 100), 100);
+
+  const toggleLike = (id: number) => {
+    setLikedPosts(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        // Fire-and-forget — WS event will broadcast the updated count.
+        // Auth header required now that /like enforces per-user identity
+        // (gratitude_likes unique index) instead of a raw open counter.
+        fetch(`${base}/api/gratitude/${id}/like`, { method: "POST", headers: { ...authHeaders() } }).catch(() => {});
+      }
+      return next;
+    });
+  };
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: "feed",      label: "💙 Feed" },
+    { key: "circles",   label: "🏘️ Circles" },
+    { key: "skills",    label: "🔧 Skills" },
+    { key: "heroes",    label: "⭐ Heroes" },
+    { key: "pool",      label: "🏦 Pool" },
+    { key: "county",    label: "🏛️ County" },
+    { key: "impact",    label: "📊 Impact" },
+    { key: "resources", label: "📋 Resources" },
+  ];
+
+  return (
+    <div className="min-h-screen bg-background text-foreground flex flex-col pb-24">
+      <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-xl border-b border-border p-4 pt-safe">
+        <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2">
+          <Users className="w-5 h-5 text-primary" /> Community
+        </h1>
+        {/* Scrollable pill tab bar — min 44px touch targets for mobile */}
+        <div className="flex gap-2 mt-3 overflow-x-auto pb-2 scrollbar-none -mx-4 px-4">
+          {tabs.map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              style={{ touchAction: "manipulation", minHeight: "44px" }}
+              className={`shrink-0 flex items-center justify-center py-2.5 px-4 rounded-2xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-95 whitespace-nowrap ${
+                tab === t.key
+                  ? "bg-primary text-primary-foreground shadow-[0_0_14px_rgba(0,212,255,0.35)]"
+                  : "bg-muted/80 text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex-1 p-4 max-w-lg mx-auto w-full">
+
+        {/* FEED TAB */}
+        {tab === "feed" && (
+          <div className="space-y-4">
+            {/* Personal Impact Banner */}
+            {currentUser && (
+              <div className="bg-gradient-to-br from-primary/15 to-background border border-primary/30 rounded-2xl p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                    <span className="text-lg font-black text-primary">
+                      {currentUser.name?.[0]?.toUpperCase() ?? "?"}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-black text-sm text-foreground">{currentUser.name}</p>
+                    <p className="text-xs text-muted-foreground">Your community impact</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-black text-primary">{currentUser.trust_score ?? 0}</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider">Trust</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-background/60 rounded-xl p-2.5 text-center">
+                    <div className="text-lg font-black text-green-400">{(currentUser as any).help_count ?? 0}</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Helped</div>
+                  </div>
+                  <div className="bg-background/60 rounded-xl p-2.5 text-center">
+                    <div className="text-lg font-black text-yellow-400">{(currentUser as any).request_count ?? 0}</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Received</div>
+                  </div>
+                  <div className="bg-background/60 rounded-xl p-2.5 text-center">
+                    <div className="text-lg font-black text-primary">{currentUser.is_helper ? "✓" : "—"}</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Helper</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {recentCompleted.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2">Recent Help</h3>
+                {recentCompleted.slice(0, 3).map(req => (
+                  <div key={req.id} className="bg-card border border-border rounded-xl p-3.5 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
+                      <Heart className="w-4 h-4 text-green-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold truncate">{req.title}</div>
+                      <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <span className="text-green-400 font-bold">✓ Completed</span>
+                        <span>·</span>
+                        <span>{req.requester_name}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Gratitude &amp; Stories</h3>
+              {niaEnabled === true ? (
+                <button
+                  onClick={() => setShowNiaStory(true)}
+                  className="flex items-center gap-1.5 text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-full transition-colors"
+                >
+                  <Mic className="w-3.5 h-3.5" /> Share with Nia
+                </button>
+              ) : niaEnabled === false ? (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground/50 px-3 py-1.5 rounded-full cursor-default select-none" title="Nia AI is currently resting — share your story in text below">
+                  <Mic className="w-3.5 h-3.5" /> Nia resting
+                </span>
+              ) : null /* loading — render nothing until we know */}
+            </div>
+            {postsLoading ? (
+              <div className="flex justify-center items-center py-10">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
+                >
+                  <Heart className="w-6 h-6 text-primary/40" />
+                </motion.div>
+              </div>
+            ) : posts.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 py-10 text-center">
+                <Heart className="w-8 h-8 text-muted-foreground/30" />
+                <div className="text-sm text-muted-foreground leading-relaxed">
+                  No gratitude posts yet.<br />
+                  <span className="text-primary font-semibold">Complete a request</span> to add the first one!
+                </div>
+              </div>
+            ) : (
+              <AnimatePresence initial={false}>
+                {posts.map(post => (
+                  <motion.div
+                    key={post.id}
+                    initial={{ opacity: 0, y: -16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="bg-card border border-border rounded-2xl p-4"
+                  >
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center border border-border shrink-0">
+                        <span className="text-sm font-black text-muted-foreground">
+                          {post.author_name[0]?.toUpperCase() ?? "?"}
+                        </span>
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm">{post.author_name}</div>
+                        <div className="text-[10px] text-muted-foreground flex items-center gap-1 flex-wrap">
+                          {post.helper_name && (
+                            <>
+                              <span className="text-primary font-medium">Thanks to {post.helper_name}</span>
+                              <span>·</span>
+                            </>
+                          )}
+                          <span>{new Date(post.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {post.request_title && (
+                      <div className="text-[10px] font-semibold text-primary/80 bg-primary/10 rounded-lg px-2 py-1 mb-2.5 inline-block max-w-full truncate">
+                        📋 {post.request_title}
+                      </div>
+                    )}
+                    <p className="text-sm text-muted-foreground leading-relaxed mb-3">"{post.message}"</p>
+                    <button
+                      onClick={() => toggleLike(post.id)}
+                      className={`flex items-center gap-1.5 text-xs transition-colors ${likedPosts.has(post.id) ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
+                    >
+                      <Heart className={`w-4 h-4 ${likedPosts.has(post.id) ? "fill-current" : ""}`} />
+                      {post.likes + (likedPosts.has(post.id) ? 1 : 0)}
+                    </button>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            )}
+          </div>
+        )}
+
+        {showNiaStory && (
+          <NiaStoryModal
+            onClose={() => setShowNiaStory(false)}
+            onPosted={(_story: string) => {
+              setShowNiaStory(false);
+              // Re-fetch gratitude posts so the new story appears immediately
+              const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+              fetch(`${base}/api/gratitude`)
+                .then(r => r.json())
+                .then((data: GratitudePost[]) => setPosts(data))
+                .catch(() => {});
+            }}
+          />
+        )}
+
+        {/* HEROES TAB — Live Leaderboard */}
+        {tab === "heroes" && <LiveLeaderboard />}
+
+        {/* PAY IT FORWARD POOL TAB */}
+        {tab === "pool" && (
+          <div className="space-y-4">
+
+            {/* Live pool balance card */}
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/40 rounded-3xl p-6 shadow-[0_0_40px_rgba(0,212,255,0.12)] flex flex-col items-center gap-3"
+            >
+              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                <DollarSign className="w-6 h-6 text-primary" />
+              </div>
+              <div className="text-center">
+                <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Community Pool</div>
+                <div className="text-4xl font-black text-primary mt-1">${poolBalance.toFixed(2)}</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Available now to pay helpers instantly
+                </div>
+                {poolStats && poolStats.guaranteed_minimum > 0 && (
+                  <div className="text-[10px] text-green-400 font-bold mt-1">
+                    ✓ ${poolStats.guaranteed_minimum.toFixed(2)} flat floor
+                    {(poolStats as typeof poolStats & { minimum_hourly_rate?: number }).minimum_hourly_rate
+                      ? ` · ${(poolStats as typeof poolStats & { minimum_hourly_rate?: number }).minimum_hourly_rate!.toFixed(0)}/hr for timed tasks`
+                      : ""} guaranteed per task
+                  </div>
+                )}
+              </div>
+
+              {/* Progress to milestone */}
+              <div className="w-full">
+                <div className="flex justify-between text-[10px] text-muted-foreground mb-1.5">
+                  <span>Community milestone</span>
+                  <span className="font-bold text-primary">{poolPct}% to ${poolTarget}</span>
+                </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${poolPct}%` }}
+                    transition={{ duration: 1, ease: "easeOut" }}
+                    className="h-full bg-gradient-to-r from-primary to-cyan-400 rounded-full"
+                  />
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-1.5 text-center">
+                  When we hit $500, we unlock the Emergency Assistance Reserve 🏦
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Pool flow — real numbers */}
+            <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+              <h3 className="font-black text-sm flex items-center gap-2">
+                <Shield className="w-4 h-4 text-primary" /> Where the Money Goes
+              </h3>
+              <div className="grid grid-cols-2 gap-2.5">
+                {[
+                  { label: "Contributed", value: poolStats?.total_contributed ?? 0, color: "text-green-400", desc: "From sponsors & neighbors" },
+                  { label: "Paid to Helpers", value: (poolStats?.total_fronted ?? 0) + (poolStats?.total_minimums ?? 0), color: "text-primary", desc: "Fronted instantly at completion" },
+                  { label: "Repaid to Pool", value: poolStats?.total_repaid ?? 0, color: "text-cyan-400", desc: "Requesters paying it forward" },
+                  { label: "Helpers Backed", value: poolStats?.helpers_fronted ?? 0, color: "text-yellow-400", desc: "Neighbors paid by the pool", isCount: true },
+                ].map((item) => (
+                  <div key={item.label} className="bg-background/60 rounded-xl px-3 py-2.5">
+                    <div className={`text-lg font-black ${item.color}`}>
+                      {item.isCount ? item.value : `$${Number(item.value).toFixed(2)}`}
+                    </div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider">{item.label}</div>
+                    <div className="text-[9px] text-muted-foreground mt-0.5">{item.desc}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                When a pay-it-forward request completes, the pool pays the helper immediately — no waiting on the requester. When the requester later pays it forward, the money flows back into the pool for the next neighbor.
+              </p>
+            </div>
+
+            {/* ── Pool Runway Dashboard ───────────────────────────────────── */}
+            {(() => {
+              const stats = poolStats as typeof poolStats & {
+                inflow_30d?: number;
+                outflow_30d?: number;
+                runway_days?: number | null;
+                outstanding_pif_total?: number;
+              };
+              const inflow   = stats?.inflow_30d   ?? 0;
+              const outflow  = stats?.outflow_30d  ?? 0;
+              const runway   = stats?.runway_days  ?? null;
+              const outstanding = stats?.outstanding_pif_total ?? 0;
+
+              const runwayColor =
+                runway === null            ? "text-green-400"
+                : runway > 30             ? "text-green-400"
+                : runway > 7              ? "text-yellow-400"
+                : "text-red-400";
+
+              const runwayLabel =
+                runway === null ? "∞ days"
+                : `${runway} day${runway === 1 ? "" : "s"}`;
+
+              const runwayBg =
+                runway === null            ? "border-green-500/30 bg-green-500/5"
+                : runway > 30             ? "border-green-500/30 bg-green-500/5"
+                : runway > 7              ? "border-yellow-500/30 bg-yellow-500/10"
+                : "border-red-500/30 bg-red-500/10";
+
+              return (
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  className={`border rounded-2xl p-4 space-y-3 ${runwayBg}`}
+                >
+                  <h3 className="font-black text-sm flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-primary" /> Pool Runway
+                  </h3>
+
+                  {/* Main runway stat */}
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <div className={`text-3xl font-black ${runwayColor}`}>{runwayLabel}</div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        {runway === null
+                          ? "No spending recorded yet — pool is fully sustained"
+                          : "estimated at current 30-day burn rate"}
+                      </div>
+                    </div>
+                    {runway !== null && runway <= 30 && (
+                      <div className="text-[10px] text-yellow-400 font-bold text-right max-w-[120px] leading-tight">
+                        {runway <= 7
+                          ? "⚠️ Pool needs contributions soon"
+                          : "📈 More contributions welcome"}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 30-day inflow vs outflow */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-background/50 rounded-xl px-3 py-2">
+                      <div className="text-sm font-black text-green-400">${inflow.toFixed(2)}</div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider">30-Day Inflow</div>
+                      <div className="text-[9px] text-muted-foreground">contributions + repayments</div>
+                    </div>
+                    <div className="bg-background/50 rounded-xl px-3 py-2">
+                      <div className="text-sm font-black text-primary">${outflow.toFixed(2)}</div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider">30-Day Outflow</div>
+                      <div className="text-[9px] text-muted-foreground">helpers paid + minimums</div>
+                    </div>
+                  </div>
+
+                  {/* Burn bar — visual ratio */}
+                  {outflow > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[9px] text-muted-foreground">
+                        <span>Inflow coverage</span>
+                        <span className={inflow >= outflow ? "text-green-400 font-bold" : "text-yellow-400 font-bold"}>
+                          {Math.round((inflow / outflow) * 100)}%
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min((inflow / outflow) * 100, 100)}%` }}
+                          transition={{ duration: 0.8, ease: "easeOut" }}
+                          className={`h-full rounded-full ${inflow >= outflow ? "bg-green-500" : "bg-yellow-500"}`}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Outstanding PIF pledges — expected future inflow */}
+                  {outstanding > 0 && (
+                    <div className="border-t border-border/40 pt-2.5 flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                          Expected Repayments
+                        </div>
+                        <div className="text-[9px] text-muted-foreground leading-relaxed">
+                          Neighbors who received help and pledged to pay it forward — this money flows back when they're ready.
+                        </div>
+                      </div>
+                      <div className="text-sm font-black text-cyan-400 shrink-0">${outstanding.toFixed(2)}</div>
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })()}
+
+            {/* Pending minimums — pool ran dry, helpers waiting on backfill */}
+            {(poolStats?.pending_minimums_count ?? 0) > 0 && (
+              <div className="bg-yellow-500/10 border border-yellow-500/40 rounded-2xl p-4 space-y-1.5">
+                <h3 className="font-black text-sm flex items-center gap-2 text-yellow-400">
+                  <AlertTriangle className="w-4 h-4" /> Helpers Waiting on the Pool
+                </h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  The pool ran low, so <span className="font-bold text-foreground">{poolStats?.pending_minimums_count}</span> guaranteed
+                  thank-you payment{(poolStats?.pending_minimums_count ?? 0) === 1 ? "" : "s"} totaling{" "}
+                  <span className="font-bold text-yellow-400">${(poolStats?.pending_minimums_total ?? 0).toFixed(2)}</span> are queued.
+                  They're paid automatically — oldest first — as soon as the pool is replenished. Every contribution helps.
+                </p>
+              </div>
+            )}
+
+            {/* Transparency ledger */}
+            {poolLedger && Array.isArray(poolLedger.entries) && poolLedger.entries.length > 0 && (
+              <div className="bg-card border border-border rounded-2xl p-4 space-y-2.5">
+                <h3 className="font-black text-sm flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-primary" /> Pool Activity
+                </h3>
+                {poolLedger.entries.map((entry) => {
+                  const meta: Record<string, { icon: string; label: string }> = {
+                    sponsor_contribution: { icon: "💛", label: entry.display_name ? `${entry.display_name} funded the pool` : "Pool contribution" },
+                    helper_front: { icon: "⚡", label: "Helper paid instantly at completion" },
+                    pledge_repayment: { icon: "🔄", label: "Pledge repaid — pool replenished" },
+                    guaranteed_minimum: { icon: "💙", label: "Guaranteed minimum paid to a helper" },
+                    adjustment: { icon: "🛠️", label: "Pool adjustment" },
+                  };
+                  const m = meta[entry.entry_type] ?? { icon: "💙", label: "Pool activity" };
+                  const positive = entry.amount >= 0;
+                  return (
+                    <div key={entry.id} className="flex items-center gap-2.5 bg-background/60 rounded-xl px-3 py-2">
+                      <div className="text-base shrink-0">{m.icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold truncate">{m.label}</div>
+                        <div className="text-[9px] text-muted-foreground">
+                          {new Date(entry.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        </div>
+                      </div>
+                      <div className={`text-xs font-black shrink-0 ${positive ? "text-green-400" : "text-primary"}`}>
+                        {positive ? "+" : "−"}${Math.abs(entry.amount).toFixed(2)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* How it works */}
+            <div className="bg-card/50 border border-border/50 rounded-2xl p-4">
+              <h3 className="font-bold text-sm mb-3 flex items-center gap-2">
+                <Heart className="w-4 h-4 text-primary" /> How Niakofa Works
+              </h3>
+              <div className="space-y-3">
+                {[
+                  { step: "1", title: "Get help now", desc: "When you need help, a neighbor shows up — no payment required upfront." },
+                  { step: "2", title: "Pay when you're able", desc: "When life gets better, contribute back any amount — even a dollar keeps the cycle going for the next neighbor who needs help. No deadline, no pressure." },
+                  { step: "3", title: "Strengthen the pool", desc: "Every dollar flows into the community reserve, funding future helpers." },
+                ].map(item => (
+                  <div key={item.step} className="flex gap-3">
+                    <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="text-[10px] font-black text-primary">{item.step}</span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold">{item.title}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{item.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Sponsor Portal — contribution history */}
+            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-yellow-400 shrink-0" />
+                  <div className="font-bold text-sm text-yellow-400">Sponsor a Neighbor</div>
+                </div>
+                {sponsorHistory.loading && <RefreshCw className="w-3 h-3 text-yellow-400/60 animate-spin" />}
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Businesses and individuals can sponsor the community pool directly. Your contributions go directly to helpers serving Fort Worth neighbors.
+              </p>
+
+              {/* Contribute to the pool */}
+              {currentUser && (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <DollarSign className="w-4 h-4 text-yellow-400/60 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min={1}
+                        max={10000}
+                        placeholder="Amount"
+                        value={contributeAmount}
+                        onChange={(e) => setContributeAmount(e.target.value)}
+                        className="w-full bg-background/60 border border-yellow-500/30 rounded-xl pl-9 pr-3 py-2.5 text-base font-bold focus:outline-none focus:border-yellow-400/60"
+                      />
+                    </div>
+                    <button
+                      onClick={submitContribution}
+                      disabled={contributeMutation.isPending}
+                      className="shrink-0 bg-yellow-400 text-black font-black text-xs uppercase tracking-wider rounded-xl px-4 py-2.5 active:scale-95 transition-transform disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      {contributeMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Heart className="w-3.5 h-3.5" />}
+                      Fund the Pool
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5">
+                    {[5, 10, 25, 50].map((amt) => (
+                      <button
+                        key={amt}
+                        onClick={() => setContributeAmount(String(amt))}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                          contributeAmount === String(amt)
+                            ? "bg-yellow-400/20 border-yellow-400/60 text-yellow-400"
+                            : "bg-background/40 border-border text-muted-foreground"
+                        }`}
+                      >
+                        ${amt}
+                      </button>
+                    ))}
+                  </div>
+                  {contributeMsg && (
+                    <div className={`text-xs rounded-xl px-3 py-2 ${
+                      contributeMsg.startsWith("Thank")
+                        ? "text-green-400 bg-green-500/10"
+                        : "text-destructive/80 bg-destructive/10"
+                    }`}>
+                      {contributeMsg}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Contribution history */}
+              {currentUser ? (
+                <>
+                  {sponsorHistory.error && (
+                    <div className="text-xs text-destructive/80 bg-destructive/10 rounded-xl px-3 py-2">
+                      Could not load history: {sponsorHistory.error}
+                    </div>
+                  )}
+                  {!sponsorHistory.loading && sponsorHistory.data.length === 0 && !sponsorHistory.error && (
+                    <div className="text-center py-4">
+                      <DollarSign className="w-7 h-7 mx-auto mb-1.5 text-yellow-400/30" />
+                      <p className="text-xs text-muted-foreground">No contributions yet</p>
+                      <p className="text-[10px] text-muted-foreground/60 mt-0.5">Pay-it-forward requests appear here</p>
+                    </div>
+                  )}
+                  {sponsorHistory.data.length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      <div className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Your Contributions</div>
+                      {sponsorHistory.data.slice(0, 5).map(entry => (
+                        <div key={entry.id} className="flex items-center gap-2.5 bg-background/60 rounded-xl px-3 py-2">
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                            entry.state === "completed" ? "bg-green-500/10" : "bg-yellow-500/10"
+                          }`}>
+                            {entry.state === "completed"
+                              ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
+                              : <Clock className="w-3.5 h-3.5 text-yellow-400" />
+                            }
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-bold truncate">
+                              {entry.request_title ?? "Community contribution"}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground capitalize">
+                              {entry.request_category?.replace(/_/g, " ") ?? entry.payment_type?.replace(/_/g, " ")}
+                              {entry.sponsored_by && ` · via ${entry.sponsored_by}`}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className="text-xs font-black text-yellow-400">${entry.amount.toFixed(2)}</div>
+                            <div className="text-[9px] text-muted-foreground">
+                              {new Date(entry.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {sponsorHistory.data.length > 5 && (
+                        <div className="text-center text-[10px] text-muted-foreground pt-1">
+                          +{sponsorHistory.data.length - 5} more contributions
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-xs text-muted-foreground text-center py-2">
+                  Sign in to view your contribution history
+                </div>
+              )}
+            </div>
+
+            {/* Anonymous public donation — no account required */}
+            {!currentUser && isStripeConfigured() && (
+              <div className="bg-primary/10 border border-primary/30 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Heart className="w-4 h-4 text-primary shrink-0" />
+                  <div className="font-bold text-sm text-primary">Support the Community</div>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  You don't need an account to fund the pool. Every dollar goes directly to helpers serving Tarrant County neighbors.
+                </p>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <DollarSign className="w-4 h-4 text-primary/50 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={1}
+                      max={10000}
+                      placeholder="Amount"
+                      value={anonAmount}
+                      onChange={(e) => setAnonAmount(e.target.value)}
+                      className="w-full bg-background/60 border border-primary/30 rounded-xl pl-9 pr-3 py-2.5 text-base font-bold focus:outline-none focus:border-primary/60"
+                    />
+                  </div>
+                  <button
+                    onClick={submitAnonDonation}
+                    disabled={anonPending}
+                    className="shrink-0 bg-primary text-primary-foreground font-black text-xs uppercase tracking-wider rounded-xl px-4 py-2.5 active:scale-95 transition-transform disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {anonPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Heart className="w-3.5 h-3.5" />}
+                    Donate
+                  </button>
+                </div>
+                <div className="flex gap-1.5">
+                  {[5, 10, 25, 50].map((amt) => (
+                    <button
+                      key={amt}
+                      onClick={() => setAnonAmount(String(amt))}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                        anonAmount === String(amt)
+                          ? "bg-primary/20 border-primary/60 text-primary"
+                          : "bg-background/40 border-border text-muted-foreground"
+                      }`}
+                    >
+                      ${amt}
+                    </button>
+                  ))}
+                </div>
+                {anonMsg && (
+                  <div className={`text-xs rounded-xl px-3 py-2 ${
+                    anonMsg.startsWith("Thank")
+                      ? "text-green-400 bg-green-500/10"
+                      : "text-destructive/80 bg-destructive/10"
+                  }`}>
+                    {anonMsg}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Stripe payment sheet for pool contributions */}
+            {contributeSecret && (
+              <StripePaymentModal
+                clientSecret={contributeSecret}
+                amount={parseFloat(contributeAmount) || 0}
+                description="Community Pool contribution"
+                onSuccess={() => {
+                  setContributeSecret(null);
+                  setContributeMsg("Thank you! Your contribution is on its way to the pool. 💙");
+                  setContributeAmount("");
+                  setTimeout(() => { refetchPoolStats(); refetchPoolLedger(); }, 2500);
+                }}
+                onSkip={() => setContributeSecret(null)}
+                onClose={() => setContributeSecret(null)}
+              />
+            )}
+
+            {/* Stripe payment sheet for anonymous donations */}
+            {anonSecret && (
+              <StripePaymentModal
+                clientSecret={anonSecret}
+                amount={parseFloat(anonAmount) || 0}
+                description="Anonymous Community Pool donation — your gift goes directly to helpers serving Tarrant County neighbors."
+                onSuccess={() => {
+                  setAnonSecret(null);
+                  setAnonMsg("Thank you for supporting the community! Your donation is on its way to the pool. 💙");
+                  setAnonAmount("");
+                  setTimeout(() => { refetchPoolStats(); refetchPoolLedger(); }, 2500);
+                }}
+                onSkip={() => setAnonSecret(null)}
+                onClose={() => setAnonSecret(null)}
+              />
+            )}
+          </div>
+        )}
+
+        {/* IMPACT TAB — real stats from /api/requests/stats */}
+        {tab === "resources" && (
+          <CivicResourcesTab />
+        )}
+
+        {tab === "impact" && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <Heart className="w-5 h-5 text-primary" />
+                </div>
+                <div className="text-3xl font-black text-primary">
+                  {stats ? stats.total_completed.toLocaleString() : "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Requests Fulfilled</div>
+              </div>
+              <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <Users className="w-5 h-5 text-green-400" />
+                </div>
+                <div className="text-3xl font-black text-green-400">
+                  {stats ? stats.total_helpers_online : "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Active Helpers</div>
+              </div>
+              <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <Activity className="w-5 h-5 text-yellow-400" />
+                </div>
+                <div className="text-3xl font-black text-yellow-400">
+                  {stats ? stats.total_open : "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Open Requests</div>
+              </div>
+              <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <DollarSign className="w-5 h-5 text-primary" />
+                </div>
+                <div className="text-3xl font-black text-primary">
+                  ${stats?.total_pledge_volume?.toFixed(0) ?? "0"}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Paid Forward</div>
+              </div>
+            </div>
+
+            {stats && stats.requests_by_category.length > 0 && (
+              <div className="bg-card border border-border rounded-2xl p-4">
+                <h3 className="font-black text-sm mb-3 flex items-center gap-2">
+                  <Star className="w-4 h-4 text-yellow-400" /> By Category
+                </h3>
+                <div className="space-y-2">
+                  {[...stats.requests_by_category]
+                    .sort((a, b) => b.count - a.count)
+                    .map(({ category, count }) => {
+                      const total = stats.requests_by_category.reduce((s, c) => s + c.count, 0);
+                      const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                      return (
+                        <div key={category}>
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="font-medium">{CATEGORY_LABELS[category] ?? category}</span>
+                            <span className="text-muted-foreground">{count} ({pct}%)</span>
+                          </div>
+                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-gradient-to-br from-primary/20 to-background border border-primary/30 rounded-2xl p-5">
+              <h3 className="font-black text-base mb-2">About Niakofa</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                This isn't charity — it's neighbors helping neighbors. Every act of help strengthens our community network. When you're able, give back. When you need help, ask. That's how communities thrive.
+              </p>
+              <div className="mt-4 space-y-2">
+                {[
+                  ["Immediate Pay", "Compensate your helper right away"],
+                  ["Niakofa", "Contribute back when you're ready"],
+                  ["Goodwill", "Pure community — no payment needed"],
+                ].map(([title, desc]) => (
+                  <div key={title} className="flex items-center gap-2 text-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                    <span className="font-semibold">{title}</span>
+                    <span className="text-muted-foreground">— {desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "county" && (
+          <div className="space-y-4">
+            {countyLoading && !countyData && (
+              <div className="flex items-center justify-center py-16 text-muted-foreground">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading county portal…
+              </div>
+            )}
+
+            {countyLoaded && !countyData && (
+              <div className="text-center py-16 text-muted-foreground text-sm">
+                No county pool has been set up yet. Check back soon.
+              </div>
+            )}
+
+            {countyData && (() => {
+              const hRatio = countyData.pool_health_ratio;
+              const healthColor =
+                hRatio >= 0.9 ? "text-green-400"
+                : hRatio >= 0.7 ? "text-yellow-400"
+                : "text-orange-400";
+              const healthLabel =
+                hRatio >= 0.9 ? "Fully Funded"
+                : hRatio >= 0.7 ? "Healthy"
+                : "Building Up";
+              const healthBg =
+                hRatio >= 0.9 ? "from-green-500/15 via-green-500/5 border-green-500/30"
+                : hRatio >= 0.7 ? "from-yellow-500/15 via-yellow-500/5 border-yellow-500/30"
+                : "from-orange-500/15 via-orange-500/5 border-orange-500/30";
+
+              return (
+                <>
+                  {/* County hero card */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`bg-gradient-to-br ${healthBg} border rounded-3xl p-6 shadow-lg`}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">County Fund</div>
+                        <h2 className="text-2xl font-black mt-0.5">{countyData.name}</h2>
+                        <div className="text-[11px] text-muted-foreground mt-1">
+                          Open community fund · {countyData.member_count.toLocaleString()} neighbors
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-[10px] font-bold uppercase tracking-widest ${healthColor}`}>{healthLabel}</div>
+                        <div className={`text-3xl font-black ${healthColor} mt-0.5`}>
+                          {Math.round(hRatio * 100)}%
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">of target</div>
+                      </div>
+                    </div>
+
+                    {/* Balance vs target */}
+                    <div className="mb-3">
+                      <div className="flex justify-between text-xs mb-1.5">
+                        <span className="font-black text-lg">${countyData.pool_balance.toFixed(2)}</span>
+                        <span className="text-muted-foreground text-[11px] self-end">target ${countyData.target_reserve_amount.toLocaleString()}</span>
+                      </div>
+                      <div className="h-3 bg-black/20 rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${countyData.pool_pct}%` }}
+                          transition={{ duration: 1.2, ease: "easeOut" }}
+                          className={`h-full rounded-full ${
+                            hRatio >= 0.9 ? "bg-gradient-to-r from-green-400 to-emerald-500"
+                            : hRatio >= 0.7 ? "bg-gradient-to-r from-yellow-400 to-amber-500"
+                            : "bg-gradient-to-r from-orange-400 to-orange-500"
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Every dollar in this fund goes directly to helpers — no platform cut, no waiting. When you complete a task, the county fund pays you right away at a livable wage floor.
+                    </p>
+                  </motion.div>
+
+                  {/* Livable wage framing */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/40 rounded-2xl p-5"
+                  >
+                    <h3 className="font-black text-sm flex items-center gap-2 mb-3">
+                      <DollarSign className="w-4 h-4 text-primary" /> Wake Up. Help Neighbors. Earn a Living.
+                    </h3>
+                    <p className="text-[12px] text-muted-foreground leading-relaxed mb-3">
+                      Helping your community pays real money — not tips, not points. The {countyData.name} fund guarantees every completed task earns a livable-wage floor, paid immediately when you finish. No invoices, no chasing payment, no waiting.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { icon: "⚡", label: "Paid Instantly", desc: "Pool pays helpers the moment a task completes" },
+                        { icon: "📈", label: "Wage Scales with You", desc: "Higher trust tier = bigger minimum guarantee" },
+                        { icon: "🔄", label: "Self-Replenishing", desc: "Requesters pay it forward, refilling the pool" },
+                        { icon: "🏛️", label: "County-Backed", desc: "Local sponsors keep the fund healthy" },
+                      ].map(item => (
+                        <div key={item.label} className="bg-background/60 rounded-xl p-3">
+                          <div className="text-lg mb-0.5">{item.icon}</div>
+                          <div className="text-[11px] font-black">{item.label}</div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{item.desc}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+
+                  {/* Impact stats */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className="bg-card border border-border rounded-2xl p-4"
+                  >
+                    <h3 className="font-black text-sm flex items-center gap-2 mb-3">
+                      <Activity className="w-4 h-4 text-primary" /> What This Fund Has Done
+                    </h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { label: "Contributed", value: `$${countyData.total_contributed.toFixed(2)}`, desc: "From sponsors & neighbors", color: "text-green-400" },
+                        { label: "Paid to Helpers", value: `$${countyData.total_paid_to_helpers.toFixed(2)}`, desc: "Instantly on task completion", color: "text-primary" },
+                        { label: "Helpers Paid", value: countyData.helpers_paid.toString(), desc: "Unique neighbors compensated", color: "text-yellow-400" },
+                        { label: "30-Day Inflow", value: `$${countyData.inflow_30d.toFixed(2)}`, desc: "Repayments + contributions", color: "text-cyan-400" },
+                      ].map(item => (
+                        <div key={item.label} className="bg-background/60 rounded-xl px-3 py-2.5">
+                          <div className={`text-xl font-black ${item.color}`}>{item.value}</div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider">{item.label}</div>
+                          <div className="text-[9px] text-muted-foreground mt-0.5">{item.desc}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+
+                  {/* Recent ledger */}
+                  {countyLedger.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2 }}
+                      className="bg-card border border-border rounded-2xl p-4"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-black text-sm flex items-center gap-2">
+                          <Shield className="w-4 h-4 text-primary" /> Public Ledger
+                        </h3>
+                        <button
+                          onClick={loadCountyData}
+                          className="text-[11px] text-primary flex items-center gap-1 active:opacity-60"
+                        >
+                          <RefreshCw className="w-3 h-3" /> Refresh
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {countyLedger.slice(0, 10).map((entry) => {
+                          const isCredit = entry.amount > 0;
+                          const typeLabel: Record<string, string> = {
+                            sponsor_contribution: "🏛️ Sponsor contributed",
+                            helper_front: "⚡ Helper paid",
+                            guaranteed_minimum: "💙 Min guarantee paid",
+                            pledge_repayment: "🔄 Pledge repaid",
+                          };
+                          return (
+                            <div key={entry.id} className="flex items-center justify-between text-xs py-1.5 border-b border-border/50 last:border-0">
+                              <div>
+                                <div className="font-medium">{typeLabel[entry.entry_type] ?? entry.entry_type}</div>
+                                {entry.description && (
+                                  <div className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[200px]">{entry.description}</div>
+                                )}
+                              </div>
+                              <div className={`font-black tabular-nums ${isCredit ? "text-green-400" : "text-primary"}`}>
+                                {isCredit ? "+" : "−"}${Math.abs(entry.amount).toFixed(2)}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {countyLedger.length === 0 && countyLoaded && (
+                    <div className="bg-card border border-border rounded-2xl p-6 text-center">
+                      <div className="text-3xl mb-2">🌱</div>
+                      <div className="font-black text-sm">Fund is getting started</div>
+                      <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                        The {countyData.name} community fund is new. Be one of the first contributors — your donation goes directly to compensating helpers in your county.
+                      </p>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
+
+        {tab === "circles" && <NeighborhoodCirclesTab />}
+        {tab === "skills" && <SkillsMarketplaceTab />}
+      </div>
+    </div>
+  );
+}

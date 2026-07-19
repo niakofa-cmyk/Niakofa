@@ -1,0 +1,55 @@
+The hub-community-leader role and crisis-lit-hub-with-pledge flow we designed together haven't been built yet — no hub_community_leaders table, no crisis fields on diaspora_hubs, no diaspora_hub_pledges. The attached_assets folder shows your team pulled in the HTML mockups from our conversation as reference images, but the backend behind them isn't there. That's the natural next PR.
+
+Wire the crisis event types that already exist. ws-hub.ts already defines crisis_update — once you add the crisis/leader tables we designed, broadcasting through this existing socket layer is nearly free.
+Hub-claim authority is currently platform-admin-only (requireAdmin()), with a comment in the code itself noting there's no community-scoped admin role yet. That's exactly the seam the hub-community-leader role should fill — claiming/managing a hub is a natural manage_tasks-tier permission, not a full-admin action.
+Wire a real STT provider (Whisper/AssemblyAI/Deepgram) before diaspora members start recording audio stories at volume — right now every audio story will hit the stub and fail by design.
+Rate-limit/moderate hub proposals — POST /griot/hubs is open to any authenticated user; worth confirming the existing moderation/report pipeline covers spam or offensive hub proposals before they hit an admin's review queue.
+
+2. Tax reporting isn't yet surfaced to helpers. Helpers paid via Stripe Connect will hit 1099-K/1099-NEC thresholds. Nothing in the flow currently tells them that.
+
+
+Diaspora / "Global Village" is architecturally ready but not yet configured for it. The multi-county schema (per-community wage floors, sponsor branding, county impact pages) means expanding beyond Tarrant County is a data problem, not a rebuild problem — but nothing today targets international use (currency is USD-only, i18n is English/Spanish only, Stripe Connect payouts assume US bank rails). If "global village" is a near-term goal rather than long-term aspiration, that's the honest gap.
+
+* The businesses_enabled flag needs a one-time DB toggle before business accounts work in any environment.
+* Dev-database migrations need to be run (pnpm --filter db run migrate) before a fresh environment is usable.
+* First admin account needs bootstrapping via ADMIN_BOOTSTRAP_SECRET.
+a few pre-launch config steps
+
+Verified diaspora helper badges/skills matching (e.g., language/cultural support for immigrants).
+
+Multi-helper payment splitting still a gap
+
+Immediate: Enhance Globe with PIF action buttons + impact metrics (quick, high-impact).
+
+
+
+Structured Nia Memory & Global Preferences:
+* Beyond freeform text—add fields for cultural/dietary/diaspora prefs to make Nia a better cross-village guide.
+
+* Globe-enhanced matching: prioritize diaspora-skilled helpers for relevant requests.
+
+
+Polish:
+* Update ADMIN_COVERAGE.md for Griot admin tab.
+* More seed data for global hubs.
+* Offline PWA resilience for broader reach.
+
+
+Prioritize Nia voice + Globe PIF actions for immediate impact.
+Run full build/migrate/seed + test flows.
+
+The one real problem: pledges aren't backed by money or authority
+I traced POST /griot/hubs/:id/pledges end to end. Right now:
+* It takes a from_hub_id, an amount, inserts a row, and returns success — there's no Stripe charge, no card capture, and no link to community_pool_ledger anywhere in the route.
+* There's no check that the pledging user actually leads or belongs to from_hub_id. Any authenticated user can submit "Fort Worth pledges $10,000 to Accra" attributing it to a hub they have no relationship to.
+* The frontend modal then tells the user "Pledge sent 🙏 ... has been recorded" — language that reads as confirmation something real happened.
+Put together, this is currently a system where anyone can publicly claim, in a crisis, that a large sum is coming from a named community — with no money moving and no way to verify the claim came from someone authorized to speak for that hub. In a real crisis, that's not a minor rough edge; it's the exact shape of a rumor that could make people believe help is coming when it isn't. This needs one of two fixes before it's exposed to real users:
+1. Wire it to real payment (my original recommendation) — pledge triggers an actual Stripe charge, and on success writes a sponsor_contribution row into community_pool_ledger scoped to the receiving hub, same as the rest of your pool machinery. Then status: 'pledged' only ever becomes 'fulfilled' when a payment actually clears, not on insert.
+
+No audit trail on crisis clear (who cleared it, why) — worth a one-line crisis_resolved_note column, since this is the one action that makes a real emergency disappear from the map.
+PledgeSchema caps a single pledge at $100,000 with no per-user daily/velocity limit — worth capping lower or rate-limiting per-user until real payment is wired, since right now it's free to submit.
+
+One real gap in the new feature, worth fixing before you rely on it: cross-hub pledges are ledger-only right now — a diaspora_hub_pledges row with status: "pledged" gets created, but nothing charges a card, moves pool money, or ever flips the status to "fulfilled". It's a promise, not a payment. Given your vision explicitly says "helpers get paid," I'd treat this as the top priority to close: either wire pledged_by's pledge into a Stripe PaymentIntent the way /pool/contribute already does, or clearly label it in the UI as a public commitment (like a crowdfunding pledge) rather than an instant transfer, so users aren't misled about when money actually moves.
+
+
+Minor, not urgent: the new test file has leftover console.log("DEBUG select called", ...) lines — harmless in a test file but worth a quick cleanup pass. Also .replit dropped the postgresql-16 module from its module list — if you were relying on a local Postgres inside Replit's dev environment, confirm that wasn't accidental; if you've fully moved dev to an external Postgres (Railway), it's just cleanup.

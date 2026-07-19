@@ -1,0 +1,30 @@
+"Reassign User to Community" form takes a raw numeric user ID with no name lookup or confirmation step — easy to fat-finger the wrong user with no way to catch it before submitting. Fix NiaDrawer.tsx any cast on import.meta.env (BUG-8-M02)
+Verify TrustTierBadge threshold parity with backend (BUG-7-M01 / BUG-8-H02)
+Verify InAppChat offline queue flush on reconnection (BUG-7-M02 / BUG-8-H01)
+Fix nia-service location middleware to use HTTPS for ip-api.com (BUG-9-C02)
+Add Stripe key validation before client initialization (BUG-9-H01 / BUG-9-H02 / CROSS-12)
+Add graceful shutdown handler for all workers in api-server/src/index.ts (BUG-9-E01) Add DB/Redis connectivity to /healthz (BUG-6-E01)
+Fix migration 0009 to ALTER created_at TYPE (BUG-6-E02)
+Add explicit body size limit to Stripe rawBodyParser (BUG-6-E04)
+Add notifType to all push notification payloads (BUG-7-H01)
+Fix nia-service CORS to restrict origin (BUG-7-C02)
+Add content-type check before JSON.parse in custom-fetch.ts (BUG-7-B02)
+Add worker crash recovery / health checks for nia-service intervals (BUG-7-E03 / BUG-8-E02)
+Add fs.existsSync guard in run-migrations.mjs (BUG-7-E01 / BUG-8-E01)
+Add adminLimiter to crisis.ts and community-neighborhoods.ts (BUG-7-C01 / BUG-8-C01)
+
+
+communities.ts (public routes) — well-built, but leaks something it shouldn't
+The stats endpoints (/communities, /communities/:id, /communities/default) are solid: correctly aggregated SQL, matches the same pool-health-ratio clamp logic used server-side for wage math, no auth required which is right for a transparency page.
+But GET /communities/:id/ledger has a real privacy problem. It returns each entry's notes field, and that field is populated in community-pool.ts like this:
+notes: `Pool fronted helper payment for: ${requestTitle}`
+notes: `Guaranteed minimum for completed task: ${requestTitle}`
+requestTitle is the free-text title a requester wrote for their own help request — and this app has categories like medical, senior_care, mental_health_peer, and legal_aid, so titles can plausibly contain things like a health condition, a domestic situation, or other personal detail. I confirmed this is actually rendered live: community.tsx's "Public Ledger" widget displays entry.notes directly to any visitor, no login required.
+The comment at the top of communities.ts says these are "no sensitive user data" — but I checked whether request titles are exposed anywhere else in the app, and they're not: GET /requests (the browse endpoint) requires requireAuth. So this is a new, unauthenticated leak of previously-private user content, not a duplicate of something already public. I'd fix this before it goes further — either strip/generalize the note text for the public ledger (e.g. "Helper paid for a completed task" with no title), or require the requester to opt in to having their request title shown publicly.
+Admin CRUD (admin-communities.ts + CommunitiesTab) — backend is solid, UI has real gaps
+Backend: proper requireAuth + requireAdmin() + rate limiting on every route, input validation (name length, positive numeric target), and it correctly strips password/reset fields before returning a reassigned user. No complaints here.
+Three real gaps in what the UI actually lets an admin do:
+
+The "Default" badge is dead code. CommunitiesTab renders a badge based on c.is_default, but I checked the schema — communitiesTable has no is_default column, and the API never returns one. The actual default-community mechanism is a system_settings.default_community_id key (read in getDefaultCommunityId()), and there's no route or UI anywhere to set it — I searched, it's only ever read, never written outside a raw DB edit. So today, admins can create counties and reassign users into them, but can't control which county a brand-new signup lands in without touching the database directly. That's the one control that matters most for a multi-county rollout, and it's missing.
+The health-percentage bar shown to admins doesn't match the number that actually drives pay. The backend returns pool_health_ratio clamped to [0.5, 1.0] (a depleted pool still shows ≥50%, matching the wage-multiplier floor). The CommunitiesTab component ignores that field entirely and recomputes its own ratio = Math.min(balance/target, 1) client-side — with no floor. So a pool at $0 would show 0% in the admin dashboard while the backend is actually paying helpers at the 50%-floor rate. An admin staring at that bar would misjudge how healthy a pool really is.
+The "unassigned" legacy bucket is invisible. The API response includes unassigned: { pool_balance, member_count } — literally the count of users still stuck in the NULL bucket, which was the whole reason this feature existed. The UI never reads or displays it. Given the entire point of this release was "the old global bucket is a problem, get everyone into a real county," not being able to see that number in the one screen built for managing it is a real oversight.

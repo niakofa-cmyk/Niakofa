@@ -1,0 +1,64 @@
+1. Yes — there's a real caching gap I found
+Your server correctly sends "don't cache me" headers on index.html:
+
+js
+if (filePath.endsWith("index.html")) {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  ...
+}
+But /sw.js (the service worker file itself) is not covered by that check — it falls through express.static's defaults, which don't set an explicit Cache-Control header at all. Browsers are supposed to re-check a service worker script periodically regardless of caching, but the spec allows them to go up to 24 hours before forcing that check if no explicit no-cache header is present. That matches exactly what you're describing: you ship an update, but your browser (or a teammate's) keeps running the old service worker for a while, which means it's still using its old cache-first logic and old cached JS bundles.
+Fix: add the same no-cache, no-store, must-revalidate headers to /sw.js specifically, not just index.html. That's a one-line addition to the existing setHeaders function.
+There's a second, smaller gap: the service worker has no controllerchange listener in the app code, so even once a new service worker does take over, a tab that's already open won't auto-reload to pick up the new JS — the user has to manually refresh. Worth adding a small "New version available — tap to refresh" prompt.
+
+
+
+2. Nia AI's default is correct in the code — but that's not the same as its current state
+I traced this all the way through, and the code is actually doing the right thing:
+* The database migration explicitly seeds nia_enabled = 'false' on setup.
+* Every place that checks it (nia-proxy.ts, nia-service/db.ts) is fail-closed: a missing row, a DB hiccup, or any value other than the literal string "true" all resolve to disabled. There's even a comment noting this was previously fail-open as a "defense in depth" measure and was deliberately changed because that was unsafe.
+So "disabled by default" is genuinely how the code behaves on a fresh install.
+If you're seeing it enabled right now, that's almost certainly because someone (an admin, or a prior test) explicitly flipped the toggle to "true" at some point — and that setting lives in the database, not in the code or the build. That's intentional: it means a redeploy doesn't silently wipe your admin settings. But it also means "disabled by default" only applies to a fresh database, not to an environment where the toggle was already touched once.
+To check the real, current, live state (not something that can be stale from a cached build), the source of truth is the system_settings table's nia_enabled row — there's already an admin analytics endpoint reading exactly that. If it says "true", someone turned it on and it needs to be explicitly turned back off; that's not a caching bug, it's just how the toggle is supposed to persist.
+Bottom line
+* The "stuck on old build" feeling is very likely real, caused by /sw.js missing a no-cache header — easy, concrete fix.
+* Nia being enabled is very likely a real toggle state in your database, not a stale build — check the DB value directly rather than assuming code is misbehaving.
+
+
+
+Read text doc word for word, line by line. Fix, and address each and every issue. . Think carefully before editing. Understand the App and the vision and mission before you edit code. Review the code line by line before you edit code. We are using Mapbox . Verify and Ensure your work! And Verify and ensure there is a mechanism created for the Admin to stay updated at all times and has been updated and is being consistently connected to functions features and consistency verifying all Necessary settings and features!? Read this uploaded document word for word. Read this document! Read line by line, Verify each and every issue. Ensure you address each and every issue. And Fix, improve and enhance the code if you can. Fix, Improve and enhance and Close each and every and all remaining Gaps end to end, and issues. Fix, Improve and enhance, address all remaining Bugs end to end.
+
+
+County/government portal — routing requests (county/business posts a need, system dispatches to nearby helpers)	STILL NOT BUILT — confirmed again this round via code search returning zero hits for any request-routing/dispatch portal tied to gov-sponsors	This is the one concrete, repeatedly-confirmed gap between the current app and your stated vision
+
+* The county/business request-routing portal. This is the biggest gap and the one piece of your vision statement not yet reflected in code. Funding flows in from counties; there is no mechanism yet for a county or business to post a need through a dedicated portal that then routes to nearby helpers the way an individual's request does. Recommend building this as a new civic-requests surface reusing the existing requests.ts claim/complete pipeline, but gated to gov-sponsor/business accounts and tagged so it's visible in admin-analytics.ts.
+* Effective hourly rate visibility. You now have all the raw data (estimated_hours, guaranteed minimum, actual payouts) to compute and surface a real "average effective hourly rate paid to helpers" metric — this would be powerful proof of the livable-wage promise, and admin-analytics.ts is the natural home for it but doesn't compute it yet.
+* Helper-facing payout preview. Consider showing the estimated guaranteed-minimum payout to a helper before they claim a task (you already compute it server-side) — reinforces "you'll be paid fairly for this."
+
+Decouple "defaulted" (an internal risk signal + trust-score ding) from "hard-blocks new requests" — let people keep using Pay-It-Forward while overdue, since that's the whole point of the model
+Extend the auto-default window well past 90 days, or tier it by account standing, so the system's actual behavior matches "2 days to 2 years, no pressure" instead of quietly contradicting it at day 91
+
+Businesses (not just individuals) can request/get help	Partially built	account types include business/sponsor/organization (per PR #1's fix), but PR #1 being unmerged means this is not live in production yet
+
+
+All three edits look correct. Here's a summary of what changed:
+Files changed
+1. artifacts/api-server/src/app.ts — /sw.js now gets the same no-cache, no-store, must-revalidate headers as index.html. This closes the gap that let browsers hold onto a stale service worker for up to 24 hours.
+2. artifacts/pay-it-forward/src/hooks/useServiceWorkerUpdate.tsx (new) — registers the service worker and:
+* Detects when a new version has installed in the background (updatefound → installed, with an existing controller present so it doesn't fire on first-ever install).
+* Shows a toast: "A new version of Niakofa is available" with a Refresh button.
+* Clicking Refresh tells the waiting worker to skipWaiting() (your sw.js already listens for that message — no server-side change needed there), which triggers controllerchange, which triggers an automatic reload.
+* Guarded against reload loops.
+3. artifacts/pay-it-forward/src/main.tsx — removed the old bare registration (now superseded by the hook, which lives inside App.tsx so it can use the app's existing Toaster).
+4. artifacts/pay-it-forward/src/App.tsx — wired in useServiceWorkerUpdate() at the app root.
+What this fixes vs. what it doesn't
+* Fixes: the "stuck on an old build" experience — going forward, a deploy will either update quietly on next natural navigation, or, for an already-open tab, prompt the user with a one-click refresh rather than leaving them silently stale.
+* Doesn't touch: the nia_enabled DB toggle — that's a separate, working system. If Nia still shows enabled after this, it's because the system_settings row genuinely says "true", not a caching artifact.
+One thing to check before you ship this
+I wasn't able to run a type-check or build in this environment (the zip doesn't include node_modules), so please run your normal tsc/build step before deploying — the code is consistent with the existing use-toast/ToastAction API I found in your codebase, but a real compile is the final word.
+
+
+
+Contains the two updated files, at their original repo paths so you can drop them straight in:
+* lib/scheduler.ts — 2-year grace window, softened copy
+* routes/requests.ts — hard block removed, soft cap widened to still count defaulted pledges
+Still open from last message: community.tsx's "within 90 days" line is now stale copy.

@@ -1,0 +1,121 @@
+
+
+
+
+
+
+
+
+
+Library
+
+
+Apps
+
+Niakofa — Community Help Platform
+Website
+
+Other
+
+Artifact
+Website
+
+
+
+artifacts/pay-it-forward/src/components/SankofaBirdSvg.tsx
+-24
++34
+
+            {/* Legs — separate animated layer; subtle perch sway at rest,
+                alternating step during flight, dangle during landing hover. */}
+            <g className="sankofa-bird-legs">
+              {/* Left leg */}
+              <line
+                x1="18.5" y1="29.5"
+                x2="16.5" y2="34"
+                stroke="hsl(190, 70%, 36%)"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+              {/* Left foot toes */}
+              <line x1="16.5" y1="34" x2="14.5" y2="35.5" stroke="hsl(190, 70%, 36%)" strokeWidth="0.8" strokeLinecap="round" />
+              <line x1="16.5" y1="34" x2="16.2" y2="36"   stroke="hsl(190, 70%, 36%)" strokeWidth="0.8" strokeLinecap="round" />
+              <line x1="16.5" y1="34" x2="18.2" y2="35.4" stroke="hsl(190, 70%, 36%)" strokeWidth="0.8" strokeLinecap="round" />
+              {/* Left leg — wrapped for individual alternating cadence (P8.10) */}
+              <g
+                className="sankofa-leg-left"
+                style={{ transformBox: "view-box", transformOrigin: "18.5px 29.5px" } as React.CSSProperties}
+              >
+                <line
+                  x1="18.5" y1="29.5"
+                  x2="16.5" y2="34"
+                  stroke="hsl(190, 70%, 36%)"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                />
+                {/* Left foot toes */}
+                <line x1="16.5" y1="34" x2="14.5" y2="35.5" stroke="hsl(190, 70%, 36%)" strokeWidth="0.8" strokeLinecap="round" />
+                <line x1="16.5" y1="34" x2="16.2" y2="36"   stroke="hsl(190, 70%, 36%)" strokeWidth="0.8" strokeLinecap="round" />
+                <line x1="16.5" y1="34" x2="18.2" y2="35.4" stroke="hsl(190, 70%, 36%)" strokeWidth="0.8" strokeLinecap="round" />
+              </g>
+
+              {/* Right leg */}
+              <line
+                x1="21.5" y1="29.5"
+                x2="23.5" y2="34"
+                stroke="hsl(190, 70%, 36%)"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+              {/* Right foot toes */}
+              <line x1="23.5" y1="34" x2="25.5" y2="35.5" stroke="hsl(190, 70%, 36%)" strokeWidth="0.8" strokeLinecap="round" />
+              <line x1="23.5" y1="34" x2="23.8" y2="36"   stroke="hsl(190, 70%, 36%)" strokeWidth="0.8" strokeLinecap="round" />
+              <line x1="23.5" y1="34" x2="21.8" y2="35.4" stroke="hsl(190, 70%, 36%)" strokeWidth="0.8" strokeLinecap="round" />
+              {/* Right leg — wrapped for individual alternating cadence (P8.10) */}
+              <g
+                className="sankofa-leg-right"
+                style={{ transformBox: "view-box", transformOrigin: "21.5px 29.5px" } as React.CSSProperties}
+              >
+                <line
+                  x1="21.5" y1="29.5"
+                  x2="23.5" y2="34"
+                  stroke="hsl(190, 70%, 36%)"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                />
+                {/* Right foot toes */}
+                <line x1="23.5" y1="34" x2="25.5" y2="35.5" stroke="hsl(190, 70%, 36%)" strokeWidth="0.8" strokeLinecap="round" />
+                <line x1="23.5" y1="34" x2="23.8" y2="36"   stroke="hsl(190, 70%, 36%)" strokeWidth="0.8" strokeLinecap="round" />
+                <line x1="23.5" y1="34" x2="21.8" y2="35.4" stroke="hsl(190, 70%, 36%)" strokeWidth="0.8" strokeLinecap="round" />
+              </g>
+
+              {/* ── Talon specular catchlights (Phase 3) ────────────────────────
+                  Thin crescent-shaped specular overlays on each foot's talon tips.
+                  Real bird talons (dark-grey keratin) have a wet, curved highlight
+
+
+
+
+
+
+artifacts/pay-it-forward/src/components/SankofaBirdSvg.tsx
+-1
++6
+                  Doc: "bird chirps → Looks toward destination → Spreads wings → Takeoff"
+                  Lower beak opens 1-2° on notification/accepted events, then closes.
+                  Transform origin is the back of the jaw (SVG coords ~5.45, 14.2)
+                  so the tip (x=2.2) swings down naturally on rotation. */}
+              {/* Upper beak (static) */}
+              {/* Upper beak — animates open on chirp states (P8.9) */}
+              <path
+                className="sankofa-bird-beak-upper"
+                d="M5.3 13.4 L2.2 14.25 L5.45 14.2 Z"
+                fill="#1a2733"
+                style={{
+                  transformBox: "view-box",
+                  transformOrigin: "5.45px 14.2px",
+                } as React.CSSProperties}
+              />
+              {/* Beak specular glint — matches the eye highlight treatment.
+                  A tiny white circle on the culmen (ridge of upper beak) gives
+                  the beak dimension and wetness at mid/high zoom — the same

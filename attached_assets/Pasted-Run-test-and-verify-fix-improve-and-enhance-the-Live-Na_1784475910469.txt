@@ -1,0 +1,587 @@
+Run test and verify, fix, improve and enhance the Live Navigation system. Helper to Requester, or any other gps pinpoint accurate task. Run and test Live navigation to 4+ Locations from Helper to requester, and run and test navigation for gps pinpoint user tasks, Helper and Community Tasks. Run and test Community tasks in 4+ locations using the live navigation system. Run and test live navigation systems end to end.
+
+17 minutes ago
+Testing live navigation system
+
+Testing live navigation system
+Launching a comprehensive parallel audit of the entire live navigation system before any testing.
+
+Show less
+
+Navigation audit complete
+
+Executed action
+const [navServer, navClient, navWorker] = await Promise.all([
+subagent({
+name: 'nav-server-audit',
+task: `Audit the navigation API in Niakofa end-to-end. Read these files fully:
+1. artifacts/api-server/src/routes/navigation.ts — what endpoints exist? GET /navigation/route? POST? What params does it accept (origin lat/lng, destination lat/lng)? What does it return?
+2. Does it call Mapbox Directions API? Which profile (driving, walking, cycling)?
+3. Is there an "arrived" short-circuit (for zero-length routes)?
+4. Is there a circuit breaker? Is cbRecordSuccess() called on success?
+5. Does the helper location relay exist? (HELPER_MOVING in ws-hub.ts)
+6. Any missing error handling, missing env var guards (MAPBOX_TOKEN)?
+7. Report EXACT file paths and line numbers for every finding.`,
+config: { $kind: 'explore' }
+}),
+subagent({
+name: 'nav-client-audit',
+task: `Audit the navigation frontend in Niakofa end-to-end. Read these files:
+1. artifacts/pay-it-forward/src/pages/navigation.tsx — full overview: does it call the API? Does it show a route on the Mapbox map? Does it display turn-by-turn instructions? Does it update as helper moves?
+2. artifacts/pay-it-forward/src/lib/wsClient.ts — does the client send HELPER_MOVING WS messages with lat/lng/heading? At what interval?
+3. Is there a useNavigation hook or similar? Where is it?
+4. Does the navigation page support both "helper navigating to requester" and "community task" modes?
+5. How is the destination set? From request.lat/lng? From community task?
+6. Any broken imports, missing handlers, or TODO stubs?
+7. Report EXACT file paths and line numbers.`,
+config: { $kind: 'explore' }
+}),
+subagent({
+name: 'nav-community-tasks-audit',
+task: `Audit community tasks and how they integrate with navigation in Niakofa. Read:
+1. artifacts/api-server/src/routes/civic.ts or civic-needs.ts — what is the civic/community task structure? Do tasks have lat/lng?
+2. artifacts/pay-it-forward/src/pages/civic.tsx or community-tasks.tsx — how are community tasks displayed? Is there a "Navigate" button?
+3. How does a helper start navigation to a community task? What route/page do they end up on?
+4. Does the navigation system handle community tasks differently from help requests?
+5. What GPS data is available for community tasks (lat/lng fields in DB/API)?
+6. Report EXACT file paths and line numbers for all gaps.`,
+config: { $kind: 'explore' }
+})
+]);
+
+console.log("=== NAV SERVER ===\n", navServer.text);
+console.log("\n=== NAV CLIENT ===\n", navClient.text);
+console.log("\n=== NAV COMMUNITY ===\n", navWorker.text);
+
+
+Subagent: Audit the navigation API in Niakofa end-to-end. Read these files fully: 1. artifacts/api-server/src/routes/navigation.ts — what endpoints exist? GET /navigation/route? POST? What params does it accept (origin lat/lng, destination lat/lng)? What does it return? 2. Does it call Mapbox Directions API? Which profile (driving, walking, cycling)? 3. Is there an "arrived" short-circuit (for zero-length routes)? 4. Is there a circuit breaker? Is cbRecordSuccess() called on success? 5. Does the helper location relay exist? (HELPER_MOVING in ws-hub.ts) 6. Any missing error handling, missing env var guards (MAPBOX_TOKEN)? 7. Report EXACT file paths and line numbers for every finding.
+
+Subagent: Audit the navigation frontend in Niakofa end-to-end. Read these files: 1. artifacts/pay-it-forward/src/pages/navigation.tsx — full overview: does it call the API? Does it show a route on the Mapbox map? Does it display turn-by-turn instructions? Does it update as helper moves? 2. artifacts/pay-it-forward/src/lib/wsClient.ts — does the client send HELPER_MOVING WS messages with lat/lng/heading? At what interval? 3. Is there a useNavigation hook or similar? Where is it? 4. Does the navigation page support both "helper navigating to requester" and "community task" modes? 5. How is the destination set? From request.lat/lng? From community task? 6. Any broken imports, missing handlers, or TODO stubs? 7. Report EXACT file paths and line numbers.
+
+Subagent: Audit community tasks and how they integrate with navigation in Niakofa. Read: 1. artifacts/api-server/src/routes/civic.ts or civic-needs.ts — what is the civic/community task structure? Do tasks have lat/lng? 2. artifacts/pay-it-forward/src/pages/civic.tsx or community-tasks.tsx — how are community tasks displayed? Is there a "Navigate" button? 3. How does a helper start navigation to a community task? What route/page do they end up on? 4. Does the navigation system handle community tasks differently from help requests? 5. What GPS data is available for community tasks (lat/lng fields in DB/API)? 6. Report EXACT file paths and line numbers for all gaps.
+Analyzing audit findings
+
+Analyzing audit findings
+The audit is complete. Let me now analyze the findings and plan the fixes:
+Navigation Server gaps:
+* parseFloat before Zod safeParse: NaN can slip through if query params are missing
+* Otherwise mostly solid
+Navigation Client gaps:
+* No standalone navigation page (navigation.tsx doesn't exist — it's all in request-active.tsx)
+* HELPER_MOVING interval is 8 seconds (reasonable)
+* Works for help requests but NOT for community tasks
+Community Tasks navigation gaps (CRITICAL):
+1. No "Navigate" button on civic needs cards
+2. Civic needs lack en_route/arrived status transitions in the API
+3. request-active.tsx is hardcoded for requests and doesn't support civic tasks
+4. When helpers claim a civic need, they only see "Mark complete" with no navigation option
+Plan:
+1. Add en_route/arrived status transitions to civic needs API
+2. Add "Navigate to Task" button to civic needs UI
+3. Create a civic-task navigation mode in the frontend (or extend request-active.tsx to handle civic tasks)
+4. Fix the parseFloat/NaN edge case in navigation.ts
+5. Run E2E tests with actual API calls
+Now I need to examine the specific files to understand the current civic needs implementation.
+Clear picture of every gap. Reading the exact code sections needed for all fixes in one parallel batch.
+
+Show less
+
+Searched for "router.(get|post|patch|…"
+
+Searched for "status|en_route|arrived…"
+
+Searched for "lat|lng|navigate|Naviga…"
+
+Searched for "civic|CivicNeed|civic_n…"
+
+Processed text
+Fixing navigation gaps
+
+Fixing navigation gaps
+Let me continue with the navigation audit and fix all the gaps found. Let me read the specific files I need to understand the civic needs structure and implement the navigation fixes.
+Key gaps to fix:
+1. Community tasks have no navigation — no "Navigate to task" button, no en_route/arrived status transitions, no navigation mode for civic tasks
+2. parseFloat before Zod safeParse — NaN edge case in navigation.ts (minor, needs fix)
+3. No end-to-end navigation test — need to run live API tests across 4+ locations
+Let me read the specific sections I need, then implement all fixes in parallel.
+Reading the civic needs routes and UI in the sections I need for the full fix.
+
+Show less
+
+Opened civic.ts
+
+Opened civic-needs.tsx
+
+Opened civic-needs.tsx
+
+Searched for "NeedStatus|civicNeedsTa…"
+
+Searched for "NavigationOverlay|useGe…"
+Fixing navigation gaps
+
+Fixing navigation gaps
+
+Opened civic-needs.ts
+
+Opened civic.ts
+
+Opened request-active.tsx
+
+Opened request-active.tsx
+
+Searched for "lat|lng|location"
+
+Searched for "lat|lng|location|geocod"
+Investigating navigation gaps
+
+Investigating navigation gaps
+Let me continue reading the necessary files and then implement all the fixes for the live navigation system. I have a clear picture of what needs to be done:
+1. Community tasks have NO navigation — most critical gap
+    * The CivicNeed interface in civic-needs.tsx doesn't include lat/lng
+    * No "Navigate to task" button on claimed civic needs
+    * No en_route/arrived status transitions for civic needs in the API
+2. GET /civic/needs doesn't return lat/lng — need to add those fields to the select
+3. Navigation.ts parseFloat edge case — minor fix
+4. Community task navigation page — need to create a way for helpers to navigate to civic need locations
+Now I'm implementing the fixes: adding lat/lng to the GET /civic/needs query, creating the en-route and arrived endpoints for civic needs, updating the CivicNeed interface to include coordinates, adding a navigate button to claimed tasks, and building out the navigation route for civic needs.
+I need to check the routing structure and app setup to understand how everything connects together, then handle the parseFloat edge case in navigation.ts and run the E2E tests.
+Reading the app routing structure and remaining files needed for all nav fixes in parallel.
+
+Show less
+
+Searched for "useRoute|Route|Switch|c…"
+
+Searched for "Route|useRoute|civic-ne…"
+
+Searched for "civic|CivicNeed|civic_n…"
+
+Processed text
+
+Opened request-active.tsx
+Implementing navigation fixes
+
+Implementing navigation fixes
+Let me continue with the navigation system fixes. I have all the information I need. Let me now implement all the fixes in one large parallel batch:
+1. API: Add lat/lng to GET /civic/needs select — so the frontend gets coordinates
+2. API: Add PATCH /civic/needs/:id/en-route and PATCH /civic/needs/:id/arrived — status transitions for navigation
+3. API: Add GET /civic/needs/:id — single need lookup for the nav page
+4. Frontend: Update CivicNeed interface to include lat/lng
+5. Frontend: Add "Navigate to Task" button on claimed civic needs
+6. Frontend: Create /civic-task-nav/:id page — civic task navigation using NavigationOverlay
+7. Frontend: Register the new route in App.tsx
+8. Frontend: Fix navigation.ts parseFloat edge case — validate before calling parseFloat
+9. Run E2E tests across 4+ locations
+I need to check the full App.tsx route list, the NavigationOverlay props interface, and the request-active.tsx bottom area to understand the navigation UI structure, then I'll implement all the fixes together.
+For the civic task navigation page, I'll extend the CivicNeed interface to include lat/lng coordinates in both the interface and API response, then create a new page that fetches the civic need by ID, displays it on a map with NavigationOverlay, and provides buttons to mark the task as en route, arrived, and complete.
+I also need to add a GET endpoint to fetch individual civic needs since that doesn't exist yet. Let me check what props NavigationOverlay expects and review the current routing setup so I can wire everything together properly.
+Reading NavigationOverlay props and App.tsx route list — the last pieces needed before implementing everything.
+
+Show less
+
+Opened NavigationOverlay.tsx
+
+Opened App.tsx
+
+Opened App.tsx
+
+Opened App.tsx
+
+Searched for "^import|civicNeedsTable…"
+Implementing navigation fixes
+
+Implementing navigation fixes
+I have all the information I need. Let me now implement all the navigation fixes in one large parallel batch:
+1. API: Add lat/lng to GET /civic/needs select — currently missing from the select query
+2. API: Add GET /civic/needs/:id — single need endpoint for the nav page
+3. API: Add PATCH /civic/needs/:id/en-route and PATCH /civic/needs/:id/arrived — status transitions for navigation
+4. Frontend: Update CivicNeed interface to include lat/lng
+5. Frontend: Add "Navigate to Task" button on claimed civic needs
+6. Frontend: Create /civic-task-nav/:id page — a navigation view for civic tasks using NavigationOverlay and Mapbox, similar to the request navigation but tailored for civic needs
+7. Frontend: Register the new route in App.tsx
+8. Fix navigation.ts parseFloat edge case — validate before calling parseFloat
+For the civic-task-nav page, I'm building a full navigation interface that fetches the civic need by ID and displays it with real-time navigation tracking.
+Now I'm reconsidering the status flow for civic tasks — the current lifecycle is open → claimed → completed | cancelled, and adding intermediate states like en_route and arrived would complicate this. Since the civic_needs table uses text for the status column, I could add these values without a migration, but I need to think through whether this actually fits the existing workflow or if I should handle navigation state separately.
+Actually, I don't need to change the DB status at all. I can keep the current status lifecycle intact and just add a "Navigate to Task" button that opens a navigation page showing the route and turn-by-turn directions. The navigation happens client-side without requiring new DB states, and when the user physically completes the task, they return and mark it complete.
+This approach is simpler and avoids schema changes. I need to add lat and lng fields to the GET /civic/needs endpoint, create a GET /civic/needs/:id route for fetching a single need with coordinates, update the CivicNeed interface on the frontend, and add the navigation button to claimed needs.
+For the navigation page itself, I'm building a full experience with a Mapbox map showing the route line, a turn-by-turn overlay, GPS position updates every 8 seconds, and a back button to return to the needs list. I need to check the NavigationOverlay props to make sure I'm passing the right data structure.
+I have everything I need. Implementing all navigation fixes in one large parallel batch — server endpoints, civic-task navigation page, App.tsx route, and the parseFloat fix simultaneously.
+
+Show less
+
+Edited civic.ts
+
+Edited navigation.ts
+Developing civic task navigation
+
+Developing civic task navigation
+Now I need to create the civic-task-nav.tsx page and update App.tsx and civic-needs.tsx. Let me do all of these in parallel.
+I need to:
+1. Create artifacts/pay-it-forward/src/pages/civic-task-nav.tsx — full navigation page for civic tasks
+2. Update artifacts/pay-it-forward/src/pages/civic-needs.tsx — add lat/lng to interface, add Navigate button
+3. Update artifacts/pay-it-forward/src/App.tsx — register the new route
+Let me also check the RouteData type from the API client to understand what structure the civic-task-nav page needs to work with.
+Good — API fixes are done. Now creating the civic-task navigation page and updating the frontend in parallel.
+
+Show less
+
+Searched for "RouteData|GetRouteRespo…"
+
+Opened request-active.tsx
+Implementing civic task navigation
+
+Implementing civic task navigation
+I have everything I need to create the civic-task-nav.tsx page. Let me implement it now. I'll create:
+1. artifacts/pay-it-forward/src/pages/civic-task-nav.tsx — full navigation page for civic tasks
+2. Update artifacts/pay-it-forward/src/pages/civic-needs.tsx — add lat/lng to interface, add Navigate button
+3. Update artifacts/pay-it-forward/src/App.tsx — register the new route
+For the civic-task-nav.tsx page, I'll build a complete navigation experience:
+* Fetch the civic need from GET /civic/needs/:id
+* Pull the user's GPS coordinates from AppContext
+* Fetch the route using GET /navigation/route with those coordinates
+* Display a Mapbox map with the route line and turn-by-turn navigation overlay
+* Broadcast the helper's position every 8 seconds to track movement
+* Add SankofaBird micro-reactions for engagement
+* Include a "Mark Complete" button when the helper arrives at the destination
+* Provide a back button to return to the civic needs list
+Now I'll implement all three file changes together.
+For the civic-task-nav page, I need to use useGetRoute from the api-client-react package, which requires start_lat, start_lng, end_lat, end_lng, profile, lang, and units parameters. I'll fetch the route data and manually retrieve the civic need details since there's no generated hook for that, then build the page with the navigation overlay, map visualization, and SankofaBird component.
+I'll also set up wsSend to broadcast HELPER_MOVING updates as the user navigates.
+Now creating the civic-task-nav page and updating civic-needs.tsx and App.tsx simultaneously.
+
+Show less
+
+Created civic-task-nav.tsx
+
+Edited civic-needs.tsx
+
+Edited civic-needs.tsx
+Implementing feature navigation
+
+Implementing feature navigation
+Let me continue with the implementation. I need to:
+1. Add the "Navigate to Task" button to civic-needs.tsx claimed needs section
+2. Register the new route in App.tsx
+3. Run typechecks and fix any issues
+4. Run E2E navigation tests across 4+ locations
+Let me do these in parallel.
+Now adding the Navigate button to claimed needs and registering the route in App.tsx, in parallel.
+
+Show less
+
+Edited civic-needs.tsx
+Parallel implementation execution
+
+Parallel implementation execution
+Let me continue with the implementation. I need to:
+1. Register the new /civic-task-nav/:id route in App.tsx
+2. Run typechecks to verify everything is correct
+3. Run E2E navigation tests across 4+ locations
+Let me do all of these in parallel.
+Registering the new route in App.tsx and running typechecks simultaneously.
+
+Show less
+
+Edited App.tsx
+
+Edited App.tsx
+Continuing typechecks and tests
+
+Continuing typechecks and tests
+Let me continue with the typechecks and then run the E2E navigation tests.
+Running both typechecks in parallel while checking logs.
+
+Show less
+
+Checked for code errors
+
+Checked for code errors
+
+Refreshed logs
+Fixing TypeScript errors
+
+Fixing TypeScript errors
+Four TypeScript errors to fix in civic-task-nav.tsx:
+1. queryKey missing in useGetRoute options — need to check how useGetRoute is used in request-active.tsx
+2. useFusedHeading receives null but type is FusedHeadingInput — need to check the hook signature
+3. RouteDataGeometry to Geometry cast — use as unknown as GeoJSON.Geometry
+4. isHelperMode prop doesn't exist on SankofaBirdProps — check SankofaBird props
+Let me fix all four errors quickly.
+Four TS errors to fix. Reading the exact signatures in parallel.
+
+Show less
+
+Processed text
+
+Searched for "FusedHeadingInput|expor…"
+
+Searched for "isHelperMode|SankofaBir…"
+Checking SankofaBirdProps and FusedHeadingInput
+
+Checking SankofaBirdProps and FusedHeadingInput
+
+Processed text
+
+Searched for "interface SankofaBirdPr…"
+Correcting TypeScript errors
+
+Correcting TypeScript errors
+Now I have the exact signatures. Let me fix all four TypeScript errors in civic-task-nav.tsx:
+1. queryKey missing in useGetRoute options — add queryKey: getGetRouteQueryKey(routeParams) to the query options
+2. useFusedHeading expects FusedHeadingInput object (not number | null) — fix the call
+3. RouteDataGeometry to Geometry cast — use as unknown as GeoJSON.Geometry
+4. isHelperMode doesn't exist on SankofaBirdProps — remove it (check what props SankofaBird actually accepts) Looking at the SankofaBirdSvg component, I can see the actual props it accepts: heading, mapBearing for the camera bearing, speed, celebrating, approaching, batterySaver, nightMode, zoom, and others. The isHelperMode prop doesn't exist, so I'll just remove that line from the component call.
+I also need to correct the useFusedHeading hook — it expects a FusedHeadingInput object with gpsHeading and gpsSpeed properties, not just a single number or null value. Let me update all four issues at once.
+Got all four issues. Fixing them all in civic-task-nav.tsx now.
+
+Show less
+
+Searched for "liveActivity|mapBearing…"
+Fixing TypeScript errors
+
+Fixing TypeScript errors
+
+Searched for "<SankofaBird"
+Analyzing SankofaBird usage
+
+Analyzing SankofaBird usage
+
+Opened request-active.tsx
+Updating SankofaBird props
+
+Updating SankofaBird props
+Now I have the exact SankofaBird props. The correct props are:
+* heading (not isHelperMode)
+* mapBearing (camera bearing)
+* speed
+* navigating (not isHelperMode)
+* size
+* celebrating
+* accepted
+* donated
+* newNotification
+* nearbyUser
+* upcomingTurnDirection
+* mapZoom (not zoom)
+* approaching
+* isHelping (not isHelperMode)
+* batterySaver
+* nightMode
+* useFusedHeading expects an object with gpsHeading and gpsSpeed properties
+I need to fix the four TypeScript errors: add queryKey to the useGetRoute options, restructure the useFusedHeading call to pass the proper object shape, cast the GeoJSON geometry correctly with a double cast, and fix the SankofaBird props.
+Now I have exact prop names. Fixing all four TS errors in civic-task-nav.tsx in one shot.
+
+Show less
+
+Edited civic-task-nav.tsx
+
+Edited civic-task-nav.tsx
+
+Edited civic-task-nav.tsx
+
+Edited civic-task-nav.tsx
+Running tests and typecheck
+
+Running tests and typecheck
+
+Checked for code errors
+
+Checked for code errors
+Testing navigation routes
+
+Testing navigation routes
+Both typechecks pass clean. Now I need to run the E2E navigation tests across 4+ locations. Let me run the navigation API tests using curl against the live API server, testing various real-world locations.
+The navigation API is at GET /navigation/route. I need to:
+1. Get a valid auth token first
+2. Test helper→requester navigation across 4+ locations worldwide
+3. Test civic task navigation (GET /civic/needs/:id)
+4. Test the arrived short-circuit (coordinates very close together)
+5. Test walking and cycling profiles
+Let me first get an auth token by logging in, then run all navigation tests.
+Both typechecks clean. Running E2E navigation tests across 4+ real-world locations now.
+
+Show less
+
+Searched for ""token":"[^"]*""
+Checking user credentials
+
+Checking user credentials
+
+Fetched a URL
+
+Checked for code errors
+Fetching auth token
+
+Fetching auth token
+
+Fetched a URL
+
+Queried the database
+Verifying login token
+
+Verifying login token
+I have a valid auth token from registration. Let me now get the token from the login and run the full E2E navigation tests across 4+ locations.
+Got a valid user. Now running all E2E navigation tests across 4+ real-world locations in parallel.
+
+Show less
+
+Ran a Python script
+
+$ TOKEN=$(curl -s -X POST http://localhost:8080/api/users/login \ -H "Content-Type: application/json" \ -d '{"email":"nav-test@niakofa.dev","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))") echo "TOKEN_LEN=${#TOKEN}" # ── TEST 1: Fort Worth TX → Dallas TX (driving, ~30 miles) ────────────────── echo "=== TEST 1: Fort Worth → Dallas (driving) ===" curl -s "http://localhost:8080/api/navigation/route?start_lat=32.7555&start_lng=-97.3308&end_lat=32.7767&end_lng=-96.7970&profile=driving" \ -H "Authorization: Bearer $TOKEN" | python3 -c " import sys,json d=json.load(sys.stdin) print(f' distance_meters: {d.get(\"distance_meters\")}') print(f' duration_seconds: {d.get(\"duration_seconds\")}') print(f' steps: {len(d.get(\"steps\",[]))}') print(f' traffic_level: {d.get(\"traffic_level\")}') print(f' eta_text: {d.get(\"eta_text\")}') print(f' distance_text: {d.get(\"distance_text\")}') print(f' arrived: {d.get(\"arrived\",False)}') print(f' geometry_coords: {len(d.get(\"geometry\",{}).get(\"coordinates\",[]))} points') print(f' ERROR: {d.get(\"error\")}') "
+
+
+
+Ran a Python script
+
+Ran a Python script
+
+Ran a Python script
+
+Ran a Python script
+Checking navigation service
+
+Checking navigation service
+Let me analyze the test results so far:
+Tests 1-4 (Mapbox routes): All returning 503 "Navigation service not configured" — this is expected because MAPBOX_TOKEN is not set in the environment secrets. The navigation guard is working correctly.
+Test 5 (Arrived short-circuit): ✅ PASS — arrived=True for points 10m apart, no Mapbox call needed.
+Test 6 (Missing params → 400): ✅ PASS — correctly returns error with our new guard.
+Test 7 (Out-of-range coords → 400): ✅ PASS — correctly rejects lat=999. Test 8 (No auth → 401): ✅ PASS — correctly rejects unauthenticated requests.
+Test 9 (GET /civic/needs/:id): Getting a JSON parse error with an empty response, which suggests a route conflict. I'm realizing the order matters — I registered the :id route before the base /civic/needs route, and there are also /nearby and /mine routes that might be interfering with the matching logic. Oh, I see the problem now — I placed my new /civic/needs/:id route before the list endpoint, which means it's catching /civic/needs/nearby and /civic/needs/mine as if they were ID parameters. Express matches routes in order, so those specific routes need to come before the parameterized :id route to work correctly. The empty response in Test 9 might mean the civic_needs table is actually empty, so there's no record with id=1 to return. But if that were the case, the route should still send back a proper 404 JSON response, not a completely empty string. Let me trace through what's happening when the database query returns no rows.
+Actually, I think I see the issue now — I placed the /:id route at the very beginning of the router, before the static routes like /civic/needs and /civic/needs/nearby. Express matches routes in order, so the dynamic route might be catching requests meant for those static endpoints. I need to reorder these so the specific static routes come first, then the dynamic :id route after them. Let me also check what's actually in the database and verify the Mapbox token is set up correctly for the navigation tests. needs/nearby and /civic/needs/mine will never be reached because the dynamic :id route catches them first. I need to reorder these routes so the static sub-routes come before the parameterized one. I'm also wondering if Test 9 returned empty JSON because the civic need with id=1 doesn't exist in the database, or if the API server crashed when parsing the response. The innerJoin might be the culprit — if the civic need exists but has no matching government sponsor, the query returns an empty array, leaving row undefined and triggering the 404 response. But that should still return valid JSON, not an empty response body. Let me trace through what happens when the query returns nothing to see if there's a crash before the response is sent.
+For the Mapbox routing tests, the missing token is expected to cause 503 errors on actual route requests, but the error handling and parameter validation are working correctly. The civic navigation needs route reordering to prevent the /:id route from catching static paths, and I need to verify whether civic needs actually exist in the database and why Test 9 returned an empty response.
+Let me run through some targeted fixes and tests to resolve these issues.
+Tests 5-8 all pass (short-circuit, validation, auth guards). The 503 for Tests 1-4 is the correct "no MAPBOX_TOKEN" guard — let me verify that token and fix the civic needs/:id routing conflict (I inserted it before nearby/mine which overwrites those routes). Running diagnostics and fixes in parallel.
+
+Show less
+
+Ran a Python script
+
+Searched for "MAPBOX_TOKEN|VITE_MAPBOX"
+
+Searched for "router.(get|patch|post|…"
+Correcting route order
+
+Correcting route order
+The routing ordering is confirmed: GET /civic/needs/:id is at line 836, but GET /civic/needs/nearby is at line 925 and GET /civic/needs/mine is at line 1182. This means Express would try to match /civic/needs/nearby against :id first — parseInt("nearby") = NaN → returns 400.
+However, the test showed that /civic/needs/nearby returned [] (empty array) and /civic/needs/mine returned the proper error. That's unexpected — it means the routes ARE working correctly despite the ordering...
+Wait, let me re-read the route ordering:
+* POST /civic/needs at 784
+* GET /civic/needs/:id at 836 (my new route)
+* GET /civic/needs at 879 (list)
+* GET /civic/needs/nearby at 925 (should be caught by /:id)
+* GET /civic/needs/mine at 1182 (should be caught by /:id)
+But the test showed /civic/needs/nearby returned [] (not a 400 error), and /civic/needs/mine returned the proper response too. This is strange. Oh wait — Express matches routes in the order they're registered, so router.get("/civic/needs/nearby", ...) must be registered before the :id route...
+Actually, looking at the test results again, /civic/needs/nearby returned [] which suggests the database is empty, not that my :id route rejected it with an error. My :id route should return { error: "Invalid id" } when the id is NaN, but the test showed [] instead. Either the request is somehow reaching the /nearby route instead of my :id route, or something else is going on with how the routes are ordered. connection was reset or the server crashed. Looking at the route ordering, my new endpoint for getting a specific civic need by ID comes before the list endpoint, so Express should match it correctly. The route queries the database, finds nothing since the DB is empty, and returns a 404 with an error message. But I need to check if there's an unhandled exception in the route — maybe the promise rejection isn't being caught properly.
+Checking the route implementation...
+Validating the ID parameter and returning a 400 if it's invalid, then querying the database with a join to get the sponsor details. If no row exists, it returns a 404. If the coordinates haven't been geocoded yet, it resolves them asynchronously before returning the full row. the /civic/needs/nearby request is actually hitting the correct route handler, which means Express must be matching it before the :id route catches it. Let me trace through the route registration order to understand what's happening here. Ah, I think I see the issue — the API server is still running the old code since I haven't restarted it yet. The Vite dev server has hot module reloading, but the backend needs a manual restart to pick up my route changes. That's why /civic/needs/nearby returns an empty array (the old code working correctly) and /civic/needs/1 isn't matching my new :id route at all.
+Let me restart the API server to load the new routes, fix the route ordering so static paths like nearby come before the dynamic :id parameter, run the tests again, and then seed some test data. I realize the route ordering is actually critical here — Express matches routes strictly in the order they're registered, so GET /civic/needs/:id will intercept /civic/needs/nearby if it comes first. That's why my test returned an empty array; the server is still running the old code. I need to reorder the routes to put the static /nearby and /mine endpoints before the dynamic /:id route, restart the server, and then run the full test suite.
+The server hasn't reloaded to pick up my new route yet, which is why /nearby still returns [] (old code). Also confirmed: the route ordering bug exists — my GET /civic/needs/:id must go AFTER /nearby and /mine. Fixing the order and restarting the server, while seeding test civic needs data in parallel.
+
+Show less
+
+Opened civic.ts
+
+Processed text
+Reordering routes
+
+Reordering routes
+I need to fix the routing order issue in civic.ts — my GET /civic/needs/:id was inserted before /civic/needs/nearby and /civic/needs/mine, which means those static routes would be swallowed by the :id parameterized route once the server restarts. I need to move the :id route to be after all the static sub-routes.
+Let me:
+1. Move the GET /civic/needs/:id route to be AFTER /civic/needs/nearby and /civic/needs/mine
+2. Restart the API server
+3. Seed some civic needs test data
+4. Run all navigation tests
+Let me read the sections I need to understand the current routing order, then do the fix. Looking at the current routing order, I can see GET /civic/needs/:id is at line 836, which is way too early — it's before the list route, nearby, and mine routes. I need to move it to after the mine route at line 1182, positioning it right before the invoices route at line 1200. I can see the rest of the routes that need to be considered. The key is that GET /civic/needs/mine needs to come before the /:id route to avoid being caught by the parameter matcher. So I need to extract the GET /civic/needs/:id block from its current location and reinsert it after the /mine route, which will put it in the right position relative to all the other routes.
+The GET /civic/needs/:id route is placed before /nearby and /mine which will swallow those routes once the server reloads. Moving it to after /mine, then restarting the server and seeding test data simultaneously.
+
+Show less
+
+Opened civic.ts
+
+Opened civic.ts
+Reordering route definition
+
+Reordering route definition
+I need to fix the route ordering in civic.ts — move the GET /civic/needs/:id route to be AFTER /civic/needs/mine (line 1182) but BEFORE /civic/needs/:id/invoices (line 1200). Let me do this efficiently.
+The fix:
+1. Remove the GET /civic/needs/:id block from its current position (lines 835-877)
+2. Insert it after the GET /civic/needs/mine block (after line 1197)
+Let me do this edit now, restart the server, seed test data, and run all nav tests in parallel.
+Moving GET /civic/needs/:id to after /mine to fix Express route ordering, then restarting the server and seeding test data all in parallel.
+
+Show less
+
+Edited civic.ts
+
+Edited civic.ts
+Parallelizing verification, restarting, and seeding
+
+Parallelizing verification, restarting, and seeding
+Let me verify the typecheck, restart the API server, and seed test civic needs data all in parallel.
+Verifying typecheck and restarting the API server while seeding civic needs test data in parallel.
+
+Show less
+
+Checked for code errors
+
+Restarted workflow artifacts/api-server: API Server
+Seeding civic needs data
+
+Seeding civic needs data
+Both workflows are running. Now I need to:
+1. Seed civic needs test data (need a government sponsor account first)
+2. Run comprehensive navigation tests
+3. Test the new GET /civic/needs/:id endpoint
+Let me seed some test data by using the API to create a government sponsor application and approve it, then post civic needs with known lat/lng coordinates for testing.
+Actually, looking at the civic needs creation flow — we need an approved government sponsor account to post civic needs. Let me check if there are any existing gov sponsors in the DB, or if I need to create one through the admin panel.
+Let me run the tests in parallel — seed data via the DB directly, and run navigation validation tests simultaneously.
+Both services back up. Seeding civic needs test data via direct DB insertion and running navigation validation simultaneously.
+
+Show less
+
+Ran a Python script
+
+Searched for "router.(get|post|patch|…"
+Verifying route ordering
+
+Verifying route ordering
+The routing order is now fixed. Let me verify and continue with seeding test data and running the navigation tests.
+Route ordering now:
+1. POST /civic/needs (784)
+2. GET /civic/needs (834) - list
+3. GET /civic/needs/nearby (880) - specific static route
+4. PATCH /civic/needs/:id/claim (951)
+5. PATCH /civic/needs/:id/complete (1018)
+6. PATCH /civic/needs/:id/cancel (1114)
+7. GET /civic/needs/mine (1137) - specific static route
+8. GET /civic/needs/:id (1157) - parameterized - CORRECT POSITION
+9. GET /civic/needs/:id/invoices (1201)
+Now I need to address the database schema issue where the government_sponsors table is missing the contact_name column, then seed some civic needs with test coordinates and run the full E2E navigation tests across multiple locations to verify the endpoint works correctly.
+Route ordering is now correct. Fixing the sponsor seed with the right schema, then running all navigation tests in parallel.
+
+Show less
+
+Queried the database
+
+Ran a Python script
+
+$ TOKEN=$(curl -s -X POST http://localhost:8080/api/users/login \ -H "Content-Type: application/json" \ -d '{"email":"nav-test@niakofa.dev","password":"Test1234!"}' | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))") # Test 5 (arrived short-circuit) — doesn't need Mapbox echo "=== Test 5: Arrived short-circuit ===" curl -s "http://localhost:8080/api/navigation/route?start_lat=32.7555&start_lng=-97.3308&end_lat=32.7555080&end_lng=-97.3308&profile=driving" \ -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f' arrived={d.get(\"arrived\")} distance_m={d.get(\"distance_meters\")} duration_s={d.get(\"duration_seconds\")}')" echo "=== Test 6: Missing params ===" curl -s "http://localhost:8080/api/navigation/route?start_lat=32.7&start_lng=-97.3" \ -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json; print(' ', json.load(sys.stdin))" echo "=== Test 7: Out-of-range ===" curl -s "http://localhost:8080/api/navigation/route?start_lat=999&start_lng=-97.3&end_lat=32.7&end_lng=-96.8" \ -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json; print(' ', json.load(sys.stdin))" echo "=== Test 8: No auth ===" curl -s "http://localhost:8080/api/navigation/route?start_lat=32.7&start_lng=-97.3&end_lat=32.78&end_lng=-96.8" \ | python3 -c "import sys,json; print(' ', json.load(sys.stdin))" echo "=== Test: /civic/needs/nearby still works (not shadowed by :id) ===" curl -s "http://localhost:8080/api/civic/needs/nearby?lat=32.7&lng=-97.3&radius_miles=50" \ -H "Authorization: Bearer $TOKEN" | python3 -c "import sys; r=sys.stdin.read(); print(' response type:', type(r), 'starts:', r[:60])" echo "=== Test: /civic/needs/mine still works ===" curl -s "http://localhost:8080/api/civic/needs/mine" \ -H "Authorization: Bearer $TOKEN" | python3 -c "import sys; print(' ', sys.stdin.read()[:100])"
+
+
+Seeding test data
+
+Seeding test data
+All the navigation validation tests are passing perfectly:
+* Test 5: Arrived short-circuit ✅ (arrived=True, no Mapbox call)
+* Test 6: Missing params → 400 ✅
+* Test 7: Out-of-range coords → 400 ✅
+* Test 8: No auth → 401 ✅
+* /civic/needs/nearby still works ✅ (not shadowed by :id route)
+* /civic/needs/mine still works ✅ (proper error for non-sponsor user)
+Now I need to:
+1. Seed civic needs test data with known lat/lng coordinates
+2. Test the GET /civic/needs/:id endpoint
+3. Run navigation tests across multiple locations, but I'll need the Mapbox token for actual routing
+Let me seed the civic needs with direct coordinates first, then check if MAPBOX_TOKEN is available in the environment or if I need to handle that separately.
+From the secrets memory, MAPBOX_TOKEN should be critical, but looking at what's actually set in this Replit workspace, only SESSION_SECRET is showing up. The 503 error from the navigation route confirms it's not configured right now, so I'll need to either set it or skip those specific tests for now.
+Let me focus on what I can test: I'll seed some civic needs data with real coordinates and run through the navigation validation logic and the arrived short-circuit, then come back to the full end-to-end flow once I verify whether MAPBOX_TOKEN is available in the environment.
+All validation tests passing. /nearby and /mine no longer shadowed. Now seeding civic needs test data with real coordinates across 4+ cities, then testing the full navigation flow end-to-end.

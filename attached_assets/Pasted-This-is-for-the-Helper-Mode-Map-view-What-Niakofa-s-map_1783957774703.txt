@@ -1,0 +1,15 @@
+This is for the Helper Mode Map view
+
+
+
+What Niakofa's map already matches from that Uber screenshot:
+* One icon-only settings button, bottom-left (already built) — mirrors Uber's clean single-icon corner buttons exactly.
+* A collapsed bottom bar with a status line + affordances on either side — the "Nearby Requests" sheet already works this way.
+* Recede-on-expand behavior for the floating controls — Uber doesn't need this since its bottom sheet doesn't cover as much, but the underlying idea (controls get out of the way of what you're trying to see) is the same instinct.
+What was genuinely different, and what I fixed: Uber's right-side cluster has exactly two icons. Niakofa's had four — orientation, recenter, zoom-in, zoom-out. I removed the two zoom buttons. This wasn't just a style match: I checked, and the map already has pinch-to-zoom and double-tap-zoom fully enabled by default (nothing was disabling them) — the on-screen +/- buttons were a second, always-visible way to do something your fingers can already do directly on the map. That's exactly the kind of icon Uber's screenshot doesn't have, and removing it cuts the right-edge stack in half, from 4 icons down to 2.
+One thing I deliberately did not copy: Uber's recenter/heading arrow sits dead-center on the map, not on an edge. I kept Niakofa's on the right edge instead of moving it to center-screen, because Uber's map is mostly open road with a driver's own dot as the only real content in the middle — Niakofa's map center is where request pins, the best-match card, and the heatmap actually live, so putting a floating button there would cover the exact things a helper is trying to look at. Matching Uber's aesthetic is worth doing where it makes the app cleaner; it's not worth doing where the two apps are showing genuinely different things.
+Net effect: same two corner groups Uber uses, same icon-only styling already in place, one less redundant pair of buttons taking up permanent space on the exact screen you said should show as much map as possible.
+
+
+
+That's the redesigned map: one icon-only settings button bottom-left, just compass + recenter bottom-right (no zoom buttons — pinch-to-zoom handles that), a clean top row, and the request list collapsed to a single quiet line at the bottom. Everything floating over the map is now a single small icon, mirroring the Uber reference's economy of controls.

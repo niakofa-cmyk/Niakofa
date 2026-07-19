@@ -1,0 +1,24 @@
+--- Niakofa-main/artifacts/pay-it-forward/src/index.css	2026-07-07 22:13:22.000000000 +0000
++++ /home/claude/niakofa/Niakofa-main/artifacts/pay-it-forward/src/index.css	2026-07-07 23:21:03.238469446 +0000
+@@ -4,6 +4,21 @@
+ 
+ @custom-variant dark (&:is(.dark *));
+ 
++/*
++ * `pb-safe` / `pt-safe` were being used throughout the app (BottomNav,
++ * BottomSheet, etc.) but were never actually defined anywhere — Tailwind
++ * silently dropped them, so the bottom nav and bottom sheets got zero
++ * safe-area padding on notched/home-indicator devices. Defining them here
++ * makes every existing usage in the codebase start working, in addition to
++ * the fixed-modal overlap fix in profile.tsx.
++ */
++@utility pb-safe {
++  padding-bottom: env(safe-area-inset-bottom, 0px);
++}
++@utility pt-safe {
++  padding-top: env(safe-area-inset-top, 0px);
++}
++
+ @theme inline {
+   --color-background: hsl(var(--background));
+   --color-foreground: hsl(var(--foreground));

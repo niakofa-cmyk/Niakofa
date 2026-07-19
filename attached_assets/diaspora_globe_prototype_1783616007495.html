@@ -1,0 +1,167 @@
+<h2 class="sr-only">Interactive prototype of a rotating globe showing African diaspora hub cities connected by lineage arcs, with a story layer and language selector</h2>
+<div style="font-family: var(--font-sans);">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+      <button id="btn-hubs" style="font-size:13px; padding:6px 12px; background:var(--bg-accent); border-color:var(--border-accent); color:var(--text-accent);">Hubs</button>
+      <button id="btn-stories" style="font-size:13px; padding:6px 12px;">Griot stories</button>
+      <button id="btn-arcs" style="font-size:13px; padding:6px 12px;">Lineage arcs</button>
+    </div>
+    <select id="lang" style="font-size:13px; width:auto;">
+      <option>English</option>
+      <option>Español</option>
+      <option>Français</option>
+      <option>Português</option>
+      <option>Kreyòl</option>
+      <option>Kiswahili</option>
+      <option>Yorùbá</option>
+    </select>
+  </div>
+
+  <div style="position:relative; background:var(--surface-1); border-radius:12px; padding:1rem; overflow:hidden;">
+    <svg id="globe" viewBox="0 0 640 400" style="width:100%; height:auto; display:block;">
+      <ellipse cx="320" cy="200" rx="150" ry="150" fill="none" class="c-blue" stroke="currentColor" stroke-opacity="0.15"></ellipse>
+      <g id="rot"></g>
+    </svg>
+    <div style="display:flex; align-items:center; gap:10px; margin-top:4px;">
+      <i class="ti ti-rotate-2" style="font-size:16px; color:var(--text-muted);" aria-hidden="true"></i>
+      <input type="range" id="spin" min="0" max="359" value="20" step="1" style="flex:1;">
+      <span style="font-size:12px; color:var(--text-muted); min-width:34px;" id="spin-out">20°</span>
+    </div>
+  </div>
+
+  <div id="detail" style="margin-top:12px; background:var(--surface-2); border:0.5px solid var(--border); border-radius:12px; padding:1rem 1.25rem; display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+      <div>
+        <p style="font-weight:500; font-size:15px; margin:0;" id="d-name"></p>
+        <p style="font-size:13px; color:var(--text-secondary); margin:2px 0 0;" id="d-sub"></p>
+      </div>
+      <span id="d-badge" style="font-size:12px; padding:3px 10px; border-radius:var(--radius); white-space:nowrap;"></span>
+    </div>
+    <p style="font-size:13px; color:var(--text-secondary); margin:10px 0 0; line-height:1.6;" id="d-note"></p>
+    <button id="d-action" style="margin-top:10px; font-size:13px; padding:6px 12px;">Ask about this hub ↗</button>
+  </div>
+</div>
+
+<script>
+const hubs = [
+  {id:'ftw', name:'Fort Worth, TX', region:'African American · Home base', lat:32.7, lon:-97.3, tag:'home', note:'Your Niakofa community. 214 active helpers this week.'},
+  {id:'atl', name:'Atlanta, GA', region:'African American', lat:33.7, lon:-84.4, tag:'us', note:'Largest US diaspora hub by member count.'},
+  {id:'kin', name:'Kingston, Jamaica', region:'Afro-Caribbean', lat:18.0, lon:-76.8, tag:'carib', note:'Windrush Day events surface here each June.'},
+  {id:'sdo', name:'Santo Domingo, DR', region:'Afro-Latino', lat:18.5, lon:-69.9, tag:'latino', note:'Growing storytelling circle in Spanish and Kreyòl.'},
+  {id:'rio', name:'Salvador, Brazil', region:'Afro-Latino', lat:-12.9, lon:-38.5, tag:'latino', note:'Home to the largest Afro-Brazilian population.'},
+  {id:'lag', name:'Lagos, Nigeria', region:'Continental — Yorùbá', lat:6.5, lon:3.4, tag:'africa', note:'Source region for many Fort Worth Yorùbá families.'},
+  {id:'acc', name:'Accra, Ghana', region:'Continental — Akan', lat:5.6, lon:-0.2, tag:'africa', note:'Year of Return pilgrimage hub since 2019.'},
+  {id:'lon', name:'London, UK', region:'Afro-European', lat:51.5, lon:-0.1, tag:'europe', note:'Notting Hill Carnival community is very active here.'},
+];
+const tagColor = {home:'c-amber', us:'c-coral', carib:'c-teal', latino:'c-green', africa:'c-purple', europe:'c-blue'};
+
+function project(lat, lon, rotDeg){
+  const R = 150, cx=320, cy=200;
+  const lonR = (lon + rotDeg) * Math.PI/180;
+  const latR = lat * Math.PI/180;
+  const x = R * Math.cos(latR) * Math.sin(lonR);
+  const y = -R * Math.sin(latR);
+  const z = R * Math.cos(latR) * Math.cos(lonR);
+  return {x: cx + x, y: cy + y, visible: z > -20, z};
+}
+
+function greatCircleArc(p1, p2){
+  const mx = (p1.x + p2.x)/2, my = (p1.y + p2.y)/2;
+  const dx = p2.x - p1.x, dy = p2.y - p1.y;
+  const lift = Math.min(60, Math.hypot(dx,dy) * 0.28);
+  const nx = -dy, ny = dx;
+  const len = Math.hypot(nx, ny) || 1;
+  const cx = mx + (nx/len) * lift * (my > 200 ? -1 : 1) * -0.4;
+  const cy = my - Math.abs(lift) * 0.5;
+  return `M ${p1.x} ${p1.y} Q ${cx} ${cy} ${p2.x} ${p2.y}`;
+}
+
+let showStories = false, showArcs = true;
+const home = hubs[0];
+
+function render(){
+  const rot = +document.getElementById('spin').value;
+  document.getElementById('spin-out').textContent = rot + '°';
+  const g = document.getElementById('rot');
+  let svg = '';
+
+  for (let la = -60; la <= 60; la += 20){
+    let pts = [];
+    for (let lo = 0; lo <= 360; lo += 8){
+      const p = project(la, lo, rot);
+      if (p.visible) pts.push(p.x + ',' + p.y);
+    }
+    if (pts.length > 1) svg += `<polyline points="${pts.join(' ')}" fill="none" stroke="currentColor" stroke-opacity="0.08" class="c-blue"/>`;
+  }
+  for (let lo = -180; lo <= 180; lo += 30){
+    let pts = [];
+    for (let la = -85; la <= 85; la += 5){
+      const p = project(la, lo, rot);
+      if (p.visible) pts.push(p.x + ',' + p.y);
+    }
+    if (pts.length > 1) svg += `<polyline points="${pts.join(' ')}" fill="none" stroke="currentColor" stroke-opacity="0.08" class="c-blue"/>`;
+  }
+
+  if (showArcs){
+    hubs.filter(h => h.id !== 'ftw').forEach(h => {
+      const p1 = project(home.lat, home.lon, rot);
+      const p2 = project(h.lat, h.lon, rot);
+      if (p1.visible && p2.visible){
+        svg += `<path d="${greatCircleArc(p1,p2)}" fill="none" stroke="currentColor" stroke-width="1" stroke-opacity="0.35" class="c-amber"/>`;
+      }
+    });
+  }
+
+  hubs.forEach(h => {
+    const p = project(h.lat, h.lon, rot);
+    if (!p.visible) return;
+    const r = h.id === 'ftw' ? 7 : 5;
+    svg += `<g class="${tagColor[h.tag]}" style="cursor:pointer;" data-id="${h.id}">
+      <circle cx="${p.x}" cy="${p.y}" r="${r+5}" fill="currentColor" fill-opacity="0.15"/>
+      <circle cx="${p.x}" cy="${p.y}" r="${r}" fill="currentColor"/>
+    </g>`;
+    if (showStories){
+      svg += `<circle cx="${p.x+8}" cy="${p.y-8}" r="3" class="c-coral" fill="currentColor"/>`;
+    }
+  });
+
+  g.innerHTML = svg;
+  g.querySelectorAll('[data-id]').forEach(el => {
+    el.addEventListener('click', () => selectHub(el.getAttribute('data-id')));
+  });
+}
+
+function selectHub(id){
+  const h = hubs.find(x => x.id === id);
+  const d = document.getElementById('detail');
+  d.style.display = 'block';
+  document.getElementById('d-name').textContent = h.name;
+  document.getElementById('d-sub').textContent = h.region;
+  const badge = document.getElementById('d-badge');
+  badge.className = tagColor[h.tag];
+  badge.style.background = 'var(--bg-accent)';
+  badge.textContent = h.tag === 'home' ? 'Home base' : 'Diaspora hub';
+  document.getElementById('d-note').textContent = h.note;
+  document.getElementById('d-action').onclick = () => sendPrompt('Tell me more about building out the ' + h.name + ' diaspora hub, including relevant cultural events and language needs');
+}
+
+document.getElementById('spin').addEventListener('input', render);
+document.getElementById('btn-stories').addEventListener('click', (e) => {
+  showStories = !showStories;
+  e.target.style.background = showStories ? 'var(--bg-accent)' : '';
+  e.target.style.borderColor = showStories ? 'var(--border-accent)' : '';
+  e.target.style.color = showStories ? 'var(--text-accent)' : '';
+  render();
+});
+document.getElementById('btn-arcs').addEventListener('click', (e) => {
+  showArcs = !showArcs;
+  e.target.style.background = showArcs ? 'var(--bg-accent)' : '';
+  e.target.style.borderColor = showArcs ? 'var(--border-accent)' : '';
+  e.target.style.color = showArcs ? 'var(--text-accent)' : '';
+  render();
+});
+document.getElementById('lang').addEventListener('change', (e) => {
+  sendPrompt('Show me how the griot story layer and hub labels would read in ' + e.target.value);
+});
+render();
+</script>

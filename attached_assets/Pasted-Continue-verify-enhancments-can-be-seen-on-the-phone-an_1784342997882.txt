@@ -1,0 +1,97 @@
+Continue verify enhancments can be seen on the phone and new devices, then continue to Review end to end your work and Verify That you Finish and checkpoint this edition of improvements before your usage rate or session percentage runs out! Verify you finish before your session time runs out!Read Verify each and every issue. Ensure you address each and every issue. And Fix, improve and enhance the code if you can. Fix, Improve and enhance and Close each and every and all remaining Gaps end to end, and issues. Fix, Improve and enhance, address all remaining Bugs end to end. Push all improvements and enhancements to repo and verify landing. Verify and ensure that you push all improvements and enhancements to repo. Push all improvements and enhancements to repo and verify landing. Verify and ensure that you push all improvements and enhancements to repo. Push and independently confirmed via gitPull that GitHub's main now matches local main exactly. https://github.com/niakofa-cmyk/Niakofa GitHub is confirmed — origin/main, migrate to github script
+
+16 minutes ago
+Starting workflows and reviewing
+
+Starting workflows and reviewing
+Workflows stopped. Let me restart both and do the full audit simultaneously.
+
+Show less
+
+Restarted workflow artifacts/api-server: API Server
+
+Restarted workflow artifacts/pay-it-forward: web
+Parallel review execution
+
+Parallel review execution
+
+Refreshed logs
+
+Viewed commit history
+Verifying and auditing app
+
+Verifying and auditing app
+Vite is on port 18848. Taking a screenshot and doing a broad parallel audit of remaining areas simultaneously.
+
+Show less
+
+Took a screenshot
+
+Searched for "useAnimationPreference|…"
+
+Read files
+
+Searched for "animate-ping|animate-sp…"
+Checking animation suppression
+
+Checking animation suppression
+App renders cleanly. I can see animate-ping in LocationPuck.tsx and animate-pulse in HelperMarker.tsx — the GPS puck and helper markers are still ignoring Reduce Motion. Let me read them plus the parent SankofaBird selector, and take a mobile-sized screenshot in parallel.
+
+Show less
+
+Opened LocationPuck.tsx
+
+Opened HelperMarker.tsx
+
+Opened SankofaBird.tsx
+
+Took a screenshot
+Addressing animation accessibility
+
+Addressing animation accessibility
+App renders clean on desktop. The login, branding, and layout all look correct. Now fixing the two remaining Reduce Motion gaps — LocationPuck (animate-ping GPS rings) and HelperMarker (animate-pulse halo) — while reading RequestMarker to triage its pulse.
+
+Show less
+
+Opened RequestMarker.tsx
+
+Opened HelperMarker.tsx
+Addressing motion animation issues
+
+Addressing motion animation issues
+RequestMarker's emergency animate-ping is a functional urgency signal — I'll keep it visible but convert it to a static ring when suppressed instead of removing it. LocationPuck's rings and HelperMarker's halo are purely decorative — suppress both. Let me read RequestMarker's imports then apply all three fixes in parallel.
+
+Show less
+
+Opened RequestMarker.tsx
+Applying reduce motion
+
+Applying reduce motion
+Let me continue with the work. I was about to fix LocationPuck, HelperMarker, and RequestMarker to respect Reduce Motion preferences. Let me do all three edits simultaneously now that I have the context I need.
+For LocationPuck.tsx:
+* Import useIsAnimationSuppressed
+* When suppressed, replace animate-ping divs with a static opacity-15 dot
+For HelperMarker.tsx:
+* Import useIsAnimationSuppressed
+* When suppressed, remove animate-pulse class from the pulse ring
+For RequestMarker.tsx:
+* Import useIsAnimationSuppressed
+* When suppressed, convert the emergency ping animation to static rings while keeping the visual urgency signal
+* When suppressed, also remove the pulse animation from highlighted states
+Now I'll apply all three fixes together.
+Applying all three Reduce Motion fixes in parallel now.
+
+Show less
+
+Edited LocationPuck.tsx
+
+Edited HelperMarker.tsx
+
+Edited RequestMarker.tsx
+Adding animation suppression
+
+Adding animation suppression
+Continuing with the parallel edits. I've added the imports to the three files. Now I need to:
+1. Add useIsAnimationSuppressed hook call and use it in the render for LocationPuck.tsx
+2. Add useIsAnimationSuppressed hook call and use it in the render for HelperMarker.tsx
+3. Add useIsAnimationSuppressed hook call and use it in the render for RequestMarker.tsx

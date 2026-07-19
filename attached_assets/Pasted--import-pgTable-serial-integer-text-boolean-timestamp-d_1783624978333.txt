@@ -1,0 +1,3542 @@
+
+
+
+
+
+
+
+import { pgTable, serial, integer, text, boolean, timestamp, doublePrecision, pgEnum, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
+
+export const griotStoryStatusEnum = pgEnum("griot_story_status", [
+  "recorded",
+  "transcribing",
+  "pending_review",
+  "ready",
+  "published",
+]);
+
+export const griotStoryVisibilityEnum = pgEnum("griot_story_visibility", [
+  "public",
+  "diaspora_tag",
+  "private",
+]);
+
+export const griotStoriesTable = pgTable("griot_stories", {
+  id:               serial("id").primaryKey(),
+  author_id:        integer("author_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  title:            text("title"),
+  prompt:           text("prompt"),
+  audio_url:        text("audio_url"),
+  text_content:     text("text_content"),
+  original_language: text("original_language").notNull().default("en"),
+  diaspora_tag:     text("diaspora_tag"),
+  hub_location:     text("hub_location"),
+  lat:              doublePrecision("lat"),
+  lng:              doublePrecision("lng"),
+  status:           griotStoryStatusEnum("status").notNull().default("recorded"),
+  visibility:       griotStoryVisibilityEnum("visibility").notNull().default("public"),
+  release_at:       timestamp("release_at", { withTimezone: true }),
+  published_at:     timestamp("published_at", { withTimezone: true }),
+  duration_seconds: integer("duration_seconds"),
+  created_at:       timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updated_at:       timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("griot_stories_author_idx").on(t.author_id),
+  index("griot_stories_status_idx").on(t.status),
+  index("griot_stories_hub_idx").on(t.hub_location),
+]);
+
+export const storyTranslationsTable = pgTable("story_translations", {
+  id:                 serial("id").primaryKey(),
+  story_id:           integer("story_id").notNull().references(() => griotStoriesTable.id, { onDelete: "cascade" }),
+  language:           text("language").notNull(),
+  nia_draft_text:     text("nia_draft_text"),
+  edited_text:        text("edited_text"),
+  recorder_approved:  boolean("recorder_approved").notNull().default(false),
+  approved_at:        timestamp("approved_at", { withTimezone: true }),
+  was_edited:         boolean("was_edited").notNull().default(false),
+  created_at:         timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updated_at:         timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("story_translations_story_lang_uniq").on(t.story_id, t.language),
+  index("story_translations_story_idx").on(t.story_id),
+]);
+
+
+/**
+ * Diaspora Globe — African diaspora connection map + Griot story layer
+ *
+ * Uses Mapbox GL JS globe projection (already available via react-map-gl/mapbox).
+ * Hub cities are rendered as colored markers; great-circle arcs connect them
+ * back to Fort Worth (the home base). Griot stories layer overlays story pins.
+ */
+
+import React, { useState, useRef, useCallback, useEffect } from "react";
+import Map, { Marker, Source, Layer, type MapRef } from "react-map-gl/mapbox";
+import "mapbox-gl/dist/mapbox-gl.css";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Globe2, Mic, MicOff, BookOpen, X, ChevronLeft, ChevronDown,
+  ChevronUp, Check, Globe, MapPin, Clock, Languages, Play, Square,
+  Send, ArrowLeft, Lock, Eye, Calendar,
+} from "lucide-react";
+import { useAppContext } from "@/lib/AppContext";
+import { authHeaders } from "@/lib/auth";
+import { toast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
+
+// ── Diaspora hub definitions ───────────────────────────────────────────────
+
+type HubTag = "home" | "us" | "carib" | "latino" | "africa" | "europe";
+
+interface Hub {
+  id: string;
+  name: string;
+  region: string;
+  lat: number;
+  lng: number;
+  tag: HubTag;
+  note: string;
+  color: string;   // Tailwind text color
+  bg: string;      // Tailwind bg color
+}
+
+const HUBS: Hub[] = [
+  { id: "ftw",  name: "Fort Worth, TX",    region: "African American · Home base", lat: 32.75, lng: -97.33, tag: "home",   color: "text-amber-400",   bg: "bg-amber-400/20",   note: "Your Niakofa community. The heart of the network." },
+  { id: "atl",  name: "Atlanta, GA",       region: "African American",             lat: 33.75, lng: -84.39, tag: "us",     color: "text-rose-400",    bg: "bg-rose-400/20",    note: "Largest US diaspora hub by member count." },
+  { id: "kin",  name: "Kingston, Jamaica", region: "Afro-Caribbean",               lat: 17.99, lng: -76.79, tag: "carib",  color: "text-teal-400",    bg: "bg-teal-400/20",    note: "Windrush Day events surface here each June." },
+  { id: "sdo",  name: "Santo Domingo, DR", region: "Afro-Latino",                  lat: 18.48, lng: -69.90, tag: "latino", color: "text-green-400",   bg: "bg-green-400/20",   note: "Growing storytelling circle in Spanish and Kreyòl." },
+  { id: "sal",  name: "Salvador, Brazil",  region: "Afro-Latino",                  lat: -12.97, lng: -38.50, tag: "latino", color: "text-green-400",  bg: "bg-green-400/20",   note: "Home to the largest Afro-Brazilian population." },
+  { id: "lag",  name: "Lagos, Nigeria",    region: "Continental — Yorùbá",          lat: 6.52,  lng: 3.38,  tag: "africa", color: "text-purple-400",  bg: "bg-purple-400/20",  note: "Source region for many Fort Worth Yorùbá families." },
+  { id: "acc",  name: "Accra, Ghana",      region: "Continental — Akan",            lat: 5.56,  lng: -0.20, tag: "africa", color: "text-purple-400",  bg: "bg-purple-400/20",  note: "Year of Return pilgrimage hub since 2019." },
+  { id: "lon",  name: "London, UK",        region: "Afro-European",                lat: 51.51, lng: -0.13, tag: "europe", color: "text-blue-400",    bg: "bg-blue-400/20",    note: "Notting Hill Carnival community is very active here." },
+  { id: "par",  name: "Paris, France",     region: "Afro-European",                lat: 48.85, lng: 2.35,  tag: "europe", color: "text-blue-400",    bg: "bg-blue-400/20",    note: "One of Europe's largest West African diaspora communities." },
+  { id: "mon",  name: "Montréal, Canada",  region: "Afro-Caribbean · Haitian",     lat: 45.50, lng: -73.57, tag: "carib", color: "text-teal-400",   bg: "bg-teal-400/20",    note: "Largest Haitian community outside of Haiti." },
+];
+
+const TAG_LABEL: Record<HubTag, string> = {
+  home: "Home base", us: "US hub", carib: "Caribbean", latino: "Afro-Latino", africa: "Continental Africa", europe: "Afro-European"
+};
+
+// ── Story types ────────────────────────────────────────────────────────────
+
+interface GriotStory {
+  id: number;
+  author_id: number;
+  title: string | null;
+  text_content: string | null;
+  audio_url: string | null;
+  original_language: string;
+  diaspora_tag: string | null;
+  hub_location: string | null;
+  lat: number | null;
+  lng: number | null;
+  visibility: string;
+  duration_seconds: number | null;
+  published_at: string | null;
+}
+
+interface StoryTranslation {
+  id: number;
+  story_id: number;
+  language: string;
+  nia_draft_text: string | null;
+  edited_text: string | null;
+  recorder_approved: boolean;
+  approved_at: string | null;
+}
+
+// ── Globe layer config ─────────────────────────────────────────────────────
+
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string;
+const HOME_HUB = HUBS[0]; // Fort Worth
+
+// Arc GeoJSON between Fort Worth and each hub
+function buildArcs(hubs: Hub[]) {
+  const features = hubs
+    .filter(h => h.id !== "ftw")
+    .map(h => ({
+      type: "Feature" as const,
+      geometry: {
+        type: "LineString" as const,
+        coordinates: [
+          [HOME_HUB.lng, HOME_HUB.lat],
+          [h.lng, h.lat],
+        ],
+      },
+      properties: { hub: h.id },
+    }));
+  return { type: "FeatureCollection" as const, features };
+}
+
+const ARC_GEOJSON = buildArcs(HUBS);
+
+// ── Translation review sub-panel ──────────────────────────────────────────
+
+function TranslationReviewPanel({
+  storyId,
+  story,
+  stories,
+  translations,
+  onClose,
+  onRefresh,
+  onStoryChange,
+}: {
+  storyId: number;
+  story: GriotStory | null;
+  stories: GriotStory[];
+  translations: StoryTranslation[];
+  onClose: () => void;
+  onRefresh: (storyId?: number) => void;
+  onStoryChange: (storyId: number) => void;
+}) {
+  const [selected, setSelected] = useState<StoryTranslation | null>(null);
+  const [editedText, setEditedText] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const pendingCount = translations.filter(t => !t.recorder_approved).length;
+
+  const approve = async (lang: string, edited?: string) => {
+    setSaving(true);
+    try {
+      const body: Record<string, string> = {};
+      if (edited) body.edited_text = edited;
+      await fetch(`/api/griot/stories/${storyId}/translations/${lang}/approve`, {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      toast({ title: "Translation approved ✓" });
+      onRefresh();
+      setSelected(null);
+    } catch {
+      toast({ title: "Failed to approve", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const langLabel: Record<string, string> = {
+    pt: "Português", es: "Español", fr: "Français", ht: "Kreyòl",
+    sw: "Kiswahili", yo: "Yorùbá", ar: "العربية", de: "Deutsch",
+    zh: "中文",
+  };
+
+  if (selected) {
+    return (
+      <div className="space-y-3">
+        <button
+          onClick={() => setSelected(null)}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="w-3 h-3" /> Back to inbox
+        </button>
+
+        {story?.text_content && (
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
+              Your original · {(story.original_language ?? "en").toUpperCase()}
+            </p>
+            <div className="bg-muted/40 rounded-xl p-3 text-[13px] leading-relaxed font-serif italic text-foreground/80 max-h-32 overflow-y-auto">
+              &ldquo;{story.text_content}&rdquo;
+            </div>
+          </div>
+        )}
+
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1 flex items-center gap-2">
+            Nia&apos;s draft · {langLabel[selected.language] ?? selected.language}
+            <span className="normal-case tracking-normal bg-muted rounded-full px-2 py-0.5 text-[10px]">
+              Pending review
+            </span>
+          </p>
+          <textarea
+            value={editedText || selected.nia_draft_text || ""}
+            onChange={e => setEditedText(e.target.value)}
+            rows={5}
+            className="w-full bg-muted/40 border border-border rounded-xl p-3 text-[13px] leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-primary font-serif"
+            placeholder="Nia's translation will appear here..."
+            style={{ fontSize: "16px" }}
+          />
+          <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
+            <Globe className="w-3 h-3" /> Publishes publicly once you approve
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => approve(selected.language, editedText || undefined)}
+            disabled={saving}
+            className="flex-1 flex items-center justify-center gap-1.5 bg-green-500/10 border border-green-500/30 text-green-400 rounded-xl py-2.5 text-[13px] font-bold hover:bg-green-500/20 transition-colors disabled:opacity-50"
+          >
+            <Check className="w-4 h-4" /> Looks right — approve
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* Story selector — shown when recorder has more than one story */}
+      {stories.length > 1 && (
+        <div className="mb-2">
+          <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Story</p>
+          <select
+            value={storyId}
+            onChange={e => onStoryChange(Number(e.target.value))}
+            className="w-full bg-muted/40 border border-border rounded-xl px-3 py-2 text-[13px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            style={{ fontSize: "16px" }}
+          >
+            {stories.map(s => (
+              <option key={s.id} value={s.id}>{s.title ?? `Story #${s.id}`}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">
+        {translations.length === 0
+          ? "No translations yet — Nia is still processing your story."
+          : pendingCount > 0
+          ? `${pendingCount} translation${pendingCount !== 1 ? "s" : ""} waiting for your review`
+          : "All translations reviewed ✓"}
+      </p>
+      {translations.map(t => (
+        <button
+          key={t.id}
+          onClick={() => { setSelected(t); setEditedText(""); }}
+          className="w-full flex items-center justify-between p-3 bg-muted/40 border border-border rounded-xl text-left hover:bg-muted/60 transition-colors"
+        >
+          <div>
+            <p className="text-[13px] font-medium">{t.recorder_approved ? "✓ " : ""}{langLabel[t.language] ?? t.language}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {t.recorder_approved ? "Approved" : "Pending review"}
+            </p>
+          </div>
+          <span className={`text-[11px] px-2 py-0.5 rounded-full ${t.recorder_approved ? "bg-green-500/10 text-green-400" : "bg-amber-500/10 text-amber-400"}`}>
+            {t.recorder_approved ? "Done" : "Review"}
+          </span>
+        </button>
+      ))}
+      <button
+        onClick={onClose}
+        className="w-full text-[12px] text-muted-foreground hover:text-foreground py-2 transition-colors"
+      >
+        Close
+      </button>
+    </div>
+  );
+}
+
+// ── Griot story card ───────────────────────────────────────────────────────
+
+function GriotStoryCard({ story }: { story: GriotStory }) {
+  const [expanded, setExpanded] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const total = story.duration_seconds ?? 120;
+
+  const togglePlay = () => {
+    if (playing) {
+      clearInterval(timerRef.current!);
+      setPlaying(false);
+    } else {
+      setPlaying(true);
+      timerRef.current = setInterval(() => {
+        setElapsed(e => {
+          if (e >= total - 1) {
+            clearInterval(timerRef.current!);
+            setPlaying(false);
+            return 0;
+          }
+          return e + 1;
+        });
+      }, 1000);
+    }
+  };
+
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const LANG_NAMES: Record<string, string> = {
+    en: "English", es: "Español", fr: "Français", pt: "Português",
+    ht: "Kreyòl", sw: "Kiswahili", yo: "Yorùbá", ar: "العربية",
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <button
+        className="w-full text-left p-4 flex items-start gap-3"
+        onClick={() => setExpanded(e => !e)}
+      >
+        <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+          <BookOpen className="w-5 h-5 text-primary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-bold text-[14px] leading-snug line-clamp-2">
+            {story.title ?? "Untitled story"}
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5">
+            <MapPin className="w-3 h-3" />
+            {story.hub_location ?? "Diaspora community"}
+            <span className="ml-1 px-1.5 py-0 bg-muted rounded-full">
+              {LANG_NAMES[story.original_language] ?? story.original_language}
+            </span>
+          </p>
+        </div>
+        {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
+      </button>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 space-y-3">
+              {/* Audio player */}
+              {story.audio_url && (
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={togglePlay}
+                    className="w-9 h-9 rounded-full bg-primary flex items-center justify-center shrink-0"
+                    aria-label={playing ? "Pause" : "Play"}
+                  >
+                    {playing ? <Square className="w-4 h-4 text-primary-foreground fill-primary-foreground" /> : <Play className="w-4 h-4 text-primary-foreground fill-primary-foreground ml-0.5" />}
+                  </button>
+                  {/* Waveform bars */}
+                  <div className="flex-1 flex items-center gap-[2px] h-8">
+                    {Array.from({ length: 30 }, (_, i) => {
+                      const h = [8,14,10,20,16,24,12,18,9,15,22,11,19,13,17,10,21,14,8,16,12,20,9,18,15,11,23,13,17,10][i];
+                      const active = i < Math.floor((elapsed / total) * 30);
+                      return (
+                        <div
+                          key={i}
+                          className={`rounded-sm flex-shrink-0 transition-colors ${active ? "bg-primary" : "bg-border"}`}
+                          style={{ width: 3, height: h }}
+                        />
+                      );
+                    })}
+                  </div>
+                  <span className="text-[11px] text-muted-foreground font-mono min-w-[36px] text-right">
+                    {playing ? fmt(elapsed) : fmt(total)}
+                  </span>
+                </div>
+              )}
+
+              {/* Text content */}
+              {story.text_content && (
+                <p className="text-[13px] leading-relaxed text-foreground/80 font-serif italic">
+                  &ldquo;{story.text_content}&rdquo;
+                </p>
+              )}
+
+              {story.diaspora_tag && (
+                <p className="text-[11px] text-muted-foreground">
+                  Tagged: <span className="text-primary">{story.diaspora_tag}</span>
+                </p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Record new story panel ─────────────────────────────────────────────────
+
+type RecordMode = "voice" | "text";
+type RecordStep = "compose" | "review" | "release";
+const DAILY_PROMPTS = [
+  "What's a name, place, or memory you want the next generation to know?",
+  "Describe a tradition in your family that comes from your ancestors.",
+  "Tell us about a food, song, or practice tied to your heritage.",
+  "Who was an elder who shaped who you are?",
+  "What language or words do you wish the next generation would keep?",
+];
+
+function RecordStoryPanel({
+  selectedHub,
+  onClose,
+  onSaved,
+}: {
+  selectedHub: Hub | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [mode, setMode] = useState<RecordMode>("voice");
+  const [step, setStep] = useState<RecordStep>("compose");
+  const [recording, setRecording] = useState(false);
+  const [recSeconds, setRecSeconds] = useState(0);
+  const [textContent, setTextContent] = useState("");
+  const [title, setTitle] = useState("");
+  const [visibility, setVisibility] = useState<"public" | "diaspora_tag" | "private">("public");
+  const [saving, setSaving] = useState(false);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  const prompt = DAILY_PROMPTS[new Date().getDate() % DAILY_PROMPTS.length];
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+  const toggleRecording = async () => {
+    if (recording) {
+      // Stop recording — onstop will fire and collect chunks
+      mediaRecorderRef.current?.stop();
+      clearInterval(recTimerRef.current!);
+      setRecording(false);
+    } else {
+      // Request mic access and start MediaRecorder
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "audio/webm";
+        const mr = new MediaRecorder(stream, { mimeType });
+        audioChunksRef.current = [];
+        mr.ondataavailable = (e) => {
+          if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        };
+        mr.onstop = () => {
+          const blob = new Blob(audioChunksRef.current, { type: mimeType });
+          setAudioBlob(blob);
+          // Stop all tracks so the mic indicator goes away
+          stream.getTracks().forEach(t => t.stop());
+        };
+        mediaRecorderRef.current = mr;
+        mr.start(250); // collect in 250ms chunks
+        setRecording(true);
+        setRecSeconds(0);
+        recTimerRef.current = setInterval(() => setRecSeconds(s => s + 1), 1000);
+      } catch {
+        toast({ title: "Microphone access denied", description: "Allow microphone access in your browser settings.", variant: "destructive" });
+      }
+    }
+  };
+
+  const saveStory = async () => {
+    if (!textContent.trim() && recSeconds === 0 && !audioBlob) {
+      toast({ title: "Add a story first", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      // If we have a recorded audio blob, upload it via multipart form-data
+      // so the server can store it (audio_url). Text stories go as JSON.
+      let audioUrl: string | undefined;
+      if (audioBlob && recSeconds > 0) {
+        const form = new FormData();
+        form.append("audio", audioBlob, `story-${Date.now()}.webm`);
+        // We POST to a generic upload endpoint and get back a URL.
+        // If no upload endpoint exists yet, we still create the story with duration
+        // and the server marks it as recorded for Nia to process later.
+        try {
+          const uploadRes = await fetch("/api/griot/upload-audio", {
+            method: "POST",
+            headers: authHeaders(),
+            body: form,
+          });
+          if (uploadRes.ok) {
+            const uploadData = await uploadRes.json() as { url: string };
+            audioUrl = uploadData.url;
+          }
+        } catch {
+          // Audio upload failed — story saved without audio_url; Nia processes text only
+        }
+      }
+
+      const payload: Record<string, unknown> = {
+        title: title || prompt.slice(0, 80),
+        text_content: textContent || undefined,
+        audio_url: audioUrl,
+        visibility,
+        hub_location: selectedHub?.name,
+        lat: selectedHub?.lat,
+        lng: selectedHub?.lng,
+        diaspora_tag: selectedHub?.tag,
+        duration_seconds: recSeconds > 0 ? recSeconds : undefined,
+        original_language: "en",
+      };
+
+      const res = await fetch("/api/griot/stories", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error(await res.text());
+      toast({ title: "Story saved! Nia will transcribe and translate it shortly." });
+      onSaved();
+    } catch {
+      toast({ title: "Failed to save story", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (step === "release") {
+    return (
+      <div className="space-y-4">
+        <p className="text-[13px] text-muted-foreground leading-relaxed">
+          Your story is saved. Nia will transcribe and translate it automatically. 
+          You&apos;ll review the translations before it goes public.
+        </p>
+
+        <div className="space-y-2">
+          <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Visibility</p>
+          {(["public", "diaspora_tag", "private"] as const).map(v => (
+            <button
+              key={v}
+              onClick={() => setVisibility(v)}
+              className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${
+                visibility === v ? "border-primary bg-primary/10" : "border-border bg-muted/30 hover:bg-muted/50"
+              }`}
+            >
+              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${visibility === v ? "border-primary" : "border-muted-foreground"}`}>
+                {visibility === v && <div className="w-2 h-2 rounded-full bg-primary" />}
+              </div>
+              <div>
+                <p className="text-[13px] font-medium">
+                  {v === "public" ? "🌍 Public to globe" : v === "diaspora_tag" ? "🏷️ Diaspora tag only" : "🔒 Private (just me)"}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {v === "public" ? "Anyone on the Diaspora Globe can find it" :
+                   v === "diaspora_tag" ? "Only people with your heritage tag" :
+                   "Only you can see this story"}
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => setStep("compose")}
+            className="flex-1 py-2.5 rounded-xl border border-border text-[13px] font-bold text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Back
+          </button>
+          <button
+            onClick={saveStory}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-[13px] font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save story ↗"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Daily prompt */}
+      <div>
+        <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-1">Today&apos;s prompt</p>
+        <p className="text-[14px] font-bold leading-snug font-serif">{prompt}</p>
+      </div>
+
+      {/* Optional title */}
+      <input
+        type="text"
+        placeholder="Give your story a title (optional)"
+        value={title}
+        onChange={e => setTitle(e.target.value)}
+        className="w-full bg-muted/40 border border-border rounded-xl px-3 py-2 text-[14px] focus:outline-none focus:ring-1 focus:ring-primary"
+        style={{ fontSize: "16px" }}
+      />
+
+      {/* Mode toggle */}
+      <div className="flex gap-2">
+        {(["voice", "text"] as const).map(m => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border text-[13px] font-bold transition-all ${
+              mode === m ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {m === "voice" ? <Mic className="w-4 h-4" /> : <BookOpen className="w-4 h-4" />}
+            {m === "voice" ? "Voice" : "Text"}
+          </button>
+        ))}
+      </div>
+
+      {/* Voice recording */}
+      {mode === "voice" && (
+        <div className="flex flex-col items-center py-4 gap-3">
+          <button
+            onClick={toggleRecording}
+            aria-label={recording ? "Stop recording" : "Start recording"}
+            className={`w-16 h-16 rounded-full flex items-center justify-center transition-all ${
+              recording
+                ? "bg-red-500/20 border-2 border-red-500 animate-pulse"
+                : "bg-muted/40 border-2 border-border hover:border-primary"
+            }`}
+          >
+            {recording
+              ? <MicOff className="w-7 h-7 text-red-400" />
+              : <Mic className="w-7 h-7 text-primary" />}
+          </button>
+          <p className="text-[12px] text-muted-foreground">
+            {recording ? "Recording…" : "Tap to start"}
+          </p>
+          {(recording || recSeconds > 0) && (
+            <p className="text-xl font-mono text-primary">{fmt(recSeconds)}</p>
+          )}
+        </div>
+      )}
+
+      {/* Text input */}
+      {mode === "text" && (
+        <textarea
+          value={textContent}
+          onChange={e => setTextContent(e.target.value)}
+          rows={5}
+          placeholder="Write the story here, in whatever language feels most natural…"
+          className="w-full bg-muted/40 border border-border rounded-xl p-3 text-[14px] leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-primary font-serif"
+          style={{ fontSize: "16px" }}
+        />
+      )}
+
+      {/* Privacy note + next */}
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+          <Lock className="w-3 h-3" /> Public by default, opt-out available
+        </p>
+        <button
+          onClick={() => setStep("release")}
+          disabled={(mode === "text" && !textContent.trim()) || (mode === "voice" && recSeconds === 0)}
+          className="flex items-center gap-1 bg-primary text-primary-foreground rounded-xl px-4 py-2 text-[13px] font-bold hover:opacity-90 transition-opacity disabled:opacity-40"
+        >
+          Next <Send className="w-3 h-3" />
+        </button>
+      </div>
+
+      <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+        Nia will automatically transcribe and translate your story.
+        You&apos;ll review translations before they go live.
+      </p>
+    </div>
+  );
+}
+
+// ── Main globe view ────────────────────────────────────────────────────────
+
+type GlobeLayer = "hubs" | "stories" | "arcs";
+type GlobePanel = "hub" | "stories_feed" | "record" | "translations" | null;
+
+export default function GlobePage({ embedded }: { embedded?: boolean } = {}) {
+  const { currentUser } = useAppContext();
+  const [activeHub, setActiveHub] = useState<Hub | null>(null);
+  const [panel, setPanel] = useState<GlobePanel>(null);
+  const [enabledLayers, setEnabledLayers] = useState<Set<GlobeLayer>>(
+    new Set(["hubs", "arcs"])
+  );
+  const [stories, setStories] = useState<GriotStory[]>([]);
+  const [myStories, setMyStories] = useState<GriotStory[]>([]);
+  const [reviewingStory, setReviewingStory] = useState<GriotStory | null>(null);
+  const [myTranslations, setMyTranslations] = useState<StoryTranslation[]>([]);
+  const [reviewingStoryId, setReviewingStoryId] = useState<number | null>(null);
+  const [translationsLoading, setTranslationsLoading] = useState(false);
+  const [storiesLoading, setStoriesLoading] = useState(false);
+  const mapRef = useRef<MapRef | null>(null);
+
+  // Map initial view — centered on Atlantic (to show both Americas and Africa)
+  const [viewState, setViewState] = useState({
+    longitude: -30,
+    latitude: 20,
+    zoom: 1.5,
+    pitch: 15,
+    bearing: 0,
+  });
+
+  const toggleLayer = (layer: GlobeLayer) => {
+    setEnabledLayers(prev => {
+      const next = new Set(prev);
+      next.has(layer) ? next.delete(layer) : next.add(layer);
+      return next;
+    });
+  };
+
+  const fetchStories = useCallback(async (hubLocation?: string) => {
+    setStoriesLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: "20" });
+      if (hubLocation) params.set("hub", hubLocation);
+      const res = await fetch(`/api/griot/stories?${params}`);
+      if (res.ok) {
+        const data = await res.json() as { stories: GriotStory[] };
+        setStories(data.stories);
+      }
+    } finally {
+      setStoriesLoading(false);
+    }
+  }, []);
+
+  const fetchMyTranslations = useCallback(async (storyId?: number) => {
+    if (!currentUser) return;
+    setTranslationsLoading(true);
+    try {
+      // Fetch the caller's own stories first
+      const storiesRes = await fetch("/api/griot/stories/mine", {
+        headers: authHeaders(),
+      });
+      if (!storiesRes.ok) return;
+      const storiesData = await storiesRes.json() as { stories: GriotStory[] };
+      setMyStories(storiesData.stories);
+
+      // Pick which story to review
+      const targetId = storyId ?? storiesData.stories[0]?.id;
+      if (targetId) {
+        const targetStory = storiesData.stories.find(s => s.id === targetId) ?? null;
+        setReviewingStory(targetStory);
+        setReviewingStoryId(targetId);
+
+        const transRes = await fetch(`/api/griot/stories/${targetId}/translations`, {
+          headers: authHeaders(),
+        });
+        if (transRes.ok) {
+          const transData = await transRes.json() as { translations: StoryTranslation[] };
+          setMyTranslations(transData.translations);
+        }
+      } else {
+        // No stories yet
+        setReviewingStory(null);
+        setReviewingStoryId(null);
+        setMyTranslations([]);
+      }
+    } catch {
+      // silent
+    } finally {
+      setTranslationsLoading(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    fetchStories();
+  }, [fetchStories]);
+
+  const handleHubClick = (hub: Hub) => {
+    setActiveHub(hub);
+    setPanel("hub");
+    // Fly to the hub using react-map-gl's MapRef.getMap()
+    if (mapRef.current) {
+      mapRef.current.getMap().flyTo({
+        center: [hub.lng, hub.lat],
+        zoom: 4,
+        duration: 1500,
+        essential: true,
+      });
+    }
+  };
+
+  const openStoriesFeed = (hub?: Hub) => {
+    const h = hub ?? activeHub;
+    setPanel("stories_feed");
+    fetchStories(h?.name);
+  };
+
+  const HUB_COLORS: Record<HubTag, string> = {
+    home: "#f59e0b", us: "#f87171", carib: "#2dd4bf",
+    latino: "#4ade80", africa: "#c084fc", europe: "#60a5fa",
+  };
+
+  return (
+    <div className={`${embedded ? "" : "min-h-screen"} bg-background text-foreground flex flex-col`}>
+      {/* Header — hidden when embedded inside Community tab */}
+      {!embedded && <div className="sticky top-0 z-20 bg-card/95 backdrop-blur-xl border-b border-border p-4 pt-safe">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2 flex-1">
+            <Globe2 className="w-5 h-5 text-primary" /> Diaspora Globe
+          </h1>
+          {currentUser && (
+            <button
+              onClick={() => { setPanel("record"); setActiveHub(null); }}
+              className="flex items-center gap-1.5 bg-primary/10 border border-primary/30 text-primary rounded-xl px-3 py-1.5 text-[12px] font-bold hover:bg-primary/20 transition-colors"
+            >
+              <Mic className="w-3.5 h-3.5" /> Record story
+            </button>
+          )}
+        </div>
+
+        {/* Layer toggles */}
+        <div className="flex gap-2 mt-3 overflow-x-auto pb-1 -mx-4 px-4 scrollbar-none">
+          {(["hubs", "stories", "arcs"] as const).map(layer => (
+            <button
+              key={layer}
+              onClick={() => toggleLayer(layer)}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider border transition-all ${
+                enabledLayers.has(layer)
+                  ? "bg-primary/10 border-primary/40 text-primary"
+                  : "bg-muted/50 border-border text-muted-foreground"
+              }`}
+            >
+              {layer === "hubs" ? "🌍 Hubs" : layer === "stories" ? "📖 Stories" : "〰️ Arcs"}
+            </button>
+          ))}
+          <div className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-muted/30 rounded-full text-[11px] text-muted-foreground">
+            <Languages className="w-3 h-3" />
+            <span>7 languages</span>
+          </div>
+        </div>
+      </div>}
+
+      {/* Map */}
+      <div className="relative" style={{ height: "55vw", minHeight: 220, maxHeight: 380 }}>
+        <Map
+          ref={mapRef}
+          mapboxAccessToken={MAPBOX_TOKEN}
+          {...viewState}
+          onMove={e => setViewState(e.viewState)}
+          projection={{ name: "globe" }}
+          mapStyle="mapbox://styles/mapbox/dark-v11"
+          style={{ width: "100%", height: "100%" }}
+          fog={{
+            color: "rgb(10, 12, 20)",
+            "high-color": "rgb(30, 35, 60)",
+            "horizon-blend": 0.02,
+            "star-intensity": 0.4,
+          }}
+          scrollZoom={false}
+          doubleClickZoom={false}
+        >
+          {/* Great-circle arcs layer */}
+          {enabledLayers.has("arcs") && (
+            <Source id="arcs" type="geojson" data={ARC_GEOJSON}>
+              <Layer
+                id="arcs-line"
+                type="line"
+                paint={{
+                  "line-color": "#f59e0b",
+                  "line-width": 1,
+                  "line-opacity": 0.35,
+                  "line-dasharray": [2, 3],
+                }}
+              />
+            </Source>
+          )}
+
+          {/* Hub markers */}
+          {enabledLayers.has("hubs") && HUBS.map(hub => (
+            <Marker
+              key={hub.id}
+              longitude={hub.lng}
+              latitude={hub.lat}
+              anchor="center"
+              onClick={() => handleHubClick(hub)}
+            >
+              <button
+                aria-label={`${hub.name} — ${hub.region}`}
+                style={{ touchAction: "manipulation" }}
+                className="relative group"
+              >
+                {/* Pulse ring for home */}
+                {hub.id === "ftw" && (
+                  <span
+                    className="absolute inset-0 rounded-full animate-ping"
+                    style={{ background: HUB_COLORS[hub.tag], opacity: 0.3 }}
+                  />
+                )}
+                <span
+                  className="relative flex items-center justify-center rounded-full border-2 border-background shadow-lg transition-transform group-active:scale-90"
+                  style={{
+                    width: hub.id === "ftw" ? 18 : 13,
+                    height: hub.id === "ftw" ? 18 : 13,
+                    background: HUB_COLORS[hub.tag],
+                  }}
+                />
+                {/* Story dot overlay */}
+                {enabledLayers.has("stories") && (
+                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-400 rounded-full border border-background" />
+                )}
+              </button>
+            </Marker>
+          ))}
+        </Map>
+
+        {/* Zoom controls */}
+        <div className="absolute right-3 bottom-3 flex flex-col gap-1.5">
+          <button
+            onClick={() => setViewState(v => ({ ...v, zoom: Math.min(v.zoom + 0.8, 10) }))}
+            className="w-9 h-9 bg-card/90 border border-border rounded-xl flex items-center justify-center text-foreground hover:bg-card transition-colors shadow-lg"
+            aria-label="Zoom in"
+          >
+            <span className="text-lg font-bold leading-none">+</span>
+          </button>
+          <button
+            onClick={() => setViewState(v => ({ ...v, zoom: Math.max(v.zoom - 0.8, 1) }))}
+            className="w-9 h-9 bg-card/90 border border-border rounded-xl flex items-center justify-center text-foreground hover:bg-card transition-colors shadow-lg"
+            aria-label="Zoom out"
+          >
+            <span className="text-lg font-bold leading-none">−</span>
+          </button>
+          <button
+            onClick={() => setViewState({ longitude: -30, latitude: 20, zoom: 1.5, pitch: 15, bearing: 0 })}
+            className="w-9 h-9 bg-card/90 border border-border rounded-xl flex items-center justify-center text-foreground hover:bg-card transition-colors shadow-lg"
+            aria-label="Reset view"
+          >
+            <Globe2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="flex gap-3 px-4 py-2 overflow-x-auto scrollbar-none text-[10px] text-muted-foreground">
+        {Object.entries(HUB_COLORS).map(([tag, color]) => (
+          <div key={tag} className="flex items-center gap-1 shrink-0">
+            <span className="w-2 h-2 rounded-full" style={{ background: color }} />
+            <span>{TAG_LABEL[tag as HubTag]}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Panel area */}
+      <div className="flex-1 px-4 pb-28 space-y-3 max-w-lg mx-auto w-full">
+
+        {/* Hub detail card */}
+        <AnimatePresence mode="wait">
+          {panel === "hub" && activeHub && (
+            <motion.div
+              key="hub-detail"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 16 }}
+              className="bg-card border border-border rounded-2xl p-4"
+            >
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ background: HUB_COLORS[activeHub.tag] }}
+                    />
+                    <h2 className="font-black text-[16px]">{activeHub.name}</h2>
+                  </div>
+                  <p className="text-[12px] text-muted-foreground mt-0.5">{activeHub.region}</p>
+                </div>
+                <span className={`text-[11px] px-2 py-0.5 rounded-full ${activeHub.bg} ${activeHub.color} font-bold`}>
+                  {TAG_LABEL[activeHub.tag]}
+                </span>
+              </div>
+              <p className="text-[13px] text-foreground/80 leading-relaxed mb-3">{activeHub.note}</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => openStoriesFeed(activeHub)}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-muted/50 border border-border rounded-xl text-[13px] font-bold hover:bg-muted transition-colors"
+                >
+                  <BookOpen className="w-4 h-4" /> Stories ↗
+                </button>
+                <button
+                  onClick={() => setPanel("record")}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-primary/10 border border-primary/30 text-primary rounded-xl text-[13px] font-bold hover:bg-primary/20 transition-colors"
+                >
+                  <Mic className="w-4 h-4" /> Record here
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Stories feed */}
+          {panel === "stories_feed" && (
+            <motion.div
+              key="stories-feed"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 16 }}
+              className="space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <h2 className="font-black text-[15px] flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-primary" />
+                  Griot Stories
+                  {activeHub && <span className="text-muted-foreground font-normal text-[12px]">· {activeHub.name}</span>}
+                </h2>
+                <button
+                  onClick={() => setPanel(activeHub ? "hub" : null)}
+                  className="text-[12px] text-muted-foreground hover:text-foreground flex items-center gap-1"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" /> Back
+                </button>
+              </div>
+
+              {storiesLoading ? (
+                <div className="text-center py-8 text-muted-foreground text-[13px]">Loading stories…</div>
+              ) : stories.length === 0 ? (
+                <div className="text-center py-8 space-y-2">
+                  <p className="text-muted-foreground text-[13px]">No stories yet for this hub.</p>
+                  <button
+                    onClick={() => setPanel("record")}
+                    className="text-primary text-[13px] font-bold hover:underline"
+                  >
+                    Be the first to share one ↗
+                  </button>
+                </div>
+              ) : (
+                stories.map(s => <GriotStoryCard key={s.id} story={s} />)
+              )}
+            </motion.div>
+          )}
+
+          {/* Record story */}
+          {panel === "record" && (
+            <motion.div
+              key="record-panel"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 16 }}
+              className="bg-card border border-border rounded-2xl p-4"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-black text-[15px] flex items-center gap-2">
+                  <Mic className="w-4 h-4 text-primary" /> Record a story
+                </h2>
+                <button onClick={() => setPanel(activeHub ? "hub" : null)} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+              {currentUser ? (
+                <RecordStoryPanel
+                  selectedHub={activeHub}
+                  onClose={() => setPanel(activeHub ? "hub" : null)}
+                  onSaved={() => { fetchStories(); setPanel(activeHub ? "hub" : null); }}
+                />
+              ) : (
+                <p className="text-[13px] text-muted-foreground text-center py-4">
+                  Sign in to record and share a griot story.
+                </p>
+              )}
+            </motion.div>
+          )}
+
+          {/* Translation review — loading state */}
+          {panel === "translations" && translationsLoading && (
+            <motion.div
+              key="translations-loading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="bg-card border border-border rounded-2xl p-6 flex items-center justify-center gap-3"
+            >
+              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <span className="text-[13px] text-muted-foreground">Loading your stories…</span>
+            </motion.div>
+          )}
+
+          {panel === "translations" && !translationsLoading && myStories.length === 0 && (
+            <motion.div
+              key="translations-empty"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 16 }}
+              className="bg-card border border-border rounded-2xl p-6 text-center space-y-3"
+            >
+              <p className="text-[14px] font-bold">No stories yet</p>
+              <p className="text-[13px] text-muted-foreground">Record your first griot story and Nia will start translating it.</p>
+              <button
+                onClick={() => setPanel("record")}
+                className="text-primary text-[13px] font-bold hover:underline"
+              >Record a story ↗</button>
+            </motion.div>
+          )}
+
+          {/* Translation review */}
+          {panel === "translations" && !translationsLoading && reviewingStoryId && (
+            <motion.div
+              key="translations-panel"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 16 }}
+              className="bg-card border border-border rounded-2xl p-4"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-black text-[15px] flex items-center gap-2">
+                  <Languages className="w-4 h-4 text-primary" /> Review Translations
+                </h2>
+                <button onClick={() => setPanel(null)} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+              <TranslationReviewPanel
+                storyId={reviewingStoryId}
+                story={reviewingStory}
+                stories={myStories}
+                translations={myTranslations}
+                onClose={() => setPanel(null)}
+                onRefresh={(sid) => fetchMyTranslations(sid)}
+                onStoryChange={(sid) => fetchMyTranslations(sid)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Default: hub picker grid when no panel open */}
+        {panel === null && (
+          <div className="space-y-3">
+            <p className="text-[12px] text-muted-foreground uppercase tracking-widest font-bold">Diaspora Hubs</p>
+            <div className="grid grid-cols-2 gap-2">
+              {HUBS.map(hub => (
+                <button
+                  key={hub.id}
+                  onClick={() => handleHubClick(hub)}
+                  className="flex flex-col items-start gap-0.5 p-3 bg-card border border-border rounded-2xl hover:border-primary/40 transition-all text-left active:scale-95"
+                  style={{ touchAction: "manipulation" }}
+                >
+                  <div className="flex items-center gap-2 w-full">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: HUB_COLORS[hub.tag] }} />
+                    <span className="text-[12px] font-black leading-snug truncate">{hub.name}</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground pl-4">{hub.region}</span>
+                </button>
+              ))}
+            </div>
+
+            {currentUser && (
+              <button
+                onClick={() => { fetchMyTranslations(); setPanel("translations"); }}
+                className="w-full flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-2xl text-[13px] font-bold hover:bg-amber-500/20 transition-colors"
+              >
+                <BookOpen className="w-4 h-4" />
+                My stories &amp; translations
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+
+
+import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+import { useNiaStory } from "@/hooks/useNiaStory";
+import { authHeaders } from "@/lib/auth";
+import { useAppContext } from "@/lib/AppContext";
+import LiveLeaderboard from "@/components/LiveLeaderboard";
+import { Users, Heart, Star, Sparkles, Activity, DollarSign, Shield, PlusCircle, X, Send, ChevronDown, MapPin, Award, Wrench, Globe, Mic, MicOff, Loader2, CheckCircle2, RefreshCw, Clock, AlertTriangle } from "lucide-react";
+import { useGetRequests, useGetRequestStats, getGetRequestsQueryKey, getGetRequestStatsQueryKey, useGetPoolStats, getGetPoolStatsQueryKey, useGetPoolLedger, getGetPoolLedgerQueryKey, useContributeToPool } from "@workspace/api-client-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useWebSocket } from "@/lib/useWebSocket";
+import { useGetSponsorHistory } from "@/hooks/useGetSponsorHistory";
+import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
+const GlobePage = lazy(() => import("@/pages/globe"));
+
+interface GratitudePost {
+  id: number;
+  author_name: string;
+  author_avatar?: string | null;
+  helper_name?: string | null;
+  message: string;
+  request_title?: string | null;
+  likes: number;
+  created_at: string;
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  groceries: "🛒 Groceries",
+  transportation: "🚗 Transportation",
+  errands: "📦 Errands",
+  home_repair: "🔧 Home Repair",
+  medical: "🏥 Medical",
+  emergency: "🚨 Emergency",
+  moving_labor: "📦 Moving & Labor",
+  pet_care: "🐾 Pet Care",
+  childcare: "🧸 Childcare",
+  senior_care: "🧓 Senior Care",
+  yard_work: "🌿 Yard Work",
+  tutoring: "📚 Tutoring",
+  cleaning: "🧹 Cleaning",
+  meal_prep: "🍲 Meal Prep",
+  paperwork: "📄 Paperwork",
+  local_farm: "🌾 Local Farm",
+  food_pantry: "🥫 Food Pantry",
+  stock_shelves: "📦 Stock Shelves",
+  event_setup: "🎪 Event Setup",
+  delivery_run: "🚚 Delivery Run",
+  tech_support: "💻 Tech Support",
+  business_services: "💼 Business Services",
+  legal_aid: "⚖️ Legal Aid",
+  financial_coaching: "💰 Financial Help",
+  job_assistance: "👔 Job Search Help",
+  language_help: "🌐 Translation / Interpretation",
+  mental_health_peer: "💜 Peer Support",
+  technology_help: "📱 Technology Help",
+  other: "💙 Other",
+};
+
+type Tab = "feed" | "heroes" | "pool" | "county" | "impact" | "resources" | "circles" | "skills" | "globe";
+
+interface CommunityStats {
+  id: number;
+  name: string;
+  target_reserve_amount: number;
+  pool_balance: number;
+  pool_health_ratio: number;
+  pool_pct: number;
+  member_count: number;
+  total_contributed: number;
+  total_paid_to_helpers: number;
+  total_repaid: number;
+  helpers_paid: number;
+  sponsor_count: number;
+  inflow_30d: number;
+  outflow_30d: number;
+  created_at: string;
+}
+
+interface LedgerEntry {
+  id: number;
+  entry_type: string;
+  amount: number;
+  description: string | null;
+  created_at: string;
+}
+
+
+interface CivicResource {
+  id: number;
+  name: string;
+  category: string;
+  description: string | null;
+  address: string | null;
+  phone: string | null;
+  website: string | null;
+  hours: string | null;
+}
+
+const CIVIC_ICONS: Record<string, string> = {
+  shelter: "🏠", food: "🍱", medical: "💊", mental_health: "🧠",
+  legal: "⚖️", financial: "💰", employment: "💼", transportation: "🚌",
+  childcare: "👶", education: "📚", local_farm: "🍎", other: "💙",
+};
+
+interface SuggestionForm {
+  name: string;
+  category: string;
+  description: string;
+  phone: string;
+  website: string;
+}
+
+function CivicResourcesTab() {
+  const [resources, setResources] = useState<CivicResource[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [category, setCategory] = useState("all");
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [suggestionSent, setSuggestionSent] = useState(false);
+  const [suggestion, setSuggestion] = useState<SuggestionForm>({
+    name: "", category: "other", description: "", phone: "", website: "",
+  });
+
+  const submitSuggestion = async () => {
+    if (!suggestion.name.trim()) return;
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      await fetch(`${base}/api/civic/suggestions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(suggestion),
+      });
+    } catch {}
+    setSuggestionSent(true);
+    setTimeout(() => { setShowSuggest(false); setSuggestionSent(false); setSuggestion({ name: "", category: "other", description: "", phone: "", website: "" }); }, 2000);
+  };
+
+  useEffect(() => {
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/civic/resources`)
+      .then(r => r.json())
+      .then((data) => { if (Array.isArray(data)) setResources(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const categories = ["all", ...Array.from(new Set(resources.map(r => r.category)))];
+  const filtered = category === "all" ? resources : resources.filter(r => r.category === category);
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
+      <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  if (resources.length === 0) return (
+    <div className="text-center py-16 px-4">
+      <div className="text-4xl mb-3">🏛️</div>
+      <div className="font-bold text-sm text-muted-foreground">No resources listed yet</div>
+      <div className="text-xs text-muted-foreground/60 mt-1">Community resources will appear here</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Category filter — min 44px touch targets for mobile */}
+      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none -mx-4 px-4">
+        {categories.map(cat => (
+          <button
+            key={cat}
+            onClick={() => setCategory(cat)}
+            style={{ touchAction: "manipulation", minHeight: "44px" }}
+            className={`shrink-0 flex items-center justify-center text-xs font-bold px-4 py-2.5 rounded-2xl border transition-all capitalize active:scale-95 whitespace-nowrap ${
+              category === cat
+                ? "bg-primary text-primary-foreground border-primary shadow-[0_0_10px_rgba(0,212,255,0.25)]"
+                : "bg-muted/80 border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            {cat === "all" ? "All" : cat.replace(/_/g, " ")}
+          </button>
+        ))}
+      </div>
+
+      {filtered.map(r => (
+        <div key={r.id} className="bg-card border border-border rounded-2xl p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-lg shrink-0">
+              {CIVIC_ICONS[r.category] ?? "💙"}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-black text-sm">{r.name}</div>
+              {r.description && <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{r.description}</p>}
+              <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+                {r.address && <span className="text-[10px] text-muted-foreground">📍 {r.address}</span>}
+                {r.hours && <span className="text-[10px] text-muted-foreground">🕐 {r.hours}</span>}
+              </div>
+              <div className="flex gap-2 mt-3">
+                {r.phone && (
+                  <a href={`tel:${r.phone}`} className="flex items-center gap-1 text-xs text-primary font-bold bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-full active:scale-95 transition-all">
+                    📞 Call
+                  </a>
+                )}
+                {r.website && (
+                  <a href={r.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-muted-foreground font-bold bg-muted border border-border px-3 py-1.5 rounded-full active:scale-95 transition-all">
+                    🌐 Website
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Suggest a resource — §3.3.2 */}
+      <button
+        onClick={() => setShowSuggest(true)}
+        className="w-full flex items-center justify-center gap-2 p-3 border border-dashed border-primary/30 rounded-2xl text-sm text-primary/70 hover:text-primary hover:border-primary/60 transition-all"
+      >
+        <PlusCircle className="w-4 h-4" />
+        Know a resource we're missing? Suggest it
+      </button>
+
+      {/* Suggestion modal */}
+      <AnimatePresence>
+        {showSuggest && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 z-50 backdrop-blur-sm"
+              onClick={() => setShowSuggest(false)}
+            />
+            <motion.div
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 26, stiffness: 220 }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl max-h-[80dvh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-5 pb-3 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <PlusCircle className="w-5 h-5 text-primary" />
+                  <h3 className="font-black text-lg">Suggest a Resource</h3>
+                </div>
+                <button onClick={() => setShowSuggest(false)} className="p-2 rounded-full hover:bg-muted transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                {suggestionSent ? (
+                  <div className="text-center py-8">
+                    <div className="text-4xl mb-3">🙏</div>
+                    <div className="font-black text-lg">Thank you!</div>
+                    <p className="text-sm text-muted-foreground mt-1">Your suggestion will be reviewed by the Niakofa team.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Organization Name *</label>
+                      <input
+                        className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                        placeholder="e.g. Tarrant County Food Bank"
+                        value={suggestion.name}
+                        onChange={e => setSuggestion(s => ({ ...s, name: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Category</label>
+                      <select
+                        className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                        value={suggestion.category}
+                        onChange={e => setSuggestion(s => ({ ...s, category: e.target.value }))}
+                      >
+                        {Object.entries(CIVIC_ICONS).map(([k, icon]) => (
+                          <option key={k} value={k}>{icon} {k.replace(/_/g, " ")}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Description</label>
+                      <textarea
+                        className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors min-h-[80px] resize-none"
+                        placeholder="What services do they provide?"
+                        value={suggestion.description}
+                        onChange={e => setSuggestion(s => ({ ...s, description: e.target.value }))}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Phone</label>
+                        <input
+                          className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                          placeholder="(817) 555-0000"
+                          value={suggestion.phone}
+                          onChange={e => setSuggestion(s => ({ ...s, phone: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Website</label>
+                        <input
+                          className="mt-1.5 w-full bg-muted border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                          placeholder="https://..."
+                          value={suggestion.website}
+                          onChange={e => setSuggestion(s => ({ ...s, website: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={submitSuggestion}
+                      disabled={!suggestion.name.trim()}
+                      className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground font-bold py-3.5 rounded-xl disabled:opacity-40 transition-all active:scale-[0.98]"
+                    >
+                      <Send className="w-4 h-4" />
+                      Submit Suggestion
+                    </button>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+const FORT_WORTH_NEIGHBORHOODS = [
+  { id: "southside",       name: "Southside",         emoji: "🏘️", description: "Historic community south of downtown" },
+  { id: "near_southside",  name: "Near Southside",    emoji: "🌳", description: "Creative district near Magnolia Ave" },
+  { id: "polytechnic",     name: "Polytechnic",       emoji: "🎓", description: "Home of Texas Wesleyan University" },
+  { id: "riverside",       name: "Riverside",         emoji: "🌊", description: "Diverse neighborhood along the Trinity River" },
+  { id: "downtown",        name: "Downtown",          emoji: "🏙️", description: "Urban core of Fort Worth" },
+  { id: "east_fort_worth", name: "East Fort Worth",   emoji: "🌅", description: "Working-class roots and tight-knit community" },
+  { id: "north_fort_worth",name: "North Fort Worth",  emoji: "🤠", description: "Stockyards district and growing suburbs" },
+  { id: "stop_six",        name: "Stop Six",          emoji: "✊", description: "Resilient community with deep history" },
+  { id: "wedgwood",        name: "Wedgwood",          emoji: "🏡", description: "Family-friendly neighborhood in southwest FW" },
+];
+
+function NeighborhoodCirclesTab() {
+  const [selected, setSelected] = useState<string | null>(null);
+  const { currentUser } = useAppContext();
+  const userHood = currentUser?.neighborhood?.toLowerCase().replace(/\s+/g, "_");
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
+        <h3 className="font-black text-sm flex items-center gap-2 mb-1">
+          <MapPin className="w-4 h-4 text-primary" /> Neighborhood Circles
+        </h3>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Your circle connects you with neighbors. Requests from your circle appear first on the map. "My neighbors helped me" — that's the power of local belonging.
+        </p>
+      </div>
+
+      {FORT_WORTH_NEIGHBORHOODS.map(hood => {
+        const isYours = userHood === hood.id || currentUser?.neighborhood?.toLowerCase() === hood.name.toLowerCase();
+        const isOpen = selected === hood.id;
+        return (
+          <motion.div
+            key={hood.id}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`bg-card border rounded-2xl p-4 cursor-pointer transition-all ${
+              isYours ? "border-primary/60 bg-primary/5" : "border-border hover:border-primary/30"
+            }`}
+            onClick={() => setSelected(isOpen ? null : hood.id)}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl shrink-0">
+                {hood.emoji}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="font-black text-sm">{hood.name}</div>
+                  {isYours && (
+                    <span className="text-[10px] font-black text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
+                      Your Circle
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">{hood.description}</div>
+              </div>
+              <Users className="w-4 h-4 text-muted-foreground shrink-0" />
+            </div>
+          </motion.div>
+        );
+      })}
+
+      <div className="bg-card/50 border border-dashed border-border rounded-2xl p-4 text-center">
+        <Globe className="w-6 h-6 text-primary/40 mx-auto mb-2" />
+        <div className="text-sm font-bold text-muted-foreground">Circle chat &amp; leaderboards coming soon</div>
+        <div className="text-xs text-muted-foreground/60 mt-1">Your neighborhood, your impact, your leaderboard</div>
+      </div>
+    </div>
+  );
+}
+
+const SKILLS_DIRECTORY = [
+  { id: "bilingual",            label: "Bilingual",    emoji: "🌐", desc: "Spanish, Vietnamese, or other language support", cats: ["groceries","errands","medical"] },
+  { id: "truck_owner",          label: "Truck Owner",  emoji: "🚛", desc: "Move furniture, haul supplies, or transport large items", cats: ["transportation","errands","stock_shelves"] },
+  { id: "medical_background",   label: "Medical",      emoji: "🏥", desc: "Healthcare worker, EMT, nurse, or caregiver experience", cats: ["medical","emergency"] },
+  { id: "licensed_electrician", label: "Electrician",  emoji: "⚡", desc: "Safe assistance with electrical needs and home repairs", cats: ["home_repair"] },
+  { id: "licensed_plumber",     label: "Plumber",      emoji: "🔧", desc: "Pipe repairs, leak fixes, and plumbing emergencies", cats: ["home_repair"] },
+  { id: "carpenter",            label: "Carpenter",    emoji: "🪚", desc: "Woodworking, furniture assembly, and construction", cats: ["home_repair","event_setup"] },
+  { id: "tech_support",         label: "Tech Support", emoji: "💻", desc: "Computer setup, smartphone help, device troubleshooting", cats: ["tech_support"] },
+  { id: "cdl_driver",           label: "CDL Driver",   emoji: "🚚", desc: "Commercial driver's license — large vehicle expertise", cats: ["transportation","delivery_run"] },
+  { id: "food_handler",         label: "Food Handler", emoji: "🍽️", desc: "Safe food preparation and handling certified", cats: ["errands","event_setup"] },
+  { id: "childcare",            label: "Childcare",    emoji: "👶", desc: "Experienced in caring for children", cats: ["other"] },
+];
+
+const CAT_LABELS: Record<string, string> = {
+  groceries: "Groceries", transportation: "Transport", errands: "Errands",
+  home_repair: "Home Repair", medical: "Medical", emergency: "Emergency",
+  stock_shelves: "Stocking", event_setup: "Events", delivery_run: "Delivery",
+  tech_support: "Tech", other: "General",
+};
+
+function SkillsMarketplaceTab() {
+  const [active, setActive] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
+        <h3 className="font-black text-sm flex items-center gap-2 mb-1">
+          <Wrench className="w-4 h-4 text-primary" /> Skills Directory
+        </h3>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Helpers tag their specialties so requesters find the right person. Skill-matched requests get dispatch priority.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        {SKILLS_DIRECTORY.map(skill => (
+          <motion.button
+            key={skill.id}
+            onClick={() => setActive(active === skill.id ? null : skill.id)}
+            whileTap={{ scale: 0.97 }}
+            className={`text-left rounded-2xl border p-3 transition-all ${
+              active === skill.id ? "border-primary/60 bg-primary/10" : "border-border bg-card hover:border-primary/30"
+            }`}
+          >
+            <div className="text-2xl mb-1.5">{skill.emoji}</div>
+            <div className="font-black text-xs">{skill.label}</div>
+            <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{skill.desc}</div>
+          </motion.button>
+        ))}
+      </div>
+
+      <AnimatePresence>
+        {active && SKILLS_DIRECTORY.find(s => s.id === active) && (() => {
+          const skill = SKILLS_DIRECTORY.find(s => s.id === active)!;
+          return (
+            <motion.div
+              key={skill.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="bg-card border border-primary/30 rounded-2xl p-4"
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-2xl">{skill.emoji}</span>
+                <div>
+                  <div className="font-black text-sm">{skill.label}</div>
+                  <div className="text-xs text-muted-foreground">{skill.desc}</div>
+                </div>
+              </div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Helps With</div>
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {skill.cats.map(cat => (
+                  <span key={cat} className="text-[10px] font-bold bg-muted border border-border px-2 py-1 rounded-full">
+                    {CAT_LABELS[cat] ?? cat}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                Add this skill in Profile → Settings to get matched with relevant requests automatically.
+              </p>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+
+      <div className="bg-card/50 border border-dashed border-border rounded-2xl p-4 text-center">
+        <Award className="w-5 h-5 text-primary/40 mx-auto mb-2" />
+        <div className="text-sm font-bold text-muted-foreground">Add skills in Profile Settings</div>
+        <div className="text-xs text-muted-foreground/60 mt-1">Skill-matched helpers get priority in dispatch</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Phase 7c: NiaStoryModal ────────────────────────────────────────────────
+function NiaStoryModal({ onClose, onPosted }: { onClose: () => void; onPosted: (story: string) => void }) {
+  const { currentUser } = useAppContext();
+  const userName = currentUser?.name ?? "A neighbor";
+  const { state, story, error, transcript, startRecording, stopAndSubmit, reset } = useNiaStory(userName);
+
+  const [posting, setPosting] = React.useState(false);
+  const [postError, setPostError] = React.useState<string | null>(null);
+
+  const handlePost = async () => {
+    if (!story || !currentUser) return;
+    setPosting(true);
+    setPostError(null);
+    try {
+      const res = await fetch("/api/gratitude", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          message: story.story,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as any;
+        throw new Error(data.error ?? `Post failed (${res.status})`);
+      }
+      onPosted(story.story);
+      onClose();
+    } catch (err: any) {
+      setPostError(err.message ?? "Failed to post story. Try again.");
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-lg bg-background rounded-t-3xl p-6 pb-10 space-y-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-black text-base">Share Your Story</div>
+            <div className="text-xs text-muted-foreground">Nia will polish your words into a community post</div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-muted"><X className="w-4 h-4" /></button>
+        </div>
+
+        {state === "idle" && (
+          <button
+            onClick={startRecording}
+            className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground rounded-2xl py-4 font-bold text-sm"
+          >
+            <Mic className="w-5 h-5" /> Tap to Record
+          </button>
+        )}
+
+        {state === "recording" && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-primary font-semibold">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              Recording… speak naturally
+            </div>
+            {transcript && <p className="text-xs text-muted-foreground italic leading-relaxed">"{transcript}"</p>}
+            <button
+              onClick={() => stopAndSubmit()}
+              className="w-full flex items-center justify-center gap-2 bg-muted border border-border rounded-2xl py-3 font-bold text-sm"
+            >
+              <MicOff className="w-4 h-4" /> Done — let Nia craft it
+            </button>
+          </div>
+        )}
+
+        {state === "processing" && (
+          <div className="flex items-center justify-center gap-2 py-6 text-muted-foreground text-sm">
+            <Loader2 className="w-5 h-5 animate-spin" /> Nia is crafting your story…
+          </div>
+        )}
+
+        {state === "done" && story && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5 text-xs text-green-400 font-semibold">
+              <CheckCircle2 className="w-4 h-4" /> Nia crafted your story
+            </div>
+            <div className="bg-muted rounded-2xl p-4 text-sm leading-relaxed text-foreground">
+              "{story.story}"
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={reset}
+                className="flex-1 border border-border rounded-2xl py-3 text-sm font-bold text-muted-foreground hover:bg-muted"
+              >
+                Re-record
+              </button>
+              <button
+                onClick={handlePost}
+                disabled={posting}
+                className="flex-2 bg-primary text-primary-foreground rounded-2xl px-6 py-3 text-sm font-bold flex items-center gap-2 disabled:opacity-70"
+              >
+                {posting ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Posting…</>
+                ) : (
+                  <><Send className="w-4 h-4" /> Post to Community</>
+                )}
+              </button>
+              {postError && <p className="text-xs text-destructive mt-1">{postError}</p>}
+            </div>
+          </div>
+        )}
+
+        {state === "error" && (
+          <div className="space-y-3">
+            <div className="text-xs text-destructive">{error ?? "Something went wrong."}</div>
+            <button onClick={reset} className="w-full border border-border rounded-2xl py-3 text-sm font-bold">Try Again</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+export default function CommunityScreen() {
+  const [tab, setTab] = useState<Tab>("feed");
+  const [showNiaStory, setShowNiaStory] = useState(false);
+  const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
+  const [posts, setPosts] = useState<GratitudePost[]>([]);
+  const [postsLoading, setPostsLoading] = useState(true);
+
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
+  const { currentUser, niaEnabled } = useAppContext();
+  const sponsorHistory = useGetSponsorHistory(currentUser?.id ?? null);
+
+  // Load initial gratitude posts from API
+  useEffect(() => {
+    fetch(`${base}/api/gratitude`)
+      .then(r => r.json())
+      .then((data: unknown) => {
+        // Defensive: API should return GratitudePost[] but guard against shape drift
+        setPosts(Array.isArray(data) ? (data as GratitudePost[]) : []);
+        setPostsLoading(false);
+      })
+      .catch(() => setPostsLoading(false));
+  }, []);
+
+  // Real-time: new gratitude post arrives
+  useWebSocket("new_gratitude", (event) => {
+    const post = event.payload as GratitudePost;
+    setPosts(prev => [post, ...prev.slice(0, 49)]);
+  });
+
+  // Real-time: like count update
+  useWebSocket("gratitude_liked", (event) => {
+    const { id, likes } = event.payload as { id: number; likes: number };
+    setPosts(prev => prev.map(p => p.id === id ? { ...p, likes } : p));
+  });
+
+  const { data: rawRecentCompleted } = useGetRequests(
+    { status: "completed" },
+    { query: { queryKey: getGetRequestsQueryKey({ status: "completed" }), staleTime: 60000 } }
+  );
+  // Defensive: useGetRequests is typed HelpRequest[] but guard against API shape drift
+  const recentCompleted = Array.isArray(rawRecentCompleted) ? rawRecentCompleted : [];
+
+  const { data: stats } = useGetRequestStats({
+    query: { queryKey: getGetRequestStatsQueryKey(), staleTime: 30000 }
+  });
+
+  // ── County portal: default community stats + ledger ──────────────────────
+  const [countyData, setCountyData] = useState<CommunityStats | null>(null);
+  const [countyLedger, setCountyLedger] = useState<LedgerEntry[]>([]);
+  const [countyLoading, setCountyLoading] = useState(false);
+  const [countyLoaded, setCountyLoaded] = useState(false);
+
+  const loadCountyData = useCallback(async () => {
+    if (countyLoading) return;
+    setCountyLoading(true);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const res = await fetch(`${base}/api/communities/default`);
+      if (res.ok) {
+        const json = await res.json();
+        const community: CommunityStats | null = json.community ?? null;
+        setCountyData(community);
+        if (community) {
+          const lr = await fetch(`${base}/api/communities/${community.id}/ledger`);
+          if (lr.ok) {
+            const lj = await lr.json();
+            setCountyLedger(lj.entries ?? []);
+          }
+        }
+      }
+    } catch {
+      // swallow — county portal is non-critical
+    } finally {
+      setCountyLoading(false);
+      setCountyLoaded(true);
+    }
+  }, [countyLoading]);
+
+  useEffect(() => {
+    if (tab === "county" && !countyLoaded) {
+      loadCountyData();
+    }
+  }, [tab, countyLoaded, loadCountyData]);
+
+  // ── Community Pool: live stats, transparency ledger, contribute flow ──────
+  const { data: poolStats, refetch: refetchPoolStats } = useGetPoolStats({
+    query: { queryKey: getGetPoolStatsQueryKey(), staleTime: 15000 }
+  });
+  const { data: poolLedger, refetch: refetchPoolLedger } = useGetPoolLedger(
+    { limit: 15 },
+    { query: { queryKey: getGetPoolLedgerQueryKey({ limit: 15 }), staleTime: 15000 } }
+  );
+  const contributeMutation = useContributeToPool();
+  const [contributeAmount, setContributeAmount] = useState("");
+  const [contributeMsg, setContributeMsg] = useState<string | null>(null);
+  const [contributeSecret, setContributeSecret] = useState<string | null>(null);
+
+  // Anonymous donation state (no login required — POST /pool/donate)
+  const [anonAmount, setAnonAmount] = useState("");
+  const [anonMsg, setAnonMsg] = useState<string | null>(null);
+  const [anonSecret, setAnonSecret] = useState<string | null>(null);
+  const [anonPending, setAnonPending] = useState(false);
+
+  useWebSocket("pool_updated", () => { refetchPoolStats(); refetchPoolLedger(); });
+  useWebSocket("pool_front_paid", () => { refetchPoolStats(); refetchPoolLedger(); });
+  useWebSocket("pool_low_balance", () => { refetchPoolStats(); });
+
+  const submitContribution = async () => {
+    const amt = parseFloat(contributeAmount);
+    if (!Number.isFinite(amt) || amt < 1) {
+      setContributeMsg("Enter an amount of $1 or more.");
+      return;
+    }
+    setContributeMsg(null);
+    try {
+      const result = await contributeMutation.mutateAsync({ data: { amount: amt } });
+      if (result.mode === "stripe" && result.client_secret) {
+        setContributeSecret(result.client_secret);
+      } else {
+        setContributeMsg(`Thank you! ${amt.toFixed(2)} added to the pool. 💙`);
+        setContributeAmount("");
+        refetchPoolStats();
+        refetchPoolLedger();
+      }
+    } catch {
+      setContributeMsg("Contribution failed. Please try again.");
+    }
+  };
+
+  // Anonymous donation — no account required (POST /pool/donate, Stripe-only)
+  const submitAnonDonation = async () => {
+    const amt = parseFloat(anonAmount);
+    if (!Number.isFinite(amt) || amt < 1) {
+      setAnonMsg("Enter an amount of $1 or more.");
+      return;
+    }
+    setAnonMsg(null);
+    setAnonPending(true);
+    try {
+      const res = await fetch(`${base}/api/pool/donate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: amt }),
+      });
+      const data = await res.json() as { mode?: string; client_secret?: string; error?: string; setup?: string };
+      if (!res.ok) {
+        setAnonMsg(data.setup ?? data.error ?? "Donation failed. Please try again.");
+        return;
+      }
+      if (data.mode === "stripe" && data.client_secret) {
+        setAnonSecret(data.client_secret);
+      } else {
+        setAnonMsg("Thank you for supporting the community! 💙");
+        setAnonAmount("");
+      }
+    } catch {
+      setAnonMsg("Network error. Please try again.");
+    } finally {
+      setAnonPending(false);
+    }
+  };
+
+  const poolBalance = poolStats?.balance ?? 0;
+  const poolTarget = 500;
+  const poolPct = Math.min(Math.round((poolBalance / poolTarget) * 100), 100);
+
+  const toggleLike = (id: number) => {
+    setLikedPosts(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        // Fire-and-forget — WS event will broadcast the updated count.
+        // Auth header required now that /like enforces per-user identity
+        // (gratitude_likes unique index) instead of a raw open counter.
+        fetch(`${base}/api/gratitude/${id}/like`, { method: "POST", headers: { ...authHeaders() } }).catch(() => {});
+      }
+      return next;
+    });
+  };
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: "feed",      label: "💙 Feed" },
+    { key: "globe",     label: "🌍 Globe" },
+    { key: "circles",   label: "🏘️ Circles" },
+    { key: "skills",    label: "🔧 Skills" },
+    { key: "heroes",    label: "⭐ Heroes" },
+    { key: "pool",      label: "🏦 Pool" },
+    { key: "county",    label: "🏛️ County" },
+    { key: "impact",    label: "📊 Impact" },
+    { key: "resources", label: "📋 Resources" },
+  ];
+
+  return (
+    <div className="min-h-screen bg-background text-foreground flex flex-col pb-24">
+      <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-xl border-b border-border p-4 pt-safe">
+        <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2">
+          <Users className="w-5 h-5 text-primary" /> Community
+        </h1>
+        {/* Scrollable pill tab bar — min 44px touch targets for mobile */}
+        <div className="flex gap-2 mt-3 overflow-x-auto pb-2 scrollbar-none -mx-4 px-4">
+          {tabs.map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              style={{ touchAction: "manipulation", minHeight: "44px" }}
+              className={`shrink-0 flex items-center justify-center py-2.5 px-4 rounded-2xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-95 whitespace-nowrap ${
+                tab === t.key
+                  ? "bg-primary text-primary-foreground shadow-[0_0_14px_rgba(0,212,255,0.35)]"
+                  : "bg-muted/80 text-muted-foreground border border-border/60 hover:text-foreground hover:bg-muted"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex-1 p-4 max-w-lg mx-auto w-full">
+
+        {/* FEED TAB */}
+        {tab === "feed" && (
+          <div className="space-y-4">
+            {/* Personal Impact Banner */}
+            {currentUser && (
+              <div className="bg-gradient-to-br from-primary/15 to-background border border-primary/30 rounded-2xl p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                    <span className="text-lg font-black text-primary">
+                      {currentUser.name?.[0]?.toUpperCase() ?? "?"}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-black text-sm text-foreground">{currentUser.name}</p>
+                    <p className="text-xs text-muted-foreground">Your community impact</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-black text-primary">{currentUser.trust_score ?? 0}</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider">Trust</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-background/60 rounded-xl p-2.5 text-center">
+                    <div className="text-lg font-black text-green-400">{(currentUser as any).help_count ?? 0}</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Helped</div>
+                  </div>
+                  <div className="bg-background/60 rounded-xl p-2.5 text-center">
+                    <div className="text-lg font-black text-yellow-400">{(currentUser as any).request_count ?? 0}</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Received</div>
+                  </div>
+                  <div className="bg-background/60 rounded-xl p-2.5 text-center">
+                    <div className="text-lg font-black text-primary">{currentUser.is_helper ? "✓" : "—"}</div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Helper</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Full Circle — recently completed Pay-It-Forward tasks */}
+            {recentCompleted.filter(r => (r as any).payment_type === "pay_it_forward").length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">🔄</span>
+                  <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Full Circle Moments</h3>
+                </div>
+                <p className="text-[11px] text-muted-foreground/70 -mt-1">Neighbors who received help and paid it forward in return.</p>
+                {recentCompleted
+                  .filter(r => (r as any).payment_type === "pay_it_forward")
+                  .slice(0, 3)
+                  .map(req => (
+                    <motion.div
+                      key={`pif-${req.id}`}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="bg-gradient-to-r from-primary/10 via-primary/5 to-background border border-primary/25 rounded-xl p-3.5 flex items-center gap-3"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0 text-xl">🔄</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-bold truncate">{req.title}</div>
+                        <div className="text-[10px] text-primary/70 mt-0.5">
+                          {req.requester_name} received help
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                          {CATEGORY_LABELS[(req as any).category] ?? (req as any).category}
+                        </div>
+                      </div>
+                      <span className="shrink-0 text-[9px] font-black text-primary bg-primary/10 border border-primary/20 px-2 py-1 rounded-full">
+                        FULL CIRCLE
+                      </span>
+                    </motion.div>
+                  ))}
+              </div>
+            )}
+
+            {recentCompleted.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-2">Recent Help</h3>
+                {recentCompleted.slice(0, 3).map(req => (
+                  <div key={req.id} className="bg-card border border-border rounded-xl p-3.5 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
+                      <Heart className="w-4 h-4 text-green-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold truncate">{req.title}</div>
+                      <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <span className="text-green-400 font-bold">✓ Completed</span>
+                        <span>·</span>
+                        <span>{req.requester_name}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">Gratitude &amp; Stories</h3>
+              {niaEnabled === true ? (
+                <button
+                  onClick={() => setShowNiaStory(true)}
+                  className="flex items-center gap-1.5 text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-full transition-colors"
+                >
+                  <Mic className="w-3.5 h-3.5" /> Share with Nia
+                </button>
+              ) : niaEnabled === false ? (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground/50 px-3 py-1.5 rounded-full cursor-default select-none" title="Nia AI is currently resting — share your story in text below">
+                  <Mic className="w-3.5 h-3.5" /> Nia resting
+                </span>
+              ) : null /* loading — render nothing until we know */}
+            </div>
+            {postsLoading ? (
+              <div className="flex justify-center items-center py-10">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
+                >
+                  <Heart className="w-6 h-6 text-primary/40" />
+                </motion.div>
+              </div>
+            ) : posts.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 py-10 text-center">
+                <Heart className="w-8 h-8 text-muted-foreground/30" />
+                <div className="text-sm text-muted-foreground leading-relaxed">
+                  No gratitude posts yet.<br />
+                  <span className="text-primary font-semibold">Complete a request</span> to add the first one!
+                </div>
+              </div>
+            ) : (
+              <AnimatePresence initial={false}>
+                {posts.map(post => (
+                  <motion.div
+                    key={post.id}
+                    initial={{ opacity: 0, y: -16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="bg-card border border-border rounded-2xl p-4"
+                  >
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center border border-border shrink-0">
+                        <span className="text-sm font-black text-muted-foreground">
+                          {post.author_name[0]?.toUpperCase() ?? "?"}
+                        </span>
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm">{post.author_name}</div>
+                        <div className="text-[10px] text-muted-foreground flex items-center gap-1 flex-wrap">
+                          {post.helper_name && (
+                            <>
+                              <span className="text-primary font-medium">Thanks to {post.helper_name}</span>
+                              <span>·</span>
+                            </>
+                          )}
+                          <span>{new Date(post.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {post.request_title && (
+                      <div className="text-[10px] font-semibold text-primary/80 bg-primary/10 rounded-lg px-2 py-1 mb-2.5 inline-block max-w-full truncate">
+                        📋 {post.request_title}
+                      </div>
+                    )}
+                    <p className="text-sm text-muted-foreground leading-relaxed mb-3">"{post.message}"</p>
+                    <button
+                      onClick={() => toggleLike(post.id)}
+                      className={`flex items-center gap-1.5 text-xs transition-colors ${likedPosts.has(post.id) ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
+                    >
+                      <Heart className={`w-4 h-4 ${likedPosts.has(post.id) ? "fill-current" : ""}`} />
+                      {post.likes + (likedPosts.has(post.id) ? 1 : 0)}
+                    </button>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            )}
+          </div>
+        )}
+
+        {showNiaStory && (
+          <NiaStoryModal
+            onClose={() => setShowNiaStory(false)}
+            onPosted={(_story: string) => {
+              setShowNiaStory(false);
+              // Re-fetch gratitude posts so the new story appears immediately
+              const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+              fetch(`${base}/api/gratitude`)
+                .then(r => r.json())
+                .then((data: GratitudePost[]) => setPosts(data))
+                .catch(() => {});
+            }}
+          />
+        )}
+
+        {/* HEROES TAB — Live Leaderboard */}
+        {tab === "heroes" && <LiveLeaderboard />}
+
+        {/* PAY IT FORWARD POOL TAB */}
+        {tab === "pool" && (
+          <div className="space-y-4">
+
+            {/* Live pool balance card */}
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/40 rounded-3xl p-6 shadow-[0_0_40px_rgba(0,212,255,0.12)] flex flex-col items-center gap-3"
+            >
+              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                <DollarSign className="w-6 h-6 text-primary" />
+              </div>
+              <div className="text-center">
+                <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Community Pool</div>
+                <div className="text-4xl font-black text-primary mt-1">${poolBalance.toFixed(2)}</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Available now to pay helpers instantly
+                </div>
+                {poolStats && poolStats.guaranteed_minimum > 0 && (
+                  <div className="text-[10px] text-green-400 font-bold mt-1">
+                    ✓ ${poolStats.guaranteed_minimum.toFixed(2)} flat floor
+                    {(poolStats as typeof poolStats & { minimum_hourly_rate?: number }).minimum_hourly_rate
+                      ? ` · ${(poolStats as typeof poolStats & { minimum_hourly_rate?: number }).minimum_hourly_rate!.toFixed(0)}/hr for timed tasks`
+                      : ""} guaranteed per task
+                  </div>
+                )}
+              </div>
+
+              {/* Progress to milestone */}
+              <div className="w-full">
+                <div className="flex justify-between text-[10px] text-muted-foreground mb-1.5">
+                  <span>Community milestone</span>
+                  <span className="font-bold text-primary">{poolPct}% to ${poolTarget}</span>
+                </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${poolPct}%` }}
+                    transition={{ duration: 1, ease: "easeOut" }}
+                    className="h-full bg-gradient-to-r from-primary to-cyan-400 rounded-full"
+                  />
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-1.5 text-center">
+                  When we hit $500, we unlock the Emergency Assistance Reserve 🏦
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Pool flow — real numbers */}
+            <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+              <h3 className="font-black text-sm flex items-center gap-2">
+                <Shield className="w-4 h-4 text-primary" /> Where the Money Goes
+              </h3>
+              <div className="grid grid-cols-2 gap-2.5">
+                {[
+                  { label: "Contributed", value: poolStats?.total_contributed ?? 0, color: "text-green-400", desc: "From sponsors & neighbors" },
+                  { label: "Paid to Helpers", value: (poolStats?.total_fronted ?? 0) + (poolStats?.total_minimums ?? 0), color: "text-primary", desc: "Fronted instantly at completion" },
+                  { label: "Repaid to Pool", value: poolStats?.total_repaid ?? 0, color: "text-cyan-400", desc: "Requesters paying it forward" },
+                  { label: "Helpers Backed", value: poolStats?.helpers_fronted ?? 0, color: "text-yellow-400", desc: "Neighbors paid by the pool", isCount: true },
+                ].map((item) => (
+                  <div key={item.label} className="bg-background/60 rounded-xl px-3 py-2.5">
+                    <div className={`text-lg font-black ${item.color}`}>
+                      {item.isCount ? item.value : `$${Number(item.value).toFixed(2)}`}
+                    </div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider">{item.label}</div>
+                    <div className="text-[9px] text-muted-foreground mt-0.5">{item.desc}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                When a pay-it-forward request completes, the pool pays the helper immediately — no waiting on the requester. When the requester later pays it forward, the money flows back into the pool for the next neighbor.
+              </p>
+            </div>
+
+            {/* ── Pool Runway Dashboard ───────────────────────────────────── */}
+            {(() => {
+              const stats = poolStats as typeof poolStats & {
+                inflow_30d?: number;
+                outflow_30d?: number;
+                runway_days?: number | null;
+                outstanding_pif_total?: number;
+              };
+              const inflow   = stats?.inflow_30d   ?? 0;
+              const outflow  = stats?.outflow_30d  ?? 0;
+              const runway   = stats?.runway_days  ?? null;
+              const outstanding = stats?.outstanding_pif_total ?? 0;
+
+              const runwayColor =
+                runway === null            ? "text-green-400"
+                : runway > 30             ? "text-green-400"
+                : runway > 7              ? "text-yellow-400"
+                : "text-red-400";
+
+              const runwayLabel =
+                runway === null ? "∞ days"
+                : `${runway} day${runway === 1 ? "" : "s"}`;
+
+              const runwayBg =
+                runway === null            ? "border-green-500/30 bg-green-500/5"
+                : runway > 30             ? "border-green-500/30 bg-green-500/5"
+                : runway > 7              ? "border-yellow-500/30 bg-yellow-500/10"
+                : "border-red-500/30 bg-red-500/10";
+
+              return (
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  className={`border rounded-2xl p-4 space-y-3 ${runwayBg}`}
+                >
+                  <h3 className="font-black text-sm flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-primary" /> Pool Runway
+                  </h3>
+
+                  {/* Main runway stat */}
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <div className={`text-3xl font-black ${runwayColor}`}>{runwayLabel}</div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        {runway === null
+                          ? "No spending recorded yet — pool is fully sustained"
+                          : "estimated at current 30-day burn rate"}
+                      </div>
+                    </div>
+                    {runway !== null && runway <= 30 && (
+                      <div className="text-[10px] text-yellow-400 font-bold text-right max-w-[120px] leading-tight">
+                        {runway <= 7
+                          ? "⚠️ Pool needs contributions soon"
+                          : "📈 More contributions welcome"}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 30-day inflow vs outflow */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-background/50 rounded-xl px-3 py-2">
+                      <div className="text-sm font-black text-green-400">${inflow.toFixed(2)}</div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider">30-Day Inflow</div>
+                      <div className="text-[9px] text-muted-foreground">contributions + repayments</div>
+                    </div>
+                    <div className="bg-background/50 rounded-xl px-3 py-2">
+                      <div className="text-sm font-black text-primary">${outflow.toFixed(2)}</div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider">30-Day Outflow</div>
+                      <div className="text-[9px] text-muted-foreground">helpers paid + minimums</div>
+                    </div>
+                  </div>
+
+                  {/* Burn bar — visual ratio */}
+                  {outflow > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[9px] text-muted-foreground">
+                        <span>Inflow coverage</span>
+                        <span className={inflow >= outflow ? "text-green-400 font-bold" : "text-yellow-400 font-bold"}>
+                          {Math.round((inflow / outflow) * 100)}%
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min((inflow / outflow) * 100, 100)}%` }}
+                          transition={{ duration: 0.8, ease: "easeOut" }}
+                          className={`h-full rounded-full ${inflow >= outflow ? "bg-green-500" : "bg-yellow-500"}`}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Outstanding PIF pledges — expected future inflow */}
+                  {outstanding > 0 && (
+                    <div className="border-t border-border/40 pt-2.5 flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+                          Expected Repayments
+                        </div>
+                        <div className="text-[9px] text-muted-foreground leading-relaxed">
+                          Neighbors who received help and pledged to pay it forward — this money flows back when they're ready.
+                        </div>
+                      </div>
+                      <div className="text-sm font-black text-cyan-400 shrink-0">${outstanding.toFixed(2)}</div>
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })()}
+
+            {/* Pending minimums — pool ran dry, helpers waiting on backfill */}
+            {(poolStats?.pending_minimums_count ?? 0) > 0 && (
+              <div className="bg-yellow-500/10 border border-yellow-500/40 rounded-2xl p-4 space-y-1.5">
+                <h3 className="font-black text-sm flex items-center gap-2 text-yellow-400">
+                  <AlertTriangle className="w-4 h-4" /> Helpers Waiting on the Pool
+                </h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  The pool ran low, so <span className="font-bold text-foreground">{poolStats?.pending_minimums_count}</span> guaranteed
+                  thank-you payment{(poolStats?.pending_minimums_count ?? 0) === 1 ? "" : "s"} totaling{" "}
+                  <span className="font-bold text-yellow-400">${(poolStats?.pending_minimums_total ?? 0).toFixed(2)}</span> are queued.
+                  They're paid automatically — oldest first — as soon as the pool is replenished. Every contribution helps.
+                </p>
+              </div>
+            )}
+
+            {/* Transparency ledger */}
+            {poolLedger && Array.isArray(poolLedger.entries) && poolLedger.entries.length > 0 && (
+              <div className="bg-card border border-border rounded-2xl p-4 space-y-2.5">
+                <h3 className="font-black text-sm flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-primary" /> Pool Activity
+                </h3>
+                {poolLedger.entries.map((entry) => {
+                  const meta: Record<string, { icon: string; label: string }> = {
+                    sponsor_contribution: { icon: "💛", label: entry.display_name ? `${entry.display_name} funded the pool` : "Pool contribution" },
+                    helper_front: { icon: "⚡", label: "Helper paid instantly at completion" },
+                    pledge_repayment: { icon: "🔄", label: "Pledge repaid — pool replenished" },
+                    guaranteed_minimum: { icon: "💙", label: "Guaranteed minimum paid to a helper" },
+                    adjustment: { icon: "🛠️", label: "Pool adjustment" },
+                  };
+                  const m = meta[entry.entry_type] ?? { icon: "💙", label: "Pool activity" };
+                  const positive = entry.amount >= 0;
+                  return (
+                    <div key={entry.id} className="flex items-center gap-2.5 bg-background/60 rounded-xl px-3 py-2">
+                      <div className="text-base shrink-0">{m.icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold truncate">{m.label}</div>
+                        <div className="text-[9px] text-muted-foreground">
+                          {new Date(entry.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        </div>
+                      </div>
+                      <div className={`text-xs font-black shrink-0 ${positive ? "text-green-400" : "text-primary"}`}>
+                        {positive ? "+" : "−"}${Math.abs(entry.amount).toFixed(2)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* How it works */}
+            <div className="bg-card/50 border border-border/50 rounded-2xl p-4">
+              <h3 className="font-bold text-sm mb-3 flex items-center gap-2">
+                <Heart className="w-4 h-4 text-primary" /> How Niakofa Works
+              </h3>
+              <div className="space-y-3">
+                {[
+                  { step: "1", title: "Get help now", desc: "When you need help, a neighbor shows up — no payment required upfront." },
+                  { step: "2", title: "Pay when you're able", desc: "When life gets better, contribute back any amount — even a dollar keeps the cycle going for the next neighbor who needs help. No deadline, no pressure." },
+                  { step: "3", title: "Strengthen the pool", desc: "Every dollar flows into the community reserve, funding future helpers." },
+                ].map(item => (
+                  <div key={item.step} className="flex gap-3">
+                    <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="text-[10px] font-black text-primary">{item.step}</span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold">{item.title}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{item.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Sponsor Portal — contribution history */}
+            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-yellow-400 shrink-0" />
+                  <div className="font-bold text-sm text-yellow-400">Sponsor a Neighbor</div>
+                </div>
+                {sponsorHistory.loading && <RefreshCw className="w-3 h-3 text-yellow-400/60 animate-spin" />}
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Businesses and individuals can sponsor the community pool directly. Your contributions go directly to helpers serving Fort Worth neighbors.
+              </p>
+
+              {/* Contribute to the pool */}
+              {currentUser && (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <DollarSign className="w-4 h-4 text-yellow-400/60 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min={1}
+                        max={10000}
+                        placeholder="Amount"
+                        value={contributeAmount}
+                        onChange={(e) => setContributeAmount(e.target.value)}
+                        className="w-full bg-background/60 border border-yellow-500/30 rounded-xl pl-9 pr-3 py-2.5 text-base font-bold focus:outline-none focus:border-yellow-400/60"
+                      />
+                    </div>
+                    <button
+                      onClick={submitContribution}
+                      disabled={contributeMutation.isPending}
+                      className="shrink-0 bg-yellow-400 text-black font-black text-xs uppercase tracking-wider rounded-xl px-4 py-2.5 active:scale-95 transition-transform disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      {contributeMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Heart className="w-3.5 h-3.5" />}
+                      Fund the Pool
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5">
+                    {[5, 10, 25, 50].map((amt) => (
+                      <button
+                        key={amt}
+                        onClick={() => setContributeAmount(String(amt))}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                          contributeAmount === String(amt)
+                            ? "bg-yellow-400/20 border-yellow-400/60 text-yellow-400"
+                            : "bg-background/40 border-border text-muted-foreground"
+                        }`}
+                      >
+                        ${amt}
+                      </button>
+                    ))}
+                  </div>
+                  {contributeMsg && (
+                    <div className={`text-xs rounded-xl px-3 py-2 ${
+                      contributeMsg.startsWith("Thank")
+                        ? "text-green-400 bg-green-500/10"
+                        : "text-destructive/80 bg-destructive/10"
+                    }`}>
+                      {contributeMsg}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Contribution history */}
+              {currentUser ? (
+                <>
+                  {sponsorHistory.error && (
+                    <div className="text-xs text-destructive/80 bg-destructive/10 rounded-xl px-3 py-2">
+                      Could not load history: {sponsorHistory.error}
+                    </div>
+                  )}
+                  {!sponsorHistory.loading && sponsorHistory.data.length === 0 && !sponsorHistory.error && (
+                    <div className="text-center py-4">
+                      <DollarSign className="w-7 h-7 mx-auto mb-1.5 text-yellow-400/30" />
+                      <p className="text-xs text-muted-foreground">No contributions yet</p>
+                      <p className="text-[10px] text-muted-foreground/60 mt-0.5">Pay-it-forward requests appear here</p>
+                    </div>
+                  )}
+                  {sponsorHistory.data.length > 0 && (
+                    <div className="space-y-2 pt-1">
+                      <div className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Your Contributions</div>
+                      {sponsorHistory.data.slice(0, 5).map(entry => (
+                        <div key={entry.id} className="flex items-center gap-2.5 bg-background/60 rounded-xl px-3 py-2">
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                            entry.state === "completed" ? "bg-green-500/10" : "bg-yellow-500/10"
+                          }`}>
+                            {entry.state === "completed"
+                              ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
+                              : <Clock className="w-3.5 h-3.5 text-yellow-400" />
+                            }
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-bold truncate">
+                              {entry.request_title ?? "Community contribution"}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground capitalize">
+                              {entry.request_category?.replace(/_/g, " ") ?? entry.payment_type?.replace(/_/g, " ")}
+                              {entry.sponsored_by && ` · via ${entry.sponsored_by}`}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className="text-xs font-black text-yellow-400">${entry.amount.toFixed(2)}</div>
+                            <div className="text-[9px] text-muted-foreground">
+                              {new Date(entry.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {sponsorHistory.data.length > 5 && (
+                        <div className="text-center text-[10px] text-muted-foreground pt-1">
+                          +{sponsorHistory.data.length - 5} more contributions
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-xs text-muted-foreground text-center py-2">
+                  Sign in to view your contribution history
+                </div>
+              )}
+            </div>
+
+            {/* Anonymous public donation — no account required */}
+            {!currentUser && isStripeConfigured() && (
+              <div className="bg-primary/10 border border-primary/30 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Heart className="w-4 h-4 text-primary shrink-0" />
+                  <div className="font-bold text-sm text-primary">Support the Community</div>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  You don't need an account to fund the pool. Every dollar goes directly to helpers serving Tarrant County neighbors.
+                </p>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <DollarSign className="w-4 h-4 text-primary/50 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={1}
+                      max={10000}
+                      placeholder="Amount"
+                      value={anonAmount}
+                      onChange={(e) => setAnonAmount(e.target.value)}
+                      className="w-full bg-background/60 border border-primary/30 rounded-xl pl-9 pr-3 py-2.5 text-base font-bold focus:outline-none focus:border-primary/60"
+                    />
+                  </div>
+                  <button
+                    onClick={submitAnonDonation}
+                    disabled={anonPending}
+                    className="shrink-0 bg-primary text-primary-foreground font-black text-xs uppercase tracking-wider rounded-xl px-4 py-2.5 active:scale-95 transition-transform disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {anonPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Heart className="w-3.5 h-3.5" />}
+                    Donate
+                  </button>
+                </div>
+                <div className="flex gap-1.5">
+                  {[5, 10, 25, 50].map((amt) => (
+                    <button
+                      key={amt}
+                      onClick={() => setAnonAmount(String(amt))}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                        anonAmount === String(amt)
+                          ? "bg-primary/20 border-primary/60 text-primary"
+                          : "bg-background/40 border-border text-muted-foreground"
+                      }`}
+                    >
+                      ${amt}
+                    </button>
+                  ))}
+                </div>
+                {anonMsg && (
+                  <div className={`text-xs rounded-xl px-3 py-2 ${
+                    anonMsg.startsWith("Thank")
+                      ? "text-green-400 bg-green-500/10"
+                      : "text-destructive/80 bg-destructive/10"
+                  }`}>
+                    {anonMsg}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Stripe payment sheet for pool contributions */}
+            {contributeSecret && (
+              <StripePaymentModal
+                clientSecret={contributeSecret}
+                amount={parseFloat(contributeAmount) || 0}
+                description="Community Pool contribution"
+                onSuccess={() => {
+                  setContributeSecret(null);
+                  setContributeMsg("Thank you! Your contribution is on its way to the pool. 💙");
+                  setContributeAmount("");
+                  setTimeout(() => { refetchPoolStats(); refetchPoolLedger(); }, 2500);
+                }}
+                onSkip={() => setContributeSecret(null)}
+                onClose={() => setContributeSecret(null)}
+              />
+            )}
+
+            {/* Stripe payment sheet for anonymous donations */}
+            {anonSecret && (
+              <StripePaymentModal
+                clientSecret={anonSecret}
+                amount={parseFloat(anonAmount) || 0}
+                description="Anonymous Community Pool donation — your gift goes directly to helpers serving Tarrant County neighbors."
+                onSuccess={() => {
+                  setAnonSecret(null);
+                  setAnonMsg("Thank you for supporting the community! Your donation is on its way to the pool. 💙");
+                  setAnonAmount("");
+                  setTimeout(() => { refetchPoolStats(); refetchPoolLedger(); }, 2500);
+                }}
+                onSkip={() => setAnonSecret(null)}
+                onClose={() => setAnonSecret(null)}
+              />
+            )}
+          </div>
+        )}
+
+        {/* IMPACT TAB — real stats from /api/requests/stats */}
+        {tab === "resources" && (
+          <CivicResourcesTab />
+        )}
+
+        {tab === "impact" && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <Heart className="w-5 h-5 text-primary" />
+                </div>
+                <div className="text-3xl font-black text-primary">
+                  {stats ? stats.total_completed.toLocaleString() : "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Requests Fulfilled</div>
+              </div>
+              <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <Users className="w-5 h-5 text-green-400" />
+                </div>
+                <div className="text-3xl font-black text-green-400">
+                  {stats ? stats.total_helpers_online : "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Active Helpers</div>
+              </div>
+              <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <Activity className="w-5 h-5 text-yellow-400" />
+                </div>
+                <div className="text-3xl font-black text-yellow-400">
+                  {stats ? stats.total_open : "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Open Requests</div>
+              </div>
+              <div className="bg-card border border-border rounded-2xl p-5 flex flex-col items-center text-center">
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
+                  <DollarSign className="w-5 h-5 text-primary" />
+                </div>
+                <div className="text-3xl font-black text-primary">
+                  ${stats?.total_pledge_volume?.toFixed(0) ?? "0"}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">Paid Forward</div>
+              </div>
+            </div>
+
+            {stats && stats.requests_by_category.length > 0 && (
+              <div className="bg-card border border-border rounded-2xl p-4">
+                <h3 className="font-black text-sm mb-3 flex items-center gap-2">
+                  <Star className="w-4 h-4 text-yellow-400" /> By Category
+                </h3>
+                <div className="space-y-2">
+                  {[...stats.requests_by_category]
+                    .sort((a, b) => b.count - a.count)
+                    .map(({ category, count }) => {
+                      const total = stats.requests_by_category.reduce((s, c) => s + c.count, 0);
+                      const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                      return (
+                        <div key={category}>
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="font-medium">{CATEGORY_LABELS[category] ?? category}</span>
+                            <span className="text-muted-foreground">{count} ({pct}%)</span>
+                          </div>
+                          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-gradient-to-br from-primary/20 to-background border border-primary/30 rounded-2xl p-5">
+              <h3 className="font-black text-base mb-2">About Niakofa</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                This isn't charity — it's neighbors helping neighbors. Every act of help strengthens our community network. When you're able, give back. When you need help, ask. That's how communities thrive.
+              </p>
+              <div className="mt-4 space-y-2">
+                {[
+                  ["Immediate Pay", "Compensate your helper right away"],
+                  ["Niakofa", "Contribute back when you're ready"],
+                  ["Goodwill", "Pure community — no payment needed"],
+                ].map(([title, desc]) => (
+                  <div key={title} className="flex items-center gap-2 text-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                    <span className="font-semibold">{title}</span>
+                    <span className="text-muted-foreground">— {desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "county" && (
+          <div className="space-y-4">
+            {countyLoading && !countyData && (
+              <div className="flex items-center justify-center py-16 text-muted-foreground">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading county portal…
+              </div>
+            )}
+
+            {countyLoaded && !countyData && (
+              <div className="text-center py-16 text-muted-foreground text-sm">
+                No county pool has been set up yet. Check back soon.
+              </div>
+            )}
+
+            {countyData && (() => {
+              const hRatio = countyData.pool_health_ratio;
+              const healthColor =
+                hRatio >= 0.9 ? "text-green-400"
+                : hRatio >= 0.7 ? "text-yellow-400"
+                : "text-orange-400";
+              const healthLabel =
+                hRatio >= 0.9 ? "Fully Funded"
+                : hRatio >= 0.7 ? "Healthy"
+                : "Building Up";
+              const healthBg =
+                hRatio >= 0.9 ? "from-green-500/15 via-green-500/5 border-green-500/30"
+                : hRatio >= 0.7 ? "from-yellow-500/15 via-yellow-500/5 border-yellow-500/30"
+                : "from-orange-500/15 via-orange-500/5 border-orange-500/30";
+
+              return (
+                <>
+                  {/* County hero card */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`bg-gradient-to-br ${healthBg} border rounded-3xl p-6 shadow-lg`}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">County Fund</div>
+                        <h2 className="text-2xl font-black mt-0.5">{countyData.name}</h2>
+                        <div className="text-[11px] text-muted-foreground mt-1">
+                          Open community fund · {countyData.member_count.toLocaleString()} neighbors
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-[10px] font-bold uppercase tracking-widest ${healthColor}`}>{healthLabel}</div>
+                        <div className={`text-3xl font-black ${healthColor} mt-0.5`}>
+                          {Math.round(hRatio * 100)}%
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">of target</div>
+                      </div>
+                    </div>
+
+                    {/* Balance vs target */}
+                    <div className="mb-3">
+                      <div className="flex justify-between text-xs mb-1.5">
+                        <span className="font-black text-lg">${countyData.pool_balance.toFixed(2)}</span>
+                        <span className="text-muted-foreground text-[11px] self-end">target ${countyData.target_reserve_amount.toLocaleString()}</span>
+                      </div>
+                      <div className="h-3 bg-black/20 rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${countyData.pool_pct}%` }}
+                          transition={{ duration: 1.2, ease: "easeOut" }}
+                          className={`h-full rounded-full ${
+                            hRatio >= 0.9 ? "bg-gradient-to-r from-green-400 to-emerald-500"
+                            : hRatio >= 0.7 ? "bg-gradient-to-r from-yellow-400 to-amber-500"
+                            : "bg-gradient-to-r from-orange-400 to-orange-500"
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Every dollar in this fund goes directly to helpers — no platform cut, no waiting. When you complete a task, the county fund pays you right away at a livable wage floor.
+                    </p>
+                  </motion.div>
+
+                  {/* Livable wage framing */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/40 rounded-2xl p-5"
+                  >
+                    <h3 className="font-black text-sm flex items-center gap-2 mb-3">
+                      <DollarSign className="w-4 h-4 text-primary" /> Wake Up. Help Neighbors. Earn a Living.
+                    </h3>
+                    <p className="text-[12px] text-muted-foreground leading-relaxed mb-3">
+                      Helping your community pays real money — not tips, not points. The {countyData.name} fund guarantees every completed task earns a livable-wage floor, paid immediately when you finish. No invoices, no chasing payment, no waiting.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { icon: "⚡", label: "Paid Instantly", desc: "Pool pays helpers the moment a task completes" },
+                        { icon: "📈", label: "Wage Scales with You", desc: "Higher trust tier = bigger minimum guarantee" },
+                        { icon: "🔄", label: "Self-Replenishing", desc: "Requesters pay it forward, refilling the pool" },
+                        { icon: "🏛️", label: "County-Backed", desc: "Local sponsors keep the fund healthy" },
+                      ].map(item => (
+                        <div key={item.label} className="bg-background/60 rounded-xl p-3">
+                          <div className="text-lg mb-0.5">{item.icon}</div>
+                          <div className="text-[11px] font-black">{item.label}</div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{item.desc}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+
+                  {/* Impact stats */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className="bg-card border border-border rounded-2xl p-4"
+                  >
+                    <h3 className="font-black text-sm flex items-center gap-2 mb-3">
+                      <Activity className="w-4 h-4 text-primary" /> What This Fund Has Done
+                    </h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { label: "Contributed", value: `$${countyData.total_contributed.toFixed(2)}`, desc: "From sponsors & neighbors", color: "text-green-400" },
+                        { label: "Paid to Helpers", value: `$${countyData.total_paid_to_helpers.toFixed(2)}`, desc: "Instantly on task completion", color: "text-primary" },
+                        { label: "Helpers Paid", value: countyData.helpers_paid.toString(), desc: "Unique neighbors compensated", color: "text-yellow-400" },
+                        { label: "30-Day Inflow", value: `$${countyData.inflow_30d.toFixed(2)}`, desc: "Repayments + contributions", color: "text-cyan-400" },
+                      ].map(item => (
+                        <div key={item.label} className="bg-background/60 rounded-xl px-3 py-2.5">
+                          <div className={`text-xl font-black ${item.color}`}>{item.value}</div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider">{item.label}</div>
+                          <div className="text-[9px] text-muted-foreground mt-0.5">{item.desc}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+
+                  {/* Recent ledger */}
+                  {countyLedger.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2 }}
+                      className="bg-card border border-border rounded-2xl p-4"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-black text-sm flex items-center gap-2">
+                          <Shield className="w-4 h-4 text-primary" /> Public Ledger
+                        </h3>
+                        <button
+                          onClick={loadCountyData}
+                          className="text-[11px] text-primary flex items-center gap-1 active:opacity-60"
+                        >
+                          <RefreshCw className="w-3 h-3" /> Refresh
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {countyLedger.slice(0, 10).map((entry) => {
+                          const isCredit = entry.amount > 0;
+                          const typeLabel: Record<string, string> = {
+                            sponsor_contribution: "🏛️ Sponsor contributed",
+                            helper_front: "⚡ Helper paid",
+                            guaranteed_minimum: "💙 Min guarantee paid",
+                            pledge_repayment: "🔄 Pledge repaid",
+                          };
+                          return (
+                            <div key={entry.id} className="flex items-center justify-between text-xs py-1.5 border-b border-border/50 last:border-0">
+                              <div>
+                                <div className="font-medium">{typeLabel[entry.entry_type] ?? entry.entry_type}</div>
+                                {entry.description && (
+                                  <div className="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[200px]">{entry.description}</div>
+                                )}
+                              </div>
+                              <div className={`font-black tabular-nums ${isCredit ? "text-green-400" : "text-primary"}`}>
+                                {isCredit ? "+" : "−"}${Math.abs(entry.amount).toFixed(2)}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {countyLedger.length === 0 && countyLoaded && (
+                    <div className="bg-card border border-border rounded-2xl p-6 text-center">
+                      <div className="text-3xl mb-2">🌱</div>
+                      <div className="font-black text-sm">Fund is getting started</div>
+                      <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                        The {countyData.name} community fund is new. Be one of the first contributors — your donation goes directly to compensating helpers in your county.
+                      </p>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
+
+        {tab === "circles" && <NeighborhoodCirclesTab />}
+        {tab === "skills" && <SkillsMarketplaceTab />}
+        {tab === "globe" && (
+          <div className="-mx-4 -mt-4">
+            <Suspense fallback={
+              <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">
+                Loading Diaspora Globe…
+              </div>
+            }>
+              <GlobePage embedded />
+            </Suspense>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+
+
+
+/**
+ * Griot Stories — oral history / diaspora storytelling
+ *
+ * Endpoints:
+ *  GET    /griot/stories             — published stories (public feed)
+ *  GET    /griot/stories/mine        — caller's own stories (all statuses)
+ *  POST   /griot/stories             — create a new story (auth required)
+ *  GET    /griot/stories/:id         — single story detail
+ *  PATCH  /griot/stories/:id         — update title/visibility/release_at (author only)
+ *  DELETE /griot/stories/:id         — soft-delete/remove story (author only)
+ *  POST   /griot/stories/:id/publish — set status = published (author only)
+ *
+ *  GET    /griot/stories/:id/translations       — list translations (author only)
+ *  POST   /griot/stories/:id/translations       — add/upsert a translation
+ *  PATCH  /griot/stories/:id/translations/:lang/approve — recorder approves translation
+ *
+ *  GET    /admin/griot/pending       — admin: stories awaiting review (pending_review)
+ *  PATCH  /admin/griot/:id/status    — admin: override story status
+ */
+
+import { Router } from "express";
+import { db, griotStoriesTable, storyTranslationsTable } from "@workspace/db";
+import { requireAuth } from "../middlewares/auth";
+import { requireAdmin } from "../middlewares/authz";
+import { generalApiLimiter, adminLimiter } from "../middlewares/rate-limit";
+import { eq, and, desc, inArray } from "drizzle-orm";
+import { z } from "zod";
+
+const router = Router();
+
+// ── Validation schemas ─────────────────────────────────────────────────────
+
+const CreateStorySchema = z.object({
+  title:             z.string().max(200).optional(),
+  prompt:            z.string().max(500).optional(),
+  text_content:      z.string().max(20000).optional(),
+  audio_url:         z.string().url().optional(),
+  original_language: z.string().max(10).default("en"),
+  diaspora_tag:      z.string().max(100).optional(),
+  hub_location:      z.string().max(200).optional(),
+  lat:               z.number().min(-90).max(90).optional(),
+  lng:               z.number().min(-180).max(180).optional(),
+  visibility:        z.enum(["public", "diaspora_tag", "private"]).default("public"),
+  release_at:        z.string().datetime().optional(),
+  duration_seconds:  z.number().int().min(0).max(7200).optional(),
+});
+
+const UpdateStorySchema = z.object({
+  title:       z.string().max(200).optional(),
+  visibility:  z.enum(["public", "diaspora_tag", "private"]).optional(),
+  release_at:  z.string().datetime().nullable().optional(),
+  hub_location: z.string().max(200).optional(),
+  diaspora_tag: z.string().max(100).optional(),
+});
+
+const UpsertTranslationSchema = z.object({
+  language:       z.string().min(2).max(10),
+  nia_draft_text: z.string().max(20000).optional(),
+  edited_text:    z.string().max(20000).optional(),
+});
+
+// ── GET /griot/stories — public published feed ─────────────────────────────
+
+router.get("/griot/stories", generalApiLimiter, async (req, res) => {
+  const hubLocation = req.query.hub as string | undefined;
+  const diasporaTag = req.query.tag as string | undefined;
+  const limit = Math.min(Number(req.query.limit ?? 20), 50);
+  const offset = Number(req.query.offset ?? 0);
+
+  // Public feed: only published AND public-visibility stories
+  const conditions = [
+    eq(griotStoriesTable.status, "published"),
+    eq(griotStoriesTable.visibility, "public"),
+  ];
+  if (hubLocation) conditions.push(eq(griotStoriesTable.hub_location, hubLocation));
+  if (diasporaTag) conditions.push(eq(griotStoriesTable.diaspora_tag, diasporaTag));
+
+  const stories = await db
+    .select({
+      id:                griotStoriesTable.id,
+      author_id:         griotStoriesTable.author_id,
+      title:             griotStoriesTable.title,
+      text_content:      griotStoriesTable.text_content,
+      audio_url:         griotStoriesTable.audio_url,
+      original_language: griotStoriesTable.original_language,
+      diaspora_tag:      griotStoriesTable.diaspora_tag,
+      hub_location:      griotStoriesTable.hub_location,
+      lat:               griotStoriesTable.lat,
+      lng:               griotStoriesTable.lng,
+      visibility:        griotStoriesTable.visibility,
+      duration_seconds:  griotStoriesTable.duration_seconds,
+      published_at:      griotStoriesTable.published_at,
+    })
+    .from(griotStoriesTable)
+    .where(and(...conditions))
+    .orderBy(desc(griotStoriesTable.published_at))
+    .limit(limit)
+    .offset(offset);
+
+  res.json({ stories, limit, offset });
+});
+
+// ── GET /griot/stories/mine — caller's own stories ─────────────────────────
+
+router.get("/griot/stories/mine", requireAuth, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const stories = await db
+    .select()
+    .from(griotStoriesTable)
+    .where(eq(griotStoriesTable.author_id, userId))
+    .orderBy(desc(griotStoriesTable.created_at));
+  res.json({ stories });
+});
+
+// ── POST /griot/stories — create a story ──────────────────────────────────
+
+router.post("/griot/stories", requireAuth, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const parsed = CreateStorySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid story data", issues: parsed.error.issues });
+    return;
+  }
+  const data = parsed.data;
+
+  const [story] = await db
+    .insert(griotStoriesTable)
+    .values({
+      author_id:         userId,
+      title:             data.title,
+      prompt:            data.prompt,
+      text_content:      data.text_content,
+      audio_url:         data.audio_url,
+      original_language: data.original_language,
+      diaspora_tag:      data.diaspora_tag,
+      hub_location:      data.hub_location,
+      lat:               data.lat,
+      lng:               data.lng,
+      visibility:        data.visibility,
+      release_at:        data.release_at ? new Date(data.release_at) : undefined,
+      duration_seconds:  data.duration_seconds,
+      status:            "recorded",
+    })
+    .returning();
+
+  res.status(201).json({ story });
+});
+
+// ── GET /griot/stories/:id ─────────────────────────────────────────────────
+
+router.get("/griot/stories/:id", generalApiLimiter, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid story id" });
+    return;
+  }
+
+  const [story] = await db
+    .select()
+    .from(griotStoriesTable)
+    .where(eq(griotStoriesTable.id, id));
+
+  if (!story) {
+    res.status(404).json({ error: "Story not found" });
+    return;
+  }
+
+  // Access control: non-published stories are author-only;
+  // published but non-public stories are also author-only
+  const callerId = (req as { authenticatedUserId?: number }).authenticatedUserId;
+  const isAuthor = story.author_id === callerId;
+  if (story.status !== "published" && !isAuthor) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  if (story.status === "published" && story.visibility !== "public" && !isAuthor) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const translations = await db
+    .select()
+    .from(storyTranslationsTable)
+    .where(eq(storyTranslationsTable.story_id, id));
+
+  res.json({ story, translations });
+});
+
+// ── PATCH /griot/stories/:id — update (author only) ───────────────────────
+
+router.patch("/griot/stories/:id", requireAuth, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid story id" });
+    return;
+  }
+
+  const [existing] = await db
+    .select({ author_id: griotStoriesTable.author_id })
+    .from(griotStoriesTable)
+    .where(eq(griotStoriesTable.id, id));
+
+  if (!existing) {
+    res.status(404).json({ error: "Story not found" });
+    return;
+  }
+  if (existing.author_id !== userId) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const parsed = UpdateStorySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid update data", issues: parsed.error.issues });
+    return;
+  }
+
+  const updates: Partial<typeof griotStoriesTable.$inferInsert> = {
+    updated_at: new Date(),
+  };
+  if (parsed.data.title !== undefined)       updates.title       = parsed.data.title;
+  if (parsed.data.visibility !== undefined)  updates.visibility  = parsed.data.visibility;
+  if (parsed.data.hub_location !== undefined) updates.hub_location = parsed.data.hub_location;
+  if (parsed.data.diaspora_tag !== undefined) updates.diaspora_tag = parsed.data.diaspora_tag;
+  if ("release_at" in parsed.data) {
+    updates.release_at = parsed.data.release_at ? new Date(parsed.data.release_at!) : null;
+  }
+
+  const [updated] = await db
+    .update(griotStoriesTable)
+    .set(updates)
+    .where(eq(griotStoriesTable.id, id))
+    .returning();
+
+  res.json({ story: updated });
+});
+
+// ── POST /griot/stories/:id/publish — recorder releases story ─────────────
+
+router.post("/griot/stories/:id/publish", requireAuth, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid story id" });
+    return;
+  }
+
+  const [existing] = await db
+    .select()
+    .from(griotStoriesTable)
+    .where(eq(griotStoriesTable.id, id));
+
+  if (!existing) { res.status(404).json({ error: "Story not found" }); return; }
+  if (existing.author_id !== userId) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  const allowedStatuses = ["ready", "pending_review", "recorded"];
+  if (!allowedStatuses.includes(existing.status)) {
+    res.status(409).json({ error: "Story cannot be published from its current status" });
+    return;
+  }
+
+  const now = new Date();
+  const releaseAt = existing.release_at;
+  if (releaseAt && releaseAt > now) {
+    // Scheduled for the future — mark ready but don't publish yet
+    const [updated] = await db
+      .update(griotStoriesTable)
+      .set({ status: "ready", updated_at: now })
+      .where(eq(griotStoriesTable.id, id))
+      .returning();
+    res.json({ story: updated, scheduled: true, release_at: releaseAt });
+    return;
+  }
+
+  const [updated] = await db
+    .update(griotStoriesTable)
+    .set({ status: "published", published_at: now, updated_at: now })
+    .where(eq(griotStoriesTable.id, id))
+    .returning();
+
+  res.json({ story: updated });
+});
+
+// ── DELETE /griot/stories/:id — author removes their story ────────────────
+
+router.delete("/griot/stories/:id", requireAuth, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid story id" });
+    return;
+  }
+
+  const [existing] = await db
+    .select({ author_id: griotStoriesTable.author_id })
+    .from(griotStoriesTable)
+    .where(eq(griotStoriesTable.id, id));
+
+  if (!existing) {
+    res.status(404).json({ error: "Story not found" });
+    return;
+  }
+  if (existing.author_id !== userId) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  // Cascade deletes translations via FK onDelete: cascade
+  await db.delete(griotStoriesTable).where(eq(griotStoriesTable.id, id));
+  res.status(204).send();
+});
+
+// ── GET /griot/stories/:id/translations ───────────────────────────────────
+
+router.get("/griot/stories/:id/translations", requireAuth, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid story id" }); return; }
+
+  const [story] = await db
+    .select({ author_id: griotStoriesTable.author_id })
+    .from(griotStoriesTable)
+    .where(eq(griotStoriesTable.id, id));
+
+  if (!story) { res.status(404).json({ error: "Story not found" }); return; }
+  if (story.author_id !== userId) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  const translations = await db
+    .select()
+    .from(storyTranslationsTable)
+    .where(eq(storyTranslationsTable.story_id, id));
+
+  res.json({ translations });
+});
+
+// ── POST /griot/stories/:id/translations — upsert a translation ───────────
+
+router.post("/griot/stories/:id/translations", requireAuth, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid story id" }); return; }
+
+  const [story] = await db
+    .select({ author_id: griotStoriesTable.author_id })
+    .from(griotStoriesTable)
+    .where(eq(griotStoriesTable.id, id));
+
+  if (!story) { res.status(404).json({ error: "Story not found" }); return; }
+  if (story.author_id !== userId) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  const parsed = UpsertTranslationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid translation data", issues: parsed.error.issues });
+    return;
+  }
+
+  const [translation] = await db
+    .insert(storyTranslationsTable)
+    .values({
+      story_id:       id,
+      language:       parsed.data.language,
+      nia_draft_text: parsed.data.nia_draft_text,
+      edited_text:    parsed.data.edited_text,
+    })
+    .onConflictDoUpdate({
+      target: [storyTranslationsTable.story_id, storyTranslationsTable.language],
+      set: {
+        nia_draft_text: parsed.data.nia_draft_text ?? undefined,
+        edited_text:    parsed.data.edited_text ?? undefined,
+        was_edited:     parsed.data.edited_text !== undefined ? true : undefined,
+        recorder_approved: false, // any new draft resets approval
+        updated_at: new Date(),
+      },
+    })
+    .returning();
+
+  res.status(201).json({ translation });
+});
+
+// ── PATCH /griot/stories/:id/translations/:lang/approve ───────────────────
+
+router.patch(
+  "/griot/stories/:id/translations/:lang/approve",
+  requireAuth,
+  generalApiLimiter,
+  async (req, res) => {
+    const userId = req.authenticatedUserId!;
+    const id = Number(req.params.id);
+    const lang = req.params.lang;
+    if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid story id" }); return; }
+
+    const [story] = await db
+      .select({ author_id: griotStoriesTable.author_id, status: griotStoriesTable.status })
+      .from(griotStoriesTable)
+      .where(eq(griotStoriesTable.id, id));
+
+    if (!story) { res.status(404).json({ error: "Story not found" }); return; }
+    if (story.author_id !== userId) { res.status(403).json({ error: "Forbidden" }); return; }
+
+    const editedText = req.body.edited_text as string | undefined;
+
+    const now = new Date();
+    const updateValues: Partial<typeof storyTranslationsTable.$inferInsert> = {
+      recorder_approved: true,
+      approved_at: now,
+      updated_at: now,
+    };
+    if (editedText !== undefined) {
+      updateValues.edited_text = editedText;
+      updateValues.was_edited = true;
+    }
+
+    const [translation] = await db
+      .update(storyTranslationsTable)
+      .set(updateValues)
+      .where(
+        and(
+          eq(storyTranslationsTable.story_id, id),
+          eq(storyTranslationsTable.language, lang),
+        )
+      )
+      .returning();
+
+    if (!translation) { res.status(404).json({ error: "Translation not found" }); return; }
+
+    // Advance story to pending_review → ready if all existing translations are approved
+    if (story.status === "transcribing" || story.status === "pending_review") {
+      const allTranslations = await db
+        .select({ recorder_approved: storyTranslationsTable.recorder_approved })
+        .from(storyTranslationsTable)
+        .where(eq(storyTranslationsTable.story_id, id));
+
+      const allApproved = allTranslations.every(t => t.recorder_approved);
+      if (allApproved) {
+        await db
+          .update(griotStoriesTable)
+          .set({ status: "ready", updated_at: now })
+          .where(eq(griotStoriesTable.id, id));
+      }
+    }
+
+    res.json({ translation });
+  }
+);
+
+// ── GET /admin/griot/pending — admin: stories awaiting review ─────────────
+
+router.get(
+  "/admin/griot/pending",
+  requireAuth,
+  requireAdmin(),
+  adminLimiter,
+  async (req, res) => {
+    const statusFilter = (req.query.status as string | undefined)?.split(",") ?? [
+      "pending_review", "transcribing",
+    ];
+    const validStatuses = ["recorded", "transcribing", "pending_review", "ready", "published"];
+    const filtered = statusFilter.filter(s => validStatuses.includes(s)) as
+      ("recorded" | "transcribing" | "pending_review" | "ready" | "published")[];
+
+    const stories = await db
+      .select()
+      .from(griotStoriesTable)
+      .where(inArray(griotStoriesTable.status, filtered))
+      .orderBy(desc(griotStoriesTable.created_at))
+      .limit(100);
+
+    res.json({ stories, count: stories.length });
+  }
+);
+
+// ── PATCH /admin/griot/:id/status — admin override status ─────────────────
+
+const AdminStatusSchema = z.object({
+  status: z.enum(["recorded", "transcribing", "pending_review", "ready", "published"]),
+  note: z.string().max(500).optional(),
+});
+
+router.patch(
+  "/admin/griot/:id/status",
+  requireAuth,
+  requireAdmin(),
+  adminLimiter,
+  async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid story id" }); return; }
+
+    const parsed = AdminStatusSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: "Invalid status", issues: parsed.error.issues }); return; }
+
+    const now = new Date();
+    const updates: Partial<typeof griotStoriesTable.$inferInsert> = {
+      status: parsed.data.status,
+      updated_at: now,
+    };
+    if (parsed.data.status === "published") updates.published_at = now;
+
+    const [updated] = await db
+      .update(griotStoriesTable)
+      .set(updates)
+      .where(eq(griotStoriesTable.id, id))
+      .returning();
+
+    if (!updated) { res.status(404).json({ error: "Story not found" }); return; }
+    res.json({ story: updated });
+  }
+);
+
+export default router;

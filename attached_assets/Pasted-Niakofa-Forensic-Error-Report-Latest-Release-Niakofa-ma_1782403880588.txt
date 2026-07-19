@@ -1,0 +1,51 @@
+Niakofa Forensic Error Report - Latest Release (Niakofa-main (42))
+Critical Bugs:
+
+TopBar/NiaFab draggable Nia AI button still broken: no persistent pointer handlers, transform state, or localStorage sync in TopBar.tsx/NiaFab.tsx/AppContext.tsx; fixed CSS overrides default top position.
+Generated User types lack helper_status/helper_skills extensions causing TS casts in profile/helper-profile.
+lib/db/schema/index.ts missing exports for recurring_requests, conversations, messages, request_helpers.
+Vite proxy/ws localhost-only; Railway SERVE_FRONTEND CORS/Origin failures.
+AppContext HMR hook order violations on new hooks.
+requireAdmin() factory misuse in routes.
+Migrations lack full idempotent PostGIS guards.
+/nia/chat proxy no rate limit.
+Stale .build-cache-bust; prod console.* leaks.
+No sw.js output.
+Trust decay/anomaly state lost on restart; missing indexes.
+Nia prompt/DB enum mismatches.
+Mobile pb-safe incomplete on fixed elements.
+Redis partial init silent.
+Routes assume authenticatedUserId without guards.
+WS desync risk.
+Incomplete helmet/CSRF.
+Test leaks.
+Replit integrations (batch/chat) unintegrated into main Nia proxy/AppContext; schema drift in chat models.
+NiaFab safe-area hook order fragile.
+New anomaly Redis dedup fallback incomplete.
+
+Security Issues:
+
+Token rotation limited.
+Admin no full rate limit on all endpoints.
+Push no validation.
+SMS no consent/encrypt.
+Geo push unbounded.
+New chat routes lack consistent auth.
+
+Performance:
+
+Non-transactional ops.
+No pagination.
+Full scans.
+No static cache.
+Vite fs.allow exposure.
+
+Finishing Touches for Niakofa + Nia Evolution (Claude/Replit updates):
+
+Full draggable Nia (pointer + localStorage + transform + AppContext).
+Complete tsc + codegen + schema exports + tests + migrations.
+Integrate Replit batch/chat into nia-proxy + main flows.
+Update CLAUDE.md (new incidents), MEMORY.md, REPLIT_GODFATHER.md with drag fix + integrations.
+Enforce mobile pb-safe, hook order, error handler placement, rate limits.
+Add transactions, indexes, avatar limits, full guards.
+Verify Nia pre-login visibility + final prompt alignment.

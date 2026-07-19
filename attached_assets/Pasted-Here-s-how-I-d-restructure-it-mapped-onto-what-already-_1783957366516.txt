@@ -1,0 +1,17 @@
+Here's how I'd restructure it, mapped onto what already exists in the app rather than invented from scratch:
+Top row — swapped from safety-first to community-first
+
+Top-left goes from the Safety/SOS icon to a Civic Portal icon — direct entry into the county needs feed that already exists in the app, instead of a helper-only safety trigger.
+The center pill becomes a "Search this area" entry point instead of an earnings-style dot — requesters are looking for something, not tracking a shift.
+The small stat pill under the top bar shows helpers online + civic needs nearby instead of the two anonymous numbers in the reference — both numbers already exist as real backend counts (GET /helpers/online, the civic needs query), just not currently surfaced together like this.
+
+The map itself changes what it's plotting. Right now pins mean "open request." For requester/community mode, pins should mean three different things, visually distinct:
+
+Helpers online nearby — pulls from the same online-helper data the map already fetches for the helper-mode "who's around" layer, just shown to requesters instead of hidden from them.
+Civic needs — county/city-posted needs from the Civic Portal, which already has its own data model and admin workflow; this just gives it a home on the map instead of only living on its own page.
+Resources / help centers — food pantries, shelters, legal aid — this is the one genuinely new data type. It doesn't exist in the app yet. It's a reasonable, contained addition (a resources table: name, category, address, hours, phone — much simpler than the request/session machinery Audio Circles needed), but it is new work, not a re-skin of something already built.
+
+Settings button filters by resource/need category and helper language, not request urgency — urgency stops being the organizing idea entirely in this mode, since a requester browsing isn't triaging incoming jobs.
+Bottom sheet goes from "Nearby requests" to "Helpers and civic needs," with the preview rows showing a nearby helper's skill/language and a nearby resource's open/closed status, instead of a job description and distance.
+Right-edge stack — I kept just orientation + recenter, matching the helper-mode version I already built, rather than the reference image's full zoom stack. Pinch-to-zoom already works in both modes, so there's no reason for requester mode to reintroduce the buttons I removed from helper mode for the same reason.
+Before I build this into real code: this is a bigger structural change than the fixes I've been making — it needs a genuinely new resources table and endpoint, plus a real second map-mode component rather than a settings tweak. My last verified codebase snapshot is a few rounds old at this point, and a change this size against a possibly-stale base risks the same kind of silent conflicts I've been catching all session.

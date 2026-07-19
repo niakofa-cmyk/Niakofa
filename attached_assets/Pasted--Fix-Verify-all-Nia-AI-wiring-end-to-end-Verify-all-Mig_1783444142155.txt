@@ -1,0 +1,21 @@
+
+Fix, Verify all Nia AI wiring end to end.
+Verify all Migrations have Been pushed and landing in repo
+
+
+Recommendations
+1. Cluster/individual marker seam — showIndividualMarkers flips at exactly zoom > 12 based on React state (mapZoom), while Mapbox's own cluster breakup uses clusterMaxZoom={12} internally on the GL thread. These two are visually synced today, but they're two independent triggers reading the same constant — worth a shared constant/hook so they can't drift if one gets tuned later.
+2. rotatestart listener re-subscribe — the effect list includes mapRef.current, which won't actually cause a re-run on ref mutation (refs don't trigger re-renders). It currently works because other state changes force a re-render after map load, but that's incidental. Consider re-subscribing directly inside handleMapLoad instead, so it's guaranteed rather than coincidental.
+3. Traffic + heatmap layers always mounted when toggled on — fine for now, but if you add more optional overlays (e.g., weather, transit), consider lazy-loading each Source/Layer pair only when first toggled on, to keep initial map load light.
+4. No offline/poor-GPS placeholder for the "My location" dot — if myLocation is stale (no update in N seconds), there's no visual staleness indicator; a subtle dimming/pulse-slowdown would help helpers trust the dot in dead zones.
+5. Emergency requests aren't visually distinct in cluster bubbles — the heatmap weights emergencies 3×, but cluster bubble color is purely count-based (green/yellow/red by point_count). Consider tinting a cluster that contains ≥1 emergency request regardless of count, so a lone emergency in a quiet area isn't buried in a "green" bubble.
+
+Missing secrets documented, Railway.toml migrate step fixed, Dockerfile COPY pattern fixed, drizzle-kit push non-TTY issue fixed
+
+Pool float math safe, Redis URL parsing safe, test suite has 35/55 failures from dynamic import bypassing jest.mock, password minimum inconsistency fixed
+Dead rating endpoint (fixed), mailer HTML injection safe, WebSocket broadcast error handling needs per-client try/catch, SSE proxy needs mid-stream error handling
+1. Verify WebSocket broadcast resilience — Add per-client try/catch in ws-hub.ts
+2. SSE mid-stream error handling — Consider adding a transform stream or abort controller check in nia-proxy.ts
+
+tying pledge self-repayment into trust_score, and adding process supervision for nia-service so a crash doesn't go silent.
+tie pledge repayment (not just county subsidy) into trust_score so requesters who pay back on their own timeline also get a reputation boost.

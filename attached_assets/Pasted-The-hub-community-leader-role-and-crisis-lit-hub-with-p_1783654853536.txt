@@ -1,0 +1,22 @@
+The hub-community-leader role and crisis-lit-hub-with-pledge flow we designed together haven't been built yet — no hub_community_leaders table, no crisis fields on diaspora_hubs, no diaspora_hub_pledges. The attached_assets folder shows your team pulled in the HTML mockups from our conversation as reference images, but the backend behind them isn't there. That's the natural next PR.
+
+Wire the crisis event types that already exist. ws-hub.ts already defines crisis_update — once you add the crisis/leader tables we designed, broadcasting through this existing socket layer is nearly free.
+Hub-claim authority is currently platform-admin-only (requireAdmin()), with a comment in the code itself noting there's no community-scoped admin role yet. That's exactly the seam the hub-community-leader role should fill — claiming/managing a hub is a natural manage_tasks-tier permission, not a full-admin action.
+Wire a real STT provider (Whisper/AssemblyAI/Deepgram) before diaspora members start recording audio stories at volume — right now every audio story will hit the stub and fail by design.
+Rate-limit/moderate hub proposals — POST /griot/hubs is open to any authenticated user; worth confirming the existing moderation/report pipeline covers spam or offensive hub proposals before they hit an admin's review queue.
+
+2. Tax reporting isn't yet surfaced to helpers. Helpers paid via Stripe Connect will hit 1099-K/1099-NEC thresholds. Nothing in the flow currently tells them that.
+
+
+Diaspora / "Global Village" is architecturally ready but not yet configured for it. The multi-county schema (per-community wage floors, sponsor branding, county impact pages) means expanding beyond Tarrant County is a data problem, not a rebuild problem — but nothing today targets international use (currency is USD-only, i18n is English/Spanish only, Stripe Connect payouts assume US bank rails). If "global village" is a near-term goal rather than long-term aspiration, that's the honest gap.
+
+* The businesses_enabled flag needs a one-time DB toggle before business accounts work in any environment.
+* Dev-database migrations need to be run (pnpm --filter db run migrate) before a fresh environment is usable.
+* First admin account needs bootstrapping via ADMIN_BOOTSTRAP_SECRET.
+a few pre-launch config steps
+
+Verified diaspora helper badges/skills matching (e.g., language/cultural support for immigrants).
+
+Multi-helper payment splitting still a gap
+
+Immediate: Enhance Globe with PIF action buttons + impact metrics (quick, high-impact).

@@ -1,0 +1,64 @@
+import http from "http";
+import app from "./app";
+import { logger } from "./lib/logger";
+import { initWebSocketServer, stopHeartbeat } from "./lib/ws-hub";
+import { startScheduledPaymentReminder } from "./lib/scheduler";
+import { isRedisConfigured, closeRedis } from "./lib/queue";
+import { startPayoutWorker } from "./workers/payout-worker";
+import { startPledgeWorker } from "./workers/pledge-worker";
+import { startCleanupWorker } from "./workers/cleanup-worker";
+import { startNotificationWorker } from "./workers/notification-worker";
+
+const rawPort = process.env["PORT"];
+if (!rawPort) throw new Error("PORT environment variable is required but was not provided.");
+const port = Number(rawPort);
+if (Number.isNaN(port) || port <= 0) throw new Error(`Invalid PORT value: "${rawPort}"`);
+
+const server = http.createServer(app);
+initWebSocketServer(server);
+
+server.listen(port, async () => {
+  logger.info({ port }, "Server listening (HTTP + WebSocket)");
+
+  // ── Background workers ────────────────────────────────────────────────────
+  if (isRedisConfigured()) {
+    // BullMQ workers handle everything — pledge reconciliation is a superset
+    // of the legacy setInterval scheduler, so we only run one or the other.
+    logger.info("redis: configured — starting BullMQ workers");
+    startPayoutWorker();
+    startNotificationWorker();
+    await startPledgeWorker().catch((err: unknown) =>
+      logger.error({ err }, "pledge-worker: failed to start")
+    );
+    await startCleanupWorker().catch((err: unknown) =>
+      logger.error({ err }, "cleanup-worker: failed to start")
+    );
+    logger.info("bullmq: all workers started");
+  } else {
+    // No Redis — fall back to simple setInterval-based scheduler.
+    // When Redis is added, this branch is skipped automatically (no duplicate reminders).
+    logger.warn(
+      "redis: REDIS_URL not set — BullMQ workers disabled. " +
+      "Falling back to legacy scheduler for payment reminders."
+    );
+    startScheduledPaymentReminder();
+  }
+});
+
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+const shutdown = async (signal: string) => {
+  logger.info({ signal }, "shutdown: received — closing gracefully");
+  stopHeartbeat();
+  server.close(async () => {
+    await closeRedis();
+    logger.info("shutdown: complete");
+    process.exit(0);
+  });
+  setTimeout(() => {
+    logger.error("shutdown: timed out — forcing exit");
+    process.exit(1);
+  }, 10_000);
+};
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT",  () => shutdown("SIGINT"));

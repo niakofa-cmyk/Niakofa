@@ -1,0 +1,65 @@
+* Gaps against your stated vision
+* Tenure-based wage tiers — spec'd in ROADMAP.md, not implemented. This is your "livable wage over time" idea almost verbatim, just needs the code written.
+* County/civic portal as a two-way marketplace — counties can currently only fund the pool; they can't yet browse and claim open requests or post their own. Also spec'd, not built.
+* Per-hub ledger — pledged money for an unclaimed hub currently falls into the global pool rather than being ring-fenced for that specific hub — flagged as a known limitation in the last change log.
+* Unresolved audit items — the last formal audit session ended with several things explicitly not yet checked: auth/authz privilege-escalation boundaries, WebSocket message routing security, and notification-preference tagging fixes that were identified but not applied.
+* No verified green build — the most recent hub-pledge payment change was shipped without pnpm run typecheck/build being run in that session (noted by the person who made the change). I have not run it either yet — I'd need to install dependencies in this sandbox, which I can do if you want a real answer instead of a guess.
+* 
+* 
+* 
+* First — the fix
+* All three things I flagged last time are properly resolved, and done with more care than the minimum:
+* Real Stripe PaymentIntent created on pledge, client_secret handed to a real payment sheet on the frontend — done only flips after Stripe confirms, not on request success. Dev-mode (no Stripe key) still credits instantly for local testing, matching your existing /pool/contribute convention.
+* Authorization fixed properly: isHubLeaderOrAdmin(fromHub.id, userId) — only an approved leader of the sending hub can attribute a pledge to it. No more "anyone can claim Fort Worth pledged $10k."
+* Webhook idempotency is genuinely correct: the status flip (pending_payment → pledged) and the community_pool_ledger credit happen inside the same transaction, gated strictly on status = 'pending_payment' so a retried webhook can't double-credit or revive a cancelled pledge.
+* Bonus fix I didn't ask for but flagged as worth doing: a per-user 24h pledge velocity cap ($10k/day), correctly serialized with a Postgres advisory lock so concurrent requests can't race past it — that's a subtle bug most people miss.
+* Crisis-clear now requires a mandatory resolution note, recorded with who/when — exactly the accountability trail I recommended.
+* One small thing worth a look next: if a pledge lands on a hub with no community_id (unclaimed), the ledger entry gets community_id: null — the money is logged but nothing can spend it since there's no linked community pool. Worth either blocking pledges to unclaimed hubs, or showing the pledger a note that funds will sit until the hub is claimed.
+* 
+* 
+* 
+* 1. Close the loop between Nia and the actual help economy. Nia's persona is genuinely excellent — the cultural fluency ("Have you eaten?" as African-grandmother check-in language, Sankofa framing, border-community immigration sensitivity, Texas heat-safety awareness) is rare, well-researched work. But right now she mostly talks about Pay It Forward rather than acting on it. Give her a real tool call to draft a help request on the user's behalf mid-conversation ("want me to post that for you?") and to check pledge/pool status for a hub she's discussing — she already knows the concepts, she just can't touch the levers yet.
+* 2. A leader needs a home base, not just three isolated endpoints. Apply/approve/declare-crisis/pledge all exist, but there's no single "my hub" dashboard pulling them together (this is the console we mocked up earlier — worth actually building it now that the backend is real). Without it, a leader has to know four separate API-shaped mental models instead of one screen.
+* 3. Unclaimed hubs are a dead end for money. As noted above — until a hub has a community_id, pledges to it can't be spent. Worth either fast-tracking hub claims during an active crisis, or letting a pledge target a county pool directly when the destination hub isn't claimed yet, so crisis relief never stalls on paperwork.
+* 4. Nia's crisis-follow-up worker and the Globe's crisis system don't talk to each other. You have two parallel crisis concepts — crisis_state (Tarrant County, drives Nia's check-ins) and diaspora_hubs.is_crisis (Globe, drives pledges). A hub in crisis today gets no Nia-driven check-ins even though the worker infrastructure for that already exists for the home county. Worth deciding if Nia should extend her care to diaspora hubs too, or if that's deliberately out of scope.
+* 5. Real STT is the last stub blocking the Griot/diaspora storytelling vision. Flagged before, still true — until audio transcription is wired to a real provider, every voice-recorded story silently fails. Given how much cultural weight the Griot feature carries in your vision, I'd prioritize this over new features.
+* 6. Trust tiers currently plateau at a platform-wide reputation — hub leadership doesn't feed back into it. Being an approved, active hub leader who's successfully run a crisis response is a meaningful trust signal that isn't reflected anywhere in getTrustTier(). Worth considering whether leadership tenure should count toward tier advancement, the same way completed-help-request quality already does.
+
+1. Voice I/O for Nia & Griot (Highest Priority): Hands-free recording/playback for stories and chats—especially powerful for diaspora elders, non-literate users, and urgent local help. Enables "speak your kindness, repay through action."
+2. Deeper Diaspora-Local Bridges: Globe stories auto-suggest or seed nearby PIF requests ("This global neighbor helped—pay it forward locally"). Diaspora-tagged pools or remittance-inspired flows.
+3. Structured Nia Memory + Global Kindness Prompts: Evolve freeform text to include cultural/dietary/diaspora prefs for wiser guidance. Add voice profiles and more community voices.
+4. Multi-Helper Coordination & Splitting: Careful Stripe design for shared tasks (coordination-only now works well).
+5. Repayment UI Polish: Self-serve "pay whatever/when you can" portal with gratitude nudges and progress toward livable helper wages.
+6. Admin/Reporting Updates: Ensure Griot tab coverage in ADMIN_COVERAGE.md; expand global seeds.
+Replit_Godfather Perspective on Improvements:
+As guardian of Nia, I recommend nurturing her as the wise village elder:
+* Voice-First Nia: Integrate ElevenLabs/OpenAI TTS + STT for natural conversations. Nia can narrate Griot stories, guide local helpers, or facilitate cross-diaspora connections ("Your story inspired a neighbor in Fort Worth—here's how to help today").
+* Global Kindness Intelligence: Enhance Nia's prompt with diaspora wisdom patterns, real-time translation in chats, and anomaly detection for community well-being. Add "kindness ripple" tracking (stories → local actions → pool impact).
+* Sustainable Helper Support: Nia suggests personalized livable-wage paths (tenure boosts, skill-building), reminds of flexible repayments gently, and surfaces county resources.
+* Technical Polish: Strengthen Nia supervision, structured memory (RAG over diaspora hubs), offline resilience, and PIF integration in share-story flows.
+* Testing: Full end-to-end (request → PIF → Globe share → repayment) on Railway + local voice prototypes.
+
+
+Globe UX/UI Enhancements (More Immersive & Actionable)
+* Interactive Diaspora Layers:
+    * Pins/clusters for active Niakofa communities, open help requests (fuzzed for privacy), and “Kindness Hotspots” (high PIF repayment areas).
+    * Great-circle arcs now animate PIF flows: glowing lines showing money/help rippling from one city to another (e.g., Fort Worth → Accra via pool repayments).
+    * Filter by “Stories of Help,” “PIF Successes,” “Crisis Resilience,” or language/diaspora group.
+* Mobile-First Globe Experience:
+    * AR mode preview (using device camera + Mapbox) for “see diaspora stories overlaid on your neighborhood.”
+    * Voice-activated via Nia: “Nia, show me stories from my homeland” or “Find helpers near me like in this story.”
+* Translation & Accessibility:
+    * Deeper Nia integration: auto-translate stories on-the-fly with community approval workflow (already partial). Add audio narration in multiple languages/dialects using community voices.
+    * Griot AI moderator (Nia) flags cultural sensitivity and suggests kind follow-ups.
+3. New Features Tied to PIF & Community Service
+* Kindness Chain Visualizer: On the globe, show “help chains” originating from stories—e.g., one act of help → PIF repayment → new helper activated in another city. Users can “join the chain” by accepting a matched request.
+* Diaspora Mutual Aid Funds: Localized sub-pools per major diaspora hub (e.g., Nigerian, Ghanaian, Jamaican communities in Tarrant County or globally). Contributors see their funds supporting stories from their roots.
+* Griot Marketplace for Services: Storytellers with verified skills (e.g., language help, cultural navigation, elder care) can offer paid/local services with PIF options. Globe highlights nearby diaspora experts.
+* Annual/Global Kindness Events: Globe hosts virtual “Pay It Forward Day” gatherings with live story circles, matched local actions, and pooled funding drives.
+
+My recommendations to enhance Niakofa + Nia
+* Finish the tenure-tier wage system first — it's already designed, low-risk, and directly realizes your "paid for waking up and helping" mission.
+* Ring-fence per-hub pledges before this scales — right now generosity aimed at one community can get diluted into the general pool.
+* Close the auth/authz and WebSocket audit gaps before wider launch — these were explicitly flagged as unaudited, and they're the categories most likely to let someone impersonate a helper or see private request data.
+* Let Nia proactively suggest "Pay It Forward" to requesters who can't pay now, rather than requiring them to know the option exists — this is core to your vision of removing shame from asking for help.
+* Add a public "helpers earned this week" transparency number on the community page — reinforces the "good people paid every day" promise and builds trust for adoption.

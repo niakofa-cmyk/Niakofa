@@ -1,0 +1,76 @@
+--- Niakofa-main/artifacts/pay-it-forward/src/pages/profile.tsx	2026-07-07 22:13:22.000000000 +0000
++++ /home/claude/niakofa/Niakofa-main/artifacts/pay-it-forward/src/pages/profile.tsx	2026-07-07 23:22:32.479282000 +0000
+@@ -56,11 +56,22 @@
+ }) {
+   return (
+     <AnimatePresence>
++      {/*
++        BUG FIX (Settings → Support & Safety cards hidden under bottom nav):
++        This sheet and <BottomNav> both used z-50. Because <BottomNav> is
++        mounted as a sibling *after* the page's <Switch> in App.tsx, it wins
++        ties in the paint order and physically covered the bottom of every
++        dialog built on ModalShell — Support & Safety items, Delete Account,
++        Notification Prefs, Account Privacy, Helper Settings, Payout Setup.
++        Bumping both layers here to z-[100] (above BottomNav's z-50) puts the
++        sheet — and its backdrop, so the nav can't peek through the sides —
++        unambiguously on top regardless of DOM order.
++      */}
+       <motion.div
+         initial={{ opacity: 0 }}
+         animate={{ opacity: 1 }}
+         exit={{ opacity: 0 }}
+-        className="fixed inset-0 bg-black/70 z-50 backdrop-blur-sm"
++        className="fixed inset-0 bg-black/70 z-[100] backdrop-blur-sm"
+         onClick={onClose}
+       />
+       <motion.div
+@@ -68,10 +79,10 @@
+         animate={{ y: 0 }}
+         exit={{ y: "100%" }}
+         transition={{ type: "spring", damping: 26, stiffness: 220 }}
+-        className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border rounded-t-3xl max-h-[85dvh] overflow-y-auto"
++        className="fixed bottom-0 left-0 right-0 z-[100] bg-card border-t border-border rounded-t-3xl max-h-[85dvh] flex flex-col"
+         onClick={e => e.stopPropagation()}
+       >
+-        <div className="flex items-center justify-between p-5 pb-3 border-b border-border">
++        <div className="flex items-center justify-between p-5 pb-3 border-b border-border shrink-0">
+           <div className="flex items-center gap-2">
+             <Icon className="w-5 h-5 text-primary" />
+             <h3 className="font-black text-lg">{title}</h3>
+@@ -80,7 +91,17 @@
+             <X className="w-5 h-5" />
+           </Button>
+         </div>
+-        <div className="p-5">{children}</div>
++        {/*
++          overflow-y-auto moved to this inner div (was on the outer sheet) so
++          the header stays pinned while the body scrolls, and the extra
++          bottom padding (fixed space + real safe-area inset, combined in one
++          value since separate padding-bottom classes would just override
++          each other) guarantees the last row/button in every card — e.g. the
++          last FAQ in "Help center" or the last guideline in "Community
++          guidelines" — always has clear space above the home indicator
++          instead of ending flush against the edge of the screen.
++        */}
++        <div className="p-5 pb-[calc(2.5rem+env(safe-area-inset-bottom,0px))] overflow-y-auto">{children}</div>
+       </motion.div>
+     </AnimatePresence>
+   );
+@@ -1045,8 +1066,16 @@
+ 
+   const closeDialog = () => setOpenDialog(null);
+ 
++  // BUG FIX: pb-24 (96px) was cutting it close against <BottomNav>'s real
++  // footprint (icon row + label + its own padding + safe-area inset on
++  // notched phones), so on many devices the last settings card — and the
++  // bottom row of the second-to-last one, which is where "Support & Safety"
++  // often landed depending on helper/business flags — rendered partially
++  // behind the nav. Note: pb-40 and pb-safe would conflict if combined
++  // (both set padding-bottom, so only one would win) — using one arbitrary
++  // value that adds them gives consistent breathing room on every device.
+   return (
+-    <div className="min-h-screen bg-background text-foreground flex flex-col pb-24">
++    <div className="min-h-screen bg-background text-foreground flex flex-col pb-[calc(10rem+env(safe-area-inset-bottom,0px))]">
+       {/* Header */}
+       <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-xl border-b border-border p-4 pt-safe">
+         <h1 className="text-xl font-black uppercase tracking-widest flex items-center gap-2">

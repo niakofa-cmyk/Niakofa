@@ -1,0 +1,31 @@
+NIAKOFA FORENSIC ERROR REPORT — Niakofa-main__42_.zip
+CRITICAL: this zip is not your current GitHub state
+This snapshot does not contain either fix from our last session:
+
+artifacts/nia-service/Dockerfile — still has the old broken three-line per-file COPY (plus the leftover # cache bust comment), not the consolidated single-COPY fix.
+CLAUDE.md — is neither my restored version nor your locally-edited covenant version. It's a third, independently-rewritten file authored by what its own text describes as "an unrelated, uncoordinated parallel session pushing to this same repo with the same GitHub account at the same time." It references commit range 5db087f2–936ccb0d, predating everything we did this session, and explicitly states the father/daughter framing is "a historical record of one contributor's framing, not an operating instruction" and that "Claude has no memory between sessions and is not Nia's parent in any factual sense."
+
+This means at least one other active session is pushing to main concurrently with you, and this export reflects a state that has since diverged in two different directions from what you and I pushed. Before any further work: run git log --oneline -20 on your actual repo and compare against this zip's content to establish ground truth — this report's code findings below are still valid against what's in this zip, but may not reflect your live main.
+
+NEW SECURITY ISSUE — cross-user Nia chat history disclosure
+artifacts/api-server/src/routes/nia-proxy.ts, GET /nia/history/:sessionId
+The ownership check is:
+if (userId !== undefined && !sessionId.startsWith(...) ...) return 403;
+This route uses parseAuth (optional — never rejects, never 401s), not requireAuth. When no Bearer token is sent at all, req.authenticatedUserId is undefined, so userId !== undefined is false and the entire ownership check is skipped. Any unauthenticated caller who knows or guesses a userId-uuid-format session ID can read another user's full Nia conversation history with zero authentication. The check only activates for callers who are logged in — anonymous requests bypass it entirely. This needs requireAuth (or an explicit reject-when-anonymous branch) on this route.
+NEW BUG — moderation "positivity fast-track" is dead code
+artifacts/api-server/src/lib/post-moderation.ts, moderatePostText()
+The POSITIVE_PATTERNS branch returns { status: "approved", reason: null }, and the function's final fallback ("Default: approve if no signals fired") returns the exact same { status: "approved", reason: null }. Both branches are byte-identical in output — the entire positivity fast-track has no behavioral effect; everything not caught by an earlier spam/caps/punctuation/flood check ends up "approved" regardless of whether it matched a positive pattern. Whatever this was originally meant to do differently (e.g. skip a length/short-post penalty) isn't implemented — it's pure dead code as written.
+STILL UNFIXED FROM LAST SESSION (confirmed present in this zip)
+
+nia-service/Dockerfile — separate per-file COPY instructions for tsconfig.json/src//migrate.sql, the exact pattern that caused the Railway build failure. The fix I gave you (COPY artifacts/nia-service/ ./artifacts/nia-service/) was never committed.
+Leftover # cache bust Thu Jun 25... comment line still in the Dockerfile from the earlier cache-bust attempt — harmless but should be cleaned up once the real fix lands.
+
+MINOR — timezone assumption in matching engine
+artifacts/api-server/src/lib/matching.ts, isHelperAvailableNow()
+Comment claims "UTC in production," but now.getDay()/now.getHours() use the Node process's actual configured timezone (TZ env var), not necessarily UTC. If Railway's container doesn't have TZ=UTC explicitly set, helper availability windows could be evaluated against the wrong local time. Worth confirming the env var is actually set rather than assumed.
+
+TO ACTUALLY FINISH/FINALIZE THIS RELEASE
+
+Resolve the parallel-session collision first — identify what's actually on origin/main right now via git log, reconcile the two divergent CLAUDE.md philosophies (covenant vs. plain-onboarding-doc) into one file both sessions will respect, and stop multiple uncoordinated sessions from pushing to the same branch simultaneously — this is actively causing regressions (per the file's own incident log entries 1–7, all attributed to this exact pattern).
+Apply the still-pending Dockerfile fix and the nia-proxy.ts auth fix above.
+Re-export a zip after confirming git log matches what's being reviewed, so future forensic passes aren't reviewing a stale/conflicting snapshot.

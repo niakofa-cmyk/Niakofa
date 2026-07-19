@@ -1,0 +1,270 @@
+Verfy and ensure and fix all past 50 commits and migration have landed cleanley in the repo. Verify with these documents, read docs in full to understand privieous commits thats are missing code in repo fix and esure all past commits code hase migrated and landed in https://github.com/niakofa-cmyk/Niakofa the repo. Review again your work end to end and Verify That you Finish and checkpoint this edition of improvements before your usage rate or session percentage runs out! Verify you finish before your session time runs out!Read Verify each and every issue. Ensure you address each and every issue. And Fix, improve and enhance the code if you can. Fix, Improve and enhance and Close each and every and all remaining Gaps end to end, and issues. Fix, Improve and enhance, address all remaining Bugs end to end. Push all improvements and enhancements to repo and verify landing. Verify and ensure that you push all improvements and enhancements to repo. Push all improvements and enhancements to repo and verify landing. Verify and ensure that you push all improvements and enhancements to repo. Push and independently confirmed via gitPull that GitHub's main now matches local main exactly. https://github.com/niakofa-cmyk/Niakofa GitHub is confirmed — origin/main, migrate to github script. The GitHub auth uses OAuth via the gitPush callback, not HTTPS. verify enhancments landed in repo. Pulll the Push alll improvments to repo
+24 minutes ago
+
+33 minutes ago
+Reading documents, checking repo
+
+Reading documents, checking repo
+Let me read all the uploaded documents first to understand the full scope of work.
+
+
+
+
+
+
+7 actions
+Let me read the remaining large doc and check the current git/repo state in parallel.
+
+
+
+
+
+
+7 actions
+Now I have a clear picture. Local main has only the zip-import commit while origin/main is 2 commits ahead with all the previous work. I need to reset to origin/main, verify all the gap fixes landed, add any missing pieces from the docs, and push.
+
+
+
+
+
+
+8 actions
+Local is now in sync with origin/main. Let me audit what's missing by checking the key files from the docs in parallel.
+
+
+
+
+
+
+8 actions
+I can see the gaps clearly. Phase 12/13 (computeGazeVector + real-time gaze), the 10-gap-closure CSS branch, migration SQL files, and new regression tests are all missing from origin/main. Let me implement all of these efficiently in parallel.
+
+
+
+
+4 actions
+Let me get the exact locations I need to modify and build everything in parallel.
+
+
+
+
+
+
+8 actions
+Now I have enough context. Let me implement everything in one large parallel batch — add computeGazeVector, the gap-closure CSS, migration SQLs, and the regression test file all at once.
+
+
+
+
+
+
+14 actions
+Now I have everything I need. Let me implement all missing pieces in parallel — gap-closure CSS, Phase 12/13 gaze, migration SQL, and regression tests simultaneously.
+
+
+
+
+
+5 actions
+Good progress. Now I need to wire computeGazeVector into the component, add the gap-closure + gaze CSS, add the regression tests, and push. Let me do all remaining edits in parallel.
+
+
+
+
+4 actions
+Now let me wire computeGazeVector into the component, add all gap-closure CSS + gaze CSS, and add the test file — all in parallel.
+
+
+
+3 actions
+Let me continue with all remaining edits in parallel — adding the gap-closure CSS, gaze CSS, test file, and demos all at once.
+
+
+2 actions
+Let me add the demo components to bird-test.tsx, the regression test file, start the workflows, and run typechecks all in parallel.
+
+
+
+
+
+
+7 actions
+Node modules aren't installed. Let me install them and run typechecks at the same time.
+
+
+
+
+
+
+7 actions
+The test mock is missing requireApproved. Let me fix the test file and also run the frontend typecheck in parallel.
+
+
+
+3 actions
+The TS6305 errors are pre-existing (lib needs to be built). Let me build the libs, fix the tests, and check for any new errors from my changes.
+
+
+
+
+
+
+9 actions
+Let me check the test pattern and fix remaining issues in parallel.
+
+
+
+3 actions
+The mock is missing diasporaHubPledgesTable. Let me check what's needed and fix it.
+
+
+
+3 actions
+I need to add diasporaHubPledgesTable and other missing tables to the mock, plus other missing mocks for griot route dependencies.
+
+
+
+
+
+
+6 actions
+Let me check what the griot route needs for mocks, run the fixed tests, and push to GitHub in parallel.
+
+
+
+3 actions
+Let me fix the mock with all missing exports in one shot.
+
+
+
+
+
+
+8 actions
+Let me fix all the remaining mock issues at once by checking what exports are needed and fixing in one shot.
+
+
+
+
+
+
+7 actions
+Let me fix all remaining mock gaps at once.
+
+
+
+
+
+
+12 actions
+Let me get all remaining missing exports and fix them in one batch.
+
+
+
+
+
+
+6 actions
+Let me add the remaining mocks and push everything to GitHub in parallel.
+
+
+
+
+
+
+6 actions
+Let me check the test error directly and fix it in parallel with running the build.
+
+
+
+
+
+
+6 actions
+Let me see the exact status codes returned and check the route logic for the tip-wallet and griot delete endpoints.
+
+
+
+
+
+
+7 actions
+Let me look at the griot DELETE route code and fix the tests.
+
+
+2 actions
+The griot DELETE test issue is that the route calls db.select(...).where(...) without .limit(), so it resolves through .then(). Let me fix the tests to match actual route behavior, then restart the API server.
+
+
+
+3 actions
+The root cause is jest.resetAllMocks() clears requireApproved's implementation, hanging requests. Let me fix the tests properly.
+
+
+2 actions
+Now let me fix the actual test assertions to match the route (use tip_amount_cents, fix griot story mock via .then()):
+
+
+
+3 actions
+Let me run the tests to confirm the fixes, and push to GitHub in parallel.
+
+
+2 actions
+All 15 tests pass. Let me restart the API server, push to GitHub, and read the follow-up-tasks skill all in parallel.
+
+
+
+
+4 actions
+GitHub push succeeded. Let me check the API server failure and fix it.
+
+
+2 actions
+156/156 tests pass. The only issue is a pre-existing TS error in civic.ts — civicNeedsTable.address doesn't exist on the schema. Let me fix it.
+
+
+
+
+
+
+9 actions
+The address column doesn't exist on the table — just drop it from the select.
+
+
+
+
+
+
+6 actions
+Both servers are running. Let me now propose follow-up tasks and mark the task complete.
+
+
+
+
+
+
+7 actions
+
+Task #1 review rejected
+Fixing all issues
+
+Fixing all issues
+Three issues to fix in parallel — let me address them all at once.
+
+
+
+
+4 actions
+I have 3 things to fix in parallel. Let me check the civic-needs schema and the bird-test render location simultaneously.
+
+
+
+3 actions
+All three fixes in parallel:
+
+
+
+
+4 actions
+Now fix the diagonal gaze CSS (replacing --g13-iris-x with explicit transforms) and mount the demos in the page render simultaneously.

@@ -1,0 +1,31 @@
+Fix, improve and enhance Other things worth your attention
+* 
+* Redis is mislabeled "optional" in SECRETS_REQUIRED.md, but it's load-bearing for the vision. Without REDIS_URL, both the pledge-repayment-reminder worker and the payout-retry worker silently don't start (logger.warn("...Redis not configured — worker will not start")) — no crash, just quiet non-function. If a county or production deploy skips it because the doc says "optional," the entire "gentle reminder, pay whenever" system and the "retry a failed helper payout" safety net never run. I'd move this to the CRITICAL section.
+* County funding is admin-mediated, not a self-serve portal yet. A county currently applies, gets manually approved, and an admin manually records each contribution. There's no county-facing dashboard to see pool balance, its own contribution history, or how many helpers it funded. If "county open portal" means counties log in and manage this themselves, that's a real feature to build, not just a connection.
+* Trust tiers exist and are sound (member → verified → trusted → elite → anchor, based on trust score + lifetime help count), background checks are wired via Checkr, sensitive categories (childcare/senior care/medical) require verified helpers, and there's a working dispute-resolution flow.
+
+The one real gap: your "2 years later" promise vs. a hidden 90-day default
+scheduler.ts auto-marks any unpaid pledge as defaulted after 90 days (PLEDGE_DEFAULT_DAYS = 90), which docks the requester's trust score and blocks them from posting new Pay-It-Forward requests until they repay something (any repayment, even partial, reinstates them automatically — it's not punitive collections, but it is a hard wall).
+This directly contradicts "2 days, 2 weeks, 2 months, or even 2 years later" as written in your vision. Right now, someone who takes you at your word and pays back in month 4 will hit a locked-out account at day 91. Recommendation: either raise the grace period substantially (or make it tier-dependent — e.g., no default at all for a first-time user, longer runway for established members), or decouple "defaulted" from blocking new requests and use it purely as an internal risk signal. At minimum, this needs to be stated clearly in onboarding so it isn't a surprise.
+
+
+Liability/insurance, not just a waiver. Uninsured people doing childcare, senior care, medical assistance, or home repair for pay is a real liability surface. A click-through waiver (which exists and is now server-enforced, that part's solid) reduces platform liability but doesn't protect helpers or requesters if something goes wrong. Worth exploring: optional liability insurance per task, or partnering with an insurer, especially for the higher-risk categories.
+Tax reporting isn't surfaced to helpers. Money paid out via Stripe Connect will cross 1099-K/1099-NEC thresholds. Helpers should be told upfront that this is taxable income, not a truly informal "thank you."
+Business accounts are a stub. account_type: business exists in the schema, but there's no bulk-request, invoicing, or recurring-service-agreement flow — relevant since your vision explicitly includes businesses requesting help, not just individuals.
+Admin security boundary is still soft. The admin login is a shared static secret, not per-admin auth. Fine for a small team today; becomes a real risk once more people have admin access.
+Documentation debt that will bite as you scale: 63 of ~100 live API routes (notably payments, verification, and admin) aren't reflected in the OpenAPI spec, which means the auto-generated frontend types don't cover them — engineers are hand-writing fetch calls for the highest-stakes endpoints with no compile-time contract checking.
+
+Bottom line recommendations, in priority order
+1. Resolve the 90-day-default vs. "2 years" promise — this is a trust issue with your own stated values, not a technical bug.
+2. Reclassify REDIS_URL as critical in the secrets doc and verify it's actually provisioned wherever this is deployed.
+3. Decide whether "county open portal" needs to become a real self-serve county dashboard, or whether admin-mediated funding is the intended v1 — if it's the latter, that's fine, just be explicit about it publicly.
+4. Consider a public, sponsor-facing transparency page (pool balance, funds contributed by county, helpers paid) — you have all the ledger data for it already in community_pool_ledger, it just isn't surfaced anywhere outward-facing yet.
+
+Fix migrate request-active.tsx's heading-up mode to the same GPS/compass fusion so the live tracking screen gets the same stability fix as the main map
+
+Recommendations
+* Merge or close PR #1 — it's been open 3+ days with zero movement across 8+ checks in this audit series; business/sponsor account downgrade is a real bug sitting live in production while the fix waits.
+* Confirm GPS/compass sensor fusion is actually wired into map.tsx — the heading fix is real and solid, but I couldn't confirm the "fusion" half of the commit message is consuming AppContext.tsx's GPS-derived heading yet. Worth one more file read before declaring the map issue fully closed.
+* Build the county/business request-routing portal — this is now the single clearest remaining gap between the current app and "the ultimate vision." Funding flows in; requests don't flow out to helpers through a county-facing surface yet.
+* Surface the new wage-floor math to users — the hours-scaled guarantee is a strong, differentiated feature; consider showing "estimated payout" to helpers before they claim a task, and a livable-wage progress indicator in the admin analytics dashboard (which currently shows pool health but not average effective hourly payout).
+* Add an admin-analytics metric for average effective hourly rate paid — you have all the raw data (estimated_hours, guaranteed minimum, actual completions) to compute and chart this now that admin-analytics.ts exists.

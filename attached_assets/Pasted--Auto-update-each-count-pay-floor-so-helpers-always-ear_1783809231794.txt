@@ -1,0 +1,41 @@
+
+Auto update each count pay floor so helpers always earn a real livable wage. Prevent helpers from getting stuck online with no way to take jobs after applying , and Catch sos and safety ping failures before a user in danger gets false reasurence
+
+Two bugs I found and fixed:
+1. Duplicate Brazil hubs. Last round's migration seeded "Recife, Brazil" / "São Luís, Brazil" / "São Paulo, Brazil." This round's new migration tried to do the same thing defensively, but used different exact name strings ("Recife (Pernambuco)," etc.) — since the safety check matches on exact name, it would have silently created 6 rows for 3 cities instead of recognizing they already existed. Fixed the naming to line up, plus added a cleanup migration in case the mismatched version already ran somewhere.
+2. A real bug in the new safety-ping test suite. The endpoint now correctly writes to the real updated_at column and deliberately doesn't let that write block the response (fire-and-forget, so a database hiccup can't turn a safety-critical response into a failure) — but the test's mock database was missing a method that real production code relies on, which triggered a false 500 in testing. Fixed the mock and updated one test assertion that was still checking for old, now-superseded behavior.
+
+One nuance worth fixing: the Nia AI prompt file currently describes São Paulo as the reference city for the Portuguese-speaking diaspora. That's defensible by raw population, but given the stats you cited, Salvador/Bahia is the more accurate cultural anchor for a "hub" framing (highest percentage, deepest historical through-line). Small text edit, but worth doing so Nia's out-loud framing matches your reasoning.
+
+Recruit a hub leader for Salvador/Bahia specifically — the schema supports it (hub_community_leaders), it's just not yet claimed.
+Fix the São Paulo→Salvador framing in Nia's prompt notes.
+
+Full e2e tests for critical paths (claim→complete→repay).
+Monitor pool health ratio alerts.
+Cache invalidation for leaderboards.
+
+Helper Earnings Dashboard (High — "wake up and get paid"):
+* Daily/weekly projected earnings (nearby open requests × guaranteed min).
+* "Kindness Streak" + leaderboard integration.
+* One-tap "I'm Available" that boosts visibility in matching.
+Flexible Repayment UX Enhancements:
+* Requester wallet/dashboard: "Pay what you can" micro-payments (any amount, any time) with impact visualizer.
+* Automated gentle reminders via Nia + push (no pressure).
+* Sponsor/gov matching for partial pledges.
+Business & Civic Expansion:
+* More seamless business posting (spending caps, approval queues).
+* Full Stripe Invoicing for NET30.
+* Verified local service provider directory.
+Brazil & Global Scaling:
+* As above + currency handling (BRL), more voices, region_crisis_resources seeding.
+* Diaspora hub leader tools (pledge ring-fencing already strong).
+Nia Polish:
+* Voice I/O (already partially wired via ElevenLabs/OpenAI).
+* Structured memory (beyond freeform text).
+* Proactive "good morning" kindness suggestions for helpers.
+
+repayment_plans is a fixed 2-installment/2-week default structure — narrower than the freeform "whatever, whenever" you described. The freeform version lives in scheduled_payments instead; these two overlap and should probably be unified so users see one consistent flow, not two payment-scheduling systems.
+
+(e.g., a daily streak bonus
+
+Still open from earlier rounds: no automated cost-of-living data source for wage floors (admin-entered only, by design for now), multi-helper payout-sum verification, and a cross-county default backstop policy.

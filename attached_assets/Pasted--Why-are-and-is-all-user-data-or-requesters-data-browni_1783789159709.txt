@@ -1,0 +1,16 @@
+
+
+Why are and is all user data or requesters data, browning requests, etc. disagreeing when refreshing the Page? Establish full app connection so that there will never be lost data or disapearing data for users and Helpers/requesters for the Niakofa app.
+
+
+Why it was happening: two real gaps in how the app reconciles what's saved on your phone/browser with what's actually true on the server.
+1. Helper mode had no safety net. When you toggled helper mode on or off, the app updated your screen and saved it locally immediately — before checking if the server actually accepted it. If that save failed for any reason (spotty connection, expired session), your device kept showing the wrong status until your next full refresh quietly flipped it back with zero explanation. That's the "disagreeing" you were seeing.
+2. Your active request was never double-checked. If you had a job in progress and closed the app, it remembered that job by ID in local storage — but never asked the server afterward "is this still true?" So if that request got completed, cancelled, or reassigned while you were away, refreshing the page brought back a ghost of an old job that no longer existed.
+What I fixed:
+* Helper mode now rolls back to the correct state (and tells you it failed) if the server rejects the change, instead of silently drifting out of sync.
+* On every page load, the app now asks the server "is this request still active?" and clears it automatically if it's been completed or cancelled — so you'll never see a stale job hanging around.
+This won't fix every possible edge case in the app, but it closes the two concrete places where your device and the server could genuinely disagree and stay disagreeing.
+
+Fix couldn’t load hubs tap the retry?
+
+Remove the Mapbox branding or tag on tote of the the Globe map view. Add Safety verification and live tracing for in-person help, and automate the county wage floor from public cost of living data, and show helpers their projected earnings before they claim a task. 

@@ -1,0 +1,59 @@
+Key Mobile Issues (Inferred from Docs + Common Patterns)
+
+Safe-area / BottomNav overlap (niakofa-map-alignment.md already notes bottom-32/36/52 hacks).
+Touch targets too small for markers/sheet handle.
+Gesture conflicts (map drag vs sheet drag vs swipe).
+Performance with many markers/clusters on lower-end devices.
+Controls discoverability when sheet is open or keyboard appears.
+iOS-specific (input zoom, Dynamic Island, Safari quirks).
+
+Concrete Improvements (Prioritized)
+1. Safe Area & Responsive Padding (Do This First)
+Create or update a useSafeArea hook / context value and apply it aggressively.
+In artifacts/pay-it-forward/src/components/map.tsx (or wrapper):
+tsx// Add near top
+const { safeAreaBottom } = useAppContext(); // or dedicated hook with env(safe-area-inset-bottom)
+
+const sheetPeekHeight = 96;
+const controlsOffset = sheetPeekHeight + safeAreaBottom + 16; // buffer
+Update BottomSheet + controls:
+
+Sheet: style={{ bottom: ${safeAreaBottom}px }} when collapsed.
+Controls (filters, recenter, orientation): bottom-[${controlsOffset}px] or Tailwind dynamic.
+Live stats pill: top-20 → dynamic top padding.
+
+2. BottomSheet Polish
+
+Snap points: Use framer-motion drag constraints or Vaul for native-like 3 positions (peek → mid → full).
+Drag handle only: Already good — add visual "grip" lines + haptic (if navigator.vibrate).
+Auto-expand: Only for new high-urgency requests assigned to this helper (use highlightedRequestId).
+Mobile-first collapse: Default collapsed on sm screens; remember last state per session via localStorage.
+
+3. Map Controls Redesign (Mobile-First)
+Extract to MapControlsPanel.tsx:
+
+Vertical stack on right edge (compact icons).
+Filters button → bottom drawer (not overlaying map).
+Mode toggle (Helper / Community) as prominent pill near TopBar or floating.
+Add "Recenter + Compass" combo button with fused heading.
+
+4. Performance & Clustering
+
+Make clusterRadius even more adaptive on mobile (useWindowSize or media query).
+Increase CLUSTER_MAX_ZOOM threshold or reduce rendered markers.
+Memoize markers aggressively (already partial — expand with useMemo for props).
+Optional: Lazy-load heatmap on zoom > certain level.
+
+5. Address Search Enhancements
+
+Voice input integration (tie to Nia wake word).
+On mobile: Search bar expands to full-width modal/sheet.
+Prevent map zoom when keyboard opens (fontSize: '16px' already noted in iOS doc).
+
+6. Additional Enhancements
+
+Dark mode map style toggle (Mapbox navigation-night or custom).
+Mini overview in collapsed sheet (small static image or inset map).
+Long-press on markers for quick actions.
+Offline indicator + cached tiles notice.
+Accessibility: Larger hit areas (44px), ARIA, reduced motion respect.

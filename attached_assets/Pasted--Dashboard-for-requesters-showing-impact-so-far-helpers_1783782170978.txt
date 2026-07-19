@@ -1,0 +1,111 @@
+
+Dashboard for requesters showing "impact so far" (helpers helped via their repayments).
+
+
+Critical Gaps:
+* No guaranteed livable wage enforcement — while getGuaranteedMinimum and getHourlyMinimumRate functions exist, they appear to be reference values rather than enforced floors. The pool_guaranteed_minimum and pool_minimum_hourly_rate settings are configurable but not automatically applied to all transactions
+* "Pay It Forward" is opt-in, not default — requesters must actively select deferred payment; the system does not proactively offer it to those who need it most
+* No automated income verification for repayment capacity assessment
+* Missing: government/sponsor subsidy integration to bridge the gap between market rates and livable wages
+
+No livable-wage floor tied to real cost of living — still a flat admin-set number.
+Here's how I'd actually build it, using what's already in your codebase:
+1. A per-county wage floor, not a global one
+Right now getHourlyMinimumRate() in community-pool.ts returns one flat number for everyone. Replace it with a lookup on a new table:
+
+county_wage_floors
+  id, county_id (→ communities/civic table), hourly_minimum, 
+  effective_date, source, set_by_admin_id
+getHourlyMinimumRate(countyId) checks this table first, falls back to a state-level default, then a national default if neither exists. That fallback chain matters — you'll have counties with no data on day one, and helpers still need to get paid.
+2. Where the number comes from
+There's no free real-time API for cost-of-living — the honest options are:
+* MIT Living Wage Calculator data (public, county-level, updated ~annually) — someone manually enters the number per county when it's released, since it's not a live feed.
+* HUD Fair Market Rent as a proxy, which does have a queryable dataset, updated yearly.
+* Or simplest to ship first: let county admins (you already have gov-sponsors and county-portal admin roles) enter their own number, sourced from whatever local data they trust. Crowdsourced-but-verified beats nothing.
+I'd start with option 3 (admin-entered, one field in the civic portal) and layer in an MIT/HUD data import job later as a suggested default they can accept or override.
+3. Pick one household assumption and say so
+Living-wage numbers change a lot by household size (single adult vs. with kids). Pick single-adult-no-dependents as the baseline rate shown to everyone, and just be transparent about that assumption in the UI — don't try to ask every helper their household size, that's a privacy and complexity trap for little benefit.
+4. Which county's rate applies
+Use the request's county (where the work happens), not the helper's home county. That matches "local cost of living" and avoids a helper in a cheap county collecting a big-city rate for driving over the line.
+5. Versioning so past payments don't shift
+Store effective_date on each wage-floor row. When payHelperFromPool calculates a payout, it should use the rate that was active at job completion time, not whatever the current rate is — otherwise a rate update could retroactively change what someone thought they earned.
+6. Surface it, don't bury it
+Show the local minimum on the helper dashboard ("Your county's guaranteed minimum: $X/hr") so it's a visible promise, not a hidden calculation — that's what makes "livable wage" feel real rather than a marketing line.
+That's the whole loop: county-scoped table → admin-entered (with room to later automate from public data) → applied at the request's location → locked in at completion time → shown transparently to helpers.
+
+
+
+1. Task #3: REQUEST_ACCEPTED fires on claim but requester has no listener → add auto-navigate to tracking
+2. Task #4: InAppChat has no requestId guard (fetches /undefined/messages) + silent history failure
+3. Gap: innerJoin drops messages from deleted senders → change to leftJoin
+4. WS event parity: request_updated not in WsEventType
+
+1. Task #3: Add auto-navigate to tracking when REQUEST_ACCEPTED fires and current user is the requester
+2. Task #4/InAppChat null guard: Add requestId guard before fetch
+3. InAppChat silent failure: Add error state for history load failure
+4. innerJoin → leftJoin for chat messages (deleted senders shouldn't drop messages)
+5. WS event type: request_updated not in WsEventType union
+Let me implement all fixes in parallel now. For task #3, I'm thinking through where to hook the auto-navigation. The most robust approach is to add a WebSocket listener in request-detail.tsx that watches for REQUEST_ACCEPTED events. When the requester sees their request get claimed, I'll navigate them to the tracking view automatically, or show a toast with a quick link if they're elsewhere in the app.
+I'll implement this in two places: first in request-detail.tsx where they're most likely waiting, and also add a global listener in AppContext.tsx so they get notified no matter what page they're on.
+Now I need to fix the database query issue where I'm using innerJoin but should use leftJoin when joining the users table to chat messages, since not all messages might have a sender.
+I also need to add a guard in the InAppChat component to handle cases where requestId is undefined or invalid, and make sure request_updated is included in the WebSocket event types for consistency.
+Let me check the request-detail.tsx file to see where I should add the listener for the request_updated event.
+
+Make the requester tracking view open automatically when a helper accepts, And Confirm messages still arrive when Both users reload min- conversation, And Prevent requester data from dissapearing when DB tables are missing
+
+
+Nia Enhancements:
+* Structured memory fields (dietary prefs, family size, preferred helpers) beyond freeform text.
+Full voice conversation loop (STT → TTS) polishing if not 100% wired.
+
+Helper Earnings Visibility:
+* "My Projected Daily/Weekly Earnings" widget based on active hours + nearby open requests + tier multiplier.
+* Tax/form 1099 helper for high-volume helpers (US compliance).
+
+
+Exportable impact reports for counties/grants.
+
+UI/UX Polish:
+* "Pay It Forward" prominent toggle in request-new with estimated repayment slider.
+* Helper availability calendar integration.
+* Offline mode improvements (service worker for cached requests).
+
+Verification Steps (Post-Audit):
+* Run full pnpm run typecheck:libs && pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/pay-it-forward run build.
+* Test end-to-end: post request → claim → complete (PIF) → repayment nudge → pool health.
+* Nia: open drawer, chat, voice wake, share-story to Griot.
+* Deploy to Railway and smoke-test (use seed-test-accounts).
+
+No tenure/loyalty pay growth for long-time helpers.
+Multi-helper payout split still records shares without verifying they sum to the full payout.
+No cross-county default backstop policy.
+
+Critical Gaps:
+* No verified GPS tracking — location proximity matching exists but real-time en-route tracking appears incomplete
+* Missing: emergency/crisis escalation protocols — no automated 911 or emergency service integration for dangerous situations
+* No helper safety verification — background checks, identity verification, or safety check-ins for in-person assistance
+
+Critical Gaps:
+* No verified end-to-end voice flow — wake word detection, STT, intent processing, and TTS response chain not confirmed working in production
+* Missing: offline/low-bandwidth mode — critical for diaspora users in areas with poor connectivity
+* No multilingual Griot support — voice profiles exist but language-specific translation and cultural adaptation appears limited
+* Nia AI lacks proactive community awareness — cannot suggest local helpers, predict community needs, or coordinate mutual aid without explicit user prompts
+
+
+
+Critical Gaps:
+* No verified cross-border payment infrastructure — diaspora members sending money to home communities requires remittance integration not found in code
+* Missing: hub-and-spoke community model — local communities not formally linked to global diaspora networks
+* No cultural event or gathering coordination — beyond individual requests, no community-wide mobilization capability
+
+This requires:
+* Binding wage floors with automatic subsidy backfill
+* Default "Pay It Forward" with genuine forgiveness for those who cannot repay
+* Verified safety and trust for in-person assistance
+* Nia AI as proactive community organizer, not just responsive chatbot
+
+Still open:?
+1. No automated data source for the rate (MIT Living Wage / HUD) — it's admin-entered only for now, which was the intended first step, not a shortcut.
+2. Multi-helper payout split still records shares without verifying they sum to the full payout.
+3. No cross-county default backstop policy.
+4. The codegen breakage above — worth a dedicated fix so the generated client stops drifting from the real API.

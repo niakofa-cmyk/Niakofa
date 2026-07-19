@@ -1,0 +1,195 @@
+Continue verify enhancements can be seen on the phone and new devices, then continue to Review end to end your work and Verify That you Finish and checkpoint this edition of improvements before your usage rate or session percentage runs out! Verify you finish before your session time runs out!Read Verify each and every issue. Ensure you address each and every issue. And Fix, improve and enhance the code if you can. Fix, Improve and enhance and Close each and every and all remaining Gaps end to end, and issues. Fix, Improve and enhance, address all remaining Bugs end to end. Push all improvements and enhancements to repo and verify landing. Verify and ensure that you push all improvements and enhancements to repo. Push all improvements and enhancements to repo and verify landing. Verify and ensure that you push all improvements and enhancements to repo. Push and independently confirmed via gitPull that GitHub's main now matches local main exactly. https://github.com/niakofa-cmyk/Niakofa GitHub is confirmed — origin/main, migrate to github script. The GitHub auth uses OAuth via the gitPush callback, not HTTPS
+
+8 minutes ago
+Auditing and testing enhancements
+
+Auditing and testing enhancements
+Let me do a comprehensive end-to-end audit in parallel — checking mobile viewport, verifying prop correctness in the new bird-test sections, and scanning for any remaining gaps.
+
+Show less
+
+Took a screenshot
+￼
+
+Searched for "batterySaver|BirdCard|B…"
+
+Searched for "function BirdCard|BirdC…"
+Auditing components and props
+
+Auditing components and props
+Let me do a comprehensive audit. I can see the BirdCard props are correct - batterySaver, mapZoom, and badge all exist. Good.
+Now let me:
+1. Check for issues with the Phase7Demo - specifically the heading: null for the curiosity card (BirdState.heading is number | null so that's fine)
+2. Check for any TypeScript errors in bird-test.tsx specific to the new components I added
+3. Check mobile responsiveness of the new sections
+4. Look for any remaining bugs/gaps in SankofaBirdSvg.tsx
+5. Do a broader sweep through the codebase to catch any other issues I might have missed
+
+Checked for code errors
+
+$ cd /home/runner/workspace/artifacts/pay-it-forward && pnpm exec tsc --noEmit 2>&1 | grep -v "TS6305" | grep -E "error|warning" | head -30
+
+(no output)
+
+Opened bird-test.tsx
+
+Searched for "AerodynamicsDemo|Phase7…"
+
+$ cd /home/runner/workspace && grep -n "AerodynamicsDemo\|Phase7Demo\|SectionLabel\|BirdCard" artifacts/pay-it-forward/src/pages/bird-test.tsx | grep -E "function|const " | head -20
+
+
+Comprehensive auditing
+
+Comprehensive auditing
+Let me continue the comprehensive audit and fix all remaining issues. I need to:
+1. Check for TypeScript errors in bird-test.tsx (the new Phase7Demo components)
+2. Check mobile responsiveness of new sections
+3. Audit SankofaBirdSvg.tsx for any CSS issues
+4. Fix any remaining gaps
+5. Push everything
+Let me run parallel exploration to find issues efficiently.
+
+Opened bird-test.tsx
+
+Checked for code errors
+
+Ran a Python script
+
+Searched for "sankofa-head-steady|san…"
+
+$ cd /home/runner/workspace && grep -n "sankofa-head-steady\|sankofa-curiosity-tilt\|sankofa-lod3-enter\|P7\." artifacts/pay-it-forward/src/components/SankofaBirdSvg.tsx | head -20
+
+
+Auditing demo functionality
+
+Auditing demo functionality
+Let me continue the comprehensive audit. So far I can see:
+1. TypeScript check shows no errors (beyond the pre-existing TS6305 lib errors)
+2. No backtick issues in CSS comments
+3. Phase 7 CSS is correctly placed
+4. Bird-test.tsx looks syntactically correct
+5. All demo functions are in place
+Now let me do a comprehensive end-to-end audit:
+1. Screenshot at mobile viewport to check responsiveness
+2. Check the main app pages for any issues
+3. Check for any remaining bugs in SankofaBirdSvg
+4. Check the API health endpoint
+5. Run a broader scan for known issues
+6. I'll spin up an explore subagent to run a parallel audit while I capture mobile screenshots to speed things up.
+TypeScript clean, no backtick issues, all Phase 7 CSS correctly placed. Now let me run a full end-to-end audit in parallel — mobile screenshot, API health check, and broad code scan.
+
+Show less
+
+Took a screenshot
+￼
+
+Fetched a URL
+
+$ cd /home/runner/workspace && curl -s http://localhost:8080/api/healthz 2>/dev/null | python3 -m json.tool 2>/dev/null | head -30
+
+
+
+Running broad codebase audit for gaps and bugs
+
+Executed action
+// Broad codebase audit: look for known gap categories in the live files
+const audit = await subagent({
+name: "niakofa-gap-auditor",
+task: `Audit the Niakofa codebase for any remaining gaps, bugs, or issues in these specific areas:
+
+1. artifacts/pay-it-forward/src/components/SankofaBirdSvg.tsx — look for:
+- Any @keyframes name collisions with existing keyframes
+- Any CSS class names in the P7 block that don't match actual SVG class names in the component (search for sankofa-bird-egg, sankofa-bird-neck, sankofa-bird-head, sankofa-feather-l2/r2/l4/r4 to confirm they exist)
+- Any @media nested inside selectors (invalid CSS)
+- The P7.3 curiosity tilt: confirm data-landing="idle" is a real possible value for the landingPhase state
+
+2. artifacts/pay-it-forward/src/pages/bird-test.tsx — look for:
+- Any React hook order issues (hooks after conditional returns)
+- Any missing props on BirdCard or SankofaBird being passed in new demo functions
+- Confirm Phase7Demo and AerodynamicsDemo are actually rendered (look for their usage in BirdTestPage)
+
+3. artifacts/pay-it-forward/src/pages/request-active.tsx — confirm:
+- skyTier, activityLevel, batterySaver props are correctly wired to SankofaBird instances
+- No stale or unused imports
+
+4. artifacts/pay-it-forward/src/components/SankofaBirdSvg.tsx lines 540-620 — confirm the data-attributes set on the rig match what P7 CSS uses:
+- data-flying, data-landing, data-zoom, data-upcoming-turn, data-helping, data-battery-saver, data-celebrating, data-donated
+
+Report any real bugs found (not just style suggestions), with exact file+line references.`,
+config: { $kind: 'explore' }
+});
+console.log(audit.text);
+
+
+Subagent stopped: Audit the Niakofa codebase for any remaining gaps, bugs, or issues in these specific areas: 1. artifacts/pay-it-forward/src/components/SankofaBirdSvg.tsx — look for: - Any @keyframes name collisions with existing keyframes - Any CSS class names in the P7 block that don't match actual SVG class names in the component (search for sankofa-bird-egg, sankofa-bird-neck, sankofa-bird-head, sankofa-feather-l2/r2/l4/r4 to confirm they exist) - Any @media nested inside selectors (invalid CSS) - The P7.3 curiosity tilt: confirm data-landing="idle" is a real possible value for the landingPhase state 2. artifacts/pay-it-forward/src/pages/bird-test.tsx — look for: - Any React hook order issues (hooks after conditional returns) - Any missing props on BirdCard or SankofaBird being passed in new demo functions - Confirm Phase7Demo and AerodynamicsDemo are actually rendered (look for their usage in BirdTestPage) 3. artifacts/pay-it-forward/src/pages/request-active.tsx — confirm: - skyTier, activityLevel, batterySaver props are correctly wired to SankofaBird instances - No stale or unused imports 4. artifacts/pay-it-forward/src/components/SankofaBirdSvg.tsx lines 540-620 — confirm the data-attributes set on the rig match what P7 CSS uses: - data-flying, data-landing, data-zoom, data-upcoming-turn, data-helping, data-battery-saver, data-celebrating, data-donated Report any real bugs found (not just style suggestions), with exact file+line references.
+Task
+Audit the Niakofa codebase for any remaining gaps, bugs, or issues in these specific areas:
+
+1. artifacts/pay-it-forward/src/components/SankofaBirdSvg.tsx — look for:
+   - Any @keyframes name collisions with existing keyframes
+   - Any CSS class names in the P7 block that don't match actual SVG class names in the component (search for sankofa-bird-egg, sankofa-bird-neck, sankofa-bird-head, sankofa-feather-l2/r2/l4/r4 to confirm they exist)
+   - Any @media nested inside selectors (invalid CSS)
+   - The P7.3 curiosity tilt: confirm data-landing="idle" is a real possible value for the landingPhase state
+
+2. artifacts/pay-it-forward/src/pages/bird-test.tsx — look for:
+   - Any React hook order issues (hooks after conditional returns)
+   - Any missing props on BirdCard or SankofaBird being passed in new demo functions
+   - Confirm Phase7Demo and AerodynamicsDemo are actually rendered (look for their usage in BirdTestPage)
+
+3. artifacts/pay-it-forward/src/pages/request-active.tsx — confirm:
+   - skyTier, activityLevel, batterySaver props are correctly wired to SankofaBird instances
+   - No stale or unused imports
+
+4. artifacts/pay-it-forward/src/components/SankofaBirdSvg.tsx lines 540-620 — confirm the data-attributes set on the rig match what P7 CSS uses:
+   - data-flying, data-landing, data-zoom, data-upcoming-turn, data-helping, data-battery-saver, data-celebrating, data-donated
+
+Report any real bugs found (not just style suggestions), with exact file+line references.
+
+Show more
+
+Show less
+3 failed
+
+Reading SankofaBirdSvg.tsx
+
+
+Reading bird-test.tsx
+
+
+Opened request-active.tsx
+
+Searched for "@keyframes"
+
+Searched for "@media"
+
+Searched for "sankofa-bird-egg|sankof…"
+
+Searched for "5"
+
+Searched for "Phase7Demo|Aerodynamics…"
+
+Opened bird-test.tsx
+
+Opened request-active.tsx
+
+Opened SankofaBirdSvg.tsx
+
+Searched for "5"
+
+$ rg -nC 5 "LandingPhase =" artifacts/pay-it-forward/src/components/SankofaBirdSvg.tsx
+
+
+
+Searched for "LandingPhaseMath"
+
+Searched for "LandingPhaseMath"
+
+Searched for "type LandingPhase"
+
+Read files
+
+Searched for "export type LandingPhase"
+
+$ rg "export type LandingPhase" artifacts/pay-it-forward/src/lib/sankofa-bird-math.ts
+
+

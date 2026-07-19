@@ -1,0 +1,173 @@
+
+
+The core gap
+The Globe is a beautiful, disconnected room. I checked — there is zero code path linking it to requests, wallet, pledges, or crisis data. It doesn't know your actual users exist. And despite importing react-i18next, the hub notes are hardcoded English strings, never run through t() — so the one feature meant to represent global diaspora isn't even localized yet.
+Here's how I'd fix that, roughly in priority order:
+1. Make it true, not decorative Right now "Largest US diaspora hub by member count" is just a sentence someone wrote, not a query. Add diaspora_tag and hub_location to the users table (griot_stories already has both), and replace every hardcoded note with a real count: actual member totals, actual completed-help totals, actual pool balance per hub. If a claim isn't backed by a query, cut it — right now it reads as marketing copy inside app code, which risks becoming misleading as the app grows.
+2. Connect it to the mutual-aid engine, not just storytelling This is the biggest miss given your vision. Right now the Globe and the help economy are two separate apps stapled together. I'd add:
+* Cross-diaspora sponsorship: someone in London can pay-it-forward directly into Accra's or Lagos's community pool (you already have community-pool.ts with per-county floors — extend it to per-hub).
+* Crisis lighting: wire region-crisis-resources/crisis.ts into the Globe so a hub in active crisis visually pulses, with a one-tap "send help to this hub" that routes into the existing pledge/pool system — not a new payment path, just a new entry point into the one you already built.
+* "Your people" onboarding: let new users pick a diaspora hub at signup; surface it as "3 people from your hub helped someone in Fort Worth this week."
+3. Make the arcs mean something Right now every arc is static and identical. Animate an arc only when a real pay-it-forward pledge, gratitude post, or griot story actually moves between two hubs — the Globe becomes a live pulse of real generosity instead of a permanent decoration.
+4. Real network, not hub-and-spoke All arcs currently terminate at Fort Worth. If the diaspora vision is "everyone's connected to everyone," draw hub-to-hub arcs too (Lagos↔London, Accra↔Kingston), weighted by actual story/help volume between them.
+5. Finish the localization Since useTranslation is already imported, actually route hub names/notes/TAG_LABEL through t() with per-language keys. A diaspora-facing feature that's English-only undercuts its own premise.
+6. Accessibility & mobile A WebGL globe with no fallback is a real risk on low-end phones (common in parts of the diaspora you're trying to reach — West Africa, Caribbean). Add a flat list/table view as an accessible + low-bandwidth alternative to the 3D globe, not just a "loading" spinner.
+
+
+both (adding diaspora_tag/hub_location to users and a hub_stats view) and mock up what a "crisis-lit hub with direct pledge"
+
+That's the interaction: the hub card only turns crisis-red when an admin explicitly activates it (never auto-guessed), the stats are the real numbers from hub_stats, and "send help" collects a Stripe charge that gets recorded two places — a diaspora_hub_pledges row (donor-facing receipt) and a sponsor_contribution row in community_pool_ledger scoped to that hub. That second write is the important one: it means the money is immediately spendable by the existing payout-worker and pool-minimums-worker — a helper in Accra gets paid through the exact same guaranteed-minimum machinery as a helper in Fort Worth. No new payment rail, just a new front door into the one you already trust.
+
+should a hub's crisis auto-clear after N days without a renewed admin confirmation (like your region crisis resources' verified pattern), or stay active until someone explicitly turns it off?  the hubs crisis should handles by that Hubs Community Leader, A community leader is the most direct term for an individual who guides, represents, and improves a local or specialized group. Depending on their specific focus, they are frequently referred to by more targeted titles like community organizer, grassroots activist, neighborhood champion, or community advocate, an assigned hub member (by Admin) dedicated to helping the Niakofa community. The Hubs Community leader with have dedicated settings and control actions, and Assigned Tasks for that particular hub to help build community..
+
+Authority check at the API layer: POST /hubs/:hub_key/crisis/activate should check "is this user an admin, OR an active hub_community_leaders row for this hub with activate_crisis in permissions" — not just is_admin. Same pattern for resolve and tasks.
+crisis_last_confirmed_by doesn't have to be the same person who activated it — a co-leader or admin reconfirming keeps the flag fresh, so one person being unreachable doesn't strand the whole hub.
+Revoking a leader mid-crisis shouldn't auto-resolve the crisis — that's a separate action an admin has to take deliberately, so a leadership change can never silently make a real emergency disappear from the map.
+
+That's the leader's control surface — everything on it maps directly to a real permission or table:
+* Crisis card — the "Reconfirm" and "Mark resolved" buttons are exactly crisis_last_confirmed_at/crisis_last_confirmed_by and the resolve_crisis permission from hub_community_leaders. Reconfirming never touches crisis_active — it only refreshes the staleness clock, so the leader can't accidentally clear a real emergency by mistaking "reconfirm" for "resolve."
+* Task list — a live view of hub_leader_tasks filtered to assigned_to = this leader, cycling open → in_progress → done. Tapping a status pill is a PATCH /hub-leader-tasks/:id from the leader, gated by manage_tasks.
+* Stats row — pulled straight from hub_stats, same view the Globe itself reads, so the leader and the public map never show conflicting numbers.
+* Hub settings button — where an admin-granted leader would manage things like a hub welcome message, pinned griot story, or (if given moderate_stories) review flagged submissions for their hub only.
+A couple of route-level things worth deciding when you build this:
+1. Every action here needs the same authority check twice — once for "is this hub_key theirs" and once for "does their permissions array include this specific action." A leader with only manage_tasks shouldn't see the crisis buttons rendered at all, not just get a 403 if they click them.
+2. Task creation stays admin/co-leader only — a leader can complete tasks assigned to them but shouldn't be able to assign tasks to themselves; that's how "assigned by admin" stays meaningful rather than becoming a to-do list they write themselves.
+3. Consider a lightweight audit trail on crisis resolve specifically (who, when, one-line reason) — not a new table, just a crisis_resolution_note column — since "an emergency got marked resolved" is the one action here where you'll want a record if something goes wrong afterward.
+
+
+
+On the schema side, here's what I added to the repo:
+* migrations/0053_user_diaspora_fields.sql + users.ts — diaspora_tag / hub_location columns on users, so members can self-identify at signup instead of the Globe knowing nothing about who's actually using it.
+* migrations/0054_diaspora_hubs.sql + diaspora-hubs.ts — a real diaspora_hubs table, seeded with your current 10 hardcoded cities so it's a drop-in replacement, not a data-loss event. Crisis fields (crisis_active, crisis_level, crisis_message) follow the exact same rule your region_crisis_resources table already enforces: only an admin action sets these, never an AI guess — a false "crisis" claim about a real city is a safety issue, not a cosmetic one.
+* migrations/0055_diaspora_hub_pledges_and_stats.sql + diaspora-hub-pledges.ts + hub-stats.ts — the pledges table described above, and a hub_stats view that joins users, griot_stories, and the new pledges table per hub. This view is meant to be the single source of truth: if a number the Globe displays isn't a column in hub_stats, it shouldn't be on screen — which directly kills the "Largest US diaspora hub by member count" problem from my last audit.
+
+
+
+
+
+
+
+No automated tests for the Nia AI service or the frontend. The backend API has decent test coverage (lifecycle, pledges, users, mailer, queue); Nia and the React app essentially don't. For something handling real money and vulnerable users, that's a real risk before wider rollout.
+Background checks are manual-only — Checkr integration exists in code but isn't connected to a live API key, so helper vetting for sensitive categories (childcare, senior care, medical, etc.) is admin-judgment only right now, not automated.
+Category list is still free-text, not a governed/enum list — this matters for your "almost any legal task" framing, since you'll eventually want an explicit, auditable list of what Niakofa does not intermediate (licensed trades, medical, etc.) for liability reasons.
+
+No tests for Nia AI service or the frontend (still just one small heading-math test).
+Category list still free-text (category: text().default("other")) — no governed enum, no explicit "what we don't cover" list.
+Background checks still manual-only — no CHECKR_API_KEY wired.
+No "paid just for being available" mechanism — compensation is still tied to completed tasks only.
+
+Close the safety gaps first (before anything else)
+* Wire a POST /griot/stories/:id/report (or reuse the existing reports pipeline) so public audio/text can actually be flagged — this is non-negotiable for public UGC.
+* Decide where audio actually lives (S3/Cloudflare R2/etc.) and implement real upload with size/duration limits and a content-type check, rather than trusting a client-given URL.
+* Either build the transcription worker (Nia AI is already in your stack — Haiku could do transcription-cleanup and draft translations) or drop the transcribing status until it's real, so the lifecycle isn't lying about what happens.
+2. Make it earn its place by connecting to the mission, not just sitting next to it Right now Griot is "diaspora storytelling" bolted onto a "help your neighbor, get paid" app — they don't reinforce each other. A few ways to fix that:
+* Let a completed pay-it-forward request prompt an optional short griot story — "tell the story of this act of kindness" — tagged to that request/community. That ties storytelling directly to the mutual-aid loop instead of being a separate cultural feature.
+* Show real activity density on the globe, not just static hub pins: number of active helpers, requests fulfilled, pool balance per hub/county — pulling from the same data that already powers /impact/:county. That turns "diaspora globe" into a living map of where Niakofa's kindness economy is actually happening, which is much closer to your vision than 10 fixed dots.
+* Let counties/communities (which you've already built as first-class entities with sponsors and wage overrides) claim/customize their own hub on the globe, instead of a hand-picked list of 10 cities you don't control.
+3. Make hubs dynamic Derive hub markers from real signup geography (cluster by community/county) with the current 10 as seed/fallback data, rather than a fixed array that can't grow as the user base does.
+
+
+Decide what this feature is actually for, and say so in the UI
+Right now it's ambiguous whether Griot is (a) a cultural-heritage archive, (b) a gratitude/storytelling layer for the help network, or (c) a diaspora social feature. Each of those has a different moderation bar, a different "why should I use this" pitch to a new user, and a different reason to exist inside a mutual-aid app. I'd pick one — my instinct is (b), since it's the only version that actually strengthens your core loop instead of competing with it for engineering time. ??  Actually its A, B, and C. Sketch the schema/route for all 3 to work cohesively with the Niakofa app
+
+
+
+Schema changes
+1. Make the story's purpose explicit, and link it to what created it
+
+ts
+// lib/db/src/schema/griot-stories.ts — additions
+export const griotStoryTypeEnum = pgEnum("griot_story_type", [
+  "heritage_archive",   // (A) oral history, no request/gratitude tie
+  "gratitude",          // (B) grew out of a completed help request
+  "diaspora_social",    // (C) hub/community connection story
+]);
+
+// on griotStoriesTable:
+story_type:       griotStoryTypeEnum("story_type").notNull().default("heritage_archive"),
+request_id:       integer("request_id").references(() => requestsTable.id, { onDelete: "set null" }),
+gratitude_post_id: integer("gratitude_post_id").unique()
+                     .references(() => gratitudePostsTable.id, { onDelete: "set null" }),
+community_id:     integer("community_id").references(() => communitiesTable.id, { onDelete: "set null" }),
+hub_id:           integer("hub_id").references(() => diasporaHubsTable.id, { onDelete: "set null" }),
+request_id/gratitude_post_id let a (B) story trace back to the real act of help it came from — same nullable-FK-plus-cascade pattern you already used for reports.reported_griot_story_id. community_id/hub_id replace the freeform hub_location text field with real relations so a community's stories actually cluster on its own pin instead of a typo-prone string.
+2. Replace the hardcoded 10-city array with a real table
+
+ts
+export const diasporaHubsTable = pgTable("diaspora_hubs", {
+  id:            serial("id").primaryKey(),
+  name:          text("name").notNull(),
+  region_label:  text("region_label").notNull(),
+  lat:           doublePrecision("lat").notNull(),
+  lng:           doublePrecision("lng").notNull(),
+  tag:           text("tag").notNull(),           // reuses HubTag values
+  community_id:  integer("community_id").references(() => communitiesTable.id),
+  is_seed:       boolean("is_seed").notNull().default(false), // your original 10
+  status:        text("status").notNull().default("approved"), // pending_review|approved
+  created_by:    integer("created_by").references(() => usersTable.id),
+  created_at:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+This is what makes (C) actually scale — any real Niakofa community can claim or propose a hub instead of being stuck with 10 cities you picked by hand. Seed the original 10 with is_seed = true so nothing visually changes at launch.
+3. Make the transcribing status real
+
+ts
+export const griotTranscriptionJobsTable = pgTable("griot_transcription_jobs", {
+  id:           serial("id").primaryKey(),
+  story_id:     integer("story_id").notNull().references(() => griotStoriesTable.id, { onDelete: "cascade" }),
+  status:       text("status").notNull().default("queued"), // queued|processing|done|failed
+  error:        text("error"),
+  created_at:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  completed_at: timestamp("completed_at", { withTimezone: true }),
+});
+A worker (mirroring checkin.ts's Nia-calling pattern) picks up queued rows, transcribes audio_url, writes text_content + a draft story_translations row, and flips the story recorded → transcribing → pending_review. Right now that status exists but nothing ever moves it — this closes that.
+Route sketch
+Bridge gratitude → Griot (the (B) connection):
+
+POST /gratitude/:postId/promote-to-story
+  — auth: must be the gratitude post's author
+  — creates a griot_stories row: story_type="gratitude",
+    request_id + gratitude_post_id pre-filled from the post,
+    community_id derived from the request's community,
+    prompt = "Tell the fuller story behind this thank-you"
+  — returns the new story id so the client jumps straight into recording
+This is the one-click "your thank-you can become a story" moment — the natural on-ramp from your existing gratitude feed into Griot, instead of two disconnected features.
+Filtering by purpose on one feed:
+
+GET /griot/stories?story_type=gratitude&community_id=12
+GET /griot/stories?story_type=heritage_archive
+GET /griot/stories?hub_id=7&story_type=diaspora_social
+Same table, three lenses — a Community tab can show only gratitude stories for that county; the Globe shows diaspora_social; a dedicated Archive page shows heritage_archive.
+Dynamic hubs with real activity data (merges B + C):
+
+GET /griot/hubs
+  — returns diaspora_hubs rows, each enriched with:
+    active_helpers, requests_fulfilled, pool_balance (same joins /impact/:county already does)
+    + story_count for that hub
+POST /griot/hubs                — propose a new hub (status="pending_review")
+PATCH /griot/hubs/:id/claim      — community admin claims an existing seed hub
+POST /admin/griot/hubs/:id/review — approve/reject, same governance pattern as story publish
+This turns the globe from "10 static pins with lore" into a live map of where the actual kindness economy is happening — which is the piece that ties it back to your core vision instead of floating next to it.
+Auto-enqueue transcription on creation:
+
+POST /griot/stories  (existing route)
+  — if audio_url present and text_content absent:
+      insert griot_transcription_jobs row (status="queued")
+      status stays "recorded" until worker moves it to "transcribing" → "pending_review"
+One naming note before you build this: griot_stories currently has no unique constraint tying one gratitude_post_id to only one story — worth adding that unique index (as sketched above) so "promote to story" can't be spammed into duplicates on the same thank-you.
+
+
+
+Files created
+* lib/db/migrations/0053_griot_gratitude_diaspora.sql — adds story_type (A/B/C), request_id/gratitude_post_id/community_id/hub_id to griot_stories, creates diaspora_hubs (seeded with your original 10 cities via ON CONFLICT DO NOTHING so it's replay-safe), and griot_transcription_jobs. Written idempotently to match run-migrations.mjs's expectations exactly.
+* lib/db/src/schema/diaspora-hubs.ts, griot-transcription-jobs.ts, and updates to griot-stories.ts + the schema barrel — matching Drizzle mirror of the migration.
+* artifacts/nia-service/src/routes/griot-translate.ts — new /griot/translate endpoint, registered in nia-service/src/index.ts.
+* artifacts/api-server/src/workers/griot-transcription-worker.ts — new worker, registered as non-critical in index.ts alongside nia-checkin.
+* Small companion edit to POST /griot/stories in griot.ts so jobs actually get enqueued.
+One thing I did not fake
+Claude's API takes text/image/PDF, not raw audio — so transcribeAudio() is a documented stub that fails loudly (clear error in job.error, not a silent stall) rather than pretending transcription works. Text-typed stories work end-to-end today (create → auto-enqueue → translation drafts → pending_review). Audio stories will queue and fail with an explicit "no STT provider configured" error until you wire one in (Whisper/AssemblyAI/Deepgram) — that's a real external dependency/cost decision I didn't want to make silently on your behalf.
+
+
+Both routes are built and wired using the same conventions as your existing codebase (nullable FKs, requireAdmin() gate on approvals, atomic job claiming, kill-switch honored). Everything's in the zip with a README mapping each file to its repo path and what's new vs. modified.
+Two things worth flagging before you deploy:
+1. globe.tsx isn't updated — it still reads the hardcoded HUBS array. You asked for schema/routes/worker specifically, so I stopped short of touching the frontend, but it needs to switch to fetching GET /griot/hubs for any of this to actually show up on the globe.
+2. The gratitude-promotion and hub-listing endpoints are new surface area with no test coverage yet — same gap I flagged for the rest of Griot back at the start.

@@ -1,0 +1,50 @@
+Phase 0 — Prerequisite (do this first, not optional)
+Resolve the multi-session collision before adding anything. Run git log --oneline -20, confirm what's actually on main, reconcile the two CLAUDE.md versions. Building six new features on top of an already-diverged codebase guarantees the next regression.
+
+Phase 1 — Structured Memory (highest leverage, smallest blast radius)
+Schema change (lib/db/src/schema/nia-memories.ts + new migration):
+sqlALTER TABLE nia_memories ADD COLUMN IF NOT EXISTS structured JSONB NOT NULL DEFAULT '{}';
+-- structured shape: { recurring_needs: string[], accessibility_notes: string[],
+--   people_mentioned: {name: string, relation: string}[], corrections: string[] }
+Keep the existing memory text column as a fallback/freeform field — don't break what's working.
+nia-service/src/lib/db.ts: add getStructuredMemory(userId) / upsertStructuredMemory(userId, patch) that merges JSONB rather than overwriting.
+nia-service/src/prompts/nia.ts: extend the memory-injection block to render structured fields as labeled context ("Recurring need: weekly grocery runs") instead of one undifferentiated blob.
+New endpoint: GET /api/nia/memory (api-server, proxied like nia-proxy.ts) so the frontend can show users what she remembers and let them edit/delete entries — this is also a privacy requirement, not just a feature.
+Effort: ~1 day. Lowest risk of the six.
+
+Phase 2 — Crisis Follow-Up Continuity
+Reuse the check-in worker's pattern, don't build parallel infrastructure. Extend checkin-worker.ts:
+
+New query: getCrisisThreadsForFollowup() — finds nia_conversations rows flagged by lib/safety.ts as crisis-level in the last 48–72h with no subsequent reply from that user.
+Separate, gentler directive (not the generic 24h-request template) — explicitly check safety.ts's existing crisis classification to avoid re-triggering distress with clumsy phrasing. This one needs a human (you) reviewing the actual prompt wording before it ships — a poorly-worded automated crisis follow-up is worse than none.
+
+Effort: ~1–2 days, but the prompt wording needs careful manual review, not just code review.
+
+Phase 3 — Multilingual by Default
+
+lib/i18n.ts (frontend) already detects locale — pass Accept-Language or stored user preference through nia-proxy.ts into the upstream request body (liveContext.language).
+prompts/nia.ts: add a directive line — "Respond in {language} unless the user switches languages first."
+No new infra — this is a plumbing change, not a new system. Effort: half a day.
+
+
+Phase 4 — Trust-Aware Explanations
+
+lib/matching.ts already returns reasons: string[] per match — expose this through whatever endpoint returns a claimed/suggested helper, and pass it into Nia's context (liveContext.matchReasons) when a user asks "why this helper?"
+Add a directive: "If asked why a specific helper was matched, explain using the matchReasons provided — never invent reasons not in that list."
+Effort: half a day. Mostly wiring, the data already exists.
+
+
+Phase 5 — Self-Correcting Category Phrasing
+This is the only one that's genuinely a data/ML project, not a quick build:
+
+Needs an events table tracking (request_id, category, time_to_claim).
+Needs enough volume before any signal is meaningful — premature to build this until Phases 1–4 are live and you have real usage data. Recommend deferring this one until there's actual claim-time data to learn from; building it now means guessing.
+
+
+Phase 6 — Voice I/O (the big one — separate track, separate timeline)
+This is not a weekend addition; it's a real subproject:
+
+STT: add a /api/nia/voice/transcribe endpoint (api-server, proxied to nia-service or a dedicated provider — Whisper API is the standard choice). Frontend: a push-to-talk button in NiaDrawer.tsx using MediaRecorder, sending audio blobs.
+TTS: Nia's text responses need a voice — pick a provider (ElevenLabs, OpenAI TTS, or similar), stream audio back alongside/instead of the SSE text stream nia-proxy.ts already pipes.
+Latency budget: voice changes the UX contract — a 3-second text-generation delay is invisible in chat, glaring in a voice call. This likely needs streaming TTS (sentence-by-sentence) layered onto the existing SSE pipe in nia-proxy.ts, not a bolt-on after full-response generation.
+Cost model: voice (STT+TTS, every turn) is meaningfully more expensive per conversation than text — needs its own rate limiting tier (crisisAwareChatLimiter's sibling), distinct from the existing chat limiter.
