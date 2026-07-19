@@ -106,3 +106,4 @@
 - [Niakofa SankofaBird Phase 11](niakofa-sankofa-bird-phase11.md) — gap-closure finalization (July 18 2026): battery-saver idle-settle guard, nav-lod opacity transitions, helping full-body crane via rotate: individual, wing-tip flex, crown sway tiers, GPU will-change, mid-zoom shimmer.
 - [Niakofa Audio Circles fixes](niakofa-audio-circles-fixes.md) — 10 bugs fixed July 19: ICE buffering, video rendering, recording wired, mute sync, list-page WS subscriptions, circle_muted_changed type parity.
 - [Niakofa SankofaBird gaze system](niakofa-sankofa-bird-gaze.md) — Phase 12: neck extracted from head group, head-pitch wrapper <g>, 9-state data-look-dir, SVG→CSS px unit conversion rule.
+- [Niakofa workflow bugs July 19](niakofa-workflow-bugs-july19.md) — 6 helper+requester bugs fixed; E2E API quirks (urgency enum, wrapped responses, approval_status gate, wsSend import path).
