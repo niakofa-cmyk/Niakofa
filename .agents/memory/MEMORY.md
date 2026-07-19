@@ -107,3 +107,4 @@
 - [Niakofa Audio Circles fixes](niakofa-audio-circles-fixes.md) — 10 bugs fixed July 19: ICE buffering, video rendering, recording wired, mute sync, list-page WS subscriptions, circle_muted_changed type parity.
 - [Niakofa SankofaBird gaze system](niakofa-sankofa-bird-gaze.md) — Phase 12: neck extracted from head group, head-pitch wrapper <g>, 9-state data-look-dir, SVG→CSS px unit conversion rule.
 - [Niakofa workflow bugs July 19](niakofa-workflow-bugs-july19.md) — 6 helper+requester bugs fixed; E2E API quirks (urgency enum, wrapped responses, approval_status gate, wsSend import path).
+- [Niakofa WS relay and broadcast scoping](niakofa-ws-relay-pattern.md) — HELPER_MOVING relay flow; lifecycle events use sendToRequestParticipants not broadcastRequestEvent; requester tracking card states.
