@@ -40,6 +40,7 @@ import {
   computeLegStrideDelays,
   type LandingPhase,
   type GazeDirection,
+  type SaccadePhase,
 } from "../sankofa-bird-math";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -628,6 +629,10 @@ describe("computeGazeVector", () => {
     expect(dir).toBe("right");
   });
 
+  // ── Saccade phase tests (8-direction full compass rose) ─────────────────
+  // Phase 14: Saccade expanded from 4 → 8 phases to cover every compass point.
+  // Cycle: upleft(0) → null(1) → upright(2) → null(3) →
+  //        downleft(4) → null(5) → downright(6) → null(7) → wrap to 0.
   it("saccadePhase 0 → 'upleft' idle drift", () => {
     const dir = computeGazeVector({ saccadePhase: 0 });
     expect(dir).toBe("upleft");
@@ -648,16 +653,88 @@ describe("computeGazeVector", () => {
     expect(dir).toBeNull();
   });
 
-  it("all saccadePhase values cycle through ['upleft', null, 'upright', null]", () => {
-    const expected: GazeDirection[] = ["upleft", null, "upright", null];
-    for (let i = 0; i < 4; i++) {
-      expect(computeGazeVector({ saccadePhase: i as 0|1|2|3 })).toBe(expected[i]);
+  it("saccadePhase 4 → 'downleft' drift (Phase 14 expansion)", () => {
+    const dir = computeGazeVector({ saccadePhase: 4 });
+    expect(dir).toBe("downleft");
+  });
+
+  it("saccadePhase 5 → null (straight ahead pause)", () => {
+    const dir = computeGazeVector({ saccadePhase: 5 });
+    expect(dir).toBeNull();
+  });
+
+  it("saccadePhase 6 → 'downright' drift (Phase 14 expansion)", () => {
+    const dir = computeGazeVector({ saccadePhase: 6 });
+    expect(dir).toBe("downright");
+  });
+
+  it("saccadePhase 7 → null (straight ahead pause)", () => {
+    const dir = computeGazeVector({ saccadePhase: 7 });
+    expect(dir).toBeNull();
+  });
+
+  it("all 8 saccadePhase values cycle through all 8 compass directions", () => {
+    const expected: GazeDirection[] = [
+      "upleft", null, "upright", null,
+      "downleft", null, "downright", null,
+    ];
+    for (let i = 0; i < 8; i++) {
+      expect(computeGazeVector({ saccadePhase: i as SaccadePhase })).toBe(expected[i]);
     }
   });
 
   it("approaching overrides saccadePhase (priority 1 > 6)", () => {
     const dir = computeGazeVector({ approaching: true, saccadePhase: 0 });
     expect(dir).toBe("down");
+  });
+
+  // ── Phase 14: Bank-responsive gaze (priority 4.5) ────────────────────────
+  // When banking hard (|bankDeg| > 10°) and no higher-priority signal is
+  // active, the bird glances toward the turn direction. This gives real-time
+  // reactive gaze on the map screen even without nav route data.
+  it("bankDeg > 10° (right turn) → 'right' gaze (priority 4.5)", () => {
+    const dir = computeGazeVector({ bankDeg: 15 });
+    expect(dir).toBe("right");
+  });
+
+  it("bankDeg < −10° (left turn) → 'left' gaze (priority 4.5)", () => {
+    const dir = computeGazeVector({ bankDeg: -15 });
+    expect(dir).toBe("left");
+  });
+
+  it("bankDeg within ±10° → no bank gaze (below threshold)", () => {
+    const dir = computeGazeVector({ bankDeg: 8 });
+    // No higher priority signals, no saccade — falls through to null
+    expect(dir).toBeNull();
+  });
+
+  it("bankDeg exactly ±10° → no bank gaze (threshold is strictly > 10)", () => {
+    expect(computeGazeVector({ bankDeg: 10 })).toBeNull();
+    expect(computeGazeVector({ bankDeg: -10 })).toBeNull();
+  });
+
+  it("notification overrides bank gaze (priority 4 > 4.5)", () => {
+    // newNotification fires at priority 4, bank gaze at 4.5 — notification wins
+    const dir = computeGazeVector({ newNotification: true, bankDeg: 20 });
+    expect(dir).toBe("right");  // notification result, not bank result (both are "right" here)
+  });
+
+  it("bank gaze overrides saccade (priority 4.5 > 6)", () => {
+    // Hard bank beats idle saccade
+    const dir = computeGazeVector({ bankDeg: 20, saccadePhase: 0 });
+    expect(dir).toBe("right");  // bank wins over saccadePhase 0 ("upleft")
+  });
+
+  it("bank gaze overrides helping (priority 4.5 > 5)", () => {
+    // Hard bank overrides the eyes-forward helping posture
+    const dir = computeGazeVector({ bankDeg: -18, isHelping: true });
+    expect(dir).toBe("left");
+  });
+
+  it("upcoming turn overrides bank gaze (priority 2 > 4.5)", () => {
+    // Nav turn anticipation beats the raw bank signal
+    const dir = computeGazeVector({ upcomingTurnDirection: "left", bankDeg: 25 });
+    expect(dir).toBe("upleft");  // turn wins, not "right" from bank
   });
 
   it("default (no inputs) → null (straight ahead)", () => {
@@ -678,28 +755,58 @@ describe("computeGazeVector", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 13. Phase 12 — nextSaccadePhase (idle drift cycle advance)
+// 13. Phase 14 — nextSaccadePhase (8-phase omnidirectional idle drift cycle)
 // ─────────────────────────────────────────────────────────────────────────────
+// Saccade was expanded from 4 → 8 phases in Phase 14 so every compass gaze
+// direction fires during idle drift (upleft, upright, downleft, downright +
+// 4 forward-pause nulls).
 describe("nextSaccadePhase", () => {
-  it("cycles 0 → 1 → 2 → 3 → 0", () => {
+  it("cycles 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 0", () => {
     expect(nextSaccadePhase(0)).toBe(1);
     expect(nextSaccadePhase(1)).toBe(2);
     expect(nextSaccadePhase(2)).toBe(3);
-    expect(nextSaccadePhase(3)).toBe(0);
+    expect(nextSaccadePhase(3)).toBe(4);
+    expect(nextSaccadePhase(4)).toBe(5);
+    expect(nextSaccadePhase(5)).toBe(6);
+    expect(nextSaccadePhase(6)).toBe(7);
+    expect(nextSaccadePhase(7)).toBe(0);
   });
 
-  it("result is always in {0,1,2,3}", () => {
-    const phases: Array<0|1|2|3> = [0, 1, 2, 3];
+  it("result is always in {0,1,2,3,4,5,6,7}", () => {
+    const phases: SaccadePhase[] = [0, 1, 2, 3, 4, 5, 6, 7];
     for (const p of phases) {
       const next = nextSaccadePhase(p);
-      expect([0, 1, 2, 3]).toContain(next);
+      expect([0, 1, 2, 3, 4, 5, 6, 7]).toContain(next);
     }
   });
 
-  it("full cycle returns to start after 4 advances", () => {
-    let phase: 0|1|2|3 = 0;
-    for (let i = 0; i < 4; i++) phase = nextSaccadePhase(phase);
+  it("full cycle returns to start after exactly 8 advances", () => {
+    let phase: SaccadePhase = 0;
+    for (let i = 0; i < 8; i++) phase = nextSaccadePhase(phase);
     expect(phase).toBe(0);
+  });
+
+  it("does NOT return to start after 4 advances (8-phase, not 4-phase)", () => {
+    let phase: SaccadePhase = 0;
+    for (let i = 0; i < 4; i++) phase = nextSaccadePhase(phase);
+    expect(phase).toBe(4);  // mid-cycle, not back to 0
+  });
+
+  it("covers all 4 directional gaze slots and 4 null pause slots across the cycle", () => {
+    const gazes: GazeDirection[] = [];
+    let phase: SaccadePhase = 0;
+    for (let i = 0; i < 8; i++) {
+      gazes.push(computeGazeVector({ saccadePhase: phase }));
+      phase = nextSaccadePhase(phase);
+    }
+    const directional = gazes.filter(g => g !== null);
+    const nullPauses   = gazes.filter(g => g === null);
+    expect(directional.length).toBe(4);  // upleft, upright, downleft, downright
+    expect(nullPauses.length).toBe(4);   // 4 forward-pause slots
+    expect(directional).toContain("upleft");
+    expect(directional).toContain("upright");
+    expect(directional).toContain("downleft");
+    expect(directional).toContain("downright");
   });
 });
 
