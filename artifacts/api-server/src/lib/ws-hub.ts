@@ -265,6 +265,22 @@ export function isCircleParticipant(sessionId: number, userId: number): boolean 
   return circleSessionParticipants.get(sessionId)?.has(userId) ?? false;
 }
 
+// ── Audio Circle host registry ────────────────────────────────────────────────
+// Tracks which userId is currently the host of a live circle session.
+// Used to detect when a host's WS closes unexpectedly (browser crash / network
+// drop) so participants receive circle_host_disconnected even if the beforeunload
+// keepalive fetch never makes it to the server.
+const circleSessionHosts = new Map<number, number>(); // userId → sessionId
+
+export function setCircleHost(sessionId: number, userId: number): void {
+  circleSessionHosts.set(userId, sessionId);
+}
+
+/** Call when the session ends OR when the host voluntarily leaves. */
+export function clearCircleHost(userId: number): void {
+  circleSessionHosts.delete(userId);
+}
+
 /**
  * Send an event to all active WebSocket connections for a specific user.
  * No-ops silently if the user has no open sockets.
@@ -790,6 +806,24 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
             userSockets.delete(registeredUserId);
             presenceMap.set(registeredUserId, "OFFLINE");
             broadcast({ type: "presence_update", payload: { user_id: registeredUserId, status: "OFFLINE" } });
+          }
+        }
+
+        // If this user was the host of a live circle session, notify remaining
+        // participants immediately. This covers the crash/network-drop case where
+        // the beforeunload keepalive fetch never reaches the server.
+        const hostedSessionId = circleSessionHosts.get(registeredUserId);
+        if (hostedSessionId !== undefined) {
+          const participants = circleSessionParticipants.get(hostedSessionId);
+          if (participants && participants.size > 0) {
+            sendToCircleParticipants(Array.from(participants), {
+              type: "circle_host_disconnected",
+              payload: { session_id: hostedSessionId, grace_period_ms: 90_000 },
+            });
+            logger.info(
+              { session_id: hostedSessionId, host_id: registeredUserId },
+              "WS: host socket closed — circle_host_disconnected broadcast"
+            );
           }
         }
       }

@@ -24,7 +24,6 @@ import { CommunityListView } from "@/components/CommunityListView";
 import { ResourceDetailSheet } from "@/components/ResourceDetailSheet";
 import { RequestMarker } from "@/components/RequestMarker";
 import { SankofaBird } from "@/components/SankofaBird";
-import { useSolarTier } from "@/hooks/useTimeOfDay";
 import { useBatterySaver } from "@/hooks/useBatterySaver";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { HelperMarker } from "@/components/HelperMarker";
@@ -131,7 +130,6 @@ function pickBestMatch(requests: HelpRequest[]): HelpRequest | null {
 export default function MapScreen() {
   const [, setLocation] = useLocation();
   const { currentUser, helperModeActive, myLocation, activeRequestId, mapNavOpen } = useAppContext();
-  const skyTier = useSolarTier(myLocation?.lat ?? null, myLocation?.lng ?? null);
   // Live battery-saver: auto-enables when Battery API ≤ 15 % or low-end device.
   const batterySaverActive = useBatterySaver({ forceOn: IS_LOW_END_DEVICE });
   const queryClient = useQueryClient();
@@ -927,16 +925,6 @@ export default function MapScreen() {
     return 28;
   }, [openRequests.length]);
 
-  // ── SankofaBird activityLevel — community busyness signal (0–1) ────────────
-  // Drives the bird's blink rate and crown alertness in real time.
-  // Uses the visible (filtered) open request count as the activity signal:
-  // 0 requests = 0.0 (quiet), 10+ requests = 1.0 (peak). The √ curve means
-  // 5 requests already reads as "busy" (~0.7) rather than requiring a full 10 —
-  // city-scale neighbourhoods with a handful of active requests feel alive.
-  const activityLevel = useMemo(
-    () => Math.min(1, Math.sqrt(openRequests.length / 10)),
-    [openRequests.length],
-  );
   // Apply diaspora language filter when active — keeps self-dot off the map
   const displayHelpers = safeHelpers
     .filter(h => h.id !== currentUser?.id)

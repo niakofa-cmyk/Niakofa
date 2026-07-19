@@ -33,6 +33,8 @@ import {
   removeCircleParticipant,
   clearCircleSession,
   broadcastToAuthenticated,
+  setCircleHost,
+  clearCircleHost,
 } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 
@@ -292,6 +294,8 @@ router.post("/audio-circles/:id/start", requireAuth, requireApproved, generalApi
 
   await db.insert(audioCircleParticipantsTable).values({ session_id: session.id, user_id: hostId, role: "host" });
   addCircleParticipant(session.id, hostId);
+  // Register in ws-hub so crash/network-drop is detected without a REST call
+  setCircleHost(session.id, hostId);
 
   const [host] = await db.select({ name: usersTable.name, avatar_url: usersTable.avatar_url }).from(usersTable).where(eq(usersTable.id, hostId)).limit(1);
 
@@ -410,6 +414,7 @@ router.post("/audio-circle-sessions/:id/leave", requireAuth, generalApiLimiter, 
     // by any of this. The host's WS registry entry still gets cleared since
     // their actual socket really is gone; /join re-adds it on reconnect.
     removeCircleParticipant(sessionId, userId);
+    clearCircleHost(userId); // clear ws-hub registry; setCircleHost re-fires on /join reconnect
     await db
       .update(audioCircleSessionsTable)
       .set({ host_disconnected_at: new Date() })
@@ -448,6 +453,14 @@ async function endSessionInternal(sessionId: number) {
     .set({ left_at: new Date() })
     .where(and(eq(audioCircleParticipantsTable.session_id, sessionId), isNull(audioCircleParticipantsTable.left_at)));
   clearCircleSession(sessionId);
+  // Clear host registry so WS close handler doesn't re-fire after session end
+  // (we need to find the host's userId from the DB before clearing)
+  const hostRow = await db
+    .select({ host_id: audioCircleSessionsTable.host_id })
+    .from(audioCircleSessionsTable)
+    .where(eq(audioCircleSessionsTable.id, sessionId))
+    .limit(1);
+  if (hostRow[0]?.host_id != null) clearCircleHost(hostRow[0].host_id);
   // Notify participants in the room
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
     type: "circle_session_ended",

@@ -7,7 +7,7 @@ import type mapboxgl from "mapbox-gl";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { detectVoiceLocale, pickBestVoice, detectUnits, detectMapLanguage } from "@/lib/locale-utils";
-import { useGetRequest, useGetRequests, useGetRoute, useCompleteRequest, useMarkEnRoute, useMarkArrived, getGetRequestQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey } from "@workspace/api-client-react";
+import { useGetRequest, useGetRoute, useCompleteRequest, useMarkEnRoute, useMarkArrived, getGetRequestQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share2, CheckCircle2, Car, PersonStanding, Bike, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,6 @@ import { useTerrain } from "@/hooks/useTerrain";
 import { useTweenedPosition } from "@/hooks/useTweenedPosition";
 import { usePulse } from "@/hooks/usePulse";
 import { SankofaBird } from "@/components/SankofaBird";
-import { useSolarTier } from "@/hooks/useTimeOfDay";
 import { useBatterySaver } from "@/hooks/useBatterySaver";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { motion, AnimatePresence } from "framer-motion";
@@ -111,24 +110,10 @@ export default function ActiveRequestScreen() {
   const [, params] = useRoute("/request/:id");
   const [, setLocation] = useLocation();
   const { currentUser, myLocation } = useAppContext();
-  // Solar sky tier — four-way lighting (day / golden / twilight / night) from
-  // real-time NOAA sun position. Feeds SankofaBird skyTier prop for photorealistic
-  // plumage shading that matches the actual sky the user is looking at.
-  const skyTier = useSolarTier(myLocation?.lat ?? null, myLocation?.lng ?? null);
 
   // Battery saver: auto-enabled when Battery API reports ≤ 15 % or device has < 4 GB RAM.
   const batterySaverActive = useBatterySaver();
 
-  // Activity level: live open-request count → bird alertness on both screens.
-  // Formula: √(openCount / 10), capped at 1.0.
-  // 0 requests → 0.0 (quiet), 10 → 1.0 (peak), 4 → ~0.63 (busy).
-  // Refetched every 60 s so the bird doesn't over-poll on a nav session.
-  const { data: openRequestsData } = useGetRequests(
-    { status: "open" },
-    { query: { queryKey: getGetRequestsQueryKey({ status: "open" }), staleTime: 60_000, refetchInterval: 60_000 } }
-  );
-  const openRequestCount = Array.isArray(openRequestsData) ? openRequestsData.length : 0;
-  const requestActivityLevel = Math.min(1, Math.sqrt(openRequestCount / 10));
   const queryClient = useQueryClient();
   const requestId = parseInt(params?.id || "0", 10);
 
