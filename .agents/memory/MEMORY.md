@@ -108,3 +108,4 @@
 - [Niakofa SankofaBird gaze system](niakofa-sankofa-bird-gaze.md) — Phase 12: neck extracted from head group, head-pitch wrapper <g>, 9-state data-look-dir, SVG→CSS px unit conversion rule.
 - [Niakofa workflow bugs July 19](niakofa-workflow-bugs-july19.md) — 6 helper+requester bugs fixed; E2E API quirks (urgency enum, wrapped responses, approval_status gate, wsSend import path).
 - [Niakofa WS relay and broadcast scoping](niakofa-ws-relay-pattern.md) — HELPER_MOVING relay flow; lifecycle events use sendToRequestParticipants not broadcastRequestEvent; requester tracking card states.
+- [Niakofa tip-wallet and paginated txns](niakofa-tip-wallet-txns.md) — tip-wallet atomic debit/credit pattern; txn type is text (any string valid); X-Total-Count/X-Has-More headers for pagination; toggle-admin self-protect rule.
