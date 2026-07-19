@@ -151,6 +151,12 @@ export default function ActiveRequestScreen() {
   // egg pulse) as described in the vision doc's anticipatory behavior section.
   const [birdApproaching, setBirdApproaching] = useState(false);
 
+  // Live helper location received via HELPER_MOVING WS relay.
+  // Only populated on the REQUESTER side — helpers track their own position via
+  // myLocation (AppContext GPS). The marker appears on the requester's map so they
+  // can see the helper moving toward them in real time without polling the API.
+  const [helperLocation, setHelperLocation] = useState<{ lat: number; lng: number } | null>(null);
+
   // ── usePulse: rising-edge debounce for micro-reactions ──────────────────
   // Prevents CSS animation stutter when props rapidly cycle true/false due to
   // GPS re-renders, WS reconnects, or batched state updates.
@@ -464,7 +470,11 @@ export default function ActiveRequestScreen() {
     const id = setInterval(async () => {
       try {
         await fetch(`/api/verification/safety-checkin/${currentUser.id}`, { method: "POST", headers: authHeaders() });
-      } catch {}
+      } catch (err) {
+        // Non-fatal — don't interrupt the trip for a failed check-in.
+        // Log at debug level so devs can see it in the console without alarming users.
+        if (import.meta.env.DEV) console.debug("[safety-checkin] background ping failed:", err);
+      }
     }, 5 * 60 * 1000);
     return () => clearInterval(id);
   }, [currentUser?.id, isArrived]);
@@ -511,11 +521,14 @@ export default function ActiveRequestScreen() {
         setTimeout(() => setBirdAccepted(false), 1500);
       }
     } else if (event.type === "HELPER_MOVING") {
-      // Requester sees helper position update — invalidate so the map re-renders
-      // with the latest helper coords from the server (server stores last known pos).
-      const p = event.payload as { requestId?: number };
-      if (p.requestId === requestId && !isHelper) {
-        queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
+      // Update the helper's live position on the requester's map.
+      // The server validates the sender is the assigned helper before relaying,
+      // so we can trust the coords. We do NOT invalidate the full request query
+      // here — that would cause a REST round-trip every 8 s, which is wasteful
+      // since the helper position is ephemeral and not stored on the request row.
+      const p = event.payload as { requestId?: number; lat?: number; lng?: number };
+      if (p.requestId === requestId && !isHelper && p.lat != null && p.lng != null) {
+        setHelperLocation({ lat: p.lat, lng: p.lng });
       }
     } else if (event.type === "HELPER_ARRIVED") {
       const p = event.payload as { request_id?: number };
@@ -524,7 +537,26 @@ export default function ActiveRequestScreen() {
         toast({ title: "📍 Your helper has arrived!", description: "They're at your location now." });
         setBirdAccepted(true);
         setTimeout(() => setBirdAccepted(false), 1500);
+        // Clear real-time position once helper has physically arrived — no longer needed
+        setHelperLocation(null);
       }
+    } else if (event.type === "REQUEST_COMPLETED") {
+      // Requester hears that the request has been marked complete by the helper.
+      // Trigger the celebration immediately (before REST refetch resolves).
+      const p = event.payload as { id?: number };
+      if (p.id === requestId && !isHelper) {
+        queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
+        toast({ title: "🎉 Request complete!", description: "Thanks for being part of the community. Rate your helper below." });
+        setBirdCelebrating(true);
+        setTimeout(() => setBirdCelebrating(false), 2500);
+        setHelperLocation(null);
+      }
+    } else if (event.type === "ws_reconnected") {
+      // WS reconnect: the real-time helper position is ephemeral — the relay stream
+      // was interrupted. Clear the stale marker; it will re-populate on the next
+      // HELPER_MOVING event once the helper's location broadcast resumes.
+      setHelperLocation(null);
+      queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
     } else if (event.type === "pledge_paid" || event.type === "payment_completed") {
       // Micro-reaction: golden sparkle + egg glow when a pledge is repaid or a
       // community-pool contribution completes. Distinct from the teal celebrating
@@ -794,20 +826,56 @@ export default function ActiveRequestScreen() {
       {/* Requester tracking card — shown instead of navigation UI */}
       {!isHelper && !isArrived && !isCompleted && (
         <div className="absolute top-16 left-4 right-4 z-20">
-          <div className="rounded-2xl border border-primary/20 bg-card/95 backdrop-blur-xl shadow-xl px-4 py-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">
-              Your Helper is On the Way
-            </p>
-            <p className="text-sm font-semibold text-foreground">
-              {request.helper_name ?? "Your helper"}
-              {routeData?.eta_text ? (
-                <span className="text-muted-foreground font-normal"> · arriving in ~{routeData.eta_text}</span>
-              ) : null}
-            </p>
-            {routeData?.distance_text && (
-              <p className="text-xs text-muted-foreground mt-0.5">{routeData.distance_text} away</p>
-            )}
-          </div>
+          {request.helper_id ? (
+            /* Helper has been assigned — show tracking info */
+            <div className="rounded-2xl border border-primary/20 bg-card/95 backdrop-blur-xl shadow-xl px-4 py-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">
+                {request.status === "en_route" ? "Your Helper is On the Way" :
+                 request.status === "arrived"   ? "Your Helper Has Arrived" :
+                                                  "Helper Accepted"}
+              </p>
+              <p className="text-sm font-semibold text-foreground">
+                {request.helper_name ?? "Your helper"}
+                {routeData?.eta_text ? (
+                  <span className="text-muted-foreground font-normal"> · arriving in ~{routeData.eta_text}</span>
+                ) : null}
+              </p>
+              {routeData?.distance_text && (
+                <p className="text-xs text-muted-foreground mt-0.5">{routeData.distance_text} away</p>
+              )}
+              {/* Live dot — shows when we have a real-time position from WS relay */}
+              {helperLocation && (
+                <p className="text-[9px] text-primary/70 mt-1 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                  Live location active
+                </p>
+              )}
+            </div>
+          ) : (
+            /* No helper yet — show a "searching" state */
+            <div className="rounded-2xl border border-amber-500/20 bg-card/95 backdrop-blur-xl shadow-xl px-4 py-3">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="flex gap-0.5">
+                  {[0, 1, 2].map(i => (
+                    <div
+                      key={i}
+                      className="w-1.5 h-1.5 rounded-full bg-amber-400"
+                      style={{ animationName: "bounce", animationDuration: "0.8s", animationDelay: `${i * 0.15}s`, animationIterationCount: "infinite" }}
+                    />
+                  ))}
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-400">
+                  Finding You a Helper
+                </p>
+              </div>
+              <p className="text-sm font-semibold text-foreground">
+                Your request is live — nearby community members are seeing it now.
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {request.urgency === "emergency" ? "Priority dispatch active" : "You'll be notified the moment someone accepts"}
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -931,6 +999,28 @@ export default function ActiveRequestScreen() {
             )}
           </div>
         </Marker>
+
+        {/* Helper live-location marker — only shown to the REQUESTER.
+            Populated via the HELPER_MOVING WS relay (server validates that
+            the sender is the assigned helper before forwarding to this user).
+            Shows a pulsing teal dot so the requester can watch the helper
+            moving toward them in real time without any polling. */}
+        {!isHelper && helperLocation && (
+          <Marker longitude={helperLocation.lng} latitude={helperLocation.lat} anchor="center">
+            <div className="relative flex items-center justify-center">
+              {/* Outer pulse ring */}
+              <div className="absolute w-10 h-10 rounded-full bg-primary/20 animate-ping" style={{ animationDuration: "1.4s" }} />
+              {/* Mid ring */}
+              <div className="absolute w-7 h-7 rounded-full bg-primary/30" />
+              {/* Inner dot */}
+              <div className="w-4 h-4 rounded-full bg-primary shadow-[0_0_10px_rgba(0,212,255,0.9)] border-2 border-white/80" />
+              {/* Helper label */}
+              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] font-black text-primary bg-background/90 border border-primary/30 rounded-full px-1.5 py-0.5">
+                {request.helper_name ?? "Helper"}
+              </div>
+            </div>
+          </Marker>
+        )}
 
         {/* Real-time traffic layer from Mapbox */}
         <Source id="mapbox-traffic" type="vector" url="mapbox://mapbox.mapbox-traffic-v1">

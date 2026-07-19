@@ -887,7 +887,11 @@ router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res
   if (!request) return res.status(409).json({ error: "Request already claimed or not found" });
   const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, helperId)).limit(1);
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: helper?.name ?? null, distance_miles: null, estimated_duration_min: null };
-  broadcastRequestEvent("REQUEST_ACCEPTED", "request_updated", enriched);
+  // Targeted: send REQUEST_ACCEPTED only to the two participants (saves battery
+  // on unrelated devices). Still broadcast request_updated globally so helpers
+  // on the map screen see the request leave the pool.
+  sendToRequestParticipants(enriched.requester_id, enriched.helper_id, { type: "REQUEST_ACCEPTED", payload: enriched });
+  broadcast({ type: "request_updated", payload: enriched });
   return res.json(enriched);
 });
 
@@ -910,7 +914,11 @@ router.post("/requests/:id/en-route", requireAuth, requireApproved, async (req, 
     .returning();
   if (!request) return res.status(409).json({ error: "Cannot mark en-route — request may have been cancelled or you are no longer the assigned helper." });
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
-  broadcastRequestEvent("HELPER_MOVING", "request_updated", enriched);
+  // Targeted send for the en-route status change: only participants need the
+  // rich REQUEST_ACCEPTED-style push; everyone else gets the lightweight
+  // request_updated so the map pool refreshes.
+  sendToRequestParticipants(enriched.requester_id, enriched.helper_id, { type: "HELPER_MOVING", payload: enriched });
+  broadcast({ type: "request_updated", payload: enriched });
   return res.json(enriched);
 });
 
@@ -931,7 +939,8 @@ router.post("/requests/:id/arrived", requireAuth, requireApproved, async (req, r
     .returning();
   if (!request) return res.status(409).json({ error: "Cannot mark arrived — request may have been cancelled or is not currently in en-route status." });
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
-  broadcastRequestEvent("HELPER_ARRIVED", "request_updated", enriched);
+  sendToRequestParticipants(enriched.requester_id, enriched.helper_id, { type: "HELPER_ARRIVED", payload: enriched });
+  broadcast({ type: "request_updated", payload: enriched });
   return res.json(enriched);
 });
 
@@ -1544,7 +1553,9 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
   }
 
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
-  broadcastRequestEvent("REQUEST_COMPLETED", "request_updated", enriched);
+  // Targeted: only participants need REQUEST_COMPLETED; global broadcast handles map refresh.
+  sendToRequestParticipants(enriched.requester_id, enriched.helper_id, { type: "REQUEST_COMPLETED", payload: enriched });
+  broadcast({ type: "request_updated", payload: enriched });
 
   // Fire-and-forget leaderboard broadcast (doesn't block response)
   broadcastLeaderboardUpdate(

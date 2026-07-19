@@ -18,7 +18,7 @@ import { IncomingMessage } from "http";
 import { logger } from "./logger";
 import { verifyToken } from "../middlewares/auth";
 import { db, chatMessagesTable, requestsTable, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 // ── Standardized Niakofa Event Types ─────────────────────────────────────────
 export type WsEventType =
@@ -771,6 +771,40 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
                   payload: { sender_id: senderId, request_id },
                 });
               }
+            } catch {}
+          })();
+          return;
+        }
+
+        if ((msg as { type: string }).type === "HELPER_MOVING") {
+          // Relay real-time helper GPS position to the requester.
+          //
+          // SECURITY: sender must be authenticated AND be the currently assigned
+          // helper for the stated requestId. We validate by querying the DB with
+          // a WHERE that requires helper_id = senderId — if the row doesn't match,
+          // the message is silently dropped (no leak to the wrong user).
+          //
+          // Rate limiting: the client sends at most once every 8 s; the DB query
+          // is cheap (indexed PK). No server-side rate limit needed.
+          if (registeredUserId === null || !authenticatedSockets.has(socket)) return;
+          const { requestId: hlRequestId, lat: hlLat, lng: hlLng, heading: hlHeading, speed: hlSpeed } =
+            msg.payload as { requestId?: number; lat?: number; lng?: number; heading?: number | null; speed?: number | null };
+          if (!hlRequestId || hlLat == null || hlLng == null) return;
+          const helperId = registeredUserId;
+          (async () => {
+            try {
+              // Confirm the sender is actually the assigned helper for this request.
+              const [req] = await db
+                .select({ requester_id: requestsTable.requester_id, helper_id: requestsTable.helper_id })
+                .from(requestsTable)
+                .where(and(eq(requestsTable.id, hlRequestId), eq(requestsTable.helper_id, helperId)))
+                .limit(1);
+              if (!req) return; // Not the assigned helper — silently reject.
+              // Relay to the requester only (helper already knows their own position).
+              sendToUser(req.requester_id, {
+                type: "HELPER_MOVING" as WsEventType,
+                payload: { requestId: hlRequestId, lat: hlLat, lng: hlLng, heading: hlHeading ?? null, speed: hlSpeed ?? null },
+              });
             } catch {}
           })();
           return;
