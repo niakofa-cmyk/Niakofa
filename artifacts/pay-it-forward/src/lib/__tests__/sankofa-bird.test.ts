@@ -629,62 +629,67 @@ describe("computeGazeVector", () => {
     expect(dir).toBe("right");
   });
 
-  // ── Saccade phase tests (8-direction full compass rose) ─────────────────
-  // Phase 14: Saccade expanded from 4 → 8 phases to cover every compass point.
-  // Cycle: upleft(0) → null(1) → upright(2) → null(3) →
-  //        downleft(4) → null(5) → downright(6) → null(7) → wrap to 0.
-  it("saccadePhase 0 → 'upleft' idle drift", () => {
-    const dir = computeGazeVector({ saccadePhase: 0 });
-    expect(dir).toBe("upleft");
+  // ── Saccade phase tests (8-direction full compass rose, no null slots) ──────
+  // Phase 14: Every saccade phase maps to a unique gaze direction.
+  // Clockwise cycle: left(0) → upleft(1) → up(2) → upright(3) →
+  //                  right(4) → downright(5) → down(6) → downleft(7) → wrap.
+  // Dwell time comes from the 3-6 s timer interval, not null placeholder phases.
+  it("saccadePhase 0 → 'left'", () => {
+    expect(computeGazeVector({ saccadePhase: 0 })).toBe("left");
   });
 
-  it("saccadePhase 1 → null (straight ahead pause)", () => {
-    const dir = computeGazeVector({ saccadePhase: 1 });
-    expect(dir).toBeNull();
+  it("saccadePhase 1 → 'upleft'", () => {
+    expect(computeGazeVector({ saccadePhase: 1 })).toBe("upleft");
   });
 
-  it("saccadePhase 2 → 'upright' drift", () => {
-    const dir = computeGazeVector({ saccadePhase: 2 });
-    expect(dir).toBe("upright");
+  it("saccadePhase 2 → 'up'", () => {
+    expect(computeGazeVector({ saccadePhase: 2 })).toBe("up");
   });
 
-  it("saccadePhase 3 → null (straight ahead pause)", () => {
-    const dir = computeGazeVector({ saccadePhase: 3 });
-    expect(dir).toBeNull();
+  it("saccadePhase 3 → 'upright'", () => {
+    expect(computeGazeVector({ saccadePhase: 3 })).toBe("upright");
   });
 
-  it("saccadePhase 4 → 'downleft' drift (Phase 14 expansion)", () => {
-    const dir = computeGazeVector({ saccadePhase: 4 });
-    expect(dir).toBe("downleft");
+  it("saccadePhase 4 → 'right'", () => {
+    expect(computeGazeVector({ saccadePhase: 4 })).toBe("right");
   });
 
-  it("saccadePhase 5 → null (straight ahead pause)", () => {
-    const dir = computeGazeVector({ saccadePhase: 5 });
-    expect(dir).toBeNull();
+  it("saccadePhase 5 → 'downright'", () => {
+    expect(computeGazeVector({ saccadePhase: 5 })).toBe("downright");
   });
 
-  it("saccadePhase 6 → 'downright' drift (Phase 14 expansion)", () => {
-    const dir = computeGazeVector({ saccadePhase: 6 });
-    expect(dir).toBe("downright");
+  it("saccadePhase 6 → 'down'", () => {
+    expect(computeGazeVector({ saccadePhase: 6 })).toBe("down");
   });
 
-  it("saccadePhase 7 → null (straight ahead pause)", () => {
-    const dir = computeGazeVector({ saccadePhase: 7 });
-    expect(dir).toBeNull();
+  it("saccadePhase 7 → 'downleft'", () => {
+    expect(computeGazeVector({ saccadePhase: 7 })).toBe("downleft");
   });
 
-  it("all 8 saccadePhase values cycle through all 8 compass directions", () => {
+  it("all 8 saccadePhase values map to all 8 compass gaze directions (no duplicates, no nulls)", () => {
     const expected: GazeDirection[] = [
-      "upleft", null, "upright", null,
-      "downleft", null, "downright", null,
+      "left", "upleft", "up", "upright",
+      "right", "downright", "down", "downleft",
     ];
     for (let i = 0; i < 8; i++) {
       expect(computeGazeVector({ saccadePhase: i as SaccadePhase })).toBe(expected[i]);
     }
+    // Verify full set coverage — all 8 directions, none omitted
+    const uniqueDirs = new Set(expected.filter(Boolean));
+    expect(uniqueDirs.size).toBe(8);
+    expect(uniqueDirs.has("left")).toBe(true);
+    expect(uniqueDirs.has("upleft")).toBe(true);
+    expect(uniqueDirs.has("up")).toBe(true);
+    expect(uniqueDirs.has("upright")).toBe(true);
+    expect(uniqueDirs.has("right")).toBe(true);
+    expect(uniqueDirs.has("downright")).toBe(true);
+    expect(uniqueDirs.has("down")).toBe(true);
+    expect(uniqueDirs.has("downleft")).toBe(true);
   });
 
   it("approaching overrides saccadePhase (priority 1 > 6)", () => {
-    const dir = computeGazeVector({ approaching: true, saccadePhase: 0 });
+    // approaching → "down" beats any saccade direction including saccadePhase 2 ("up")
+    const dir = computeGazeVector({ approaching: true, saccadePhase: 2 });
     expect(dir).toBe("down");
   });
 
@@ -757,9 +762,9 @@ describe("computeGazeVector", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // 13. Phase 14 — nextSaccadePhase (8-phase omnidirectional idle drift cycle)
 // ─────────────────────────────────────────────────────────────────────────────
-// Saccade was expanded from 4 → 8 phases in Phase 14 so every compass gaze
-// direction fires during idle drift (upleft, upright, downleft, downright +
-// 4 forward-pause nulls).
+// Phase 14 expanded saccade from 4 → 8 phases. Every phase is a distinct
+// compass gaze direction — no null placeholder slots. Dwell comes from the
+// 3-6 s timer interval between phase advances.
 describe("nextSaccadePhase", () => {
   it("cycles 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 0", () => {
     expect(nextSaccadePhase(0)).toBe(1);
@@ -792,21 +797,27 @@ describe("nextSaccadePhase", () => {
     expect(phase).toBe(4);  // mid-cycle, not back to 0
   });
 
-  it("covers all 4 directional gaze slots and 4 null pause slots across the cycle", () => {
+  it("covers all 8 compass gaze directions across one full cycle — no direction omitted", () => {
     const gazes: GazeDirection[] = [];
     let phase: SaccadePhase = 0;
     for (let i = 0; i < 8; i++) {
       gazes.push(computeGazeVector({ saccadePhase: phase }));
       phase = nextSaccadePhase(phase);
     }
-    const directional = gazes.filter(g => g !== null);
-    const nullPauses   = gazes.filter(g => g === null);
-    expect(directional.length).toBe(4);  // upleft, upright, downleft, downright
-    expect(nullPauses.length).toBe(4);   // 4 forward-pause slots
-    expect(directional).toContain("upleft");
-    expect(directional).toContain("upright");
-    expect(directional).toContain("downleft");
-    expect(directional).toContain("downright");
+    // Every phase is directional — no null pause slots in this cycle design
+    expect(gazes.filter(g => g === null).length).toBe(0);
+    expect(gazes.length).toBe(8);
+    // All 8 compass directions must appear exactly once
+    const dirs = new Set(gazes);
+    expect(dirs.size).toBe(8);
+    expect(dirs.has("left")).toBe(true);
+    expect(dirs.has("upleft")).toBe(true);
+    expect(dirs.has("up")).toBe(true);
+    expect(dirs.has("upright")).toBe(true);
+    expect(dirs.has("right")).toBe(true);
+    expect(dirs.has("downright")).toBe(true);
+    expect(dirs.has("down")).toBe(true);
+    expect(dirs.has("downleft")).toBe(true);
   });
 });
 

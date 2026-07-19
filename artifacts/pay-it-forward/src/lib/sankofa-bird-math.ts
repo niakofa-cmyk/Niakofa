@@ -249,13 +249,15 @@ export function computeGazeVector(input: GazeInput): GazeDirection {
   if (isHelping) return null;
 
   // 6. Idle auto-saccade — all 8 compass directions for true omnidirectional drift.
-  //    Cycle: upleft → forward → upright → forward → downleft → forward → downright → forward.
-  //    The null slots give natural dwell between drift moves (bird returns to center
-  //    before shifting to the next direction) — matches real avian saccade rhythm.
+  //    Cycle (clockwise from left): left → upleft → up → upright →
+  //                                  right → downright → down → downleft → wrap.
+  //    Every phase is a distinct directional gaze — no null placeholder slots.
+  //    Dwell between moves is provided by the 3-6 s saccade timer interval;
+  //    the CSS 0.25 s ease-out transition handles smooth movement between directions.
   if (saccadePhase !== undefined) {
     const drifts: GazeDirection[] = [
-      "upleft", null, "upright", null,
-      "downleft", null, "downright", null,
+      "left", "upleft", "up", "upright",
+      "right", "downright", "down", "downleft",
     ];
     return drifts[saccadePhase % 8];
   }
