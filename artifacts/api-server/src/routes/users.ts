@@ -481,7 +481,7 @@ router.get("/users/:id/public", requireAuth, resolveMeParam, async (req, res) =>
     help_count: user.help_count,
     goodwill_score: user.goodwill_score,
     // Reliability signals — exposed so requesters can make informed choices
-    no_show_count: (user as any).no_show_count ?? 0,
+    no_show_count: user.no_show_count ?? 0,
     // Tier + verification
     highest_tier_reached: user.highest_tier_reached,
     identity_verified: user.identity_verified,
@@ -909,7 +909,7 @@ router.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(
 // back their future requests. Community is validated to exist; null clears the
 // assignment back to the global/unassigned bucket.
 router.put("/users/me/community", requireAuth, async (req, res) => {
-  const userId = (req as any).authenticatedUserId as number;
+  const userId = req.authenticatedUserId!;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const { community_id } = req.body as { community_id?: number | null };
@@ -980,7 +980,7 @@ async function findBlockingPledges(userId: number) {
 // subject (authenticatedUserId) as the canonical source — never a path param —
 // so there is no way to delete another user's account via this route.
 router.delete("/users/me", requireAuth, async (req, res) => {
-  const userId = (req as any).authenticatedUserId as number;
+  const userId = req.authenticatedUserId!;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const blocking = await findBlockingActiveRequests(userId);

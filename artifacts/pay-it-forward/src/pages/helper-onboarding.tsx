@@ -244,14 +244,15 @@ function BioStep({
 export default function HelperOnboardingScreen() {
   const [, setLocation] = useLocation();
   const { currentUser } = useAppContext();
+  const extUser = currentUser as import("@/lib/userTypes").ExtendedUser | null;
 
   // ── All hooks MUST be declared before any conditional return (Rules of Hooks) ──
   const [step, setStep] = useState(0);
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(
-    new Set((currentUser as any)?.helper_skills ?? [])
+    new Set(extUser?.helper_skills ?? [])
   );
   const [availSlots, setAvailSlots] = useState<AvailabilitySlot[]>([]);
-  const [bio, setBio] = useState((currentUser as any)?.helper_bio ?? "");
+  const [bio, setBio] = useState(extUser?.helper_bio ?? "");
   const [saving, setSaving] = useState(false);
 
   const toggleSkill = useCallback((s: string) => {
@@ -269,8 +270,8 @@ export default function HelperOnboardingScreen() {
     });
   }, []);
 
-  const bgStatus = (currentUser as any)?.background_check_status ?? "not_started";
-  const helperStatus = (currentUser as any)?.helper_status as string | undefined;
+  const bgStatus = extUser?.background_check_status ?? "not_started";
+  const helperStatus = extUser?.helper_status;
 
   const STEPS = [
     { id: "skills",       label: "Skills",       icon: Wrench },
