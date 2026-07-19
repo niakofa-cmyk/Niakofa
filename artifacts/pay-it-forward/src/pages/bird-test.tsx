@@ -2276,7 +2276,7 @@ function Phase14_16Demo() {
         <span className="text-[10px] text-center" style={{ color: "#7ee8fa" }}>
           Egg pre-swing<br /><b style={{ color: "#fff" }}>upcoming: {upcomingTurn ?? "none"}</b>
         </span>
-        <span className="text-[9px] mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>P16.2 anticipatory 2° → 3.5° on commit</span>
+        <span className="text-[9px] mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>P16.2 anticipatory 2° · analog pendulum on commit</span>
       </div>
 
       {/* P15: gaze neck arc — perched bird shows neck skewX from diagonal gaze */}
