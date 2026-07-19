@@ -15,7 +15,7 @@
  *  - BankSweepDemo uses small per-tick increments for continuous visible banking
  *  - Unused `tick` state removed
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { SankofaBird } from "@/components/SankofaBird";
 
 /* ── Demo state shape ─────────────────────────────────────────────────── */
@@ -2343,7 +2343,7 @@ function Phase14_16Demo() {
   );
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({ children }: { children: ReactNode }) {
   return (
     <h2
       className="text-xs uppercase font-semibold mb-3"

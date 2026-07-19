@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import {
   computeScreenRotation,
   shortestHeadingDelta,
@@ -514,7 +515,7 @@ export function SankofaBirdSvg({
               style={{
                 "--deg": `${deg}deg`,
                 animationDelay: `${deg * 2}ms`,
-              } as React.CSSProperties}
+              } as CSSProperties}
             />
           ))}
         </div>
@@ -537,7 +538,7 @@ export function SankofaBirdSvg({
                 background: "#f5d98a",
                 borderRadius: "2px",
                 animationDelay: `${deg * 3}ms`,
-              } as React.CSSProperties}
+              } as CSSProperties}
             />
           ))}
         </div>
@@ -698,7 +699,7 @@ export function SankofaBirdSvg({
               //   When heading is unknown, neutral 0.5 gives static opacity 0.22.
               // initial-value 0.5 in @property gives static 0.22 on old browsers.
               "--lighting-factor": `${Math.round((Math.cos(((hasHeading ? (heading as number) : 0) - 315) * Math.PI / 180) * 0.32 + 0.5) * 100) / 100}`,
-            } as React.CSSProperties
+            } as CSSProperties
           }
           data-flying={isMoving ? "true" : "false"}
           data-gliding={isVisuallyGliding ? "true" : "false"}
@@ -1122,7 +1123,7 @@ export function SankofaBirdSvg({
                 transform: "rotate(-22deg)",
                 transformBox: "view-box",
                 transformOrigin: "18.0px 17.0px",
-              } as React.CSSProperties}
+              } as CSSProperties}
             />
             <ellipse
               className="sankofa-wing-joint sankofa-wing-joint-right"
@@ -1134,7 +1135,7 @@ export function SankofaBirdSvg({
                 transform: "rotate(22deg)",
                 transformBox: "view-box",
                 transformOrigin: "22.0px 17.0px",
-              } as React.CSSProperties}
+              } as CSSProperties}
             />
 
             {/* ── Scapular shoulder feathers (design doc: Wing→Shoulder sublayer) ───────────
@@ -1199,7 +1200,7 @@ export function SankofaBirdSvg({
               d="M 14.5 22 A 5.5 7.5 0 0 1 25.5 22 C 24 16.5 16 16.5 14.5 22 Z"
               fill="hsl(190, 85%, 32%)"
               opacity={0}
-              style={{ transformBox: "view-box", transformOrigin: "20px 22px" } as React.CSSProperties}
+              style={{ transformBox: "view-box", transformOrigin: "20px 22px" } as CSSProperties}
             />
             {/* ── Belly — design doc hierarchy: Body → Belly ───────────────────
                 Ventral/lower surface. Real teal birds (kingfishers, etc.) have
@@ -1213,7 +1214,7 @@ export function SankofaBirdSvg({
               d="M 14.5 22 A 5.5 7.5 0 0 0 25.5 22 C 24 27.5 16 27.5 14.5 22 Z"
               fill="hsl(195, 55%, 72%)"
               opacity={0}
-              style={{ transformBox: "view-box", transformOrigin: "20px 22px" } as React.CSSProperties}
+              style={{ transformBox: "view-box", transformOrigin: "20px 22px" } as CSSProperties}
             />
             {/* Body micro-feather texture — visible only at high zoom (≥15).
                 Doc: "At street level: individual feathers gleaming in sunlight."
@@ -1335,28 +1336,28 @@ export function SankofaBirdSvg({
                 d="M5.8 11.0 C5.5 10.2 5.8 9.3 6.3 8.9 C6.5 9.7 6.2 10.6 6.1 11.4 Z"
                 fill="hsl(190, 90%, 50%)"
                 opacity={0}
-                style={{ transformBox: "view-box", transformOrigin: "6.1px 11.4px" } as React.CSSProperties}
+                style={{ transformBox: "view-box", transformOrigin: "6.1px 11.4px" } as CSSProperties}
               />
               <path
                 className="sankofa-crown-feather sankofa-crown-feather-1"
                 d="M6.8 10.0 C6.6 9.2 7.0 8.4 7.6 8.0 C7.6 8.8 7.3 9.7 7.1 10.5 Z"
                 fill="hsl(190, 100%, 58%)"
                 opacity={0}
-                style={{ transformBox: "view-box", transformOrigin: "7.1px 10.5px" } as React.CSSProperties}
+                style={{ transformBox: "view-box", transformOrigin: "7.1px 10.5px" } as CSSProperties}
               />
               <path
                 className="sankofa-crown-feather sankofa-crown-feather-2"
                 d="M7.8 9.6 C7.9 8.7 8.4 8.0 9.0 7.7 C8.8 8.5 8.5 9.4 8.3 10.2 Z"
                 fill="hsl(190, 100%, 68%)"
                 opacity={0}
-                style={{ transformBox: "view-box", transformOrigin: "8.3px 10.2px" } as React.CSSProperties}
+                style={{ transformBox: "view-box", transformOrigin: "8.3px 10.2px" } as CSSProperties}
               />
               <path
                 className="sankofa-crown-feather sankofa-crown-feather-3"
                 d="M9.0 10.1 C9.4 9.2 9.9 8.5 10.4 8.3 C10.1 9.1 9.7 10.0 9.4 10.7 Z"
                 fill="hsl(190, 100%, 62%)"
                 opacity={0}
-                style={{ transformBox: "view-box", transformOrigin: "9.4px 10.7px" } as React.CSSProperties}
+                style={{ transformBox: "view-box", transformOrigin: "9.4px 10.7px" } as CSSProperties}
               />
               {/* crown-5 — far-right foreground feather (most upright, catches most light) */}
               <path
@@ -1364,7 +1365,7 @@ export function SankofaBirdSvg({
                 d="M10.2 10.5 C10.7 9.6 11.2 9.0 11.6 8.8 C11.4 9.6 11.0 10.4 10.7 11.2 Z"
                 fill="hsl(190, 100%, 72%)"
                 opacity={0}
-                style={{ transformBox: "view-box", transformOrigin: "10.7px 11.2px" } as React.CSSProperties}
+                style={{ transformBox: "view-box", transformOrigin: "10.7px 11.2px" } as CSSProperties}
               />
               {/* Crown tip specular catchlights — tiny bright circle at the tip of each
                   major crown feather (visible at street zoom only). Real iridescent crown
@@ -1406,7 +1407,7 @@ export function SankofaBirdSvg({
                   // fill-box breaks Safari < 16.4 (uses wrong transform origin).
                   transformBox: "view-box",
                   transformOrigin: "7.1px 12.2px",
-                } as React.CSSProperties}
+                } as CSSProperties}
               />
               {/* Iris inner ring — dark limbal band between iris and pupil */}
               <circle
@@ -1423,7 +1424,7 @@ export function SankofaBirdSvg({
                 style={{
                   transformBox: "view-box",
                   transformOrigin: "7.1px 12.2px",
-                } as React.CSSProperties}
+                } as CSSProperties}
               />
               {/* Eye highlight — primary corneal glint (static anchor) */}
               <circle cx="7.4" cy="11.95" r="0.2" fill="white" opacity={0.9} />
@@ -1437,7 +1438,7 @@ export function SankofaBirdSvg({
                 style={{
                   transformBox: "view-box",
                   transformOrigin: "7.6px 11.85px",
-                } as React.CSSProperties}
+                } as CSSProperties}
               />
               {/* Eyelid — thin crescent arc that slides down during blinks.
                   Invisible at rest (opacity 0); CSS animates it to opacity 1
@@ -1483,7 +1484,7 @@ export function SankofaBirdSvg({
                 style={{
                   transformBox: "view-box",
                   transformOrigin: "5.45px 14.2px",
-                } as React.CSSProperties}
+                } as CSSProperties}
               />
               {/* Beak specular glint — matches the eye highlight treatment.
                   A tiny white circle on the culmen (ridge of upper beak) gives
@@ -1504,7 +1505,7 @@ export function SankofaBirdSvg({
                 style={{
                   transformBox: "view-box",
                   transformOrigin: "5.45px 14.2px",
-                } as React.CSSProperties}
+                } as CSSProperties}
               />
               {/* ── Chirp rings — sound-wave concentric circles from beak tip ─────
                   Doc: "bird chirps → Looks toward destination → Spreads wings →
@@ -1521,7 +1522,7 @@ export function SankofaBirdSvg({
                 stroke="hsl(190, 100%, 72%)"
                 strokeWidth="0.25"
                 opacity={0}
-                style={{ transformBox: "view-box", transformOrigin: "2.2px 14.25px" } as React.CSSProperties}
+                style={{ transformBox: "view-box", transformOrigin: "2.2px 14.25px" } as CSSProperties}
               />
               <circle
                 className="sankofa-chirp-ring-2"
@@ -1530,7 +1531,7 @@ export function SankofaBirdSvg({
                 stroke="hsl(190, 100%, 82%)"
                 strokeWidth="0.18"
                 opacity={0}
-                style={{ transformBox: "view-box", transformOrigin: "2.2px 14.25px" } as React.CSSProperties}
+                style={{ transformBox: "view-box", transformOrigin: "2.2px 14.25px" } as CSSProperties}
               />
               {/* Third chirp ring — outermost wavefront, expands slowest + furthest.
                   The three rings at overlapping durations produce a true ripple-
@@ -1543,7 +1544,7 @@ export function SankofaBirdSvg({
                 stroke="hsl(190, 100%, 78%)"
                 strokeWidth="0.12"
                 opacity={0}
-                style={{ transformBox: "view-box", transformOrigin: "2.2px 14.25px" } as React.CSSProperties}
+                style={{ transformBox: "view-box", transformOrigin: "2.2px 14.25px" } as CSSProperties}
               />
               {/* ── Beak moisture glint (Phase 4 #26) ────────────────────────────
                   Real bird beaks are hydrated keratin — they carry a sub-pixel wet
@@ -1557,7 +1558,7 @@ export function SankofaBirdSvg({
                 cx="2.4" cy="14.15" r="0.18"
                 fill="white"
                 opacity={0}
-                style={{ transformBox: "view-box", transformOrigin: "2.4px 14.15px" } as React.CSSProperties}
+                style={{ transformBox: "view-box", transformOrigin: "2.4px 14.15px" } as CSSProperties}
               />
               {/* Egg counter-rotation wrapper — keeps egg perfectly stable in the beak
                   while the bird banks. The rig rotates by bankDeg around the pivot
@@ -1571,7 +1572,7 @@ export function SankofaBirdSvg({
                   transformOrigin: "20px 24.8px",
                   transformBox: "view-box",
                   transition: "transform 0.35s ease-out",
-                } as React.CSSProperties}
+                } as CSSProperties}
               >
                 {/* Egg — luminous teal sphere (matching reference image), gold on celebration.
                     The egg symbolises wisdom and carrying the future forward. */}
@@ -1612,7 +1613,7 @@ export function SankofaBirdSvg({
                   style={{
                     transformBox: "view-box",
                     transformOrigin: "3.4px 15.6px",
-                  } as React.CSSProperties}
+                  } as CSSProperties}
                 />
                 {/* Egg orbit particle — internal light swirl when helping/donated.
                     Positioned 1.4 SVG units above the egg center (cy=14.2 vs egg
@@ -1633,7 +1634,7 @@ export function SankofaBirdSvg({
                   style={{
                     transformBox: "view-box",
                     transformOrigin: "3.4px 15.6px",
-                  } as React.CSSProperties}
+                  } as CSSProperties}
                 />
                 {/* Secondary egg orbit particle — 1.4 SVG units below egg center.
                     Rotates counter-clockwise at a different speed, creating a
@@ -1650,7 +1651,7 @@ export function SankofaBirdSvg({
                   style={{
                     transformBox: "view-box",
                     transformOrigin: "3.4px 15.6px",
-                  } as React.CSSProperties}
+                  } as CSSProperties}
                 />
                 {/* ── Egg thermal depth layers (Phase 4 #25) ─────────────────────
                     Two concentric circles with deliberately different periods
@@ -1664,7 +1665,7 @@ export function SankofaBirdSvg({
                   stroke="hsl(192, 100%, 82%)"
                   strokeWidth="0.22"
                   opacity={0}
-                  style={{ transformBox: "view-box", transformOrigin: "3.4px 15.6px" } as React.CSSProperties}
+                  style={{ transformBox: "view-box", transformOrigin: "3.4px 15.6px" } as CSSProperties}
                 />
                 <circle
                   className="sankofa-egg-thermal-mid"
@@ -1673,7 +1674,7 @@ export function SankofaBirdSvg({
                   stroke="hsl(192, 100%, 76%)"
                   strokeWidth="0.16"
                   opacity={0}
-                  style={{ transformBox: "view-box", transformOrigin: "3.4px 15.6px" } as React.CSSProperties}
+                  style={{ transformBox: "view-box", transformOrigin: "3.4px 15.6px" } as CSSProperties}
                 />
               </g>
             </g>
@@ -1685,7 +1686,7 @@ export function SankofaBirdSvg({
                   transform-origin at hip joint (18.5, 29.5) in SVG space. */}
               <g
                 className="sankofa-leg-left"
-                style={{ transformBox: "view-box", transformOrigin: "18.5px 29.5px" } as React.CSSProperties}
+                style={{ transformBox: "view-box", transformOrigin: "18.5px 29.5px" } as CSSProperties}
               >
                 <line
                   x1="18.5" y1="29.5"
@@ -1704,7 +1705,7 @@ export function SankofaBirdSvg({
                   transform-origin at hip joint (21.5, 29.5) in SVG space. */}
               <g
                 className="sankofa-leg-right"
-                style={{ transformBox: "view-box", transformOrigin: "21.5px 29.5px" } as React.CSSProperties}
+                style={{ transformBox: "view-box", transformOrigin: "21.5px 29.5px" } as CSSProperties}
               >
                 <line
                   x1="21.5" y1="29.5"
@@ -1731,14 +1732,14 @@ export function SankofaBirdSvg({
                 d="M14.2 35.8 C13.6 36.5 13.4 37.0 13.8 37.1 C14.2 36.6 14.6 36.0 14.5 35.6 Z"
                 fill="hsl(196, 40%, 72%)"
                 opacity={0}
-                style={{ transformBox: "view-box", transformOrigin: "14px 36.4px" } as React.CSSProperties}
+                style={{ transformBox: "view-box", transformOrigin: "14px 36.4px" } as CSSProperties}
               />
               <path
                 className="sankofa-talon-right"
                 d="M25.8 35.8 C26.4 36.5 26.6 37.0 26.2 37.1 C25.8 36.6 25.4 36.0 25.5 35.6 Z"
                 fill="hsl(196, 40%, 72%)"
                 opacity={0}
-                style={{ transformBox: "view-box", transformOrigin: "26px 36.4px" } as React.CSSProperties}
+                style={{ transformBox: "view-box", transformOrigin: "26px 36.4px" } as CSSProperties}
               />
             </g>
 
@@ -1750,15 +1751,15 @@ export function SankofaBirdSvg({
                 Uses transform-box:view-box so origins are in SVG coordinate space. */}
             <circle className="sankofa-idle-dust sankofa-dust-1"
               cx="15.5" cy="35.5" r="0.32" fill="hsl(190, 100%, 72%)" opacity={0}
-              style={{ transformBox: "view-box", transformOrigin: "15.5px 35.5px" } as React.CSSProperties}
+              style={{ transformBox: "view-box", transformOrigin: "15.5px 35.5px" } as CSSProperties}
             />
             <circle className="sankofa-idle-dust sankofa-dust-2"
               cx="20" cy="37" r="0.26" fill="hsl(190, 100%, 78%)" opacity={0}
-              style={{ transformBox: "view-box", transformOrigin: "20px 37px" } as React.CSSProperties}
+              style={{ transformBox: "view-box", transformOrigin: "20px 37px" } as CSSProperties}
             />
             <circle className="sankofa-idle-dust sankofa-dust-3"
               cx="24.5" cy="35.5" r="0.22" fill="hsl(190, 100%, 72%)" opacity={0}
-              style={{ transformBox: "view-box", transformOrigin: "24.5px 35.5px" } as React.CSSProperties}
+              style={{ transformBox: "view-box", transformOrigin: "24.5px 35.5px" } as CSSProperties}
             />
 
             {/* ── Walk-dust lateral pair (Phase 4 #16) ───────────────────────────
@@ -1769,11 +1770,11 @@ export function SankofaBirdSvg({
                 CSS triggers: data-speed="walking" AND data-flying="false". */}
             <circle className="sankofa-walk-dust-4"
               cx="14.0" cy="35.0" r="0.28" fill="hsl(190, 100%, 68%)" opacity={0}
-              style={{ transformBox: "view-box", transformOrigin: "14px 35px" } as React.CSSProperties}
+              style={{ transformBox: "view-box", transformOrigin: "14px 35px" } as CSSProperties}
             />
             <circle className="sankofa-walk-dust-5"
               cx="26.0" cy="35.0" r="0.24" fill="hsl(190, 100%, 68%)" opacity={0}
-              style={{ transformBox: "view-box", transformOrigin: "26px 35px" } as React.CSSProperties}
+              style={{ transformBox: "view-box", transformOrigin: "26px 35px" } as CSSProperties}
             />
 
             {/* ── Helping orbit particles ─────────────────────────────────────────
@@ -1794,7 +1795,7 @@ export function SankofaBirdSvg({
                   transformBox: "view-box",
                   transformOrigin: "20px 21px",
                   animationDelay: `${deg * 0.00778}s`,
-                } as React.CSSProperties}
+                } as CSSProperties}
               />
             ))}
 
@@ -1811,7 +1812,7 @@ export function SankofaBirdSvg({
               stroke="hsl(192, 100%, 78%)"
               strokeWidth="0.48"
               opacity={0}
-              style={{ transformBox: "view-box", transformOrigin: "20px 27px" } as React.CSSProperties}
+              style={{ transformBox: "view-box", transformOrigin: "20px 27px" } as CSSProperties}
             />
 
             {/* ── Speed streaks (Phase 4 #24) ───────────────────────────────────────
@@ -1822,17 +1823,17 @@ export function SankofaBirdSvg({
             <line className="sankofa-speed-streak sankofa-speed-streak-1"
               x1="22" y1="14" x2="28" y2="14"
               stroke="hsl(192, 100%, 80%)" strokeWidth="0.45" strokeLinecap="round" opacity={0}
-              style={{ transformBox: "view-box", transformOrigin: "20px 14px" } as React.CSSProperties}
+              style={{ transformBox: "view-box", transformOrigin: "20px 14px" } as CSSProperties}
             />
             <line className="sankofa-speed-streak sankofa-speed-streak-2"
               x1="22" y1="18" x2="27" y2="18"
               stroke="hsl(192, 100%, 85%)" strokeWidth="0.35" strokeLinecap="round" opacity={0}
-              style={{ transformBox: "view-box", transformOrigin: "20px 18px" } as React.CSSProperties}
+              style={{ transformBox: "view-box", transformOrigin: "20px 18px" } as CSSProperties}
             />
             <line className="sankofa-speed-streak sankofa-speed-streak-3"
               x1="22" y1="22" x2="26" y2="22"
               stroke="hsl(192, 100%, 75%)" strokeWidth="0.28" strokeLinecap="round" opacity={0}
-              style={{ transformBox: "view-box", transformOrigin: "20px 22px" } as React.CSSProperties}
+              style={{ transformBox: "view-box", transformOrigin: "20px 22px" } as CSSProperties}
             />
 
             {/* ── Notification arrival ring (Phase 4 #30) ─────────────────────────
@@ -1848,7 +1849,7 @@ export function SankofaBirdSvg({
               stroke="hsl(192, 100%, 72%)"
               strokeWidth="0.50"
               opacity={0}
-              style={{ transformBox: "view-box", transformOrigin: "20px 20px" } as React.CSSProperties}
+              style={{ transformBox: "view-box", transformOrigin: "20px 20px" } as CSSProperties}
             />
 
             {/* ── Wing-tip vortex rings (Phase 3) ────────────────────────────────
@@ -1869,7 +1870,7 @@ export function SankofaBirdSvg({
               stroke="hsl(192, 100%, 76%)"
               strokeWidth="0.55"
               opacity={0}
-              style={{ transformBox: "view-box", transformOrigin: "3.5px 6.5px" } as React.CSSProperties}
+              style={{ transformBox: "view-box", transformOrigin: "3.5px 6.5px" } as CSSProperties}
             />
             <circle
               className="sankofa-vortex sankofa-vortex-right"
@@ -1879,7 +1880,7 @@ export function SankofaBirdSvg({
               stroke="hsl(192, 100%, 76%)"
               strokeWidth="0.55"
               opacity={0}
-              style={{ transformBox: "view-box", transformOrigin: "36.5px 6.5px" } as React.CSSProperties}
+              style={{ transformBox: "view-box", transformOrigin: "36.5px 6.5px" } as CSSProperties}
             />
           </svg>
         </div>
