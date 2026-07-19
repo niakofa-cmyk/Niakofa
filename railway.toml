@@ -1,9 +1,7 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "cd artifacts/pay-it-forward && npm ci && npm run build"
 
 [deploy]
-startCommand = "cd artifacts/pay-it-forward && npx serve dist -p $PORT"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 healthcheckPath = "/"
