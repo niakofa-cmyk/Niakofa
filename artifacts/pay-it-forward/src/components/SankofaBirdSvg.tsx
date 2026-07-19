@@ -1942,6 +1942,17 @@ export function SankofaBirdSvg({
           inherits: true;
           initial-value: 0;
         }
+        /* --turn-intensity: normalized bank intensity [0, 1].
+           0 = flying straight, 1 = maximum 25° bank.
+           Set by the React layer and consumed by P14 CSS for smooth
+           intensity-proportional wing-sweep and body-commit (replaces the
+           binary 0px/max approach so a gentle 8° bank gives a small sweep,
+           a hard 25° bank gives the full 1.4 px / 0.7 px displacement). */
+        @property --turn-intensity {
+          syntax: '<number>';
+          inherits: true;
+          initial-value: 0;
+        }
         /* --deg is used in sankofa-burst and sankofa-golden-burst keyframes.
            Without @property the browser cannot interpolate it inside @keyframes
            on Safari < 15.4 — the particles all fire from the center instead
@@ -9312,32 +9323,35 @@ export function SankofaBirdSvg({
            wing extends outward and slightly forward — aerodynamic lift asymmetry.
            The INSIDE wing pulls back and inward — feathers loaded for the downstroke.
            This is more aggressive than P12.5 (upcoming-turn) which was 0.8px and
-           anticipatory. These are 1.4px actual-bank extensions and fire simultaneously
-           with P12.5 when both upcoming-turn and turning are active.
+           anticipatory. These are up to 1.4px actual-bank extensions and fire
+           simultaneously with P12.5 when both upcoming-turn and turning are active.
+           INTENSITY SCALING: sweep now uses calc(var(--turn-intensity) * Xpx) so
+           a gentle 8° bank (intensity≈0.32) gives ~0.45px, a hard 25° bank gives
+           the full 1.4px. This replaces the previous binary 0px→1.4px step.
            @supports translate so it composes with P12.5 translate cleanly. */
         @supports (translate: 0px) {
           /* Banking left: right wing (outside) sweeps out+forward */
           .sankofa-bird-rig[data-flying="true"][data-turning="left"][data-zoom="high"] .sankofa-bird-wing-right,
           .sankofa-bird-rig[data-flying="true"][data-turning="left"][data-zoom="street"] .sankofa-bird-wing-right {
-            translate: 1.4px -0.4px;
+            translate: calc(var(--turn-intensity, 0) * 1.4px) calc(var(--turn-intensity, 0) * -0.4px);
             transition: translate 0.30s cubic-bezier(0.34, 1.15, 0.64, 1);
           }
           /* Banking left: left wing (inside) tucks inward */
           .sankofa-bird-rig[data-flying="true"][data-turning="left"][data-zoom="high"] .sankofa-bird-wing-left,
           .sankofa-bird-rig[data-flying="true"][data-turning="left"][data-zoom="street"] .sankofa-bird-wing-left {
-            translate: -0.6px 0.3px;
+            translate: calc(var(--turn-intensity, 0) * -0.6px) calc(var(--turn-intensity, 0) * 0.3px);
             transition: translate 0.32s cubic-bezier(0.34, 1.15, 0.64, 1);
           }
           /* Banking right: left wing (outside) sweeps out+forward */
           .sankofa-bird-rig[data-flying="true"][data-turning="right"][data-zoom="high"] .sankofa-bird-wing-left,
           .sankofa-bird-rig[data-flying="true"][data-turning="right"][data-zoom="street"] .sankofa-bird-wing-left {
-            translate: -1.4px -0.4px;
+            translate: calc(var(--turn-intensity, 0) * -1.4px) calc(var(--turn-intensity, 0) * -0.4px);
             transition: translate 0.30s cubic-bezier(0.34, 1.15, 0.64, 1);
           }
           /* Banking right: right wing (inside) tucks inward */
           .sankofa-bird-rig[data-flying="true"][data-turning="right"][data-zoom="high"] .sankofa-bird-wing-right,
           .sankofa-bird-rig[data-flying="true"][data-turning="right"][data-zoom="street"] .sankofa-bird-wing-right {
-            translate: 0.6px 0.3px;
+            translate: calc(var(--turn-intensity, 0) * 0.6px) calc(var(--turn-intensity, 0) * 0.3px);
             transition: translate 0.32s cubic-bezier(0.34, 1.15, 0.64, 1);
           }
           /* Reset when bank clears */
@@ -9359,16 +9373,17 @@ export function SankofaBirdSvg({
            translateX moves the BODY element (not the rig, which already rotates)
            so it reads as "the whole torso shifting into the turn" rather than just
            an angle change. Uses individual translate: property so it composes with
-           E7's rotate: on .sankofa-bird-body without any shorthand conflict. */
+           E7's rotate: on .sankofa-bird-body without any shorthand conflict.
+           INTENSITY SCALING: 0.7px max, proportional to --turn-intensity. */
         @supports (translate: 0px) {
           .sankofa-bird-rig[data-flying="true"][data-turning="left"][data-zoom="high"] .sankofa-bird-body,
           .sankofa-bird-rig[data-flying="true"][data-turning="left"][data-zoom="street"] .sankofa-bird-body {
-            translate: -0.7px 0.1px;
+            translate: calc(var(--turn-intensity, 0) * -0.7px) calc(var(--turn-intensity, 0) * 0.1px);
             transition: translate 0.38s cubic-bezier(0.34, 1.1, 0.64, 1);
           }
           .sankofa-bird-rig[data-flying="true"][data-turning="right"][data-zoom="high"] .sankofa-bird-body,
           .sankofa-bird-rig[data-flying="true"][data-turning="right"][data-zoom="street"] .sankofa-bird-body {
-            translate: 0.7px 0.1px;
+            translate: calc(var(--turn-intensity, 0) * 0.7px) calc(var(--turn-intensity, 0) * 0.1px);
             transition: translate 0.38s cubic-bezier(0.34, 1.1, 0.64, 1);
           }
           .sankofa-bird-rig[data-turning="none"] .sankofa-bird-body {
@@ -9384,22 +9399,23 @@ export function SankofaBirdSvg({
            During a hard bank the outer tail feathers spread asymmetrically —
            the inside-turn feathers compress (folded for bank geometry) while
            outside-turn feathers fan wider for drag-steering (the avian rudder).
-           Uses individual transform on outer tail elements with @supports guard. */
+           Uses individual transform on outer tail elements with @supports guard.
+           INTENSITY SCALING: 0.5px / 0.3px max, proportional to --turn-intensity. */
         @supports (translate: 0px) {
           .sankofa-bird-rig[data-flying="true"][data-turning="left"] .sankofa-tail-outer-right {
-            translate: 0.5px -0.2px;
+            translate: calc(var(--turn-intensity, 0) * 0.5px) calc(var(--turn-intensity, 0) * -0.2px);
             transition: translate 0.40s ease-out;
           }
           .sankofa-bird-rig[data-flying="true"][data-turning="left"] .sankofa-tail-outer-left {
-            translate: -0.3px 0.1px;
+            translate: calc(var(--turn-intensity, 0) * -0.3px) calc(var(--turn-intensity, 0) * 0.1px);
             transition: translate 0.42s ease-out;
           }
           .sankofa-bird-rig[data-flying="true"][data-turning="right"] .sankofa-tail-outer-left {
-            translate: -0.5px -0.2px;
+            translate: calc(var(--turn-intensity, 0) * -0.5px) calc(var(--turn-intensity, 0) * -0.2px);
             transition: translate 0.40s ease-out;
           }
           .sankofa-bird-rig[data-flying="true"][data-turning="right"] .sankofa-tail-outer-right {
-            translate: 0.3px 0.1px;
+            translate: calc(var(--turn-intensity, 0) * 0.3px) calc(var(--turn-intensity, 0) * 0.1px);
             transition: translate 0.42s ease-out;
           }
           .sankofa-bird-rig[data-turning="none"] .sankofa-tail-outer-left,
