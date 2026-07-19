@@ -9,6 +9,8 @@ import {
   computeWingExtras,
   computeTailBend,
   computeHeadLeadDeg,
+  computeGazePitchSvgUnits,
+  computeLookDir,
   getSpeedTier,
   type LandingPhase as LandingPhaseMath,
 } from "@/lib/sankofa-bird-math";
@@ -246,6 +248,21 @@ export function SankofaBirdSvg({
   // micro-movement that scales with wind pressure, not just flap timing.
   const speedFactor = Math.min(1, speedMs / 15);
 
+  // ── Real-time gaze system ────────────────────────────────────────────────────
+  // gazePitchSvgUnits: vertical head offset in the 40×40 viewBox coordinate space.
+  // Negative = look DOWN (approaching, landing), Positive = look UP (alert, helping).
+  // Applied to the sankofa-bird-head-pitch wrapper <g> as a CSS translateY in px,
+  // converted to CSS pixels with: svgUnits × (size / 40).
+  const gazePitchSvgUnits = computeGazePitchSvgUnits({
+    approaching: approaching ?? false,
+    landingPhase: landingPhase as LandingPhaseMath,
+    isHelping: isHelping ?? false,
+    isMoving,
+  });
+  // lookDir: nine-state gaze direction label — combines yaw (headLeadDeg + turn dir)
+  // and pitch (gazePitchSvgUnits) into a single CSS-targetable data attribute.
+  const lookDir = computeLookDir(headLeadDeg, gazePitchSvgUnits, upcomingTurnDirection ?? null);
+
   return (
     <div
       className="relative flex items-center justify-center"
@@ -475,6 +492,11 @@ export function SankofaBirdSvg({
           data-approaching={approaching ? "true" : "false"}
           data-helping={isHelping ? "true" : "false"}
           data-battery-saver={batterySaver ? "true" : "false"}
+          data-look-dir={lookDir}
+          data-gaze-vertical={
+            gazePitchSvgUnits > 0.5 ? "up" :
+            gazePitchSvgUnits < -0.5 ? "down" : "level"
+          }
         >
           <svg
             width={size}
@@ -1004,16 +1026,37 @@ export function SankofaBirdSvg({
               d="M21.0 25.5 C20.7 26.7 21.2 28.0 21.8 29.0 C22.1 27.5 21.8 26.2 22.0 25.7 Z"
               fill="hsl(190, 87%, 57%)" opacity={0} />
 
-            {/* ── Neck + head — Sankofa backward-looking pose ───────────────── */}
+            {/* ── Neck — independent element (not inside head pitch wrapper) ────
+                Extracted from sankofa-bird-head so it can flex laterally into
+                the turn without participating in head pitch. The neck's body-end
+                attachment (18, 16) is the transform-origin so bends stay anchored
+                to the body. CSS drives the lateral rotate via --head-lead-deg. */}
+            <path
+              className="sankofa-bird-neck"
+              d="M18 16 C15 13 12 12 9 13.5"
+              fill="none"
+              stroke="hsl(190, 100%, 52%)"
+              strokeWidth="3.4"
+              strokeLinecap="round"
+              style={{ transformBox: "view-box", transformOrigin: "18px 16px" } as React.CSSProperties}
+            />
+
+            {/* ── Head pitch wrapper — translates the entire head group vertically ─
+                Uses CSS px computed from SVG units: gazePitchSvgUnits × (size/40).
+                This wrapper is separate from the head group so head CSS animations
+                (crown sway, eyelids, pupil saccades, etc.) are unaffected — they
+                operate on .sankofa-bird-head children; this outer <g> only moves
+                the origin point up or down as the bird gazes at its destination. */}
+            <g
+              className="sankofa-bird-head-pitch"
+              style={{
+                transform: `translateY(${(gazePitchSvgUnits * size / 40).toFixed(2)}px)`,
+                transformBox: "view-box",
+                transition: "transform 0.5s ease-out",
+                willChange: "transform",
+              } as React.CSSProperties}
+            >
             <g className="sankofa-bird-head">
-              <path
-                className="sankofa-bird-neck"
-                d="M18 16 C15 13 12 12 9 13.5"
-                fill="none"
-                stroke="hsl(190, 100%, 52%)"
-                strokeWidth="3.4"
-                strokeLinecap="round"
-              />
               <circle
                 cx="8"
                 cy="13"
@@ -1295,7 +1338,8 @@ export function SankofaBirdSvg({
                   } as React.CSSProperties}
                 />
               </g>
-            </g>
+            </g>{/* /sankofa-bird-head */}
+            </g>{/* /sankofa-bird-head-pitch */}
 
             {/* Legs — separate animated layer; subtle perch sway at rest,
                 alternating step during flight, dangle during landing hover. */}
@@ -4451,6 +4495,172 @@ export function SankofaBirdSvg({
            only already-declared vars (--heading-deg, --flap-period, --lean-deg)
            so no new @property declarations are needed. This comment documents
            the check so future authors know it was intentional, not an oversight. */
+
+        /* ═══════════════════════════════════════════════════════════════════
+           REAL-TIME GAZE SYSTEM (Phase 12)
+           data-look-dir: nine-state 2-axis head gaze
+           data-gaze-vertical: up / level / down
+           sankofa-bird-head-pitch <g>: vertical offset wrapper (React inline)
+           sankofa-bird-neck (extracted): lateral flex via --head-lead-deg
+           ═══════════════════════════════════════════════════════════════════ */
+
+        /* ── Neck lateral flex (extracted from head group) ────────────────
+           Bends at the body-end anchor (18, 16) so the neck stays glued
+           to the body while its head-end swings left/right into the turn.
+           0.35× scale of headLeadDeg gives a realistic anatomical ratio.
+           Transition must match the head-lead CSS transition (0.4s). */
+        .sankofa-bird-rig[data-flying="true"] .sankofa-bird-neck {
+          transform: rotate(calc(var(--head-lead-deg, 0deg) * 0.35));
+          transition: transform 0.4s ease-out;
+        }
+
+        /* Stronger neck commitment when a turn is explicitly signalled */
+        .sankofa-bird-rig[data-upcoming-turn="left"] .sankofa-bird-neck {
+          transform: rotate(-8deg);
+          transition: transform 0.35s ease-out;
+        }
+        .sankofa-bird-rig[data-upcoming-turn="right"] .sankofa-bird-neck {
+          transform: rotate(8deg);
+          transition: transform 0.35s ease-out;
+        }
+
+        /* Neck relaxes to vertical on approach/landing (head already pitching down) */
+        .sankofa-bird-rig[data-approaching="true"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-landing="hover"] .sankofa-bird-neck,
+        .sankofa-bird-rig[data-landing="slowflap"] .sankofa-bird-neck {
+          transform: rotate(-4deg);
+          transition: transform 0.5s ease-out;
+        }
+
+        /* Idle — neck fully relaxed, neutral posture */
+        .sankofa-bird-rig[data-landing="idle"] .sankofa-bird-neck {
+          transform: rotate(0deg);
+          transition: transform 0.8s ease-out;
+        }
+
+        /* ── Head pitch wrapper transition ────────────────────────────────
+           The <g class="sankofa-bird-head-pitch"> gets transform from React
+           inline style. This CSS only provides will-change and a fall-through
+           transition for cases where the inline style doesn't change (i.e. level). */
+        .sankofa-bird-head-pitch {
+          will-change: transform;
+        }
+
+        /* ── Crown response to gaze pitch ─────────────────────────────────
+           Up-gaze: crown feathers fan upright (alert, takeoff).
+           Down-gaze: crown feathers droop forward slightly (looking down at target). */
+        .sankofa-bird-rig[data-gaze-vertical="up"] .sankofa-crown-feather {
+          transform: translateY(-0.6px) rotate(-5deg);
+          transition: transform 0.5s ease-out;
+        }
+        .sankofa-bird-rig[data-gaze-vertical="down"] .sankofa-crown-feather {
+          transform: translateY(0.4px) rotate(4deg);
+          transition: transform 0.5s ease-out;
+        }
+
+        /* ── Eye pupil shift by look direction ────────────────────────────
+           The pupil (sankofa-bird-pupil) shifts in the direction the bird
+           is looking. Values are small (SVG scale): 0.4px = ~1% of head radius.
+           Combined with the pitch wrapper this creates a physically grounded gaze. */
+        .sankofa-bird-rig[data-look-dir="up"] .sankofa-bird-pupil,
+        .sankofa-bird-rig[data-look-dir="left-up"] .sankofa-bird-pupil,
+        .sankofa-bird-rig[data-look-dir="right-up"] .sankofa-bird-pupil {
+          transform: translateY(-0.35px);
+          transition: transform 0.4s ease-out;
+        }
+        .sankofa-bird-rig[data-look-dir="down"] .sankofa-bird-pupil,
+        .sankofa-bird-rig[data-look-dir="left-down"] .sankofa-bird-pupil,
+        .sankofa-bird-rig[data-look-dir="right-down"] .sankofa-bird-pupil {
+          transform: translateY(0.35px);
+          transition: transform 0.4s ease-out;
+        }
+        .sankofa-bird-rig[data-look-dir="left"] .sankofa-bird-pupil {
+          transform: translateX(-0.3px);
+          transition: transform 0.4s ease-out;
+        }
+        .sankofa-bird-rig[data-look-dir="right"] .sankofa-bird-pupil {
+          transform: translateX(0.3px);
+          transition: transform 0.4s ease-out;
+        }
+        .sankofa-bird-rig[data-look-dir="left-up"] .sankofa-bird-pupil {
+          transform: translate(-0.25px, -0.3px);
+          transition: transform 0.4s ease-out;
+        }
+        .sankofa-bird-rig[data-look-dir="right-up"] .sankofa-bird-pupil {
+          transform: translate(0.25px, -0.3px);
+          transition: transform 0.4s ease-out;
+        }
+        .sankofa-bird-rig[data-look-dir="left-down"] .sankofa-bird-pupil {
+          transform: translate(-0.25px, 0.3px);
+          transition: transform 0.4s ease-out;
+        }
+        .sankofa-bird-rig[data-look-dir="right-down"] .sankofa-bird-pupil {
+          transform: translate(0.25px, 0.3px);
+          transition: transform 0.4s ease-out;
+        }
+
+        /* ── Iris saccade override for directional gaze ───────────────────
+           The existing sankofa-iris-saccade keyframe runs a 7s cycle independent
+           of gaze state. When a strong directional gaze is active, we pause the
+           cycle and hold the iris in the look direction instead. */
+        .sankofa-bird-rig[data-look-dir="left"] .sankofa-bird-iris,
+        .sankofa-bird-rig[data-look-dir="left-up"] .sankofa-bird-iris,
+        .sankofa-bird-rig[data-look-dir="left-down"] .sankofa-bird-iris {
+          animation-play-state: paused;
+          transform: translate(-0.4px, 0px);
+          transition: transform 0.4s ease-out;
+        }
+        .sankofa-bird-rig[data-look-dir="right"] .sankofa-bird-iris,
+        .sankofa-bird-rig[data-look-dir="right-up"] .sankofa-bird-iris,
+        .sankofa-bird-rig[data-look-dir="right-down"] .sankofa-bird-iris {
+          animation-play-state: paused;
+          transform: translate(0.4px, 0px);
+          transition: transform 0.4s ease-out;
+        }
+
+        /* ── Body inside-turn compression ─────────────────────────────────
+           Simulates aerodynamic load on the inner (lower) wing and body during
+           banking. scaleX on the body ellipse gives a subtle "squished inward"
+           effect on the turning side. This is a CSS-only approximation — for
+           full physical accuracy the wing-fold already handles the primary cue. */
+        .sankofa-bird-rig[data-upcoming-turn="left"] .sankofa-bird-body {
+          transform: scaleX(0.96);
+          transform-box: view-box;
+          transform-origin: 20px 24px;
+          transition: transform 0.35s ease-out;
+        }
+        .sankofa-bird-rig[data-upcoming-turn="right"] .sankofa-bird-body {
+          transform: scaleX(1.04);
+          transform-box: view-box;
+          transform-origin: 20px 24px;
+          transition: transform 0.35s ease-out;
+        }
+
+        /* ── Battery saver: disable pitch transition, hold neutral ─────────
+           At LOD3 (battery-saver) we skip animated pitch for GPU budget. */
+        .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-head-pitch {
+          transition: none !important;
+        }
+        .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-neck {
+          transition: none !important;
+          transform: none !important;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .sankofa-bird-head-pitch {
+            transition: none !important;
+          }
+          .sankofa-bird-neck {
+            transition: none !important;
+          }
+          .sankofa-crown-feather {
+            transition: none !important;
+          }
+          .sankofa-bird-pupil,
+          .sankofa-bird-iris {
+            transition: none !important;
+          }
+        }
       `}</style>
     </div>
   );

@@ -227,3 +227,80 @@ export function computeLeanDeg(opts: {
   if (!isMoving)                                                return 0;
   return Math.min(15, 6 + speedMs);
 }
+
+// ── Real-time gaze system ─────────────────────────────────────────────────────
+
+/**
+ * Compute the vertical head pitch offset in SVG viewBox units (40×40 coordinate space).
+ *
+ * Positive = head tilts UP (alert / takeoff look-up).
+ * Negative = head tilts DOWN (approaching destination, landing, looking for perch).
+ *
+ * Values are kept small (max ±2.0 SVG units) because the head radius is 3.4 units
+ * — a 2-unit shift is already a highly visible tilt at any zoom level.
+ *
+ * Caller must convert to CSS px: svgUnits × (size / 40).
+ */
+export function computeGazePitchSvgUnits(opts: {
+  approaching: boolean;
+  landingPhase: LandingPhase;
+  isHelping: boolean;
+  isMoving: boolean;
+}): number {
+  const { approaching, landingPhase, isHelping, isMoving } = opts;
+
+  // Landing — bird looks DOWN to find the perch
+  if (landingPhase === "hover")    return -1.8;
+  if (landingPhase === "slowflap") return -1.2;
+  if (landingPhase === "perch")    return -0.6;
+  // Idle at rest — neutral, very slight upright posture
+  if (landingPhase === "idle")     return isHelping ? 0.6 : 0;
+  // Takeoff — head snaps up during launch (handled by keyframes too, this gives
+  // the CSS head-pitch wrapper a baseline so the keyframe starts from the right place)
+  if (landingPhase === "takeoff")  return 1.0;
+  // Approaching destination — gentle downward look as bird scopes the target
+  if (approaching)                 return -1.0;
+  // Active flight while helping — upright, purposeful head carriage
+  if (isHelping && isMoving)       return 0.4;
+  // Neutral cruise
+  return 0;
+}
+
+/**
+ * Compute a look-direction label for the data-look-dir attribute.
+ *
+ * Combines yaw (from headLeadDeg / upcomingTurn) and pitch (from gazePitchSvgUnits)
+ * into one of 9 named directions. CSS uses this for targeted gaze animations:
+ *   - Crown feathers raise on "up", droop on "down"
+ *   - Eye pupil override shifts in the look direction
+ *   - Wing root flex reinforces the turn direction
+ *
+ * Thresholds are intentionally generous so "forward" covers small jitter.
+ */
+export function computeLookDir(
+  headLeadDeg: number,
+  gazePitchSvgUnits: number,
+  upcomingTurnDirection: "left" | "right" | null,
+): "forward" | "left" | "right" | "up" | "down" | "left-up" | "right-up" | "left-down" | "right-down" {
+  // Yaw: upcoming-turn signal overrides bank-derived lead
+  let yawSign = 0;
+  if (upcomingTurnDirection === "left") yawSign = -1;
+  else if (upcomingTurnDirection === "right") yawSign = 1;
+  else if (headLeadDeg < -3) yawSign = -1;
+  else if (headLeadDeg >  3) yawSign = 1;
+
+  // Pitch: use SVG unit magnitude; thresholds tuned for the small head size
+  let pitchSign = 0;
+  if (gazePitchSvgUnits >  0.5) pitchSign = 1;
+  else if (gazePitchSvgUnits < -0.5) pitchSign = -1;
+
+  if (yawSign < 0 && pitchSign > 0) return "left-up";
+  if (yawSign > 0 && pitchSign > 0) return "right-up";
+  if (yawSign < 0 && pitchSign < 0) return "left-down";
+  if (yawSign > 0 && pitchSign < 0) return "right-down";
+  if (yawSign < 0) return "left";
+  if (yawSign > 0) return "right";
+  if (pitchSign > 0) return "up";
+  if (pitchSign < 0) return "down";
+  return "forward";
+}

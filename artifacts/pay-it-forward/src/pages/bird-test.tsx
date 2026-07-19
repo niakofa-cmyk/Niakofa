@@ -989,6 +989,11 @@ export default function BirdTestPage() {
           />
         </div>
 
+        {/* ── Phase 12 Gaze System ──────────────────────────────────────── */}
+        <SectionLabel>Phase 12 — Real-time 2-axis gaze (neck flex + head pitch + look-dir)</SectionLabel>
+        <GazeDirectionDemo />
+        <NeckLateralBendDemo />
+
         {/* ── Size comparison ───────────────────────────────────────────── */}
         <SectionLabel>Size comparison (map marker = 34px default, test = 48px)</SectionLabel>
         <div className="flex gap-6 items-end mb-8 flex-wrap">
@@ -1051,6 +1056,176 @@ export default function BirdTestPage() {
         </div>
 
       </div>
+    </div>
+  );
+}
+
+/* ── Phase 12: Gaze Direction Demo ─────────────────────────────────────────
+   Cycles through all 9 look-dir states with explicit props so each state
+   triggers the full gaze pipeline (neck flex + head pitch + pupil shift). */
+const GAZE_STATES: Array<{
+  label: string;
+  approaching?: boolean;
+  landingPhase?: string;
+  isHelping?: boolean;
+  upcomingTurnDirection?: "left" | "right" | null;
+  speed: number;
+  navigating: boolean;
+  heading: number;
+  lookDirLabel: string;
+}> = [
+  { label: "Forward", speed: 5, navigating: true, heading: 0, lookDirLabel: "forward" },
+  { label: "Left glance", speed: 5, navigating: true, heading: 0, upcomingTurnDirection: "left", lookDirLabel: "left" },
+  { label: "Right glance", speed: 5, navigating: true, heading: 0, upcomingTurnDirection: "right", lookDirLabel: "right" },
+  { label: "Look up (takeoff)", speed: 5, navigating: true, heading: 0, lookDirLabel: "up" },
+  { label: "Look down (approach)", speed: 5, navigating: true, heading: 0, approaching: true, lookDirLabel: "down" },
+  { label: "Left-down (left turn + approach)", speed: 5, navigating: true, heading: 0, upcomingTurnDirection: "left", approaching: true, lookDirLabel: "left-down" },
+  { label: "Right-down (right turn + approach)", speed: 5, navigating: true, heading: 0, upcomingTurnDirection: "right", approaching: true, lookDirLabel: "right-down" },
+  { label: "Left-up (left turn + helping)", speed: 5, navigating: true, heading: 0, upcomingTurnDirection: "left", isHelping: true, lookDirLabel: "left-up" },
+  { label: "Right-up (right + helping)", speed: 5, navigating: true, heading: 0, upcomingTurnDirection: "right", isHelping: true, lookDirLabel: "right-up" },
+];
+
+function GazeDirectionDemo() {
+  const [idx, setIdx] = useState(0);
+  const [auto, setAuto] = useState(true);
+
+  useEffect(() => {
+    if (!auto) return;
+    const t = setInterval(() => setIdx(i => (i + 1) % GAZE_STATES.length), 1800);
+    return () => clearInterval(t);
+  }, [auto]);
+
+  const gs = GAZE_STATES[idx];
+  return (
+    <div className="mb-6">
+      <div className="flex gap-3 flex-wrap mb-4">
+        {GAZE_STATES.map((g, i) => (
+          <button
+            key={i}
+            onClick={() => { setIdx(i); setAuto(false); }}
+            className="text-xs px-3 py-1 rounded-lg"
+            style={{
+              background: i === idx ? "rgba(0,200,200,0.18)" : "rgba(255,255,255,0.05)",
+              border: `1px solid ${i === idx ? "rgba(0,200,200,0.5)" : "rgba(255,255,255,0.1)"}`,
+              color: i === idx ? "hsl(190,100%,65%)" : "rgba(255,255,255,0.5)",
+              cursor: "pointer",
+            }}
+          >
+            {g.lookDirLabel}
+          </button>
+        ))}
+        <button
+          onClick={() => setAuto(a => !a)}
+          className="text-xs px-3 py-1 rounded-lg ml-2"
+          style={{
+            background: auto ? "rgba(0,200,200,0.08)" : "rgba(255,255,255,0.03)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            color: "rgba(255,255,255,0.5)",
+            cursor: "pointer",
+          }}
+        >
+          {auto ? "⏸ pause" : "▶ auto"}
+        </button>
+      </div>
+      <div className="flex gap-6 items-start flex-wrap">
+        <div
+          className="flex flex-col items-center gap-3 rounded-xl p-5"
+          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", minWidth: 180 }}
+        >
+          <div style={{ width: 96, height: 96, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <SankofaBird
+              heading={gs.heading}
+              mapBearing={0}
+              speed={gs.speed}
+              navigating={gs.navigating}
+              size={64}
+              approaching={gs.approaching}
+              isHelping={gs.isHelping}
+              upcomingTurnDirection={gs.upcomingTurnDirection ?? null}
+              mapZoom={17}
+            />
+          </div>
+          <p className="text-sm font-semibold text-white text-center leading-snug">{gs.label}</p>
+          <p className="text-xs text-center" style={{ color: "rgba(255,255,255,0.45)" }}>
+            look-dir: <span style={{ color: "hsl(190,100%,65%)" }}>{gs.lookDirLabel}</span>
+          </p>
+        </div>
+        <div className="flex-1 min-w-48">
+          <p className="text-xs mb-2" style={{ color: "rgba(255,255,255,0.35)" }}>What to look for:</p>
+          <ul className="text-xs space-y-1.5" style={{ color: "rgba(255,255,255,0.5)" }}>
+            <li>• <strong style={{ color: "white" }}>Neck</strong> — lateral flex toward turn direction (body-end anchored)</li>
+            <li>• <strong style={{ color: "white" }}>Head pitch</strong> — vertical offset: down on approach/landing, up on helping/alert</li>
+            <li>• <strong style={{ color: "white" }}>Crown feathers</strong> — fan up on "up", droop on "down"</li>
+            <li>• <strong style={{ color: "white" }}>Pupil shift</strong> — follows look direction (zoom ≥17 to see)</li>
+            <li>• <strong style={{ color: "white" }}>Iris saccades</strong> — pause when left/right gaze is active</li>
+            <li>• <strong style={{ color: "white" }}>Body scaleX</strong> — slight inside-of-turn compression on upcoming-turn</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Phase 12: Neck Lateral Bend Demo ──────────────────────────────────────
+   Shows the neck bending independently from the head at sustained bank angles.
+   All 3 upcoming-turn states side by side: left, none, right. */
+function NeckLateralBendDemo() {
+  return (
+    <div className="flex gap-4 flex-wrap mb-8">
+      {(["left", "none", "right"] as const).map(dir => (
+        <div
+          key={dir}
+          className="flex flex-col items-center gap-3 rounded-xl p-4"
+          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", minWidth: 130 }}
+        >
+          <div style={{ width: 80, height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <SankofaBird
+              heading={0}
+              mapBearing={0}
+              speed={8}
+              navigating={true}
+              size={52}
+              upcomingTurnDirection={dir === "none" ? null : dir}
+              mapZoom={17}
+            />
+          </div>
+          <p className="text-sm font-semibold text-white">
+            {dir === "none" ? "Straight" : dir === "left" ? "← Turn left" : "→ Turn right"}
+          </p>
+          <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
+            neck: {dir === "none" ? "neutral" : dir === "left" ? "−8°" : "+8°"}
+          </p>
+        </div>
+      ))}
+      {/* Head pitch comparison — approaching vs cruise vs helping */}
+      {(
+        [
+          { label: "Cruise", approaching: false, isHelping: false, speed: 8, navigating: true, pitchNote: "0 SVG u" },
+          { label: "Approaching", approaching: true,  isHelping: false, speed: 8, navigating: true, pitchNote: "−1.0" },
+          { label: "Helping", approaching: false, isHelping: true, speed: 8, navigating: true, pitchNote: "+0.4" },
+        ] as const
+      ).map(s => (
+        <div
+          key={s.label}
+          className="flex flex-col items-center gap-3 rounded-xl p-4"
+          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", minWidth: 130 }}
+        >
+          <div style={{ width: 80, height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <SankofaBird
+              heading={0}
+              mapBearing={0}
+              speed={s.speed}
+              navigating={s.navigating}
+              size={52}
+              approaching={s.approaching}
+              isHelping={s.isHelping}
+              mapZoom={17}
+            />
+          </div>
+          <p className="text-sm font-semibold text-white">{s.label}</p>
+          <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>pitch: {s.pitchNote}</p>
+        </div>
+      ))}
     </div>
   );
 }
