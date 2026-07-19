@@ -1,0 +1,89 @@
+Niakofa App Forensic Error Report
+Build / Deployment Issues
+* Build pipeline is locked to pnpm only; npm/yarn installs fail by design
+* Node version requirement may break unsupported deployment environments
+* Monorepo build depends on all package typechecks passing
+* Platform-specific native dependencies may create deployment failures
+* Production environment validation is incomplete
+TypeScript / Code Defects
+* 136+ unsafe any usages creating runtime type failure risks
+* Multiple unsafe type assumptions
+* 50+ generic thrown errors reducing failure traceability
+* Missing structured error classes
+* Weak compile-time safety in several modules
+Backend Issues
+* API error handling is inconsistent
+* Request validation coverage needs strengthening
+* Authentication and authorization paths require deeper edge-case testing
+* Rate limiting implementation requires abuse testing
+* Worker processes require failure recovery validation
+* Queue/background jobs require retry verification
+* Database failure scenarios require more coverage
+Security Issues
+* Environment variable usage requires stricter validation
+* Secret handling requires security audit
+* Potential sensitive information exposure through logs
+* Authentication token lifecycle requires additional hardening
+* Authorization checks require route-by-route verification
+* API endpoints require penetration testing
+Frontend Issues
+* Missing defensive handling for failed API responses
+* Possible UI crashes from unexpected state values
+* Loading and error states require consistency review
+* Mobile layout regression risks
+* Accessibility issues require WCAG review
+* Client state synchronization risks
+Data Layer Issues
+* Migration rollback testing needed
+* Schema consistency verification needed
+* Data recovery procedures need validation
+* Integrity checks need expansion
+Performance Issues
+* Bundle optimization required
+* Dependency footprint review needed
+* API call reduction opportunities
+* Cache strategy improvements needed
+* Asset loading optimization needed
+Testing Gaps
+* End-to-end coverage needs expansion
+* Authentication flow testing incomplete
+* Payment flow failure testing needed
+* Permission boundary testing needed
+* Network interruption testing needed
+* Production smoke tests needed
+Codebase Cleanup
+* Remove unused/legacy code paths
+* Reduce duplicate logic
+* Replace unsafe typing patterns
+* Improve logging structure
+* Improve monitoring visibility
+Recommended Enhancements
+* Add centralized error handling
+* Add runtime schema validation
+* Add automated security scanning
+* Add crash reporting
+* Add performance monitoring
+* Add CI regression suite
+* Add API contract testing
+* Add accessibility automation
+* Add production health checks
+
+
+
+
+Niakofa Forensic Review
+Setup
+*  Locate and extract uploaded release archive
+*  Identify app stack and project structure
+Static and Runtime Review
+*  Inspect configuration, dependencies, and entry points
+*  Run install/check/build/test commands when available
+*  Review source code for errors, security issues, UX defects, and release risks
+
+* Issue 4: Startup migration for the two new schema columns
+* Issue 5: Self-referential FK on approval_reviewed_by
+* Issue 12: Per-email rate limit on forgot-password
+* Issue 18: WS notification to active sessions on password reset request
+* Issue 20: approval_status + account_type in admin user list
+* Plus: env var docs updateNow add the startup migration to index.ts (Issue 4):Now add the per-email rate limiter for forgot-password (Issue 12):Now wire the new limiter into the forgot-password route (Issue 12) and add the WS notification (Issue 18):
+

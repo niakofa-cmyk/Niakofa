@@ -1,0 +1,87 @@
+// artifacts/pay-it-forward/src/pages/admin.tsx
+import React, { useState, useEffect } from 'react';
+import { useAppContext } from '@/lib/AppContext';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Swipeable } from 'react-swipeable';
+import { UsersTab } from './admin/UsersTab';
+import { RequestsTab } from './admin/RequestsTab';
+import { ReportsTab } from './admin/ReportsTab';
+// ... other tabs
+
+const ADMIN_TABS = [
+  { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+  { id: 'users', label: 'Users', icon: '👥' },
+  { id: 'requests', label: 'Requests', icon: '📋' },
+  { id: 'reports', label: 'Reports', icon: '⚠️' },
+  { id: 'griot', label: 'Griot', icon: '🌍' },
+  { id: 'system', label: 'System', icon: '⚙️' },
+];
+
+export default function AdminScreen() {
+  const { currentUser } = useAppContext();
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  // Auto-refresh every 30s
+  useEffect(() => {
+    const interval = setInterval(() => setRefreshTick(t => t + 1), 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (!currentUser?.is_admin) {
+    return <div className="p-8 text-center">Admin access required.</div>;
+  }
+
+  const handleSwipe = (direction: 'LEFT' | 'RIGHT') => {
+    const currentIndex = ADMIN_TABS.findIndex(t => t.id === activeTab);
+    let newIndex = currentIndex;
+    if (direction === 'LEFT' && currentIndex < ADMIN_TABS.length - 1) newIndex++;
+    if (direction === 'RIGHT' && currentIndex > 0) newIndex--;
+    setActiveTab(ADMIN_TABS[newIndex].id);
+  };
+
+  return (
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 pb-20">
+      {/* TopBar */}
+      <div className="sticky top-0 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md z-50 border-b p-4 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Admin Hub</h1>
+        <button onClick={() => setRefreshTick(t => t + 1)} className="text-sm px-4 py-2 bg-primary text-white rounded-xl">
+          Refresh
+        </button>
+      </div>
+
+      {/* Swipeable Tabs */}
+      <Swipeable onSwipedLeft={() => handleSwipe('LEFT')} onSwipedRight={() => handleSwipe('RIGHT')}>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="w-full justify-start overflow-x-auto flex gap-2 px-4 py-3 bg-white dark:bg-zinc-900 border-b sticky top-[73px] z-40">
+            {ADMIN_TABS.map(tab => (
+              <TabsTrigger
+                key={tab.id}
+                value={tab.id}
+                className="data-[state=active]:bg-primary data-[state=active]:text-white flex-shrink-0 min-w-[100px]"
+              >
+                {tab.icon} {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          {/* Tab Contents */}
+          <div className="p-4">
+            <TabsContent value="dashboard"><DashboardTab refreshTick={refreshTick} /></TabsContent>
+            <TabsContent value="users"><UsersTab refreshTick={refreshTick} /></TabsContent>
+            <TabsContent value="requests"><RequestsTab refreshTick={refreshTick} /></TabsContent>
+            <TabsContent value="reports"><ReportsTab refreshTick={refreshTick} /></TabsContent>
+            {/* Add other tabs similarly */}
+          </div>
+        </Tabs>
+      </Swipeable>
+
+      {/* Floating Quick Actions */}
+      <div className="fixed bottom-20 right-4 z-50">
+        <button className="w-14 h-14 bg-primary rounded-2xl shadow-xl flex items-center justify-center text-white text-2xl">
+          +
+        </button>
+      </div>
+    </div>
+  );
+}

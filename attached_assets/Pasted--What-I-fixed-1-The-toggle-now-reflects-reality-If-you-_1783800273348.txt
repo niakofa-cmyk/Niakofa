@@ -1,0 +1,73 @@
+
+What I fixed:
+1. The toggle now reflects reality. If you're approved, you see the real switch. If your application's pending, you see "under review." If you haven't applied yet, you see an "Apply to Become a Helper" button that takes you straight to the application flow — no more dead-end toggle.
+2. The error message now tells the truth. If a rejection does happen for some other reason, you'll see the server's actual explanation instead of a generic "check your connection" message that was actively misleading in this exact case.
+3. Also caught and fixed a second, unrelated real bug while checking everything: a new safety-check feature was trying to save to a database column that doesn't exist, which would have broken the whole build.
+
+Can you fix: Cant go online. Server rejected the change. Your status has been restored? Issue! Bug! Helper Mode will not turn on now? Isnt helper mode supposed to connect and turn on when you switch to Helper mode? Improve and enhance helper mode switching mechanisms to fix the problem?
+
+Minor Issues Found:
+* Generated client/Zod may drift (run codegen after changes).
+* Some .agents/memory entries reference old dates/commits — update CLAUDE.md as needed.
+* Nia memory still single-column (freeform) — aligns with known gap.
+Recommendations & Additions
+1. Brazil Hubs Priority:
+    * Seed Salvador/Bahia as flagship diaspora hub (high open_requests tie-in via globe).
+    * Expand CATEGORIES + local resources for Portuguese/Candomblé-influenced needs.
+    * Nia prompt tweaks for Brazilian Portuguese greetings/cultural context.
+2. Livable Wage / Daily Pay Emphasis:
+    * Helper dashboard "Earnings Today/This Week" projection (nearby requests × rate × availability).
+    * "Benevolence Streak" badges + rewards for consistent helping.
+3. PIF Long-Term:
+    * Forgiveness path (community vote/admin after sustained partial payments + service hours).
+    * Impact visualization: "Your repayments helped X more neighbors."
+4. Nia Polish:
+    * Structured memory fields (JSONB or separate table) for prefs.
+    * Proactive daily voice kindness briefs.
+    * Full STT completion if transcription queue is still stubbed.
+
+One real bug — this is currently broken
+POST /requests/:id/safety-ping does not compile. It tries to update an updated_at column on help_requests, but that table has no updated_at column at all:
+
+src/routes/requests.ts(2453,12): error TS2353: Object literal may only specify known properties, and 'updated_at' does not exist in type...
+Concretely: pnpm run typecheck fails, which means pnpm run build (which runs typecheck first) is blocked — this app cannot be built for production in its current state. And because there's no test written for the new endpoint, the Jest suite still shows 98/98 green — the test suite genuinely can't tell you this is broken. That's worth flagging on its own: the safety-ping/SOS feature that people would rely on mid-session shipped with zero test coverage, and the automated checks gave a false "all clear."
+The fix is small — either add updated_at to the help_requests schema (with a migration) or drop that .set({ updated_at: new Date() }) call and just rely on the broadcast for liveness. I'd recommend the former since "last seen live" is exactly the kind of thing an admin dashboard should be able to query later, not just react to in real time.
+
+Fix the safety-ping bug before this reaches real users — it's a safety feature; if it's silently broken, someone in an actually risky situation gets false reassurance from a UI that looks like it's working.
+Add a test for the new safety endpoints so a future change to help_requests doesn't quietly reintroduce this same class of bug.
+
+
+Auto-set each county’s minimum wage from public cost of living data so helpers always earn a real livable rate, Prevent leper map data from going stale silently test the new active requests and  helper Mode sync flows, and show live safety alerts to admins in real time so an sos can be actioned within seconds.
+
+
+Run pnpm install, typecheck, codegen, builds.
+Seed test accounts + civic/crisis.
+Deploy/test key flows (request → claim → PIF complete → repayment).
+Add Brazil hub seed script.
+
+Fix couldn’t load hubs tap the retry?
+
+Remove the Mapbox branding or tag on tote of the the Globe map view. Add Safety verification and live tracing for in-person help, and automate the county wage floor from public cost of living data, and show helpers their projected earnings before they claim a task. 
+
+* Generated client/Zod may drift (run codegen after changes).
+* Some .agents/memory entries reference old dates/commits — update CLAUDE.md as needed.
+* Nia memory still single-column (freeform) — aligns with known gap.
+
+Brazil Hubs Priority:
+* Seed Salvador/Bahia as flagship diaspora hub (high open_requests tie-in via globe).
+* Expand CATEGORIES + local resources for Portuguese/Candomblé-influenced needs.
+* Nia prompt tweaks for Brazilian Portuguese greetings/cultural context.
+Livable Wage / Daily Pay Emphasis:
+* Helper dashboard "Earnings Today/This Week" projection (nearby requests × rate × availability).
+* "Benevolence Streak" badges + rewards for consistent helping.
+
+Nia Polish:
+* Structured memory fields (JSONB or separate table) for prefs.
+* Proactive daily voice kindness briefs.
+* Full STT completion if transcription queue is still stubbed.
+
+What I added: a new migration, 0060_brazil_diaspora_hubs.sql, seeding three more Brazilian hubs alongside the existing Salvador entry:
+* Recife (Pernambuco) — Northeast, major Afro-Brazilian cultural center
+* São Luís (Maranhão) — Northeast, deep Afro-Brazilian religious/cultural traditions
+* São Paulo — largest Afro-Brazilian population in absolute numbers, and the city Nia's own prompt already flagged as diaspora-significant
+All four Brazilian cities now use the same latino tag as the existing Salvador and Santo Domingo hubs, so they'll render consistently on the globe with no frontend changes needed — the hub list is fully database-driven, so this is a safe, additive migration that runs automatically on your next deploy.

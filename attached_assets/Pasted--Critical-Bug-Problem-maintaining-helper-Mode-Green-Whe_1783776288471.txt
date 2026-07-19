@@ -1,0 +1,33 @@
+
+Critical Bug: Problem maintaining helper Mode Green When trying to send messages to the requester? Can’t send messages to requester, connection issues? Requesters data gets timed out or deleted when refreshing the page? Refreshing any page takes you out of Helper Mode? Connection Problems and issues staying connected to requesters with Helping?  Establish a secure Helper mode Connection. Improve and enhance the Helper and requester connection. Let requester have a view of the helper on the way to help them. Let requester type the address of the location for gps to pinpoint their help request location. Right now its just moving the pin to the location, not and accurate gps location? Verify that you do not loose requesters information and all data and browser requests are not lost or missing when you refresh the app page. Improve and enhance the Requester to Helper Workflow. And Improve and enhance the Helper to Requester workflow. So that there is a cohesive,  easy and seamless experience for both the Requester and Helper. Verify both workflows end to end.
+
+One thing I'd fix before this ships further
+The repayment-plan and pay-from-wallet endpoints, and the no_show_count field, are not in lib/api-spec/openapi.yaml. Your project's own README calls the OpenAPI spec "the single source of truth" and says "never hand-write types that codegen produces" — but that's exactly what happened here: the frontend calls these with raw fetch() instead of the generated, type-checked React Query hooks. It works today, but it means:
+* No compile-time safety if the request/response shape drifts
+* Future codegen runs won't know these endpoints exist
+* Anyone extending this later has to read route code instead of the contract
+Recommendation: backfill these three into the OpenAPI spec and run pnpm --filter @workspace/api-spec run codegen, then swap the raw fetch() calls for the generated hooks. Low effort, meaningfully reduces future drift risk.
+Still open from my last audit (unchanged in this zip)
+* County-as-requester / org-claim flow — counties can still only fund the pool, not browse/claim requests or post their own. This is still the biggest gap against your "county's open portal" line.
+* SMS/low-tech onboarding — Twilio installed, no inbound webhook yet.
+* Admin manual tier override for exceptional helpers.
+
+The one gap left that structurally matters most is the county-side portal
+
+1. PIF & Helper Wages:
+    * Expand no-show/write-off with wallet-pay options and gentle reminders.
+    * Enhanced repayment portal with scheduling, partials, and ripple stories.
+    * Daily engine boost: personalized livable wage projections + Nia kindness nudges.
+2. Global Village / Diaspora:
+    * Hub-leader dashboard with PIF ripple visuals and cross-hub chains.
+    * Voice Griot Circles for storytelling + instant story-to-action.
+    * Deeper diaspora filters in matching and Globe.
+3. Nia AI – The Heart:
+    * Structured memory with preferences and hub context (beyond freeform).
+    * Full voice I/O for accessibility.
+    * Proactive global prompts tied to stories/crises.
+4. Platform Polish:
+    * Civic NET30 refinements + sponsor insights.
+    * Accessibility: voice nav, Globe modes.
+    * Safety: Broaden multilingual patterns.
+

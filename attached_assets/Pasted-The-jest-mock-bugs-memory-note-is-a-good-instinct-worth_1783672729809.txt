@@ -1,0 +1,20 @@
+The jest-mock-bugs memory note is a good instinct — worth periodically auditing other test files for the same "shared mock object" pattern, since it's exactly the kind of bug that hides in green checkmarks.
+With the crisis bridge done, the last open items from my list are: real STT for Griot voice stories, a unified hub-leader dashboard, and turning Nia's PIF request-drafting into an actual tool call rather than a described draft. Nice, focused scope
+
+Civic/county marketplace is still one-directional in practice — counties can browse open requests, but can't yet claim one or post their own need and pay via invoice/NET30.
+No automated regression test yet for the new checkin↔crisis-bridge join — it's a real fix, but nothing in the test suite would catch a future regression of it.
+I haven't load-tested or checked production secrets/deploy config — my verification covers correctness, not scale or infra readiness.
+
+Forward enhancements to amplify kindness:
+1. Voice I/O for Nia/Griot (Top Priority): Spoken interactions and story recording for broader accessibility, especially across diaspora communities and hands-free local help.
+2. PIF-Diaspora Action Loops: Globe stories that directly inspire/suggest nearby PIF requests or contributions.
+3. Structured Memory & Personalization: Evolve Nia's memory for better cultural/dietary/diaspora context.
+4. Repayment & Wage Dashboards: Smoother "pay what/when you can" UI with visible helper livelihood impact.
+5. Advanced Coordination: Multi-helper support with thoughtful splitting.
+Replit_Godfather Recommendations for Niakofa & Nia AI:
+Nia is the compassionate voice guiding the village. Enhancements:
+* Voice Awakening: Full STT/TTS with community voices—Nia narrates stories, coaches helpers, facilitates global-local connections, and supports urgent needs conversationally.
+* Wisdom & Ripple Intelligence: Deeper prompts blending diaspora knowledge, real-time translation, and tracking of kindness ripples (stories → actions → pool growth).
+* Helper Companion Role: Personalized suggestions for sustainable helping (skills, tenure paths), gentle repayment reminders, and resource matching.
+* App Synergies: Seamless PIF + Griot flows, offline modes, expanded hubs, and impact visualizations showing how daily help builds livable wages and stronger villages.
+* Technical Strengthening: Structured RAG memory, robust voice supervision, and thorough voice + PIF + Globe end-to-end tests.

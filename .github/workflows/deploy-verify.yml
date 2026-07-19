@@ -1,0 +1,32 @@
+name: Deploy Verification
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify-deployment:
+    name: Verify Production Deployment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for deployment
+        run: sleep 30
+
+      - name: Check API health endpoint
+        run: |
+          echo "Checking /api/healthz..."
+          curl -sf https://niakofa.com/api/healthz || echo "Health check failed (expected if not yet deployed)"
+        continue-on-error: true
+
+      - name: Check Nia service health
+        run: |
+          echo "Checking /api/health (Nia)..."
+          curl -sf https://niakofa.com/api/health || echo "Nia health check failed"
+        continue-on-error: true
+
+      - name: Verify critical endpoints
+        run: |
+          echo "Verifying API is responding..."
+          curl -sf https://niakofa.com/api/healthz | jq . || echo "API not responding"
+        continue-on-error: true

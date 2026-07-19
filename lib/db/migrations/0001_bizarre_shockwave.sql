@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "payment_transactions_one_completed_per_request" ON "payment_transactions" USING btree ("request_id") WHERE "payment_transactions"."state" = 'completed';

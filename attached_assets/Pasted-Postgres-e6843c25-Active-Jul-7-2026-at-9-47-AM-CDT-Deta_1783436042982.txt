@@ -1,0 +1,123 @@
+Postgres
+/
+e6843c25
+Active
+
+Jul 7, 2026 at 9:47 AM CDT
+Details
+Build Logs
+Deploy Logs
+Network Flow Logs
+Filter and search logs
+
+You reached the start of the range
+Jul 7, 2026 at 9:47 AM
+Mounting volume on: /var/lib/containers/railwayapp/bind-mounts/6727e6fe-a4d1-4ee0-a375-d4a71c604815/vol_vnft0e25id7kprl3
+Starting Container
+wrapper: removing stale /var/lib/postgresql/data/pgdata/postmaster.pid (no postgres running at container start)
+Certificate will not expire
+pgbackrest: volume 4614 MiB; sized wal-drop= MiB queue-max=2307 MiB
+pgbackrest: restore-gate WAL_RECOVER_FROM_BUCKET= POSTGRES_RECOVERY_TARGET_TIME= PG_VERSION=present PG_CONTROL=present RESTORED_MARKER=missing PGDATA=/var/lib/postgresql/data/pgdata
+PostgreSQL Database directory appears to contain a database; Skipping initialization
+2026-07-07 14:48:17.087 UTC [18] LOG:  starting PostgreSQL 18.4 (Debian 18.4-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-07-07 14:48:17.087 UTC [18] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-07-07 14:48:17.087 UTC [18] LOG:  listening on IPv6 address "::", port 5432
+2026-07-07 14:48:17.090 UTC [18] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-07-07 14:48:17.099 UTC [51] LOG:  database system was interrupted; last known up at 2026-07-07 14:40:56 UTC
+2026-07-07 14:48:17.571 UTC [51] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-07 14:48:17.575 UTC [51] LOG:  redo starts at 0/22F8348
+2026-07-07 14:48:17.577 UTC [51] LOG:  invalid record length at 0/2352EB8: expected at least 24, got 0
+2026-07-07 14:48:17.577 UTC [51] LOG:  redo done at 0/2352E80 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-07 14:48:17.584 UTC [49] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-07 14:48:17.606 UTC [49] LOG:  checkpoint complete: wrote 56 buffers (0.3%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.007 s, sync=0.006 s, total=0.024 s; sync files=37, longest=0.004 s, average=0.001 s; distance=362 kB, estimate=362 kB; lsn=0/2352EB8, redo lsn=0/2352EB8
+2026-07-07 14:48:17.609 UTC [18] LOG:  database system is ready to accept connections
+collation-refresh: psql: error: /tmp/collation-refresh.i9DCfN.sql: Permission denied
+2026-07-07 14:50:33.031 UTC [77] ERROR:  extension "postgis" is not available
+2026-07-07 14:50:33.031 UTC [77] HINT:  The extension must first be installed on the system where PostgreSQL is running.
+2026-07-07 14:50:33.031 UTC [77] STATEMENT:  CREATE EXTENSION IF NOT EXISTS postgis
+2026-07-07 14:50:33.275 UTC [79] ERROR:  functions in index expression must be marked IMMUTABLE
+2026-07-07 14:50:33.275 UTC [79] STATEMENT:  CREATE TABLE IF NOT EXISTS nia_conversations (
+	  id BIGSERIAL PRIMARY KEY,
+	-- Non-fatal if not yet consumed — rows accumulate until drained.
+	  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+	-- into it on every cycle, throwing "relation does not exist" silently
+	  session_id TEXT NOT NULL,
+	  user_message TEXT NOT NULL,
+	--
+	-- (caught by their per-insert try/catch). All push notifications were
+	  nia_response TEXT NOT NULL,
+	-- silently dropped on every nia-service boot.
+	-- BUG-14c FIX: This table was previously missing from migrate.sql.
+	  -- is_crisis: set by checkSafety() at save-time in routes/chat.ts
+	CREATE TABLE IF NOT EXISTS push_notification_queue (
+	-- Both ambient-presence-worker and general-checkin-worker tried to INSERT
+	  -- Used by crisis follow-up worker (crisis-followup-worker.ts) to find
+	  -- users who need a gentle check-in 48-72h after a crisis-flagged message.
+	  is_crisis BOOLEAN NOT NULL DEFAULT FALSE,
+	  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	
+	-- Add is_crisis if this table already exists from an older migration
+	ALTER TABLE nia_conversations
+	  ADD COLUMN IF NOT EXISTS is_crisis BOOLEAN NOT NULL DEFAULT FALSE;
+	
+	CREATE INDEX IF NOT EXISTS nia_conversations_session_idx ON nia_conversations (session_id);
+	CREATE INDEX IF NOT EXISTS nia_conversations_created_at_idx ON nia_conversations (created_at);
+	CREATE INDEX IF NOT EXISTS nia_conversations_user_id_idx ON nia_conversations (user_id);
+	-- Index for crisis follow-up worker: quickly find crisis rows by time window
+	CREATE INDEX IF NOT EXISTS nia_conversations_crisis_idx
+	  ON nia_conversations (user_id, created_at)
+	  WHERE is_crisis = TRUE;
+	
+	CREATE TABLE IF NOT EXISTS nia_memories (
+	  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+	  memory TEXT NOT NULL,
+	  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	
+	-- Phase 1: Structured memory — JSONB subfields for high-signal facts.
+	ALTER TABLE nia_memories
+	  ADD COLUMN IF NOT EXISTS structured JSONB NOT NULL DEFAULT '{}';
+	
+	  id         BIGSERIAL PRIMARY KEY,
+	-- system_settings: persists admin toggles (e.g. nia_enabled) across redeploys
+	CREATE TABLE IF NOT EXISTS system_settings (
+	  user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
+	  key        TEXT PRIMARY KEY,
+	  title      TEXT NOT NULL,
+	  value      TEXT NOT NULL DEFAULT '',
+	  body       TEXT NOT NULL,
+	  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	  data       JSONB NOT NULL DEFAULT '{}',
+	);
+	  sent_at    TIMESTAMPTZ,
+	
+	-- Seed nia_enabled = 'false' so "no row yet" is never an ambiguous state.
+	-- isNiaEnabled() (in both api-server and nia-service) is fail-closed: a
+	-- missing row resolves to false. This seed makes the default explicit and
+	  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	-- survives redeploys. Nia must be explicitly enabled by an admin.
+	);
+	-- ON CONFLICT DO NOTHING: if an admin has already toggled Nia on, preserve
+	
+	-- that decision — never overwrite an intentional toggle with the default.
+	INSERT INTO system_settings (key, value, updated_at)
+	CREATE INDEX IF NOT EXISTS push_notification_queue_unsent_idx
+	VALUES ('nia_enabled', 'false', NOW())
+	  ON push_notification_queue (user_id, created_at)
+	ON CONFLICT (key) DO NOTHING;
+	  WHERE sent_at IS NULL;
+	
+	
+	-- ── AI Cost Monitoring ────────────────────────────────────────────────────────
+	-- nia_knowledge: Nia's continuous learning store.
+	-- Keyed entries (e.g. 'fort_worth_news', 'community_trends') with TTL.
+	-- The continuous-learning worker writes here every 6h.
+	-- chat.ts injects fresh entries into Nia's context prefix.
+	CREATE TABLE IF NOT EXISTS nia_knowledge (
+	  key         TEXT PRIMARY KEY,
+	  content     TEXT NOT NULL,
+	  source      TEXT,
+	  learned_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	  expires_at  TIMESTAMPTZ

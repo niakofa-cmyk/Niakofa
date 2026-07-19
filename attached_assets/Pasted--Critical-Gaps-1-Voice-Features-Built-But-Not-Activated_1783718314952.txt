@@ -1,0 +1,85 @@
+
+
+Critical Gaps 🔴
+1. Voice Features — Built But Not Activated
+The most important gap for your "Global Village" vision.
+Component	Status	Blocker
+voiceProfiles.ts — 8 regional profiles	✅ Built	Needs ELEVENLABS_API_KEY + per-profile voice IDs
+nia-voice.ts — STT/TTS endpoints	✅ Built	Needs OPENAI_API_KEY for Whisper; ElevenLabs optional
+useNiaTTS.ts — frontend TTS hook	✅ Built	Not integrated into NiaDrawer chat flow
+useVoiceWakeWord.ts — wake word detection	✅ Built	Not mounted in App.tsx
+VoiceWakeWordIndicator.tsx — UI feedback	✅ Built	Not rendered
+voiceWakeWord.ts — Web Audio VAD engine	✅ Built	Not started
+The code exists. The wiring is missing. NiaDrawer imports useVoiceWakeWord and VoiceWakeWordIndicator but the hook is never instantiated with an onWakeWordDetected callback, and the indicator is never rendered in the component tree. [niakofa-cmyk/Niakofa/artifacts/pay-it-forward/src/components/NiaDrawer.tsx]
+Your voice vision — "Sawubona Nia" in Zulu, "Habari Nia" in Swahili — requires:
+1. Set OPENAI_API_KEY for Whisper STT (minimum viable)
+2. Optionally set ELEVENLABS_API_KEY + ELEVENLABS_VOICE_AAVE_WARM, etc. for authentic community voices
+3. Wire useVoiceWakeWord() in App.tsx or NiaGlobal with a callback that opens NiaDrawer
+4. Render <VoiceWakeWordIndicator /> in the NiaDrawer header
+2. Globe ↔ Mutual-Aid Engine Disconnected
+The diaspora map is beautiful but isolated.
+* Zero code path linking hub markers to requests, wallet, pledges, or crisis data [niakofa-cmyk/Niakofa/artifacts/pay-it-forward/src/components/NiaDrawer.tsx]
+* Hub notes are hardcoded English strings, not localized via t() [niakofa-cmyk/Niakofa/artifacts/pay-it-forward/src/components/NiaDrawer.tsx]
+* "Largest US diaspora hub by member count" is marketing copy, not a live query [niakofa-cmyk/Niakofa/artifacts/pay-it-forward/src/components/NiaDrawer.tsx]
+* No way for a diaspora member in Lagos to fund a Tarrant County helper directly, or for a Fort Worth user to see "my cousin in Accra just helped someone — here's how to help too"
+To fix: Add hub_id to requests table, create cross-hub request browsing, wire hub pledges to specific request categories.
+3. Nia ↔ Crisis Bridge Gap
+Two crisis systems that don't talk.
+* Nia's check-in worker knows about county-level crisis_state but not diaspora_hubs.is_crisis [niakofa-cmyk/Niakofa/artifacts/pay-it-forward/src/components/NiaDrawer.tsx]
+* A hub crisis flag on the globe doesn't trigger Nia's crisis protocol
+* A user in crisis talking to Nia won't see diaspora-specific resources if their hub is flagged
+To fix: Extend community-context.ts to query diaspora_hubs.is_crisis and include hub-level resources in Nia's crisis response.
+4. Real STT for Griot Voice Stories
+The transcribeAudio() function is an intentional stub that fails loudly. [niakofa-cmyk/Niakofa/artifacts/pay-it-forward/src/components/NiaDrawer.tsx]
+* No Whisper, AssemblyAI, or Deepgram wired for Griot story recording
+* Diaspora members cannot currently record and share spoken stories
+* The griot-translate.ts endpoint expects text_content to already exist — it translates, doesn't transcribe
+To fix: Wire Whisper (same API as Nia voice STT) to griot-transcription-worker.ts, or reuse the existing /api/nia/voice/transcribe endpoint for Griot audio upload.
+5. County/Civic Portal — One-Directional
+Counties can fund the pool but cannot browse or claim requests.
+* Your vision: "county open portal where those who have been helped can pay later"
+* Reality: civic resources are seeded DB rows, not a two-way marketplace
+* No API for counties to post their own needs, no invoice/NET30 payment flow
+To fix: Extend businesses.ts pattern to counties — POST /civic/needs, PATCH /civic/needs/:id/claim, Stripe Connect for institutional payers.
+6. Per-Hub Ledger Ring-Fencing
+Pledged money for an unclaimed hub falls into the global pool. [niakofa-cmyk/Niakofa/artifacts/pay-it-forward/src/components/NiaDrawer.tsx]
+* A diaspora member pledges $500 to "Accra Hub Crisis"
+* If no Accra-specific request exists, the money goes to general Tarrant County pool
+* Violates donor intent and hub autonomy
+To fix: Add hub_id to community_pool_ledger, create hub-specific sub-ledgers with target_reserve_amount per hub.
+
+
+Build on what's there—no clobbering existing code.
+1. Deepen Global Village Connectivity (Griot Globe Evolution):
+    * Story → Local Action Bridge: After a diaspora story, Nia prompts "Pay this forward locally?" with one-tap matched request creation (PIF default).
+    * Live Kindness Ripples: Animate PIF flows on globe (arcs showing repayments crossing hubs). Add "Global Impact Feed" tab.
+    * Diaspora Sub-Pools & Expert Matching: Hub-specific funds; searchable diaspora helpers for cultural/language aid with PIF.
+    * Voice Griot Circles: Nia-hosted live/shared story sessions (voice I/O addresses gap).
+2. Strengthen PIF & Helper Sustainability:
+    * PIF Portal: Dedicated view for flexible repayments, schedules, impact ("Your payment helped X more neighbors").
+    * Daily Helper Engine: "Wake-up Kindness" Nia notifications + personalized task feed with earnings estimates.
+    * Recurring Benevolence: Easy sponsor/helper subscriptions flowing to pool.
+3. Nia AI as Global Kindness Guide:
+    * Full Voice I/O (STT/TTS with community voices).
+    * Structured memory + diaspora awareness ("Reminds me of your roots in [hub]").
+    * Proactive global-local matches + crisis tone adaptation (already bridging well).
+4. County & Scale Polish:
+    * Smoother open portal exports/API for gov partners.
+    * Multi-helper coordination (future splitting) with shared goodwill credits.
+    * Accessibility: Globe AR preview, larger mobile controls.
+Technical Covenant Notes: Continue idempotency, migrations (use generate+migrate), tests. Update docs post-changes. Pool health + Redis critical.
+
+
+
+
+add unified hub-leader dashboard, and turning Nia's Pay-It-Forward drafting into an actual tool call, and Verify end to end.
+
+Per-hub pledge ring-fencing doesn't exist. I checked griot.ts directly — money pledged toward a specific diaspora hub still lands in the global community pool rather than a hub-specific sub-ledger. So a pledge earmarked for, say, a hub in crisis in Lagos could functionally get spent helping someone in Fort Worth. This is a real trust/intent problem for the "Global Village" framing, not just a nice-to-have.
+Civic/county portal is still one-directional. Counties can fund the pool, but still can't browse and claim open requests, post their own needs, or pay via invoice/NET30 — exactly as the note said.
+
+
+Ring-fence hub pledges — this is a promise-integrity issue, not just a feature gap. People pledging to a specific hub in crisis should know their money goes there.
+Wire real STT for Griot stories (Whisper is the cheapest lift since you already use it for Nia's voice — same provider, different endpoint).
+
+Make the county portal two-way (claim/post/invoice), not just fund-only.
+Close the OpenAPI gap on Stripe/verification/admin routes before it causes a silent bug.

@@ -1,0 +1,68 @@
+{
+  "name": "Niakofa — Community Help",
+  "short_name": "Niakofa",
+  "description": "Help Today. Pay It Forward Tomorrow. Real-time mutual aid for Tarrant County, TX.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0f1e",
+  "theme_color": "#0a0f1e",
+  "orientation": "portrait-primary",
+  "lang": "en-US",
+  "categories": ["social", "utilities"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "display_override": ["standalone", "minimal-ui"],
+  "shortcuts": [
+    {
+      "name": "Request Help",
+      "short_name": "Request",
+      "url": "/request/new",
+      "description": "Create a new help request"
+    },
+    {
+      "name": "Community",
+      "short_name": "Community",
+      "url": "/community",
+      "description": "See the community leaderboard and gratitude feed"
+    },
+    {
+      "name": "My Wallet",
+      "short_name": "Wallet",
+      "url": "/wallet",
+      "description": "View earnings, pledges, and pay-it-forward balance"
+    },
+    {
+      "name": "Helper Dashboard",
+      "short_name": "Earnings",
+      "url": "/helper-dashboard",
+      "description": "Earnings projections, streak, and impact feed"
+    }
+  ],
+  "prefer_related_applications": false,
+  "related_applications": []
+}

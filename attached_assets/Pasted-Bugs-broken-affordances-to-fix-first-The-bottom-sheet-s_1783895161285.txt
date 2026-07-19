@@ -1,0 +1,27 @@
+Bugs / broken affordances to fix first
+The bottom sheet's drag handle doesn't drag. BottomSheet.tsx renders a grab handle (cursor-grab active:cursor-grabbing) but the motion.div has no drag prop — it's a fixed-height sheet capped at max-h-[55vh] with no snap points. On a long list of nearby requests, that's a broken gesture users will try and get nothing from. Worth wiring real drag with 2–3 snap points (peek / half / full).
+Individual pins are dead-ends at high zoom. RequestMarker (32–40px SVG) toggles a tiny tooltip on tap but has no claim action — the only way to act is the bottom sheet, which still floats over the map regardless of zoom. So zooming in to inspect a specific pin doesn't actually help a helper act on it. Tapping a pin should at minimum scroll/highlight that card in the sheet, or open a compact action popover.
+Touch targets under 44px. The 32px marker (40px for emergency) is below Apple/Google's 44×44 minimum. Worth padding the tap area invisibly (e.g. wrap in a 44px hit box) without changing the visual glyph size.
+Mobile-specific UX gains
+
+Bottom sheet + FAB + control rows collide by convention, not measurement. Right now BottomSheet (bottom-16), the Filters/Layers row (bottom-32), Orientation/Recenter (bottom-48), and the Request-Help FAB (bottom-64) are all hand-stacked pixel offsets. It works today, but any future addition risks the same "four things fighting for one spot" problem the code comments say they already solved once for the top status area. I'd extract these into a single bottom-safe-area layout helper the way the top status slot was consolidated.
+No haptic feedback on key actions (claim, emergency toast, recenter) — cheap win on mobile that reinforces state changes tactilely.
+Best Match card and Bottom Sheet fight for the same real estate and are mutually exclusive by a boolean (!showBestMatch) — consider letting Best Match dock as a persistent top card of the sheet instead of an either/or, so accepting or dismissing it doesn't cause a jarring layout swap.
+"Search this area" has no debounce/visual loading tie-in — panning triggers isOffCenter, but there's no subtle skeleton/shimmer on the stats pills while the new-area fetch resolves, so a slow network reads as unresponsive.
+Pinch-to-rotate vs. heading-up mode conflict: useMapOrientation pauses following when the user manually rotates, which is right, but on mobile a stray two-finger gesture during normal scrolling can trigger this unintentionally — worth a small rotation-angle threshold before treating it as intentional.
+
+Performance
+
+Individual <Marker> components for helpers/requests re-render on every WS tick since HelperMarker/RequestMarker aren't memoized (no React.memo) — with many concurrent helpers this adds up on mid-tier Android devices. Worth wrapping both in memo with a custom comparator on lat/lng/heading/status.
+The traffic vector layer (mapbox://mapbox.mapbox-traffic-v1) plus heatmap plus cluster source all mounted together is a lot of GPU/tile load for a phone — consider auto-disabling traffic below a certain zoom or on low-end device detection (navigator.deviceMemory), rather than always defaulting showTraffic = true.
+
+Accessibility
+
+Cluster/heatmap layers are canvas-drawn with no non-visual equivalent — a screen-reader user gets nothing. At minimum, the live-stats pills already give a text summary; you could extend that to an optional "list view" toggle that's just the bottom sheet content without needing the map at all.
+Color is the only differentiator for urgency in clusters (green/yellow/red) — colorblind-safe alternative (shape or icon) would help, especially since emergency logic already gets a distinct red stroke ring you could extend into a shape difference too.
+
+Feature ideas worth considering
+
+Offline/poor-connectivity mode: cache the last-fetched requests/helpers snapshot so a helper who loses signal briefly still sees a (marked "stale") map instead of a blank one — LastUpdated component already tracks freshness, so this is a small extension of what's there.
+Route ETA surfaced on the Best Match card, not just the live route line — helps a helper decide before accepting.
+Sheet-to-marker linking (mentioned above) turns the map and list into one coherent view instead of two parallel ones.

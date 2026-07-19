@@ -1,0 +1,23 @@
+
+
+update this app in chunks. Read text doc word for word, line by line. Fix, and address each and every issue. . Think carefully before editing. Understand the App and the vision and mission before you edit code. Review the code line by line before you edit code. We are using Mapbox .Understand the Niakafa app and Nia ai separation and connection before editing code. REad the Replit Godfatehermd, read Claudemd.
+
+One real gap I found that isn't in the changelog — worth fixing before this matters legally: the waiver is only enforced in the frontend (request-new.tsx shows the modal before submit). I checked requests.ts on the server, and there's no equivalent server-side block stopping someone from posting a home_repair or moving_labor request via a direct API call without ever accepting the waiver. Compare that to childcare/senior_care/medical, which do have a server-side gate (isSensitiveCategory + a sensitive_acknowledged flag) — but that gate checks a boolean, not the actual tos_waiver_accepted_at timestamp the new waiver system created. So right now you have two waiver-adjacent checks that don't fully overlap, and a liability waiver that only exists if the user goes through the app UI honestly. For something meant to hold up if you're ever sued, that's the difference between "we have a waiver" and "we have a waiver screen." I'd close that loop next.
+
+
+What's genuinely still open
+* BUG-H06 — nia-service's /chat route still needs to confirm INTERNAL_SECRET header validation is enforced if the service is publicly reachable on Railway (flagged HIGH, not yet re-verified this session).
+* BUG-H01 / BUG-C07-08 tip flow — the memory log confirms the pledge double-credit was fixed, but tips (POST /requests/:id/tip) crediting wallet without a real Stripe transfer is called out as a still-accepted "known architectural limitation," not a bug fix [niakofa-cmyk/Niakofa/lib/db/migrations/0021_password_reset_code.sql].
+
+
+Two new things worth your attention
+1. The Checkr webhook fails open if the secret isn't configured.
+
+js
+if (CHECKR_WEBHOOK_SECRET) {
+  // ...signature verification...
+}
+Signature verification only runs if CHECKR_WEBHOOK_SECRET is set. If that env var is ever missing or misconfigured in production — which is exactly the kind of thing that slips through during deploy — this endpoint accepts any unsigned POST and will set background_check_status = "passed" for whatever candidate_id is in the payload. Given this status is the actual gate for claiming childcare, senior_care, and medical requests, this deserves a fail-closed fix: if the secret isn't set, the webhook should reject the request outright, not silently skip verification. This is the same category of issue as the tip endpoint from before — a security-critical write path with a conditional, not mandatory, auth check.
+2. The ToS waiver is only enforced client-side. WaiverModal is wired into request-new.tsx in the frontend, but I checked requests.ts — there's no server-side check that tos_waiver_accepted_at is set before a home_repair/moving_labor/medical/etc. request gets created. Compare this to sensitive_acknowledged, which is enforced server-side (line 271, returns 400 if missing), and to the business-account guardrail, which has a comment explicitly saying "the actual guardrail goes in the request-creation route, not the frontend — client-side hiding is a UX nicety, not the real control." That principle wasn't applied to the waiver. Anyone hitting the API directly — a modified client, a script, Postman — can currently skip the waiver entirely, which means Niakofa may have no actual record of waiver acceptance for a request that later has a liability dispute. This should get the same server-side gate sensitive_acknowledged has.
+
+verify the admin page has every funtion , feature, and settings to contorll the app and Nia Ai. flawlessly! Verify User functions and features Front and Back for code errors. Verify and review and fix all Conflict in the app. Fix childcare/senior_care/medical, or any waiver-gated categories. Fix EXCESSIVE_CAPS in post-moderation.ts is unchanged — still /^[^a-z]*[A-Z]{8,}/, still only catches an unbroken all-caps token with no spaces, still doesn't fire on realistic screaming-caps sentences. Not touched in this update.

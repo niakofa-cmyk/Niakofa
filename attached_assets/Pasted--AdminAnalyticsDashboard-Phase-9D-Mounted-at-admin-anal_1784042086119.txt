@@ -1,0 +1,868 @@
+/**
+ * AdminAnalyticsDashboard — Phase 9D
+ *
+ * Mounted at /admin/analytics inside the existing AdminScreen tab system.
+ * Fetches GET /api/admin/analytics and renders:
+ *  - Overview KPI cards
+ *  - Daily request volume (7d bar chart)
+ *  - Requests by category
+ *  - Trust score distribution
+ *  - Voice activation rate + language distribution
+ *  - Pledge pool health
+ *  - Reports by status / type
+ */
+import { useEffect, useState } from "react";
+import { authHeaders } from "@/lib/auth";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend,
+} from "recharts";
+import {
+  Users, CheckCircle2, Mic, Globe, ShieldAlert,
+  TrendingUp, DollarSign, RefreshCw,
+} from "lucide-react";
+
+// ── types ────────────────────────────────────────────────────────────────────
+interface AnalyticsData {
+  overview: {
+    total_open: number;
+    total_completed: number;
+    total_helpers_online: number;
+    recent_completions_24h: number;
+    total_users: number;
+    new_users_week: number;
+  };
+  requests_by_category: { category: string; count: number }[];
+  daily_request_volume: { day: string; count: number }[];
+  pledge_pool: { total_pledged: number; total_paid: number; pending: number };
+  helper_compensation?: { avg_effective_hourly_rate: number; sample_size: number };
+  reports_by_status: { status: string; count: number }[];
+  reports_by_type: { type: string; count: number }[];
+  trust_score_distribution: { bucket: string; count: number }[];
+  voice_activation: { total_requests_7d: number; voice_activated_7d: number; rate_pct: number };
+  language_distribution: { language: string; count: number }[];
+}
+
+// ── constants ────────────────────────────────────────────────────────────────
+const LANG_NAMES: Record<string, string> = {
+  en: "English", es: "Spanish", fr: "French", ar: "Arabic",
+  zh: "Mandarin", hi: "Hindi", sw: "Swahili", zu: "Zulu",
+  pt: "Portuguese", de: "German", yo: "Yoruba", ha: "Hausa",
+};
+
+const PIE_COLORS = [
+  "#FF3C00", "#f97316", "#eab308", "#22c55e",
+  "#06b6d4", "#6366f1", "#a855f7", "#ec4899",
+];
+
+const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
+// ── KPI card ─────────────────────────────────────────────────────────────────
+function KpiCard({ icon: Icon, label, value, sub }: {
+  icon: React.ElementType; label: string; value: string | number; sub?: string;
+}) {
+  return (
+    <div className="bg-card border border-border rounded-2xl p-4 flex items-start gap-3">
+      <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+        <Icon className="w-4 h-4 text-primary" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs text-muted-foreground font-medium">{label}</p>
+        <p className="text-2xl font-black text-foreground leading-tight">{value}</p>
+        {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
+// ── Section wrapper ───────────────────────────────────────────────────────────
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+      <h3 className="text-sm font-black text-foreground">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+export default function AdminAnalyticsDashboard() {
+  const [data, setData] = useState<AnalyticsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshedAt, setRefreshedAt] = useState<Date>(new Date());
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${BASE}/api/admin/analytics`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      setData(await res.json());
+      setRefreshedAt(new Date());
+    } catch (e: any) {
+      setError(e.message ?? "Failed to load analytics");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  // Only block the full screen on the very first load (no data yet).
+  // On subsequent refreshes keep showing the existing data; a subtle spinner
+  // in the header is enough feedback — replacing the whole dashboard with a
+  // blank spinner causes a flash-empty on every manual refresh.
+  if (loading && !data) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <RefreshCw className="w-6 h-6 text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3 text-center px-6">
+        <ShieldAlert className="w-8 h-8 text-destructive" />
+        <p className="text-sm text-muted-foreground">{error ?? "No data"}</p>
+        <button
+          onClick={load}
+          className="text-xs font-semibold text-primary underline underline-offset-2"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  const { overview, requests_by_category, daily_request_volume,
+    pledge_pool, reports_by_status, reports_by_type,
+    trust_score_distribution, voice_activation, language_distribution } = data;
+
+  const langData = language_distribution.map(l => ({
+    name: LANG_NAMES[l.language] ?? l.language.toUpperCase(),
+    value: l.count,
+  }));
+
+  const trustData = trust_score_distribution.map(t => ({
+    name: t.bucket,
+    count: t.count,
+  }));
+
+  const catData = requests_by_category.map(c => ({
+    name: c.category.replace(/_/g, " "),
+    count: c.count,
+  }));
+
+  return (
+    <div className="space-y-4 pb-8">
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-black text-foreground">Platform Analytics</h2>
+          <p className="text-[11px] text-muted-foreground">
+            Refreshed {refreshedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </p>
+        </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="flex items-center gap-1.5 text-xs font-semibold text-primary bg-primary/10 rounded-xl px-3 py-1.5 disabled:opacity-60 transition-opacity"
+        >
+          <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+
+      {/* KPI grid */}
+      <div className="grid grid-cols-2 gap-3">
+        <KpiCard icon={Users} label="Total Users" value={overview.total_users.toLocaleString()}
+          sub={`+${overview.new_users_week} this week`} />
+        <KpiCard icon={CheckCircle2} label="Completed" value={overview.total_completed.toLocaleString()}
+          sub={`${overview.recent_completions_24h} in last 24h`} />
+        <KpiCard icon={Users} label="Helpers Online" value={overview.total_helpers_online}
+          sub={`${overview.total_open} open requests`} />
+        <KpiCard icon={Mic} label="Voice Rate (7d)" value={`${voice_activation.rate_pct}%`}
+          sub={`${voice_activation.voice_activated_7d} of ${voice_activation.total_requests_7d}`} />
+      </div>
+
+      {/* Daily volume */}
+      <Section title="Request Volume — Last 7 Days">
+        <ResponsiveContainer width="100%" height={160}>
+          <BarChart data={daily_request_volume} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+            <XAxis dataKey="day" tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} allowDecimals={false} />
+            <Tooltip
+              contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, fontSize: 12 }}
+              cursor={{ fill: "rgba(255,60,0,0.08)" }}
+            />
+            <Bar dataKey="count" name="Requests" fill="#FF3C00" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </Section>
+
+      {/* Voice language distribution */}
+      {langData.length > 0 && (
+        <Section title="Language Distribution (Voice, 7d)">
+          <div className="flex items-center gap-4">
+            <ResponsiveContainer width="50%" height={140}>
+              <PieChart>
+                <Pie data={langData} dataKey="value" cx="50%" cy="50%" outerRadius={60} paddingAngle={2}>
+                  {langData.map((_, i) => (
+                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, fontSize: 11 }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="flex-1 space-y-1.5">
+              {langData.slice(0, 6).map((l, i) => (
+                <div key={l.name} className="flex items-center gap-2">
+                  <span
+                    className="w-2.5 h-2.5 rounded-sm shrink-0"
+                    style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
+                  />
+                  <span className="text-[11px] text-muted-foreground flex-1 truncate">{l.name}</span>
+                  <span className="text-[11px] font-bold text-foreground">{l.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Section>
+      )}
+
+      {/* Requests by category */}
+      <Section title="Requests by Category (All Time)">
+        <ResponsiveContainer width="100%" height={140}>
+          <BarChart data={catData} layout="vertical" margin={{ top: 0, right: 8, left: 60, bottom: 0 }}>
+            <XAxis type="number" tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} allowDecimals={false} />
+            <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={60} />
+            <Tooltip
+              contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, fontSize: 11 }}
+              cursor={{ fill: "rgba(255,60,0,0.08)" }}
+            />
+            <Bar dataKey="count" name="Requests" fill="#6366f1" radius={[0, 4, 4, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </Section>
+
+      {/* Trust score distribution */}
+      <Section title="Trust Score Distribution">
+        <ResponsiveContainer width="100%" height={130}>
+          <BarChart data={trustData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+            <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} allowDecimals={false} />
+            <Tooltip
+              contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, fontSize: 11 }}
+              cursor={{ fill: "rgba(255,60,0,0.08)" }}
+            />
+            <Bar dataKey="count" name="Users" fill="#22c55e" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </Section>
+
+      {/* Pledge pool */}
+      <Section title="Pledge Pool Health">
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            // Pool amounts are stored and processed in USD (platform currency).
+            // toLocaleString() uses the admin's browser locale for number formatting
+            // (e.g. "1,234" in en-US, "1.234" in de-DE) while the $ prefix
+            // correctly reflects that these are USD pool amounts.
+            { label: "Pledged",  value: `$${pledge_pool.total_pledged.toLocaleString("en-US")}`, color: "text-foreground" },
+            { label: "Paid Out", value: `$${pledge_pool.total_paid.toLocaleString("en-US")}`,    color: "text-green-400" },
+            { label: "Pending",  value: `$${pledge_pool.pending.toLocaleString("en-US")}`,       color: "text-amber-400" },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="bg-background rounded-xl p-3 text-center">
+              <DollarSign className="w-4 h-4 text-muted-foreground mx-auto mb-1" />
+              <p className={`text-base font-black ${color}`}>{value}</p>
+              <p className="text-[10px] text-muted-foreground">{label}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* Helper compensation — effective hourly rate proof-of-livable-wage */}
+      {data.helper_compensation && (
+        <Section title="Helper Compensation">
+          <div className="flex items-center gap-4">
+            <div className="bg-background rounded-xl p-4 flex-1 text-center">
+              <p className="text-[11px] text-muted-foreground mb-1">Avg Effective Hourly Rate</p>
+              <p className="text-2xl font-black text-green-400">
+                {data.helper_compensation.avg_effective_hourly_rate > 0
+                  ? `$${data.helper_compensation.avg_effective_hourly_rate.toFixed(2)}/hr`
+                  : "—"}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                {data.helper_compensation.sample_size > 0
+                  ? `Based on ${data.helper_compensation.sample_size} paid tasks`
+                  : "No paid tasks with hour estimates yet"}
+              </p>
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground px-1">
+            Computed from completed Pay-It-Forward tasks where estimated hours and actual payout are both recorded.
+            This is the platform's livable-wage proof metric.
+          </p>
+        </Section>
+      )}
+
+      {/* Reports */}
+      <Section title="Reports by Status">
+        <div className="flex flex-wrap gap-2">
+          {reports_by_status.map(r => (
+            <div key={r.status} className="flex items-center gap-1.5 bg-background rounded-xl px-3 py-2">
+              <span className="text-sm font-black text-foreground">{r.count}</span>
+              <span className="text-[11px] text-muted-foreground capitalize">{r.status.replace(/_/g, " ")}</span>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+    </div>
+  );
+}
+
+
+
+
+
+/**
+ * CommunityTopPanel — slide-down panel accessed via the TopBar hamburger menu
+ * in Community (requester) map mode.
+ *
+ * Previously this data lived in a bottom sheet (CommunityBottomSheet) that
+ * competed with the map controls and was hard to reach one-handed. Now it
+ * slides down from the top when the TopBar menu icon is tapped, keeping the
+ * bottom of the map completely free for navigation controls.
+ */
+import { motion, AnimatePresence } from "framer-motion";
+import { useLocation } from "wouter";
+import { X, HeartHandshake, Building2, Landmark, Clock } from "lucide-react";
+import type { HelperLocation, CivicNeedNearby, CivicResourceNearby } from "@workspace/api-client-react";
+import { Z_SEARCH, Z_TOPBAR } from "@/lib/zLayers";
+
+interface CommunityTopPanelProps {
+  open: boolean;
+  onClose: () => void;
+  helpers: HelperLocation[];
+  needs: CivicNeedNearby[];
+  resources: CivicResourceNearby[];
+  onSelectResource: (r: CivicResourceNearby) => void;
+}
+
+export function CommunityTopPanel({
+  open, onClose, helpers, needs, resources, onSelectResource,
+}: CommunityTopPanelProps) {
+  const [, setLocation] = useLocation();
+
+  const totalCount = helpers.length + needs.length + resources.length;
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          {/* Backdrop — sits just above the TopBar (Z_TOPBAR + 1) so a tap
+              anywhere outside the panel (including on the TopBar) closes it. */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            style={{ zIndex: Z_TOPBAR + 1 }}
+            onClick={onClose}
+          />
+
+          {/* Slide-down panel — above backdrop and TopBar (Z_SEARCH = 25).
+              The panel starts at top-0 (edge of screen) and uses pt-16 in the
+              header so content clears the ~64px TopBar row underneath. */}
+          <motion.div
+            initial={{ y: "-100%", opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: "-100%", opacity: 0 }}
+            transition={{ type: "spring", damping: 28, stiffness: 300 }}
+            style={{ zIndex: Z_SEARCH }}
+            className="absolute top-0 left-0 right-0 bg-card border-b border-border rounded-b-3xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] max-h-[75vh] flex flex-col"
+          >
+            {/* Header — pt-16 clears the TopBar row above */}
+            <div className="flex items-center justify-between px-5 pt-16 pb-3 border-b border-border/60 shrink-0">
+              <div>
+                <h2 className="font-black text-[15px]">Helpers &amp; Civic Needs</h2>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{totalCount} nearby</p>
+              </div>
+              <button
+                onClick={onClose}
+                aria-label="Close panel"
+                className="w-8 h-8 rounded-full bg-muted flex items-center justify-center active:scale-95 transition-transform"
+              >
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+
+            {/* Scrollable rows */}
+            <div className="overflow-y-auto flex-1 px-4 py-3 space-y-2">
+              {totalCount === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-10">Nothing nearby right now.</p>
+              ) : (
+                <>
+                  {helpers.map(h => {
+                    const hx = h as HelperLocation & { distance_miles?: number; languages?: string[]; skills?: string[] };
+                    return (
+                      <button
+                        key={`h-${hx.id}`}
+                        onClick={() => { setLocation(`/helper/${hx.id}`); onClose(); }}
+                        className="w-full flex items-center gap-3 p-3 rounded-2xl bg-muted/40 border border-border/60 text-left active:scale-[0.98] transition-transform"
+                      >
+                        <div className="w-9 h-9 rounded-full bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center shrink-0">
+                          <HeartHandshake className="w-4 h-4 text-emerald-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold truncate">{hx.name}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">
+                            {[hx.skills?.[0], hx.languages?.[0]].filter(Boolean).join(", ") || "Helper"}
+                            {hx.distance_miles != null ? ` · ${hx.distance_miles.toFixed(1)} mi` : " · nearby"}
+                          </p>
+                        </div>
+                        <span className="text-[10px] font-bold text-emerald-400 shrink-0 bg-emerald-500/10 px-2 py-0.5 rounded-full">Online</span>
+                      </button>
+                    );
+                  })}
+
+                  {needs.map(n => (
+                    <button
+                      key={`n-${n.id}`}
+                      onClick={() => { setLocation(`/civic-needs?need=${n.id}`); onClose(); }}
+                      className="w-full flex items-center gap-3 p-3 rounded-2xl bg-muted/40 border border-border/60 text-left active:scale-[0.98] transition-transform"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-primary/15 border border-primary/40 flex items-center justify-center shrink-0">
+                        <Building2 className="w-4 h-4 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold truncate">{n.title}</p>
+                        <p className="text-[11px] text-muted-foreground truncate capitalize">
+                          {n.category.replace(/_/g, " ")} · {n.distance_miles.toFixed(1)} mi
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-bold text-primary shrink-0 bg-primary/10 px-2 py-0.5 rounded-full">Civic</span>
+                    </button>
+                  ))}
+
+                  {resources.map(r => (
+                    <button
+                      key={`r-${r.id}`}
+                      onClick={() => { onSelectResource(r); onClose(); }}
+                      className="w-full flex items-center gap-3 p-3 rounded-2xl bg-muted/40 border border-border/60 text-left active:scale-[0.98] transition-transform"
+                    >
+                      <div className="w-9 h-9 rotate-45 bg-emerald-500/10 border-2 border-emerald-500/50 flex items-center justify-center shrink-0">
+                        <Landmark className="w-3.5 h-3.5 text-emerald-400 -rotate-45" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold truncate">{r.org_name}</p>
+                        <p className="text-[11px] text-muted-foreground truncate flex items-center gap-1">
+                          <Clock className="w-3 h-3 shrink-0" />
+                          {r.open_status === "open" ? "Open now" : r.open_status === "closed" ? "Closed" : "Hours unknown"}
+                          {r.distance_miles != null && ` · ${r.distance_miles.toFixed(1)} mi`}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </>
+              )}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
+
+
+
+
+
+import { useLocation, Link } from "wouter";
+import { Map, Users, DollarSign, Radio, Navigation2, Wallet, Bell, X } from "lucide-react";
+import { useState, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { NotificationsDrawer, type LiveNotification } from "./NotificationsDrawer";
+import { useWebSocket } from "@/lib/useWebSocket";
+import { useAppContext } from "@/lib/AppContext";
+import type { HelpRequest } from "@workspace/api-client-react";
+import { useTranslation } from "react-i18next";
+import { Z_NAV } from "@/lib/zLayers";
+
+type Tab = { path: string; icon: React.ElementType; labelKey: string; center?: boolean };
+
+// The tab bar fully swaps based on helperModeActive — this is a real "Helper
+// Mode home screen", not just a toggle that changes what you can do while
+// leaving the nav chrome the same. Profile stays reachable via the TopBar
+// avatar in both modes (see TopBar.tsx), so dropping it here isn't a
+// regression — it frees two slots for features that previously had zero
+// bottom-nav discoverability (Wallet, Circles).
+//
+// Helper Mode OFF — consumer-facing nav: Home/Community, Map (browse &
+// request — the map screen carries its own "Request Help" FAB), Circles,
+// Wallet. No navigation UI, no earnings, no background-check chrome.
+const BASE_TABS: Tab[] = [
+  { path: "/community",     icon: Users,   labelKey: "nav.community" },
+  { path: "/",               icon: Map,     labelKey: "nav.map"       },
+  { path: "/audio-circles",  icon: Radio,   labelKey: "nav.circles"   },
+  { path: "/wallet",         icon: Wallet,  labelKey: "nav.wallet"    },
+];
+
+// Helper Mode ON — helper-facing nav: Active Job (center, most important
+// action — jumps straight to the in-progress job, or to Nearby Requests if
+// there isn't one yet), Nearby Requests (map, already filters to claimable
+// requests when helperModeActive is true), Earnings (helper-dashboard is the
+// full earnings + payout home), Circles.
+const HELPER_TABS: Tab[] = [
+  { path: "/helper-dashboard", icon: DollarSign,   labelKey: "nav.earnings" },
+  { path: "/",                 icon: Map,           labelKey: "nav.nearby"  },
+  { path: "__active_job__",    icon: Navigation2,   labelKey: "nav.active_job", center: true },
+  { path: "/audio-circles",    icon: Radio,         labelKey: "nav.circles" },
+];
+
+const SEED_NOTIFICATIONS: LiveNotification[] = [
+  {
+    id: "seed-1",
+    type: "emergency",
+    title: "🚨 Emergency nearby",
+    body: "Sarah Chen needs immediate help — power out, needs phone charge",
+    time: new Date(Date.now() - 2 * 60 * 1000),
+  },
+  {
+    id: "seed-2",
+    type: "completed",
+    title: "✅ Request completed",
+    body: "You helped DeShawn Moore with grocery pickup",
+    time: new Date(Date.now() - 60 * 60 * 1000),
+  },
+  {
+    id: "seed-3",
+    type: "pledge",
+    title: "💙 Niakofa received",
+    body: "Maria G. contributed $5 toward your help last week",
+    time: new Date(Date.now() - 3 * 60 * 60 * 1000),
+  },
+  {
+    id: "seed-4",
+    type: "nearby",
+    title: "📍 New request 0.3 mi away",
+    body: "Airport drop-off at 6am — transportation needed",
+    time: new Date(Date.now() - 5 * 60 * 60 * 1000),
+  },
+];
+
+export function BottomNav() {
+  const { t } = useTranslation();
+  const [location] = useLocation();
+  const { helperModeActive, activeRequestId, mapNavOpen, setMapNavOpen } = useAppContext();
+  const tabs = helperModeActive ? HELPER_TABS : BASE_TABS;
+
+  const isMapRoute = location === "/";
+
+  // "Active Job" is a placeholder path — resolved here so a helper who
+  // hasn't been dispatched yet lands on Nearby Requests (map) instead of a
+  // dead link, while a helper mid-job jumps straight to that job's tracking
+  // screen.
+  const activeJobHref = activeRequestId ? `/request/${activeRequestId}` : "/";
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<LiveNotification[]>(SEED_NOTIFICATIONS);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const seenIds = useRef(new Set<string>());
+
+  const addNotif = (n: LiveNotification) => {
+    if (seenIds.current.has(n.id)) return;
+    seenIds.current.add(n.id);
+    setNotifications(prev => [n, ...prev].slice(0, 50));
+    setUnreadCount(prev => Math.min(prev + 1, 99));
+  };
+
+  useWebSocket((event) => {
+    if (event.type === "chat_message") {
+      const msg = event.payload as { request_id: number; content: string; sender_id: number };
+      addNotif({
+        id: `chat-${Date.now()}`,
+        type: "chat",
+        title: "💬 New message",
+        body: msg.content.length > 60 ? msg.content.slice(0, 60) + "…" : msg.content,
+        time: new Date(),
+      });
+    } else if (event.type === "new_request") {
+      const req = event.payload as HelpRequest;
+      const isEmergency = req.urgency === "emergency";
+      addNotif({
+        id: `req-${req.id}`,
+        type: (isEmergency ? "emergency" : "nearby") as LiveNotification["type"],
+        title: isEmergency ? "🚨 Emergency nearby" : "📍 New request nearby",
+        body: req.title,
+        time: new Date(),
+      });
+    } else if (event.type === "request_updated") {
+      const req = event.payload as HelpRequest;
+      if (req.status === "claimed" && req.helper_name) {
+        addNotif({
+          id: `claimed-${req.id}`,
+          type: "helper_accepted",
+          title: "✋ Helper accepted your request",
+          body: `${req.helper_name} is on the way for: ${req.title}`,
+          time: new Date(),
+        });
+      } else if (req.status === "completed") {
+        addNotif({
+          id: `complete-${req.id}`,
+          type: "completed",
+          title: "✅ Request completed",
+          body: req.title,
+          time: new Date(),
+        });
+      }
+    } else if (event.type === "pledge_paid") {
+      const p = event.payload as { amount: number; request_title: string };
+      addNotif({
+        id: `pledge-paid-${Date.now()}`,
+        type: "pledge",
+        title: "💙 Niakofa sent",
+        body: `$${p.amount.toFixed(2)} paid forward for: ${p.request_title}`,
+        time: new Date(),
+      });
+    } else if (event.type === "pledge_scheduled") {
+      const p = event.payload as { amount: number; scheduled_date: string };
+      const d = new Date(p.scheduled_date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      addNotif({
+        id: `pledge-sched-${Date.now()}`,
+        type: "pledge_scheduled",
+        title: "📅 Payment scheduled",
+        body: `$${p.amount.toFixed(2)} saved for ${d} — we'll remind you`,
+        time: new Date(),
+      });
+    }
+  });
+
+  const openNotifications = () => {
+    setNotifOpen(true);
+    setUnreadCount(0);
+  };
+
+  // ── Map route: floating corner icon + pop-up nav panel ────────────────────
+  // On the map the full bottom bar is hidden entirely. Instead, a small
+  // floating button sits in the bottom-LEFT corner (so it doesn't overlap
+  // the map zoom/compass controls on the right) and toggles a compact
+  // vertical nav panel above it. This keeps 100% of the map surface free
+  // from chrome when the nav is closed, while still being reachable with
+  // a single tap.
+  if (isMapRoute) {
+    return (
+      <>
+        {/* Floating corner nav button — LEFT side to avoid Mapbox controls */}
+        <div
+          className="fixed bottom-24 left-4 flex flex-col items-start gap-2"
+          style={{ zIndex: Z_NAV }}
+        >
+          <AnimatePresence>
+            {mapNavOpen && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.85, y: 12 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.85, y: 12 }}
+                transition={{ type: "spring", stiffness: 380, damping: 28 }}
+                className="flex flex-col items-start gap-1.5 mb-2"
+              >
+                {/* Notification bell in expanded panel */}
+                <button
+                  onClick={openNotifications}
+                  aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`}
+                  className="relative flex items-center gap-2 pl-3 pr-3 py-2 bg-card/95 backdrop-blur-xl border border-border rounded-2xl shadow-lg active:scale-95 transition-transform"
+                >
+                  <Bell className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+                  <span className="text-xs font-bold text-muted-foreground">Alerts</span>
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 flex items-center justify-center bg-destructive rounded-full text-[9px] font-black text-white border border-background shadow-[0_0_8px_rgba(255,50,50,0.6)]">
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Nav tabs — reversed so bottom tab is closest to the button */}
+                {[...tabs].reverse().map((tab) => {
+                  const href = tab.path === "__active_job__" ? activeJobHref : tab.path;
+                  const isActive = tab.path === "__active_job__"
+                    ? !!activeRequestId && location.startsWith(`/request/${activeRequestId}`)
+                    : tab.path === "/"
+                      ? location === "/"
+                      : location.startsWith(tab.path);
+
+                  return (
+                    <Link
+                      key={tab.path}
+                      href={href}
+                      onClick={() => setMapNavOpen(false)}
+                      aria-label={`${t(tab.labelKey)}${isActive ? " (current page)" : ""}`}
+                      aria-current={isActive ? "page" : undefined}
+                    >
+                      <div
+                        className={`flex items-center gap-2 pl-3 pr-3 py-2 rounded-2xl border shadow-lg transition-all active:scale-95 ${
+                          isActive
+                            ? "bg-primary text-primary-foreground border-primary shadow-[0_0_12px_rgba(0,212,255,0.35)]"
+                            : "bg-card/95 backdrop-blur-xl border-border text-muted-foreground"
+                        }`}
+                      >
+                        <tab.icon className="w-4 h-4" aria-hidden="true" />
+                        <span className="text-xs font-bold uppercase tracking-wider">
+                          {t(tab.labelKey)}
+                        </span>
+                        {/* Pulse when there's a live job to jump back to */}
+                        {tab.path === "__active_job__" && !!activeRequestId && !isActive && (
+                          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Toggle button — Sankofa bird icon (left corner, doesn't overlap
+              Mapbox zoom/compass controls on the right edge) */}
+          <button
+            onClick={() => setMapNavOpen(!mapNavOpen)}
+            aria-label={mapNavOpen ? "Close navigation" : "Open navigation"}
+            style={{ touchAction: "manipulation" }}
+            className={`relative w-12 h-12 rounded-2xl border shadow-xl flex items-center justify-center transition-all active:scale-95 ${
+              mapNavOpen
+                ? "bg-primary text-primary-foreground border-primary shadow-[0_0_16px_rgba(0,212,255,0.4)]"
+                : "bg-card/95 backdrop-blur-xl border-border text-foreground"
+            }`}
+          >
+            {mapNavOpen
+              ? <X className="w-5 h-5" aria-hidden="true" />
+              : <img
+                  src="/sankofa-bird.png"
+                  alt=""
+                  aria-hidden="true"
+                  className="w-7 h-7 object-contain"
+                  style={{ filter: "brightness(0) invert(1)", opacity: 0.85 }}
+                />
+            }
+            {!mapNavOpen && unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 flex items-center justify-center bg-destructive rounded-full text-[9px] font-black text-white border border-background shadow-[0_0_8px_rgba(255,50,50,0.6)]">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} notifications={notifications} />
+      </>
+    );
+  }
+
+  // ── Non-map routes: classic full bottom nav bar ───────────────────────────
+  return (
+    <>
+      <nav
+        aria-label="Main navigation"
+        style={{ zIndex: Z_NAV }}
+        className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-xl border-t border-border pb-safe shadow-[0_-4px_30px_rgba(0,0,0,0.4)]"
+      >
+        {/* ── Nav tabs ─────────────────────────────────────────────────────── */}
+        <div className="flex items-end justify-around px-2 pt-2 pb-2">
+          {tabs.map((tab) => {
+            const href = tab.path === "__active_job__" ? activeJobHref : tab.path;
+            const isActive = tab.path === "__active_job__"
+              ? !!activeRequestId && location.startsWith(`/request/${activeRequestId}`)
+              : tab.path === "/"
+                ? location === "/"
+                : location.startsWith(tab.path);
+
+            if (tab.center) {
+              return (
+                <Link
+                  key={tab.path}
+                  href={href}
+                  aria-label={t(tab.labelKey, "Active job")}
+                >
+                  <div className="flex flex-col items-center -mt-5">
+                    <div
+                      className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all relative ${
+                        isActive
+                          ? "bg-primary shadow-[0_0_20px_rgba(0,212,255,0.5)]"
+                          : "bg-primary/80 hover:bg-primary"
+                      }`}
+                      aria-hidden="true"
+                    >
+                      <tab.icon className="w-7 h-7 text-primary-foreground" />
+                      {/* Pulse when there's a live job to jump back to */}
+                      {tab.path === "__active_job__" && !!activeRequestId && !isActive && (
+                        <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-400 border border-background animate-pulse" />
+                      )}
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider mt-1 text-muted-foreground">
+                      {t(tab.labelKey)}
+                    </span>
+                  </div>
+                </Link>
+              );
+            }
+
+            return (
+              <Link
+                key={tab.path}
+                href={href}
+                aria-label={`${t(tab.labelKey)}${isActive ? " (current page)" : ""}`}
+                aria-current={isActive ? "page" : undefined}
+              >
+                <div className="flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all min-w-[52px] relative">
+                  <tab.icon
+                    aria-hidden="true"
+                    className={`w-5 h-5 transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`}
+                  />
+                  <span className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`}>
+                    {t(tab.labelKey)}
+                  </span>
+                  {isActive && <div aria-hidden="true" className="w-1 h-1 rounded-full bg-primary" />}
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* Notification bell — floats above the nav bar */}
+        <button
+          onClick={openNotifications}
+          aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`}
+          className="absolute -top-4 right-3 w-9 h-9 rounded-full bg-card border border-border flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+        >
+          <Bell className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+          {unreadCount > 0 && (
+            <AnimatePresence>
+              <motion.span
+                key="notif-badge"
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0, opacity: 0 }}
+                transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 flex items-center justify-center bg-destructive rounded-full shadow-[0_0_8px_rgba(255,50,50,0.6)] border border-background"
+              >
+                <span className="text-[9px] font-black text-white leading-none">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              </motion.span>
+            </AnimatePresence>
+          )}
+        </button>
+      </nav>
+
+      <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} notifications={notifications} />
+    </>
+  );
+}

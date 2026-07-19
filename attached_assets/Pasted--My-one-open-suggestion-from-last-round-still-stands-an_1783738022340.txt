@@ -1,0 +1,31 @@
+
+
+My one open suggestion from last round still stands and is probably the natural next step: with this many background workers now running, a worker health dashboard (last-run time, success/failure counts) would close the same kind of "invisible until something's stuck" gap that the cashouts/hardship admin UI closed a few rounds back — the one remaining place where something could silently fail without anyone noticing.
+
+Let Nia take real actions (post a request, check a hub’s pledgee total
+0 instead of only linking elsewhere
+
+Gaps are small and closing fast (structured Nia memory, full voice I/O). Prioritize these without overwriting existing beauty:
+1. Global Village Enhancements:
+    * Hub-Leader Tools: Expand dashboard with PIF repayment visuals and cross-hub kindness chains.
+    * Diaspora Story Ripples: One-tap from stories to local/global PIF requests with cultural tags.
+    * Voice Griot Circles: Live/shared voice sessions (addresses voice gap) for storytelling + action.
+2. PIF & Helper Wages:
+    * Flexible Repay Portal: Scheduling, easy "any amount" contributions, personalized impact stories.
+    * Daily Kindness Boost: Nia morning messages with projected earnings + PIF encouragement.
+    * Multi-Helper Evolution: Build on splitting/credits for seamless coordination rewards.
+3. Nia AI – The Compassionate Soul:
+    * Structured memory with diaspora context.
+    * Full voice I/O (STT/TTS with community voices).
+    * Proactive global kindness prompts tied to hubs/stories.
+4. County & Polish:
+    * Civic NET30 auto-reminders + sponsor insights.
+    * Accessibility: Voice navigation, Globe accessibility modes.
+    * Safety: Broaden multilingual patterns + anomaly detection
+* Stripe Connect payout splitting across multiple co-helpers (explicitly deferred, not forgotten)
+* Stripe institutional billing for civic invoices (still manual)
+* Admin auth is still a shared static secret
+One buried note also raised a good idea I want to surface on its own merits: with this many background workers now running (daily-kindness, NET30 reminders, pledge/payout, pool-minimums, check-ins, crisis-followup, ambient-presence), a small worker health dashboard for admins — last-run time, success/failure counts, next
+
+
+The unified hub-leader dashboard: Non-leaders get a read-only view and an "Apply to lead this hub" button — a sensible default rather than a dead end.

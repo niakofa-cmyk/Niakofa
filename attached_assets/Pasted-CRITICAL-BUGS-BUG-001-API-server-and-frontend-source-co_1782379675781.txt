@@ -1,0 +1,320 @@
+CRITICAL BUGS
+BUG-001 — API server and frontend source code NOT accessible
+Files: @workspace/api-server and @workspace/pay-it-forward source directories do not exist at expected paths. The .replit runs pnpm --filter @workspace/api-server run dev and pnpm --filter @workspace/pay-it-forward run dev but these packages cannot be located in the repo tree. Neither apps/, packages/, server/, frontend/, web/, api-server/, or pay-it-forward/ exist as top-level directories. The actual application source code for both the API and the frontend is missing from the repository or located in an undiscovered path. This means the majority of the runtime code — all Express route handlers, Nia AI service, auth middleware, WebSocket logic, Stripe integration, push notification worker, admin analytics, map components, all React pages/components — cannot be reviewed, verified, or deployed from this repo in its current state.
+
+BUG-002 — post-merge.sh runs pnpm --filter db push which is UNSAFE in production
+File: scripts/post-merge.sh
+
+pnpm --filter db push   # drizzle-kit push — destructive, no migration file, no rollback
+
+drizzle-kit push applies schema changes directly to the database without generating migration files. It can DROP columns and tables silently. This runs automatically post-merge on Replit. Should be drizzle-kit generate + drizzle-kit migrate.
+
+BUG-003 — seed-if-empty.ts dynamic import uses .js extension for a .ts file
+File: scripts/src/seed-if-empty.ts
+
+const seedModule = (await import("./seed-fort-worth.js")) as { default?: unknown };
+
+Imports seed-fort-worth.js but the file is seed-fort-worth.ts. In a type: "module" + tsx/ts-node environment without explicit allowImportingTsExtensions, this will either silently succeed (if compiled first) or throw ERR_MODULE_NOT_FOUND at runtime. The module is also typed with as { default?: unknown } when seed-fort-worth.ts has no default export — it runs as side effects on import. The runSeed path will always be undefined, and the else branch fires — meaning the re-import via dynamic import just double-runs the seed script's side effects uncontrollably.
+
+BUG-004 — niaMemoriesTable uses user_id as PRIMARY KEY — one memory per user
+File: lib/db/src/schema/nia-memories.ts
+
+user_id: integer("user_id").primaryKey().references(...)
+
+user_id is the primary key. Every user can only have one memory row. Any upsert that adds a second memory for the same user will either fail or overwrite the entire memory field. If the intent is to store a single growing memory blob per user, this may be intentional — but there is no length cap on the text("memory") column, no truncation logic, and no versioning. Unbounded memory growth will degrade Nia's context window and API costs.
+
+BUG-005 — crisisStateTable.resources is text (JSON string), not validated at DB level
+File: lib/db/src/schema/crisis-state.ts
+
+resources: text("resources"), // JSON-encoded array of { label, phone?, url? }
+
+The resources field stores JSON as a raw text column with no schema enforcement. Malformed JSON written by any route handler (missing label, bad phone format) will silently persist and crash the frontend banner renderer on read. No DB-level check constraint, no Zod parse on insert.
+
+BUG-006 — civicSuggestionsTable.status is free-form text, no constraint
+File: lib/db/src/schema/civic-suggestions.ts
+
+status: text("status").notNull().default("pending"),
+
+No enum, no check constraint. Any string value can be written. Compare with crisisStateTable which correctly uses a check() constraint for its level field.
+
+BUG-007 — gratitudeLikesTable.post_id has NO foreign key to gratitude posts
+File: lib/db/src/schema/gratitude-likes.ts
+
+post_id: integer("post_id").notNull(),  // no.references()
+
+post_id has no foreign key reference to gratitudePostsTable. Likes can be inserted for non-existent posts. No cascade delete means orphaned likes accumulate when posts are deleted.
+
+BUG-008 — reportsTable.reported_request_id has NO foreign key to requests
+File: lib/db/src/schema/reports.ts
+
+reported_request_id: integer("reported_request_id"),  // no.references()
+
+No FK to requestsTable. Reports can reference deleted or non-existent requests. No cascade.
+
+BUG-009 — reportsTable.reviewed_by has NO foreign key
+File: lib/db/src/schema/reports.ts
+
+reviewed_by: integer("reviewed_by"),  // no.references()
+
+Reviewer user ID is stored with no FK. Admin who reviewed a report can be deleted without orphan protection.
+
+BUG-010 — OpenAPI spec missing Nia AI chat endpoints entirely
+File: lib/api-spec/openapi.yaml The OpenAPI spec defines: health, users, requests, helpers, navigation, reports, civic. There are no Nia AI chat endpoints in the spec. The DB schema has nia_conversations and nia_memories tables and the commit history references Nia chat routes — but these routes are not in the OpenAPI spec, which means:
+
+No generated React Query hooks for Nia chat
+No Zod validators for Nia chat requests/responses
+The frontend must be using hand-written fetch calls to undocumented endpoints
+API contract is invisible to consumers
+BUG-011 — Missing Nia-related endpoints in OpenAPI: gratitude, crisis, push, ratings, admin, websocket, civic-suggestions, recurring-requests, helper-availability
+File: lib/api-spec/openapi.yaml The spec covers only 7 tag groups. The DB schema reveals many more active features with no API contract:
+
+gratitude / gratitude_likes — no spec
+push_subscriptions — no spec
+ratings — no spec
+crisis_state — no spec
+admin_analytics — no spec
+region_crisis_resources — no spec
+civic_suggestions — no spec
+recurring_requests — no spec
+helper_availability — no spec
+chat_messages (direct messaging) — no spec
+password_reset_codes — no spec
+WebSocket events — no spec
+All frontend calls to these features are hand-rolled against undocumented endpoints. No validation, no type safety.
+
+BUG-012 — drizzle.config.ts uses __dirname in an ESM module
+File: lib/db/drizzle.config.ts
+
+schema: path.join(__dirname, "./src/schema/index.ts"),
+out: path.join(__dirname, "./migrations"),
+
+lib/db/package.json sets "type": "module". In ESM, __dirname is not defined. This will throw ReferenceError: __dirname is not defined when running drizzle-kit commands. Migrations and schema pushes will fail unless Drizzle's CLI handles this internally. Must use import.meta.url + fileURLToPath.
+
+BUG-013 — tsconfig.json references three projects but only lib/db, lib/api-client-react, and lib/api-zod exist in the reference list
+File: tsconfig.json
+
+"references": [{ "path": "./lib/db" },
+  { "path": "./lib/api-client-react" },
+  { "path": "./lib/api-zod" }]
+
+Missing references for lib/trust-tiers, lib/api-spec, scripts, @workspace/api-server, and @workspace/pay-it-forward. TypeScript project references are incomplete. tsc --build will not compile the full monorepo.
+
+HIGH SEVERITY BUGS
+BUG-014 — User schema: goodwill_score typed as number in OpenAPI but integer in Zod
+File: lib/api-spec/openapi.yaml
+
+goodwill_score:
+  type: integer
+
+Generated Zod schema: zod.number() (not zod.number().int()). Type mismatch between spec intent and generated validator. Floats will pass Zod validation and be stored.
+
+BUG-015 — CreateReportBody: missing sos report type in API spec vs DB schema
+File: lib/api-spec/openapi.yaml vs lib/db/src/schema/reports.ts
+
+DB schema reportTypeEnum includes "sos". The OpenAPI spec's CreateReportInput.type enum does not include "sos". SOS reports cannot be created via the API client. The generated Zod validator will reject sos type. If the frontend needs SOS reporting (it appears so based on the schema), this is a critical feature gap.
+
+BUG-016 — Transaction.type schema mismatch: DB has more types than API spec
+File: lib/db/src/schema/transactions.ts (file not fully returned but inferred from generated types)
+
+Generated TransactionType enum: earned | pledge_received | pledge_sent | goodwill | tip_received. Earlier commit message ("adding missing enum values for request statuses and transaction types") confirms there were mismatches here that were partially fixed. Verify DB enum matches generated types exactly.
+
+BUG-017 — lib/api-client-react/src/generated/api.ts (68KB) is committed generated code
+File: lib/api-client-react/src/generated/api.ts Generated files are committed to the repo. Any manual change to the OpenAPI spec without re-running orval will cause the committed generated files to drift from the spec. No CI step enforces codegen freshness. The generated client will silently be out of sync with the actual API.
+
+BUG-018 — pnpm-workspace.yaml not readable (skipped as duplicate by tool)
+The pnpm workspace file was skipped as a duplicate call, meaning the actual workspace glob patterns were never confirmed. The specific paths for @workspace/api-server and @workspace/pay-it-forward remain unknown, which is the root of BUG-001.
+
+BUG-019 — orval.config.ts uses useDates: true and useBigInt: true in Zod output
+File: lib/api-spec/orval.config.ts
+
+useDates: true,
+useBigInt: true,
+
+useDates causes Orval to generate z.coerce.date() for date fields. The API returns ISO strings. z.coerce.date() will parse them into JS Date objects, but customFetch returns raw JSON without date coercion. The mismatch means Zod validation will either fail or produce unexpected Date objects where strings are expected. The api-client-react generated output does NOT use Zod for response validation (it uses Orval's react-query client mode, not the zod client mode) — so the Zod validators in api-zod may never actually run against responses.
+
+BUG-020 — No authentication on ANY API endpoint in the OpenAPI spec
+File: lib/api-spec/openapi.yaml Zero securitySchemes, zero security blocks on any path. The spec shows no auth layer. If the actual API server implements session/JWT auth, it is not reflected in the spec, client, or validators. Admin routes (GET /reports, PATCH /reports/{id}/review) are publicly accessible per the spec — no auth requirement defined.
+
+BUG-021 — helper_social_links stored as text (JSON string), type-unsafe
+File: lib/api-spec/openapi.yaml
+
+helper_social_links:
+  type: ["string", "null"]
+
+Social links typed as a plain string but almost certainly intended to be a JSON object/array. No structure enforced at API or DB level. Frontend parsing will be error-prone.
+
+BUG-022 — getTrustTier() has a logical gap: helpCount ≥ 5 → "verified" but trustScore ≥ 85 also → "verified" — these conditions are OR'd in the wrong order
+File: lib/trust-tiers/src/index.ts
+
+if (helpCount >= 5 || trustScore >= 85) return "verified";
+return "member";
+
+A user with helpCount=5, trustScore=10 gets "verified" solely because they have 5 helps. A brand-new user with high trust score (imported/admin-set) also gets "verified". The OR logic means a bad actor who completes 5 spam requests immediately becomes "verified" regardless of trust score. Should be && for the primary check with fallback behavior clarified.
+
+BUG-023 — reportsTable created_at / updated_at missing timezone
+File: lib/db/src/schema/reports.ts
+
+created_at: timestamp("created_at").defaultNow().notNull(),
+updated_at: timestamp("updated_at").defaultNow().notNull(),
+
+Missing { withTimezone: true }. All other critical tables (crisis_state, nia_conversations, helper_availability) use withTimezone: true. Reports timestamps will be stored as local-time, causing timezone bugs in admin dashboard displays.
+
+BUG-024 — civicSuggestionsTable timestamps missing timezone
+File: lib/db/src/schema/civic-suggestions.ts
+
+created_at: timestamp("created_at").notNull().defaultNow(),
+reviewed_at: timestamp("reviewed_at"),
+
+No { withTimezone: true }. Same issue as BUG-023.
+
+BUG-025 — passwordResetCodesTable timestamps missing timezone
+File: lib/db/src/schema/password-reset-codes.ts
+
+expires_at: timestamp("expires_at").notNull(),
+used_at: timestamp("used_at"),
+created_at: timestamp("created_at").defaultNow().notNull(),
+
+No { withTimezone: true }. Password reset expiry comparison done against timestamps stored without timezone — will produce incorrect expiry behavior in non-UTC environments.
+
+BUG-026 — gratitudeLikesTable.created_at missing timezone
+File: lib/db/src/schema/gratitude-likes.ts
+
+created_at: timestamp("created_at").defaultNow().notNull(),
+
+Missing { withTimezone: true }.
+
+BUG-027 — niaConversationsTable.user_id uses onDelete: "set null" but the column has no .nullable()
+File: lib/db/src/schema/nia-conversations.ts
+
+user_id: integer("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+
+The column is declared without .notNull() so it is implicitly nullable — that part is correct. However, set null behavior means Nia conversation history is preserved but anonymized when a user deletes their account. There is no index on user_id here despite session_id being indexed. Querying Nia conversations by user_id (e.g., user history page) will do a full table scan.
+
+BUG-028 — recurringRequestsTable.next_fire_at is non-nullable but omitted from insert schema
+File: lib/db/src/schema/recurring-requests.ts
+
+next_fire_at: timestamp("next_fire_at").notNull(),
+//...
+export const insertRecurringRequestSchema = createInsertSchema(recurringRequestsTable).omit({
+  next_fire_at: true,  // omitted from user-facing insert schema
+
+next_fire_at is notNull but omitted from the insert schema. The API server is responsible for computing this on insert. If the server route handler does not calculate and provide next_fire_at, the DB insert will fail with a NOT NULL constraint violation. No default value is set on the column.
+
+MEDIUM SEVERITY BUGS
+BUG-029 — regionCrisisResourcesTable.resources is text (JSON), not validated
+File: lib/db/src/schema/region-crisis-resources.ts
+
+resources: text("resources").notNull().default(""),
+
+Same issue as BUG-005. Emergency contact resources for crisis banner stored as raw JSON text. Malformed JSON silently persists.
+
+BUG-030 — lib/db/src/index.ts — database connection pool has no connection limit set
+File: lib/db/src/index.ts
+
+export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+No max, idleTimeoutMillis, connectionTimeoutMillis. Default pg.Pool max is 10 connections. Under load, requests will queue silently. On Railway/Replit free tier, this will exhaust Postgres connections quickly.
+
+BUG-031 — custom-fetch.ts — _authTokenGetter note says "never use in web apps" but no enforcement
+File: lib/api-client-react/src/custom-fetch.ts
+
+// NOTE: This function should never be used in web applications
+// where session token cookies are automatically associated with API calls
+
+This is a comment, not enforcement. Nothing prevents a web-app developer from accidentally calling setAuthTokenGetter() and leaking tokens into Authorization headers alongside cookies. No runtime check.
+
+BUG-032 — orval.config.ts — zod output uses coerce on response fields
+File: lib/api-spec/orval.config.ts
+
+coerce: {
+  response: ['bigint', 'date'],
+}
+
+Coercing response values means Zod will attempt type coercion on API responses. If the API returns a date as an ISO string but Zod coerces to bigint, this will produce unexpected NaN values or throw.
+
+BUG-033 — seed-fort-worth.ts — Presbyterian Night Shelter URL has typo
+File: scripts/src/seed-fort-worth.ts
+
+url: "https://www.pvnightshelf.org",  // typo: "shelf" not "shelter"
+
+Correct URL: https://www.presbyteriannightshelter.org. pvnightshelf.org does not exist — broken link in civic resources.
+
+BUG-034 — seed-fort-worth.ts — Meals on Wheels URL is wrong
+File: scripts/src/seed-fort-worth.ts
+
+url: "https://www.mealsonwheels.org/tarrantcounty",
+
+The actual Tarrant County Meals on Wheels is at mowta.com (Meals on Wheels of Tarrant County). The seeded URL is a generic national page.
+
+BUG-035 — seed-fort-worth.ts — Volunteer Center of North Texas is Dallas-based
+File: scripts/src/seed-fort-worth.ts
+
+phone: "(214) 826-6767",  // 214 = Dallas area code, not Fort Worth (817)
+
+Fort Worth/Tarrant County uses 817/682 area codes. This organization is Dallas-based and may not serve Tarrant County residents adequately.
+
+BUG-036 — tsconfig.base.json sets noUnusedLocals: false — dead code accumulates silently
+File: tsconfig.base.json
+
+"noUnusedLocals": false,
+
+Unused imports, variables, and parameters go unchecked across the entire monorepo. This will allow dead code and stale imports to accumulate undetected.
+
+BUG-037 — tsconfig.base.json sets strictFunctionTypes: false
+File: tsconfig.base.json
+
+"strictFunctionTypes": false,
+
+Function type variance is not checked. Callbacks with incompatible parameter types can be passed without TypeScript error, allowing subtle runtime type bugs in event handlers and async callbacks.
+
+WHAT IS MISSING / INCOMPLETE (To Finish the App)
+MISSING-001 — Nia AI endpoints not in OpenAPI spec
+All Nia chat routes must be added to lib/api-spec/openapi.yaml and Orval re-run to generate typed hooks and validators.
+
+MISSING-002 — No auth endpoints in OpenAPI spec
+Login, logout, session check, password reset endpoints are absent from the spec. No generated hooks for auth flow.
+
+MISSING-003 — No WebSocket/real-time spec
+WebSocket events for live map updates, request status changes, helper location pings have no contract defined.
+
+MISSING-004 — No admin endpoints in OpenAPI spec
+Admin analytics, user banning, crisis activation, civic resource verification — none are specced.
+
+MISSING-005 — No gratitude/community feed endpoints in spec
+The gratitude posts, likes, community board features have no API contract.
+
+MISSING-006 — No push notification endpoints in spec
+Push subscription registration/unregistration not in spec.
+
+MISSING-007 — No ratings endpoints in spec
+Helper ratings system has no API contract.
+
+MISSING-008 — No recurring request endpoints in spec
+Recurring request creation, management, and the background job firing mechanism have no spec.
+
+MISSING-009 — No helper availability endpoints in spec
+Helper schedule management has no API contract.
+
+MISSING-010 — Crisis state activation/deactivation endpoints not specced
+Crisis banner management for admins has no API contract.
+
+MISSING-011 — CLAUDE.md is not in the root of the repo
+The CLAUDE.md file was not found at the repo root. Previous session context states it was authored — confirm it was pushed.
+
+MISSING-012 — No .env.example file in repo
+There is no .env.example documenting required environment variables (DATABASE_URL, OPENAI_API_KEY, STRIPE_*, MAPBOX_TOKEN, VAPID keys, etc.). New contributors and Railway deployments have no reference.
+
+MISSING-013 — No Dockerfile or docker-compose.yml
+Railway deployment requires either a Dockerfile or Nixpacks configuration. Neither a Dockerfile nor docker-compose.yml was found. Deployment pipeline unclear.
+
+MISSING-014 — Migration files directory is empty
+lib/db/migrations/ exists as a directory but appears empty. No migration history. Running drizzle-kit migrate in production has no migrations to apply. The entire schema is maintained only via drizzle-kit push (destructive).
+
+MISSING-015 — Civic resources data only covers Fort Worth/Tarrant County
+The seed data covers one city. For any user outside Fort Worth, GET /civic/resources will return no resources or fall back to generic national resources. The app is functionally incomplete for all other cities.
+
+MISSING-016 — No Stripe webhook handler confirmed in spec
+Stripe payment lifecycle (payment_intent.succeeded, etc.) requires a webhook endpoint. Not in spec, not visible in accessible source.
+
+MISSING-017 — lib/api-client-react generated files are 68KB+ committed code
+Generated code committed to source control will constantly drift. A CI step enforcing orval generate and checking for diff is required

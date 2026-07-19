@@ -1,0 +1,25 @@
+ update this app Now. Review the app . Fix, and address each and every issue. . Think carefully before editing. Understand the App and the vision and mission before you edit code. Review the code before you edit code. We are using Mapbox . Verify and Ensure your work! Improve and enhance the infrastructure of the Niakofa app. Verify that you have verified each and every issue. And have addressed each and every issue. Verify and Ensure that Nia ai is Disable to all users by default to the Niakofa app. Review your work and Verify That you Finish and checkpoint this edition of improvements before your usage rate or session percentage runs out! Verify you finish before your session time runs out!Read Verify each and every issue. Ensure you address each and every issue. And Fix, improve and enhance the code if you can. Fix, Improve and enhance and Close each and every and all remaining Gaps end to end, and issues. Fix, Improve and enhance, address all remaining Bugs end to end.
+
+The real fix is to stop using that COPY artifacts/nia-service/ ./artifacts/nia-service/ pattern entirely. Let me rewrite the Dockerfile to copy the whole repo in one shot instead, which sidesteps the buggy code path completely.
+
+Rewrote the Dockerfile to stop using the pattern that's failing entirely, rather than trying another cache-bust:
+* Dockerfile goes in artifacts/nia-service/Dockerfile (replaces the existing one) — now copies the whole repo in one COPY . . instead of singling out artifacts/nia-service/ as its own layer, which is the exact line that's been failing. Added a pnpm store cache mount so repeat builds stay fast despite that change.
+* .dockerignore goes at your repo root (you don't have one currently) — keeps that full-repo copy from dragging in node_modules, .git, and the large attached_assets folder.
+
+Still outstanding
+1. Map: WS-reconnect resync + settings-driven radius (discussed last time, not yet applied).
+2. Docs vs. code: the earlier README claims about per-category wage bands and tenure tiers still don't correspond to anything in the codebase — worth tracking down or dropping those claims. Nothing outstanding from our list right now except optional cleanup (the dead fallback code
+
+Fix Nia AI wiring, Recommendation
+The requireApproved gate on requests.ts is still the single most important outstanding item — a suspended or unapproved account can still claim, mark en-route/arrived, and complete requests, triggering real payouts
+
+Map Upgrades:
+What it does:
+1. Settings-driven radius — replaces the hardcoded radius_miles: 10 with a computed radiusMiles (helper mode → max_travel_miles → service_radius_miles → 15; browsing mode → service_radius_miles → 15), matching what the backend actually enforces at claim time.
+2. WS reconnect resync — on every "connected" event, invalidates the nearby-requests and online-helpers queries so a dropped-and-restored connection always triggers a fresh fetch, on top of the isSuccess empty-state fix already in your latest zip.
+3. Accessibility — aria-label/aria-pressed on the Traffic and Heat toggle buttons.
+
+Add Tenure tiers (Neighbor/Pillar/Anchor/Elder) are still design-only — ROADMAP.md is the only place they exist; still no code implementing the livable-wage multiplier [niakofa-cmyk/Niakofa/artifacts/api-server/src/tests/integration-lifecycle.test.ts]. This remains the single biggest gap between your stated vision ("paid a livable wage... just by waking up and helping others") and the current build, which only guarantees a flat per-job floor.
+* County-posted requests (vs. county→pool funding only) remains unimplemented — no change since this morning.
+* Sensitive-category gating on the 6 newest categories (legal_aid, mental_health_peer, etc.) is still not extended — still worth a policy pass before wide release.
+
