@@ -1311,6 +1311,16 @@ export default function BirdTestPage() {
         </p>
         <GazeDirectionDemo />
 
+        {/* ── Phase 14/15/16 — Turning commit, full-body gaze, live nav ── */}
+        <SectionLabel>Phase 14/15/16 — Turning commit · full-body gaze · live nav wiring</SectionLabel>
+        <p className="text-xs mb-3" style={{ color: "rgba(255,255,255,0.35)" }}>
+          P14: data-turning fires when |bankDeg|≥8° — body CoM commits, wing sweep, tail rudder fan, perched weight-shift.
+          P15: gaze neck arc (skewX from data-gaze), mid-zoom gaze at 60%, beak pitch, eye shimmer, wing micro-lift.
+          P16: curiosity head tilt (diagonal idle scan), egg pendulum physics, WAIR wing flutter, navLod=2 GPU suppression,
+          wind-compensation posture, wingbeat ±12% jitter. useBirdNavigation hook + NavigationBird wrapper component added.
+        </p>
+        <Phase14_16Demo />
+
         {/* ── Legend ────────────────────────────────────────────────────── */}
         <div
           className="rounded-xl p-4 text-xs"
@@ -2181,6 +2191,154 @@ function GazeDirectionDemo() {
         </span>
         <span className="text-[9px] mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>P13 speed-correlated</span>
       </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PHASE 14/15/16 — Turning commit, full-body gaze, live nav wiring demos
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * LiveTurningDemo — demonstrates P14 data-turning commitment and P16.2 egg
+ * pendulum physics. Oscillates heading left/right so bankDeg fires (≥8°)
+ * and data-turning="left"/"right" activates. Shows full street-zoom detail
+ * so wing sweep, body CoM, tail rudder, AND egg swing are all visible at once.
+ */
+function LiveTurningDemo() {
+  const [heading, setHeading] = useState(90);
+  const [label, setLabel] = useState("straight");
+
+  useEffect(() => {
+    type Step = { delta: number; lbl: string; hold: number };
+    // Sequence: straight → hard left turn → straight → hard right → repeat
+    const steps: Step[] = [
+      { delta:  0,  lbl: "straight",         hold: 1500 },
+      { delta: -35, lbl: "← left bank (P14)", hold: 1200 },
+      { delta:  0,  lbl: "straight",         hold: 1500 },
+      { delta:  35, lbl: "right bank → (P14)", hold: 1200 },
+    ];
+    let base = 90; let i = 0; let t: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      const s = steps[i % steps.length];
+      if (i % steps.length === 0) base = 90;
+      setHeading((base + s.delta + 360) % 360);
+      setLabel(s.lbl);
+      i++;
+      t = setTimeout(tick, s.hold);
+    };
+    tick();
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <SankofaBird heading={heading} mapBearing={0} speed={12} navigating={true}
+        mapZoom={17} size={56} />
+      <span className="text-[10px] text-center" style={{ color: "#7ee8fa" }}>
+        Turn commit + egg swing<br /><b style={{ color: "#fff" }}>{label}</b>
+      </span>
+      <span className="text-[9px] mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>P14 data-turning · P16.2 egg pendulum</span>
+    </div>
+  );
+}
+
+/**
+ * Phase14_16Demo — visual regression grid for all P14/P15/P16 behaviors.
+ * Each card demonstrates a single system in isolation:
+ *   • Live turning: heading oscillation shows data-turning + egg pendulum
+ *   • Upcoming turn: static upcoming-left/right shows egg pre-swing + gaze lead
+ *   • Curiosity tilt: perched idle bird (idle scan cycles automatically)
+ *   • WAIR flutter: walking + not navigating → subtle wing flutter
+ *   • Wind compensation: high speed → neck lowers, tail opens
+ *   • NavLod tiers: navLodOverride=1/2 shows GPU suppression in action
+ */
+function Phase14_16Demo() {
+  // Cycling upcoming-turn signal to show anticipatory egg pre-swing + gaze lead
+  const [upcomingTurn, setUpcomingTurn] = useState<"left" | "right" | null>(null);
+  useEffect(() => {
+    const seq: Array<"left" | "right" | null> = [null, "left", null, null, "right", null];
+    let i = 0;
+    const t = setInterval(() => { setUpcomingTurn(seq[i++ % seq.length]); }, 2200);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div className="flex flex-wrap gap-4">
+
+      {/* P14: data-turning commitment — full body commit, wing sweep, tail rudder */}
+      <LiveTurningDemo />
+
+      {/* P16.2 egg anticipatory pre-swing from upcoming turn signal */}
+      <div className="flex flex-col items-center gap-1">
+        <SankofaBird heading={0} mapBearing={0} speed={10} navigating={true}
+          upcomingTurnDirection={upcomingTurn} mapZoom={17} size={52} />
+        <span className="text-[10px] text-center" style={{ color: "#7ee8fa" }}>
+          Egg pre-swing<br /><b style={{ color: "#fff" }}>upcoming: {upcomingTurn ?? "none"}</b>
+        </span>
+        <span className="text-[9px] mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>P16.2 anticipatory 2° → 3.5° on commit</span>
+      </div>
+
+      {/* P15: gaze neck arc — perched bird shows neck skewX from diagonal gaze */}
+      <div className="flex flex-col items-center gap-1">
+        <SankofaBird heading={null} mapBearing={0} speed={0} navigating={false}
+          mapZoom={17} size={52} />
+        <span className="text-[10px] text-center" style={{ color: "#7ee8fa" }}>
+          Idle scan + neck arc<br /><b style={{ color: "#fff" }}>P15.1 skewX</b>
+        </span>
+        <span className="text-[9px] mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>auto-cycles · 3.5–6.5s intervals</span>
+      </div>
+
+      {/* P16.1: curiosity head tilt — perched + diagonal gaze → Z-axis quizzical tilt */}
+      <div className="flex flex-col items-center gap-1">
+        <SankofaBird heading={null} mapBearing={0} speed={0} navigating={false}
+          mapZoom={17} size={52} activityLevel={0.4} />
+        <span className="text-[10px] text-center" style={{ color: "#7ee8fa" }}>
+          Curiosity head tilt<br /><b style={{ color: "#fff" }}>P16.1 ±4°</b>
+        </span>
+        <span className="text-[9px] mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>up-left/up-right → quizzical tilt</span>
+      </div>
+
+      {/* P16.3: WAIR wing flutter — walking but not flying */}
+      <BirdCard label="WAIR flutter · walking" subLabel="not navigating · 1.4 m/s" badge="P16"
+        state={{ heading: 45, mapBearing: 0, speed: 1.4, navigating: false }}
+        mapZoom={17} size={52} />
+
+      {/* P16.6: Wind compensation — driving speed neck lowers, tail opens */}
+      <BirdCard label="Wind comp · driving" subLabel="18 m/s · neck lowers · tail opens" badge="P16"
+        state={{ heading: 0, mapBearing: 0, speed: 18, navigating: true }}
+        mapZoom={17} size={52} />
+
+      {/* P15.5: Wing gaze micro-lift — flying + left gaze highlights left wing */}
+      <BirdCard label="Wing micro-lift · left" subLabel="gaze-driven brightness boost" badge="P15"
+        state={{ heading: 0, mapBearing: 0, speed: 10, navigating: true }}
+        mapZoom={17} size={52} upcomingTurnDirection="left" />
+
+      {/* P16.5: NavLod=1 — 10+ min session, decorative layers dim */}
+      <BirdCard label="NavLod=1 · 10 min" subLabel="scap feathers dim · glow fades" badge="P16"
+        state={{ heading: 90, mapBearing: 0, speed: 10, navigating: true }}
+        mapZoom={17} size={52} navLodOverride={1} />
+
+      {/* P16.5: NavLod=2 — 30+ min session, near-battery-saver */}
+      <BirdCard label="NavLod=2 · 30 min" subLabel="highlights/scap/crown suppressed" badge="P16"
+        state={{ heading: 90, mapBearing: 0, speed: 10, navigating: true }}
+        mapZoom={17} size={52} navLodOverride={2} />
+
+      {/* P14 + P16: Perched weight-shift — banking toward foot planted */}
+      <BirdCard label="Perched weight-shift" subLabel="grounded + bankDeg → foot lean" badge="P14"
+        state={{ heading: null, mapBearing: 0, speed: 0, navigating: false }}
+        mapZoom={17} size={52} />
+
+      {/* P15.3: Beak pitch from gaze — street zoom + gaze down → beak pitches down */}
+      <BirdCard label="Beak pitch · gaze down" subLabel="street zoom · beak pitches ±2.5°" badge="P15"
+        state={{ heading: 0, mapBearing: 0, speed: 10, navigating: true }}
+        mapZoom={17} size={56} upcomingTurnDirection={null} />
+
+      {/* P16: Wingbeat jitter — ±12% period variation every 3-8 cycles (visual diff subtle) */}
+      <BirdCard label="Wingbeat ±12% jitter" subLabel="flapPeriodMs varies organically" badge="P16"
+        state={{ heading: 90, mapBearing: 0, speed: 8, navigating: true }}
+        mapZoom={14} size={52} />
+
     </div>
   );
 }

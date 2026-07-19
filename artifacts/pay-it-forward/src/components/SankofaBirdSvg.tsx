@@ -9885,36 +9885,44 @@ export function SankofaBirdSvg({
            Only fires when not flying (idle scan active), street/high zoom.
            Amplitude ±4deg — enough to register without distorting. */
         @supports (rotate: 0deg) {
-          /* Up-left scan: additional 4deg clockwise tilt (ear toward right) */
-          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up-left"][data-zoom="high"] .sankofa-bird-head,
-          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up-left"][data-zoom="street"] .sankofa-bird-head {
+          /* P16.1 curiosity tilt guards:
+             :not([data-flying="true"])     — only when perched/idle
+             :not([data-helping="true"])    — CRITICAL: must not override E2 helping-crane
+               head transform (translateX/Y) which is set at specificity (0,3,0).
+               P16.1 is at (0,5,0+) so without this guard it would silently clobber
+               the helping-crane pose whenever idle scan hits a diagonal direction. */
+
+          /* Up-left scan: additional 4deg clockwise tilt (ear toward right shoulder) */
+          .sankofa-bird-rig:not([data-flying="true"]):not([data-helping="true"])[data-gaze="up-left"][data-zoom="high"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"]):not([data-helping="true"])[data-gaze="up-left"][data-zoom="street"] .sankofa-bird-head {
             transform: rotate(4deg);
             transition: rotate 0.50s cubic-bezier(0.34, 1.1, 0.64, 1), transform 0.50s cubic-bezier(0.34, 1.1, 0.64, 1);
           }
-          /* Up-right scan: additional 4deg counter-clockwise tilt (ear toward left) */
-          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up-right"][data-zoom="high"] .sankofa-bird-head,
-          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up-right"][data-zoom="street"] .sankofa-bird-head {
+          /* Up-right scan: additional 4deg counter-clockwise tilt (ear toward left shoulder) */
+          .sankofa-bird-rig:not([data-flying="true"]):not([data-helping="true"])[data-gaze="up-right"][data-zoom="high"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"]):not([data-helping="true"])[data-gaze="up-right"][data-zoom="street"] .sankofa-bird-head {
             transform: rotate(-4deg);
             transition: rotate 0.50s cubic-bezier(0.34, 1.1, 0.64, 1), transform 0.50s cubic-bezier(0.34, 1.1, 0.64, 1);
           }
-          /* Down-left: shallower tilt 2deg (looking down is less curious, more watchful) */
-          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down-left"][data-zoom="high"] .sankofa-bird-head,
-          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down-left"][data-zoom="street"] .sankofa-bird-head {
+          /* Down-left: shallower 2deg tilt (watchful, not quizzical) */
+          .sankofa-bird-rig:not([data-flying="true"]):not([data-helping="true"])[data-gaze="down-left"][data-zoom="high"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"]):not([data-helping="true"])[data-gaze="down-left"][data-zoom="street"] .sankofa-bird-head {
             transform: rotate(2deg);
             transition: rotate 0.55s ease-out, transform 0.55s ease-out;
           }
-          /* Down-right: shallower tilt -2deg */
-          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down-right"][data-zoom="high"] .sankofa-bird-head,
-          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down-right"][data-zoom="street"] .sankofa-bird-head {
+          /* Down-right: shallower -2deg tilt */
+          .sankofa-bird-rig:not([data-flying="true"]):not([data-helping="true"])[data-gaze="down-right"][data-zoom="high"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"]):not([data-helping="true"])[data-gaze="down-right"][data-zoom="street"] .sankofa-bird-head {
             transform: rotate(-2deg);
             transition: rotate 0.55s ease-out, transform 0.55s ease-out;
           }
-          /* Horizontal/vertical/center gaze: no curiosity tilt */
-          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="left"] .sankofa-bird-head,
-          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="right"] .sankofa-bird-head,
-          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="up"] .sankofa-bird-head,
-          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="down"] .sankofa-bird-head,
-          .sankofa-bird-rig:not([data-flying="true"])[data-gaze="center"] .sankofa-bird-head {
+          /* Horizontal/vertical/center gaze: clear any prior tilt.
+             Also needs :not([data-helping]) to preserve E2 helping translate. */
+          .sankofa-bird-rig:not([data-flying="true"]):not([data-helping="true"])[data-gaze="left"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"]):not([data-helping="true"])[data-gaze="right"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"]):not([data-helping="true"])[data-gaze="up"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"]):not([data-helping="true"])[data-gaze="down"] .sankofa-bird-head,
+          .sankofa-bird-rig:not([data-flying="true"]):not([data-helping="true"])[data-gaze="center"] .sankofa-bird-head {
             transform: rotate(0deg);
             transition: rotate 0.45s ease-out, transform 0.45s ease-out;
           }
@@ -10048,23 +10056,33 @@ export function SankofaBirdSvg({
            effects to protect older iPhone GPU memory after long rides.
            Priority: 1. keep head/eye motion alive, 2. preserve wing beat,
            3. suppress particles + glow + shimmer + iridescence. */
+        /* navLod=2 suppression — all class names verified against SVG markup.
+           sankofa-glow-layer (l.816), wing-scap-l1/l2/r1/r2 (l.1143-1152),
+           crown-feather (l.1155+), feather-ls1/ls2/ls3/rs1/rs2/rs3 (l.1063-1076).
+           Excluded: sankofa-bird-body-shimmer / sankofa-bird-body-highlight — these
+           classes do not exist in the SVG; including dead selectors is a CSS bug. */
         .sankofa-bird-rig[data-nav-lod="2"] .sankofa-glow-layer,
-        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-bird-body-shimmer,
         .sankofa-bird-rig[data-nav-lod="2"] .sankofa-wing-scap-l1,
         .sankofa-bird-rig[data-nav-lod="2"] .sankofa-wing-scap-l2,
         .sankofa-bird-rig[data-nav-lod="2"] .sankofa-wing-scap-r1,
         .sankofa-bird-rig[data-nav-lod="2"] .sankofa-wing-scap-r2,
-        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-crown-feather {
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-crown-feather,
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-feather-ls1,
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-feather-ls2,
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-feather-ls3,
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-feather-rs1,
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-feather-rs2,
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-feather-rs3 {
           animation-play-state: paused !important;
           opacity: 0 !important;
-          transition: opacity 1.5s ease-out !important; /* graceful fade-out */
+          transition: opacity 1.5s ease-out !important; /* graceful 1.5s fade — invisible to user */
         }
-        /* At navLod=2 also mute heavy filter operations */
+        /* At navLod=2 mute heavy GPU filter operations on highlights */
         .sankofa-bird-rig[data-nav-lod="2"] .sankofa-bird-wing-left-highlight,
-        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-bird-wing-right-highlight,
-        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-bird-body-highlight {
+        .sankofa-bird-rig[data-nav-lod="2"] .sankofa-bird-wing-right-highlight {
           filter: none !important;
-          opacity: 0.4 !important;
+          opacity: 0.35 !important;
+          transition: filter 1.5s ease-out, opacity 1.5s ease-out !important;
         }
         /* Battery-saver overrides navLod (already the strongest suppressor) */
 

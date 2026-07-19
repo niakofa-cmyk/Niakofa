@@ -61,6 +61,7 @@
  * Battery-saver mode further reduces GPU load to a simple teal silhouette.
  */
 
+import type { CSSProperties } from "react";
 import { SankofaBirdSvg } from "@/components/SankofaBirdSvg";
 import { useBirdNavigation, type NavInput } from "@/lib/useBirdNavigation";
 
@@ -68,7 +69,7 @@ export interface NavigationBirdProps extends NavInput {
   /** Optional CSS class applied to the wrapper div. */
   className?: string;
   /** Optional inline style for the wrapper div. */
-  style?: React.CSSProperties;
+  style?: CSSProperties;
 }
 
 /**
