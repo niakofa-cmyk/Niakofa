@@ -32,9 +32,20 @@ CSS `transform: translateY(Xpx)` on an SVG `<g>` uses CSS pixels, NOT SVG viewBo
 
 **How to apply:** Any new gaze state must update `computeGazePitchSvgUnits` (new landingPhase or flight mode), `computeLookDir` (new yaw threshold), AND CSS rules in Phase 12 block. Do not re-add neck inside sankofa-bird-head — it must stay extracted.
 
-## nightMode wiring (companion fix)
-- `nightMode?: boolean` is now in `SankofaBirdProps` (documented with full Phase-10 effect list)
-- Defaulted to `false` in `SankofaBirdSvg` destructuring
+## nightMode wiring (all call sites confirmed)
+- `nightMode?: boolean` is in `SankofaBirdProps`, `SankofaBirdSvg`, `SankofaBirdRive` (with Rive input), and flows via `{...props}` spread through `SankofaBird.tsx`
 - `data-night-mode={nightMode ? "true" : "false"}` emitted on the `.sankofa-bird-rig` div
-- `map.tsx` imports `useTimeOfDay` from `@/hooks/useTimeOfDay` and calls `isNight = useTimeOfDay(lat, lng)`; passes `nightMode={isNight}` to BOTH SankofaBird instances (error-state bird + live map marker)
-- Any new call site that renders SankofaBird should pass `nightMode={isNight}` if it has GPS context
+- Both `map.tsx` and `request-active.tsx` call `isNight = useTimeOfDay(lat ?? null, lng ?? null)` and pass `nightMode={isNight}` to ALL their SankofaBird instances
+- SankofaBirdRive adds `nightModeInput = useStateMachineInput(rive, ..., "nightMode")` and syncs it
+
+## Dive physics (all 3 math functions fully specced)
+- `computeFlapPeriodMs("dive")` = 320ms (rapid hard-braking strokes, between takeoff 250ms and slowflap 1000ms)
+- `computeLeanDeg("dive")` = 18° (more than cruise max 15°; nose-down to shed altitude)
+- `computeGazePitchSvgUnits({landingPhase:"dive"})` = -1.4 SVG units (sharp forward pitch)
+- CSS: `[data-landing="dive"]` block at SankofaBirdSvg.tsx ~2525 animates body/wing/tail with hard-coded keyframes; `--lean-deg` set inline at rig level flows into these
+
+## Neck ruffle pivot
+- `.sankofa-bird-neck` ruffle notification CSS was using `transform-origin: 16px 18px` (transposed) — fixed to `18px 16px` (body-end, same as base rule and Phase-12 inline style)
+
+## LandingDemo label timing
+- Dive is 600ms, then slowflap 800ms, hover 1200ms, perch 800ms, idle. LandingDemo now labels each phase correctly with a DIVE badge during the 600ms window.
