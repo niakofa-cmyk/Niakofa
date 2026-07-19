@@ -209,11 +209,16 @@ function LandingDemo() {
       timers.current = [];
       setNavigating(true); setSpeed(8); setLabel("Flying (8 m/s)");
       schedule(() => {
-        setNavigating(false); setSpeed(0); setLabel("Slowflap ↓");
-        schedule(() => setLabel("Hovering ↓"),  1000);
-        schedule(() => setLabel("Perching ↓"),  2400);
-        schedule(() => setLabel("Idle"),         3400);
-        schedule(cycle,                          4800);
+        // navigating=false fires the internal landing sequence:
+        //   dive (600ms) → slowflap (800ms) → hover (1200ms) → perch (800ms) → idle
+        // Labels track the real internal phase so the demo is an accurate test harness.
+        // dive: 18° forward lean, 320ms flap period, -1.4 SVG head pitch, CSS dive-body keyframe
+        setNavigating(false); setSpeed(0); setLabel("Dive ↓ (18° lean, 320ms flap)");
+        schedule(() => setLabel("Slowflap ↓ (1000ms flap)"),    600);   // dive→slowflap
+        schedule(() => setLabel("Hovering ↓"),                  1400);  // +800ms slowflap
+        schedule(() => setLabel("Perching ↓"),                  2600);  // +1200ms hover
+        schedule(() => setLabel("Idle"),                         3400);  // +800ms perch
+        schedule(cycle,                                          5000);  // restart
       }, 3000);
     }
     cycle();
@@ -225,6 +230,7 @@ function LandingDemo() {
       label="Landing Sequence"
       subLabel={label}
       state={{ heading: 0, mapBearing: 0, speed, navigating }}
+      badge={label.startsWith("Dive") ? "DIVE" : undefined}
     />
   );
 }
@@ -1081,7 +1087,7 @@ export default function BirdTestPage() {
             <li><strong>Donated</strong>: golden sparkle (6-pointed, 6 particles) — egg turns gold</li>
             <li><strong>Trail particles</strong>: speed-tiered — walking: 3 soft teal dots; running: 3 elongated ovals; driving: 4 slim wind-streaks; airplane: 2 wide wisp bars with blur — trail fires while moving OR during slowflap/dive/takeoff landing phases</li>
             <li><strong>Takeoff sequence</strong>: idle (2 s pause) → navigate=true → crouch/spread/power-flap (1.2 s) → cruise</li>
-            <li><strong>Landing sequence</strong>: flying → slowflap (800ms) → hover (1600ms) → perch (2600ms) → idle</li>
+            <li><strong>Landing sequence</strong>: flying → <em>dive</em> (600ms: 18° forward lean, 320ms flap, −1.4 SVG head pitch) → slowflap (800ms) → hover (1200ms) → perch (800ms) → idle; LandingDemo labels each phase in real-time</li>
             <li><strong>Nearby User</strong>: wing salute fires when another helper is within 200 m; debounced 3 s so salute completes before clearing</li>
             <li><strong>Upcoming Turn</strong>: head glances left/right anticipating next maneuver before the turn instruction fires</li>
             <li><strong>Iridescence</strong>: wing highlights shift hue based on real-world heading (--heading-deg × 0.25 in keyframe) — Blue→Turquoise→Emerald→Silver→Blue like a hummingbird; chest also hue-shifts at zoom ≥15</li>

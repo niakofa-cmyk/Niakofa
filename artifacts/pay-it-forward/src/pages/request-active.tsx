@@ -26,6 +26,7 @@ import { useMapOrientation } from "@/hooks/useMapOrientation";
 import { useTerrain } from "@/hooks/useTerrain";
 import { useTweenedPosition } from "@/hooks/useTweenedPosition";
 import { usePulse } from "@/hooks/usePulse";
+import { useTimeOfDay } from "@/hooks/useTimeOfDay";
 import { SankofaBird } from "@/components/SankofaBird";
 import { useBatterySaver } from "@/hooks/useBatterySaver";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -113,6 +114,8 @@ export default function ActiveRequestScreen() {
 
   // Battery saver: auto-enabled when Battery API reports ≤ 15 % or device has < 4 GB RAM.
   const batterySaverActive = useBatterySaver();
+  // Night mode: real solar elevation at user's GPS — activates Phase-10 plumage.
+  const isNight = useTimeOfDay(myLocation?.lat ?? null, myLocation?.lng ?? null);
 
   const queryClient = useQueryClient();
   const requestId = parseInt(params?.id || "0", 10);
@@ -811,7 +814,7 @@ export default function ActiveRequestScreen() {
               heading={null} mapBearing={0} speed={0} navigating={false} size={56}
               celebrating={false} newNotification={false} accepted={false}
               donated={false} nearbyUser={false} mapZoom={14} upcomingTurnDirection={null}
-              isHelping={false} batterySaver={batterySaverActive}
+              isHelping={false} batterySaver={batterySaverActive} nightMode={isNight}
             />
           </ErrorBoundary>
           <p className="text-base font-bold text-center">Navigation unavailable</p>
@@ -861,6 +864,7 @@ export default function ActiveRequestScreen() {
               approaching={birdApproaching}
               isHelping={isHelper && !isCompleted && !isArrived}
               batterySaver={batterySaverActive}
+              nightMode={isNight}
             />
           </ErrorBoundary>
         </Marker>

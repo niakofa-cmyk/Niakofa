@@ -44,6 +44,7 @@ export function SankofaBirdRive(props: SankofaBirdProps) {
     approaching = false,
     isHelping = false,
     batterySaver = false,
+    nightMode = false,
   } = props;
 
   // ── Load failure state: fall back to SVG if .riv is absent or corrupt ──
@@ -83,6 +84,7 @@ export function SankofaBirdRive(props: SankofaBirdProps) {
   const isHelpingInput      = useStateMachineInput(rive, STATE_MACHINE_NAME, "isHelping");
   const batterySaverInput   = useStateMachineInput(rive, STATE_MACHINE_NAME, "batterySaver");
   const approachingInput    = useStateMachineInput(rive, STATE_MACHINE_NAME, "approaching");
+  const nightModeInput      = useStateMachineInput(rive, STATE_MACHINE_NAME, "nightMode");
 
   // ── Sync props → Rive inputs ─────────────────────────────────────────
   useEffect(() => {
@@ -141,6 +143,10 @@ export function SankofaBirdRive(props: SankofaBirdProps) {
   useEffect(() => {
     if (approachingInput)  approachingInput.value  = approaching;
   }, [approaching, approachingInput]);
+
+  useEffect(() => {
+    if (nightModeInput)    nightModeInput.value    = nightMode;
+  }, [nightMode, nightModeInput]);
 
   // ── Fallback: SVG bird if .riv failed to load ─────────────────────────
   if (loadFailed) {

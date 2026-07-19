@@ -2685,7 +2685,7 @@ export function SankofaBirdSvg({
         .sankofa-bird-rig[data-notification="true"] .sankofa-bird-neck {
           animation: sankofa-neck-ruffle 0.28s ease-in-out 3;
           transform-box: view-box;
-          transform-origin: 16px 18px;
+          transform-origin: 18px 16px;
         }
         @keyframes sankofa-neck-ruffle {
           0%   { transform: scaleX(1)    scaleY(1);    }

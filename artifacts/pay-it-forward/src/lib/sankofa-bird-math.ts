@@ -191,6 +191,9 @@ export function computeFlapPeriodMs(opts: {
   if (isGliding)                                                return 4000;
   // Takeoff: two strong power flaps before settling into cruise cadence
   if (landingPhase === "takeoff")                               return 250;
+  // Dive: rapid hard-braking strokes — bird decelerates from cruise speed;
+  // faster than takeoff cadence since it's fighting momentum, not building it
+  if (landingPhase === "dive")                                  return 320;
   if (landingPhase === "slowflap")                              return 1000;
   if (
     landingPhase === "hover" ||
@@ -218,6 +221,9 @@ export function computeLeanDeg(opts: {
 }): number {
   const { isMoving, isGliding, speedMs, landingPhase } = opts;
   if (isGliding)                                                return 12;
+  // Dive: aggressive forward lean — more than normal cruise max (15°) since
+  // the bird pitches nose-down to convert altitude into braking distance
+  if (landingPhase === "dive")                                  return 18;
   if (landingPhase === "slowflap")                              return 6;
   if (
     landingPhase === "hover" ||
@@ -249,11 +255,13 @@ export function computeGazePitchSvgUnits(opts: {
 }): number {
   const { approaching, landingPhase, isHelping, isMoving } = opts;
 
-  // Landing — bird looks DOWN to find the perch
+  // Dive — sharp forward pitch as bird accelerates toward target (most aggressive)
+  if (landingPhase === "dive")     return -1.4;
+  // Landing — bird looks DOWN to find the perch (progressively less aggressive)
   if (landingPhase === "hover")    return -1.8;
   if (landingPhase === "slowflap") return -1.2;
   if (landingPhase === "perch")    return -0.6;
-  // Idle at rest — neutral, very slight upright posture
+  // Idle at rest — neutral, very slight upright posture when not helping
   if (landingPhase === "idle")     return isHelping ? 0.6 : 0;
   // Takeoff — head snaps up during launch (handled by keyframes too, this gives
   // the CSS head-pitch wrapper a baseline so the keyframe starts from the right place)
