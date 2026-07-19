@@ -21,6 +21,7 @@ import { getToken } from "@/lib/auth";
 import { TurnArrowHUD } from "@/components/TurnArrowHUD";
 import { OrientationToggle } from "@/components/OrientationToggle";
 import { useWebSocket } from "@/lib/useWebSocket";
+import { wsSend } from "@/lib/wsClient";
 import { useFusedHeading } from "@/hooks/useFusedHeading";
 import { useMapOrientation } from "@/hooks/useMapOrientation";
 import { useTerrain } from "@/hooks/useTerrain";
@@ -468,12 +469,61 @@ export default function ActiveRequestScreen() {
     return () => clearInterval(id);
   }, [currentUser?.id, isArrived]);
 
+  // ── HELPER_MOVING broadcast — emit location every 8s so the requester's
+  // request-active view can update the helper's position on their map in
+  // real time without waiting for a full REST refresh. Only helpers broadcast;
+  // requesters don't need to (the helper isn't tracking the requester's live
+  // position, only navigating to the static request lat/lng).
+  useEffect(() => {
+    if (!isHelper || isArrived || isCompleted || !currentUser) return;
+    const id = setInterval(() => {
+      if (!myLocation) return;
+      wsSend({
+        type: "HELPER_MOVING",
+        payload: {
+          requestId,
+          helperId: currentUser.id,
+          lat: myLocation.lat,
+          lng: myLocation.lng,
+          heading: myLocation.heading ?? null,
+          speed: myLocation.speed ?? null,
+        },
+      });
+    }, 8_000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHelper, isArrived, isCompleted, currentUser?.id, myLocation?.lat, myLocation?.lng, requestId]);
+
   // WebSocket updates
   useWebSocket(useCallback((event) => {
     if (event.type === "request_updated") {
       const req = event.payload as { id: number };
       if (req.id === requestId) {
         queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
+      }
+    } else if (event.type === "REQUEST_ACCEPTED") {
+      // Requester learns a helper has claimed — invalidate + toast
+      const p = event.payload as { request_id?: number };
+      if (p.request_id === requestId && !isHelper) {
+        queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
+        toast({ title: "🙌 A helper is on their way!", description: "You can chat with them below." });
+        setBirdAccepted(true);
+        setTimeout(() => setBirdAccepted(false), 1500);
+      }
+    } else if (event.type === "HELPER_MOVING") {
+      // Requester sees helper position update — invalidate so the map re-renders
+      // with the latest helper coords from the server (server stores last known pos).
+      const p = event.payload as { requestId?: number };
+      if (p.requestId === requestId && !isHelper) {
+        queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
+      }
+    } else if (event.type === "HELPER_ARRIVED") {
+      const p = event.payload as { request_id?: number };
+      if (p.request_id === requestId && !isHelper) {
+        queryClient.invalidateQueries({ queryKey: getGetRequestQueryKey(requestId) });
+        toast({ title: "📍 Your helper has arrived!", description: "They're at your location now." });
+        setBirdAccepted(true);
+        setTimeout(() => setBirdAccepted(false), 1500);
       }
     } else if (event.type === "pledge_paid" || event.type === "payment_completed") {
       // Micro-reaction: golden sparkle + egg glow when a pledge is repaid or a
@@ -487,7 +537,7 @@ export default function ActiveRequestScreen() {
       setBirdNewNotification(true);
       setTimeout(() => setBirdNewNotification(false), 2000);
     }
-  }, [requestId, queryClient]));
+  }, [requestId, queryClient, isHelper]));
 
   const handleComplete = () => {
     if (!currentUser || !request) return;

@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import type { HelpRequest } from "@workspace/api-client-react";
 import { Button } from "./ui/button";
 import { MapPin, Clock, HeartPulse, ShoppingBag, Car, Hammer, ShieldAlert, MoreHorizontal, AlertTriangle, Heart, DollarSign, Gift, ShieldCheck } from "lucide-react";
@@ -69,6 +70,31 @@ export function RequestCard({
 }: RequestCardProps) {
   const [, setLocation] = useLocation();
   const suppressed = useIsAnimationSuppressed();
+
+  // ── Two-tap claim confirmation (non-emergency only) ──────────────────────
+  // Emergency requests skip confirmation — speed matters more than accidental
+  // taps. For normal urgency, the first tap switches the button to a "Confirm?"
+  // state; a second tap within 4 s actually claims. Auto-resets if not confirmed.
+  const isEmergency = request.urgency === "emergency";
+  const [confirmPending, setConfirmPending] = useState(false);
+  useEffect(() => {
+    if (!confirmPending) return;
+    const t = setTimeout(() => setConfirmPending(false), 4_000);
+    return () => clearTimeout(t);
+  }, [confirmPending]);
+
+  const handleClaimClick = () => {
+    if (isEmergency) {
+      onClaim(request);
+      return;
+    }
+    if (confirmPending) {
+      setConfirmPending(false);
+      onClaim(request);
+    } else {
+      setConfirmPending(true);
+    }
+  };
 
   return (
     <div
@@ -183,13 +209,29 @@ export function RequestCard({
           Details
         </Button>
         <Button
-          className={`flex-1 font-bold uppercase tracking-wider h-12 ${request.urgency === 'emergency' ? 'bg-destructive hover:bg-destructive/90 text-white' : ''}`}
-          variant={request.urgency === 'emergency' ? 'destructive' : 'default'}
-          onClick={() => onClaim(request)}
+          className={`flex-1 font-bold uppercase tracking-wider h-12 transition-colors ${
+            request.urgency === 'emergency'
+              ? 'bg-destructive hover:bg-destructive/90 text-white'
+              : confirmPending
+              ? 'bg-amber-500 hover:bg-amber-400 text-black border-amber-400'
+              : ''
+          }`}
+          variant={request.urgency === 'emergency' ? 'destructive' : confirmPending ? 'outline' : 'default'}
+          onClick={handleClaimClick}
           disabled={isClaiming || !helperModeActive}
-          title={!helperModeActive ? "Switch to Helper Mode in the top bar to claim requests" : undefined}
+          title={
+            !helperModeActive
+              ? "Switch to Helper Mode in the top bar to claim requests"
+              : confirmPending
+              ? "Tap again to confirm — auto-cancels in 4 s"
+              : undefined
+          }
         >
-          {request.urgency === 'emergency' ? '🚨 Help Now' : 'Accept'}
+          {request.urgency === 'emergency'
+            ? '🚨 Help Now'
+            : confirmPending
+            ? '✓ Confirm Accept?'
+            : 'Accept'}
         </Button>
       </div>
     </div>

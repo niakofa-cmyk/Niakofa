@@ -116,6 +116,8 @@ interface PendingPayment {
   clientSecret: string;
   amount: number;
   requestTitle: string;
+  /** ID of the created request — used to navigate directly to it after payment. */
+  requestId: number;
 }
 
 function checkWebGL(): boolean {
@@ -432,12 +434,20 @@ export default function NewRequestScreen() {
     mapRef.current?.flyTo({ center: [lng, lat], zoom: 15, duration: 800 });
   };
 
-  const finishAndNavigate = () => {
+  // After a successful request post, land the requester directly on their new
+  // request's tracking page instead of the generic home map. This removes the
+  // friction of having to find the request again and immediately shows the
+  // "Waiting for a helper" state with the real-time map.
+  const finishAndNavigate = (newRequestId?: number) => {
     queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
     if (myLocation) {
       queryClient.invalidateQueries({ queryKey: getGetNearbyRequestsQueryKey({ lat: myLocation.lat, lng: myLocation.lng }) });
     }
-    setLocation("/");
+    if (newRequestId) {
+      setLocation(`/request/${newRequestId}`);
+    } else {
+      setLocation("/");
+    }
   };
 
   const handleNiaAnalyzeImage = async () => {
@@ -556,7 +566,7 @@ export default function NewRequestScreen() {
             title: "⏳ Sent to owner approval",
             description: "Your request is pending approval from the business owner before it goes live.",
           });
-          finishAndNavigate();
+          finishAndNavigate(request.id);
           return;
         }
 
@@ -597,7 +607,7 @@ export default function NewRequestScreen() {
 
             if (res.ok) {
               const { clientSecret } = await res.json() as { clientSecret: string };
-              setPendingPayment({ clientSecret, amount, requestTitle: values.title });
+              setPendingPayment({ clientSecret, amount, requestTitle: values.title, requestId: request.id });
               return; // wait for payment modal to complete
             } else {
               const err = await res.json() as { error?: string; setup?: string };
@@ -617,7 +627,9 @@ export default function NewRequestScreen() {
           }
         }
 
-        finishAndNavigate();
+        // Navigate directly to the new request's tracking page so the requester
+        // immediately sees the "Waiting for helper" live view, not the generic map.
+        finishAndNavigate(request.id);
       },
       onError: (err) => {
         toast({ title: "Failed to post request", description: String(err), variant: "destructive" });
@@ -1335,18 +1347,21 @@ export default function NewRequestScreen() {
           amount={pendingPayment.amount}
           description={`Pay your helper for: "${pendingPayment.requestTitle}". Your helper receives the funds when the request is completed.`}
           onSuccess={() => {
+            const rid = pendingPayment.requestId;
             setPendingPayment(null);
             toast({ title: "Payment confirmed!", description: "Your helper will be paid automatically upon completion." });
-            finishAndNavigate();
+            finishAndNavigate(rid);
           }}
           onSkip={() => {
+            const rid = pendingPayment.requestId;
             setPendingPayment(null);
             toast({ title: "Payment skipped", description: "You can pay from your wallet later." });
-            finishAndNavigate();
+            finishAndNavigate(rid);
           }}
           onClose={() => {
+            const rid = pendingPayment.requestId;
             setPendingPayment(null);
-            finishAndNavigate();
+            finishAndNavigate(rid);
           }}
         />
       )}
