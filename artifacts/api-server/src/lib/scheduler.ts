@@ -300,17 +300,10 @@ const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
 
 /** Start the pledge default worker. Runs every 12 hours. */
 export function startPledgeDefaultWorker(): () => void {
-  let isRunning = false;
-  const run = () => {
-    if (isRunning) { logger.warn("pledge-defaults: previous run still in progress — skipping"); return; }
-    isRunning = true;
-    processPledgeDefaults()
-      .then(() => workerRan("pledge-defaults", true))
-      .catch(() => { workerRan("pledge-defaults", false); })
-      .finally(() => { isRunning = false; });
-  };
-  run();
-  const interval = setInterval(run, TWELVE_HOURS_MS);
+  processPledgeDefaults().then(() => workerRan("pledge-defaults", true)).catch(() => { workerRan("pledge-defaults", false); });
+  const interval = setInterval(() => {
+    processPledgeDefaults().then(() => workerRan("pledge-defaults", true)).catch(() => { workerRan("pledge-defaults", false); });
+  }, TWELVE_HOURS_MS);
 
   logger.info({ intervalMs: TWELVE_HOURS_MS, grace_days: PLEDGE_DEFAULT_DAYS }, "scheduler: pledge default worker started");
 
@@ -322,17 +315,10 @@ export function startPledgeDefaultWorker(): () => void {
 
 /** Start the Pay-It-Forward repayment nudge worker. Runs every 6 hours. */
 export function startPifNudgeWorker(): () => void {
-  let isRunning = false;
-  const run = () => {
-    if (isRunning) { logger.warn("pif-nudge: previous run still in progress — skipping"); return; }
-    isRunning = true;
-    processPifNudges()
-      .then(() => workerRan("pif-nudge", true))
-      .catch(() => { workerRan("pif-nudge", false); })
-      .finally(() => { isRunning = false; });
-  };
-  run();
-  const interval = setInterval(run, SIX_HOURS_MS);
+  processPifNudges().then(() => workerRan("pif-nudge", true)).catch(() => { workerRan("pif-nudge", false); });
+  const interval = setInterval(() => {
+    processPifNudges().then(() => workerRan("pif-nudge", true)).catch(() => { workerRan("pif-nudge", false); });
+  }, SIX_HOURS_MS);
 
   logger.info({ intervalMs: SIX_HOURS_MS, windows: PIF_NUDGE_WINDOWS }, "scheduler: PIF nudge worker started");
 
@@ -344,18 +330,11 @@ export function startPifNudgeWorker(): () => void {
 
 /** Start the scheduled payment reminder worker. Returns a cleanup function. */
 export function startScheduledPaymentReminder(): () => void {
-  let isRunning = false;
-  const run = () => {
-    if (isRunning) { logger.warn("payment-reminder: previous run still in progress — skipping"); return; }
-    isRunning = true;
-    processScheduledReminders()
-      .then(() => workerRan("payment-reminder", true))
-      .catch(() => { workerRan("payment-reminder", false); })
-      .finally(() => { isRunning = false; });
-  };
   // Run once immediately on server start, then every 6 hours
-  run();
-  const interval = setInterval(run, SIX_HOURS_MS);
+  processScheduledReminders().then(() => workerRan("payment-reminder", true)).catch(() => { workerRan("payment-reminder", false); });
+  const interval = setInterval(() => {
+    processScheduledReminders().then(() => workerRan("payment-reminder", true)).catch(() => { workerRan("payment-reminder", false); });
+  }, SIX_HOURS_MS);
 
   logger.info({ intervalMs: SIX_HOURS_MS }, "scheduler: scheduled payment reminder worker started");
 
@@ -623,25 +602,16 @@ async function processCashoutReconciliation(): Promise<void> {
 
 /** Start the cashout reconciliation cron. Runs every 10 minutes. Returns a cleanup function. */
 export function startCashoutReconciliation(): () => void {
-  // isRunning guard prevents overlapping runs if reconciliation takes >10 min
-  let isRunning = false;
-  const run = () => {
-    if (isRunning) {
-      logger.warn("cashout-reconciliation: previous run still in progress — skipping this tick");
-      return;
-    }
-    isRunning = true;
-    processCashoutReconciliation()
-      .then(() => workerRan("cashout-recon", true))
-      .catch((err: unknown) => {
-        logger.error({ err }, "cashout-reconciliation: run failed");
-        workerRan("cashout-recon", false);
-      })
-      .finally(() => { isRunning = false; });
-  };
-
-  run(); // immediate startup run
-  const interval = setInterval(run, TEN_MINUTES_MS);
+  processCashoutReconciliation().then(() => workerRan("cashout-recon", true)).catch((err: unknown) => {
+    logger.error({ err }, "cashout-reconciliation: startup run failed");
+    workerRan("cashout-recon", false);
+  });
+  const interval = setInterval(() => {
+    processCashoutReconciliation().then(() => workerRan("cashout-recon", true)).catch((err: unknown) => {
+      logger.error({ err }, "cashout-reconciliation: scheduled run failed");
+      workerRan("cashout-recon", false);
+    });
+  }, TEN_MINUTES_MS);
 
   logger.info({ intervalMs: TEN_MINUTES_MS }, "cashout-reconciliation: cron started");
 
@@ -794,22 +764,20 @@ async function processNet30InvoiceReminders(): Promise<void> {
 
 /** Start the NET30 invoice reminder worker. Runs daily. Returns a cleanup function. */
 export function startNet30InvoiceReminderWorker(): () => void {
-  let isRunning = false;
-  const run = (context: string) => {
-    if (isRunning) { logger.warn("net30-reminder: previous run still in progress — skipping"); return; }
-    isRunning = true;
-    processNet30InvoiceReminders()
-      .then(() => workerRan("net30-invoices", true))
-      .catch((err: unknown) => {
-        logger.error({ err }, `net30-reminder: ${context} run failed`);
-        workerRan("net30-invoices", false);
-      })
-      .finally(() => { isRunning = false; });
-  };
-
   // First run after 2 min startup delay so DB is fully ready
-  const startupDelay = setTimeout(() => run("startup"), 2 * 60 * 1000);
-  const interval = setInterval(() => run("daily"), ONE_DAY_MS);
+  const startupDelay = setTimeout(() => {
+    processNet30InvoiceReminders().then(() => workerRan("net30-invoices", true)).catch((err: unknown) => {
+      logger.error({ err }, "net30-reminder: startup run failed");
+      workerRan("net30-invoices", false);
+    });
+  }, 2 * 60 * 1000);
+
+  const interval = setInterval(() => {
+    processNet30InvoiceReminders().then(() => workerRan("net30-invoices", true)).catch((err: unknown) => {
+      logger.error({ err }, "net30-reminder: daily run failed");
+      workerRan("net30-invoices", false);
+    });
+  }, ONE_DAY_MS);
 
   logger.info({ intervalMs: ONE_DAY_MS }, "net30-reminder: daily reminder worker started");
 
@@ -824,21 +792,19 @@ export function startNet30InvoiceReminderWorker(): () => void {
 export function startLedgerDriftMonitor(): () => void {
   // Run once at a short delay after startup so it doesn't block boot,
   // then daily thereafter.
-  let isRunning = false;
-  const run = (context: string) => {
-    if (isRunning) { logger.warn("ledger-drift: previous run still in progress — skipping"); return; }
-    isRunning = true;
-    checkLedgerStripeDrift()
-      .then(() => workerRan("ledger-drift", true))
-      .catch((err: unknown) => {
-        logger.error({ err }, `ledger-drift: ${context} run failed`);
-        workerRan("ledger-drift", false);
-      })
-      .finally(() => { isRunning = false; });
-  };
+  const startupDelay = setTimeout(() => {
+    checkLedgerStripeDrift().then(() => workerRan("ledger-drift", true)).catch((err: unknown) => {
+      logger.error({ err }, "ledger-drift: startup run failed");
+      workerRan("ledger-drift", false);
+    });
+  }, 5 * 60 * 1000); // 5 min after boot
 
-  const startupDelay = setTimeout(() => run("startup"), 5 * 60 * 1000); // 5 min after boot
-  const interval = setInterval(() => run("daily"), ONE_DAY_MS);
+  const interval = setInterval(() => {
+    checkLedgerStripeDrift().then(() => workerRan("ledger-drift", true)).catch((err: unknown) => {
+      logger.error({ err }, "ledger-drift: daily run failed");
+      workerRan("ledger-drift", false);
+    });
+  }, ONE_DAY_MS);
 
   logger.info({ intervalMs: ONE_DAY_MS }, "ledger-drift: daily monitor started");
 

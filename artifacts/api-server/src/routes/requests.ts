@@ -887,11 +887,7 @@ router.post("/requests/:id/claim", requireAuth, requireApproved, async (req, res
   if (!request) return res.status(409).json({ error: "Request already claimed or not found" });
   const [helper] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, helperId)).limit(1);
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: helper?.name ?? null, distance_miles: null, estimated_duration_min: null };
-  // Targeted: send REQUEST_ACCEPTED only to the two participants (saves battery
-  // on unrelated devices). Still broadcast request_updated globally so helpers
-  // on the map screen see the request leave the pool.
-  sendToRequestParticipants(enriched.requester_id, enriched.helper_id, { type: "REQUEST_ACCEPTED", payload: enriched });
-  broadcast({ type: "request_updated", payload: enriched });
+  broadcastRequestEvent("REQUEST_ACCEPTED", "request_updated", enriched);
   return res.json(enriched);
 });
 
@@ -914,11 +910,7 @@ router.post("/requests/:id/en-route", requireAuth, requireApproved, async (req, 
     .returning();
   if (!request) return res.status(409).json({ error: "Cannot mark en-route — request may have been cancelled or you are no longer the assigned helper." });
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
-  // Targeted send for the en-route status change: only participants need the
-  // rich REQUEST_ACCEPTED-style push; everyone else gets the lightweight
-  // request_updated so the map pool refreshes.
-  sendToRequestParticipants(enriched.requester_id, enriched.helper_id, { type: "HELPER_MOVING", payload: enriched });
-  broadcast({ type: "request_updated", payload: enriched });
+  broadcastRequestEvent("HELPER_MOVING", "request_updated", enriched);
   return res.json(enriched);
 });
 
@@ -939,8 +931,7 @@ router.post("/requests/:id/arrived", requireAuth, requireApproved, async (req, r
     .returning();
   if (!request) return res.status(409).json({ error: "Cannot mark arrived — request may have been cancelled or is not currently in en-route status." });
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
-  sendToRequestParticipants(enriched.requester_id, enriched.helper_id, { type: "HELPER_ARRIVED", payload: enriched });
-  broadcast({ type: "request_updated", payload: enriched });
+  broadcastRequestEvent("HELPER_ARRIVED", "request_updated", enriched);
   return res.json(enriched);
 });
 
@@ -1553,9 +1544,7 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
   }
 
   const enriched = { ...request, requester_name: null, requester_avatar: null, helper_name: null, distance_miles: null, estimated_duration_min: null };
-  // Targeted: only participants need REQUEST_COMPLETED; global broadcast handles map refresh.
-  sendToRequestParticipants(enriched.requester_id, enriched.helper_id, { type: "REQUEST_COMPLETED", payload: enriched });
-  broadcast({ type: "request_updated", payload: enriched });
+  broadcastRequestEvent("REQUEST_COMPLETED", "request_updated", enriched);
 
   // Fire-and-forget leaderboard broadcast (doesn't block response)
   broadcastLeaderboardUpdate(
@@ -1712,85 +1701,22 @@ router.post("/requests/:id/rate", requireAuth, async (req, res) => {
 // directly to a helper's benevolence_wallet with no Stripe payment verification.
 // That is a money-security hole: any authenticated user could inflate a helper's
 // wallet balance by any amount simply by calling this route.
-// Use /requests/:id/tip-wallet instead.
+//
+// Tips now flow through the existing pledge/Stripe path:
+//   - Immediate tippers: create a Stripe PaymentIntent (POST /payments/create-intent)
+//     and confirm via the StripePaymentModal; the webhook handler credits the wallet.
+//   - PIF requesters: the standard Niakofa pledge flow (POST /users/:id/pledge).
+//
+// Returning 410 (not 404) signals to clients that the endpoint existed but was
+// intentionally removed — callers should update rather than retry.
 router.post("/requests/:id/tip", (_req, res) => {
   return res.status(410).json({
     error:
-      "POST /requests/:id/tip has been retired. Use POST /requests/:id/tip-wallet " +
-      "(wallet-balance deduction) or POST /payments/create-intent (Stripe).",
+      "POST /requests/:id/tip has been retired. Tips are now processed through " +
+      "the Stripe payment flow (POST /payments/create-intent) or the standard " +
+      "pledge path (POST /users/:id/pledge). See API changelog for migration guidance.",
     code: "endpoint_retired",
   });
-});
-
-// ── POST /requests/:id/tip-wallet — tip a helper from your wallet balance ─────
-//
-// Deducts tip_amount_cents from the requester's benevolence_wallet (must have
-// enough balance), then credits the same amount to the helper's wallet and
-// records both transactions for the ledger.  Returns 402 when balance is
-// insufficient so the client can redirect to the add-funds flow.
-router.post("/requests/:id/tip-wallet", requireAuth, requireApproved, async (req, res) => {
-  const requestId = parseInt(String(req.params.id));
-  const callerId  = req.authenticatedUserId!;
-  if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
-
-  const { tip_amount_cents } = req.body as { tip_amount_cents?: number };
-  if (!tip_amount_cents || tip_amount_cents < 50 || tip_amount_cents > 10_000) {
-    return res.status(400).json({ error: "tip_amount_cents must be between 50 (¢) and 10 000 (= $100)" });
-  }
-
-  // Load the request and confirm the caller is the requester
-  const [request] = await db.select({
-    requester_id: requestsTable.requester_id,
-    helper_id:    requestsTable.helper_id,
-    status:       requestsTable.status,
-  }).from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
-
-  if (!request) return res.status(404).json({ error: "Request not found" });
-  if (request.requester_id !== callerId) return res.status(403).json({ error: "Only the requester may tip the helper" });
-  if (!request.helper_id)  return res.status(409).json({ error: "No helper assigned to this request" });
-  if (!["completed","arrived"].includes(request.status)) {
-    return res.status(409).json({ error: "Tips are only allowed after the helper has arrived or the request is complete" });
-  }
-
-  const tipDollars = tip_amount_cents / 100;
-
-  // Atomic: deduct from requester, credit helper — advisory lock per user pair
-  await db.transaction(async tx => {
-    // Verify requester balance (FOR UPDATE prevents double-spend race)
-    const [requesterRow] = await tx.select({ wallet: usersTable.benevolence_wallet })
-      .from(usersTable).where(eq(usersTable.id, callerId)).limit(1);
-    if (!requesterRow) throw Object.assign(new Error("User not found"), { status: 404 });
-    if ((requesterRow.wallet ?? 0) < tipDollars) {
-      throw Object.assign(new Error("Insufficient balance"), { code: "insufficient_balance", status: 402 });
-    }
-
-    await tx.update(usersTable)
-      .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} - ${tipDollars}` })
-      .where(eq(usersTable.id, callerId));
-
-    await tx.update(usersTable)
-      .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${tipDollars}` })
-      .where(eq(usersTable.id, request.helper_id!));
-
-    // transactionsTable.type is text (not a DB enum) so any string is valid
-    await tx.insert(transactionsTable).values([
-      { user_id: callerId,           type: "tip_sent",     amount: -tipDollars, description: `Tip to helper for request #${requestId}`, request_id: requestId },
-      { user_id: request.helper_id!, type: "tip_received", amount:  tipDollars, description: `Tip from requester for request #${requestId}`, request_id: requestId },
-    ]);
-  }).catch((err: Error & { code?: string; status?: number }) => {
-    if (err.code === "insufficient_balance") {
-      return res.status(402).json({ error: err.message, code: err.code });
-    }
-    throw err;
-  });
-
-  // Notify helper they received a tip
-  sendToUser(request.helper_id, {
-    type: "payment_completed",
-    payload: { tip_amount_cents, request_id: requestId, from_user_id: callerId },
-  });
-
-  return res.json({ ok: true, tip_amount_cents, request_id: requestId });
 });
 
 // ── Help Chains ──────────────────────────────────────────────────────────────

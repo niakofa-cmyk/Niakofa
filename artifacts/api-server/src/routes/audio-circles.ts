@@ -32,9 +32,6 @@ import {
   addCircleParticipant,
   removeCircleParticipant,
   clearCircleSession,
-  broadcastToAuthenticated,
-  setCircleHost,
-  clearCircleHost,
 } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 
@@ -294,28 +291,10 @@ router.post("/audio-circles/:id/start", requireAuth, requireApproved, generalApi
 
   await db.insert(audioCircleParticipantsTable).values({ session_id: session.id, user_id: hostId, role: "host" });
   addCircleParticipant(session.id, hostId);
-  // Register in ws-hub so crash/network-drop is detected without a REST call
-  setCircleHost(session.id, hostId);
 
   const [host] = await db.select({ name: usersTable.name, avatar_url: usersTable.avatar_url }).from(usersTable).where(eq(usersTable.id, hostId)).limit(1);
 
   logger.info({ session_id: session.id, circle_id: circleId, host_id: hostId }, "audio-circles: session started");
-
-  // Broadcast to every connected authenticated user so the circles list
-  // page can update in real time without waiting for the 15-second poll.
-  broadcastToAuthenticated({
-    type: "circle_session_started",
-    payload: {
-      session_id: session.id,
-      circle_id: circleId,
-      city_key: circle.city_key,
-      host_id: hostId,
-      host_name: host?.name ?? null,
-      title: session.title,
-      video_enabled: session.video_enabled,
-    },
-  });
-
   return res.status(201).json({ session, host_name: host?.name ?? null });
 });
 
@@ -414,7 +393,6 @@ router.post("/audio-circle-sessions/:id/leave", requireAuth, generalApiLimiter, 
     // by any of this. The host's WS registry entry still gets cleared since
     // their actual socket really is gone; /join re-adds it on reconnect.
     removeCircleParticipant(sessionId, userId);
-    clearCircleHost(userId); // clear ws-hub registry; setCircleHost re-fires on /join reconnect
     await db
       .update(audioCircleSessionsTable)
       .set({ host_disconnected_at: new Date() })
@@ -453,21 +431,7 @@ async function endSessionInternal(sessionId: number) {
     .set({ left_at: new Date() })
     .where(and(eq(audioCircleParticipantsTable.session_id, sessionId), isNull(audioCircleParticipantsTable.left_at)));
   clearCircleSession(sessionId);
-  // Clear host registry so WS close handler doesn't re-fire after session end
-  // (we need to find the host's userId from the DB before clearing)
-  const hostRow = await db
-    .select({ host_id: audioCircleSessionsTable.host_id })
-    .from(audioCircleSessionsTable)
-    .where(eq(audioCircleSessionsTable.id, sessionId))
-    .limit(1);
-  if (hostRow[0]?.host_id != null) clearCircleHost(hostRow[0].host_id);
-  // Notify participants in the room
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
-    type: "circle_session_ended",
-    payload: { session_id: sessionId },
-  });
-  // Notify all authenticated users browsing the circles list so it updates immediately
-  broadcastToAuthenticated({
     type: "circle_session_ended",
     payload: { session_id: sessionId },
   });
@@ -581,40 +545,6 @@ router.post("/audio-circle-sessions/:id/demote", requireAuth, generalApiLimiter,
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
     type: "circle_role_changed",
     payload: { session_id: sessionId, user_id: parsed.data.user_id, role: "listener" },
-  });
-  return res.json({ ok: true });
-});
-
-// ── Mute ─────────────────────────────────────────────────────────────────────
-
-const MuteBody = z.object({ muted: z.boolean() });
-
-// POST /audio-circle-sessions/:id/mute — speaker/host syncs their server-side
-// mute state so other participants see the correct mic indicator in real time.
-// A speaker can only mute themselves; the host can mute any speaker.
-router.post("/audio-circle-sessions/:id/mute", requireAuth, generalApiLimiter, async (req, res) => {
-  const sessionId = parseInt(String(req.params.id ?? ""), 10);
-  if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
-  const parsed = MuteBody.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "muted must be a boolean" });
-
-  const userId = req.authenticatedUserId!;
-  const { session, participant: actingParticipant } = await requireActiveParticipant(sessionId, userId);
-  if (!session) return res.status(404).json({ error: "Session not live" });
-  if (!actingParticipant) return res.status(403).json({ error: "You're not in this session" });
-
-  // Only speakers/hosts can set mute state (listeners have no mic)
-  if (actingParticipant.role === "listener") return res.status(400).json({ error: "Listeners have no mic to mute" });
-
-  await db
-    .update(audioCircleParticipantsTable)
-    .set({ muted: parsed.data.muted })
-    .where(and(eq(audioCircleParticipantsTable.session_id, sessionId), eq(audioCircleParticipantsTable.user_id, userId)));
-
-  const activeParticipants = await getActiveParticipants(sessionId);
-  sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
-    type: "circle_muted_changed",
-    payload: { session_id: sessionId, user_id: userId, muted: parsed.data.muted },
   });
   return res.json({ ok: true });
 });

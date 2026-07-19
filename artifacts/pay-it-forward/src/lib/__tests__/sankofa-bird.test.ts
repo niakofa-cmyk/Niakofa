@@ -12,7 +12,7 @@
  *   3. Bank angle      — heading delta → ±25° clamped bank
  *   4. Differential wing banking (outside extends, inside folds)
  *   5. Tail rudder bend
- *   6. Flight mode     — isMoving / isGliding from speed + navigating + phase
+ *   6. Flight mode     — isMoving / isGliding / isVisuallyGliding from speed + navigating + phase
  *   7. Speed tier labels
  *   8. Flap period     — idle 1.4s → walking ~1/sec → driving 5/sec → glide 4s
  *   9. Body lean angle — 0° idle → 15° max → 12° glide posture
@@ -247,34 +247,77 @@ describe("computeFlightMode", () => {
     expect(isGliding).toBe(false);
   });
 
-  it("driving speed (14 m/s, navigating) → moving, not gliding", () => {
-    const { isMoving, isGliding } = computeFlightMode(14, true, "idle");
+  it("driving speed (14 m/s, navigating) → moving, not physics-gliding, but visually gliding", () => {
+    const { isMoving, isGliding, isVisuallyGliding } = computeFlightMode(14, true, "idle");
     expect(isMoving).toBe(true);
+    // Physics glide still requires airplane speed (> 50 m/s) — flap cadence + lean unchanged
     expect(isGliding).toBe(false);
+    // Visual glide fires at driving speed so CSS elongation/wing-tip effects are reachable
+    expect(isVisuallyGliding).toBe(true);
   });
 
-  it("airplane speed (55 m/s, navigating) → moving AND gliding", () => {
-    const { isMoving, isGliding } = computeFlightMode(55, true, "idle");
+  it("airplane speed (55 m/s, navigating) → moving AND physics-gliding AND visually gliding", () => {
+    const { isMoving, isGliding, isVisuallyGliding } = computeFlightMode(55, true, "idle");
     expect(isMoving).toBe(true);
     expect(isGliding).toBe(true);
+    expect(isVisuallyGliding).toBe(true);
   });
 
-  it("exactly 50 m/s → not gliding (threshold is strictly > 50)", () => {
-    const { isGliding } = computeFlightMode(50, true, "idle");
+  it("exactly 50 m/s → not physics-gliding (threshold is strictly > 50), but visually gliding", () => {
+    const { isGliding, isVisuallyGliding } = computeFlightMode(50, true, "idle");
     expect(isGliding).toBe(false);
+    expect(isVisuallyGliding).toBe(true);
   });
 
-  it("above 50 m/s but NOT navigating → not moving, not gliding", () => {
+  it("exactly 10 m/s → not visually gliding (threshold is strictly > 10)", () => {
+    const { isVisuallyGliding } = computeFlightMode(10, true, "idle");
+    expect(isVisuallyGliding).toBe(false);
+  });
+
+  it("10.1 m/s → visually gliding", () => {
+    const { isVisuallyGliding } = computeFlightMode(10.1, true, "idle");
+    expect(isVisuallyGliding).toBe(true);
+  });
+
+  it("walking speed (1.4 m/s) → not visually gliding", () => {
+    const { isVisuallyGliding } = computeFlightMode(1.4, true, "idle");
+    expect(isVisuallyGliding).toBe(false);
+  });
+
+  it("above 10 m/s but NOT navigating → not visually gliding (isMoving required)", () => {
+    const { isMoving, isVisuallyGliding } = computeFlightMode(14, false, "idle");
+    expect(isMoving).toBe(false);
+    expect(isVisuallyGliding).toBe(false);
+  });
+
+  it("above 50 m/s but NOT navigating → not moving, not gliding, not visually gliding", () => {
     // Speed alone doesn't trigger flight — navigating OR flying landingPhase required
-    const { isMoving, isGliding } = computeFlightMode(55, false, "idle");
+    const { isMoving, isGliding, isVisuallyGliding } = computeFlightMode(55, false, "idle");
     expect(isMoving).toBe(false);
     expect(isGliding).toBe(false);
+    expect(isVisuallyGliding).toBe(false);
   });
 
-  it("landingPhase='flying' acts as navigating for isMoving", () => {
+  it("landingPhase='flying' acts as navigating for isMoving and isVisuallyGliding", () => {
     // This is how landing sequence keeps trail particles during slowflap
-    const { isMoving } = computeFlightMode(10, false, "flying");
+    const { isMoving, isVisuallyGliding } = computeFlightMode(14, false, "flying");
     expect(isMoving).toBe(true);
+    expect(isVisuallyGliding).toBe(true);
+  });
+
+  it("running speed (5 m/s) with landingPhase='flying': moving but NOT visually gliding", () => {
+    // 5 m/s is below the 10 m/s isVisuallyGliding threshold — trail dots render
+    // but body elongation / wing-tip slots do NOT fire (those need > 10 m/s).
+    const { isMoving, isVisuallyGliding } = computeFlightMode(5, false, "flying");
+    expect(isMoving).toBe(true);
+    expect(isVisuallyGliding).toBe(false);
+  });
+
+  it("running speed (5 m/s) with navigating=true: moving but NOT visually gliding", () => {
+    const { isMoving, isGliding, isVisuallyGliding } = computeFlightMode(5, true, "idle");
+    expect(isMoving).toBe(true);
+    expect(isGliding).toBe(false);
+    expect(isVisuallyGliding).toBe(false);
   });
 });
 

@@ -1769,38 +1769,6 @@ function UsersTab({ refreshTick = 0 }: { refreshTick?: number }) {
                     <div className="text-xs text-muted-foreground">Remove from platform permanently</div>
                   </div>
                 </button>
-                <button
-                  onClick={async () => {
-                    const tok = getToken();
-                    try {
-                      const res = await fetch(`${BASE}/api/users/${actionUser.id}/toggle-admin`, {
-                        method: "PATCH",
-                        headers: tok ? { Authorization: `Bearer ${tok}` } : {},
-                      });
-                      if (!res.ok) { toast({ title: "Failed to update admin status", variant: "destructive" }); return; }
-                      const { is_admin } = await res.json() as { is_admin: boolean };
-                      toast({ title: is_admin ? `✅ ${actionUser.name} is now an admin` : `🔒 Admin removed from ${actionUser.name}` });
-                      setUsers(prev => prev.map(u => u.id === actionUser.id ? { ...u, is_admin } : u));
-                      setActionUser(null);
-                    } catch {
-                      toast({ title: "Network error", variant: "destructive" });
-                    }
-                  }}
-                  style={{ touchAction: "manipulation" }}
-                  className="w-full flex items-center gap-3 p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl active:scale-[0.98] transition-all"
-                >
-                  <ShieldCheck className="w-5 h-5 text-blue-400" />
-                  <div className="text-left">
-                    <div className="font-black text-sm text-blue-400">
-                      {(actionUser as AdminUser & { is_admin?: boolean }).is_admin ? "Remove Admin" : "Grant Admin"}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {(actionUser as AdminUser & { is_admin?: boolean }).is_admin
-                        ? "Revoke admin access for this user"
-                        : "Give this user full admin access"}
-                    </div>
-                  </div>
-                </button>
                 <HardDeleteUserButton userId={actionUser.id} userName={actionUser.name} onDeleted={() => {
                   setActionUser(null);
                   setUsers(prev => prev.filter(u => u.id !== actionUser.id));

@@ -75,7 +75,6 @@ export type WsEventType =
   | "circle_role_changed"
   | "circle_reaction"
   | "circle_recording_changed"
-  | "circle_muted_changed"
   | "circle_host_disconnected"
   | "circle_host_reconnected"
   | "circle_signal"
@@ -94,13 +93,6 @@ type Handler = (event: WsEvent) => void;
 const MIN_RECONNECT_MS = 1_000;
 const MAX_RECONNECT_MS = 30_000;
 const PING_INTERVAL_MS = 25_000;
-// If the server doesn't reply with a pong within this window after a ping,
-// the connection is considered stale and forcibly closed so onclose triggers
-// the normal backoff-reconnect path. This catches "zombie" TCP connections
-// where the socket appears open but traffic is not flowing (e.g. NAT timeout,
-// mobile network handover, Wi-Fi change) — without this the client silently
-// loses real-time events for minutes.
-const PONG_TIMEOUT_MS = 10_000;
 
 function backoff(attempt: number): number {
   const exp = Math.min(MIN_RECONNECT_MS * 2 ** attempt, MAX_RECONNECT_MS);
@@ -111,7 +103,6 @@ function backoff(attempt: number): number {
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
-let pongTimer: ReturnType<typeof setTimeout> | null = null;
 let attempt = 0;
 let registeredUserId: number | null = null;
 let registeredToken: string | null = null;
@@ -150,21 +141,9 @@ function connect(): void {
       send({ type: "register", payload: { userId: registeredUserId, token: tok } });
     }
 
-    // Keepalive ping every 25s with pong-timeout guard.
-    // After each ping, start a 10s timeout; if the server sends a pong before
-    // it fires the timeout is cleared. If not, the socket is forcibly closed
-    // so the normal backoff-reconnect cycle restores the live connection.
+    // Keepalive ping every 25s
     if (pingTimer) clearInterval(pingTimer);
-    pingTimer = setInterval(() => {
-      send({ type: "ping" });
-      // Arm the pong-timeout (idempotent — clear any previous one first).
-      if (pongTimer) clearTimeout(pongTimer);
-      pongTimer = setTimeout(() => {
-        pongTimer = null;
-        // Force-close; onclose fires and schedules the next connect().
-        socket?.close();
-      }, PONG_TIMEOUT_MS);
-    }, PING_INTERVAL_MS);
+    pingTimer = setInterval(() => send({ type: "ping" }), PING_INTERVAL_MS);
 
     // Notify all subscribers that the connection is back so they can re-fetch
     // any data that might have changed while we were offline.
@@ -177,11 +156,6 @@ function connect(): void {
   socket.onmessage = (msg) => {
     try {
       const event = JSON.parse(msg.data as string) as WsEvent;
-      // Pong clears the stale-connection timeout so we don't force-close a
-      // healthy socket that the server confirmed is alive.
-      if (event.type === "pong") {
-        if (pongTimer) { clearTimeout(pongTimer); pongTimer = null; }
-      }
       handlers.forEach((h) => h(event));
     } catch {
       // ignore malformed
@@ -189,8 +163,10 @@ function connect(): void {
   };
 
   socket.onclose = () => {
-    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
-    if (pongTimer) { clearTimeout(pongTimer); pongTimer = null; }
+    if (pingTimer) {
+      clearInterval(pingTimer);
+      pingTimer = null;
+    }
     const delay = backoff(attempt);
     attempt = Math.min(attempt + 1, 10);
     reconnectTimer = setTimeout(connect, delay);

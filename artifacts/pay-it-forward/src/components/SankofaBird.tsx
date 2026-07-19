@@ -1,9 +1,15 @@
 /**
- * SankofaBird — auto-selector
+ * SankofaBird — auto-selector + auto battery-saver
  *
  * Renders the Rive bird when `VITE_USE_RIVE_BIRD=true` is set in Replit Secrets,
  * otherwise falls back to the SVG bird. All existing call sites (map.tsx,
  * request-active.tsx, /bird-test) import from this module unchanged.
+ *
+ * ── Auto Battery Saver ───────────────────────────────────────────────────
+ * When the device battery is < 20% AND not charging, LOD3 (batterySaver) mode
+ * activates automatically — no user action needed. Uses the Battery Status API
+ * (Chrome / Edge; gracefully ignored on Safari / Firefox). Merges with the
+ * external `batterySaver` prop so either source can activate the mode.
  *
  * ── Activating Rive ──────────────────────────────────────────────────────
  *  1. Create `sankofa-bird.riv` following `public/SANKOFA_BIRD_RIVE_SPEC.md`
@@ -20,7 +26,7 @@
  * See SankofaBirdSvg.tsx for the full prop documentation.
  */
 
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { SankofaBirdSvg, type SankofaBirdProps } from "./SankofaBirdSvg";
 
 // Re-export the type so existing callers that import SankofaBirdProps from
@@ -42,10 +48,87 @@ const SankofaBirdRiveLazy = USE_RIVE
     )
   : null;
 
+// ── BatteryManager interface (Chrome Battery Status API) ─────────────────
+// Not part of the standard TypeScript lib — defined here to avoid a
+// dependency on @types/w3c-battery-status which may not be installed.
+interface BatteryManager extends EventTarget {
+  readonly level: number;
+  readonly charging: boolean;
+}
+
+/**
+ * useAutoBatterySaver
+ *
+ * Monitors device battery via the Battery Status API and returns `true` when
+ * the battery is low (< 20 %) and not charging. Merges with an external prop
+ * so either source can activate battery-saver mode independently.
+ *
+ * Graceful degradation:
+ *  - Safari / Firefox: navigator.getBattery is undefined → returns externalProp
+ *  - Battery API unavailable (strict mode, permission denied): returns externalProp
+ *  - All event listeners cleaned up on unmount to prevent memory leaks.
+ *
+ * Threshold: 20 % matches Android's "Battery Saver activates at 20 %" default,
+ * making the bird's LOD3 behaviour consistent with the system's own battery intent.
+ */
+function useAutoBatterySaver(externalBatterySaver = false): boolean {
+  const [autoBattery, setAutoBattery] = useState(false);
+
+  useEffect(() => {
+    // Battery Status API — Chrome / Edge only; Safari / Firefox ignore gracefully.
+    const nav = navigator as Navigator & {
+      getBattery?: () => Promise<BatteryManager>;
+    };
+    if (typeof nav.getBattery !== "function") return;
+
+    let bm: BatteryManager | null = null;
+
+    // Arrow function closure avoids the unsafe `this: BatteryManager` typed method
+    // pattern that required an `as EventListener` cast. The closure captures `bm`
+    // and reads level/charging from the stable BatteryManager reference.
+    const onBatteryEvent = () => {
+      if (bm) setAutoBattery(!bm.charging && bm.level < 0.20);
+    };
+
+    nav
+      .getBattery()
+      .then((battery: BatteryManager) => {
+        bm = battery;
+        // Evaluate immediately so the initial render already reflects battery state.
+        setAutoBattery(!battery.charging && battery.level < 0.20);
+        battery.addEventListener("levelchange", onBatteryEvent);
+        battery.addEventListener("chargingchange", onBatteryEvent);
+      })
+      .catch(() => {
+        // Permission denied or API not available — no-op, externalBatterySaver still applies.
+      });
+
+    return () => {
+      if (bm) {
+        bm.removeEventListener("levelchange", onBatteryEvent);
+        bm.removeEventListener("chargingchange", onBatteryEvent);
+      }
+    };
+  }, []);
+
+  return externalBatterySaver || autoBattery;
+}
+
 export function SankofaBird(props: SankofaBirdProps) {
+  // Always call hooks before any conditional returns (Rules of Hooks).
+  // useAutoBatterySaver is unconditional regardless of USE_RIVE.
+  const effectiveBatterySaver = useAutoBatterySaver(props.batterySaver);
+
+  // Merge auto-detected battery state with the incoming prop.
+  // When auto-detected OR prop is true, LOD3 activates.
+  const mergedProps: SankofaBirdProps = {
+    ...props,
+    batterySaver: effectiveBatterySaver,
+  };
+
   // Default path (VITE_USE_RIVE_BIRD not set): pure SVG, zero extra overhead.
   if (!USE_RIVE || !SankofaBirdRiveLazy) {
-    return <SankofaBirdSvg {...props} />;
+    return <SankofaBirdSvg {...mergedProps} />;
   }
 
   // Rive path: lazy-load the runtime on first render.
@@ -55,8 +138,8 @@ export function SankofaBird(props: SankofaBirdProps) {
   // always the last resort if anything goes wrong.
   const RiveLazy = SankofaBirdRiveLazy;
   return (
-    <Suspense fallback={<SankofaBirdSvg {...props} />}>
-      <RiveLazy {...props} />
+    <Suspense fallback={<SankofaBirdSvg {...mergedProps} />}>
+      <RiveLazy {...mergedProps} />
     </Suspense>
   );
 }

@@ -131,21 +131,29 @@ export function computeHeadLeadDeg(
 // ── Flight mode ───────────────────────────────────────────────────────────────
 
 /**
- * Derive `isMoving` and `isGliding` from speed, navigating flag, and landing phase.
+ * Derive `isMoving`, `isGliding`, and `isVisuallyGliding` from speed, navigating flag, and landing phase.
  *
- * isMoving  — true when the bird should flap faster and lean forward.
- * isGliding — true when speed > 50 m/s (airplane): wings spread, barely oscillate.
+ * isMoving        — true when the bird should flap faster and lean forward.
+ * isGliding       — true when speed > 50 m/s (airplane): affects flap cadence (4 s glide period)
+ *                   and fixed 12° body posture. Physics-accurate; rarely fires in real navigation.
+ * isVisuallyGliding — true when speed > 10 m/s (driving tier): drives CSS body-elongation and
+ *                   wing-tip slotted-spread effects that are visible during normal navigation.
+ *                   Separated from isGliding so the visual effects don't require airplane speed
+ *                   while flap cadence and lean angle remain physically correct.
  */
 export function computeFlightMode(
   speedMs: number,
   navigating: boolean,
   landingPhase: LandingPhase,
-): { isMoving: boolean; isGliding: boolean } {
+): { isMoving: boolean; isGliding: boolean; isVisuallyGliding: boolean } {
   // During "takeoff" we use dedicated CSS keyframes (data-landing="takeoff"),
   // not the generic data-flying="true" rules — so isMoving stays false here.
   const isMoving = (navigating || landingPhase === "flying") && speedMs > 0.3;
   const isGliding = isMoving && speedMs > 50;
-  return { isMoving, isGliding };
+  // Visual glide fires at driving speed so the CSS elongation/wing-tip effects are
+  // reachable during everyday navigation — not just at unreachable airplane speed.
+  const isVisuallyGliding = isMoving && speedMs > 10;
+  return { isMoving, isGliding, isVisuallyGliding };
 }
 
 /**
@@ -191,9 +199,6 @@ export function computeFlapPeriodMs(opts: {
   if (isGliding)                                                return 4000;
   // Takeoff: two strong power flaps before settling into cruise cadence
   if (landingPhase === "takeoff")                               return 250;
-  // Dive: rapid hard-braking strokes — bird decelerates from cruise speed;
-  // faster than takeoff cadence since it's fighting momentum, not building it
-  if (landingPhase === "dive")                                  return 320;
   if (landingPhase === "slowflap")                              return 1000;
   if (
     landingPhase === "hover" ||
@@ -221,9 +226,6 @@ export function computeLeanDeg(opts: {
 }): number {
   const { isMoving, isGliding, speedMs, landingPhase } = opts;
   if (isGliding)                                                return 12;
-  // Dive: aggressive forward lean — more than normal cruise max (15°) since
-  // the bird pitches nose-down to convert altitude into braking distance
-  if (landingPhase === "dive")                                  return 18;
   if (landingPhase === "slowflap")                              return 6;
   if (
     landingPhase === "hover" ||
@@ -232,83 +234,4 @@ export function computeLeanDeg(opts: {
   )                                                             return 0;
   if (!isMoving)                                                return 0;
   return Math.min(15, 6 + speedMs);
-}
-
-// ── Real-time gaze system ─────────────────────────────────────────────────────
-
-/**
- * Compute the vertical head pitch offset in SVG viewBox units (40×40 coordinate space).
- *
- * Positive = head tilts UP (alert / takeoff look-up).
- * Negative = head tilts DOWN (approaching destination, landing, looking for perch).
- *
- * Values are kept small (max ±2.0 SVG units) because the head radius is 3.4 units
- * — a 2-unit shift is already a highly visible tilt at any zoom level.
- *
- * Caller must convert to CSS px: svgUnits × (size / 40).
- */
-export function computeGazePitchSvgUnits(opts: {
-  approaching: boolean;
-  landingPhase: LandingPhase;
-  isHelping: boolean;
-  isMoving: boolean;
-}): number {
-  const { approaching, landingPhase, isHelping, isMoving } = opts;
-
-  // Dive — sharp forward pitch as bird accelerates toward target (most aggressive)
-  if (landingPhase === "dive")     return -1.4;
-  // Landing — bird looks DOWN to find the perch (progressively less aggressive)
-  if (landingPhase === "hover")    return -1.8;
-  if (landingPhase === "slowflap") return -1.2;
-  if (landingPhase === "perch")    return -0.6;
-  // Idle at rest — neutral, very slight upright posture when not helping
-  if (landingPhase === "idle")     return isHelping ? 0.6 : 0;
-  // Takeoff — head snaps up during launch (handled by keyframes too, this gives
-  // the CSS head-pitch wrapper a baseline so the keyframe starts from the right place)
-  if (landingPhase === "takeoff")  return 1.0;
-  // Approaching destination — gentle downward look as bird scopes the target
-  if (approaching)                 return -1.0;
-  // Active flight while helping — upright, purposeful head carriage
-  if (isHelping && isMoving)       return 0.4;
-  // Neutral cruise
-  return 0;
-}
-
-/**
- * Compute a look-direction label for the data-look-dir attribute.
- *
- * Combines yaw (from headLeadDeg / upcomingTurn) and pitch (from gazePitchSvgUnits)
- * into one of 9 named directions. CSS uses this for targeted gaze animations:
- *   - Crown feathers raise on "up", droop on "down"
- *   - Eye pupil override shifts in the look direction
- *   - Wing root flex reinforces the turn direction
- *
- * Thresholds are intentionally generous so "forward" covers small jitter.
- */
-export function computeLookDir(
-  headLeadDeg: number,
-  gazePitchSvgUnits: number,
-  upcomingTurnDirection: "left" | "right" | null,
-): "forward" | "left" | "right" | "up" | "down" | "left-up" | "right-up" | "left-down" | "right-down" {
-  // Yaw: upcoming-turn signal overrides bank-derived lead
-  let yawSign = 0;
-  if (upcomingTurnDirection === "left") yawSign = -1;
-  else if (upcomingTurnDirection === "right") yawSign = 1;
-  else if (headLeadDeg < -3) yawSign = -1;
-  else if (headLeadDeg >  3) yawSign = 1;
-
-  // Pitch: use SVG unit magnitude; thresholds tuned for the small head size
-  let pitchSign = 0;
-  if (gazePitchSvgUnits >  0.5) pitchSign = 1;
-  else if (gazePitchSvgUnits < -0.5) pitchSign = -1;
-
-  if (yawSign < 0 && pitchSign > 0) return "left-up";
-  if (yawSign > 0 && pitchSign > 0) return "right-up";
-  if (yawSign < 0 && pitchSign < 0) return "left-down";
-  if (yawSign > 0 && pitchSign < 0) return "right-down";
-  if (yawSign < 0) return "left";
-  if (yawSign > 0) return "right";
-  if (pitchSign > 0) return "up";
-  if (pitchSign < 0) return "down";
-  return "forward";
 }

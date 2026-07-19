@@ -18,7 +18,7 @@ import { IncomingMessage } from "http";
 import { logger } from "./logger";
 import { verifyToken } from "../middlewares/auth";
 import { db, chatMessagesTable, requestsTable, usersTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 // ── Standardized Niakofa Event Types ─────────────────────────────────────────
 export type WsEventType =
@@ -89,7 +89,6 @@ export type WsEventType =
   | "circle_role_changed"
   | "circle_reaction"
   | "circle_recording_changed"
-  | "circle_muted_changed"
   | "circle_host_disconnected"
   | "circle_host_reconnected"
   // WebRTC mesh signaling relay (offer/answer/ICE) between two specific
@@ -263,22 +262,6 @@ export function clearCircleSession(sessionId: number): void {
 
 export function isCircleParticipant(sessionId: number, userId: number): boolean {
   return circleSessionParticipants.get(sessionId)?.has(userId) ?? false;
-}
-
-// ── Audio Circle host registry ────────────────────────────────────────────────
-// Tracks which userId is currently the host of a live circle session.
-// Used to detect when a host's WS closes unexpectedly (browser crash / network
-// drop) so participants receive circle_host_disconnected even if the beforeunload
-// keepalive fetch never makes it to the server.
-const circleSessionHosts = new Map<number, number>(); // userId → sessionId
-
-export function setCircleHost(sessionId: number, userId: number): void {
-  circleSessionHosts.set(userId, sessionId);
-}
-
-/** Call when the session ends OR when the host voluntarily leaves. */
-export function clearCircleHost(userId: number): void {
-  circleSessionHosts.delete(userId);
 }
 
 /**
@@ -775,40 +758,6 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
           })();
           return;
         }
-
-        if ((msg as { type: string }).type === "HELPER_MOVING") {
-          // Relay real-time helper GPS position to the requester.
-          //
-          // SECURITY: sender must be authenticated AND be the currently assigned
-          // helper for the stated requestId. We validate by querying the DB with
-          // a WHERE that requires helper_id = senderId — if the row doesn't match,
-          // the message is silently dropped (no leak to the wrong user).
-          //
-          // Rate limiting: the client sends at most once every 8 s; the DB query
-          // is cheap (indexed PK). No server-side rate limit needed.
-          if (registeredUserId === null || !authenticatedSockets.has(socket)) return;
-          const { requestId: hlRequestId, lat: hlLat, lng: hlLng, heading: hlHeading, speed: hlSpeed } =
-            msg.payload as { requestId?: number; lat?: number; lng?: number; heading?: number | null; speed?: number | null };
-          if (!hlRequestId || hlLat == null || hlLng == null) return;
-          const helperId = registeredUserId;
-          (async () => {
-            try {
-              // Confirm the sender is actually the assigned helper for this request.
-              const [req] = await db
-                .select({ requester_id: requestsTable.requester_id, helper_id: requestsTable.helper_id })
-                .from(requestsTable)
-                .where(and(eq(requestsTable.id, hlRequestId), eq(requestsTable.helper_id, helperId)))
-                .limit(1);
-              if (!req) return; // Not the assigned helper — silently reject.
-              // Relay to the requester only (helper already knows their own position).
-              sendToUser(req.requester_id, {
-                type: "HELPER_MOVING" as WsEventType,
-                payload: { requestId: hlRequestId, lat: hlLat, lng: hlLng, heading: hlHeading ?? null, speed: hlSpeed ?? null },
-              });
-            } catch {}
-          })();
-          return;
-        }
       } catch {
         // ignore malformed messages
       }
@@ -840,24 +789,6 @@ export function initWebSocketServer(server: import("http").Server): WebSocketSer
             userSockets.delete(registeredUserId);
             presenceMap.set(registeredUserId, "OFFLINE");
             broadcast({ type: "presence_update", payload: { user_id: registeredUserId, status: "OFFLINE" } });
-          }
-        }
-
-        // If this user was the host of a live circle session, notify remaining
-        // participants immediately. This covers the crash/network-drop case where
-        // the beforeunload keepalive fetch never reaches the server.
-        const hostedSessionId = circleSessionHosts.get(registeredUserId);
-        if (hostedSessionId !== undefined) {
-          const participants = circleSessionParticipants.get(hostedSessionId);
-          if (participants && participants.size > 0) {
-            sendToCircleParticipants(Array.from(participants), {
-              type: "circle_host_disconnected",
-              payload: { session_id: hostedSessionId, grace_period_ms: 90_000 },
-            });
-            logger.info(
-              { session_id: hostedSessionId, host_id: registeredUserId },
-              "WS: host socket closed — circle_host_disconnected broadcast"
-            );
           }
         }
       }

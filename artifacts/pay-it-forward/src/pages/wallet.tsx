@@ -11,9 +11,11 @@ import { RepaymentSchedulerModal } from "@/components/RepaymentSchedulerModal";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
 import {
   useMakePledgePayment,
+  useGetUserTransactions,
   useGetUserOutstandingPledges,
   useCreateScheduledPayment,
   useGetScheduledPayments,
+  getGetUserTransactionsQueryKey,
   getGetUserOutstandingPledgesQueryKey,
   getGetScheduledPaymentsQueryKey,
 } from "@workspace/api-client-react";
@@ -82,49 +84,9 @@ export default function WalletScreen() {
   const scheduleMutation = useCreateScheduledPayment();
 
   const userId = currentUser?.id ?? 0;
-
-  // ── Paginated transaction history ─────────────────────────────────────────
-  // We bypass the generated hook here so we can append pages via "Load more"
-  // rather than replacing the list. The API returns the array as before (for
-  // backward compat) but also sets X-Total-Count / X-Has-More headers.
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [txLoading, setTxLoading] = useState(true);
-  const [txOffset, setTxOffset] = useState(0);
-  const [txHasMore, setTxHasMore] = useState(false);
-  const [txLoadingMore, setTxLoadingMore] = useState(false);
-  const txLoadedRef = useRef(false);
-  const TX_PAGE_SIZE = 50;
-
-  const fetchTransactions = async (offset: number, append: boolean) => {
-    if (!userId) return;
-    if (append) setTxLoadingMore(true);
-    else if (!txLoadedRef.current) setTxLoading(true);
-    try {
-      const res = await fetch(
-        `/api/users/${userId}/transactions?limit=${TX_PAGE_SIZE}&offset=${offset}`,
-        { headers: authHeaders() }
-      );
-      if (!res.ok) return;
-      const data = (await res.json()) as Transaction[];
-      const hasMore = res.headers.get("X-Has-More") === "true";
-      setTransactions(prev => append ? [...prev, ...data] : data);
-      setTxHasMore(hasMore);
-      setTxOffset(offset + data.length);
-      txLoadedRef.current = true;
-    } finally {
-      setTxLoading(false);
-      setTxLoadingMore(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!userId) return;
-    setTxOffset(0);
-    setTransactions([]);
-    txLoadedRef.current = false;
-    fetchTransactions(0, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  const { data: transactions = [], isLoading: txLoading } = useGetUserTransactions(userId, {
+    query: { enabled: !!userId, queryKey: getGetUserTransactionsQueryKey(userId), staleTime: 30000, placeholderData: keepPreviousData }
+  });
   const { data: outstandingPledges = [] } = useGetUserOutstandingPledges(userId, {
     query: { enabled: !!userId, queryKey: getGetUserOutstandingPledgesQueryKey(userId), placeholderData: keepPreviousData }
   });
@@ -303,7 +265,7 @@ export default function WalletScreen() {
       setCashoutOpen(false);
       setCashoutAmount("");
       // Refresh transactions
-      fetchTransactions(0, false);
+      queryClient.invalidateQueries({ queryKey: getGetUserTransactionsQueryKey(userId) });
     } catch {
       toast({ title: "Network error — please try again", variant: "destructive" });
     } finally {
@@ -359,7 +321,7 @@ export default function WalletScreen() {
           setSelectedRequest(null);
           setPledgeAmount("");
           setPledgeOpen(false);
-          fetchTransactions(0, false);
+          queryClient.invalidateQueries({ queryKey: getGetUserTransactionsQueryKey(userId) });
           queryClient.invalidateQueries({ queryKey: getGetUserOutstandingPledgesQueryKey(userId) });
         },
         onError: () => toast({ title: "Failed to send contribution", variant: "destructive" }),
@@ -431,7 +393,7 @@ export default function WalletScreen() {
               title: "Payment sent!",
               description: `$${amt.toFixed(2)} paid forward. Scheduled payment completed.`,
             });
-            fetchTransactions(0, false);
+            queryClient.invalidateQueries({ queryKey: getGetUserTransactionsQueryKey(userId) });
             queryClient.invalidateQueries({ queryKey: getGetUserOutstandingPledgesQueryKey(userId) });
             setPayNowScheduled(null);
             setPayNowPayment(null);
@@ -481,7 +443,7 @@ export default function WalletScreen() {
       });
       queryClient.invalidateQueries({ queryKey: getGetScheduledPaymentsQueryKey(userId) });
       queryClient.invalidateQueries({ queryKey: getGetUserOutstandingPledgesQueryKey(userId) });
-      fetchTransactions(0, false);
+      queryClient.invalidateQueries({ queryKey: getGetUserTransactionsQueryKey(userId) });
     } catch {
       toast({ title: "Network error — please try again", variant: "destructive" });
     } finally {
@@ -1126,19 +1088,6 @@ export default function WalletScreen() {
                 );
               })}
             </div>
-
-            {/* Load more */}
-            {txHasMore && (
-              <button
-                onClick={() => fetchTransactions(txOffset, true)}
-                disabled={txLoadingMore}
-                className="w-full mt-2 py-3 rounded-xl border border-border text-sm font-bold text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-              >
-                {txLoadingMore
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Loading…</>
-                  : "Load more transactions"}
-              </button>
-            )}
           </div>
         )}
 
