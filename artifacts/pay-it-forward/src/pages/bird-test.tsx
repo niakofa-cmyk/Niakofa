@@ -2238,7 +2238,7 @@ function LiveTurningDemo() {
       <span className="text-[10px] text-center" style={{ color: "#7ee8fa" }}>
         Turn commit + egg swing<br /><b style={{ color: "#fff" }}>{label}</b>
       </span>
-      <span className="text-[9px] mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>P14 data-turning · P16.2 egg pendulum</span>
+      <span className="text-[9px] mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>P14 data-turning · analog egg pendulum (l.7724)</span>
     </div>
   );
 }

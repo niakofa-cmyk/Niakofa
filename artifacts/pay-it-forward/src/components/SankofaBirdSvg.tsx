@@ -9932,25 +9932,27 @@ export function SankofaBirdSvg({
           }
         }
 
-        /* ── P16.2: Egg pendulum physics ──────────────────────────────────────
-           When the bird banks (data-turning fires at |bankDeg|≥8°), the egg
-           swings slightly in the OPPOSITE direction — pendulum physics.
-           Real pendulums overshoot; cubic-bezier(0.34,1.56,0.64,1) spring easing
-           gives the 1-2px overshoot the Niakofa doc describes ("just a few pixels").
-           Also fires during upcoming-turn anticipation (smaller amplitude, 2deg)
-           so the egg begins moving before the full bank commitment.
-           Composes with existing egg transform: (hover/beak compensation). */
+        /* ── P16.2: Egg anticipatory pre-swing (Niakofa doc §16) ─────────────
+           DESIGN NOTE: The committed-bank egg pendulum is already handled by the
+           analog physics system at lines 7723–7743:
+             .sankofa-bird-rig[data-flying="true"] .sankofa-bird-egg {
+               rotate: calc(var(--bank-angle, 0deg) * -0.18); }
+           That system is physics-correct and proportional to actual bankDeg.
+           Adding discrete overrides here at the SAME specificity (0,3,0) but
+           later in the file would silently clobber the better analog value —
+           a CSS source-order specificity trap. Those rules must NOT exist here.
+
+           P16.2 adds ONLY the anticipatory pre-swing: when upcoming-turn fires
+           (1–2 s before the manoeuvre) but bankDeg is still ≈0 (data-turning="none"),
+           the egg begins moving toward the direction before the body commits.
+           This is the "sees the future" design-doc behavior. The [data-turning="none"]
+           gate means these rules NEVER run when the analog pendulum is active
+           (bankDeg > 0 → data-turning fires). The neutral return and committed-bank
+           cases are fully handled by lines 7723-7743 and need no duplication. */
         @supports (rotate: 0deg) {
-          /* Actual committed bank: egg swings 3.5deg counter to turn direction */
-          .sankofa-bird-rig[data-turning="left"] .sankofa-bird-egg {
-            rotate: 3.5deg;
-            transition: rotate 0.38s cubic-bezier(0.34, 1.56, 0.64, 1);
-          }
-          .sankofa-bird-rig[data-turning="right"] .sankofa-bird-egg {
-            rotate: -3.5deg;
-            transition: rotate 0.38s cubic-bezier(0.34, 1.56, 0.64, 1);
-          }
-          /* Anticipatory: upcoming-turn pre-swings egg 2deg before bank fires */
+          /* Anticipatory pre-swing: upcoming-turn fires before any committed bank.
+             Specificity (0,4,0) > analog pendulum's (0,3,0) — correct, it should
+             override the zero-valued analog result when bankDeg=0. */
           .sankofa-bird-rig[data-turning="none"][data-upcoming-turn="left"] .sankofa-bird-egg {
             rotate: 2.0deg;
             transition: rotate 0.55s ease-out;
@@ -9959,11 +9961,7 @@ export function SankofaBirdSvg({
             rotate: -2.0deg;
             transition: rotate 0.55s ease-out;
           }
-          /* Neutral: egg returns to upright (gravity wins) */
-          .sankofa-bird-rig[data-turning="none"]:not([data-upcoming-turn="left"]):not([data-upcoming-turn="right"]) .sankofa-bird-egg {
-            rotate: 0deg;
-            transition: rotate 0.60s cubic-bezier(0.34, 1.2, 0.64, 1);
-          }
+          /* Battery-saver: no anticipatory swing (redundant with line 7734 but explicit) */
           .sankofa-bird-rig[data-battery-saver="true"] .sankofa-bird-egg {
             rotate: 0deg !important;
             transition: none !important;
