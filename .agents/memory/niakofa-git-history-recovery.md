@@ -27,7 +27,10 @@ GitHub's history. A raw `git push` in this state would either fail outright or (
 4. Commit the real changes normally, then push with the `gitPush` callback (not raw
    `git push` — raw CLI has no credentials configured in this environment and always
    fails with "Invalid username or token").
-5. Verify the push landed with `gitPull` (should report success/no-op) and
-   `git log --oneline` / `git status` showing local `HEAD` matches `origin/main` — raw
-   `git fetch`/`git ls-remote` from the shell will fail auth and are not a valid
-   verification path here.
+5. Before calling `gitPush`, set the upstream tracking branch explicitly:
+   `git branch --set-upstream-to=origin/<branch> <branch>` — without this the gitPush
+   callback returns `BRANCH_ALREADY_EXISTS` even with `force: true`, because it treats
+   the local branch as a new-branch creation attempt rather than an update.
+6. Verify the push landed with `git log --oneline` / `git status` showing local `HEAD`
+   matches `origin/<branch>` — raw `git fetch`/`git ls-remote` from the shell will fail
+   auth and are not a valid verification path here.
