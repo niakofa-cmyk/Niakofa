@@ -81,6 +81,23 @@ export interface SankofaBirdProps {
    * Design doc: "LOD3 — Minimal silhouette."
    */
   batterySaver?: boolean;
+  /**
+   * True when the sun is below the horizon at the user's location.
+   * Derived from the `useTimeOfDay(lat, lng)` hook and passed down from the
+   * map screen. Activates Phase 10 night-mode plumage:
+   *  - Pupil shimmer (slow white sparkle)
+   *  - Moonlit wing rim (silver edge glow)
+   *  - Nocturnal breathing (deep chest, slow 3.2s cycle)
+   *  - Dark plumage (deep teal desaturate)
+   *  - Bio-luminescent flight trail (cyan-blue)
+   *  - Slow blink + shadow suppress
+   *  - Crown moon tips (silver specular)
+   *  - Lunar egg pearl (warm white glow)
+   *  - Low-zoom silhouette shift
+   * Design doc Phase 10: "Night-mode plumage — 10 effects, all gated
+   * [data-night-mode='true'], battery-saver + reduced-motion guarded."
+   */
+  nightMode?: boolean;
 }
 
 type LandingPhase = LandingPhaseMath;
@@ -122,6 +139,7 @@ export function SankofaBirdSvg({
   approaching = false,
   isHelping = false,
   batterySaver = false,
+  nightMode = false,
 }: SankofaBirdProps) {
   const hasHeading = typeof heading === "number" && !Number.isNaN(heading);
   const screenRotationDeg = hasHeading
@@ -497,6 +515,7 @@ export function SankofaBirdSvg({
             gazePitchSvgUnits > 0.5 ? "up" :
             gazePitchSvgUnits < -0.5 ? "down" : "level"
           }
+          data-night-mode={nightMode ? "true" : "false"}
         >
           <svg
             width={size}
@@ -1668,9 +1687,11 @@ export function SankofaBirdSvg({
 
         /* ── Neck flex — idle life breath ────────────────────────────────── */
         /* The neck path curves from body to head; a subtle opacity + slight
-           scale pulse makes the bird look like it's breathing. */
+           stroke-width pulse makes the bird look like it's breathing.
+           transform-origin at body end (18,16) so Phase-12 lateral flex
+           pivots correctly at the shoulder, not the head. */
         .sankofa-bird-neck {
-          transform-origin: 13px 15px;
+          transform-origin: 18px 16px;
           transform-box: view-box;
           animation: sankofa-neck-flex calc(var(--flap-period, 1400ms) * 1.2) ease-in-out infinite;
         }

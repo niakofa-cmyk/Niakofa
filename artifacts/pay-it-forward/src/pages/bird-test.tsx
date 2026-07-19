@@ -80,6 +80,7 @@ function BirdCard({
   approaching,
   isHelping,
   batterySaver,
+  nightMode,
   mapZoom,
   badge,
 }: {
@@ -92,6 +93,7 @@ function BirdCard({
   approaching?: boolean;
   isHelping?: boolean;
   batterySaver?: boolean;
+  nightMode?: boolean;
   mapZoom?: number;
   badge?: string;
 }) {
@@ -120,6 +122,7 @@ function BirdCard({
           upcomingTurnDirection={upcomingTurnDirection}
           isHelping={isHelping}
           batterySaver={batterySaver}
+          nightMode={nightMode}
           mapZoom={mapZoom}
         />
       </div>
@@ -989,7 +992,52 @@ export default function BirdTestPage() {
           />
         </div>
 
-        {/* ── Phase 12 Gaze System ──────────────────────────────────────── */}
+        {/* ── Phase 10/12: Night Mode + Gaze System ────────────────────── */}
+        <SectionLabel>Phase 10 — Night-mode plumage (nightMode prop wired from useTimeOfDay)</SectionLabel>
+        <div className="flex gap-4 flex-wrap mb-8">
+          <BirdCard
+            label="Day — Idle"
+            subLabel="nightMode=false (default)"
+            state={{ heading: 0, mapBearing: 0, speed: 0, navigating: false }}
+            mapZoom={17}
+            badge="DAY"
+          />
+          <BirdCard
+            label="Night — Idle"
+            subLabel="nightMode=true: dark plumage"
+            state={{ heading: 0, mapBearing: 0, speed: 0, navigating: false }}
+            mapZoom={17}
+            nightMode={true}
+            badge="NIGHT"
+          />
+          <BirdCard
+            label="Night — Flying"
+            subLabel="bio-glow + moonlit wing rim"
+            state={{ heading: 0, mapBearing: 0, speed: 8, navigating: true }}
+            mapZoom={17}
+            nightMode={true}
+            badge="NIGHT"
+          />
+          <BirdCard
+            label="Night — Helping"
+            subLabel="nocturnal gold + night plumage"
+            state={{ heading: 0, mapBearing: 0, speed: 8, navigating: true }}
+            mapZoom={17}
+            nightMode={true}
+            isHelping={true}
+            badge="NIGHT"
+          />
+          <BirdCard
+            label="Night — Battery saver"
+            subLabel="silhouette + dark mode"
+            state={{ heading: 0, mapBearing: 0, speed: 0, navigating: false }}
+            mapZoom={14}
+            nightMode={true}
+            batterySaver={true}
+            badge="NIGHT"
+          />
+        </div>
+
         <SectionLabel>Phase 12 — Real-time 2-axis gaze (neck flex + head pitch + look-dir)</SectionLabel>
         <GazeDirectionDemo />
         <NeckLateralBendDemo />
@@ -1052,6 +1100,8 @@ export default function BirdTestPage() {
             <li><strong>Pre-bank leading-edge feather compression (GAP CLOSED)</strong>: when upcoming-turn is signalled, outside-wing primaries slot/compress (scaleX 0.88) before fanning back out — aerodynamic load simulation before the bank</li>
             <li><strong>Shadow state coloring (GAP CLOSED)</strong>: shadow is now amber-gold when isHelping=true (warm radial light cast downward), teal-pulse when celebrating; baseline stays neutral grey; battery saver hides shadow</li>
             <li><strong>Helping at low zoom (GAP CLOSED)</strong>: at zoom &lt;10 where wing highlights are hidden, a warm amber drop-shadow halo now pulses on the body so the helping state remains visible at city/country scale</li>
+            <li><strong>nightMode (Phase 10, NOW WIRED)</strong>: driven by <code>useTimeOfDay(lat, lng)</code> — real solar elevation at user's GPS position. 10 CSS effects: pupil shimmer, moonlit wing rim, nocturnal breathing (3.2s), dark plumage desaturate, bio-luminescent flight trail, slow blink, shadow suppress, crown moon-tips silver, lunar egg pearl, low-zoom silhouette shift. All gated <code>data-night-mode="true"</code> with battery-saver + reduced-motion guards.</li>
+            <li><strong>Phase 12 — Real-time 2-axis gaze (neck flex + head pitch + look-dir)</strong>: <code>computeGazePitchSvgUnits</code> gives vertical head offset in SVG units (approaching/landing=−1.0→−1.8, helping=+0.4, takeoff=+1.0); <code>computeLookDir</code> maps yaw+pitch into 9 named directions. Neck extracted from head group so it bends laterally at the body-end anchor (18,16) independent of head pitch. <code>data-look-dir</code> targets pupil shift, crown posture, iris saccade pause, and body inside-turn scaleX compression via CSS.</li>
           </ul>
         </div>
 
@@ -1083,6 +1133,7 @@ const GAZE_STATES: Array<{
   { label: "Right-down (right turn + approach)", speed: 5, navigating: true, heading: 0, upcomingTurnDirection: "right", approaching: true, lookDirLabel: "right-down" },
   { label: "Left-up (left turn + helping)", speed: 5, navigating: true, heading: 0, upcomingTurnDirection: "left", isHelping: true, lookDirLabel: "left-up" },
   { label: "Right-up (right + helping)", speed: 5, navigating: true, heading: 0, upcomingTurnDirection: "right", isHelping: true, lookDirLabel: "right-up" },
+  { label: "Up (helping at idle)", speed: 0, navigating: false, heading: 0, isHelping: true, lookDirLabel: "up" },
 ];
 
 function GazeDirectionDemo() {

@@ -43,6 +43,7 @@ import { useFusedHeading } from "@/hooks/useFusedHeading";
 import { useMapOrientation } from "@/hooks/useMapOrientation";
 import { useTweenedPosition } from "@/hooks/useTweenedPosition";
 import { usePulse } from "@/hooks/usePulse";
+import { useTimeOfDay } from "@/hooks/useTimeOfDay";
 import { OrientationToggle } from "@/components/OrientationToggle";
 import { LastUpdated } from "@/components/LastUpdated";
 import { RequestListView } from "@/components/RequestListView";
@@ -132,6 +133,10 @@ export default function MapScreen() {
   const { currentUser, helperModeActive, myLocation, activeRequestId, mapNavOpen } = useAppContext();
   // Live battery-saver: auto-enables when Battery API ≤ 15 % or low-end device.
   const batterySaverActive = useBatterySaver({ forceOn: IS_LOW_END_DEVICE });
+  // Real-time solar position — activates Phase-10 night-mode plumage on the bird.
+  // useTimeOfDay recalculates the sun's elevation angle every 60 s using the
+  // user's current GPS position. Falls back to false (day mode) when no GPS.
+  const isNight = useTimeOfDay(myLocation?.lat ?? null, myLocation?.lng ?? null);
   const queryClient = useQueryClient();
   // MAPBOX_TOKEN is resolved at module level (see top of file) so this check
   // never re-evaluates on re-renders. useState lazy initializer reads it once.
@@ -1493,6 +1498,7 @@ export default function MapScreen() {
                 upcomingTurnDirection={null}
                 isHelping={false}
                 batterySaver={batterySaverActive}
+                nightMode={isNight}
               />
             </ErrorBoundary>
           </div>
@@ -1619,6 +1625,7 @@ export default function MapScreen() {
                 upcomingTurnDirection={birdUpcomingTurn}
                 isHelping={helperModeActive && !!activeRequestId}
                 batterySaver={batterySaverActive}
+                nightMode={isNight}
               />
             </ErrorBoundary>
           </Marker>
