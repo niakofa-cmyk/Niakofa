@@ -21,8 +21,12 @@ export function Body(): React.ReactElement {
   const { bodyGradId } = useBird();
 
   // Derived IDs matching Gradients.tsx pattern
-  const bodyLuminaryId = `${bodyGradId}-lum`;
-  const glowHaloId     = `${bodyGradId}-halo`;
+  const bodyLuminaryId  = `${bodyGradId}-lum`;
+  const glowHaloId      = `${bodyGradId}-halo`;
+  // Phase 26: new depth elements
+  const bellyGradId     = `${bodyGradId}-belly`;
+  const dorsalGradId    = `${bodyGradId}-dorsal`;
+  const chestWarmGradId = `${bodyGradId}-chest-warm`;
 
   return (
     <>
@@ -198,6 +202,56 @@ export function Body(): React.ReactElement {
         ry="3.2"
         fill={`url(#${glowHaloId})`}
         opacity={0.40}
+      />
+
+      {/* ── Phase 26: Belly shadow ellipse ─────────────────────────────────
+          Dark semi-transparent radial over the lower body — the belly that
+          falls into the shadow of the wings during flight. Hidden at rest;
+          CSS activates it (sankofa-belly-shadow) when data-flying="true".
+          The gradient runs dark-at-centre → transparent-at-edge so it
+          blends naturally with the body gradient underneath. */}
+      <ellipse
+        className="sankofa-belly-shadow"
+        cx="20"
+        cy="25"
+        rx="5.5"
+        ry="4.5"
+        fill={`url(#${bellyGradId})`}
+        opacity={0}
+        style={{ pointerEvents: "none" } as React.CSSProperties}
+      />
+
+      {/* ── Phase 26: Dorsal highlight stripe ─────────────────────────────
+          Slim luminous path across the upper back — the sky-light catch on
+          the dorsal surface during flight. Hidden at rest; CSS activates it
+          (sankofa-dorsal-hi) when data-flying="true". Runs as a narrow
+          ellipse along the top arc of the body. */}
+      <ellipse
+        className="sankofa-dorsal-hi"
+        cx="20"
+        cy="16.5"
+        rx="5.0"
+        ry="1.4"
+        fill={`url(#${dorsalGradId})`}
+        opacity={0}
+        transform="rotate(-5 20 16.5)"
+        style={{ pointerEvents: "none" } as React.CSSProperties}
+      />
+
+      {/* ── Phase 26: Chest warmth halo ────────────────────────────────────
+          Warm amber/gold radial that blooms outward from the chest on
+          meaningful community moments (helping, celebrating, donated).
+          CSS class sankofa-chest-warmth controls visibility.
+          Larger than the egg warmglow — body-scale, not egg-scale. */}
+      <ellipse
+        className="sankofa-chest-warmth"
+        cx="19"
+        cy="20"
+        rx="6.5"
+        ry="6"
+        fill={`url(#${chestWarmGradId})`}
+        opacity={0}
+        style={{ pointerEvents: "none" } as React.CSSProperties}
       />
     </>
   );

@@ -13,6 +13,7 @@ import { sankofaCssPhase22 } from "./phase-22";
 import { sankofaCssPhase23 } from "./phase-23";
 import { sankofaCssPhase24 } from "./phase-24";
 import { sankofaCssPhase25 } from "./phase-25";
+import { sankofaCssPhase26 } from "./phase-26";
 
 export { sankofaCssBase } from "./base";
 export { sankofaCssPhase3to11 } from "./phase-3-11";
@@ -24,8 +25,9 @@ export { sankofaCssPhase22 } from "./phase-22";
 export { sankofaCssPhase23 } from "./phase-23";
 export { sankofaCssPhase24 } from "./phase-24";
 export { sankofaCssPhase25 } from "./phase-25";
+export { sankofaCssPhase26 } from "./phase-26";
 
-/** Full Sankofa Bird CSS — all 25 phases concatenated in correct order.
+/** Full Sankofa Bird CSS — all 26 phases concatenated in correct order.
  *  Each phase file may be edited independently; this constant assembles them.
  *
  *  Phase history:
@@ -51,6 +53,12 @@ export { sankofaCssPhase25 } from "./phase-25";
  *                  edge fill-swap activation, wing atmosphere third layer, body/head
  *                  heading-reactive colour unity, neck heading shimmer, beak metallic
  *                  gold-white catchlight, shadow-side feather depth
+ *    phase-26    — LUMINOUS DEPTH & ORGANIC LIFE: L/R organic asymmetry (feather hue
+ *                  offsets, staggered breath timing), per-feather luminous breath (8-14s
+ *                  independent cycles), full lighting-from-above system (dorsal brightens /
+ *                  belly shadows / anatomy zone segmentation), body depth (belly shadow
+ *                  ellipse + dorsal stripe), enhanced egg warmth (nearby/accepted states +
+ *                  body warmth halo), tail fan luminosity breathing, feather tonal variation
  */
 export const sankofaBirdCss =
   sankofaCssBase +
@@ -62,4 +70,5 @@ export const sankofaBirdCss =
   sankofaCssPhase22 +
   sankofaCssPhase23 +
   sankofaCssPhase24 +
-  sankofaCssPhase25;
+  sankofaCssPhase25 +
+  sankofaCssPhase26;

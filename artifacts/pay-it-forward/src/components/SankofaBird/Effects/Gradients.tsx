@@ -243,6 +243,40 @@ export function Gradients(): React.ReactElement {
           <stop offset="100%" stopColor="#095E5A" stopOpacity="0.58" />
         </linearGradient>
 
+        {/* ── Phase 26: Belly shadow gradient ─────────────────────────────────
+            Semi-transparent dark gradient for the lower body belly-shadow
+            ellipse. Activates during flight (body in shadow of wings).
+            Centre: dark teal at 0.65 opacity; edge: fully transparent. */}
+        <radialGradient id={`${bodyGradId}-belly`} cx="50%" cy="60%" r="55%" fx="50%" fy="65%">
+          <stop offset="0%"   stopColor="#062E2E" stopOpacity="0.65" />
+          <stop offset="42%"  stopColor="#095E5A" stopOpacity="0.38" />
+          <stop offset="100%" stopColor="#062E2E" stopOpacity="0" />
+        </radialGradient>
+
+        {/* ── Phase 26: Dorsal highlight gradient ─────────────────────────────
+            Bright #0FE5D4 stripe across the upper dorsal surface — the sky
+            light catch on the bird's back. Used by sankofa-dorsal-hi path.
+            Runs horizontally (x-axis) across the top of the body ellipse. */}
+        <linearGradient id={`${bodyGradId}-dorsal`} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%"   stopColor="#0FE5D4" stopOpacity="0" />
+          <stop offset="22%"  stopColor="#0FE5D4" stopOpacity="0.55" />
+          <stop offset="50%"  stopColor="#00D4FF" stopOpacity="0.70" />
+          <stop offset="78%"  stopColor="#0FE5D4" stopOpacity="0.55" />
+          <stop offset="100%" stopColor="#0FE5D4" stopOpacity="0" />
+        </linearGradient>
+
+        {/* ── Phase 26: Chest warmth gradient ─────────────────────────────────
+            Warm amber/gold radial for the chest-warmth element. Activates on
+            helping / celebrating / donated — the community warmth radiating
+            outward from the bird's heart/egg area. Warmer and larger than the
+            egg warm gradient — this is body-scale, not just egg-scale. */}
+        <radialGradient id={`${bodyGradId}-chest-warm`} cx="42%" cy="35%" r="60%" fx="38%" fy="28%">
+          <stop offset="0%"   stopColor="#fff4c2" stopOpacity="0.60" />
+          <stop offset="28%"  stopColor="#f0b800" stopOpacity="0.35" />
+          <stop offset="60%"  stopColor="#d97706" stopOpacity="0.14" />
+          <stop offset="100%" stopColor="#92400e" stopOpacity="0" />
+        </radialGradient>
+
       </defs>
     </>
   );
