@@ -242,6 +242,20 @@ export function Gradients(): React.ReactElement {
           <stop offset="55%"  stopColor="#0D9488" stopOpacity="0.68" />
           <stop offset="100%" stopColor="#095E5A" stopOpacity="0.58" />
         </linearGradient>
+        <linearGradient id={`${bodyGradId}-fsh`} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#0FE5D4" stopOpacity="0.88" />
+          <stop offset="45%" stopColor="#22D3EE" stopOpacity="0.72" />
+          <stop offset="75%" stopColor="#7C3AED" stopOpacity="0.42" />
+          <stop offset="100%" stopColor="#095E5A" stopOpacity="0.62" />
+        </linearGradient>
+
+        {/* Phase 27: reflected warm light across the dorsal body surface. */}
+        <radialGradient id={`${bodyGradId}-ambient`} cx="22%" cy="18%" r="78%" fx="18%" fy="12%">
+          <stop offset="0%" stopColor="#FFE4A3" stopOpacity="0.42" />
+          <stop offset="28%" stopColor="#F0B800" stopOpacity="0.24" />
+          <stop offset="62%" stopColor="#D97706" stopOpacity="0.10" />
+          <stop offset="100%" stopColor="#92400E" stopOpacity="0" />
+        </radialGradient>
 
         {/* ── Phase 26: Belly shadow gradient ─────────────────────────────────
             Semi-transparent dark gradient for the lower body belly-shadow

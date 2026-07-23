@@ -32,4 +32,7 @@ export {
   sankofaCssPhase22,
   sankofaCssPhase23,
   sankofaCssPhase24,
+  sankofaCssPhase25,
+  sankofaCssPhase26,
+  sankofaCssPhase27,
 } from "../../../sankofa-bird-css";

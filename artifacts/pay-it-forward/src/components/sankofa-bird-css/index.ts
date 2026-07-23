@@ -14,6 +14,7 @@ import { sankofaCssPhase23 } from "./phase-23";
 import { sankofaCssPhase24 } from "./phase-24";
 import { sankofaCssPhase25 } from "./phase-25";
 import { sankofaCssPhase26 } from "./phase-26";
+import { sankofaCssPhase27 } from "./phase-27";
 
 export { sankofaCssBase } from "./base";
 export { sankofaCssPhase3to11 } from "./phase-3-11";
@@ -26,8 +27,9 @@ export { sankofaCssPhase23 } from "./phase-23";
 export { sankofaCssPhase24 } from "./phase-24";
 export { sankofaCssPhase25 } from "./phase-25";
 export { sankofaCssPhase26 } from "./phase-26";
+export { sankofaCssPhase27 } from "./phase-27";
 
-/** Full Sankofa Bird CSS — all 26 phases concatenated in correct order.
+/** Full Sankofa Bird CSS — all 27 phases concatenated in correct order.
  *  Each phase file may be edited independently; this constant assembles them.
  *
  *  Phase history:
@@ -73,6 +75,10 @@ export { sankofaCssPhase26 } from "./phase-26";
  *                        data-bank-dir (left/right/none at 8deg threshold), directional
  *                        wing luminary bright/shadow, scapular sky-catch, tail iri sweep,
  *                        dorsal brightening, breast reflected light, p26-bank-iri-dir keyframe
+ *    phase-27    — LIVING FEATHERS & NATURAL LIGHT: night readability, slow
+ *                  cyan/teal/turquoise/violet structural-color cycling, shoulder
+ *                  and wingtip feather layers, reflected ambient light, organic
+ *                  neck/eye overlays, aerodynamic lighting, Safari guards
  */
 export const sankofaBirdCss =
   sankofaCssBase +
@@ -85,4 +91,5 @@ export const sankofaBirdCss =
   sankofaCssPhase23 +
   sankofaCssPhase24 +
   sankofaCssPhase25 +
-  sankofaCssPhase26;
+  sankofaCssPhase26 +
+  sankofaCssPhase27;

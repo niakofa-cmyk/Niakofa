@@ -43,6 +43,7 @@ import { RightWing }      from "../Flight/Wings";
 import { LeftWing }       from "../Flight/Wings";
 import { WingJoints }     from "../Flight/Wings";
 import { Scapulars }      from "../Flight/Wings";
+import { ShoulderFeathers, WingtipFeathers } from "../Flight/Wings";
 import { Body }           from "../Anatomy/Body";
 import { Neck, HeadSphere, Crest, Eye, Beak, ChirpRings, Egg } from "../Anatomy/Head";
 import { Legs }           from "../Anatomy/Legs";
@@ -322,8 +323,10 @@ export function Renderer({
                 <Tail />
                 <RightWing />
                 <LeftWing />
+                <WingtipFeathers />
                 <WingJoints />
                 <Scapulars />
+                <ShoulderFeathers />
                 <Body />
                 <g className="sankofa-bird-head">
                   <Neck />

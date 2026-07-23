@@ -162,6 +162,36 @@ export function Neck(): React.ReactElement {
           rotate: "var(--sme-neck-lower-deg, 0deg)",
         } as React.CSSProperties}
       />
+      {/* Phase 27: additive middle-neck sheen. The mixer still owns the
+          dynamic path and static fallback segments. */}
+      <path
+        className="sankofa-neck-mid-organic"
+        d="M15.5 14.3 C14.2 13.7 13.5 13.2 12.8 13.1"
+        fill="none"
+        stroke="#0FE5D4"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        opacity={0}
+        style={{
+          transformBox: "view-box",
+          transformOrigin: "15.5px 14.3px",
+          rotate: "var(--sme-neck-lower-deg, 0deg)",
+        } as React.CSSProperties}
+      />
+      <path
+        className="sankofa-neck-mid-organic-halo"
+        d="M15.5 14.3 C14.2 13.7 13.5 13.2 12.8 13.1"
+        fill="none"
+        stroke="#00C4EE"
+        strokeWidth="3.8"
+        strokeLinecap="round"
+        opacity={0}
+        style={{
+          transformBox: "view-box",
+          transformOrigin: "15.5px 14.3px",
+          rotate: "var(--sme-neck-lower-deg, 0deg)",
+        } as React.CSSProperties}
+      />
       <path
         className="sankofa-neck-seg sankofa-neck-seg-2"
         d="M13 13.2 C11.5 13.0 10.2 13.0 9 13.5"

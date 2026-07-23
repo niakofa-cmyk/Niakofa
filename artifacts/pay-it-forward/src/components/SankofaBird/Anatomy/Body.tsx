@@ -27,6 +27,7 @@ export function Body(): React.ReactElement {
   const bellyGradId     = `${bodyGradId}-belly`;
   const dorsalGradId    = `${bodyGradId}-dorsal`;
   const chestWarmGradId = `${bodyGradId}-chest-warm`;
+  const ambientGradId    = `${bodyGradId}-ambient`;
 
   return (
     <>
@@ -251,6 +252,20 @@ export function Body(): React.ReactElement {
         ry="6"
         fill={`url(#${chestWarmGradId})`}
         opacity={0}
+        style={{ pointerEvents: "none" } as React.CSSProperties}
+      />
+
+      {/* Phase 27: reflected ambient light. This is a low-opacity surface
+          reflection, not an outer glow, and is driven by lighting-factor. */}
+      <ellipse
+        className="sankofa-ambient-warmth"
+        cx="19.5"
+        cy="18.5"
+        rx="7"
+        ry="5.5"
+        fill={`url(#${ambientGradId})`}
+        opacity={0}
+        transform="rotate(-8 19.5 18.5)"
         style={{ pointerEvents: "none" } as React.CSSProperties}
       />
     </>
