@@ -209,6 +209,7 @@ export function RightWing(): React.ReactElement {
         fill="#00D4FF"
         opacity={0.55}
       />
+      <WingtipFeathers side="right" />
     </g>
   );
 }
@@ -389,6 +390,7 @@ export function LeftWing(): React.ReactElement {
         fill="#00D4FF"
         opacity={0.55}
       />
+      <WingtipFeathers side="left" />
     </g>
   );
 }
@@ -531,33 +533,44 @@ export function ShoulderFeathers(): React.ReactElement {
 // WINGTIP FEATHERS — Phase 27
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function WingtipFeathers(): React.ReactElement {
+export function WingtipFeathers({
+  side,
+}: {
+  side: "left" | "right";
+}): React.ReactElement {
   const { bodyGradId } = useBird();
   const featherOuterGradId = `${bodyGradId}-fo`;
 
+  if (side === "right") {
+    return (
+      <g className="sankofa-wingtip-feathers sankofa-wingtip-feathers-right">
+        <path
+          className="sankofa-wingtip-feather sankofa-wingtip-r-a"
+          d="M40.8 2.4 C41.9 0.3 41.5 -1.0 40.1 -1.2 C39.4 0.4 39.1 2.0 39.6 3.6 Z"
+          fill={`url(#${featherOuterGradId})`}
+          opacity={0.76}
+          style={{ transformBox: "view-box", transformOrigin: "40.8px 2.4px" } as React.CSSProperties}
+        />
+        <path
+          className="sankofa-wingtip-feather sankofa-wingtip-r-b"
+          d="M39.4 1.4 C40.2 -0.4 39.9 -1.4 38.7 -1.6 C38.1 0.1 37.9 1.8 38.4 3.1 Z"
+          fill="#0FE5D4"
+          opacity={0.62}
+          style={{ transformBox: "view-box", transformOrigin: "39.4px 1.4px" } as React.CSSProperties}
+        />
+        <path
+          className="sankofa-wingtip-feather sankofa-wingtip-r-c"
+          d="M41.6 3.5 C42.5 1.6 42.1 0.2 40.8 0.0 C40.2 1.6 40.0 3.2 40.5 4.4 Z"
+          fill="#0FE5D4"
+          opacity={0.45}
+          style={{ transformBox: "view-box", transformOrigin: "41.6px 3.5px" } as React.CSSProperties}
+        />
+      </g>
+    );
+  }
+
   return (
-    <>
-      <path
-        className="sankofa-wingtip-feather sankofa-wingtip-r-a"
-        d="M40.8 2.4 C41.9 0.3 41.5 -1.0 40.1 -1.2 C39.4 0.4 39.1 2.0 39.6 3.6 Z"
-        fill={`url(#${featherOuterGradId})`}
-        opacity={0.76}
-        style={{ transformBox: "view-box", transformOrigin: "40.8px 2.4px" } as React.CSSProperties}
-      />
-      <path
-        className="sankofa-wingtip-feather sankofa-wingtip-r-b"
-        d="M39.4 1.4 C40.2 -0.4 39.9 -1.4 38.7 -1.6 C38.1 0.1 37.9 1.8 38.4 3.1 Z"
-        fill="#0FE5D4"
-        opacity={0.62}
-        style={{ transformBox: "view-box", transformOrigin: "39.4px 1.4px" } as React.CSSProperties}
-      />
-      <path
-        className="sankofa-wingtip-feather sankofa-wingtip-r-c"
-        d="M41.6 3.5 C42.5 1.6 42.1 0.2 40.8 0.0 C40.2 1.6 40.0 3.2 40.5 4.4 Z"
-        fill="#0FE5D4"
-        opacity={0.45}
-        style={{ transformBox: "view-box", transformOrigin: "41.6px 3.5px" } as React.CSSProperties}
-      />
+    <g className="sankofa-wingtip-feathers sankofa-wingtip-feathers-left">
       <path
         className="sankofa-wingtip-feather sankofa-wingtip-l-a"
         d="M-0.8 2.4 C-1.9 0.3 -1.5 -1.0 -0.1 -1.2 C0.6 0.4 0.9 2.0 0.4 3.6 Z"
@@ -579,6 +592,6 @@ export function WingtipFeathers(): React.ReactElement {
         opacity={0.45}
         style={{ transformBox: "view-box", transformOrigin: "-1.6px 3.5px" } as React.CSSProperties}
       />
-    </>
+    </g>
   );
 }

@@ -8,7 +8,18 @@
 
 import { describe, it } from "node:test";
 import { expect } from "expect";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { sankofaBirdCss, sankofaCssPhase27 } from "../../components/sankofa-bird-css";
+
+const wingsSource = readFileSync(
+  fileURLToPath(new URL("../../components/SankofaBird/Flight/Wings.tsx", import.meta.url)),
+  "utf8",
+);
+const rendererSource = readFileSync(
+  fileURLToPath(new URL("../../components/SankofaBird/Core/Renderer.tsx", import.meta.url)),
+  "utf8",
+);
 
 describe("Phase 27: living feathers and natural light", () => {
   it("is included after Phase 26 in the combined CSS", () => {
@@ -32,6 +43,14 @@ describe("Phase 27: living feathers and natural light", () => {
     ]) {
       expect(sankofaCssPhase27).toContain(selector);
     }
+  });
+
+  it("keeps each wingtip layer inside its animated wing rig", () => {
+    expect(wingsSource).toContain('<WingtipFeathers side="right" />');
+    expect(wingsSource).toContain('<WingtipFeathers side="left" />');
+    expect(wingsSource).toContain("className=\"sankofa-sme-wing-right-rig\"");
+    expect(wingsSource).toContain("className=\"sankofa-sme-wing-left-rig\"");
+    expect(rendererSource).not.toContain("<WingtipFeathers />");
   });
 
   it("disables new animation channels for battery saver and reduced motion", () => {
