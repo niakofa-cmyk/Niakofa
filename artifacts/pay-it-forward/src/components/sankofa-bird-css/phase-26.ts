@@ -523,7 +523,7 @@ export const sankofaCssPhase26 = `
   }
 
   /* Egg warmglow: activate on nearby + accepted */
-  .sankofa-bird-rig[data-nearby="true"] .sankofa-egg-warmglow,
+  .sankofa-bird-rig[data-nearby-user="true"] .sankofa-egg-warmglow,
   .sankofa-bird-rig[data-accepted="true"] .sankofa-egg-warmglow {
     opacity: 0.28;
     transition: opacity 0.75s ease;
@@ -547,7 +547,7 @@ export const sankofaCssPhase26 = `
   }
 
   /* Body wing-glow: brightens on community warmth */
-  .sankofa-bird-rig[data-nearby="true"] .sankofa-body-wing-glow,
+  .sankofa-bird-rig[data-nearby-user="true"] .sankofa-body-wing-glow,
   .sankofa-bird-rig[data-helping="true"] .sankofa-body-wing-glow {
     opacity: 0.26;
     transition: opacity 0.75s ease;
@@ -726,8 +726,8 @@ export const sankofaCssPhase26 = `
   /* Helping/nearby: wing atmosphere warms slightly — overlapping warm haze */
   .sankofa-bird-rig[data-helping="true"] .sankofa-wing-luminary-r-a,
   .sankofa-bird-rig[data-helping="true"] .sankofa-wing-luminary-l-a,
-  .sankofa-bird-rig[data-nearby="true"] .sankofa-wing-luminary-r-a,
-  .sankofa-bird-rig[data-nearby="true"] .sankofa-wing-luminary-l-a {
+  .sankofa-bird-rig[data-nearby-user="true"] .sankofa-wing-luminary-r-a,
+  .sankofa-bird-rig[data-nearby-user="true"] .sankofa-wing-luminary-l-a {
     opacity: 0.16;
     transition: opacity 0.85s ease;
   }
