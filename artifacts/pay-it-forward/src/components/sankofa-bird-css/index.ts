@@ -53,12 +53,26 @@ export { sankofaCssPhase26 } from "./phase-26";
  *                  edge fill-swap activation, wing atmosphere third layer, body/head
  *                  heading-reactive colour unity, neck heading shimmer, beak metallic
  *                  gold-white catchlight, shadow-side feather depth
- *    phase-26    — LUMINOUS DEPTH & ORGANIC LIFE: L/R organic asymmetry (feather hue
- *                  offsets, staggered breath timing), per-feather luminous breath (8-14s
- *                  independent cycles), full lighting-from-above system (dorsal brightens /
- *                  belly shadows / anatomy zone segmentation), body depth (belly shadow
- *                  ellipse + dorsal stripe), enhanced egg warmth (nearby/accepted states +
- *                  body warmth halo), tail fan luminosity breathing, feather tonal variation
+ *    phase-26    — LUMINOUS DEPTH & ORGANIC LIFE (v2 — cascade-conflict-fixed):
+ *                  26.1 L/R organic asymmetry via animation keyframe peaks + scapular
+ *                       brightness (no hue-rotate on feathers — conflict with P25 fixed)
+ *                  26.2 Per-feather luminous breath: distinct R/L keyframes + periods
+ *                       (sankofa-breath-outer-r/l, breath-mid-r/l, breath-inner,
+ *                        breath-secondary-r/l) — wings never in phase
+ *                  26.3 Full sky-lighting system (dorsal/belly/luminary/crown/beak)
+ *                  26.4 Wing anatomy zone resting baseline + flight amplification
+ *                       (scapulars/secondaries/coverts always-on depth — gap fixed)
+ *                  26.5 Body depth: belly shadow + dorsal stripe + 4-tier tonal variation
+ *                       (rows 1-3 bright, 4-6 mid, 7-9 transitional, 10-11 dark base)
+ *                  26.6 Egg warm atmosphere (nearby/accepted + chest halo + halo pulse)
+ *                  26.7 Tail fan luminosity breathing + landing ground-effect tip glow
+ *                  26.8 Battery-saver + reduced-motion guards (includes rs3/ls3)
+ *                  26.9 Atmosphere: overlapping transparent wing/body layers, softer
+ *                       0.85-1.0s transitions, ambient baseline for all luminary elements
+ *                  26.10 Iridescent highlights that shift with movement + banking lighting:
+ *                        data-bank-dir (left/right/none at 8deg threshold), directional
+ *                        wing luminary bright/shadow, scapular sky-catch, tail iri sweep,
+ *                        dorsal brightening, breast reflected light, p26-bank-iri-dir keyframe
  */
 export const sankofaBirdCss =
   sankofaCssBase +

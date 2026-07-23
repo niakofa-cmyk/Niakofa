@@ -208,6 +208,7 @@ export function Renderer({
           data-upcoming-turn={upcomingTurnDirection ?? "none"}
           data-zoom={zoomTier}
           data-hard-bank={Math.abs(effectiveBankDeg) > 20 ? "true" : "false"}
+          data-bank-dir={effectiveBankDeg > 8 ? "right" : effectiveBankDeg < -8 ? "left" : "none"}
           data-nearby-user={nearbyUser ? "true" : "false"}
           data-speed={getSpeedTier(speedMs)}
           data-approaching={approaching ? "true" : "false"}
