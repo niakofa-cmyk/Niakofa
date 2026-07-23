@@ -1,0 +1,1355 @@
+import { useState, useEffect, useRef, type ReactElement } from "react";
+import { getIpLocation } from "@/lib/locale-utils";
+import { useLocation } from "wouter";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { ChevronLeft, DollarSign, Heart, Gift, AlertTriangle, MapPin, Plus, Minus, Camera, X, ShieldCheck, Building2, User, Sparkles, Loader2, Globe, Search } from "lucide-react";
+import { isSensitiveCategory } from "@workspace/trust-tiers";
+import { Button } from "@/components/ui/button";
+import { authHeaders } from "@/lib/auth";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "@/hooks/use-toast";
+import { useCreateRequest, getGetRequestsQueryKey, getGetNearbyRequestsQueryKey } from "@workspace/api-client-react";
+import { useAppContext } from "@/lib/AppContext";
+import { useQueryClient } from "@tanstack/react-query";
+import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
+import { WaiverModal, WAIVER_CATEGORIES, CURRENT_TOS_VERSION, type WaiverCategory } from "@/components/WaiverModal";
+import "mapbox-gl/dist/mapbox-gl.css";
+import MapboxMap, { Marker } from "react-map-gl/mapbox";
+import type { MapRef } from "react-map-gl/mapbox";
+
+type PaymentType = "immediate" | "pay_it_forward" | "goodwill";
+
+const CATEGORIES = [
+  // Community
+  { value: "groceries",         label: "🛒 Groceries",         group: "Community" },
+  { value: "transportation",    label: "🚗 Transportation",     group: "Community" },
+  { value: "errands",           label: "📦 Errands",            group: "Community" },
+  { value: "home_repair",       label: "🔧 Home Repair",        group: "Community" },
+  { value: "medical",           label: "💊 Medical",            group: "Community" },
+  { value: "emergency",         label: "🚨 Emergency",          group: "Community" },
+  { value: "moving_labor",      label: "📦 Moving & Labor",     group: "Community" },
+  { value: "pet_care",          label: "🐾 Pet Care",           group: "Community" },
+  { value: "childcare",         label: "🧸 Childcare",          group: "Community" },
+  { value: "senior_care",       label: "🧓 Senior Care",        group: "Community" },
+  { value: "yard_work",         label: "🌿 Yard Work",          group: "Community" },
+  { value: "tutoring",          label: "📚 Tutoring",           group: "Community" },
+  { value: "cleaning",          label: "🧹 Cleaning",           group: "Community" },
+  { value: "meal_prep",         label: "🍲 Meal Prep",          group: "Community" },
+  { value: "paperwork",         label: "📄 Paperwork Help",     group: "Community" },
+  { value: "local_farm",        label: "🌾 Local Farm",         group: "Community" },
+  { value: "food_pantry",       label: "🥫 Food Pantry",        group: "Community" },
+  // Expanded marketplace categories (broader than mutual-aid)
+  { value: "legal_aid",         label: "⚖️ Legal Aid",           group: "Community" },
+  { value: "financial_coaching",label: "💰 Financial Help",      group: "Community" },
+  { value: "job_assistance",    label: "👔 Job Search Help",     group: "Community" },
+  { value: "language_help",     label: "🌐 Translation / Interpretation", group: "Community" },
+  { value: "mental_health_peer",label: "💜 Peer Support",        group: "Community" },
+  { value: "technology_help",   label: "📱 Technology Help",     group: "Community" },
+  // Business
+  { value: "stock_shelves",     label: "📦 Stock Shelves",      group: "Business" },
+  { value: "event_setup",       label: "🎪 Event Setup",        group: "Business" },
+  { value: "delivery_run",      label: "🚚 Delivery Run",       group: "Business" },
+  { value: "tech_support",      label: "💻 Tech Support",       group: "Business" },
+  { value: "business_services", label: "💼 Business Services",  group: "Business" },
+  // Catch-all
+  { value: "other",             label: "📋 Other",              group: "Community" },
+] as const;
+
+type CategoryValue = typeof CATEGORIES[number]["value"];
+
+const formSchema = z.object({
+  title: z.string().min(3, "Title is too short").max(80, "Title is too long"),
+  description: z.string().optional(),
+  category: z.enum([
+    "groceries", "transportation", "errands", "home_repair", "medical", "emergency",
+    "moving_labor", "pet_care", "childcare", "senior_care", "yard_work", "tutoring",
+    "cleaning", "meal_prep", "paperwork", "local_farm", "food_pantry",
+    "stock_shelves", "event_setup", "delivery_run", "tech_support", "business_services",
+    // Expanded marketplace categories
+    "legal_aid", "financial_coaching", "job_assistance", "language_help",
+    "mental_health_peer", "technology_help",
+    "other",
+  ] as [string, ...string[]]),
+  urgency: z.enum(["low", "medium", "high", "emergency"]),
+  pay_it_forward_amount: z.number().optional(),
+  pledge_amount: z.number().optional(),
+  // Optional task duration estimate — used by the Community Pool to compute a
+  // livable-wage guaranteed minimum (hours × $15/hr rate vs flat floor).
+  estimated_hours: z.number().min(0.5, "At least 0.5 hours").max(24, "Max 24 hours").optional(),
+});
+
+const PAYMENT_OPTIONS: { type: PaymentType; label: string; desc: string; color: string; icon: ReactElement }[] = [
+  {
+    type: "immediate",
+    label: "Pay Now",
+    desc: "Compensate helper immediately upon completion",
+    color: "border-green-500/60 bg-green-500/10 text-green-400",
+    icon: <DollarSign className="w-5 h-5" />,
+  },
+  {
+    type: "pay_it_forward",
+    label: "Pay It Forward",
+    desc: "Can't afford it today? Pay it forward when you're able — no judgment, no pressure.",
+    color: "border-primary/60 bg-primary/10 text-primary",
+    icon: <Heart className="w-5 h-5" />,
+  },
+  {
+    type: "goodwill",
+    label: "Goodwill",
+    desc: "Volunteer help — no payment expected",
+    color: "border-purple-500/60 bg-purple-500/10 text-purple-400",
+    icon: <Gift className="w-5 h-5" />,
+  },
+];
+
+const COMMUNITY_CATS = CATEGORIES.filter(c => c.group === "Community");
+const BUSINESS_CATS = CATEGORIES.filter(c => c.group === "Business");
+
+const DRAFT_KEY = "niakofa_request_draft";
+
+interface PendingPayment {
+  clientSecret: string;
+  amount: number;
+  requestTitle: string;
+}
+
+function checkWebGL(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    return !!(
+      window.WebGLRenderingContext &&
+      (canvas.getContext("webgl") || canvas.getContext("experimental-webgl"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+export default function NewRequestScreen() {
+  const [, setLocation] = useLocation();
+  const { currentUser, myLocation, userPlace } = useAppContext();
+  const queryClient = useQueryClient();
+  const createMutation = useCreateRequest();
+  const [paymentType, setPaymentType] = useState<PaymentType>("pay_it_forward");
+  const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
+  const [creatingPaymentIntent, setCreatingPaymentIntent] = useState(false);
+  const [webGLSupported] = useState(checkWebGL);
+  const [checklistItems, setChecklistItems] = useState<string[]>([]);
+  const [accessibilityNeeds, setAccessibilityNeeds] = useState<string[]>([]);
+  const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [niaAnalysis, setNiaAnalysis] = useState<string | null>(null);
+  const [niaAnalyzing, setNiaAnalyzing] = useState(false);
+  // Map-center prefill — the map screen's "Request Help Here" pill and its
+  // long-press gesture both land here with ?lat=&lng= for wherever the
+  // requester was actually looking, instead of always defaulting to their
+  // raw GPS fix. Explicit URL coordinates win over GPS since they represent
+  // a deliberate choice the requester already made on the previous screen.
+  const initialUrlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const urlLat = initialUrlParams ? Number(initialUrlParams.get("lat")) : NaN;
+  const urlLng = initialUrlParams ? Number(initialUrlParams.get("lng")) : NaN;
+  const hasUrlPin = Number.isFinite(urlLat) && Number.isFinite(urlLng);
+  const [pinLocation, setPinLocation] = useState<{ lat: number; lng: number } | null>(
+    hasUrlPin ? { lat: urlLat, lng: urlLng } : myLocation ? { lat: myLocation.lat, lng: myLocation.lng } : null
+  );
+  // IP-based map center — shown when GPS is unavailable so the user can see the
+  // map and drag the pin to their actual location instead of seeing "Waiting for GPS".
+  const [ipMapCenter, setIpMapCenter] = useState<{ lat: number; lng: number } | null>(null);
+
+  // ── Address geocoding search ───────────────────────────────────────────────
+  const [addressSearch, setAddressSearch] = useState("");
+  const [addressSuggestions, setAddressSuggestions] = useState<
+    { place_name: string; center: [number, number] }[]
+  >([]);
+  const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
+  const [addressSearching, setAddressSearching] = useState(false);
+  const mapRef = useRef<MapRef>(null);
+  const addressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Story-to-Action: read URL params pre-filled from Diaspora Globe stories
+  const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const prefillTitle = urlParams?.get("title") ?? "";
+  const prefillNeighborhood = urlParams?.get("neighborhood") ?? "";
+  const [storyInspiredBanner] = useState(!!prefillTitle);
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      title: prefillTitle,
+      description: prefillNeighborhood ? `Inspired by the ${prefillNeighborhood} diaspora community.` : "",
+      category: "other",
+      urgency: "medium",
+    },
+  });
+
+  const urgency = form.watch("urgency");
+  const selectedCategory = form.watch("category");
+  const isSensitive = isSensitiveCategory(selectedCategory);
+  const [sensitiveAcknowledged, setSensitiveAcknowledged] = useState(false);
+
+  // ── Liability/ToS waiver state ─────────────────────────────────────────────
+  // WaiverModal is shown for WAIVER_CATEGORIES (superset of SENSITIVE_CATEGORIES).
+  // pendingMutateRef stores a closure that calls createMutation.mutate() with the
+  // fully-built args; the modal invokes it after the user accepts the agreement.
+  const [showWaiverModal, setShowWaiverModal] = useState(false);
+  const [waiverAccepted, setWaiverAccepted] = useState(false);
+  const [waiverPending, setWaiverPending] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pendingMutateRef = useRef<(() => void) | null>(null);
+  const isWaiverCategory = WAIVER_CATEGORIES.includes(selectedCategory as WaiverCategory);
+
+  // ── County/Community — GPS-triangulated, never manually chosen ─────────────
+  interface CommunityOption { id: number; name: string; pool_health_ratio: number; pool_pct: number }
+  const [communities, setCommunities] = useState<CommunityOption[]>([]);
+  const [geoMatchedCommunity, setGeoMatchedCommunity] = useState<CommunityOption | null>(null);
+  const [geoDetecting, setGeoDetecting] = useState(false);
+
+  // "Notify me when this county activates" — captured for the outside-coverage
+  // banner below. Backed by coverage_interest (migration 0065); purely a
+  // demand signal for admins, no pool logic reads it.
+  const [notifyMeSent, setNotifyMeSent] = useState(false);
+  const [notifyMeLoading, setNotifyMeLoading] = useState(false);
+  const handleNotifyMe = async () => {
+    if (!pinLocation) return;
+    setNotifyMeLoading(true);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const res = await fetch(`${base}/api/coverage-interest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ lat: pinLocation.lat, lng: pinLocation.lng, neighborhood: userPlace?.city ?? userPlace?.county ?? undefined }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? "Couldn't save that — try again.");
+      }
+      setNotifyMeSent(true);
+      toast({ title: "Got it — we'll notify you when your county activates" });
+    } catch (err) {
+      toast({ title: err instanceof Error ? err.message : "Couldn't save that", variant: "destructive" });
+    } finally {
+      setNotifyMeLoading(false);
+    }
+  };
+
+  // Load the community list once on mount
+  useEffect(() => {
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/communities`)
+      .then(r => r.ok ? r.json() : { communities: [] })
+      .then((j: { communities: CommunityOption[] }) => {
+        if (Array.isArray(j.communities)) setCommunities(j.communities);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Whenever the pin moves, reverse-geocode → match county → auto-assign
+  useEffect(() => {
+    if (!pinLocation || communities.length === 0) return;
+    const token = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
+    if (!token) return;
+
+    setGeoDetecting(true);
+    const { lat, lng } = pinLocation;
+    fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?types=district,place&limit=1&access_token=${token}`,
+    )
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { features?: { text: string; context?: { text: string }[] }[] } | null) => {
+        if (!data?.features?.length) return;
+
+        // Collect candidate names from the top feature: feature.text + each context text
+        const feature = data.features[0]!;
+        const candidates = [
+          feature.text,
+          ...(feature.context ?? []).map(c => c.text),
+        ].map(s => s.toLowerCase().replace(/\s+county$/i, "").trim());
+
+        // Find the best-matching community (strip "county" from both sides before comparing).
+        // BUG FIX: this used to fall back to `communities[0]` whenever nothing matched —
+        // which silently enrolled requesters outside any covered county (e.g. Recife,
+        // Brazil) into an arbitrary US county's pool. No match now means no match:
+        // `geoMatchedCommunity` stays null and the UI below tells the requester their
+        // area isn't covered yet instead of quietly mis-attributing their request.
+        const match = communities.find(c => {
+          const normalized = c.name.toLowerCase().replace(/\s+county$/i, "").trim();
+          return candidates.some(cand => cand.includes(normalized) || normalized.includes(cand));
+        }) ?? null;
+
+        setGeoMatchedCommunity(match);
+        if (!match) return;
+
+        // Silently persist so future requests inherit the correct pool
+        if (currentUser) {
+          const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+          fetch(`${base}/api/users/me/community`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", ...authHeaders() },
+            body: JSON.stringify({ community_id: match.id }),
+          }).catch(() => {});
+        }
+      })
+      .catch(() => {})
+      .finally(() => setGeoDetecting(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinLocation, communities]);
+
+  // ── Business "posting as" state ────────────────────────────────────────────
+  const [myBusinesses, setMyBusinesses] = useState<{ id: number; display_name: string }[]>([]);
+  const [selectedBusinessId, setSelectedBusinessId] = useState<number | null>(null);
+
+  // Reset acknowledgments whenever the user switches category — consent must
+  // be given for the specific category being posted.
+  useEffect(() => {
+    setSensitiveAcknowledged(false);
+    setWaiverAccepted(false);
+    pendingMutateRef.current = null;
+  }, [selectedCategory]);
+
+  // Fetch approved businesses the user belongs to (for "posting as" switcher)
+  useEffect(() => {
+    if (!currentUser) return;
+    const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+    fetch(`${base}/api/businesses/mine`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : [])
+      .then((data: { id: number; display_name: string; approval_status?: string }[]) => {
+        if (Array.isArray(data)) {
+          setMyBusinesses(data.filter(b => !b.approval_status || b.approval_status === "approved"));
+        }
+      })
+      .catch(() => {});
+  }, [currentUser]);
+
+  // When switching TO a business, always default to immediate payment (pay now).
+  // A business should never default to free volunteer work.
+  // The user can still manually choose goodwill after the switch —
+  // this only fires on the transition to a selected business, not on every render.
+  // Dependency: only [selectedBusinessId] so manual payment-type changes by the user
+  // after picking a business are not overwritten.
+  useEffect(() => {
+    if (selectedBusinessId !== null) {
+      setPaymentType("immediate");
+    }
+  }, [selectedBusinessId]);
+
+  // Offline draft: restore on mount, auto-save on every change, clear on successful submit
+  // Skip draft restore when story-to-action pre-fill is active (URL params take priority)
+  useEffect(() => {
+    if (prefillTitle) return; // story-to-action pre-fill overrides any saved draft
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const vals = JSON.parse(saved) as Record<string, unknown>;
+        form.reset({
+          title:       String(vals.title ?? ""),
+          description: String(vals.description ?? ""),
+          category:    String(vals.category ?? "other"),
+          urgency:     (vals.urgency as "low" | "medium" | "high" | "emergency") ?? "medium",
+        });
+        toast({ title: "✏️ Draft restored", description: "Your previous unfinished request has been loaded." });
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const sub = form.watch(vals => {
+      if (vals.title) {
+        try { localStorage.setItem(DRAFT_KEY, JSON.stringify(vals)); } catch {}
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [form]);
+
+  // Sync pinLocation from GPS when it first becomes available
+  useEffect(() => {
+    if (myLocation && !pinLocation) {
+      setPinLocation({ lat: myLocation.lat, lng: myLocation.lng });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myLocation]);
+
+  // IP geolocation fallback — runs once on mount when GPS is not yet available.
+  // Gives the map a meaningful center (e.g., Lagos, London, Nairobi) instead of
+  // showing a blank "Waiting for GPS…" screen that blocks international users.
+  useEffect(() => {
+    if (myLocation || pinLocation) return; // GPS already provided a location
+    getIpLocation().then(loc => {
+      if (!loc || pinLocation || myLocation) return; // GPS arrived while we fetched
+      setIpMapCenter({ lat: loc.lat, lng: loc.lng });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Address geocoding — called when user types in the address search box.
+  // A query-token guard (not just the debounce) discards any response that
+  // isn't for the most recent query: the debounce only prevents overlapping
+  // *scheduling* of fetches, but two back-to-back debounce windows (pause,
+  // type more, pause again) can still have their fetches resolve out of
+  // order over a slow/variable connection, momentarily showing stale
+  // suggestions for an earlier keystroke.
+  const addressSearchTokenRef = useRef(0);
+  const handleAddressSearch = (value: string) => {
+    setAddressSearch(value);
+    if (!value.trim()) {
+      setAddressSuggestions([]);
+      setShowAddressSuggestions(false);
+      return;
+    }
+    if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+    addressDebounceRef.current = setTimeout(async () => {
+      const token = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
+      if (!token) return;
+      const myToken = ++addressSearchTokenRef.current;
+      setAddressSearching(true);
+      try {
+        const center = pinLocation ?? myLocation ?? ipMapCenter;
+        const proximity = center ? `&proximity=${center.lng},${center.lat}` : "";
+        const res = await fetch(
+          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(value)}.json?limit=5&types=address,place,neighborhood,locality${proximity}&access_token=${token}`
+        );
+        if (!res.ok) return;
+        if (myToken !== addressSearchTokenRef.current) return; // a newer search superseded this one
+        const data = await res.json() as { features?: { place_name: string; center: [number, number] }[] };
+        setAddressSuggestions(data.features ?? []);
+        setShowAddressSuggestions(true);
+      } catch { /* silently ignore */ }
+      finally { if (myToken === addressSearchTokenRef.current) setAddressSearching(false); }
+    }, 400);
+  };
+
+  const handleSelectAddress = (suggestion: { place_name: string; center: [number, number] }) => {
+    const [lng, lat] = suggestion.center;
+    setPinLocation({ lat, lng });
+    setAddressSearch(suggestion.place_name);
+    setShowAddressSuggestions(false);
+    // Fly the map to the selected address
+    mapRef.current?.flyTo({ center: [lng, lat], zoom: 15, duration: 800 });
+  };
+
+  const finishAndNavigate = () => {
+    queryClient.invalidateQueries({ queryKey: getGetRequestsQueryKey() });
+    if (myLocation) {
+      queryClient.invalidateQueries({ queryKey: getGetNearbyRequestsQueryKey({ lat: myLocation.lat, lng: myLocation.lng }) });
+    }
+    setLocation("/");
+  };
+
+  const handleNiaAnalyzeImage = async () => {
+    if (!photoDataUrl) return;
+    setNiaAnalyzing(true);
+    setNiaAnalysis(null);
+    try {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const res = await fetch(`${base}/api/nia/analyze-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          imageBase64: photoDataUrl,
+          question: "Describe what you see and summarize what kind of help is needed in 1–2 sentences, so a nearby helper can quickly understand the task.",
+        }),
+      });
+      if (!res.ok) {
+        toast({ title: "Nia couldn't analyze the image — try again", variant: "destructive" });
+        return;
+      }
+      const data = await res.json() as { analysis?: string; error?: string };
+      if (data.analysis) {
+        setNiaAnalysis(data.analysis);
+      } else {
+        toast({ title: "No analysis returned", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Could not reach Nia — check your connection", variant: "destructive" });
+    } finally {
+      setNiaAnalyzing(false);
+    }
+  };
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setPhotoError("Photo must be under 5MB");
+      return;
+    }
+    setPhotoError(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const original = ev.target?.result as string;
+      // Compress to max 800px on client side
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 800;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        setPhotoDataUrl(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      img.src = original;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    if (!currentUser || !pinLocation) {
+      toast({ title: "Error", description: "Please confirm your pickup location on the map", variant: "destructive" });
+      return;
+    }
+
+    // Append checklist and accessibility needs to description
+    const extras: string[] = [];
+    const filledItems = checklistItems.filter(i => i.trim());
+    if (filledItems.length > 0) {
+      extras.push("Items needed:\n" + filledItems.map(i => `• ${i}`).join("\n"));
+    }
+    if (accessibilityNeeds.length > 0) {
+      const labels: Record<string, string> = {
+        wheelchair: "Wheelchair accessible location",
+        female_helper: "Prefer female helper",
+        pet_friendly: "Pet-friendly",
+        non_smoking: "Non-smoking",
+      };
+      extras.push("Needs: " + accessibilityNeeds.map(n => labels[n] ?? n).join(", "));
+    }
+    const fullDescription = [values.description, ...extras].filter(Boolean).join("\n\n");
+
+    // Build the mutation call as a closure so it can be deferred through the
+    // WaiverModal without re-running the submit pipeline.
+    const executePost = () => createMutation.mutate({
+      data: {
+        title: values.title,
+        description: fullDescription || undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        category: values.category as any,
+        urgency: values.urgency as any,
+        payment_type: paymentType,
+        requester_id: currentUser.id,
+        lat: pinLocation.lat,
+        lng: pinLocation.lng,
+        neighborhood: userPlace?.city ?? userPlace?.county ?? undefined,
+        pay_it_forward_amount: values.pay_it_forward_amount,
+        pledge_amount: values.pledge_amount,
+        ...(values.estimated_hours ? { estimated_hours: values.estimated_hours } as Record<string, unknown> : {}),
+        // Always true once waiver is accepted; server validates this for sensitive categories
+        ...(isSensitive ? { sensitive_acknowledged: true } : {}),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...(photoDataUrl ? { photo_url: photoDataUrl } as any : {}),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...(selectedBusinessId !== null ? { business_id: selectedBusinessId } as any : {}),
+      }
+    }, {
+      onSuccess: async (request) => {
+        localStorage.removeItem(DRAFT_KEY);
+
+        // Staff posts under a business go to the owner approval queue first.
+        if (request.status === "pending_owner_approval") {
+          toast({
+            title: "⏳ Sent to owner approval",
+            description: "Your request is pending approval from the business owner before it goes live.",
+          });
+          finishAndNavigate();
+          return;
+        }
+
+        // "X helpers online near you" — fetched once, best-effort, so the
+        // confirmation toast reflects real nearby supply instead of a generic
+        // line. Never blocks posting if it's slow or fails.
+        let helperCountDescription = "Nearby helpers have been notified in real time.";
+        try {
+          const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+          const helpersRes = await fetch(
+            `${base}/api/helpers/online?lat=${pinLocation.lat}&lng=${pinLocation.lng}&radius_miles=10`,
+            { headers: authHeaders() }
+          );
+          if (helpersRes.ok) {
+            const helpersData = await helpersRes.json() as unknown[];
+            const count = Array.isArray(helpersData) ? helpersData.length : 0;
+            if (count > 0) helperCountDescription = `${count} helper${count === 1 ? "" : "s"} online near you right now.`;
+          }
+        } catch { /* best-effort — keep the generic description */ }
+
+        toast({ title: "📍 Request posted!", description: helperCountDescription });
+
+        // ── Pay Now: create PaymentIntent and show Stripe checkout ──────────
+        const amount = values.pay_it_forward_amount;
+        if (paymentType === "immediate" && amount && amount > 0 && isStripeConfigured()) {
+          setCreatingPaymentIntent(true);
+          try {
+            const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+            const res = await fetch(`${base}/api/stripe/payment-intent`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ...authHeaders() },
+              body: JSON.stringify({
+                requestId: request.id,
+                amount,
+                requesterId: currentUser.id,
+              }),
+            });
+
+            if (res.ok) {
+              const { clientSecret } = await res.json() as { clientSecret: string };
+              setPendingPayment({ clientSecret, amount, requestTitle: values.title });
+              return; // wait for payment modal to complete
+            } else {
+              const err = await res.json() as { error?: string; setup?: string };
+              if (res.status === 503) {
+                toast({
+                  title: "Stripe not configured",
+                  description: err.setup ?? "Ask the admin to add the Stripe API key to enable real payments.",
+                });
+              } else {
+                toast({ title: "Could not create payment", description: err.error ?? "Please try again.", variant: "destructive" });
+              }
+            }
+          } catch {
+            toast({ title: "Network error — payment skipped", variant: "destructive" });
+          } finally {
+            setCreatingPaymentIntent(false);
+          }
+        }
+
+        finishAndNavigate();
+      },
+      onError: (err) => {
+        toast({ title: "Failed to post request", description: String(err), variant: "destructive" });
+      }
+    });
+
+    // Waiver categories (childcare, senior_care, medical, home_repair, moving_labor) require
+    // the user to accept the liability / community ToS before the request goes live.
+    // Store the executePost closure in a ref so the WaiverModal can invoke it after acceptance.
+    if (isWaiverCategory && !waiverAccepted) {
+      pendingMutateRef.current = executePost;
+      setShowWaiverModal(true);
+      return;
+    }
+
+    executePost();
+  };
+
+  return (
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      <div className="sticky top-0 z-10 bg-card border-b border-border p-4 pt-safe flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="rounded-full">
+          <ChevronLeft className="w-6 h-6" />
+        </Button>
+        <div>
+          <h1 className="text-xl font-bold uppercase tracking-widest">New Request</h1>
+          <p className="text-xs text-muted-foreground">Helpers are notified in real time</p>
+        </div>
+      </div>
+
+      <div className="flex-1 p-5 overflow-y-auto">
+        <div className="max-w-md mx-auto space-y-6">
+          {/* Story-to-Action banner: shown when user arrived from Diaspora Globe */}
+          {storyInspiredBanner && (
+            <div className="bg-primary/10 border border-primary/30 rounded-xl p-3 flex items-center gap-3">
+              <Globe className="w-5 h-5 text-primary shrink-0" />
+              <div>
+                <div className="font-bold text-sm text-primary">Inspired by a Diaspora story</div>
+                <div className="text-xs text-muted-foreground">Pre-filled from the Diaspora Globe — edit freely</div>
+              </div>
+            </div>
+          )}
+
+          {urgency === "emergency" && (
+            <div className="bg-destructive/10 border border-destructive/40 rounded-xl p-3 flex items-center gap-3 text-destructive">
+              <AlertTriangle className="w-5 h-5 shrink-0 animate-pulse" />
+              <div>
+                <div className="font-bold text-sm">Emergency Request</div>
+                <div className="text-xs opacity-80">This will be dispatched to helpers with highest priority</div>
+              </div>
+            </div>
+          )}
+
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+              <FormField
+                control={form.control}
+                name="title"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">What do you need?</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. Ride to pharmacy, grocery pickup..." className="bg-card border-border text-base py-5" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid grid-cols-2 gap-3">
+                <FormField
+                  control={form.control}
+                  name="category"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Category</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="bg-card border-border h-11">
+                            <SelectValue placeholder="Select..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-muted-foreground">Community</div>
+                          {COMMUNITY_CATS.map(c => (
+                            <SelectItem key={c.value} value={c.value}>
+                              {c.label}{isSensitiveCategory(c.value) ? " 🛡️" : ""}
+                            </SelectItem>
+                          ))}
+                          <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-muted-foreground border-t border-border mt-1 pt-2">Business</div>
+                          {BUSINESS_CATS.map(c => (
+                            <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="urgency"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Urgency</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger className={`bg-card border-border h-11 ${field.value === 'emergency' ? 'text-destructive font-bold' : ''}`}>
+                            <SelectValue placeholder="Select..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high" className="text-orange-500">High</SelectItem>
+                          <SelectItem value="emergency" className="text-destructive font-bold">🚨 Emergency</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* ── Community pool — GPS-triangulated, read-only ─────────── */}
+              {communities.length > 0 && (() => {
+                // Only fall back to communities[0] before a pin exists (nothing to
+                // match yet). Once a pin is placed, a null geoMatchedCommunity means
+                // the pinned location genuinely isn't inside any covered county —
+                // that must render as "not covered yet", never as an arbitrary pool.
+                const c = pinLocation ? geoMatchedCommunity : communities[0];
+                const outsideCoverage = !!pinLocation && !geoDetecting && !geoMatchedCommunity;
+                const hRatio = c?.pool_health_ratio ?? 1;
+                const healthColor = hRatio >= 0.9 ? "text-green-400" : hRatio >= 0.7 ? "text-yellow-400" : "text-orange-400";
+                const healthLabel = hRatio >= 0.9 ? "Fully Funded" : hRatio >= 0.7 ? "Healthy" : "Building Up";
+                return (
+                  <div className={`bg-card border rounded-2xl p-4 space-y-2 ${outsideCoverage ? "border-amber-500/40" : "border-border"}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                        <Globe className="w-3.5 h-3.5" /> Community Pool
+                      </div>
+                      {c && !outsideCoverage && (
+                        <div className={`text-[10px] font-black ${healthColor} flex items-center gap-1`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${hRatio >= 0.9 ? "bg-green-400" : hRatio >= 0.7 ? "bg-yellow-400" : "bg-orange-400"}`} />
+                          {healthLabel} · {c.pool_pct}%
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {geoDetecting ? (
+                        <><Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" /><span className="text-xs text-muted-foreground">Detecting your county…</span></>
+                      ) : outsideCoverage ? (
+                        <><AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" /><span className="text-xs text-amber-400 font-semibold">Your area doesn't have an active pool yet</span></>
+                      ) : c ? (
+                        <><MapPin className="w-3.5 h-3.5 text-primary shrink-0" /><span className="text-sm font-black">{c.name}</span></>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Pin your location to detect your county</span>
+                      )}
+                    </div>
+
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      {outsideCoverage
+                        ? "You can still post your request and neighbors can help directly — it just won't be backed by a guaranteed-minimum pool until your county joins."
+                        : "Detected from your pin · This pool guarantees helpers a livable-wage minimum the moment your task completes."}
+                    </p>
+
+                    {outsideCoverage && (
+                      notifyMeSent ? (
+                        <p className="text-[11px] font-semibold text-green-400">✓ We'll let you know when your county activates</p>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleNotifyMe}
+                          disabled={notifyMeLoading}
+                          className="text-[11px] font-black uppercase tracking-wider text-primary underline disabled:opacity-50"
+                        >
+                          {notifyMeLoading ? "Saving…" : "Notify me when this county activates"}
+                        </button>
+                      )
+                    )}
+                  </div>
+                );
+              })()}
+
+              {isSensitive && (
+                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-400">
+                    <ShieldCheck className="w-5 h-5 shrink-0" />
+                    <p className="text-sm font-bold">Extra safeguards apply to this category</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Because this request involves care for a vulnerable person, only <span className="font-semibold text-foreground">Verified Helpers</span> who
+                    have completed identity verification can claim it. It may take a little longer to get matched.
+                  </p>
+                </div>
+              )}
+
+              {/* Waiver notice for all high-risk categories */}
+              {isWaiverCategory && (
+                <div className={`rounded-xl border p-4 space-y-2 ${waiverAccepted ? "border-green-500/40 bg-green-500/10" : "border-primary/40 bg-primary/5"}`}>
+                  <div className={`flex items-center gap-2 ${waiverAccepted ? "text-green-400" : "text-primary"}`}>
+                    <ShieldCheck className="w-4 h-4 shrink-0" />
+                    <p className="text-sm font-bold">
+                      {waiverAccepted ? "Community Agreement Accepted ✓" : "Community Agreement Required"}
+                    </p>
+                  </div>
+                  {waiverAccepted ? (
+                    <p className="text-xs text-green-400/80">
+                      You've reviewed and accepted the liability waiver for this category.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Clicking "Post Request" will open our Community Agreement for you to review.
+                      It covers liability, helper vetting responsibility, and the pay-it-forward gift structure.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Details (optional)</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Specific instructions, building code, special considerations..."
+                        className="bg-card border-border min-h-[90px] resize-none"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Estimated hours — used by the pool to compute a livable-wage guarantee */}
+              {paymentType !== "goodwill" && (
+                <FormField
+                  control={form.control}
+                  name="estimated_hours"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">
+                        Estimated Hours{" "}
+                        <span className="normal-case font-normal tracking-normal text-muted-foreground/60">
+                          (optional — helps ensure fair pay)
+                        </span>
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.5"
+                          min="0.5"
+                          max="24"
+                          placeholder="e.g. 1.5"
+                          className="bg-card border-border text-base"
+                          {...field}
+                          onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                        />
+                      </FormControl>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        The Community Pool uses this to scale the helper's guaranteed minimum — longer tasks earn proportionally more.
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              {/* Item Checklist — §3.1.4 Request specificity */}
+              {checklistItems.length > 0 || true ? (
+                <div>
+                  <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">Item Checklist (optional)</div>
+                  <div className="space-y-2">
+                    {checklistItems.map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={item}
+                          onChange={e => setChecklistItems(prev => prev.map((v, j) => j === i ? e.target.value : v))}
+                          placeholder={`Item ${i + 1}`}
+                          className="flex-1 bg-card border border-border rounded-xl px-3 py-2 text-sm outline-none focus:border-primary transition-colors"
+                          style={{ fontSize: "16px" }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setChecklistItems(prev => prev.filter((_, j) => j !== i))}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg bg-muted hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-all"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {checklistItems.length < 8 && (
+                      <button
+                        type="button"
+                        onClick={() => setChecklistItems(prev => [...prev, ""])}
+                        className="flex items-center gap-1.5 text-xs text-primary/70 hover:text-primary transition-colors py-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Add item
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Accessibility Needs — §4.5 */}
+              <div>
+                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">Accessibility Needs</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: "wheelchair", label: "♿ Wheelchair access" },
+                    { id: "female_helper", label: "👩 Prefer female helper" },
+                    { id: "pet_friendly", label: "🐾 Pet-friendly" },
+                    { id: "non_smoking", label: "🚭 Non-smoking" },
+                  ].map(opt => (
+                    <label
+                      key={opt.id}
+                      className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all text-xs font-medium ${
+                        accessibilityNeeds.includes(opt.id)
+                          ? "border-primary/60 bg-primary/10 text-primary"
+                          : "border-border bg-card text-muted-foreground"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={accessibilityNeeds.includes(opt.id)}
+                        onChange={e => setAccessibilityNeeds(prev =>
+                          e.target.checked ? [...prev, opt.id] : prev.filter(v => v !== opt.id)
+                        )}
+                      />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Photo Upload — optional */}
+              <div>
+                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5" />
+                  Add a Photo <span className="ml-1 text-[10px] text-muted-foreground/60 normal-case font-normal tracking-normal">(optional — helps your helper)</span>
+                </div>
+                {photoDataUrl ? (
+                  <div className="space-y-2">
+                    <div className="relative rounded-xl overflow-hidden border border-border">
+                      <img src={photoDataUrl} alt="Request photo" className="w-full max-h-48 object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => { setPhotoDataUrl(null); setNiaAnalysis(null); }}
+                        className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 transition-all"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    {/* Nia image analysis — "snap a photo, Nia describes it" */}
+                    {!niaAnalysis && (
+                      <button
+                        type="button"
+                        onClick={handleNiaAnalyzeImage}
+                        disabled={niaAnalyzing}
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded-xl bg-primary/10 border border-primary/30 hover:border-primary/60 text-primary text-xs font-bold transition-all active:scale-95"
+                      >
+                        {niaAnalyzing ? (
+                          <><Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" /> Nia is analyzing…</>
+                        ) : (
+                          <><Sparkles className="w-3.5 h-3.5 shrink-0" /> Let Nia describe this to helpers</>
+                        )}
+                      </button>
+                    )}
+                    {niaAnalysis && (
+                      <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-primary">
+                            <Sparkles className="w-3 h-3" /> Nia's Summary
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const cur = form.getValues("description") ?? "";
+                              form.setValue("description", cur ? `${cur}\n\n${niaAnalysis}` : niaAnalysis);
+                              setNiaAnalysis(null);
+                              toast({ title: "Nia's description added to details ✓" });
+                            }}
+                            className="text-[10px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-md hover:bg-primary/20 transition-all"
+                          >
+                            Add to details
+                          </button>
+                        </div>
+                        <p className="text-xs text-foreground/80 leading-relaxed">{niaAnalysis}</p>
+                        <button
+                          type="button"
+                          onClick={() => setNiaAnalysis(null)}
+                          className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center gap-2 w-full h-24 rounded-xl border-2 border-dashed border-border hover:border-primary/50 cursor-pointer transition-colors bg-card">
+                    <Camera className="w-5 h-5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Tap to take or upload a photo</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="sr-only"
+                      onChange={handlePhotoChange}
+                    />
+                  </label>
+                )}
+                {photoError && <p className="text-xs text-destructive mt-1">{photoError}</p>}
+              </div>
+
+              {/* ── Location Picker ─────────────────────────────────────── */}
+              <div>
+                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5" />
+                  Pickup Location
+                  <span className="ml-1 text-[10px] text-muted-foreground/60 normal-case font-normal tracking-normal">Tap or drag pin to adjust</span>
+                </div>
+                {/* Address search box */}
+                <div className="relative mb-2">
+                  <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2">
+                    {addressSearching
+                      ? <Loader2 className="w-4 h-4 text-muted-foreground shrink-0 animate-spin" />
+                      : <Search className="w-4 h-4 text-muted-foreground shrink-0" />}
+                    <input
+                      type="text"
+                      value={addressSearch}
+                      onChange={e => handleAddressSearch(e.target.value)}
+                      onFocus={() => addressSuggestions.length > 0 && setShowAddressSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowAddressSuggestions(false), 200)}
+                      placeholder="Type an address or place name…"
+                      className="flex-1 bg-transparent text-sm placeholder:text-muted-foreground outline-none"
+                      style={{ fontSize: "16px" }}
+                    />
+                    {addressSearch && (
+                      <button type="button" onClick={() => { setAddressSearch(""); setAddressSuggestions([]); setShowAddressSuggestions(false); }}>
+                        <X className="w-4 h-4 text-muted-foreground" />
+                      </button>
+                    )}
+                  </div>
+                  {showAddressSuggestions && addressSuggestions.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-card border border-border rounded-xl shadow-xl overflow-hidden">
+                      {addressSuggestions.map((s, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onMouseDown={() => handleSelectAddress(s)}
+                          className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted transition-colors flex items-center gap-2 border-b border-border/50 last:border-0"
+                        >
+                          <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
+                          <span className="truncate">{s.place_name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="relative rounded-xl overflow-hidden border border-border bg-card" style={{ height: 180 }}>
+                  {webGLSupported && !!import.meta.env.VITE_MAPBOX_TOKEN && (pinLocation ?? ipMapCenter) ? (
+                    // Show the map centered on GPS pin OR IP approximation.
+                    // When only ipMapCenter is available, user must tap to place the pin.
+                    <MapboxMap
+                      ref={mapRef}
+                      mapboxAccessToken={import.meta.env.VITE_MAPBOX_TOKEN}
+                      initialViewState={{
+                        longitude: (pinLocation ?? ipMapCenter!).lng,
+                        latitude:  (pinLocation ?? ipMapCenter!).lat,
+                        // Wider zoom for IP approximation (city-level), tight for GPS
+                        zoom: pinLocation ? 14 : 11,
+                      }}
+                      style={{ width: "100%", height: "100%" }}
+                      mapStyle="mapbox://styles/mapbox/dark-v11"
+                      attributionControl={false}
+                      onClick={(e) => setPinLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng })}
+                    >
+                      {pinLocation ? (
+                        <Marker
+                          longitude={pinLocation.lng}
+                          latitude={pinLocation.lat}
+                          anchor="bottom"
+                          draggable
+                          onDragEnd={(e) => setPinLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng })}
+                        >
+                          <div className="text-2xl drop-shadow-lg select-none">📍</div>
+                        </Marker>
+                      ) : (
+                        // No pin yet — overlay a prompt so the user knows to tap
+                        <div
+                          className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                          style={{ background: "rgba(0,0,0,0.35)" }}
+                        >
+                          <span className="text-white text-xs font-semibold px-3 py-1.5 rounded-full"
+                            style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}>
+                            📍 Tap map to place your location
+                          </span>
+                        </div>
+                      )}
+                    </MapboxMap>
+                  ) : webGLSupported ? (
+                    // WebGL available but IP lookup still in flight
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                      <MapPin className="w-8 h-8 text-primary animate-pulse" />
+                      <span className="text-xs">Locating you…</span>
+                    </div>
+                  ) : (
+                    // No WebGL — fall back to coordinate display
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                      <MapPin className="w-8 h-8 text-primary" />
+                      <span className="text-xs">
+                        {pinLocation
+                          ? `${pinLocation.lat.toFixed(5)}, ${pinLocation.lng.toFixed(5)}`
+                          : "Enable location or tap to set manually"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center justify-between mt-1.5 min-h-[16px]">
+                  <span className="text-[10px] text-muted-foreground">
+                    {pinLocation ? `📍 ${pinLocation.lat.toFixed(5)}, ${pinLocation.lng.toFixed(5)}` : ""}
+                  </span>
+                  {myLocation && pinLocation &&
+                    (Math.abs(pinLocation.lat - myLocation.lat) > 0.00001 || Math.abs(pinLocation.lng - myLocation.lng) > 0.00001) && (
+                    <button
+                      type="button"
+                      onClick={() => setPinLocation({ lat: myLocation.lat, lng: myLocation.lng })}
+                      className="text-[10px] text-primary underline"
+                    >
+                      Reset to my GPS
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Posting As Switcher — appears only when user belongs to ≥1 approved business */}
+              {myBusinesses.length > 0 && (
+                <div>
+                  <div className="uppercase tracking-wider text-xs text-muted-foreground mb-2 font-medium">Posting As</div>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedBusinessId(null)}
+                      className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
+                        selectedBusinessId === null
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-card/50 hover:border-border/80"
+                      }`}
+                    >
+                      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+                        <User className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className={`text-xs font-black ${selectedBusinessId === null ? "text-primary" : "text-foreground"}`}>Myself</div>
+                        <div className="text-[10px] text-muted-foreground">Personal request</div>
+                      </div>
+                    </button>
+                    {myBusinesses.map(biz => (
+                      <button
+                        key={biz.id}
+                        type="button"
+                        onClick={() => setSelectedBusinessId(biz.id)}
+                        className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
+                          selectedBusinessId === biz.id
+                            ? "border-blue-500 bg-blue-500/10"
+                            : "border-border bg-card/50 hover:border-border/80"
+                        }`}
+                      >
+                        <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0">
+                          <Building2 className="w-4 h-4 text-blue-500" />
+                        </div>
+                        <div>
+                          <div className={`text-xs font-black ${selectedBusinessId === biz.id ? "text-blue-500" : "text-foreground"}`}>{biz.display_name}</div>
+                          <div className="text-[10px] text-muted-foreground">Business request · pay-it-forward unavailable</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Three-Tier Payment Selector */}
+              <div>
+                <div className="uppercase tracking-wider text-xs text-muted-foreground mb-3 font-medium">Assistance Type</div>
+                <div className="grid grid-cols-3 gap-2">
+                  {(selectedBusinessId !== null ? PAYMENT_OPTIONS.filter(o => o.type !== "pay_it_forward") : PAYMENT_OPTIONS).map(opt => (
+                    <button
+                      key={opt.type}
+                      type="button"
+                      onClick={() => setPaymentType(opt.type)}
+                      className={`relative flex flex-col items-center text-center p-3 rounded-xl border-2 transition-all ${
+                        paymentType === opt.type ? opt.color : 'border-border bg-card/50 text-muted-foreground hover:border-border/80'
+                      }`}
+                    >
+                      <div className="mb-1.5">{opt.icon}</div>
+                      <div className="text-[11px] font-black uppercase tracking-wide leading-tight">{opt.label}</div>
+                      {paymentType === opt.type && (
+                        <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-current opacity-80" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-2 text-center">
+                  {PAYMENT_OPTIONS.find(o => o.type === paymentType)?.desc}
+                </p>
+              </div>
+
+              {paymentType === "immediate" && (
+                <FormField
+                  control={form.control}
+                  name="pay_it_forward_amount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Amount to Pay ($)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          placeholder="e.g. 15.00"
+                          className="bg-card border-border"
+                          {...field}
+                          onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                        />
+                      </FormControl>
+                      {isStripeConfigured() ? (
+                        <p className="text-xs text-green-400 mt-1">You'll confirm payment via Stripe after posting.</p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground mt-1">Stripe must be configured to enable real card payments.</p>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              {paymentType === "pay_it_forward" && (
+                <FormField
+                  control={form.control}
+                  name="pledge_amount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="uppercase tracking-wider text-xs text-muted-foreground">Pledge Amount (optional)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          placeholder="Any amount, when you're able"
+                          className="bg-card border-border"
+                          {...field}
+                          onChange={e => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                        />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground mt-1">No pressure — any contribution helps sustain the community</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              <Button
+                type="submit"
+                className="w-full h-13 text-base font-black tracking-widest uppercase"
+                disabled={!pinLocation || createMutation.isPending || creatingPaymentIntent}
+              >
+                {createMutation.isPending || creatingPaymentIntent ? "Posting..." : "📍 Post Request"}
+              </Button>
+
+              {!pinLocation && (
+                <p className="text-xs text-yellow-500 text-center">
+                  Tap the map above to pin your location
+                </p>
+              )}
+            </form>
+          </Form>
+        </div>
+      </div>
+
+      {/* Liability / Community Agreement Waiver Modal */}
+      {showWaiverModal && isWaiverCategory && (
+        <WaiverModal
+          category={selectedCategory as WaiverCategory}
+          isSubmitting={waiverPending}
+          onAccept={async () => {
+            setWaiverPending(true);
+            try {
+              const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+              // Best-effort server record — a network failure here does NOT block the post
+              await fetch(`${base}/api/users/me/accept-tos`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...authHeaders() },
+                body: JSON.stringify({ version: CURRENT_TOS_VERSION }),
+              }).catch(() => {});
+              setWaiverAccepted(true);
+              setShowWaiverModal(false);
+              pendingMutateRef.current?.();
+              pendingMutateRef.current = null;
+            } finally {
+              setWaiverPending(false);
+            }
+          }}
+          onClose={() => setShowWaiverModal(false)}
+        />
+      )}
+
+      {/* Stripe Payment Modal — shown after request is created for immediate payments */}
+      {pendingPayment && (
+        <StripePaymentModal
+          clientSecret={pendingPayment.clientSecret}
+          amount={pendingPayment.amount}
+          description={`Pay your helper for: "${pendingPayment.requestTitle}". Your helper receives the funds when the request is completed.`}
+          onSuccess={() => {
+            setPendingPayment(null);
+            toast({ title: "Payment confirmed!", description: "Your helper will be paid automatically upon completion." });
+            finishAndNavigate();
+          }}
+          onSkip={() => {
+            setPendingPayment(null);
+            toast({ title: "Payment skipped", description: "You can pay from your wallet later." });
+            finishAndNavigate();
+          }}
+          onClose={() => {
+            setPendingPayment(null);
+            finishAndNavigate();
+          }}
+        />
+      )}
+    </div>
+  );
+}
