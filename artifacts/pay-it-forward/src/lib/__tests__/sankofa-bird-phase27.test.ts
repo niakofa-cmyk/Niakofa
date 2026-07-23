@@ -1,9 +1,9 @@
 /**
  * Phase 27 contract coverage.
  *
- * These checks are intentionally source-level: the phase is a CSS/SVG
- * composition layer, so the important regressions are missing barrel wiring,
- * selector drift, and reintroducing unsafe Safari CSS.
+ * Source-level checks: the phase is a CSS/SVG composition layer, so the
+ * important regressions are missing barrel wiring, selector drift, missing
+ * @property registrations, and reintroducing unsafe Safari CSS.
  */
 
 import { describe, it } from "node:test";
@@ -27,6 +27,13 @@ describe("Phase 27: living feathers and natural light", () => {
     expect(sankofaCssPhase27).toContain("sankofa-p27-iri-natural");
   });
 
+  it("registers all four @property declarations required for Safari", () => {
+    expect(sankofaCssPhase27).toContain("@property --p27-iri-hue");
+    expect(sankofaCssPhase27).toContain("@property --p27-shoulder-angle");
+    expect(sankofaCssPhase27).toContain("@property --p27-neck-mid-opacity");
+    expect(sankofaCssPhase27).toContain("@property --p27-ambient-opacity");
+  });
+
   it("targets the active speed tiers and night-mode wiring", () => {
     expect(sankofaCssPhase27).toContain('[data-speed="driving"]');
     expect(sankofaCssPhase27).toContain('[data-speed="airplane"]');
@@ -40,9 +47,54 @@ describe("Phase 27: living feathers and natural light", () => {
       ".sankofa-wingtip-feather",
       ".sankofa-neck-mid-organic",
       ".sankofa-bird-iris",
+      ".sankofa-ambient-warmth",
+      ".sankofa-neck-top-sheen",
     ]) {
       expect(sankofaCssPhase27).toContain(selector);
     }
+  });
+
+  it("has night-mode rules for crown, covert-band r/l, body-luminary, and dorsal-hi", () => {
+    expect(sankofaCssPhase27).toContain(".sankofa-crown-feather");
+    expect(sankofaCssPhase27).toContain(".sankofa-wing-covert-band-r");
+    expect(sankofaCssPhase27).toContain(".sankofa-wing-covert-band-l");
+    expect(sankofaCssPhase27).toContain(".sankofa-body-luminary-layer");
+    expect(sankofaCssPhase27).toContain('[data-night-mode="true"][data-flying="true"] .sankofa-dorsal-hi');
+  });
+
+  it("covers aerodynamic wing-pose feather-level responses (27.9)", () => {
+    expect(sankofaCssPhase27).toContain('[data-wing-pose="down"]');
+    expect(sankofaCssPhase27).toContain('[data-wing-pose="up"]');
+    expect(sankofaCssPhase27).toContain('[data-wing-pose="forward"]');
+    expect(sankofaCssPhase27).toContain('[data-wing-pose="back"]');
+    expect(sankofaCssPhase27).toContain(".sankofa-bird-wing-right-highlight");
+    expect(sankofaCssPhase27).toContain(".sankofa-feather-iri-edge");
+  });
+
+  it("covers tail-pose flare and stream feather-level responses (27.9)", () => {
+    expect(sankofaCssPhase27).toContain('[data-tail-pose="flare"]');
+    expect(sankofaCssPhase27).toContain('[data-tail-pose="stream"]');
+    expect(sankofaCssPhase27).toContain(".sankofa-tail-luminary-inner");
+    expect(sankofaCssPhase27).toContain(".sankofa-tail-luminary-outer");
+    expect(sankofaCssPhase27).toContain(".sankofa-tail-iri-left");
+    expect(sankofaCssPhase27).toContain(".sankofa-tail-iri-right");
+  });
+
+  it("covers neck-luminary fast-speed strengthening", () => {
+    expect(sankofaCssPhase27).toContain(".sankofa-neck-luminary");
+  });
+
+  it("covers activity-tier eye-scan-group speed change", () => {
+    expect(sankofaCssPhase27).toContain('[data-activity="busy"]');
+    expect(sankofaCssPhase27).toContain('[data-activity="peak"]');
+    expect(sankofaCssPhase27).toContain(".sankofa-eye-scan-group");
+    expect(sankofaCssPhase27).toContain("animation-duration: 11s");
+  });
+
+  it("covers bank-dir body-banking dorsal response", () => {
+    expect(sankofaCssPhase27).toContain('[data-bank-dir="left"][data-flying="true"]');
+    expect(sankofaCssPhase27).toContain('[data-bank-dir="right"][data-flying="true"]');
+    expect(sankofaCssPhase27).toContain(".sankofa-dorsal-hi");
   });
 
   it("keeps each wingtip layer inside its animated wing rig", () => {
