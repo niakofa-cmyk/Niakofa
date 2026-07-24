@@ -3,7 +3,7 @@ import { useLocation, useParams } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Mic, MicOff, Hand, Video, VideoOff, Radio, Users, X, PhoneOff,
-  Circle as CircleIcon, ChevronDown, Crown,
+  Circle as CircleIcon, ChevronDown, Crown, Upload,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders, getToken } from "@/lib/auth";
@@ -47,12 +47,15 @@ export default function AudioCircleRoomScreen() {
   const [loading, setLoading] = useState(true);
   const [micOn, setMicOn] = useState(false);
   const [videoOn, setVideoOn] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [floatingReactions, setFloatingReactions] = useState<{ id: string; emoji: string }[]>([]);
   const [remoteStreams, setRemoteStreams] = useState<Map<number, MediaStream>>(new Map());
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
 
   const meshRef = useRef<AudioCircleMesh | null>(null);
-  const localAudioElRef = useRef<HTMLAudioElement | null>(null);
   const audioElsRef = useRef<Map<number, HTMLAudioElement>>(new Map());
+  // Track recording state in a ref so the WS closure always reads the latest
+  const isRecordingRef = useRef(false);
 
   const myUserId = currentUser?.id;
   const me = participants.find(p => p.user_id === myUserId);
@@ -123,7 +126,6 @@ export default function AudioCircleRoomScreen() {
   // Small helper so the mesh can subscribe to the shared WS without importing
   // the React hook (mesh is a plain class, not a component).
   function subscribeRaw(type: string, handler: (e: WsEvent) => void): () => void {
-    // useWebSocket below re-dispatches into this ref-held handler.
     signalHandlerRef.current = handler;
     return () => { signalHandlerRef.current = null; };
   }
@@ -150,35 +152,65 @@ export default function AudioCircleRoomScreen() {
   useEffect(() => {
     if (!canSpeak || !meshRef.current) return;
     meshRef.current.publishLocalMedia({ video: !!session?.video_enabled && videoOn })
-      .then(() => setMicOn(true))
+      .then((stream) => {
+        setMicOn(true);
+        setLocalStream(stream);
+      })
       .catch(() => toast({ title: "Couldn't access your microphone", description: "Check your browser's permission settings.", variant: "destructive" }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canSpeak]);
 
-  // ── Play remote audio ────────────────────────────────────────────────────
+  // ── Play remote audio (audio-only elements for all streams) ─────────────
+  // Video streams are rendered into <video> elements in the JSX below;
+  // those elements handle their own audio output. For audio-only streams
+  // (no video track) we still need a hidden <audio> element.
   useEffect(() => {
     for (const [userId, stream] of remoteStreams) {
-      let el = audioElsRef.current.get(userId);
-      if (!el) {
-        el = new Audio();
-        el.autoplay = true;
-        audioElsRef.current.set(userId, el);
+      const hasVideo = stream.getVideoTracks().length > 0;
+      if (!hasVideo) {
+        let el = audioElsRef.current.get(userId);
+        if (!el) {
+          el = new Audio();
+          el.autoplay = true;
+          audioElsRef.current.set(userId, el);
+        }
+        if (el.srcObject !== stream) el.srcObject = stream;
       }
-      if (el.srcObject !== stream) el.srcObject = stream;
     }
   }, [remoteStreams]);
+
+  // ── Upload recording blob to server ──────────────────────────────────────
+  const uploadRecording = useCallback(async (blob: Blob) => {
+    if (!isHost) return;
+    setUploading(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`${base}/api/audio-circle-sessions/${sessionId}/recording-upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "audio/webm",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: blob,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast({ title: "Recording upload failed", description: err.error ?? "Check your connection.", variant: "destructive" });
+      } else {
+        toast({ title: "Recording saved", description: "The circle recording is now available in past recordings." });
+      }
+    } catch {
+      toast({ title: "Recording upload failed", description: "Check your connection.", variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  }, [base, sessionId, isHost]);
 
   // ── Leave on unmount / tab close ─────────────────────────────────────────
   const leaveRoom = useCallback(() => {
     if (isNaN(sessionId)) return;
     const url = `${base}/api/audio-circle-sessions/${sessionId}/leave`;
     const token = getToken();
-    // NOTE: sendBeacon cannot carry an Authorization header (the leave route
-    // requires auth), and in browsers where sendBeacon succeeds it would
-    // silently short-circuit the authenticated fetch below via `||` — so the
-    // leave would appear to "work" client-side but never persist server-side.
-    // A keepalive fetch survives page unload just like sendBeacon does, so
-    // there's no reason to use the unauthenticated beacon path at all.
     fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: token ? `Bearer ${token}` : "" },
@@ -229,20 +261,37 @@ export default function AudioCircleRoomScreen() {
     setFloatingReactions(prev => [...prev, { id, emoji: p.emoji }]);
     setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2000);
   });
+
+  // ── Recording lifecycle — wire mesh startRecording/stopRecording ─────────
+  // Every participant receives this event; only the host does the actual
+  // recording (they hear everyone in a full mesh), but all clients update
+  // the UI indicator.
   useWebSocket("circle_recording_changed", (e) => {
     const p = e.payload as { session_id: number; is_recording: boolean };
     if (p.session_id !== sessionId) return;
+
+    const wasRecording = isRecordingRef.current;
+    isRecordingRef.current = p.is_recording;
     setSession(prev => prev ? { ...prev, is_recording: p.is_recording } : prev);
+
+    if (isHost) {
+      if (p.is_recording && !wasRecording) {
+        meshRef.current?.startRecording();
+      } else if (!p.is_recording && wasRecording) {
+        const blob = meshRef.current?.stopRecording();
+        if (blob && blob.size > 0) {
+          uploadRecording(blob);
+        }
+      }
+    }
   });
+
   useWebSocket("circle_session_ended", (e) => {
     const p = e.payload as { session_id: number };
     if (p.session_id !== sessionId) return;
     toast({ title: "The host ended this circle" });
     setLocation("/audio-circles");
   });
-  // Host disconnected (e.g. a page refresh) — the session stays live for a
-  // grace period rather than ending immediately (see routes/audio-circles.ts).
-  // Just a heads-up notification; nobody gets kicked out for this.
   useWebSocket("circle_host_disconnected", (e) => {
     const p = e.payload as { session_id: number };
     if (p.session_id !== sessionId) return;
@@ -283,12 +332,22 @@ export default function AudioCircleRoomScreen() {
     });
   };
 
-  const toggleVideo = () => {
-    setVideoOn(prev => {
-      const next = !prev;
-      meshRef.current?.setVideoEnabled(next);
-      return next;
-    });
+  const toggleVideo = async () => {
+    if (!meshRef.current || !session?.video_enabled) return;
+    const next = !videoOn;
+    setVideoOn(next);
+    if (next && localStream && localStream.getVideoTracks().length === 0) {
+      // First time enabling camera — need to re-publish with video
+      try {
+        const stream = await meshRef.current.publishLocalMedia({ video: true });
+        setLocalStream(stream);
+      } catch {
+        toast({ title: "Couldn't access camera", description: "Check browser permissions.", variant: "destructive" });
+        setVideoOn(false);
+        return;
+      }
+    }
+    meshRef.current.setVideoEnabled(next);
   };
 
   const toggleRecording = () => post("/recording", { is_recording: !session?.is_recording });
@@ -296,6 +355,11 @@ export default function AudioCircleRoomScreen() {
   if (loading || !session) {
     return <div className="min-h-screen bg-background flex items-center justify-center text-sm text-muted-foreground">Loading circle…</div>;
   }
+
+  // Remote streams that carry video tracks (rendered as <video>)
+  const remoteVideoStreams = [...remoteStreams.entries()].filter(
+    ([, s]) => s.getVideoTracks().length > 0
+  );
 
   return (
     <div className="min-h-screen bg-background pb-32 relative overflow-hidden">
@@ -307,6 +371,7 @@ export default function AudioCircleRoomScreen() {
             <div className="text-[11px] text-muted-foreground flex items-center gap-1">
               <Users className="w-3 h-3" /> {participants.length} here
               {session.is_recording && <span className="text-red-400 flex items-center gap-0.5 ml-1"><CircleIcon className="w-2 h-2 fill-current" /> REC</span>}
+              {uploading && <span className="text-amber-400 flex items-center gap-0.5 ml-1"><Upload className="w-2.5 h-2.5" /> Saving…</span>}
             </div>
           </div>
         </div>
@@ -332,6 +397,58 @@ export default function AudioCircleRoomScreen() {
       </div>
 
       <div className="p-4 space-y-6">
+
+        {/* ── Video grid (only shown when this session has video on) ───────── */}
+        {session.video_enabled && (remoteVideoStreams.length > 0 || (localStream && localStream.getVideoTracks().length > 0 && videoOn)) && (
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Video</div>
+            <div className="grid grid-cols-2 gap-2">
+              {/* Local camera preview */}
+              {localStream && localStream.getVideoTracks().length > 0 && videoOn && (
+                <div className="relative aspect-video bg-black rounded-xl overflow-hidden">
+                  <video
+                    autoPlay
+                    muted
+                    playsInline
+                    ref={(el) => {
+                      if (el && el.srcObject !== localStream) {
+                        el.srcObject = localStream;
+                      }
+                    }}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute bottom-1 left-1 text-[9px] font-bold text-white bg-black/60 px-1.5 py-0.5 rounded">
+                    You
+                  </div>
+                </div>
+              )}
+              {/* Remote video feeds */}
+              {remoteVideoStreams.map(([userId, stream]) => {
+                const p = participants.find(x => x.user_id === userId);
+                return (
+                  <div key={userId} className="relative aspect-video bg-black rounded-xl overflow-hidden">
+                    <video
+                      autoPlay
+                      playsInline
+                      ref={(el) => {
+                        if (el && el.srcObject !== stream) {
+                          el.srcObject = stream;
+                          el.play().catch(() => {});
+                        }
+                      }}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute bottom-1 left-1 text-[9px] font-bold text-white bg-black/60 px-1.5 py-0.5 rounded truncate max-w-[80%]">
+                      {p?.name ?? "Speaker"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Speakers ─────────────────────────────────────────────────────── */}
         <div>
           <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Speaking ({speakers.length}/13)</div>
           <div className="grid grid-cols-4 gap-3">
@@ -390,17 +507,23 @@ export default function AudioCircleRoomScreen() {
             </Button>
           )}
           {canSpeak && (
-            <Button variant={micOn ? "default" : "outline"} size="icon" onClick={toggleMic}>
+            <Button variant={micOn ? "default" : "outline"} size="icon" onClick={toggleMic} title={micOn ? "Mute" : "Unmute"}>
               {micOn ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
             </Button>
           )}
           {canSpeak && session.video_enabled && (
-            <Button variant={videoOn ? "default" : "outline"} size="icon" onClick={toggleVideo}>
+            <Button variant={videoOn ? "default" : "outline"} size="icon" onClick={toggleVideo} title={videoOn ? "Turn off camera" : "Turn on camera"}>
               {videoOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
             </Button>
           )}
           {isHost && (
-            <Button variant="outline" size="icon" onClick={toggleRecording} title="Toggle recording">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={toggleRecording}
+              disabled={uploading}
+              title={session.is_recording ? "Stop recording" : "Start recording"}
+            >
               <CircleIcon className={`w-4 h-4 ${session.is_recording ? "text-red-500 fill-red-500" : ""}`} />
             </Button>
           )}
