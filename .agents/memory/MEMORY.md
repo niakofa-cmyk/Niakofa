@@ -122,3 +122,4 @@
 - [Niakofa SankofaBird Phase 22 audit](niakofa-sankofa-bird-phase22-audit.md) — current build is Phase 22; 3 CSS selector bugs fixed (P21.6 + P21.8 :not as descendant, empty blocks); tail-pose authoritative triggers added; banking LOD-gated; 433 tests pass.
 - [Niakofa SankofaBird spec-align Jul 2026](niakofa-sankofa-bird-spec-align.md) — official palette #0FE5D4 (hue 174, not 190); wing-pose/tail-pose data-attrs; snap-hold-snap saccade (Idle.ts); saccadeSnapping wired end-to-end.
 - [Niakofa SankofaBird Phase 23](niakofa-sankofa-bird-phase23.md) — structural iridescence: heading-reactive wing filter (8 quadrants), feather depth gradients (-fo/-fm/-fi/-fs), bank burst, cascade shimmer; --diagonal-pose-intensity @property added to base.ts.
+- [Niakofa SankofaBird Phase 27](niakofa-sankofa-bird-phase27.md) — verified living-feather baseline: four Safari @property registrations, wing-rig wingtips, night/aerodynamic selectors, and Phase 27 contract test.

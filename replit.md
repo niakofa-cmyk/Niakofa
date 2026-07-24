@@ -4,7 +4,7 @@
 
 Map-first, pay-it-forward community mutual aid platform for Tarrant County, TX. Residents request help with groceries, rides, errands, etc; neighbors volunteer as helpers and earn goodwill — all on a live Mapbox map.
 
-**Current phase:** Phase 16 complete (SankofaBird Phases 1–16, navigation E2E tests, full lib build, 77 migrations applied, 182 tests passing).
+**Current phase:** Phase 27 complete — SankofaBird “Living Feathers & Natural Light” (77 DB migrations applied, 446 frontend tests passing, 182 API tests passing).
 
 ## How to Run
 
@@ -55,5 +55,5 @@ Full project conventions, gotchas, and operating notes:
 
 - Keep existing monorepo structure — do not restructure or migrate the stack.
 - All changes must push to `https://github.com/niakofa-cmyk/Niakofa` via `gitPush` callback (OAuth), not raw `git push`.
-- Phase 16 is the current baseline. The SankofaBird is in `artifacts/pay-it-forward/src/components/SankofaBird.tsx` / `SankofaBirdSvg.tsx`.
-- After any fresh import: `pnpm install` → `pnpm --filter @workspace/api-zod run build` → `pnpm --filter @workspace/api-client-react run build` → start workflows. The post-merge script (`scripts/post-merge.sh`) handles this in the correct order (install-first).
+- Phase 27 is the current baseline. SankofaBird CSS is split across `artifacts/pay-it-forward/src/components/sankofa-bird-css/`; SVG/components are under `artifacts/pay-it-forward/src/components/SankofaBird/`.
+- After any fresh import: `pnpm install` → start the artifact workflows. The post-merge script (`scripts/post-merge.sh`) handles the full install/build/migration order when required.
