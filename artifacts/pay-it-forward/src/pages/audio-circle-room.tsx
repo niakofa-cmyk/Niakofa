@@ -160,14 +160,28 @@ export default function AudioCircleRoomScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canSpeak]);
 
-  // ── Play remote audio (audio-only elements for all streams) ─────────────
-  // Video streams are rendered into <video> elements in the JSX below;
-  // those elements handle their own audio output. For audio-only streams
-  // (no video track) we still need a hidden <audio> element.
+  // ── Remote audio element lifecycle ──────────────────────────────────────
+  // <video> elements rendered in JSX handle their own audio output for video
+  // streams. For audio-only streams (no video track) we create a hidden
+  // <Audio> element imperatively.
+  //
+  // Critical: when a stream *transitions* from audio-only → audio+video (e.g.
+  // the host turns their camera on mid-session), we MUST tear down the stale
+  // hidden <audio> element. Without this, both the <audio> element and the
+  // <video> element play audio simultaneously → doubled/echoed sound.
   useEffect(() => {
     for (const [userId, stream] of remoteStreams) {
       const hasVideo = stream.getVideoTracks().length > 0;
-      if (!hasVideo) {
+      if (hasVideo) {
+        // Video stream: <video> in JSX owns audio. Destroy any stale audio el.
+        const staleAudio = audioElsRef.current.get(userId);
+        if (staleAudio) {
+          staleAudio.pause();
+          staleAudio.srcObject = null;
+          audioElsRef.current.delete(userId);
+        }
+      } else {
+        // Audio-only stream: ensure a hidden <audio> element is playing.
         let el = audioElsRef.current.get(userId);
         if (!el) {
           el = new Audio();
@@ -175,6 +189,14 @@ export default function AudioCircleRoomScreen() {
           audioElsRef.current.set(userId, el);
         }
         if (el.srcObject !== stream) el.srcObject = stream;
+      }
+    }
+    // Clean up audio elements for peers who have left.
+    for (const [userId] of Array.from(audioElsRef.current)) {
+      if (!remoteStreams.has(userId)) {
+        const el = audioElsRef.current.get(userId);
+        if (el) { el.pause(); el.srcObject = null; }
+        audioElsRef.current.delete(userId);
       }
     }
   }, [remoteStreams]);
