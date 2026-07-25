@@ -4,7 +4,7 @@
  * Barrel for the Behavior system — landing, idle, aero, search, delivery, and takeoff.
  */
 
-export { useLanding, LANDING_TIMINGS_MS } from "./Landing";
+export { useLanding }         from "./Landing";
 export type { LandingState, LandingPhase } from "./Landing";
 
 export { useIdleState }       from "./Idle";

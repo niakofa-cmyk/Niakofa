@@ -233,10 +233,10 @@ function LandingDemo() {
       setNavigating(true); setSpeed(8); setLabel("Flying (8 m/s)");
       schedule(() => {
         setNavigating(false); setSpeed(0); setLabel("Slowflap ↓");
-        schedule(() => setLabel("Hovering ↓"),  1400);
-        schedule(() => setLabel("Perching ↓"),  2200);
-        schedule(() => setLabel("Idle"),        4200);
-        schedule(cycle,                         5400);
+        schedule(() => setLabel("Hovering ↓"),  1000);
+        schedule(() => setLabel("Perching ↓"),  2400);
+        schedule(() => setLabel("Idle"),         3400);
+        schedule(cycle,                          4800);
       }, 3000);
     }
     cycle();

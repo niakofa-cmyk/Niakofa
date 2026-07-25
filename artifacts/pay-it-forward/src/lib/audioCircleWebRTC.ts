@@ -153,7 +153,13 @@ export class AudioCircleMesh {
   destroy(): void {
     for (const userId of Array.from(this.peers.keys())) this.disconnectFromPeer(userId);
     this.stopLocalMedia();
-    this.stopRecording();
+    // stopRecording is async — fire and ignore on destroy (cleanup only, no upload)
+    if (this.mediaRecorder) {
+      try { this.mediaRecorder.stop(); } catch { /* ignore */ }
+      this.mediaRecorder = null;
+    }
+    this.audioContext?.close().catch(() => {});
+    this.audioContext = null;
     this.wsUnsubscribe?.();
   }
 
@@ -183,18 +189,45 @@ export class AudioCircleMesh {
     this.mediaRecorder.start(1000);
   }
 
-  /** Stops recording and returns the final audio Blob (webm) — caller uploads it and calls POST /audio-circle-sessions/:id/recording-url with the resulting URL. */
-  stopRecording(): Blob | null {
-    if (!this.mediaRecorder) return null;
-    this.mediaRecorder.stop();
-    this.mediaRecorder = null;
-    this.audioContext?.close().catch(() => {});
-    this.audioContext = null;
-    this.mixDestination = null;
-    if (this.recordedChunks.length === 0) return null;
-    const blob = new Blob(this.recordedChunks, { type: "audio/webm" });
-    this.recordedChunks = [];
-    return blob;
+  /** Stops recording and resolves with the complete audio Blob (webm) once all
+   * MediaRecorder data has been flushed.  MediaRecorder.stop() is async — it
+   * fires one final ondataavailable before onstop, so we MUST wait for onstop
+   * rather than reading recordedChunks immediately after calling stop(). */
+  stopRecording(): Promise<Blob | null> {
+    return new Promise((resolve) => {
+      if (!this.mediaRecorder) { resolve(null); return; }
+      const mr = this.mediaRecorder;
+      this.mediaRecorder = null;
+
+      mr.onstop = () => {
+        this.audioContext?.close().catch(() => {});
+        this.audioContext = null;
+        this.mixDestination = null;
+        if (this.recordedChunks.length === 0) { resolve(null); return; }
+        const blob = new Blob(this.recordedChunks, { type: "audio/webm" });
+        this.recordedChunks = [];
+        resolve(blob);
+      };
+
+      // Trigger final flush → ondataavailable → onstop
+      mr.stop();
+    });
+  }
+
+  /** Stops outgoing video tracks so the camera indicator light turns off.
+   * Replaces the sender track with null on each peer connection so remote
+   * participants stop receiving video without a full renegotiation. */
+  stopVideoTracks(): void {
+    if (!this.localStream) return;
+    for (const track of this.localStream.getVideoTracks()) {
+      // Null out the peer sender first so remote peers receive nothing
+      for (const pc of this.peers.values()) {
+        const sender = pc.getSenders().find(s => s.track === track);
+        if (sender) sender.replaceTrack(null).catch(() => {});
+      }
+      track.stop();
+      this.localStream.removeTrack(track);
+    }
   }
 
   private addStreamToMix(stream: MediaStream): void {

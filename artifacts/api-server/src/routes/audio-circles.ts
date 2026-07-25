@@ -16,7 +16,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import { randomUUID } from "crypto";
-import { writeFileSync, mkdirSync } from "fs";
+import { mkdirSync } from "fs";
+import { writeFile } from "fs/promises";
 import path from "path";
 import {
   db,
@@ -633,7 +634,8 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
 
   const filename = `${sessionId}-${randomUUID()}.webm`;
   const filePath = path.join(uploadsDir, filename);
-  writeFileSync(filePath, body);
+  // Use async writeFile — writeFileSync blocks the event loop for large blobs
+  await writeFile(filePath, body);
 
   // Build a URL the client can use to play back the recording.
   // In dev the API is on port 8080; in production behind a reverse proxy the
@@ -643,6 +645,17 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
   await db.update(audioCircleSessionsTable)
     .set({ recording_url })
     .where(eq(audioCircleSessionsTable.id, sessionId));
+
+  // Notify all past participants (session may now be ended) that a recording
+  // is available so they can navigate to past recordings without refreshing.
+  const allParticipants = await db
+    .select({ user_id: audioCircleParticipantsTable.user_id })
+    .from(audioCircleParticipantsTable)
+    .where(eq(audioCircleParticipantsTable.session_id, sessionId));
+  sendToCircleParticipants(allParticipants.map(p => p.user_id), {
+    type: "circle_recording_available",
+    payload: { session_id: sessionId, circle_id: session.circle_id, recording_url },
+  });
 
   return res.json({ ok: true, recording_url });
 });

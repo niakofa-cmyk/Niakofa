@@ -150,13 +150,9 @@ export function SankofaBirdSvg({
     upcomingTurnDirection,
     approaching,
     newNotification,
-    nearbyUser,
     isGliding,
     isHelping,
-    // Navigation uses the same cheap snap-hold-snap scan as idle.  Stronger
-    // signals (approach, turn, nearby presence, notification) still win in
-    // computeGazeVector's priority waterfall.
-    saccadePhase: (!celebrating && !newNotification) ? saccadePhase : undefined,
+    saccadePhase: (!navigating && !celebrating && !newNotification) ? saccadePhase : undefined,
     bankDeg,
   });
 

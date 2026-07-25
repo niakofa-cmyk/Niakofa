@@ -84,7 +84,6 @@ const CHANNEL_UNITS: Record<MixerChannel, string> = {
  *
  * SME v2/v3 additions:
  *   windStrength — crosswind intensity [0..1], used by Phase 20 feather-ruffle
- *   aeroLoad — bounded speed/turn/wind load used by Phase 27 feathers
  */
 export const SME_CSS_VARS = {
   headDeg:          "--sme-head-deg",
@@ -103,7 +102,6 @@ export const SME_CSS_VARS = {
   notificationPulse:"--sme-notification-pulse",
   headingDeltaDeg:  "--sme-heading-delta-deg",
   windStrength:     "--sme-wind-strength",
-  aeroLoad:         "--sme-aero-load",
 } as const;
 
 // ── Hook interface ──────────────────────────────────────────────────────────
@@ -205,7 +203,6 @@ export function useAnimationMixer(
         target.style.setProperty(SME_CSS_VARS.headingDeltaDeg,   `${(out.smoothedHeadingDeltaRad * 180 / Math.PI).toFixed(2)}deg`);
         // SME v2/v3: wind strength for Phase 20 feather-ruffle CSS scaling
         target.style.setProperty(SME_CSS_VARS.windStrength,       `${out.windStrength.toFixed(3)}`);
-        target.style.setProperty(SME_CSS_VARS.aeroLoad,            `${out.aeroLoad.toFixed(3)}`);
       }
 
       // ── B. Spring mixer tick ────────────────────────────────────────

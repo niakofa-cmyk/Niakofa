@@ -51,7 +51,6 @@ import {
   type SaccadePhase,
   type TurnDirection,
 } from "../sankofa-bird-math";
-import { LANDING_TIMINGS_MS } from "../../components/SankofaBird/Behavior/Landing";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Screen rotation
@@ -439,23 +438,6 @@ describe("computeFlapPeriodMs", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10. Landing timing contract
-// ─────────────────────────────────────────────────────────────────────────────
-describe("landing sequence timing", () => {
-  it("uses cumulative offsets for dive → slowflap → hover → perch → idle", () => {
-    expect(LANDING_TIMINGS_MS).toEqual({
-      slowflap: 600,
-      hover: 1400,
-      perch: 2200,
-      idle: 4200,
-    });
-    expect(LANDING_TIMINGS_MS.slowflap).toBeLessThan(LANDING_TIMINGS_MS.hover);
-    expect(LANDING_TIMINGS_MS.hover).toBeLessThan(LANDING_TIMINGS_MS.perch);
-    expect(LANDING_TIMINGS_MS.perch).toBeLessThan(LANDING_TIMINGS_MS.idle);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
 // 9. Body lean angle
 // ─────────────────────────────────────────────────────────────────────────────
 describe("computeLeanDeg", () => {
@@ -654,15 +636,6 @@ describe("computeGazeVector", () => {
   it("notification overrides helping (priority 4 > 5)", () => {
     const dir = computeGazeVector({ newNotification: true, isHelping: true });
     expect(dir).toBe("right");
-  });
-
-  it("nearby presence gets a distinct lower-side glance", () => {
-    expect(computeGazeVector({ nearbyUser: true })).toBe("downright");
-  });
-
-  it("navigation scans do not override an imminent turn or approach", () => {
-    expect(computeGazeVector({ nearbyUser: true, upcomingTurnDirection: "left" })).toBe("upleft");
-    expect(computeGazeVector({ nearbyUser: true, approaching: true })).toBe("down");
   });
 
   // ── Saccade phase tests (8-direction full compass rose, no null slots) ──────

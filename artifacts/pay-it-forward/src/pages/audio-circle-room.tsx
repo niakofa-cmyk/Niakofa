@@ -300,11 +300,23 @@ export default function AudioCircleRoomScreen() {
       if (p.is_recording && !wasRecording) {
         meshRef.current?.startRecording();
       } else if (!p.is_recording && wasRecording) {
-        const blob = meshRef.current?.stopRecording();
-        if (blob && blob.size > 0) {
-          uploadRecording(blob);
-        }
+        // stopRecording is async — it waits for MediaRecorder.onstop so the
+        // final chunk is included in the blob before upload.
+        meshRef.current?.stopRecording().then((blob) => {
+          if (blob && blob.size > 0) uploadRecording(blob);
+        });
       }
+    }
+  });
+
+  // ── Recording available — notify when upload completes ───────────────────
+  useWebSocket("circle_recording_available", (e) => {
+    const p = e.payload as { session_id: number; circle_id: number; recording_url: string };
+    if (p.session_id !== sessionId) return;
+    // Only show the "go listen" toast to non-uploading clients; the uploader
+    // already sees a "Recording saved" toast from uploadRecording().
+    if (!isHost) {
+      toast({ title: "Recording available", description: "This circle was recorded — check Past Recordings." });
     }
   });
 
@@ -357,19 +369,29 @@ export default function AudioCircleRoomScreen() {
   const toggleVideo = async () => {
     if (!meshRef.current || !session?.video_enabled) return;
     const next = !videoOn;
-    setVideoOn(next);
-    if (next && localStream && localStream.getVideoTracks().length === 0) {
-      // First time enabling camera — need to re-publish with video
+    if (next) {
+      // Turning camera ON — request a fresh camera track (a stopped track
+      // cannot be re-enabled; we must always call getUserMedia again).
       try {
         const stream = await meshRef.current.publishLocalMedia({ video: true });
         setLocalStream(stream);
+        setVideoOn(true);
       } catch {
         toast({ title: "Couldn't access camera", description: "Check browser permissions.", variant: "destructive" });
-        setVideoOn(false);
-        return;
       }
+    } else {
+      // Turning camera OFF — stop the video tracks so the camera indicator
+      // light turns off, and null-out the sender on each peer so remote
+      // participants stop receiving video frames immediately.
+      meshRef.current.stopVideoTracks();
+      // Update local preview stream to audio-only so the <video> grid hides.
+      setLocalStream(prev => {
+        if (!prev) return prev;
+        const audioTracks = prev.getAudioTracks();
+        return audioTracks.length > 0 ? new MediaStream(audioTracks) : null;
+      });
+      setVideoOn(false);
     }
-    meshRef.current.setVideoEnabled(next);
   };
 
   const toggleRecording = () => post("/recording", { is_recording: !session?.is_recording });
