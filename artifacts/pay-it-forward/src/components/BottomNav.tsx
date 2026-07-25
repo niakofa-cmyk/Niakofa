@@ -1,5 +1,5 @@
 import { useLocation, Link } from "wouter";
-import { Map, Users, DollarSign, Radio, Navigation2, Wallet, Bell, X, SlidersHorizontal } from "lucide-react";
+import { Map, Users, DollarSign, Radio, Navigation2, Wallet, Bell, X, SlidersHorizontal, BookHeart } from "lucide-react";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -23,10 +23,11 @@ type Tab = { path: string; icon: React.ElementType; labelKey: string; center?: b
 // request — the map screen carries its own "Request Help" FAB), Circles,
 // Wallet. No navigation UI, no earnings, no background-check chrome.
 const BASE_TABS: Tab[] = [
-  { path: "/community",     icon: Users,   labelKey: "nav.community" },
-  { path: "/",               icon: Map,     labelKey: "nav.map"       },
-  { path: "/audio-circles",  icon: Radio,   labelKey: "nav.circles"   },
-  { path: "/wallet",         icon: Wallet,  labelKey: "nav.wallet"    },
+  { path: "/community",     icon: Users,      labelKey: "nav.community" },
+  { path: "/",              icon: Map,        labelKey: "nav.map"       },
+  { path: "/family",        icon: BookHeart,  labelKey: "nav.family"    },
+  { path: "/audio-circles", icon: Radio,      labelKey: "nav.circles"   },
+  { path: "/wallet",        icon: Wallet,     labelKey: "nav.wallet"    },
 ];
 
 // Helper Mode ON — helper-facing nav: Active Job (center, most important

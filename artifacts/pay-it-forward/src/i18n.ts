@@ -13,6 +13,7 @@ const en = {
     earnings: "Earnings",
     nearby: "Nearby",
     active_job: "Active Job",
+    family: "Family",
   },
   common: {
     loading: "Loading…",

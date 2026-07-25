@@ -68,6 +68,8 @@ export type WsEventType =
   | "account_approval_decided"
   // Niakofa Audio Circles
   | "circle_session_started"
+  | "family_memory_created"
+  | "family_interview_status_changed"
   | "circle_session_ended"
   | "circle_participant_joined"
   | "circle_participant_left"

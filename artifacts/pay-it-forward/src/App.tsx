@@ -51,6 +51,9 @@ const GlobePage            = lazy(() => import("@/pages/globe"));
 const HubLeaderDashboard   = lazy(() => import("@/pages/hub-leader"));
 const BirdTestPage         = lazy(() => import("@/pages/bird-test"));
 const CivicTaskNavPage     = lazy(() => import("@/pages/civic-task-nav"));
+const FamilySpacesPage     = lazy(() => import("@/pages/family-spaces"));
+const FamilyVaultPage      = lazy(() => import("@/pages/family-vault"));
+const FamilyMemoryPage     = lazy(() => import("@/pages/family-memory"));
 
 // Minimal spinner shown while a lazy chunk is loading.
 // Kept intentionally simple — just a centred, low-opacity dot so the
@@ -288,6 +291,9 @@ function AppShell() {
             <Route path="/requests" component={RequestsBrowsePage} />
             <Route path="/globe" component={GlobePage} />
             <Route path="/hub-leader/:id" component={HubLeaderDashboard} />
+            <Route path="/family" component={FamilySpacesPage} />
+            <Route path="/family/:id/memory/:memoryId" component={FamilyMemoryPage} />
+            <Route path="/family/:id" component={FamilyVaultPage} />
             <Route component={NotFound} />
           </Switch>
         </Suspense>

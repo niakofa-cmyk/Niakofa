@@ -33,6 +33,7 @@ import impactRouter from "./impact";
 import griotRouter from "./griot";
 import audioCirclesRouter from "./audio-circles";
 import coverageInterestRouter from "./coverage-interest";
+import familyRouter from "./family";
 
 const router: IRouter = Router();
 
@@ -70,5 +71,6 @@ router.use(impactRouter);
 router.use(griotRouter);
 router.use(audioCirclesRouter);
 router.use(coverageInterestRouter);
+router.use(familyRouter);
 
 export default router;

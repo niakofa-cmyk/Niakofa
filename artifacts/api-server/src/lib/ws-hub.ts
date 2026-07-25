@@ -83,6 +83,9 @@ export type WsEventType =
   // Niakofa Audio Circles — live voice/video rooms.
   | "circle_session_started"
   | "circle_session_ended"
+  // Diaspora Platform — Family Vault events (scoped to family members)
+  | "family_memory_created"
+  | "family_interview_status_changed"
   | "circle_participant_joined"
   | "circle_participant_left"
   | "circle_hand_raised"
