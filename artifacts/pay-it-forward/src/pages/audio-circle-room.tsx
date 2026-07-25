@@ -51,6 +51,7 @@ export default function AudioCircleRoomScreen() {
   const [floatingReactions, setFloatingReactions] = useState<{ id: string; emoji: string }[]>([]);
   const [remoteStreams, setRemoteStreams] = useState<Map<number, MediaStream>>(new Map());
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [meshReady, setMeshReady] = useState(false);
 
   const meshRef = useRef<AudioCircleMesh | null>(null);
   const audioElsRef = useRef<Map<number, HTMLAudioElement>>(new Map());
@@ -119,7 +120,8 @@ export default function AudioCircleRoomScreen() {
       },
     });
     meshRef.current = mesh;
-    return () => { mesh.destroy(); meshRef.current = null; };
+    setMeshReady(true);
+    return () => { mesh.destroy(); meshRef.current = null; setMeshReady(false); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.id, myUserId]);
 
@@ -210,7 +212,7 @@ export default function AudioCircleRoomScreen() {
       const res = await fetch(`${base}/api/audio-circle-sessions/${sessionId}/recording-upload`, {
         method: "POST",
         headers: {
-          "Content-Type": "audio/webm",
+          "Content-Type": blob.type || "audio/webm",
           Authorization: token ? `Bearer ${token}` : "",
         },
         body: blob,
@@ -309,6 +311,20 @@ export default function AudioCircleRoomScreen() {
     }
   });
 
+  // A host can enter a session that was already recording. In that case there
+  // is no new WS transition for this tab, so hydrate the local recorder from
+  // the server state once the mesh exists.
+  useEffect(() => {
+    if (!isHost || !session?.is_recording || !meshRef.current || isRecordingRef.current) return;
+    isRecordingRef.current = true;
+    try {
+      meshRef.current.startRecording();
+    } catch {
+      isRecordingRef.current = false;
+      toast({ title: "Couldn't start recording", description: "Your browser could not create an audio recorder.", variant: "destructive" });
+    }
+  }, [isHost, session?.is_recording, session?.id, meshReady]);
+
   // ── Recording available — notify when upload completes ───────────────────
   useWebSocket("circle_recording_available", (e) => {
     const p = e.payload as { session_id: number; circle_id: number; recording_url: string };
@@ -355,8 +371,16 @@ export default function AudioCircleRoomScreen() {
   const promote = (userId: number) => post("/promote", { user_id: userId });
   const demote = (userId: number) => post("/demote", { user_id: userId });
   const react = (emoji: string) => post("/react", { emoji });
-  const endSession = async () => { await post("/end"); setLocation("/audio-circles"); };
-  const leaveAndExit = () => { leaveRoom(); setLocation("/audio-circles"); };
+  const endSession = async () => {
+    if (isRecordingRef.current) await toggleRecording();
+    await post("/end");
+    setLocation("/audio-circles");
+  };
+  const leaveAndExit = async () => {
+    if (isHost && isRecordingRef.current) await toggleRecording();
+    leaveRoom();
+    setLocation("/audio-circles");
+  };
 
   const toggleMic = () => {
     setMicOn(prev => {
@@ -394,7 +418,45 @@ export default function AudioCircleRoomScreen() {
     }
   };
 
-  const toggleRecording = () => post("/recording", { is_recording: !session?.is_recording });
+  const toggleRecording = async () => {
+    const next = !isRecordingRef.current;
+
+    if (next) {
+      // Start from the host's click so MediaRecorder does not depend on a
+      // WebSocket round-trip. The server event still updates every other tab.
+      isRecordingRef.current = true;
+      setSession(prev => prev ? { ...prev, is_recording: true } : prev);
+      try {
+        meshRef.current?.startRecording();
+      } catch {
+        isRecordingRef.current = false;
+        setSession(prev => prev ? { ...prev, is_recording: false } : prev);
+        toast({ title: "Couldn't start recording", description: "Your browser could not create an audio recorder.", variant: "destructive" });
+        return;
+      }
+
+      const ok = await post("/recording", { is_recording: true });
+      if (!ok) {
+        isRecordingRef.current = false;
+        setSession(prev => prev ? { ...prev, is_recording: false } : prev);
+        await meshRef.current?.stopRecording();
+      }
+      return;
+    }
+
+    // Stop the server state first, then await MediaRecorder.onstop so its
+    // final dataavailable chunk is included before the blob is uploaded.
+    isRecordingRef.current = false;
+    setSession(prev => prev ? { ...prev, is_recording: false } : prev);
+    const ok = await post("/recording", { is_recording: false });
+    if (!ok) {
+      isRecordingRef.current = true;
+      setSession(prev => prev ? { ...prev, is_recording: true } : prev);
+      return;
+    }
+    const blob = await meshRef.current?.stopRecording();
+    if (blob && blob.size > 0) await uploadRecording(blob);
+  };
 
   if (loading || !session) {
     return <div className="min-h-screen bg-background flex items-center justify-center text-sm text-muted-foreground">Loading circle…</div>;

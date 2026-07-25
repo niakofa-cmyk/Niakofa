@@ -130,6 +130,10 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
       },
+      "/uploads": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+      },
     },
     // Dev-only: the Replit preview proxy/iframe can hold onto a stale cached
     // index.html across dep-optimizer restarts, which then requests

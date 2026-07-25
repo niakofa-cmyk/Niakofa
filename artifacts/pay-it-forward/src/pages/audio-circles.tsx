@@ -31,6 +31,16 @@ interface CircleSummary {
   live_session: LiveSessionSummary | null;
 }
 
+interface Recording {
+  id: number;
+  title: string;
+  host_id: number | null;
+  host_name: string | null;
+  recording_url: string;
+  started_at: string;
+  ended_at: string | null;
+}
+
 const SESSION_KEY = "niakofa_circles_city";
 
 export default function AudioCirclesScreen() {
@@ -54,6 +64,8 @@ export default function AudioCirclesScreen() {
   // camera icon next to "Host", it toggles video_enabled for that circle's
   // upcoming session. Defaults to audio-only (false) to preserve existing UX.
   const [videoToggles, setVideoToggles] = useState<Map<number, boolean>>(new Map());
+  const [recordingsByCircle, setRecordingsByCircle] = useState<Map<number, Recording[]>>(new Map());
+  const [recordingsOpen, setRecordingsOpen] = useState<Set<number>>(new Set());
   const toggleCircleVideo = (circleId: number) =>
     setVideoToggles(prev => new Map(prev).set(circleId, !prev.get(circleId)));
 
@@ -128,6 +140,25 @@ export default function AudioCirclesScreen() {
   };
 
   const joinRoom = (sessionId: number) => setLocation(`/audio-circle/${sessionId}`);
+
+  const loadRecordings = async (circleId: number) => {
+    const nextOpen = new Set(recordingsOpen);
+    if (nextOpen.has(circleId)) {
+      nextOpen.delete(circleId);
+      setRecordingsOpen(nextOpen);
+      return;
+    }
+    try {
+      const res = await fetch(`${base}/api/audio-circles/${circleId}/recordings`, { headers: authHeaders() });
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      setRecordingsByCircle(prev => new Map(prev).set(circleId, data.recordings ?? []));
+      nextOpen.add(circleId);
+      setRecordingsOpen(nextOpen);
+    } catch {
+      toast({ title: "Couldn't load recordings", description: "Try again in a moment.", variant: "destructive" });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -251,7 +282,30 @@ export default function AudioCirclesScreen() {
                       </Button>
                     </div>
                   )}
+                  <button
+                    onClick={() => loadRecordings(circle.id)}
+                    className="mt-3 text-[11px] font-bold text-primary underline underline-offset-2"
+                  >
+                    {recordingsOpen.has(circle.id) ? "Hide past recordings" : "Past recordings"}
+                  </button>
                 </div>
+                {recordingsOpen.has(circle.id) && (
+                  <div className="mt-3 pt-3 border-t border-border space-y-2">
+                    {(recordingsByCircle.get(circle.id) ?? []).length === 0 ? (
+                      <div className="text-xs text-muted-foreground">No recordings yet.</div>
+                    ) : (
+                      (recordingsByCircle.get(circle.id) ?? []).map(recording => (
+                        <div key={recording.id} className="rounded-xl bg-background/60 p-3">
+                          <div className="text-xs font-bold truncate">{recording.title}</div>
+                          <div className="text-[10px] text-muted-foreground mb-2">
+                            Hosted by {recording.host_name ?? "a former member"}
+                          </div>
+                          <audio controls preload="none" src={recording.recording_url} className="w-full h-9" />
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </motion.div>
             );
           })}

@@ -157,7 +157,7 @@ app.use("/api/background-checks/webhook", express.raw({ type: "application/json"
 // Voice STT endpoint needs raw audio bytes before express.json() runs
 app.use("/api/nia/voice/transcribe", voiceAudioRawParser);
 // Circle recording upload — raw audio body parsed before the json() middleware
-app.use("/api/audio-circle-sessions/:id/recording-upload", express.raw({ type: "audio/*", limit: "500mb" }));
+app.use("/api/audio-circle-sessions/:id/recording-upload", express.raw({ type: ["audio/*", "application/octet-stream"], limit: "500mb" }));
 
 app.use(express.json({ limit: "10mb" })); // 10mb to allow base64 avatar uploads
 app.use(express.urlencoded({ extended: true, limit: "1mb" })); // cap form bodies to prevent DoS

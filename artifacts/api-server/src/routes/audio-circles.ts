@@ -632,7 +632,13 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
   const uploadsDir = path.join(import.meta.dirname, "..", "..", "..", "..", "uploads", "recordings");
   mkdirSync(uploadsDir, { recursive: true });
 
-  const filename = `${sessionId}-${randomUUID()}.webm`;
+  const contentType = String(req.headers["content-type"] ?? "").split(";")[0].toLowerCase();
+  const extension = contentType === "audio/mp4"
+    ? "m4a"
+    : contentType === "audio/ogg"
+      ? "ogg"
+      : "webm";
+  const filename = `${sessionId}-${randomUUID()}.${extension}`;
   const filePath = path.join(uploadsDir, filename);
   // Use async writeFile — writeFileSync blocks the event loop for large blobs
   await writeFile(filePath, body);

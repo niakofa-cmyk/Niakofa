@@ -43,6 +43,27 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
+// TURN is optional for local development, but can be supplied at deploy time
+// so calls work across restrictive NATs and cellular networks. Credentials
+// are intentionally runtime-configured rather than hardcoded in the bundle.
+const turnUrl = import.meta.env.VITE_TURN_URL as string | undefined;
+const turnUsername = import.meta.env.VITE_TURN_USERNAME as string | undefined;
+const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL as string | undefined;
+if (turnUrl && turnUsername && turnCredential) {
+  ICE_SERVERS.push({ urls: turnUrl, username: turnUsername, credential: turnCredential });
+}
+
+function supportedRecordingMimeType(): string | undefined {
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+  ];
+  if (typeof MediaRecorder.isTypeSupported !== "function") return candidates[0];
+  return candidates.find(type => MediaRecorder.isTypeSupported(type));
+}
+
 export class AudioCircleMesh {
   private sessionId: number;
   private selfUserId: number;
@@ -57,7 +78,8 @@ export class AudioCircleMesh {
   private mixDestination: MediaStreamAudioDestinationNode | null = null;
   private mediaRecorder: MediaRecorder | null = null;
   private recordedChunks: Blob[] = [];
-  private connectedSourceUserIds = new Set<number>();
+  private connectedSourceIds = new Set<string>();
+  private makingOffer = new Set<number>();
   private videoExpected: boolean;
 
   constructor(opts: {
@@ -83,6 +105,9 @@ export class AudioCircleMesh {
       video: opts.video ? { width: 320, height: 240 } : false,
     });
     this.localStream = stream;
+    if (this.mediaRecorder) {
+      this.addStreamToMix(stream, "local");
+    }
     // Add tracks to any peer connections that already exist (e.g. a
     // listener who's mid-connection when they get promoted to speaker).
     // Prefer upgrading an existing recvonly transceiver in place (reusing
@@ -119,24 +144,11 @@ export class AudioCircleMesh {
     this.localStream?.getVideoTracks().forEach(t => { t.enabled = enabled; });
   }
 
-  /** Opens (or re-opens) a peer connection to another participant and starts signaling. isInitiator decides who sends the offer — always the lower user id, so both sides agree without extra coordination. */
+  /** Opens (or re-opens) a peer connection to another participant and starts signaling. */
   connectToPeer(remoteUserId: number): void {
     if (this.peers.has(remoteUserId)) return;
     const pc = this.createPeerConnection(remoteUserId);
     this.peers.set(remoteUserId, pc);
-
-    const isInitiator = this.selfUserId < remoteUserId;
-    if (isInitiator) {
-      pc.onnegotiationneeded = async () => {
-        try {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          this.sendSignal(remoteUserId, { kind: "offer", data: offer });
-        } catch (err) {
-          console.error("audioCircleWebRTC: failed to create offer", err);
-        }
-      };
-    }
   }
 
   disconnectFromPeer(remoteUserId: number): void {
@@ -145,7 +157,11 @@ export class AudioCircleMesh {
       pc.close();
       this.peers.delete(remoteUserId);
     }
-    this.connectedSourceUserIds.delete(remoteUserId);
+    for (const sourceId of this.connectedSourceIds) {
+      if (sourceId.startsWith(`remote:${remoteUserId}:`)) {
+        this.connectedSourceIds.delete(sourceId);
+      }
+    }
     this.onRemoteStreamEnded(remoteUserId);
   }
 
@@ -171,18 +187,21 @@ export class AudioCircleMesh {
     this.audioContext = new AudioContext();
     this.mixDestination = this.audioContext.createMediaStreamDestination();
 
-    if (this.localStream) this.addStreamToMix(this.localStream);
+    if (this.localStream) this.addStreamToMix(this.localStream, "local");
     for (const pc of this.peers.values()) {
       pc.getReceivers().forEach(r => {
         if (r.track && r.track.kind === "audio") {
           const stream = new MediaStream([r.track]);
-          this.addStreamToMix(stream);
+          this.addStreamToMix(stream, `remote:receiver:${r.track.id}`);
         }
       });
     }
 
     this.recordedChunks = [];
-    this.mediaRecorder = new MediaRecorder(this.mixDestination.stream, { mimeType: "audio/webm" });
+    const mimeType = supportedRecordingMimeType();
+    this.mediaRecorder = mimeType
+      ? new MediaRecorder(this.mixDestination.stream, { mimeType })
+      : new MediaRecorder(this.mixDestination.stream);
     this.mediaRecorder.ondataavailable = (e) => {
       if (e.data.size > 0) this.recordedChunks.push(e.data);
     };
@@ -203,6 +222,7 @@ export class AudioCircleMesh {
         this.audioContext?.close().catch(() => {});
         this.audioContext = null;
         this.mixDestination = null;
+        this.connectedSourceIds.clear();
         if (this.recordedChunks.length === 0) { resolve(null); return; }
         const blob = new Blob(this.recordedChunks, { type: "audio/webm" });
         this.recordedChunks = [];
@@ -210,7 +230,16 @@ export class AudioCircleMesh {
       };
 
       // Trigger final flush → ondataavailable → onstop
-      mr.stop();
+      try {
+        mr.stop();
+      } catch {
+        this.audioContext?.close().catch(() => {});
+        this.audioContext = null;
+        this.mixDestination = null;
+        this.connectedSourceIds.clear();
+        this.recordedChunks = [];
+        resolve(null);
+      }
     });
   }
 
@@ -230,8 +259,10 @@ export class AudioCircleMesh {
     }
   }
 
-  private addStreamToMix(stream: MediaStream): void {
+  private addStreamToMix(stream: MediaStream, sourceId: string): void {
     if (!this.audioContext || !this.mixDestination) return;
+    if (this.connectedSourceIds.has(sourceId)) return;
+    this.connectedSourceIds.add(sourceId);
     const source = this.audioContext.createMediaStreamSource(stream);
     source.connect(this.mixDestination);
   }
@@ -254,12 +285,35 @@ export class AudioCircleMesh {
       if (this.videoExpected) pc.addTransceiver("video", { direction: "recvonly" });
     }
 
+    // Renegotiation is needed when a listener becomes a speaker or when a
+    // speaker enables video. Both sides can initiate it; handleSignal applies
+    // deterministic perfect-negotiation rules for offer collisions.
+    pc.onnegotiationneeded = async () => {
+      try {
+        this.makingOffer.add(remoteUserId);
+        const offer = await pc.createOffer();
+        if (pc.signalingState !== "stable") return;
+        await pc.setLocalDescription(offer);
+        this.sendSignal(remoteUserId, { kind: "offer", data: pc.localDescription });
+      } catch (err) {
+        console.error("audioCircleWebRTC: failed to create offer", err);
+      } finally {
+        this.makingOffer.delete(remoteUserId);
+      }
+    };
+
     pc.onicecandidate = (e) => {
       if (e.candidate) this.sendSignal(remoteUserId, { kind: "ice", data: e.candidate.toJSON() });
     };
 
     pc.ontrack = (e) => {
-      this.onRemoteStream({ userId: remoteUserId, stream: e.streams[0] ?? new MediaStream([e.track]) });
+      const stream = e.streams[0] ?? new MediaStream([e.track]);
+      this.onRemoteStream({ userId: remoteUserId, stream });
+      // Add tracks that arrive after REC was pressed, including newly promoted
+      // speakers and renegotiated audio tracks.
+      if (e.track.kind === "audio" && this.mediaRecorder) {
+        this.addStreamToMix(new MediaStream([e.track]), `remote:${remoteUserId}:${e.track.id}`);
+      }
     };
 
     pc.onconnectionstatechange = () => {
@@ -291,10 +345,14 @@ export class AudioCircleMesh {
 
     try {
       if (signal.kind === "offer") {
+        const polite = this.selfUserId > from_user_id;
+        const offerCollision = this.makingOffer.has(from_user_id) || pc.signalingState !== "stable";
+        if (offerCollision && !polite) return;
+        if (offerCollision) await pc.setLocalDescription({ type: "rollback" });
         await pc.setRemoteDescription(new RTCSessionDescription(signal.data as RTCSessionDescriptionInit));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
-        this.sendSignal(from_user_id, { kind: "answer", data: answer });
+        this.sendSignal(from_user_id, { kind: "answer", data: pc.localDescription });
       } else if (signal.kind === "answer") {
         await pc.setRemoteDescription(new RTCSessionDescription(signal.data as RTCSessionDescriptionInit));
       } else if (signal.kind === "ice") {
