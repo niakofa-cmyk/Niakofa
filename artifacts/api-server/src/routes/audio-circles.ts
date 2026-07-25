@@ -553,6 +553,102 @@ router.post("/audio-circle-sessions/:id/demote", requireAuth, generalApiLimiter,
   return res.json({ ok: true });
 });
 
+// POST /audio-circle-sessions/:id/mute — host mutes or unmutes a specific
+// speaker (without demoting them). The muted flag lives in the DB so it
+// survives page refreshes; the audio track itself is controlled client-side
+// by the speaker when they receive the circle_muted event.
+const MuteBody = z.object({
+  user_id: z.number().int().positive(),
+  muted: z.boolean(),
+});
+
+router.post("/audio-circle-sessions/:id/mute", requireAuth, generalApiLimiter, async (req, res) => {
+  const sessionId = parseInt(String(req.params.id ?? ""), 10);
+  if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
+  const parsed = MuteBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "user_id and muted (boolean) are required" });
+
+  const { session, participant: hostParticipant } = await requireActiveParticipant(sessionId, req.authenticatedUserId!, "host");
+  if (!session) return res.status(404).json({ error: "Session not live" });
+  if (!hostParticipant) return res.status(403).json({ error: "Only the host can mute speakers" });
+
+  const activeParticipants = await getActiveParticipants(sessionId);
+  const target = activeParticipants.find(p => p.user_id === parsed.data.user_id);
+  if (!target) return res.status(404).json({ error: "That user isn't in this session" });
+
+  await db
+    .update(audioCircleParticipantsTable)
+    .set({ muted: parsed.data.muted })
+    .where(and(eq(audioCircleParticipantsTable.session_id, sessionId), eq(audioCircleParticipantsTable.user_id, parsed.data.user_id)));
+
+  sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
+    type: "circle_muted",
+    payload: { session_id: sessionId, user_id: parsed.data.user_id, muted: parsed.data.muted },
+  });
+  return res.json({ ok: true });
+});
+
+// POST /audio-circle-sessions/:id/mute-all — host mutes every speaker at once.
+router.post("/audio-circle-sessions/:id/mute-all", requireAuth, generalApiLimiter, async (req, res) => {
+  const sessionId = parseInt(String(req.params.id ?? ""), 10);
+  if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
+
+  const { session, participant: hostParticipant } = await requireActiveParticipant(sessionId, req.authenticatedUserId!, "host");
+  if (!session) return res.status(404).json({ error: "Session not live" });
+  if (!hostParticipant) return res.status(403).json({ error: "Only the host can mute everyone" });
+
+  // Mute all non-host speakers
+  await db
+    .update(audioCircleParticipantsTable)
+    .set({ muted: true })
+    .where(and(
+      eq(audioCircleParticipantsTable.session_id, sessionId),
+      eq(audioCircleParticipantsTable.role, "speaker"),
+      isNull(audioCircleParticipantsTable.left_at),
+    ));
+
+  const activeParticipants = await getActiveParticipants(sessionId);
+  sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
+    type: "circle_muted",
+    payload: { session_id: sessionId, user_id: null, muted: true, all: true },
+  });
+  return res.json({ ok: true });
+});
+
+// POST /audio-circle-sessions/:id/kick — host removes a user from the room.
+const KickBody = z.object({ user_id: z.number().int().positive() });
+
+router.post("/audio-circle-sessions/:id/kick", requireAuth, generalApiLimiter, async (req, res) => {
+  const sessionId = parseInt(String(req.params.id ?? ""), 10);
+  if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
+  const parsed = KickBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "user_id is required" });
+
+  const { session, participant: hostParticipant } = await requireActiveParticipant(sessionId, req.authenticatedUserId!, "host");
+  if (!session) return res.status(404).json({ error: "Session not live" });
+  if (!hostParticipant) return res.status(403).json({ error: "Only the host can remove participants" });
+  if (parsed.data.user_id === req.authenticatedUserId) {
+    return res.status(400).json({ error: "You can't kick yourself — use End Circle instead" });
+  }
+
+  await db
+    .update(audioCircleParticipantsTable)
+    .set({ left_at: new Date() })
+    .where(and(
+      eq(audioCircleParticipantsTable.session_id, sessionId),
+      eq(audioCircleParticipantsTable.user_id, parsed.data.user_id),
+      isNull(audioCircleParticipantsTable.left_at),
+    ));
+  removeCircleParticipant(sessionId, parsed.data.user_id);
+
+  const activeParticipants = await getActiveParticipants(sessionId);
+  sendToCircleParticipants(activeParticipants.map(p => p.user_id).concat(parsed.data.user_id), {
+    type: "circle_kicked",
+    payload: { session_id: sessionId, user_id: parsed.data.user_id },
+  });
+  return res.json({ ok: true });
+});
+
 // ── Reactions ────────────────────────────────────────────────────────────────
 
 const ReactionBody = z.object({ emoji: z.string().trim().min(1).max(MAX_EMOJI_LEN) });

@@ -249,10 +249,11 @@ export default function AudioCirclesScreen() {
                       <div className="text-xs text-muted-foreground mt-0.5">No live session right now</div>
                     )}
                     {live && (
-                      <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground">
-                        <span className="flex items-center gap-1"><Mic className="w-3 h-3" /> {live.speaker_count}</span>
-                        <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {live.listener_count}</span>
+                      <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1"><Mic className="w-3 h-3" /> {live.speaker_count} speaker{live.speaker_count !== 1 ? "s" : ""}</span>
+                        <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {live.listener_count} audience</span>
                         {live.video_enabled && <span className="flex items-center gap-1"><Video className="w-3 h-3" /> Video</span>}
+                        {live.is_recording && <span className="flex items-center gap-1 text-red-400"><Radio className="w-3 h-3" /> Recording</span>}
                       </div>
                     )}
                   </div>

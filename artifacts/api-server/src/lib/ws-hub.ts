@@ -92,6 +92,8 @@ export type WsEventType =
   | "circle_recording_available"
   | "circle_host_disconnected"
   | "circle_host_reconnected"
+  | "circle_muted"
+  | "circle_kicked"
   // WebRTC mesh signaling relay (offer/answer/ICE) between two specific
   // participants in the same session — see sendCircleSignal below.
   | "circle_signal";

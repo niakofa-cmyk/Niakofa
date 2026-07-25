@@ -78,6 +78,8 @@ export type WsEventType =
   | "circle_recording_available"
   | "circle_host_disconnected"
   | "circle_host_reconnected"
+  | "circle_muted"
+  | "circle_kicked"
   | "circle_signal"
   | "connected"
   | "pong"

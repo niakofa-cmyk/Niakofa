@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation, useParams } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Mic, MicOff, Hand, Video, VideoOff, Radio, Users, X, PhoneOff,
-  Circle as CircleIcon, ChevronDown, Crown, Upload,
+  Mic, MicOff, Hand, Video, VideoOff, Radio, Users, PhoneOff,
+  Circle as CircleIcon, ChevronDown, Crown, Upload, Wifi, WifiOff,
+  VolumeX, UserMinus, Flag, Volume2,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders, getToken } from "@/lib/auth";
@@ -33,7 +34,50 @@ interface SessionInfo {
   is_recording: boolean;
 }
 
+type ConnectionStatus = "connecting" | "connected" | "reconnecting" | "lost";
+
 const REACTION_EMOJIS = ["👏", "🔥", "❤️", "😂", "🙌"];
+
+// ── Speaking volume analyser ─────────────────────────────────────────────────
+// Returns a cleanup function. Calls onLevel(0–1) at ~30fps.
+function startVolumeAnalyser(stream: MediaStream, onLevel: (v: number) => void): () => void {
+  let ctx: AudioContext | null = null;
+  let animId = 0;
+  try {
+    ctx = new AudioContext();
+    const src = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    src.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      const avg = data.reduce((a, b) => a + b, 0) / data.length;
+      onLevel(Math.min(1, avg / 80));
+      animId = requestAnimationFrame(tick);
+    };
+    animId = requestAnimationFrame(tick);
+  } catch {
+    // AudioContext unavailable in some environments — fail silently
+  }
+  return () => {
+    cancelAnimationFrame(animId);
+    ctx?.close().catch(() => {});
+  };
+}
+
+// ── Recording timer ──────────────────────────────────────────────────────────
+function useRecordingTimer(running: boolean) {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    if (!running) { setSeconds(0); return; }
+    const id = setInterval(() => setSeconds(s => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [running]);
+  const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const ss = String(seconds % 60).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
 
 export default function AudioCircleRoomScreen() {
   const params = useParams<{ id: string }>();
@@ -52,20 +96,38 @@ export default function AudioCircleRoomScreen() {
   const [remoteStreams, setRemoteStreams] = useState<Map<number, MediaStream>>(new Map());
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [meshReady, setMeshReady] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
+  // userId → 0–1 speaking volume
+  const [speakingLevels, setSpeakingLevels] = useState<Map<number, number>>(new Map());
+  const [localLevel, setLocalLevel] = useState(0);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
+  // moderation menu open for which speaker userId
+  const [modMenuOpen, setModMenuOpen] = useState<number | null>(null);
 
   const meshRef = useRef<AudioCircleMesh | null>(null);
   const audioElsRef = useRef<Map<number, HTMLAudioElement>>(new Map());
-  // Track recording state in a ref so the WS closure always reads the latest
   const isRecordingRef = useRef(false);
+  // volume analyser cleanups keyed by userId ("local" for own mic)
+  const analyserCleanupsRef = useRef<Map<string, () => void>>(new Map());
 
   const myUserId = currentUser?.id;
   const me = participants.find(p => p.user_id === myUserId);
   const isHost = session?.host_id === myUserId;
   const canSpeak = me?.role === "host" || me?.role === "speaker";
-  const speakers = participants.filter(p => p.role === "host" || p.role === "speaker");
-  const listeners = participants.filter(p => p.role === "listener");
+  const host = participants.find(p => p.role === "host");
+  const speakers = participants.filter(p => p.role === "speaker");
+  const audience = participants.filter(p => p.role === "listener");
 
-  // ── Load initial state, join as listener ────────────────────────────────
+  const recordingTimer = useRecordingTimer(!!session?.is_recording);
+
+  // ── Connection status from WS + WebRTC states ────────────────────────────
+  // We derive overall status: if the WS is alive and we loaded, "connected";
+  // if circle_host_disconnected or a peer fails, "reconnecting".
+  useEffect(() => {
+    if (!loading && session) setConnectionStatus("connected");
+  }, [loading, session]);
+
+  // ── Load initial state ───────────────────────────────────────────────────
   useEffect(() => {
     if (isNaN(sessionId)) return;
     let cancelled = false;
@@ -113,20 +175,28 @@ export default function AudioCircleRoomScreen() {
       },
       onRemoteStreamEnded: (userId: number) => {
         setRemoteStreams(prev => { const next = new Map(prev); next.delete(userId); return next; });
+        setSpeakingLevels(prev => { const next = new Map(prev); next.delete(userId); return next; });
+        const cleanup = analyserCleanupsRef.current.get(`remote:${userId}`);
+        if (cleanup) { cleanup(); analyserCleanupsRef.current.delete(`remote:${userId}`); }
       },
       subscribeToCircleSignal: (handler) => {
-        const unsub1 = subscribeRaw("circle_signal", handler);
-        return unsub1;
+        const unsub = subscribeRaw("circle_signal", handler);
+        return unsub;
       },
     });
     meshRef.current = mesh;
     setMeshReady(true);
-    return () => { mesh.destroy(); meshRef.current = null; setMeshReady(false); };
+    return () => {
+      mesh.destroy();
+      meshRef.current = null;
+      setMeshReady(false);
+      // tear down all analysers
+      for (const cleanup of analyserCleanupsRef.current.values()) cleanup();
+      analyserCleanupsRef.current.clear();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.id, myUserId]);
 
-  // Small helper so the mesh can subscribe to the shared WS without importing
-  // the React hook (mesh is a plain class, not a component).
   function subscribeRaw(type: string, handler: (e: WsEvent) => void): () => void {
     signalHandlerRef.current = handler;
     return () => { signalHandlerRef.current = null; };
@@ -134,7 +204,19 @@ export default function AudioCircleRoomScreen() {
   const signalHandlerRef = useRef<((e: WsEvent) => void) | null>(null);
   useWebSocket("circle_signal", (e) => signalHandlerRef.current?.(e));
 
-  // Connect the mesh to the right set of peers once we know who's who.
+  // Wire volume analysers for remote streams as they arrive
+  useEffect(() => {
+    for (const [userId, stream] of remoteStreams) {
+      const key = `remote:${userId}`;
+      if (analyserCleanupsRef.current.has(key)) continue;
+      const cleanup = startVolumeAnalyser(stream, (level) => {
+        setSpeakingLevels(prev => new Map(prev).set(userId, level));
+      });
+      analyserCleanupsRef.current.set(key, cleanup);
+    }
+  }, [remoteStreams]);
+
+  // Connect the mesh to peers
   useEffect(() => {
     const mesh = meshRef.current;
     if (!mesh || !myUserId) return;
@@ -143,39 +225,37 @@ export default function AudioCircleRoomScreen() {
         if (p.user_id !== myUserId) mesh.connectToPeer(p.user_id);
       }
     } else {
-      for (const s of speakers) {
+      const stageUsers = participants.filter(p => p.role === "host" || p.role === "speaker");
+      for (const s of stageUsers) {
         if (s.user_id !== myUserId) mesh.connectToPeer(s.user_id);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [participants.map(p => p.user_id).join(","), speakers.map(s => s.user_id).join(","), myUserId, canSpeak]);
+  }, [participants.map(p => p.user_id).join(","), myUserId, canSpeak]);
 
-  // ── Mic/video publish when promoted to speaker ──────────────────────────
+  // Publish mic when promoted to speaker
   useEffect(() => {
     if (!canSpeak || !meshRef.current) return;
     meshRef.current.publishLocalMedia({ video: !!session?.video_enabled && videoOn })
       .then((stream) => {
         setMicOn(true);
         setLocalStream(stream);
+        // Start local volume analyser
+        const key = "local";
+        const existing = analyserCleanupsRef.current.get(key);
+        if (existing) existing();
+        const cleanup = startVolumeAnalyser(stream, setLocalLevel);
+        analyserCleanupsRef.current.set(key, cleanup);
       })
       .catch(() => toast({ title: "Couldn't access your microphone", description: "Check your browser's permission settings.", variant: "destructive" }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canSpeak]);
 
-  // ── Remote audio element lifecycle ──────────────────────────────────────
-  // <video> elements rendered in JSX handle their own audio output for video
-  // streams. For audio-only streams (no video track) we create a hidden
-  // <Audio> element imperatively.
-  //
-  // Critical: when a stream *transitions* from audio-only → audio+video (e.g.
-  // the host turns their camera on mid-session), we MUST tear down the stale
-  // hidden <audio> element. Without this, both the <audio> element and the
-  // <video> element play audio simultaneously → doubled/echoed sound.
+  // Remote audio element lifecycle
   useEffect(() => {
     for (const [userId, stream] of remoteStreams) {
       const hasVideo = stream.getVideoTracks().length > 0;
       if (hasVideo) {
-        // Video stream: <video> in JSX owns audio. Destroy any stale audio el.
         const staleAudio = audioElsRef.current.get(userId);
         if (staleAudio) {
           staleAudio.pause();
@@ -183,7 +263,6 @@ export default function AudioCircleRoomScreen() {
           audioElsRef.current.delete(userId);
         }
       } else {
-        // Audio-only stream: ensure a hidden <audio> element is playing.
         let el = audioElsRef.current.get(userId);
         if (!el) {
           el = new Audio();
@@ -193,7 +272,6 @@ export default function AudioCircleRoomScreen() {
         if (el.srcObject !== stream) el.srcObject = stream;
       }
     }
-    // Clean up audio elements for peers who have left.
     for (const [userId] of Array.from(audioElsRef.current)) {
       if (!remoteStreams.has(userId)) {
         const el = audioElsRef.current.get(userId);
@@ -203,7 +281,7 @@ export default function AudioCircleRoomScreen() {
     }
   }, [remoteStreams]);
 
-  // ── Upload recording blob to server ──────────────────────────────────────
+  // ── Upload recording blob ────────────────────────────────────────────────
   const uploadRecording = useCallback(async (blob: Blob) => {
     if (!isHost) return;
     setUploading(true);
@@ -230,7 +308,7 @@ export default function AudioCircleRoomScreen() {
     }
   }, [base, sessionId, isHost]);
 
-  // ── Leave on unmount / tab close ─────────────────────────────────────────
+  // ── Leave / cleanup ──────────────────────────────────────────────────────
   const leaveRoom = useCallback(() => {
     if (isNaN(sessionId)) return;
     const url = `${base}/api/audio-circle-sessions/${sessionId}/leave`;
@@ -261,23 +339,61 @@ export default function AudioCircleRoomScreen() {
       { user_id: p.user_id, role: (p.role as Participant["role"]) ?? "listener", hand_raised: false, muted: false, name: p.name ?? "Someone", avatar_url: p.avatar_url ?? null },
     ]);
   });
+
   useWebSocket("circle_participant_left", (e) => {
     const p = e.payload as { session_id: number; user_id: number };
     if (p.session_id !== sessionId) return;
     setParticipants(prev => prev.filter(x => x.user_id !== p.user_id));
     meshRef.current?.disconnectFromPeer(p.user_id);
   });
+
   useWebSocket("circle_hand_raised", (e) => {
     const p = e.payload as { session_id: number; user_id: number; raised: boolean };
     if (p.session_id !== sessionId) return;
     setParticipants(prev => prev.map(x => x.user_id === p.user_id ? { ...x, hand_raised: p.raised } : x));
   });
+
   useWebSocket("circle_role_changed", (e) => {
     const p = e.payload as { session_id: number; user_id: number; role: Participant["role"] };
     if (p.session_id !== sessionId) return;
     setParticipants(prev => prev.map(x => x.user_id === p.user_id ? { ...x, role: p.role, hand_raised: false } : x));
     if (p.user_id !== myUserId && p.role === "listener") meshRef.current?.disconnectFromPeer(p.user_id);
   });
+
+  useWebSocket("circle_muted", (e) => {
+    const p = e.payload as { session_id: number; user_id: number | null; muted: boolean; all?: boolean };
+    if (p.session_id !== sessionId) return;
+    if (p.all) {
+      // Mute all speakers
+      setParticipants(prev => prev.map(x => x.role === "speaker" ? { ...x, muted: true } : x));
+      // If I'm a speaker, mute my own mic
+      if (me?.role === "speaker") {
+        setMicOn(false);
+        meshRef.current?.setMicEnabled(false);
+        toast({ title: "The host muted everyone" });
+      }
+    } else if (p.user_id !== null) {
+      setParticipants(prev => prev.map(x => x.user_id === p.user_id ? { ...x, muted: p.muted } : x));
+      if (p.user_id === myUserId) {
+        setMicOn(!p.muted);
+        meshRef.current?.setMicEnabled(!p.muted);
+        toast({ title: p.muted ? "The host muted you" : "The host unmuted you" });
+      }
+    }
+  });
+
+  useWebSocket("circle_kicked", (e) => {
+    const p = e.payload as { session_id: number; user_id: number };
+    if (p.session_id !== sessionId) return;
+    if (p.user_id === myUserId) {
+      toast({ title: "You were removed from this circle", variant: "destructive" });
+      setLocation("/audio-circles");
+      return;
+    }
+    setParticipants(prev => prev.filter(x => x.user_id !== p.user_id));
+    meshRef.current?.disconnectFromPeer(p.user_id);
+  });
+
   useWebSocket("circle_reaction", (e) => {
     const p = e.payload as { session_id: number; emoji: string };
     if (p.session_id !== sessionId) return;
@@ -286,24 +402,16 @@ export default function AudioCircleRoomScreen() {
     setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2000);
   });
 
-  // ── Recording lifecycle — wire mesh startRecording/stopRecording ─────────
-  // Every participant receives this event; only the host does the actual
-  // recording (they hear everyone in a full mesh), but all clients update
-  // the UI indicator.
   useWebSocket("circle_recording_changed", (e) => {
     const p = e.payload as { session_id: number; is_recording: boolean };
     if (p.session_id !== sessionId) return;
-
     const wasRecording = isRecordingRef.current;
     isRecordingRef.current = p.is_recording;
     setSession(prev => prev ? { ...prev, is_recording: p.is_recording } : prev);
-
     if (isHost) {
       if (p.is_recording && !wasRecording) {
         meshRef.current?.startRecording();
       } else if (!p.is_recording && wasRecording) {
-        // stopRecording is async — it waits for MediaRecorder.onstop so the
-        // final chunk is included in the blob before upload.
         meshRef.current?.stopRecording().then((blob) => {
           if (blob && blob.size > 0) uploadRecording(blob);
         });
@@ -311,9 +419,6 @@ export default function AudioCircleRoomScreen() {
     }
   });
 
-  // A host can enter a session that was already recording. In that case there
-  // is no new WS transition for this tab, so hydrate the local recorder from
-  // the server state once the mesh exists.
   useEffect(() => {
     if (!isHost || !session?.is_recording || !meshRef.current || isRecordingRef.current) return;
     isRecordingRef.current = true;
@@ -321,19 +426,13 @@ export default function AudioCircleRoomScreen() {
       meshRef.current.startRecording();
     } catch {
       isRecordingRef.current = false;
-      toast({ title: "Couldn't start recording", description: "Your browser could not create an audio recorder.", variant: "destructive" });
     }
   }, [isHost, session?.is_recording, session?.id, meshReady]);
 
-  // ── Recording available — notify when upload completes ───────────────────
   useWebSocket("circle_recording_available", (e) => {
-    const p = e.payload as { session_id: number; circle_id: number; recording_url: string };
+    const p = e.payload as { session_id: number };
     if (p.session_id !== sessionId) return;
-    // Only show the "go listen" toast to non-uploading clients; the uploader
-    // already sees a "Recording saved" toast from uploadRecording().
-    if (!isHost) {
-      toast({ title: "Recording available", description: "This circle was recorded — check Past Recordings." });
-    }
+    if (!isHost) toast({ title: "Recording available", description: "Check Past Recordings." });
   });
 
   useWebSocket("circle_session_ended", (e) => {
@@ -342,14 +441,18 @@ export default function AudioCircleRoomScreen() {
     toast({ title: "The host ended this circle" });
     setLocation("/audio-circles");
   });
+
   useWebSocket("circle_host_disconnected", (e) => {
     const p = e.payload as { session_id: number };
     if (p.session_id !== sessionId) return;
+    setConnectionStatus("reconnecting");
     toast({ title: "Host reconnecting…", description: "The circle is still open — hang tight." });
   });
+
   useWebSocket("circle_host_reconnected", (e) => {
     const p = e.payload as { session_id: number };
     if (p.session_id !== sessionId) return;
+    setConnectionStatus("connected");
     toast({ title: "Host is back" });
   });
 
@@ -368,14 +471,19 @@ export default function AudioCircleRoomScreen() {
   };
 
   const toggleHand = () => post("/hand", { raised: !me?.hand_raised });
-  const promote = (userId: number) => post("/promote", { user_id: userId });
-  const demote = (userId: number) => post("/demote", { user_id: userId });
+  const promote = (userId: number) => { post("/promote", { user_id: userId }); setModMenuOpen(null); };
+  const demote = (userId: number) => { post("/demote", { user_id: userId }); setModMenuOpen(null); };
+  const muteUser = (userId: number, muted: boolean) => { post("/mute", { user_id: userId, muted }); setModMenuOpen(null); };
+  const muteAll = () => post("/mute-all");
+  const kickUser = (userId: number) => { post("/kick", { user_id: userId }); setModMenuOpen(null); };
   const react = (emoji: string) => post("/react", { emoji });
+
   const endSession = async () => {
     if (isRecordingRef.current) await toggleRecording();
     await post("/end");
     setLocation("/audio-circles");
   };
+
   const leaveAndExit = async () => {
     if (isHost && isRecordingRef.current) await toggleRecording();
     leaveRoom();
@@ -394,8 +502,6 @@ export default function AudioCircleRoomScreen() {
     if (!meshRef.current || !session?.video_enabled) return;
     const next = !videoOn;
     if (next) {
-      // Turning camera ON — request a fresh camera track (a stopped track
-      // cannot be re-enabled; we must always call getUserMedia again).
       try {
         const stream = await meshRef.current.publishLocalMedia({ video: true });
         setLocalStream(stream);
@@ -404,11 +510,7 @@ export default function AudioCircleRoomScreen() {
         toast({ title: "Couldn't access camera", description: "Check browser permissions.", variant: "destructive" });
       }
     } else {
-      // Turning camera OFF — stop the video tracks so the camera indicator
-      // light turns off, and null-out the sender on each peer so remote
-      // participants stop receiving video frames immediately.
       meshRef.current.stopVideoTracks();
-      // Update local preview stream to audio-only so the <video> grid hides.
       setLocalStream(prev => {
         if (!prev) return prev;
         const audioTracks = prev.getAudioTracks();
@@ -420,10 +522,7 @@ export default function AudioCircleRoomScreen() {
 
   const toggleRecording = async () => {
     const next = !isRecordingRef.current;
-
     if (next) {
-      // Start from the host's click so MediaRecorder does not depend on a
-      // WebSocket round-trip. The server event still updates every other tab.
       isRecordingRef.current = true;
       setSession(prev => prev ? { ...prev, is_recording: true } : prev);
       try {
@@ -431,10 +530,9 @@ export default function AudioCircleRoomScreen() {
       } catch {
         isRecordingRef.current = false;
         setSession(prev => prev ? { ...prev, is_recording: false } : prev);
-        toast({ title: "Couldn't start recording", description: "Your browser could not create an audio recorder.", variant: "destructive" });
+        toast({ title: "Couldn't start recording", variant: "destructive" });
         return;
       }
-
       const ok = await post("/recording", { is_recording: true });
       if (!ok) {
         isRecordingRef.current = false;
@@ -443,9 +541,6 @@ export default function AudioCircleRoomScreen() {
       }
       return;
     }
-
-    // Stop the server state first, then await MediaRecorder.onstop so its
-    // final dataavailable chunk is included before the blob is uploaded.
     isRecordingRef.current = false;
     setSession(prev => prev ? { ...prev, is_recording: false } : prev);
     const ok = await post("/recording", { is_recording: false });
@@ -462,30 +557,52 @@ export default function AudioCircleRoomScreen() {
     return <div className="min-h-screen bg-background flex items-center justify-center text-sm text-muted-foreground">Loading circle…</div>;
   }
 
-  // Remote streams that carry video tracks (rendered as <video>)
   const remoteVideoStreams = [...remoteStreams.entries()].filter(
     ([, s]) => s.getVideoTracks().length > 0
   );
 
+  // Connection status dot
+  const connDot = connectionStatus === "connected"
+    ? <span className="flex items-center gap-1 text-green-400 text-[10px]"><Wifi className="w-3 h-3" /> Connected</span>
+    : connectionStatus === "reconnecting"
+      ? <span className="flex items-center gap-1 text-amber-400 text-[10px] animate-pulse"><WifiOff className="w-3 h-3" /> Reconnecting…</span>
+      : connectionStatus === "lost"
+        ? <span className="flex items-center gap-1 text-red-400 text-[10px]"><WifiOff className="w-3 h-3" /> Connection lost</span>
+        : <span className="flex items-center gap-1 text-muted-foreground text-[10px]"><Wifi className="w-3 h-3" /> Connecting…</span>;
+
   return (
-    <div className="min-h-screen bg-background pb-32 relative overflow-hidden">
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
-          <div className="min-w-0">
-            <div className="font-black text-sm truncate">{session.title}</div>
-            <div className="text-[11px] text-muted-foreground flex items-center gap-1">
-              <Users className="w-3 h-3" /> {participants.length} here
-              {session.is_recording && <span className="text-red-400 flex items-center gap-0.5 ml-1"><CircleIcon className="w-2 h-2 fill-current" /> REC</span>}
-              {uploading && <span className="text-amber-400 flex items-center gap-0.5 ml-1"><Upload className="w-2.5 h-2.5" /> Saving…</span>}
+    <div className="min-h-screen bg-background pb-40 relative overflow-hidden" onClick={() => setModMenuOpen(null)}>
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+            <div className="min-w-0">
+              <div className="font-black text-sm truncate">{session.title}</div>
+              <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
+                <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {participants.length} here</span>
+                {connDot}
+              </div>
             </div>
           </div>
+          <button onClick={leaveAndExit} className="p-2 rounded-full hover:bg-muted shrink-0">
+            <ChevronDown className="w-5 h-5" />
+          </button>
         </div>
-        <button onClick={leaveAndExit} className="p-2 rounded-full hover:bg-muted"><ChevronDown className="w-5 h-5" /></button>
+
+        {/* Recording bar — visible to everyone */}
+        {session.is_recording && (
+          <div className="mt-2 flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-1.5">
+            <CircleIcon className="w-3 h-3 text-red-500 fill-red-500 animate-pulse shrink-0" />
+            <span className="text-xs text-red-400 font-bold flex-1">This Circle is being recorded</span>
+            {isHost && <span className="text-xs text-red-400 font-mono">{recordingTimer}</span>}
+            {uploading && <Upload className="w-3 h-3 text-amber-400 animate-bounce" />}
+          </div>
+        )}
       </div>
 
-      {/* Floating reactions */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-32 flex justify-center z-20">
+      {/* ── Floating reactions ───────────────────────────────────────────────── */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-48 flex justify-center z-20">
         <AnimatePresence>
           {floatingReactions.map(r => (
             <motion.div
@@ -502,46 +619,59 @@ export default function AudioCircleRoomScreen() {
         </AnimatePresence>
       </div>
 
-      <div className="p-4 space-y-6">
+      {/* ── End confirmation overlay ─────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showEndConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6"
+            onClick={(e) => { e.stopPropagation(); setShowEndConfirm(false); }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 16 }}
+              className="bg-card border border-border rounded-2xl p-6 max-w-xs w-full space-y-4"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="text-base font-black">End this Circle?</div>
+              <div className="text-sm text-muted-foreground">This will end the Circle for everyone in the room.</div>
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={() => setShowEndConfirm(false)}>Cancel</Button>
+                <Button variant="destructive" className="flex-1" onClick={() => { setShowEndConfirm(false); endSession(); }}>End Circle</Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        {/* ── Video grid (only shown when this session has video on) ───────── */}
+      <div className="p-4 space-y-5">
+
+        {/* ── Video grid ──────────────────────────────────────────────────────── */}
         {session.video_enabled && (remoteVideoStreams.length > 0 || (localStream && localStream.getVideoTracks().length > 0 && videoOn)) && (
           <div>
             <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Video</div>
             <div className="grid grid-cols-2 gap-2">
-              {/* Local camera preview */}
               {localStream && localStream.getVideoTracks().length > 0 && videoOn && (
-                <div className="relative aspect-video bg-black rounded-xl overflow-hidden">
+                <div className={`relative aspect-video bg-black rounded-xl overflow-hidden ${localLevel > 0.15 ? "ring-2 ring-primary" : ""}`}>
                   <video
-                    autoPlay
-                    muted
-                    playsInline
-                    ref={(el) => {
-                      if (el && el.srcObject !== localStream) {
-                        el.srcObject = localStream;
-                      }
-                    }}
+                    autoPlay muted playsInline
+                    ref={(el) => { if (el && el.srcObject !== localStream) el.srcObject = localStream; }}
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute bottom-1 left-1 text-[9px] font-bold text-white bg-black/60 px-1.5 py-0.5 rounded">
-                    You
-                  </div>
+                  <div className="absolute bottom-1 left-1 text-[9px] font-bold text-white bg-black/60 px-1.5 py-0.5 rounded">You</div>
                 </div>
               )}
-              {/* Remote video feeds */}
               {remoteVideoStreams.map(([userId, stream]) => {
                 const p = participants.find(x => x.user_id === userId);
+                const level = speakingLevels.get(userId) ?? 0;
                 return (
-                  <div key={userId} className="relative aspect-video bg-black rounded-xl overflow-hidden">
+                  <div key={userId} className={`relative aspect-video bg-black rounded-xl overflow-hidden ${level > 0.15 ? "ring-2 ring-primary" : ""}`}>
                     <video
-                      autoPlay
-                      playsInline
-                      ref={(el) => {
-                        if (el && el.srcObject !== stream) {
-                          el.srcObject = stream;
-                          el.play().catch(() => {});
-                        }
-                      }}
+                      autoPlay playsInline
+                      ref={(el) => { if (el && el.srcObject !== stream) { el.srcObject = stream; el.play().catch(() => {}); } }}
                       className="w-full h-full object-cover"
                     />
                     <div className="absolute bottom-1 left-1 text-[9px] font-bold text-white bg-black/60 px-1.5 py-0.5 rounded truncate max-w-[80%]">
@@ -554,41 +684,102 @@ export default function AudioCircleRoomScreen() {
           </div>
         )}
 
-        {/* ── Speakers ─────────────────────────────────────────────────────── */}
+        {/* ── Stage: HOST ──────────────────────────────────────────────────────── */}
         <div>
-          <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Speaking ({speakers.length}/13)</div>
-          <div className="grid grid-cols-4 gap-3">
-            {speakers.map(s => (
-              <div key={s.user_id} className="flex flex-col items-center gap-1">
-                <div className="relative">
-                  <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 border-primary/40">
-                    {s.avatar_url ? <img src={s.avatar_url} className="w-full h-full object-cover" alt="" /> : <span className="text-lg font-black">{s.name?.[0] ?? "?"}</span>}
-                  </div>
-                  {s.role === "host" && <Crown className="w-3.5 h-3.5 text-amber-400 absolute -top-1 -right-1" />}
-                  {s.muted && <MicOff className="w-3 h-3 text-red-400 absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5" />}
+          <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Host</div>
+          {host ? (
+            <SpeakerTile
+              participant={host}
+              isMe={host.user_id === myUserId}
+              level={host.user_id === myUserId ? localLevel : (speakingLevels.get(host.user_id) ?? 0)}
+              isHost={isHost}
+              canMod={false}
+              modMenuOpen={false}
+              onOpenMod={() => {}}
+              onMute={() => {}}
+              onDemote={() => {}}
+              onKick={() => {}}
+            />
+          ) : (
+            <div className="text-xs text-muted-foreground">Host has left</div>
+          )}
+        </div>
+
+        {/* ── Stage: SPEAKERS ─────────────────────────────────────────────────── */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+              Speakers ({speakers.length})
+            </div>
+            {isHost && speakers.length > 0 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); muteAll(); }}
+                className="text-[10px] font-bold text-amber-400 flex items-center gap-1 hover:opacity-70"
+              >
+                <VolumeX className="w-3 h-3" /> Mute all
+              </button>
+            )}
+          </div>
+          {speakers.length === 0 ? (
+            <div className="text-xs text-muted-foreground">No speakers yet</div>
+          ) : (
+            <div className="grid grid-cols-4 gap-3" onClick={e => e.stopPropagation()}>
+              {speakers.map(s => (
+                <SpeakerTile
+                  key={s.user_id}
+                  participant={s}
+                  isMe={s.user_id === myUserId}
+                  level={s.user_id === myUserId ? localLevel : (speakingLevels.get(s.user_id) ?? 0)}
+                  isHost={isHost}
+                  canMod={isHost && s.user_id !== myUserId}
+                  modMenuOpen={modMenuOpen === s.user_id}
+                  onOpenMod={() => setModMenuOpen(prev => prev === s.user_id ? null : s.user_id)}
+                  onMute={() => muteUser(s.user_id, !s.muted)}
+                  onDemote={() => demote(s.user_id)}
+                  onKick={() => kickUser(s.user_id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Raised hands (host-only) ─────────────────────────────────────────── */}
+        {isHost && audience.some(l => l.hand_raised) && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 space-y-2">
+            <div className="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-1">Raised Hands</div>
+            {audience.filter(l => l.hand_raised).map(l => (
+              <div key={l.user_id} className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm font-black overflow-hidden shrink-0">
+                  {l.avatar_url ? <img src={l.avatar_url} className="w-full h-full object-cover" alt="" /> : l.name?.[0] ?? "?"}
                 </div>
-                <span className="text-[10px] font-bold truncate max-w-[64px]">{s.name}</span>
-                {isHost && s.user_id !== myUserId && (
-                  <button onClick={() => demote(s.user_id)} className="text-[9px] text-muted-foreground underline">move down</button>
-                )}
+                <span className="flex-1 text-sm font-bold truncate">{l.name}</span>
+                <div className="flex gap-1.5">
+                  <Button size="sm" className="h-7 text-xs px-2" onClick={() => promote(l.user_id)}>Bring up</Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={() => post("/hand", { raised: false })}>Dismiss</Button>
+                </div>
               </div>
             ))}
           </div>
-        </div>
+        )}
 
-        {listeners.length > 0 && (
+        {/* ── Audience ─────────────────────────────────────────────────────────── */}
+        {audience.length > 0 && (
           <div>
-            <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Listening ({listeners.length})</div>
+            <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
+              Audience ({audience.length})
+            </div>
             <div className="grid grid-cols-5 gap-3">
-              {listeners.map(l => (
+              {audience.map(l => (
                 <div key={l.user_id} className="flex flex-col items-center gap-1">
                   <div className="relative">
                     <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center overflow-hidden">
                       {l.avatar_url ? <img src={l.avatar_url} className="w-full h-full object-cover" alt="" /> : <span className="text-sm font-black">{l.name?.[0] ?? "?"}</span>}
                     </div>
-                    {l.hand_raised && <Hand className="w-3.5 h-3.5 text-amber-400 absolute -top-1 -right-1" />}
+                    {l.hand_raised && (
+                      <span className="absolute -top-1 -right-1 text-base leading-none">✋</span>
+                    )}
                   </div>
-                  <span className="text-[9px] truncate max-w-[52px]">{l.name}</span>
+                  <span className="text-[9px] truncate max-w-[52px] text-center">{l.name}</span>
                   {isHost && l.hand_raised && (
                     <button onClick={() => promote(l.user_id)} className="text-[9px] text-primary font-bold underline">bring up</button>
                   )}
@@ -599,17 +790,21 @@ export default function AudioCircleRoomScreen() {
         )}
       </div>
 
-      {/* Bottom controls */}
+      {/* ── Bottom controls ───────────────────────────────────────────────────── */}
       <div className="fixed bottom-0 inset-x-0 bg-background/95 backdrop-blur border-t border-border p-4 space-y-3">
+        {/* Reactions */}
         <div className="flex items-center justify-center gap-2">
           {REACTION_EMOJIS.map(e => (
             <button key={e} onClick={() => react(e)} className="text-xl px-1 hover:scale-125 transition-transform">{e}</button>
           ))}
         </div>
-        <div className="flex items-center justify-center gap-3">
+
+        {/* Controls row */}
+        <div className="flex items-center justify-center gap-2.5">
           {!canSpeak && (
             <Button variant={me?.hand_raised ? "default" : "outline"} onClick={toggleHand} className="gap-2">
-              <Hand className="w-4 h-4" /> {me?.hand_raised ? "Hand raised" : "Raise hand"}
+              <Hand className="w-4 h-4" />
+              {me?.hand_raised ? "Hand raised" : "Raise hand"}
             </Button>
           )}
           {canSpeak && (
@@ -620,6 +815,12 @@ export default function AudioCircleRoomScreen() {
           {canSpeak && session.video_enabled && (
             <Button variant={videoOn ? "default" : "outline"} size="icon" onClick={toggleVideo} title={videoOn ? "Turn off camera" : "Turn on camera"}>
               {videoOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+            </Button>
+          )}
+          {/* Speaker can leave stage themselves */}
+          {me?.role === "speaker" && (
+            <Button variant="outline" size="icon" onClick={() => demote(myUserId!)} title="Leave stage">
+              <UserMinus className="w-4 h-4" />
             </Button>
           )}
           {isHost && (
@@ -633,11 +834,101 @@ export default function AudioCircleRoomScreen() {
               <CircleIcon className={`w-4 h-4 ${session.is_recording ? "text-red-500 fill-red-500" : ""}`} />
             </Button>
           )}
-          <Button variant="destructive" size="icon" onClick={isHost ? endSession : leaveAndExit}>
+          <Button
+            variant="destructive"
+            size="icon"
+            onClick={isHost ? () => setShowEndConfirm(true) : leaveAndExit}
+            title={isHost ? "End Circle" : "Leave"}
+          >
             <PhoneOff className="w-4 h-4" />
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Speaker tile (used for both Host and Speakers sections) ────────────────────
+interface SpeakerTileProps {
+  participant: Participant;
+  isMe: boolean;
+  level: number; // 0–1 speaking volume
+  isHost: boolean;
+  canMod: boolean;
+  modMenuOpen: boolean;
+  onOpenMod: () => void;
+  onMute: () => void;
+  onDemote: () => void;
+  onKick: () => void;
+}
+
+function SpeakerTile({ participant: s, isMe, level, canMod, modMenuOpen, onOpenMod, onMute, onDemote, onKick }: SpeakerTileProps) {
+  const isSpeaking = level > 0.12;
+  return (
+    <div className="flex flex-col items-center gap-1 relative">
+      <div className="relative">
+        {/* Animated speaking ring */}
+        {isSpeaking && (
+          <motion.div
+            className="absolute inset-0 rounded-full border-2 border-primary"
+            animate={{ scale: [1, 1.15, 1], opacity: [0.8, 0.3, 0.8] }}
+            transition={{ duration: 0.8, repeat: Infinity }}
+          />
+        )}
+        <button
+          className={`w-14 h-14 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 ${
+            isSpeaking ? "border-primary" : s.role === "host" ? "border-amber-400/60" : "border-primary/30"
+          }`}
+          onClick={canMod ? onOpenMod : undefined}
+        >
+          {s.avatar_url
+            ? <img src={s.avatar_url} className="w-full h-full object-cover" alt="" />
+            : <span className="text-lg font-black">{s.name?.[0] ?? "?"}</span>}
+        </button>
+        {s.role === "host" && (
+          <Crown className="w-3.5 h-3.5 text-amber-400 absolute -top-1 -right-1 drop-shadow" />
+        )}
+        {s.muted && (
+          <MicOff className="w-3 h-3 text-red-400 absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5" />
+        )}
+        {isSpeaking && !s.muted && (
+          <Volume2 className="w-3 h-3 text-primary absolute -bottom-0.5 -left-0.5 bg-background rounded-full p-0.5" />
+        )}
+      </div>
+      <span className="text-[10px] font-bold truncate max-w-[64px]">{isMe ? "You" : s.name}</span>
+
+      {/* Host moderation dropdown */}
+      <AnimatePresence>
+        {modMenuOpen && canMod && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: -4 }}
+            transition={{ duration: 0.12 }}
+            className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-30 bg-card border border-border rounded-xl shadow-xl py-1 min-w-[140px]"
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted"
+              onClick={onMute}
+            >
+              {s.muted ? <><Mic className="w-3 h-3" /> Unmute</> : <><MicOff className="w-3 h-3" /> Mute</>}
+            </button>
+            <button
+              className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted"
+              onClick={onDemote}
+            >
+              <UserMinus className="w-3 h-3" /> Move to Audience
+            </button>
+            <button
+              className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-red-400"
+              onClick={onKick}
+            >
+              <Flag className="w-3 h-3" /> Remove from Circle
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
