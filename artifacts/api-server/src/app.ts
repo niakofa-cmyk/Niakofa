@@ -156,6 +156,8 @@ app.use("/api/verification/identity/webhook", express.raw({ type: "application/j
 app.use("/api/background-checks/webhook", express.raw({ type: "application/json", limit: "1mb" }));
 // Voice STT endpoint needs raw audio bytes before express.json() runs
 app.use("/api/nia/voice/transcribe", voiceAudioRawParser);
+// Circle recording upload — raw audio body parsed before the json() middleware
+app.use("/api/audio-circle-sessions/:id/recording-upload", express.raw({ type: "audio/*", limit: "500mb" }));
 
 app.use(express.json({ limit: "10mb" })); // 10mb to allow base64 avatar uploads
 app.use(express.urlencoded({ extended: true, limit: "1mb" })); // cap form bodies to prevent DoS
@@ -177,6 +179,13 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
 });
 
 app.use("/api", router);
+
+// ── Serve uploaded circle recordings ─────────────────────────────────────────
+// Recordings are stored at <monorepo-root>/uploads/recordings/ and served
+// here so the /uploads/recordings/<filename>.webm URL embedded in the DB
+// resolves correctly in both dev and production.
+const uploadsDir = path.join(import.meta.dirname, "..", "..", "..", "uploads");
+app.use("/uploads", express.static(uploadsDir, { maxAge: "7d" }));
 
 // ── Production: serve built frontend static files ─────────────────────────────
 if (process.env.NODE_ENV === "production" && process.env.SERVE_FRONTEND === "true") {

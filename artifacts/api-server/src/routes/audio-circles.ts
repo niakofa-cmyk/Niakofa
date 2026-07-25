@@ -15,6 +15,9 @@
  */
 import { Router } from "express";
 import { z } from "zod";
+import { randomUUID } from "crypto";
+import { writeFileSync, mkdirSync } from "fs";
+import path from "path";
 import {
   db,
   audioCirclesTable,
@@ -602,6 +605,46 @@ router.post("/audio-circle-sessions/:id/recording", requireAuth, generalApiLimit
     payload: { session_id: sessionId, is_recording: parsed.data.is_recording },
   });
   return res.json({ ok: true });
+});
+
+// POST /audio-circle-sessions/:id/recording-upload — host uploads the raw
+// audio blob (audio/webm) produced by the client-side MediaRecorder.  The
+// file is saved to disk under <repo-root>/uploads/recordings/ and the
+// resulting URL is persisted automatically so the host doesn't need to call
+// /recording-url separately.
+router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalApiLimiter, async (req, res) => {
+  const sessionId = parseInt(String(req.params.id ?? ""), 10);
+  if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
+
+  const userId = req.authenticatedUserId!;
+  const [session] = await db.select().from(audioCircleSessionsTable).where(eq(audioCircleSessionsTable.id, sessionId)).limit(1);
+  if (!session) return res.status(404).json({ error: "Session not found" });
+  if (session.host_id !== userId) return res.status(403).json({ error: "Only the host can upload a recording" });
+
+  const body = req.body as Buffer;
+  if (!Buffer.isBuffer(body) || body.length === 0) {
+    return res.status(400).json({ error: "Empty or non-audio body" });
+  }
+
+  // Determine uploads dir — two levels up from routes/ gets us to the artifact
+  // root; from there we go up two more to the monorepo root.
+  const uploadsDir = path.join(import.meta.dirname, "..", "..", "..", "..", "uploads", "recordings");
+  mkdirSync(uploadsDir, { recursive: true });
+
+  const filename = `${sessionId}-${randomUUID()}.webm`;
+  const filePath = path.join(uploadsDir, filename);
+  writeFileSync(filePath, body);
+
+  // Build a URL the client can use to play back the recording.
+  // In dev the API is on port 8080; in production behind a reverse proxy the
+  // origin is the same as the frontend, so a root-relative path is enough.
+  const recording_url = `/uploads/recordings/${filename}`;
+
+  await db.update(audioCircleSessionsTable)
+    .set({ recording_url })
+    .where(eq(audioCircleSessionsTable.id, sessionId));
+
+  return res.json({ ok: true, recording_url });
 });
 
 const RecordingUrlBody = z.object({ recording_url: z.string().url().max(2048) });

@@ -50,6 +50,12 @@ export default function AudioCirclesScreen() {
   });
   const [cityInput, setCityInput] = useState(city);
   const [startingId, setStartingId] = useState<number | null>(null);
+  // Per-circle video toggle: Map<circleId, boolean>. When the host clicks the
+  // camera icon next to "Host", it toggles video_enabled for that circle's
+  // upcoming session. Defaults to audio-only (false) to preserve existing UX.
+  const [videoToggles, setVideoToggles] = useState<Map<number, boolean>>(new Map());
+  const toggleCircleVideo = (circleId: number) =>
+    setVideoToggles(prev => new Map(prev).set(circleId, !prev.get(circleId)));
 
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
@@ -96,10 +102,11 @@ export default function AudioCirclesScreen() {
     setStartingId(circle.id);
     try {
       const title = circle.neighborhood_name ? `${circle.neighborhood_name} Circle` : `${circle.city_display} Circle`;
+      const video_enabled = videoToggles.get(circle.id) ?? false;
       const res = await fetch(`${base}/api/audio-circles/${circle.id}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ title, video_enabled }),
       });
       const data = await res.json();
       if (res.status === 409 && data.session_id) {
@@ -221,14 +228,28 @@ export default function AudioCirclesScreen() {
                   {live ? (
                     <Button size="sm" onClick={() => joinRoom(live.id)}>Join</Button>
                   ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={startingId === circle.id}
-                      onClick={() => startRoom(circle)}
-                    >
-                      {startingId === circle.id ? "Starting…" : "Host"}
-                    </Button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Video toggle — lets the host enable camera before starting */}
+                      <button
+                        onClick={() => toggleCircleVideo(circle.id)}
+                        title={videoToggles.get(circle.id) ? "Video on — click to turn off" : "Enable video for this circle"}
+                        className={`p-1.5 rounded-lg border transition-colors ${
+                          videoToggles.get(circle.id)
+                            ? "bg-primary/15 border-primary text-primary"
+                            : "border-border text-muted-foreground hover:border-primary/50"
+                        }`}
+                      >
+                        <Video className="w-3.5 h-3.5" />
+                      </button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={startingId === circle.id}
+                        onClick={() => startRoom(circle)}
+                      >
+                        {startingId === circle.id ? "Starting…" : "Host"}
+                      </Button>
+                    </div>
                   )}
                 </div>
               </motion.div>
