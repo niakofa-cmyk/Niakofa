@@ -456,30 +456,44 @@ router.post("/audio-circle-sessions/:id/end", requireAuth, generalApiLimiter, as
 
 // ── Hand raising & speaker roles ─────────────────────────────────────────────
 
-const HandRaiseBody = z.object({ raised: z.boolean() });
+const HandRaiseBody = z.object({
+  raised: z.boolean(),
+  // Optional: host can pass another user's id to dismiss their raised hand.
+  user_id: z.number().int().positive().optional(),
+});
 
-// POST /audio-circle-sessions/:id/hand — listener raises/lowers their hand
-// to ask for a turn to speak.
+// POST /audio-circle-sessions/:id/hand — listener raises/lowers their own hand.
+// The host may also pass user_id to dismiss another participant's raised hand.
 router.post("/audio-circle-sessions/:id/hand", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
   const parsed = HandRaiseBody.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "raised must be a boolean" });
 
-  const userId = req.authenticatedUserId!;
-  const { session, participant } = await requireActiveParticipant(sessionId, userId);
+  const actingUserId = req.authenticatedUserId!;
+  const { session, participant: actingParticipant } = await requireActiveParticipant(sessionId, actingUserId);
   if (!session) return res.status(404).json({ error: "Session not live" });
-  if (!participant) return res.status(403).json({ error: "You're not in this session" });
+  if (!actingParticipant) return res.status(403).json({ error: "You're not in this session" });
+
+  // Host dismissing another participant's raised hand
+  const targetUserId = parsed.data.user_id ?? actingUserId;
+  if (targetUserId !== actingUserId && actingParticipant.role !== "host") {
+    return res.status(403).json({ error: "Only the host can lower another participant's hand" });
+  }
 
   await db
     .update(audioCircleParticipantsTable)
     .set({ hand_raised: parsed.data.raised })
-    .where(eq(audioCircleParticipantsTable.id, participant.id));
+    .where(and(
+      eq(audioCircleParticipantsTable.session_id, sessionId),
+      eq(audioCircleParticipantsTable.user_id, targetUserId),
+      isNull(audioCircleParticipantsTable.left_at),
+    ));
 
   const activeParticipants = await getActiveParticipants(sessionId);
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
     type: "circle_hand_raised",
-    payload: { session_id: sessionId, user_id: userId, raised: parsed.data.raised },
+    payload: { session_id: sessionId, user_id: targetUserId, raised: parsed.data.raised },
   });
   return res.json({ ok: true });
 });

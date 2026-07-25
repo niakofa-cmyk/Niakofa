@@ -233,14 +233,26 @@ export default function AudioCircleRoomScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [participants.map(p => p.user_id).join(","), myUserId, canSpeak]);
 
-  // Publish mic when promoted to speaker
+  // Publish mic when promoted to speaker.
+  // Critically: honour the DB-persisted muted flag so a page-refresh by a
+  // host-muted speaker cannot silently bypass the mute — we disable the mic
+  // track immediately after getUserMedia rather than waiting for a new WS event.
   useEffect(() => {
     if (!canSpeak || !meshRef.current) return;
+    // Capture muted state at the moment of promotion so the closure is stable.
+    const startMuted = me?.muted ?? false;
     meshRef.current.publishLocalMedia({ video: !!session?.video_enabled && videoOn })
       .then((stream) => {
-        setMicOn(true);
+        if (startMuted) {
+          // Host had previously muted this speaker. Keep mic disabled so the
+          // refresh doesn't give them an open mic until the host unmutes again.
+          meshRef.current?.setMicEnabled(false);
+          setMicOn(false);
+        } else {
+          setMicOn(true);
+        }
         setLocalStream(stream);
-        // Start local volume analyser
+        // Start local volume analyser (only meaningful when unmuted, but cheap to run)
         const key = "local";
         const existing = analyserCleanupsRef.current.get(key);
         if (existing) existing();
@@ -755,7 +767,7 @@ export default function AudioCircleRoomScreen() {
                 <span className="flex-1 text-sm font-bold truncate">{l.name}</span>
                 <div className="flex gap-1.5">
                   <Button size="sm" className="h-7 text-xs px-2" onClick={() => promote(l.user_id)}>Bring up</Button>
-                  <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={() => post("/hand", { raised: false })}>Dismiss</Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={() => post("/hand", { raised: false, user_id: l.user_id })}>Dismiss</Button>
                 </div>
               </div>
             ))}
