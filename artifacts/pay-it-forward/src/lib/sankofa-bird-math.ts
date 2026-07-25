@@ -181,6 +181,12 @@ export interface GazeInput {
   approaching?: boolean;
   /** True when a new nearby request notification arrived — quick look-around. */
   newNotification?: boolean;
+  /**
+   * True when another helper/request is nearby.  This is distinct from a
+   * notification: the bird gives a brief, lower side glance toward the
+   * nearby presence while staying ready for route instructions.
+   */
+  nearbyUser?: boolean;
   /** True when thermaling / gliding (speed > 50 m/s) — look upward. */
   isGliding?: boolean;
   /** True while helping — bird keeps eyes level forward (alert, engaged). */
@@ -206,15 +212,17 @@ export interface GazeInput {
  *  1. approaching destination → look down (focus on landing zone)
  *  2. upcoming turn → glance toward the turn 1-2 s early (anticipatory)
  *  3. gliding / thermal → look slightly up (scanning horizon)
- *  4. new notification → brief look right (searching, alert)
- *  5. saccade phase (idle micro-drift) → subtle directional wander
- *  6. default → null (straight ahead)
+ *  4. nearby presence → brief lower-side glance
+ *  5. new notification → brief look right (searching, alert)
+ *  6. saccade phase (idle/navigation micro-drift) → subtle wander
+ *  7. default → null (straight ahead)
  */
 export function computeGazeVector(input: GazeInput): GazeDirection {
   const {
     upcomingTurnDirection,
     approaching,
     newNotification,
+    nearbyUser,
     isGliding,
     isHelping,
     saccadePhase,
@@ -232,9 +240,14 @@ export function computeGazeVector(input: GazeInput): GazeDirection {
   if (isGliding) return "up";
 
   // 4. Notification — quick alerting look
+  // Nearby presence is intentionally separate from a notification.  A
+  // downward side glance reads as "I noticed you" without implying an alert.
+  if (nearbyUser) return "downright";
+
+  // 5. Notification — quick alerting look
   if (newNotification) return "right";
 
-  // 4.5. Banking-responsive gaze — when turning hard (|bank| > 10°) without a
+  // 5.5. Banking-responsive gaze — when turning hard (|bank| > 10°) without a
   //      nav upcoming-turn signal, the bird still looks toward the turn direction.
   //      This gives real-time reactive gaze on the map screen where the bird banks
   //      from heading changes even when no turn-by-turn data is available.
@@ -245,10 +258,11 @@ export function computeGazeVector(input: GazeInput): GazeDirection {
     return bankDeg < 0 ? "left" : "right";
   }
 
-  // 5. Helping — eyes level and forward (alert, engaged posture)
+  // 6. Helping — eyes level and forward (alert, engaged posture)
   if (isHelping) return null;
 
-  // 6. Idle auto-saccade — all 8 compass directions for true omnidirectional drift.
+  // 7. Idle/navigation auto-saccade — all 8 compass directions for true
+  // omnidirectional drift between stronger route/event signals.
   //    Cycle (clockwise from left): left → upleft → up → upright →
   //                                  right → downright → down → downleft → wrap.
   //    Every phase is a distinct directional gaze — no null placeholder slots.

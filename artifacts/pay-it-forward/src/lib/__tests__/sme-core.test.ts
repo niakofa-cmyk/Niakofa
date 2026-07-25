@@ -186,6 +186,7 @@ describe("MotionSolver", () => {
       "eyeX", "eyeY", "flapPhase", "flapAmplitude",
       "notificationPulse", "smoothedHeadingDeltaRad",
       "windStrength",  // SME v2/v3 addition
+      "aeroLoad",      // Phase 27 motion-quality channel
     ];
     for (const field of requiredFields) {
       expect(out).toHaveProperty(field);
@@ -229,6 +230,15 @@ describe("MotionSolver", () => {
     expect(out.tailDeg).toBeLessThan(0);
   });
 
+  it("tail counter-steer is smoothed and gains authority during a turn", () => {
+    const fs = makeFS({ turnRate: 0.8 });
+    const first = solver.step(fs, 1 / 60);
+    let settled = first;
+    for (let i = 0; i < 45; i++) settled = solver.step(fs, 1 / 60);
+    expect(first.tailDeg).toBeLessThanOrEqual(0);
+    expect(settled.tailDeg).toBeLessThan(first.tailDeg);
+  });
+
   it("wings flap (non-zero amplitude) during active flight", () => {
     const fs = makeFS({ velocity: 0.8 });
     let out = solver.step(fs, 1 / 60);
@@ -236,6 +246,19 @@ describe("MotionSolver", () => {
     // Wing upper degrees should be oscillating — check they are non-zero at some point
     expect(out.flapAmplitude).toBeGreaterThan(0);
     expect(out.flapPhase).toBeGreaterThan(0);
+  });
+
+  it("aerodynamic load rises with speed and wind and remains bounded", () => {
+    const calm = new MotionSolver(new SankofaRig());
+    const loaded = new MotionSolver(new SankofaRig());
+    const calmOut = calm.step(makeFS({ velocity: 0.1 }), 1 / 60);
+    let loadedOut = loaded.step(makeFS({ velocity: 0.9, windStrength: 1, turnRate: 0.8 }), 1 / 60);
+    for (let i = 0; i < 45; i++) {
+      loadedOut = loaded.step(makeFS({ velocity: 0.9, windStrength: 1, turnRate: 0.8 }), 1 / 60);
+    }
+    expect(loadedOut.aeroLoad).toBeGreaterThan(calmOut.aeroLoad);
+    expect(loadedOut.aeroLoad).toBeGreaterThanOrEqual(0);
+    expect(loadedOut.aeroLoad).toBeLessThanOrEqual(1);
   });
 
   it("idle mode uses a much gentler flap amplitude than cruise", () => {
@@ -308,6 +331,8 @@ describe("MotionSolver", () => {
     // Public eye state is zeroed
     expect(solver.eyeX).toBe(0);
     expect(solver.eyeY).toBe(0);
+    const resetOut = solver.step(makeFS(), 0);
+    expect(resetOut.aeroLoad).toBeLessThan(0.1);
 
     // After one tiny step in idle/calm state, bodyRoll and notification should
     // be near-zero (only 1ms of integration from zero).

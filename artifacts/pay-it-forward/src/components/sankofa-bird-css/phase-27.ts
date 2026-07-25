@@ -44,6 +44,12 @@ export const sankofaCssPhase27 = `
     initial-value: 0.04;
   }
 
+  @property --sme-aero-load {
+    syntax: "<number>";
+    inherits: false;
+    initial-value: 0;
+  }
+
 
   /* =======================================================================
      PHASE 27.1 — Night Mode Atmosphere
@@ -529,6 +535,18 @@ export const sankofaCssPhase27 = `
   .sankofa-bird-rig[data-wing-pose="down"] .sankofa-feather-lc1 {
     filter: brightness(1.12) saturate(1.14);
     transition: filter 0.25s ease;
+  }
+
+  /* Continuous load response from MotionSolver.  The rig owns the actual
+     wing kinematics; Phase 27 only changes how much light the loaded
+     trailing layers catch, so the feather response cannot drift from the
+     physical flap state. */
+  .sankofa-bird-rig[data-flying="true"]:not([data-battery-saver="true"]) .sankofa-feather-r5,
+  .sankofa-bird-rig[data-flying="true"]:not([data-battery-saver="true"]) .sankofa-feather-l5,
+  .sankofa-bird-rig[data-flying="true"]:not([data-battery-saver="true"]) .sankofa-wing-covert-band-r,
+  .sankofa-bird-rig[data-flying="true"]:not([data-battery-saver="true"]) .sankofa-wing-covert-band-l {
+    filter: brightness(calc(1 + var(--sme-aero-load, 0) * 0.14))
+            saturate(calc(1 + var(--sme-aero-load, 0) * 0.12));
   }
 
   /* Wing pose "up" — upstroke / hover: wing surfaces slightly paler */

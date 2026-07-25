@@ -14,6 +14,14 @@ export interface LandingState {
   landingPhase: LandingPhase;
 }
 
+/** Cumulative offsets for the cinematic landing sequence. */
+export const LANDING_TIMINGS_MS = {
+  slowflap: 600,
+  hover: 1400,
+  perch: 2200,
+  idle: 4200,
+} as const;
+
 /**
  * useLanding — multi-stage takeoff + landing sequence.
  *
@@ -41,10 +49,10 @@ export function useLanding(navigating: boolean): LandingState {
 
     if (wasNavigating && !navigating) {
       setLandingPhase("dive");
-      const t0 = setTimeout(() => setLandingPhase("slowflap"),  600);
-      const t1 = setTimeout(() => setLandingPhase("hover"),    1400);
-      const t2 = setTimeout(() => setLandingPhase("perch"),    2800);
-      const t3 = setTimeout(() => setLandingPhase("idle"),     4800);
+      const t0 = setTimeout(() => setLandingPhase("slowflap"), LANDING_TIMINGS_MS.slowflap);
+      const t1 = setTimeout(() => setLandingPhase("hover"),    LANDING_TIMINGS_MS.hover);
+      const t2 = setTimeout(() => setLandingPhase("perch"),    LANDING_TIMINGS_MS.perch);
+      const t3 = setTimeout(() => setLandingPhase("idle"),     LANDING_TIMINGS_MS.idle);
       return () => {
         clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
       };

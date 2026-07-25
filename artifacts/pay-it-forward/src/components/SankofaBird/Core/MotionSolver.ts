@@ -39,6 +39,10 @@
  *      by +0.25 (clamped to 1) on the tick that receives pulse > decay,
  *      matching Flutter's one-shot transient nudge pattern.
  *
+ *   6. AERODYNAMIC LOAD — speed, turn and wind combine into one bounded
+ *      feather-load signal. The solver exposes it to Phase 27 so feather
+ *      response stays coupled to the same physics that move the wing rigs.
+ *
  * The solver owns four time-integrated state variables:
  *   _headingSmoothed  — exponential heading smoother (rate 6.0)
  *   _bodyRoll         — body-roll accumulator (rate 4.0 toward turnRate×0.6)
@@ -46,6 +50,8 @@
  *   _notificationDecay— notification pulse decay (rate 1.25/s)
  *   _wingAmplitude    — smoothed wing amplitude (rate 6.0)
  *   _wingFreq         — smoothed flap frequency Hz (rate 6.0)
+ *   _tailSteer        — smoothed rudder/counter-steer angle (rate 5.0)
+ *   _aeroLoad         — smoothed aerodynamic load [0..1] (rate 5.5)
  *
  * These MUST live in the solver (not in React state) so they continue
  * integrating every rAF frame at 60fps, independent of React re-renders.
@@ -119,6 +125,8 @@ export interface SolverOutput {
    * Exposed so CSS can read --sme-wind-strength for feather-ruffle effects.
    */
   windStrength: number;
+  /** Bounded speed/turn/wind load [0..1] for feather-level response. */
+  aeroLoad: number;
 }
 
 // ── Math helpers ──────────────────────────────────────────────────────────
@@ -198,6 +206,10 @@ export class MotionSolver {
    * Approaches target frequency with dampedApproach(rate=6).
    */
   private _wingFreq = 2.5;
+  /** Tail counter-steering accumulator in radians. */
+  private _tailSteer = 0;
+  /** Smoothed aerodynamic load [0..1]. */
+  private _aeroLoad = 0;
 
   // ── Solver output (updated each tick, readable between ticks) ─────────
   eyeX = 0;
@@ -272,8 +284,13 @@ export class MotionSolver {
     const chestNode = this.rig.get(BirdPart.chest);
     this.rig.setRotation(BirdPart.chest, chestNode.localDeg + state.windX * 0.05);
 
-    // ── 4. Tail as rudder — opposes body roll to steer (rate=5.0) ───────
-    this.rig.setRotation(BirdPart.tail, -this._bodyRoll * 0.8 * RAD_TO_DEG);
+    // ── 4. Tail as rudder — smoothed counter-steer -----------------------
+    // The tail leads the turn's correction instead of snapping directly to
+    // the current body roll. The small turn-rate term is the intentional
+    // flare: it gives the tail authority while the body is still banking in.
+    const tailTarget = -this._bodyRoll * 0.8 - clamp(state.turnRate, -1, 1) * 0.08;
+    this._tailSteer = dampedApproach(this._tailSteer, tailTarget, 5.0, dtClamped);
+    this.rig.setRotation(BirdPart.tail, this._tailSteer * RAD_TO_DEG);
 
     // ── 5. Wing flap — smooth amplitude + frequency transitions ─────────
     // SME v2/v3: _wingAmplitude and _wingFreq are now smoothed accumulators
@@ -282,6 +299,15 @@ export class MotionSolver {
     // stepping instantly to a new value.
     const speed  = clamp(state.velocity, 0, 1);
     const hover  = clamp(state.hoverAmount, 0, 1);
+    const targetLoad = clamp(
+      speed * 0.55 +
+      windStrength * 0.30 +
+      Math.abs(state.turnRate) * 0.20 +
+      hover * 0.10,
+      0,
+      1,
+    );
+    this._aeroLoad = dampedApproach(this._aeroLoad, targetLoad, 5.5, dtClamped);
 
     // Compute mode-dependent amplitude + frequency targets (matches Flutter).
     let targetAmplitude: number;
@@ -325,12 +351,15 @@ export class MotionSolver {
 
     // Left wing: negative flap = upstroke.
     const lwuDeg = -flap * RAD_TO_DEG;
-    const lwlDeg = -flap * 0.6 * RAD_TO_DEG;
+    // Under load, the trailing segment lags farther behind the upper wing.
+    // This is driven by the same flap phase, not a second animation loop.
+    const trailingGain = 0.6 + this._aeroLoad * 0.18;
+    const lwlDeg = -flap * trailingGain * RAD_TO_DEG;
     this.rig.setRotation(BirdPart.leftWingUpper,  lwuDeg);
     this.rig.setRotation(BirdPart.leftWingLower,  lwlDeg);
     // Right wing: mirrored.
     const rwuDeg =  flap * RAD_TO_DEG;
-    const rwlDeg =  flap * 0.6 * RAD_TO_DEG;
+    const rwlDeg =  flap * trailingGain * RAD_TO_DEG;
     this.rig.setRotation(BirdPart.rightWingUpper, rwuDeg);
     this.rig.setRotation(BirdPart.rightWingLower, rwlDeg);
 
@@ -422,6 +451,7 @@ export class MotionSolver {
       notificationPulse:       this._notificationDecay,
       smoothedHeadingDeltaRad: smoothedDelta,
       windStrength:            windStrength,
+      aeroLoad:                this._aeroLoad,
     };
   }
 
@@ -433,6 +463,8 @@ export class MotionSolver {
     this._notificationDecay  = 0;
     this._wingAmplitude      = 0.4;
     this._wingFreq           = 2.5;
+    this._tailSteer          = 0;
+    this._aeroLoad           = 0;
     this.eyeX                = 0;
     this.eyeY                = 0;
     this.rig.reset();

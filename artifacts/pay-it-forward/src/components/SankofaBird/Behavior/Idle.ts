@@ -51,6 +51,22 @@ const DWELL_MAX: Record<ActivityTier, number> = {
   peak:   700,
 };
 
+// Navigation scans are quicker than rest scans, but remain lightweight.
+// Route turns, approach, nearby presence, and notifications still override
+// these scans in computeGazeVector().
+const NAV_DWELL_MIN: Record<ActivityTier, number> = {
+  quiet:  650,
+  normal: 520,
+  busy:   420,
+  peak:   320,
+};
+const NAV_DWELL_MAX: Record<ActivityTier, number> = {
+  quiet:  1000,
+  normal: 820,
+  busy:   680,
+  peak:   540,
+};
+
 // Probability of a double-take (second snap after a short micro-pause).
 const DOUBLE_TAKE_PROB = 0.18;
 
@@ -87,7 +103,7 @@ export function useIdleState(
   tierRef.current = activityTier;
 
   useEffect(() => {
-    if (navigating || celebrating || newNotification) return;
+    if (celebrating || newNotification) return;
 
     let cancelled = false;
 
@@ -115,14 +131,18 @@ export function useIdleState(
             setTimeout(() => { if (!cancelled) setSaccadeSnapping(false); }, 80);
             // Schedule the next regular dwell after the double-take
             const tier = tierRef.current;
-            scheduleNextSnap(DWELL_MIN[tier] + Math.random() * (DWELL_MAX[tier] - DWELL_MIN[tier]));
+            const min = navigating ? NAV_DWELL_MIN[tier] : DWELL_MIN[tier];
+            const max = navigating ? NAV_DWELL_MAX[tier] : DWELL_MAX[tier];
+            scheduleNextSnap(min + Math.random() * (max - min));
           }, microPause);
           // Cleanup for the double-take timer is handled by the outer cancelled flag.
           void dtId;
         } else {
           // Schedule next snap after dwell
           const tier = tierRef.current;
-          scheduleNextSnap(DWELL_MIN[tier] + Math.random() * (DWELL_MAX[tier] - DWELL_MIN[tier]));
+          const min = navigating ? NAV_DWELL_MIN[tier] : DWELL_MIN[tier];
+          const max = navigating ? NAV_DWELL_MAX[tier] : DWELL_MAX[tier];
+          scheduleNextSnap(min + Math.random() * (max - min));
         }
 
         void snapFlagId;
@@ -132,7 +152,9 @@ export function useIdleState(
 
     // Initial dwell before first snap (randomised so birds don't sync)
     const tier = tierRef.current;
-    const initialDwell = DWELL_MIN[tier] + Math.random() * (DWELL_MAX[tier] - DWELL_MIN[tier]);
+    const min = navigating ? NAV_DWELL_MIN[tier] : DWELL_MIN[tier];
+    const max = navigating ? NAV_DWELL_MAX[tier] : DWELL_MAX[tier];
+    const initialDwell = min + Math.random() * (max - min);
     const id = scheduleNextSnap(initialDwell);
 
     return () => {
