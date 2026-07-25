@@ -39,3 +39,10 @@ The join/start routes already gate with `requireApproved`. Action routes (hand, 
 
 ## circle_recording_available broadcast
 After upload, broadcast `circle_recording_available` to ALL session participants (including those who have left — use the full participants table, not just active). This notifies listeners they can now access the recording without a page refresh.
+
+## Reconnect and control feedback
+The room page must listen for the synthetic `ws_reconnected` event and re-fetch the session/participant state. REST controls should show a connection-error toast and update the initiating user's participant state after a successful mutation instead of waiting only for the WS echo.
+
+**Why:** A dropped WebSocket could make successful hand-raise, moderation, mute, or kick actions appear unresponsive and leave the room stale until a manual reload.
+
+**How to apply:** Keep `ws_reconnected` in the shared client event path and use the room's authenticated session endpoint as the resync source of truth.
