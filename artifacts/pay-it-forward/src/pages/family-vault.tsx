@@ -539,7 +539,7 @@ export default function FamilyVaultPage() {
                 <input
                   value={iRel}
                   onChange={e => setIRel(e.target.value)}
-                  placeholder='e.g. "Grandmother on Dad\'s side"'
+                  placeholder={'e.g. "Grandmother on Dad\'s side"'}
                   className="w-full border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                   style={{ fontSize: "16px" }}
                 />
