@@ -127,6 +127,26 @@ export default function AudioCircleRoomScreen() {
     if (!loading && session) setConnectionStatus("connected");
   }, [loading, session]);
 
+  // Re-fetch session state after a WS reconnect. Controls and participant
+  // roles are normally kept current by broadcasts, but a reconnect can miss
+  // events that arrived while the socket was down.
+  const resync = useCallback(async () => {
+    try {
+      const res = await fetch(`${base}/api/audio-circle-sessions/${sessionId}`, { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      setSession(data.session);
+      setParticipants(data.participants ?? []);
+      setConnectionStatus("connected");
+    } catch {
+      // The next reconnect will retry; keep the last known state visible.
+    }
+  }, [base, sessionId]);
+
+  useWebSocket("ws_reconnected", () => {
+    void resync();
+  });
+
   // ── Load initial state ───────────────────────────────────────────────────
   useEffect(() => {
     if (isNaN(sessionId)) return;
@@ -469,25 +489,71 @@ export default function AudioCircleRoomScreen() {
   });
 
   // ── Actions ──────────────────────────────────────────────────────────────
+  // Always surface network failures. Without this guard, a dropped
+  // connection made controls appear to do nothing.
   const post = async (path: string, body?: object) => {
-    const res = await fetch(`${base}/api/audio-circle-sessions/${sessionId}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify(body ?? {}),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      toast({ title: "Action failed", description: data.error ?? "Try again.", variant: "destructive" });
+    try {
+      const res = await fetch(`${base}/api/audio-circle-sessions/${sessionId}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(body ?? {}),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast({ title: "Action failed", description: data.error ?? "Try again.", variant: "destructive" });
+      }
+      return res.ok;
+    } catch {
+      toast({
+        title: "Connection issue",
+        description: "Couldn't reach the server — check your connection and try again.",
+        variant: "destructive",
+      });
+      return false;
     }
-    return res.ok;
   };
 
-  const toggleHand = () => post("/hand", { raised: !me?.hand_raised });
-  const promote = (userId: number) => { post("/promote", { user_id: userId }); setModMenuOpen(null); };
-  const demote = (userId: number) => { post("/demote", { user_id: userId }); setModMenuOpen(null); };
-  const muteUser = (userId: number, muted: boolean) => { post("/mute", { user_id: userId, muted }); setModMenuOpen(null); };
-  const muteAll = () => post("/mute-all");
-  const kickUser = (userId: number) => { post("/kick", { user_id: userId }); setModMenuOpen(null); };
+  // Update the initiating user's view after the REST mutation succeeds rather
+  // than waiting for its WS echo. The broadcast still reconciles other tabs.
+  const toggleHand = async () => {
+    const raised = !me?.hand_raised;
+    if (await post("/hand", { raised })) {
+      setParticipants(prev => prev.map(x => x.user_id === myUserId ? { ...x, hand_raised: raised } : x));
+    }
+  };
+  const promote = async (userId: number) => {
+    setModMenuOpen(null);
+    if (await post("/promote", { user_id: userId })) {
+      setParticipants(prev => prev.map(x => x.user_id === userId
+        ? { ...x, role: "speaker" as const, hand_raised: false }
+        : x));
+    }
+  };
+  const demote = async (userId: number) => {
+    setModMenuOpen(null);
+    if (await post("/demote", { user_id: userId })) {
+      setParticipants(prev => prev.map(x => x.user_id === userId
+        ? { ...x, role: "listener" as const, hand_raised: false }
+        : x));
+    }
+  };
+  const muteUser = async (userId: number, muted: boolean) => {
+    setModMenuOpen(null);
+    if (await post("/mute", { user_id: userId, muted })) {
+      setParticipants(prev => prev.map(x => x.user_id === userId ? { ...x, muted } : x));
+    }
+  };
+  const muteAll = async () => {
+    if (await post("/mute-all")) {
+      setParticipants(prev => prev.map(x => x.role === "speaker" ? { ...x, muted: true } : x));
+    }
+  };
+  const kickUser = async (userId: number) => {
+    setModMenuOpen(null);
+    if (await post("/kick", { user_id: userId })) {
+      setParticipants(prev => prev.filter(x => x.user_id !== userId));
+    }
+  };
   const react = (emoji: string) => post("/react", { emoji });
 
   const endSession = async () => {
