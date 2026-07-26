@@ -38,19 +38,40 @@ interface CircleSignalPayload {
   signal: { kind: "offer" | "answer" | "ice"; data: unknown };
 }
 
-const ICE_SERVERS: RTCIceServer[] = [
+const STUN_ONLY_FALLBACK: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
-// TURN is optional for local development, but can be supplied at deploy time
-// so calls work across restrictive NATs and cellular networks. Credentials
-// are intentionally runtime-configured rather than hardcoded in the bundle.
-const turnUrl = import.meta.env.VITE_TURN_URL as string | undefined;
-const turnUsername = import.meta.env.VITE_TURN_USERNAME as string | undefined;
-const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL as string | undefined;
-if (turnUrl && turnUsername && turnCredential) {
-  ICE_SERVERS.push({ urls: turnUrl, username: turnUsername, credential: turnCredential });
+/**
+ * Fetches this session's ICE servers (STUN + a short-lived TURN credential,
+ * if a TURN server is configured) from the backend's /webrtc-ice-servers
+ * endpoint — see api-server/src/routes/webrtc-ice.ts for how the TURN
+ * credential is minted.
+ *
+ * Previously this read a permanent VITE_TURN_USERNAME/VITE_TURN_CREDENTIAL
+ * pair baked into the client bundle at build time, which — since this is a
+ * Vite app — is visible to anyone who opens dev tools. Fetching a
+ * short-lived, per-request credential instead means nothing long-lived ever
+ * reaches the browser.
+ *
+ * Falls back to STUN-only (never throws) if the request fails, or if no
+ * TURN server has been configured on the backend yet — the mesh still works
+ * for most NAT types without TURN, just without a fallback for the
+ * minority of symmetric-NAT peers. See getAudioCircleMediaCapabilities-
+ * adjacent docs in audio-circles pages for the user-facing framing of that
+ * tradeoff.
+ */
+export async function fetchIceServers(authHeadersFn: () => HeadersInit, base = ""): Promise<RTCIceServer[]> {
+  try {
+    const res = await fetch(`${base}/api/webrtc-ice-servers`, { headers: authHeadersFn() });
+    if (!res.ok) return STUN_ONLY_FALLBACK;
+    const data = await res.json();
+    const servers = data?.iceServers;
+    return Array.isArray(servers) && servers.length > 0 ? servers : STUN_ONLY_FALLBACK;
+  } catch {
+    return STUN_ONLY_FALLBACK;
+  }
 }
 
 function supportedRecordingMimeType(): string | undefined {
@@ -101,11 +122,14 @@ export class AudioCircleMesh {
   private pendingIceCandidates = new Map<number, RTCIceCandidateInit[]>();
   private mixSources = new Map<string, MediaStreamAudioSourceNode>();
   private videoExpected: boolean;
+  private iceServers: RTCIceServer[];
 
   constructor(opts: {
     sessionId: number;
     selfUserId: number;
     videoEnabled: boolean;
+    /** Pass the result of fetchIceServers(); defaults to STUN-only if omitted. */
+    iceServers?: RTCIceServer[];
     onRemoteStream: (handle: RemoteStreamHandle) => void;
     onRemoteStreamEnded: (userId: number) => void;
     subscribeToCircleSignal: (handler: (event: WsEvent) => void) => () => void;
@@ -113,6 +137,7 @@ export class AudioCircleMesh {
     this.sessionId = opts.sessionId;
     this.selfUserId = opts.selfUserId;
     this.videoExpected = opts.videoEnabled;
+    this.iceServers = opts.iceServers && opts.iceServers.length > 0 ? opts.iceServers : STUN_ONLY_FALLBACK;
     this.onRemoteStream = opts.onRemoteStream;
     this.onRemoteStreamEnded = opts.onRemoteStreamEnded;
     this.wsUnsubscribe = opts.subscribeToCircleSignal((event) => this.handleSignal(event));
@@ -313,7 +338,7 @@ export class AudioCircleMesh {
   // ── Internal ───────────────────────────────────────────────────────────────
 
   private createPeerConnection(remoteUserId: number): RTCPeerConnection {
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({ iceServers: this.iceServers });
 
     if (this.localStream) {
       for (const track of this.localStream.getTracks()) pc.addTrack(track, this.localStream);

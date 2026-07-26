@@ -32,6 +32,7 @@ import disputesRouter from "./disputes";
 import impactRouter from "./impact";
 import griotRouter from "./griot";
 import audioCirclesRouter from "./audio-circles";
+import webrtcIceRouter from "./webrtc-ice";
 import coverageInterestRouter from "./coverage-interest";
 import familyRouter from "./family";
 
@@ -70,6 +71,7 @@ router.use(disputesRouter);
 router.use(impactRouter);
 router.use(griotRouter);
 router.use(audioCirclesRouter);
+router.use(webrtcIceRouter);
 router.use(coverageInterestRouter);
 router.use(familyRouter);
 

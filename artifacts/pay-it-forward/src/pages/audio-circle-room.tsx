@@ -15,6 +15,7 @@ import { wsSend } from "@/lib/wsClient";
 import type { WsEvent } from "@/lib/wsClient";
 import {
   AudioCircleMesh,
+  fetchIceServers,
   getAudioCircleMediaCapabilities,
   type AudioCircleMediaCapabilities,
   type RemoteStreamHandle,
@@ -209,30 +210,42 @@ export default function AudioCircleRoomScreen() {
   }, [sessionId, base, setLocation]);
 
   // ── WebRTC mesh setup ────────────────────────────────────────────────────
+  // ICE servers (STUN + a short-lived TURN credential, if configured) are
+  // fetched fresh per room join rather than baked into the client bundle —
+  // see fetchIceServers() in audioCircleWebRTC.ts. This makes construction
+  // async, so we guard against the effect having been cleaned up (session
+  // changed, component unmounted) before the fetch resolves.
   useEffect(() => {
     if (!session || !myUserId) return;
-    const mesh = new AudioCircleMesh({
-      sessionId,
-      selfUserId: myUserId,
-      videoEnabled: session.video_enabled,
-      onRemoteStream: (handle: RemoteStreamHandle) => {
-        setRemoteStreams(prev => new Map(prev).set(handle.userId, handle.stream));
-      },
-      onRemoteStreamEnded: (userId: number) => {
-        setRemoteStreams(prev => { const next = new Map(prev); next.delete(userId); return next; });
-        setSpeakingLevels(prev => { const next = new Map(prev); next.delete(userId); return next; });
-        const cleanup = analyserCleanupsRef.current.get(`remote:${userId}`);
-        if (cleanup) { cleanup(); analyserCleanupsRef.current.delete(`remote:${userId}`); }
-      },
-      subscribeToCircleSignal: (handler) => {
-        const unsub = subscribeRaw("circle_signal", handler);
-        return unsub;
-      },
-    });
-    meshRef.current = mesh;
-    setMeshReady(true);
+    let cancelled = false;
+    (async () => {
+      const iceServers = await fetchIceServers(authHeaders, base);
+      if (cancelled) return;
+      const mesh = new AudioCircleMesh({
+        sessionId,
+        selfUserId: myUserId,
+        videoEnabled: session.video_enabled,
+        iceServers,
+        onRemoteStream: (handle: RemoteStreamHandle) => {
+          setRemoteStreams(prev => new Map(prev).set(handle.userId, handle.stream));
+        },
+        onRemoteStreamEnded: (userId: number) => {
+          setRemoteStreams(prev => { const next = new Map(prev); next.delete(userId); return next; });
+          setSpeakingLevels(prev => { const next = new Map(prev); next.delete(userId); return next; });
+          const cleanup = analyserCleanupsRef.current.get(`remote:${userId}`);
+          if (cleanup) { cleanup(); analyserCleanupsRef.current.delete(`remote:${userId}`); }
+        },
+        subscribeToCircleSignal: (handler) => {
+          const unsub = subscribeRaw("circle_signal", handler);
+          return unsub;
+        },
+      });
+      meshRef.current = mesh;
+      setMeshReady(true);
+    })();
     return () => {
-      mesh.destroy();
+      cancelled = true;
+      meshRef.current?.destroy();
       meshRef.current = null;
       setMeshReady(false);
       // tear down all analysers
