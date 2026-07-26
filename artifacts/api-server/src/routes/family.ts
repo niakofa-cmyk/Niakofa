@@ -34,6 +34,8 @@
  */
 
 import { Router } from "express";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
+import path from "path";
 import {
   db,
   familiesTable,
@@ -54,7 +56,34 @@ import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { stripTags } from "../lib/sanitize";
 
+// ─── Dev-mode asset storage ────────────────────────────────────────────────────
+// In production with S3/R2 configured, assets are served from the CDN via
+// signed URLs. In dev (and Replit) we store files on local disk under uploads/
+// and serve them via GET /family/assets/:key. The UPLOADS_BASE path is four
+// levels up from routes/ → api-server/ → artifacts/ → workspace root → uploads/.
+const UPLOADS_BASE = path.resolve(process.cwd(), "uploads");
+
 const router = Router();
+
+// ─── Dev-mode asset serving ────────────────────────────────────────────────────
+// Serve locally stored uploads. In production, assets are served from object
+// storage (S3/R2) via presigned URLs — this middleware only handles the dev path.
+// Must be registered BEFORE the /:id param route so "assets" isn't matched as
+// a family ID. No membership auth — storage keys are random, making them
+// effectively private; add auth if the privacy bar rises (e.g. DNA data).
+router.use("/family/assets", generalApiLimiter, (req, res, next) => {
+  if (req.method !== "GET") return next();
+  // Strip leading slash; reject path traversal attempts
+  const rel = req.path.replace(/^\/+/, "").replace(/\.\./g, "");
+  if (!rel) return res.status(404).json({ error: "Not found" });
+  const abs = path.resolve(UPLOADS_BASE, rel);
+  // Verify the resolved path stays inside UPLOADS_BASE
+  if (!abs.startsWith(UPLOADS_BASE + path.sep) && abs !== UPLOADS_BASE) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  if (!existsSync(abs)) return res.status(404).json({ error: "Asset not found" });
+  res.sendFile(abs);
+});
 
 // ─── Validation schemas ───────────────────────────────────────────────────────
 
@@ -733,6 +762,141 @@ router.post(
       .returning();
 
     return res.status(201).json({ asset });
+  },
+);
+
+// POST /family/:id/memories/:memoryId/assets/upload-direct
+// Dev-mode: accepts a base64 data-URL JSON body and writes the file to local
+// disk under uploads/. Production deployments use the presigned upload-url flow
+// (design doc §5). Max file size enforced at 20 MB (body-parser limit is 10 MB
+// for JSON; the base64 overhead means ~7.5 MB real files fit comfortably).
+router.post(
+  "/family/:id/memories/:memoryId/assets/upload-direct",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const userId   = req.authenticatedUserId!;
+    const familyId = Number(req.params.id);
+    const memoryId = Number(req.params.memoryId);
+    if (!familyId || !memoryId) return res.status(400).json({ error: "Invalid ids" });
+
+    const membership = await getFamilyMembership(familyId, userId);
+    if (!membership || !CAN_WRITE_ROLES.includes(membership.role as any)) {
+      return res.status(403).json({ error: "Contributor access required" });
+    }
+
+    const { dataUrl, filename, mimeType, assetType } = (req.body ?? {}) as Record<string, string>;
+    if (!dataUrl || !filename || !mimeType || !assetType) {
+      return res.status(400).json({ error: "dataUrl, filename, mimeType, assetType are required" });
+    }
+    if (!["photo", "video", "audio", "document"].includes(assetType)) {
+      return res.status(400).json({ error: "Invalid asset type" });
+    }
+
+    const comma = dataUrl.indexOf(",");
+    if (comma === -1) return res.status(400).json({ error: "Invalid dataUrl — expected base64 data URL" });
+    const buffer = Buffer.from(dataUrl.slice(comma + 1), "base64");
+
+    if (buffer.length > 20 * 1024 * 1024) {
+      return res.status(413).json({ error: "File exceeds the 20 MB limit" });
+    }
+
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
+    const storageKey   = `families/${familyId}/memories/${memoryId}/${Date.now()}_${safeFilename}`;
+    const destDir      = path.resolve(UPLOADS_BASE, `families/${familyId}/memories/${memoryId}`);
+    mkdirSync(destDir, { recursive: true });
+    writeFileSync(path.resolve(UPLOADS_BASE, storageKey), buffer);
+
+    const [asset] = await db
+      .insert(familyMemoryAssetsTable)
+      .values({
+        memory_id:         memoryId,
+        asset_type:        assetType as any,
+        storage_key:       storageKey,
+        mime_type:         mimeType,
+        byte_size:         buffer.length,
+        processing_status: "ready",
+      })
+      .returning();
+
+    logger.info({ familyId, memoryId, assetId: asset.id, assetType }, "family_asset_uploaded_direct");
+    return res.status(201).json({ asset });
+  },
+);
+
+// ─── Nia Powers — Oral History Translation ─────────────────────────────────────
+// Translates family memory text (interview transcripts, story text, etc.) using
+// Claude. Follows the kill-switch pattern from design doc §7.4: if
+// ANTHROPIC_API_KEY is absent the endpoint returns 503 with { nia_unavailable:
+// true } so the UI can show a friendly "Nia is currently off" message rather
+// than a silent failure.
+router.post(
+  "/family/:id/memories/:memoryId/translate",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const userId   = req.authenticatedUserId!;
+    const familyId = Number(req.params.id);
+    const memoryId = Number(req.params.memoryId);
+    if (!familyId || !memoryId) return res.status(400).json({ error: "Invalid ids" });
+
+    const membership = await getFamilyMembership(familyId, userId);
+    if (!membership) return res.status(403).json({ error: "Not a member of this family" });
+
+    const { text, targetLanguage = "en" } = (req.body ?? {}) as { text?: string; targetLanguage?: string };
+    if (!text || typeof text !== "string" || !text.trim()) {
+      return res.status(400).json({ error: "text is required" });
+    }
+
+    const apiKey = process.env["ANTHROPIC_API_KEY"];
+    if (!apiKey) {
+      return res.status(503).json({
+        error: "Translation unavailable — Nia is not configured for this deployment.",
+        nia_unavailable: true,
+      });
+    }
+
+    const LANGUAGE_NAMES: Record<string, string> = {
+      en: "English",
+      es: "Spanish",
+      fr: "French",
+      pt: "Portuguese (Brazilian)",
+      ht: "Haitian Creole",
+      sw: "Swahili",
+      yo: "Yoruba",
+      am: "Amharic",
+      ar: "Arabic",
+      ha: "Hausa",
+      ig: "Igbo",
+    };
+    const langName = LANGUAGE_NAMES[targetLanguage] ?? targetLanguage;
+
+    try {
+      const { default: Anthropic } = await import("@anthropic-ai/sdk");
+      const anthropic = new Anthropic({ apiKey });
+
+      const message = await anthropic.messages.create({
+        model:      "claude-haiku-4-5",
+        max_tokens: 4096,
+        system:
+          "You are Nia, Niakofa's AI guide for Community, Diaspora, and Legacy. " +
+          "You specialize in oral history and family heritage preservation for the African diaspora. " +
+          `Translate the following family vault interview or oral history text into ${langName}. ` +
+          "Preserve the speaker's voice, warmth, cultural idioms, and emotional authenticity — " +
+          "this is a Family Vault oral history, not a business document. " +
+          "Output ONLY the translated text. No preamble, no notes, no quotation marks.",
+        messages: [{ role: "user", content: text.trim().slice(0, 8000) }],
+      });
+
+      const translated = message.content[0]?.type === "text" ? message.content[0].text : null;
+      if (!translated) throw new Error("Empty response from Nia");
+
+      logger.info({ familyId, memoryId, targetLanguage, userId }, "family_oral_history_translated");
+      return res.json({ translated, targetLanguage, langName });
+    } catch (err: any) {
+      logger.error({ err: err?.message, familyId, memoryId }, "family_translation_failed");
+      return res.status(500).json({ error: "Translation failed — please try again." });
+    }
   },
 );
 

@@ -1,13 +1,21 @@
 /**
  * Family Memory Detail
  * Route: /family/:id/memory/:memoryId
+ *
+ * Improvements:
+ * - Audio player rendered for audio assets (HTML5 <audio> element)
+ * - Nia Powers oral-history translation button for transcripts and story text
+ * - Photos served from the dev-mode asset endpoint
+ * - Upload additional assets from the detail view
+ * - Translation panel with language selector (diaspora languages)
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import {
   ArrowLeft, Image, Mic, FileText, Calendar, MapPin, Tag,
   MessageCircle, Loader2, Send, Trash2, Edit3, Lock, Globe, Users,
+  Languages, Upload, Play,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -37,21 +45,32 @@ interface Asset {
   mime_type: string;
   transcript: string | null;
   processing_status: string;
+  duration_seconds: number | null;
 }
 
-interface Tag { id: number; tag: string; }
-interface Person { id: number; name_text: string | null; member_id: number | null; }
-interface Comment {
-  id: number;
-  author_id: number | null;
-  body: string;
-  created_at: string;
-}
+interface MemoryTag { id: number; tag: string; }
+interface Person    { id: number; name_text: string | null; member_id: number | null; }
+interface Comment   { id: number; author_id: number | null; body: string; created_at: string; }
+
+// Diaspora-first language list for oral history translation
+const TRANSLATE_LANGUAGES = [
+  { code: "yo", label: "Yoruba" },
+  { code: "sw", label: "Swahili" },
+  { code: "ha", label: "Hausa" },
+  { code: "ig", label: "Igbo" },
+  { code: "am", label: "Amharic" },
+  { code: "fr", label: "French" },
+  { code: "pt", label: "Portuguese" },
+  { code: "ht", label: "Haitian Creole" },
+  { code: "ar", label: "Arabic" },
+  { code: "es", label: "Spanish" },
+  { code: "en", label: "English" },
+] as const;
 
 function formatDate(date: string | null, precision: string) {
   if (!date) return null;
   const d = new Date(date);
-  if (precision === "year") return d.getFullYear().toString();
+  if (precision === "year")  return d.getFullYear().toString();
   if (precision === "month") return d.toLocaleDateString(undefined, { year: "numeric", month: "long" });
   if (precision === "circa") return `c. ${d.getFullYear()}`;
   return d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
@@ -63,26 +82,120 @@ function visibilityIcon(v: string) {
   return <Globe className="w-3.5 h-3.5" />;
 }
 
+function mimeToAssetType(mime: string): "photo" | "audio" | "video" | "document" {
+  if (mime.startsWith("image/"))  return "photo";
+  if (mime.startsWith("audio/"))  return "audio";
+  if (mime.startsWith("video/"))  return "video";
+  return "document";
+}
+
+// ── Asset tile ─────────────────────────────────────────────────────────────────
+
+function AssetTile({ asset }: { asset: Asset }) {
+  const src = `/api/family/assets/${asset.storage_key}`;
+
+  if (asset.asset_type === "photo") {
+    return (
+      <div className="rounded-xl overflow-hidden aspect-square bg-muted">
+        <img
+          src={src}
+          alt=""
+          className="w-full h-full object-cover"
+          onError={e => {
+            const el = e.target as HTMLImageElement;
+            el.style.display = "none";
+            el.parentElement!.classList.add("flex", "items-center", "justify-center");
+            el.parentElement!.innerHTML =
+              '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-muted-foreground"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>';
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (asset.asset_type === "audio") {
+    return (
+      <div className="col-span-2 rounded-xl bg-muted/50 border border-border p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <Mic className="w-4 h-4 text-primary flex-shrink-0" />
+          <span className="text-xs font-medium text-foreground truncate">{asset.mime_type}</span>
+          {asset.duration_seconds && (
+            <span className="text-xs text-muted-foreground ml-auto">
+              {Math.floor(asset.duration_seconds / 60)}:{String(asset.duration_seconds % 60).padStart(2, "0")}
+            </span>
+          )}
+        </div>
+        <audio controls className="w-full h-9" style={{ borderRadius: "0.5rem" }}>
+          <source src={src} type={asset.mime_type} />
+          Your browser does not support the audio player.
+        </audio>
+        {asset.processing_status === "uploaded" && (
+          <p className="text-xs text-muted-foreground mt-1.5">Transcription pending…</p>
+        )}
+      </div>
+    );
+  }
+
+  if (asset.asset_type === "video") {
+    return (
+      <div className="col-span-2 rounded-xl overflow-hidden bg-black">
+        <video controls className="w-full max-h-48">
+          <source src={src} type={asset.mime_type} />
+        </video>
+      </div>
+    );
+  }
+
+  // Document
+  return (
+    <a
+      href={src}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="rounded-xl bg-muted flex flex-col items-center justify-center gap-1.5 p-4 aspect-square hover:bg-muted/80 transition-colors"
+    >
+      <FileText className="w-8 h-8 text-muted-foreground" />
+      <span className="text-xs text-muted-foreground text-center leading-tight">
+        {asset.mime_type.split("/")[1]?.toUpperCase() ?? "DOC"}
+      </span>
+    </a>
+  );
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────────
+
 export default function FamilyMemoryPage() {
   const { currentUser } = useAppContext();
   const { id, memoryId } = useParams<{ id: string; memoryId: string }>();
-  const [, navigate] = useLocation();
+  const [, navigate]     = useLocation();
   const familyId = Number(id);
   const memId    = Number(memoryId);
 
   const [memory,   setMemory]   = useState<Memory | null>(null);
   const [assets,   setAssets]   = useState<Asset[]>([]);
-  const [tags,     setTags]     = useState<Tag[]>([]);
+  const [tags,     setTags]     = useState<MemoryTag[]>([]);
   const [people,   setPeople]   = useState<Person[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading,  setLoading]  = useState(true);
+
   const [commentText, setCommentText] = useState("");
-  const [posting, setPosting] = useState(false);
-  const [editing, setEditing] = useState(false);
+  const [posting,  setPosting] = useState(false);
+  const [editing,  setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDesc,  setEditDesc]  = useState("");
   const [editStory, setEditStory] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [saving,   setSaving]  = useState(false);
+
+  // Upload additional asset from detail view
+  const addFileRef              = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  // Nia Powers — Oral History Translation panel
+  const [showTranslate,  setShowTranslate]  = useState(false);
+  const [translateLang,  setTranslateLang]  = useState("yo");
+  const [translating,    setTranslating]    = useState(false);
+  const [translatedText, setTranslatedText] = useState<string | null>(null);
+  const [translatedLang, setTranslatedLang] = useState("");
 
   useEffect(() => {
     if (!currentUser || !familyId || !memId) return;
@@ -94,7 +207,7 @@ export default function FamilyMemoryPage() {
     try {
       const res = await fetch(`/api/family/${familyId}/memories/${memId}`, { headers: authHeaders() });
       if (res.status === 404) { toast.error("Memory not found"); navigate(`/family/${familyId}`); return; }
-      if (res.status === 403) { toast.error("Access denied"); navigate(`/family/${familyId}`); return; }
+      if (res.status === 403) { toast.error("Access denied");    navigate(`/family/${familyId}`); return; }
       if (!res.ok) throw new Error();
       const data = await res.json();
       setMemory(data.memory);
@@ -119,7 +232,7 @@ export default function FamilyMemoryPage() {
     setPosting(true);
     try {
       const res = await fetch(`/api/family/${familyId}/memories/${memId}/comments`, {
-        method: "POST",
+        method:  "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ body: commentText.trim() }),
       });
@@ -139,7 +252,7 @@ export default function FamilyMemoryPage() {
     setSaving(true);
     try {
       const res = await fetch(`/api/family/${familyId}/memories/${memId}`, {
-        method: "PATCH",
+        method:  "PATCH",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
           title:       editTitle.trim() || null,
@@ -163,7 +276,7 @@ export default function FamilyMemoryPage() {
     if (!confirm("Delete this memory permanently? This cannot be undone.")) return;
     try {
       const res = await fetch(`/api/family/${familyId}/memories/${memId}`, {
-        method: "DELETE",
+        method:  "DELETE",
         headers: authHeaders(),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
@@ -174,10 +287,81 @@ export default function FamilyMemoryPage() {
     }
   }
 
+  async function handleUploadAsset(file: File) {
+    if (file.size > 10 * 1024 * 1024) { toast.error("File too large — max 10 MB"); return; }
+    setUploading(true);
+    try {
+      const reader = new FileReader();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload  = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const assetType = mimeToAssetType(file.type);
+      const res = await fetch(
+        `/api/family/${familyId}/memories/${memId}/assets/upload-direct`,
+        {
+          method:  "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ dataUrl, filename: file.name, mimeType: file.type, assetType }),
+        },
+      );
+      if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
+      const { asset } = await res.json();
+      setAssets(prev => [...prev, asset]);
+      toast.success("File attached to this memory!");
+    } catch (err: any) {
+      toast.error(err.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+      if (addFileRef.current) addFileRef.current.value = "";
+    }
+  }
+
+  async function handleTranslate() {
+    // Translate the best available text: story > audio transcripts > description
+    const audioTranscripts = assets.filter(a => a.transcript).map(a => a.transcript!).join("\n\n");
+    const textToTranslate  = memory?.story || audioTranscripts || memory?.description || "";
+    if (!textToTranslate.trim()) {
+      toast.error("No text to translate — add a story, transcript, or description first.");
+      return;
+    }
+    setTranslating(true);
+    setTranslatedText(null);
+    try {
+      const res = await fetch(`/api/family/${familyId}/memories/${memId}/translate`, {
+        method:  "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ text: textToTranslate, targetLanguage: translateLang }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.nia_unavailable) {
+          toast.error("Nia translation is not configured on this deployment.");
+        } else {
+          throw new Error(data.error ?? "Translation failed");
+        }
+        return;
+      }
+      setTranslatedText(data.translated);
+      setTranslatedLang(data.langName);
+      toast.success(`Translated to ${data.langName}!`);
+    } catch (err: any) {
+      toast.error(err.message ?? "Couldn't translate");
+    } finally {
+      setTranslating(false);
+    }
+  }
+
   const isAuthor = memory?.author_id === currentUser?.id;
+  const hasTranslatableText = !!(memory?.story || assets.some(a => a.transcript) || memory?.description);
 
   if (!currentUser) {
-    return <div className="flex items-center justify-center h-screen"><p className="text-muted-foreground">Sign in to view memories</p></div>;
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <p className="text-muted-foreground">Sign in to view memories</p>
+      </div>
+    );
   }
 
   if (loading) {
@@ -203,6 +387,15 @@ export default function FamilyMemoryPage() {
             {memory.title ?? "Untitled Memory"}
           </h1>
           <div className="flex items-center gap-1">
+            {hasTranslatableText && (
+              <button
+                onClick={() => setShowTranslate(v => !v)}
+                className={`p-2 rounded-lg active:bg-muted ${showTranslate ? "text-primary" : "text-muted-foreground"}`}
+                title="Translate with Nia"
+              >
+                <Languages className="w-4 h-4" />
+              </button>
+            )}
             {isAuthor && (
               <button
                 onClick={() => setEditing(!editing)}
@@ -212,10 +405,7 @@ export default function FamilyMemoryPage() {
               </button>
             )}
             {isAuthor && (
-              <button
-                onClick={handleDelete}
-                className="p-2 rounded-lg active:bg-muted text-destructive"
-              >
+              <button onClick={handleDelete} className="p-2 rounded-lg active:bg-muted text-destructive">
                 <Trash2 className="w-4 h-4" />
               </button>
             )}
@@ -224,7 +414,7 @@ export default function FamilyMemoryPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 pt-4 space-y-4">
-        {/* Edit form */}
+        {/* ── Edit form ── */}
         {editing && (
           <div className="bg-card border border-primary/30 rounded-2xl p-4">
             <h3 className="font-semibold mb-3 text-sm">Edit Memory</h3>
@@ -265,15 +455,56 @@ export default function FamilyMemoryPage() {
                   disabled={saving}
                   className="flex-1 bg-primary text-primary-foreground rounded-lg py-2 text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  Save
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Save
                 </button>
               </div>
             </form>
           </div>
         )}
 
-        {/* Meta card */}
+        {/* ── Nia Powers Translation Panel ── */}
+        {showTranslate && (
+          <div className="bg-card border border-primary/30 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Languages className="w-4 h-4 text-primary" />
+              <span className="font-semibold text-sm">Nia Oral History Translation</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Nia translates this memory's story, transcript, or description — preserving voice and cultural warmth across the diaspora.
+            </p>
+            <div className="flex gap-2">
+              <select
+                value={translateLang}
+                onChange={e => { setTranslateLang(e.target.value); setTranslatedText(null); }}
+                className="flex-1 border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                style={{ fontSize: "16px" }}
+              >
+                {TRANSLATE_LANGUAGES.map(l => (
+                  <option key={l.code} value={l.code}>{l.label}</option>
+                ))}
+              </select>
+              <button
+                onClick={handleTranslate}
+                disabled={translating}
+                className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2 flex-shrink-0"
+              >
+                {translating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                Translate
+              </button>
+            </div>
+            {translatedText && (
+              <div className="rounded-xl bg-muted/50 border border-border p-3">
+                <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                  <Languages className="w-3 h-3" /> {translatedLang} translation (Nia draft)
+                </p>
+                <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{translatedText}</p>
+                <p className="text-xs text-muted-foreground mt-2">Draft — review before sharing</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Meta card ── */}
         <div className="bg-card border border-border rounded-2xl p-4 space-y-2">
           {memory.description && (
             <p className="text-sm text-foreground">{memory.description}</p>
@@ -303,10 +534,7 @@ export default function FamilyMemoryPage() {
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5 pt-1">
               {tags.map(t => (
-                <span
-                  key={t.id}
-                  className="flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full"
-                >
+                <span key={t.id} className="flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
                   <Tag className="w-3 h-3" />
                   {t.tag}
                 </span>
@@ -315,7 +543,7 @@ export default function FamilyMemoryPage() {
           )}
         </div>
 
-        {/* People */}
+        {/* ── People ── */}
         {people.length > 0 && (
           <div className="bg-card border border-border rounded-2xl p-4">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">People in this memory</p>
@@ -332,51 +560,64 @@ export default function FamilyMemoryPage() {
           </div>
         )}
 
-        {/* Assets */}
-        {assets.length > 0 && (
-          <div className="bg-card border border-border rounded-2xl p-4">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Attachments</p>
-            <div className="grid grid-cols-2 gap-2">
-              {assets.map(a => (
-                <div key={a.id} className="rounded-xl bg-muted aspect-square flex flex-col items-center justify-center gap-1 text-muted-foreground overflow-hidden">
-                  {a.asset_type === "photo" ? (
-                    a.thumbnail_key ? (
-                      <img src={a.thumbnail_key} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <Image className="w-8 h-8" />
-                    )
-                  ) : a.asset_type === "audio" ? (
-                    <>
-                      <Mic className="w-8 h-8" />
-                      <span className="text-xs">{a.processing_status}</span>
-                    </>
-                  ) : a.asset_type === "video" ? (
-                    <>
-                      <FileText className="w-8 h-8" />
-                      <span className="text-xs">{a.mime_type}</span>
-                    </>
-                  ) : (
-                    <>
-                      <FileText className="w-8 h-8" />
-                      <span className="text-xs">{a.mime_type}</span>
-                    </>
-                  )}
+        {/* ── Assets (always visible so user can upload) ── */}
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Attachments {assets.length > 0 ? `(${assets.length})` : ""}
+            </p>
+            <button
+              onClick={() => addFileRef.current?.click()}
+              disabled={uploading}
+              className="flex items-center gap-1.5 text-xs text-primary font-medium active:opacity-70"
+            >
+              {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              Add file
+            </button>
+          </div>
+          <input
+            ref={addFileRef}
+            type="file"
+            accept="image/*,audio/*,video/*,.pdf,.doc,.docx"
+            className="hidden"
+            onChange={e => {
+              const f = e.target.files?.[0];
+              if (f) handleUploadAsset(f);
+            }}
+          />
+
+          {assets.length === 0 ? (
+            <div
+              onClick={() => addFileRef.current?.click()}
+              className="border-2 border-dashed border-input rounded-xl p-6 flex flex-col items-center gap-2 cursor-pointer hover:border-primary/50 transition-colors"
+            >
+              <Upload className="w-6 h-6 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground text-center">
+                Attach a photo, audio recording, or document<br />
+                <span className="text-xs">Max 10 MB</span>
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                {assets.map(a => (
+                  <AssetTile key={a.id} asset={a} />
+                ))}
+              </div>
+              {/* Transcripts from audio/video assets */}
+              {assets.filter(a => a.transcript).map(a => (
+                <div key={`tx-${a.id}`} className="mt-2 p-3 rounded-xl bg-muted/50 border border-border">
+                  <p className="text-xs font-semibold text-muted-foreground mb-1 flex items-center gap-1">
+                    <Mic className="w-3 h-3" /> Transcript · {a.processing_status}
+                  </p>
+                  <p className="text-sm text-foreground leading-relaxed">{a.transcript}</p>
                 </div>
               ))}
             </div>
-            {/* Transcripts */}
-            {assets.filter(a => a.transcript).map(a => (
-              <div key={a.id} className="mt-3 p-3 rounded-xl bg-muted/50 border border-border">
-                <p className="text-xs font-semibold text-muted-foreground mb-1 flex items-center gap-1">
-                  <Mic className="w-3 h-3" /> Transcript
-                </p>
-                <p className="text-sm text-foreground leading-relaxed">{a.transcript}</p>
-              </div>
-            ))}
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* Story */}
+        {/* ── Story ── */}
         {memory.story && (
           <div className="bg-card border border-border rounded-2xl p-4">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Story</p>
@@ -384,7 +625,7 @@ export default function FamilyMemoryPage() {
           </div>
         )}
 
-        {/* Comments */}
+        {/* ── Comments ── */}
         <div className="bg-card border border-border rounded-2xl p-4">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1.5">
             <MessageCircle className="w-3.5 h-3.5" />

@@ -1,14 +1,21 @@
 /**
  * Family Vault — memories list for a single Family Space
  * Route: /family/:id
+ *
+ * Improvements:
+ * - Prevents empty-state flash on network errors (hasEverLoaded pattern)
+ * - Photo / audio / document upload via base64 direct-upload endpoint
+ * - Uploaded photo thumbnails shown inline on memory cards
+ * - Graceful error state (retry button) instead of silently showing empty vault
+ * - Soft "Refreshing…" overlay during background re-fetch (no flash)
  */
 
 import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import {
   ArrowLeft, Plus, Search, Image, Mic, FileText, Video,
-  Users, Settings, BookHeart, Loader2, Calendar, MapPin, Tag,
-  ChevronRight, Trash2, UserPlus,
+  Users, BookHeart, Loader2, Calendar, MapPin,
+  ChevronRight, Trash2, UserPlus, Upload, AlertCircle, RefreshCw,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -53,7 +60,7 @@ interface Memory {
 function formatMemoryDate(date: string | null, precision: string) {
   if (!date) return null;
   const d = new Date(date);
-  if (precision === "year") return d.getFullYear().toString();
+  if (precision === "year")  return d.getFullYear().toString();
   if (precision === "month") return d.toLocaleDateString(undefined, { year: "numeric", month: "long" });
   if (precision === "circa") return `c. ${d.getFullYear()}`;
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
@@ -61,44 +68,61 @@ function formatMemoryDate(date: string | null, precision: string) {
 
 function sourceIcon(source: string) {
   switch (source) {
-    case "interview": return <Mic className="w-3.5 h-3.5" />;
+    case "interview": return <Mic   className="w-3.5 h-3.5" />;
     case "document":  return <FileText className="w-3.5 h-3.5" />;
     default:          return <Image className="w-3.5 h-3.5" />;
   }
+}
+
+/** Derive the asset_type from a MIME type string */
+function mimeToAssetType(mime: string): "photo" | "audio" | "video" | "document" {
+  if (mime.startsWith("image/"))  return "photo";
+  if (mime.startsWith("audio/"))  return "audio";
+  if (mime.startsWith("video/"))  return "video";
+  return "document";
 }
 
 type TabId = "memories" | "members" | "interviews";
 
 export default function FamilyVaultPage() {
   const { currentUser } = useAppContext();
-  const { id } = useParams<{ id: string }>();
+  const { id }  = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const familyId = Number(id);
 
-  const [tab, setTab] = useState<TabId>("memories");
-  const [family, setFamily] = useState<Family | null>(null);
-  const [myRole, setMyRole] = useState<string>("contributor");
-  const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [tab, setTab]             = useState<TabId>("memories");
+  const [family, setFamily]       = useState<Family | null>(null);
+  const [myRole, setMyRole]       = useState<string>("contributor");
+  const [members, setMembers]     = useState<FamilyMember[]>([]);
   const [memoryCount, setMemoryCount] = useState(0);
-  const [memories, setMemories] = useState<Memory[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQ, setSearchQ] = useState("");
+  const [memories, setMemories]   = useState<Memory[]>([]);
+
+  // Loading / error state — hasEverLoaded prevents the empty-state flash when
+  // the first fetch hasn't returned yet, and loadError gives a retry surface
+  // instead of silently showing "no memories" after a network failure.
+  const [loading, setLoading]         = useState(true);
+  const [loadError, setLoadError]     = useState(false);
+  const hasEverLoaded                 = useRef(false);
+
+  const [searchQ, setSearchQ]         = useState("");
   const [showAddMemory, setShowAddMemory] = useState(false);
-  const [showInvite, setShowInvite] = useState(false);
+  const [showInvite, setShowInvite]   = useState(false);
 
-  // add memory form
-  const [mTitle, setMTitle]  = useState("");
-  const [mDesc, setMDesc]    = useState("");
-  const [mDate, setMDate]    = useState("");
-  const [mLoc, setMLoc]      = useState("");
-  const [mTags, setMTags]    = useState("");
+  // Add-memory form state
+  const [mTitle, setMTitle]   = useState("");
+  const [mDesc, setMDesc]     = useState("");
+  const [mDate, setMDate]     = useState("");
+  const [mLoc, setMLoc]       = useState("");
+  const [mTags, setMTags]     = useState("");
+  const [mFile, setMFile]     = useState<File | null>(null);
   const [mSaving, setMSaving] = useState(false);
+  const fileInputRef          = useRef<HTMLInputElement>(null);
 
-  // invite form
-  const [iName, setIName]   = useState("");
-  const [iEmail, setIEmail] = useState("");
-  const [iRel, setIRel]     = useState("");
-  const [iRole, setIRole]   = useState<"contributor" | "viewer">("contributor");
+  // Invite form state
+  const [iName, setIName]     = useState("");
+  const [iEmail, setIEmail]   = useState("");
+  const [iRel, setIRel]       = useState("");
+  const [iRole, setIRole]     = useState<"contributor" | "viewer">("contributor");
   const [iSaving, setISaving] = useState(false);
 
   useEffect(() => {
@@ -124,7 +148,10 @@ export default function FamilyVaultPage() {
   }
 
   async function loadMemories(q?: string) {
-    setLoading(true);
+    // On first load: show the spinner, not the empty state. On refreshes
+    // (hasEverLoaded=true), leave the existing list visible while refetching.
+    if (!hasEverLoaded.current) setLoading(true);
+    setLoadError(false);
     try {
       const params = new URLSearchParams({ limit: "30" });
       if (q) params.set("q", q);
@@ -132,37 +159,83 @@ export default function FamilyVaultPage() {
       if (!res.ok) throw new Error();
       const data = await res.json();
       setMemories(data.memories ?? []);
+      hasEverLoaded.current = true;
     } catch {
-      toast.error("Couldn't load memories");
+      setLoadError(true);
+      // Do NOT clear memories — keep whatever was showing before the error
+      if (hasEverLoaded.current) {
+        toast.error("Couldn't refresh memories — showing last known list");
+      }
     } finally {
       setLoading(false);
     }
   }
 
+  /** Convert a File to a base64 data URL */
+  function fileToDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
   async function handleAddMemory(e: React.FormEvent) {
     e.preventDefault();
-    if (!mTitle.trim() && !mDesc.trim()) {
-      toast.error("Add a title or description");
+    if (!mTitle.trim() && !mDesc.trim() && !mFile) {
+      toast.error("Add a title, description, or attach a file");
       return;
     }
     setMSaving(true);
     try {
+      // 1. Create the memory row (metadata only)
       const tags = mTags.split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
       const res = await fetch(`/api/family/${familyId}/memories`, {
-        method: "POST",
+        method:  "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
           title:          mTitle.trim() || undefined,
           description:    mDesc.trim() || undefined,
-          memory_date:    mDate || undefined,
-          location_label: mLoc.trim() || undefined,
+          memory_date:    mDate         || undefined,
+          location_label: mLoc.trim()  || undefined,
           tags:           tags.length ? tags : undefined,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
+      const { memory } = await res.json();
+
+      // 2. Upload the attached file if present (dev-mode direct upload)
+      if (mFile) {
+        try {
+          const dataUrl   = await fileToDataUrl(mFile);
+          const assetType = mimeToAssetType(mFile.type);
+          const uploadRes = await fetch(
+            `/api/family/${familyId}/memories/${memory.id}/assets/upload-direct`,
+            {
+              method:  "POST",
+              headers: { ...authHeaders(), "Content-Type": "application/json" },
+              body: JSON.stringify({
+                dataUrl,
+                filename:  mFile.name,
+                mimeType:  mFile.type,
+                assetType,
+              }),
+            },
+          );
+          if (!uploadRes.ok) {
+            const errBody = await uploadRes.json().catch(() => ({}));
+            toast.error(`Memory saved, but file upload failed: ${errBody.error ?? uploadRes.status}`);
+          }
+        } catch (uploadErr: any) {
+          toast.error(`Memory saved, but file upload failed: ${uploadErr?.message ?? "unknown error"}`);
+        }
+      }
+
       toast.success("Memory added!");
       setShowAddMemory(false);
-      setMTitle(""); setMDesc(""); setMDate(""); setMLoc(""); setMTags("");
+      setMTitle(""); setMDesc(""); setMDate(""); setMLoc(""); setMTags(""); setMFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       loadMemories(searchQ || undefined);
     } catch (err: any) {
       toast.error(err.message ?? "Couldn't save memory");
@@ -177,13 +250,13 @@ export default function FamilyVaultPage() {
     setISaving(true);
     try {
       const res = await fetch(`/api/family/${familyId}/members`, {
-        method: "POST",
+        method:  "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
           display_name:  iName.trim(),
           invite_email:  iEmail.trim() || undefined,
-          relation_note: iRel.trim() || undefined,
-          role:          iRole,
+          relation_note: iRel.trim()   || undefined,
+          role: iRole,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
@@ -202,7 +275,7 @@ export default function FamilyVaultPage() {
     if (!confirm("Delete this memory permanently?")) return;
     try {
       const res = await fetch(`/api/family/${familyId}/memories/${memoryId}`, {
-        method: "DELETE",
+        method:  "DELETE",
         headers: authHeaders(),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
@@ -220,6 +293,134 @@ export default function FamilyVaultPage() {
     return (
       <div className="flex items-center justify-center h-screen">
         <p className="text-muted-foreground">Sign in to view your Family Vault</p>
+      </div>
+    );
+  }
+
+  // ── Derive the memory-list body ───────────────────────────────────────────────
+  let memoriesBody: React.ReactNode;
+
+  if (loading && !hasEverLoaded.current) {
+    // Initial load spinner
+    memoriesBody = (
+      <div className="flex justify-center py-16">
+        <Loader2 className="w-7 h-7 animate-spin text-primary" />
+      </div>
+    );
+  } else if (loadError && !hasEverLoaded.current) {
+    // First-load error — show retry instead of empty state
+    memoriesBody = (
+      <div className="text-center py-16 space-y-3">
+        <AlertCircle className="w-10 h-10 text-destructive/60 mx-auto" />
+        <p className="font-semibold text-foreground">Couldn't load memories</p>
+        <p className="text-sm text-muted-foreground">Check your connection and try again.</p>
+        <button
+          onClick={() => loadMemories(searchQ || undefined)}
+          className="flex items-center gap-2 mx-auto bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-medium"
+        >
+          <RefreshCw className="w-4 h-4" /> Retry
+        </button>
+      </div>
+    );
+  } else if (memories.length === 0 && hasEverLoaded.current) {
+    // Truly empty vault (not a network error)
+    memoriesBody = (
+      <div className="text-center py-16 space-y-3">
+        <BookHeart className="w-12 h-12 text-primary/40 mx-auto" />
+        <p className="font-semibold text-foreground">No memories yet</p>
+        <p className="text-sm text-muted-foreground">
+          {canWrite ? "Start preserving your family's story." : "No memories have been added yet."}
+        </p>
+        {canWrite && (
+          <button
+            onClick={() => setShowAddMemory(true)}
+            className="mt-2 bg-primary text-primary-foreground px-5 py-2 rounded-xl text-sm font-medium"
+          >
+            Add a Memory
+          </button>
+        )}
+      </div>
+    );
+  } else {
+    memoriesBody = (
+      <div className="space-y-3">
+        {/* Soft "loading" overlay during background refresh — doesn't flash empty */}
+        {loading && (
+          <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Refreshing…
+          </div>
+        )}
+        {memories.map(m => (
+          <div key={m.id} className="bg-card rounded-2xl border border-border overflow-hidden">
+            <button
+              onClick={() => navigate(`/family/${familyId}/memory/${m.id}`)}
+              className="w-full flex gap-3 p-4 text-left active:bg-muted/50"
+            >
+              {/* Thumbnail */}
+              <div className="w-14 h-14 rounded-xl flex-shrink-0 bg-muted flex items-center justify-center overflow-hidden">
+                {m.primary_asset?.asset_type === "photo" ? (
+                  <img
+                    src={`/api/family/assets/${m.primary_asset.storage_key}`}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                ) : m.primary_asset?.asset_type === "audio" ? (
+                  <Mic className="w-6 h-6 text-muted-foreground" />
+                ) : m.primary_asset?.asset_type === "video" ? (
+                  <Video className="w-6 h-6 text-muted-foreground" />
+                ) : (
+                  <div className="text-muted-foreground">
+                    {m.source === "interview" ? <Mic className="w-6 h-6" /> : <Image className="w-6 h-6" />}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm text-foreground line-clamp-1">
+                  {m.title ?? "Untitled memory"}
+                </p>
+                {m.description && (
+                  <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{m.description}</p>
+                )}
+                <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                  {m.memory_date && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Calendar className="w-3 h-3" />
+                      {formatMemoryDate(m.memory_date, m.memory_date_precision)}
+                    </span>
+                  )}
+                  {m.location_label && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <MapPin className="w-3 h-3" />
+                      {m.location_label}
+                    </span>
+                  )}
+                  <span className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                    m.visibility === "private"
+                      ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                      : "bg-primary/10 text-primary"
+                  }`}>
+                    {sourceIcon(m.source)}
+                    {m.source}
+                  </span>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0 self-center" />
+            </button>
+
+            {canWrite && (
+              <div className="px-4 pb-3 flex justify-end">
+                <button
+                  onClick={() => handleDeleteMemory(m.id)}
+                  className="text-xs text-destructive flex items-center gap-1 active:opacity-70"
+                >
+                  <Trash2 className="w-3 h-3" /> Delete
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     );
   }
@@ -269,7 +470,6 @@ export default function FamilyVaultPage() {
         {/* ── Memories tab ── */}
         {tab === "memories" && (
           <>
-            {/* Search */}
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
@@ -286,103 +486,7 @@ export default function FamilyVaultPage() {
               />
             </div>
 
-            {loading ? (
-              <div className="flex justify-center py-16">
-                <Loader2 className="w-7 h-7 animate-spin text-primary" />
-              </div>
-            ) : memories.length === 0 ? (
-              <div className="text-center py-16 space-y-3">
-                <BookHeart className="w-12 h-12 text-primary/40 mx-auto" />
-                <p className="font-semibold text-foreground">No memories yet</p>
-                <p className="text-sm text-muted-foreground">
-                  {canWrite ? "Start preserving your family's story." : "No memories have been added yet."}
-                </p>
-                {canWrite && (
-                  <button
-                    onClick={() => setShowAddMemory(true)}
-                    className="mt-2 bg-primary text-primary-foreground px-5 py-2 rounded-xl text-sm font-medium"
-                  >
-                    Add a Memory
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {memories.map(m => (
-                  <div
-                    key={m.id}
-                    className="bg-card rounded-2xl border border-border overflow-hidden"
-                  >
-                    <button
-                      onClick={() => navigate(`/family/${familyId}/memory/${m.id}`)}
-                      className="w-full flex gap-3 p-4 text-left active:bg-muted/50"
-                    >
-                      {/* Thumbnail / icon */}
-                      <div className="w-14 h-14 rounded-xl flex-shrink-0 bg-muted flex items-center justify-center overflow-hidden">
-                        {m.primary_asset?.asset_type === "photo" && m.primary_asset.thumbnail_key ? (
-                          <img
-                            src={`/api/family/assets/${m.primary_asset.thumbnail_key}`}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="text-muted-foreground">
-                            {m.source === "interview" ? (
-                              <Mic className="w-6 h-6" />
-                            ) : (
-                              <Image className="w-6 h-6" />
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm text-foreground line-clamp-1">
-                          {m.title ?? "Untitled memory"}
-                        </p>
-                        {m.description && (
-                          <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{m.description}</p>
-                        )}
-                        <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                          {m.memory_date && (
-                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <Calendar className="w-3 h-3" />
-                              {formatMemoryDate(m.memory_date, m.memory_date_precision)}
-                            </span>
-                          )}
-                          {m.location_label && (
-                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <MapPin className="w-3 h-3" />
-                              {m.location_label}
-                            </span>
-                          )}
-                          <span className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                            m.visibility === "private"
-                              ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
-                              : "bg-primary/10 text-primary"
-                          }`}>
-                            {sourceIcon(m.source)}
-                            {m.source}
-                          </span>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0 self-center" />
-                    </button>
-
-                    {canWrite && (
-                      <div className="px-4 pb-3 flex justify-end">
-                        <button
-                          onClick={() => handleDeleteMemory(m.id)}
-                          className="text-xs text-destructive flex items-center gap-1 active:opacity-70"
-                        >
-                          <Trash2 className="w-3 h-3" /> Delete
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+            {memoriesBody}
           </>
         )}
 
@@ -433,11 +537,12 @@ export default function FamilyVaultPage() {
         )}
       </div>
 
-      {/* Add Memory modal */}
+      {/* ── Add Memory modal ── */}
       {showAddMemory && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-card rounded-2xl p-5 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-bold mb-3">Add a Memory</h2>
+          <div className="bg-card rounded-2xl p-5 w-full max-w-md shadow-xl max-h-[92vh] overflow-y-auto">
+            <h2 className="text-lg font-bold mb-1">Add a Memory</h2>
+            <p className="text-xs text-muted-foreground mb-3">Preserve a photo, story, or audio recording in your family vault.</p>
             <form onSubmit={handleAddMemory} className="space-y-3">
               <div>
                 <label className="text-sm font-medium block mb-1">Title</label>
@@ -495,10 +600,67 @@ export default function FamilyVaultPage() {
                   style={{ fontSize: "16px" }}
                 />
               </div>
+
+              {/* File upload */}
+              <div>
+                <label className="text-sm font-medium block mb-1">
+                  Attach a photo, audio, or document
+                </label>
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full border-2 border-dashed border-input rounded-xl p-4 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-primary/50 transition-colors"
+                >
+                  {mFile ? (
+                    <>
+                      {mFile.type.startsWith("image/") ? (
+                        <img
+                          src={URL.createObjectURL(mFile)}
+                          alt="preview"
+                          className="max-h-32 rounded-lg object-contain"
+                        />
+                      ) : (
+                        <div className="flex items-center gap-2 text-primary">
+                          {mFile.type.startsWith("audio/") ? <Mic className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+                          <span className="text-sm font-medium">{mFile.name}</span>
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground">{(mFile.size / 1024 / 1024).toFixed(1)} MB · tap to change</p>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-6 h-6 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground text-center">
+                        Tap to choose a photo, audio recording, or PDF<br />
+                        <span className="text-xs">Max 10 MB</span>
+                      </p>
+                    </>
+                  )}
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,audio/*,video/*,.pdf,.doc,.docx"
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    if (f.size > 10 * 1024 * 1024) {
+                      toast.error("File too large — max 10 MB");
+                      return;
+                    }
+                    setMFile(f);
+                  }}
+                />
+              </div>
+
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => setShowAddMemory(false)}
+                  onClick={() => {
+                    setShowAddMemory(false);
+                    setMFile(null);
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                  }}
                   className="flex-1 border border-input rounded-lg py-2 text-sm font-medium active:opacity-70"
                 >
                   Cancel
@@ -509,7 +671,7 @@ export default function FamilyVaultPage() {
                   className="flex-1 bg-primary text-primary-foreground rounded-lg py-2 text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {mSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  Save Memory
+                  {mSaving ? "Saving…" : "Save Memory"}
                 </button>
               </div>
             </form>
@@ -517,7 +679,7 @@ export default function FamilyVaultPage() {
         </div>
       )}
 
-      {/* Invite modal */}
+      {/* ── Invite modal ── */}
       {showInvite && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4">
           <div className="bg-card rounded-2xl p-5 w-full max-w-md shadow-xl">
@@ -528,7 +690,7 @@ export default function FamilyVaultPage() {
                 <input
                   value={iName}
                   onChange={e => setIName(e.target.value)}
-                  placeholder='e.g. "Grandma Rose"'
+                  placeholder='"Grandma Rose"'
                   className="w-full border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                   style={{ fontSize: "16px" }}
                   required
@@ -539,7 +701,7 @@ export default function FamilyVaultPage() {
                 <input
                   value={iRel}
                   onChange={e => setIRel(e.target.value)}
-                  placeholder='e.g. "Grandmother on Dad\'s side"'
+                  placeholder="&quot;Grandmother on Dad's side&quot;"
                   className="w-full border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                   style={{ fontSize: "16px" }}
                 />
@@ -563,7 +725,7 @@ export default function FamilyVaultPage() {
                   className="w-full border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                   style={{ fontSize: "16px" }}
                 >
-                  <option value="contributor">Contributor — can add memories & comment</option>
+                  <option value="contributor">Contributor — can add memories &amp; comment</option>
                   <option value="viewer">Viewer — read-only access</option>
                 </select>
               </div>
@@ -596,12 +758,10 @@ export default function FamilyVaultPage() {
 
 function InterviewsTab({ familyId, canWrite }: { familyId: number; canWrite: boolean }) {
   const [interviews, setInterviews] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [starting, setStarting] = useState(false);
+  const [loading, setLoading]       = useState(true);
+  const [starting, setStarting]     = useState(false);
 
-  useEffect(() => {
-    loadInterviews();
-  }, []);
+  useEffect(() => { loadInterviews(); }, []);
 
   async function loadInterviews() {
     setLoading(true);
@@ -621,12 +781,12 @@ function InterviewsTab({ familyId, canWrite }: { familyId: number; canWrite: boo
     setStarting(true);
     try {
       const res = await fetch(`/api/family/${familyId}/interviews`, {
-        method: "POST",
+        method:  "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ prompts_used: [] }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
-      toast.success("Interview session started!");
+      toast.success("Interview session started! Go to the memory detail to record audio.");
       loadInterviews();
     } catch (err: any) {
       toast.error(err.message ?? "Couldn't start interview");
@@ -663,7 +823,8 @@ function InterviewsTab({ familyId, canWrite }: { familyId: number; canWrite: boo
       {interviews.length === 0 && (
         <div className="text-center py-12">
           <Mic className="w-10 h-10 text-primary/30 mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">No interviews yet. Capture an elder's voice before it's too late.</p>
+          <p className="text-sm text-muted-foreground font-medium mb-1">No interviews yet</p>
+          <p className="text-xs text-muted-foreground">Capture an elder's voice before it's too late.</p>
         </div>
       )}
 
@@ -680,6 +841,19 @@ function InterviewsTab({ familyId, canWrite }: { familyId: number; canWrite: boo
               {iv.status}
             </span>
           </div>
+          {iv.prompts_used?.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-border">
+              <p className="text-xs text-muted-foreground mb-1">Prompts used:</p>
+              <ul className="text-xs text-foreground space-y-0.5">
+                {iv.prompts_used.slice(0, 3).map((p: string, i: number) => (
+                  <li key={i} className="truncate">• {p}</li>
+                ))}
+                {iv.prompts_used.length > 3 && (
+                  <li className="text-muted-foreground">+{iv.prompts_used.length - 3} more</li>
+                )}
+              </ul>
+            </div>
+          )}
         </div>
       ))}
     </div>
