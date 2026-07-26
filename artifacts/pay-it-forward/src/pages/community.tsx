@@ -1367,7 +1367,7 @@ export default function CommunityScreen() {
                 <h3 className="font-black text-sm flex items-center gap-2">
                   <Activity className="w-4 h-4 text-primary" /> Pool Activity
                 </h3>
-                {poolLedger.entries.map((entry) => {
+                {poolLedger.entries.map((entry: { id: number; entry_type: string; amount: number; display_name?: string | null; created_at: string }) => {
                   const meta: Record<string, { icon: string; label: string }> = {
                     sponsor_contribution: { icon: "💛", label: entry.display_name ? `${entry.display_name} funded the pool` : "Pool contribution" },
                     helper_front: { icon: "⚡", label: "Helper paid instantly at completion" },
@@ -1696,7 +1696,7 @@ export default function CommunityScreen() {
                   {[...stats.requests_by_category]
                     .sort((a, b) => b.count - a.count)
                     .map(({ category, count }) => {
-                      const total = stats.requests_by_category.reduce((s, c) => s + c.count, 0);
+                      const total = stats.requests_by_category.reduce((s: number, c: { count: number }) => s + c.count, 0);
                       const pct = total > 0 ? Math.round((count / total) * 100) : 0;
                       return (
                         <div key={category}>
