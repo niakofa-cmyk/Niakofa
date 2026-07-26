@@ -914,6 +914,7 @@ router.delete(
     const familyId = Number(req.params.id);
     const memoryId = Number(req.params.memoryId);
     const assetId  = Number(req.params.assetId);
+    if (!familyId || !memoryId || !assetId) return res.status(400).json({ error: "Invalid ids" });
 
     const membership = await getFamilyMembership(familyId, userId);
     if (!membership || !CAN_WRITE_ROLES.includes(membership.role as any)) {
@@ -942,6 +943,7 @@ router.get(
     const userId = req.authenticatedUserId!;
     const familyId = Number(req.params.id);
     const memoryId = Number(req.params.memoryId);
+    if (!familyId || !memoryId) return res.status(400).json({ error: "Invalid ids" });
 
     const membership = await getFamilyMembership(familyId, userId);
     if (!membership) return res.status(403).json({ error: "Not a member" });
@@ -965,6 +967,7 @@ router.post(
     const userId = req.authenticatedUserId!;
     const familyId = Number(req.params.id);
     const memoryId = Number(req.params.memoryId);
+    if (!familyId || !memoryId) return res.status(400).json({ error: "Invalid ids" });
 
     const membership = await getFamilyMembership(familyId, userId);
     if (!membership || !CAN_WRITE_ROLES.includes(membership.role as any)) {
@@ -1041,6 +1044,7 @@ router.get("/family/:id/interviews/:interviewId", generalApiLimiter, requireAuth
   const userId = req.authenticatedUserId!;
   const familyId    = Number(req.params.id);
   const interviewId = Number(req.params.interviewId);
+  if (!familyId || !interviewId) return res.status(400).json({ error: "Invalid ids" });
 
   const membership = await getFamilyMembership(familyId, userId);
   if (!membership) return res.status(403).json({ error: "Not a member" });
@@ -1063,6 +1067,7 @@ router.patch("/family/:id/interviews/:interviewId", generalApiLimiter, requireAu
   const userId = req.authenticatedUserId!;
   const familyId    = Number(req.params.id);
   const interviewId = Number(req.params.interviewId);
+  if (!familyId || !interviewId) return res.status(400).json({ error: "Invalid ids" });
 
   const membership = await getFamilyMembership(familyId, userId);
   if (!membership || !CAN_WRITE_ROLES.includes(membership.role as any)) {
