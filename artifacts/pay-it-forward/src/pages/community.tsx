@@ -340,11 +340,62 @@ const FORT_WORTH_NEIGHBORHOODS = [
   { id: "wedgwood",        name: "Wedgwood",          emoji: "🏡", description: "Family-friendly neighborhood in southwest FW" },
 ];
 
+interface NeighborhoodLiveStatus {
+  session_id: number | null;
+  host_name: string | null;
+  speaker_count: number;
+  listener_count: number;
+  video_enabled: boolean;
+}
+
 function NeighborhoodCirclesTab() {
-  const [selected, setSelected] = useState<string | null>(null);
   const [, setLocation] = useLocation();
   const { currentUser } = useAppContext();
   const userHood = currentUser?.neighborhood?.toLowerCase().replace(/\s+/g, "_");
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
+  // Fetch live circle data so cards show real-time status
+  const [liveByHood, setLiveByHood] = useState<Map<string, NeighborhoodLiveStatus>>(new Map());
+  const [fetchedCity, setFetchedCity] = useState<string | null>(null);
+
+  const city = currentUser?.city?.trim() || "Fort Worth";
+
+  useEffect(() => {
+    if (fetchedCity === city) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${base}/api/audio-circles?city=${encodeURIComponent(city)}`, { headers: authHeaders() });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const map = new Map<string, NeighborhoodLiveStatus>();
+        for (const circle of data.circles ?? []) {
+          const key = (circle.neighborhood_name ?? "").toLowerCase().replace(/\s+/g, "_");
+          if (key) {
+            map.set(key, {
+              session_id: circle.live_session?.id ?? null,
+              host_name: circle.live_session?.host_name ?? null,
+              speaker_count: circle.live_session?.speaker_count ?? 0,
+              listener_count: circle.live_session?.listener_count ?? 0,
+              video_enabled: circle.live_session?.video_enabled ?? false,
+            });
+          }
+        }
+        if (!cancelled) { setLiveByHood(map); setFetchedCity(city); }
+      } catch { /* non-critical */ }
+    })();
+    return () => { cancelled = true; };
+  }, [base, city, fetchedCity]);
+
+  const openCircle = (hood: typeof FORT_WORTH_NEIGHBORHOODS[0]) => {
+    // Prefer direct navigation to the live session if one is running
+    const live = liveByHood.get(hood.id);
+    if (live?.session_id) {
+      setLocation(`/audio-circle/${live.session_id}`);
+    } else {
+      setLocation(`/audio-circles?neighborhood=${encodeURIComponent(hood.name)}`);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -353,22 +404,28 @@ function NeighborhoodCirclesTab() {
           <MapPin className="w-4 h-4 text-primary" /> Neighborhood Circles
         </h3>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          Your circle connects you with neighbors. Requests from your circle appear first on the map. "My neighbors helped me" — that's the power of local belonging.
+          Tap your neighborhood to join or host a live Circle — voice and video rooms where neighbors talk in real time.
         </p>
       </div>
 
-      {FORT_WORTH_NEIGHBORHOODS.map(hood => {
+      {FORT_WORTH_NEIGHBORHOODS.map((hood, i) => {
         const isYours = userHood === hood.id || currentUser?.neighborhood?.toLowerCase() === hood.name.toLowerCase();
-        const isOpen = selected === hood.id;
+        const live = liveByHood.get(hood.id);
+        const isLive = !!live?.session_id;
         return (
           <motion.div
             key={hood.id}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`bg-card border rounded-2xl p-4 cursor-pointer transition-all ${
-              isYours ? "border-primary/60 bg-primary/5" : "border-border hover:border-primary/30"
+            transition={{ delay: i * 0.03 }}
+            className={`bg-card border rounded-2xl p-4 cursor-pointer transition-all active:scale-[0.98] ${
+              isLive
+                ? "border-red-500/50 bg-red-500/5"
+                : isYours
+                  ? "border-primary/60 bg-primary/5"
+                  : "border-border hover:border-primary/30"
             }`}
-            onClick={() => setSelected(isOpen ? null : hood.id)}
+            onClick={() => openCircle(hood)}
           >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl shrink-0">
@@ -377,15 +434,41 @@ function NeighborhoodCirclesTab() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <div className="font-black text-sm">{hood.name}</div>
-                  {isYours && (
+                  {isYours && !isLive && (
                     <span className="text-[10px] font-black text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
                       Your Circle
                     </span>
                   )}
+                  {isLive && (
+                    <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 flex items-center gap-1">
+                      <Radio className="w-2.5 h-2.5" /> Live
+                    </span>
+                  )}
                 </div>
-                <div className="text-xs text-muted-foreground mt-0.5">{hood.description}</div>
+                {isLive && live ? (
+                  <div className="mt-1 space-y-0.5">
+                    <div className="text-xs text-muted-foreground">
+                      Hosted by <span className="font-bold text-foreground">{live.host_name}</span>
+                      {live.video_enabled && <span className="ml-1 text-[10px] text-primary">· 🎥 Video</span>}
+                    </div>
+                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                      <span className="flex items-center gap-1"><Mic className="w-3 h-3" /> {live.speaker_count} speaker{live.speaker_count !== 1 ? "s" : ""}</span>
+                      <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {live.listener_count} audience</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground mt-0.5">{hood.description}</div>
+                )}
               </div>
-              <Users className="w-4 h-4 text-muted-foreground shrink-0" />
+              {isLive ? (
+                <div className="shrink-0">
+                  <span className="text-xs font-black text-red-400 bg-red-500/10 border border-red-500/30 px-3 py-1.5 rounded-xl">Join</span>
+                </div>
+              ) : (
+                <div className="shrink-0">
+                  <span className="text-xs font-bold text-muted-foreground bg-muted px-3 py-1.5 rounded-xl">Host</span>
+                </div>
+              )}
             </div>
           </motion.div>
         );
@@ -399,8 +482,8 @@ function NeighborhoodCirclesTab() {
           <Radio className="w-5 h-5 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-black">Join the live Audio Circle</div>
-          <div className="text-xs text-muted-foreground mt-0.5">Talk with your neighbors in real time — voice rooms for every circle, plus one for all of {currentUser?.city?.trim() || "your city"}.</div>
+          <div className="text-sm font-black">Browse all Circles</div>
+          <div className="text-xs text-muted-foreground mt-0.5">See all neighborhoods + a city-wide Circle for all of {currentUser?.city?.trim() || "your city"}.</div>
         </div>
       </div>
     </div>

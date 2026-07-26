@@ -3,9 +3,9 @@ import { useLocation, useParams } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Mic, MicOff, Hand, Video, VideoOff, Radio, Users, PhoneOff,
-  Circle as CircleIcon, ChevronDown, Crown, Upload, Wifi, WifiOff,
-  VolumeX, UserMinus, Flag, Volume2, Shield, Ban, AlertTriangle,
-  MoreVertical, Check, X, Signal, SignalHigh, SignalMedium, SignalLow,
+  Circle as CircleIcon, ChevronDown, Crown, Upload, WifiOff,
+  VolumeX, UserMinus, Flag, Volume2, Ban, AlertTriangle,
+  Signal, SignalHigh, SignalMedium, SignalLow, Share2,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders, getToken } from "@/lib/auth";
@@ -786,9 +786,30 @@ export default function AudioCircleRoomScreen() {
               </div>
             </div>
           </div>
-          <button onClick={leaveAndExit} className="p-2 rounded-full hover:bg-muted shrink-0">
-            <ChevronDown className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => {
+                const url = `${window.location.origin}/audio-circle/${sessionId}`;
+                if (navigator.share) {
+                  navigator.share({ title: session.title, url }).catch(() => {});
+                } else {
+                  navigator.clipboard.writeText(url).then(() => {
+                    // toast is imported below
+                  }).catch(() => {});
+                  import("@/hooks/use-toast").then(({ toast }) => {
+                    toast({ title: "Link copied!", description: "Share it with your neighbors." });
+                  });
+                }
+              }}
+              className="p-2 rounded-full hover:bg-muted"
+              title="Share this Circle"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+            <button onClick={leaveAndExit} className="p-2 rounded-full hover:bg-muted">
+              <ChevronDown className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Recording bar */}
@@ -1030,12 +1051,20 @@ export default function AudioCircleRoomScreen() {
           )}
         </div>
 
-        {/* ── Raised hands (host-only) ────────────────────────────────────────── */}
+        {/* ── Raised hands (host-only) — ordered queue ───────────────────────── */}
         {isHost && audience.some(l => l.hand_raised) && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 space-y-2">
-            <div className="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-1">Raised Hands</div>
-            {audience.filter(l => l.hand_raised).map(l => (
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">
+                ✋ Raised Hands ({audience.filter(l => l.hand_raised).length})
+              </div>
+              <span className="text-[10px] text-amber-400/70">Tap "Bring up" in order</span>
+            </div>
+            {audience.filter(l => l.hand_raised).map((l, idx) => (
               <div key={l.user_id} className="flex items-center gap-3">
+                <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
+                  <span className="text-[10px] font-black text-amber-400">{idx + 1}</span>
+                </div>
                 <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm font-black overflow-hidden shrink-0">
                   {l.avatar_url ? <img src={l.avatar_url} className="w-full h-full object-cover" alt="" /> : l.name?.[0] ?? "?"}
                 </div>
@@ -1086,12 +1115,19 @@ export default function AudioCircleRoomScreen() {
           ))}
         </div>
 
+        {/* Audience hint — only shown to listeners who haven't raised their hand */}
+        {!canSpeak && !me?.hand_raised && (
+          <div className="text-center text-xs text-muted-foreground bg-muted/50 rounded-xl px-3 py-2">
+            Want to speak? <span className="font-bold text-foreground">Raise your hand</span> — the Host can bring you onto the stage.
+          </div>
+        )}
+
         {/* Controls row */}
         <div className="flex items-center justify-center gap-2.5">
           {!canSpeak && (
             <Button variant={me?.hand_raised ? "default" : "outline"} onClick={toggleHand} className="gap-2">
               <Hand className="w-4 h-4" />
-              {me?.hand_raised ? "Hand raised" : "Raise hand"}
+              {me?.hand_raised ? "Hand raised ✋" : "Raise hand"}
             </Button>
           )}
           {canSpeak && (

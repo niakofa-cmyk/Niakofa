@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
-import { useLocation } from "wouter";
-import { motion } from "framer-motion";
-import { Radio, Users, Mic, Video, ArrowLeft, Search, WifiOff, Crown, Hand, Volume2 } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation, useSearch } from "wouter";
+import { motion, AnimatePresence } from "framer-motion";
+import { Radio, Users, Mic, Video, ArrowLeft, Search, WifiOff, Crown, Volume2, X, Share2 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -43,14 +43,141 @@ interface Recording {
 
 const SESSION_KEY = "niakofa_circles_city";
 
+// ── Pre-join host modal ──────────────────────────────────────────────────────
+interface HostModalProps {
+  circle: CircleSummary;
+  onClose: () => void;
+  onStart: (circle: CircleSummary, videoEnabled: boolean) => void;
+  starting: boolean;
+}
+
+function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps) {
+  const [format, setFormat] = useState<"audio" | "video">("audio");
+  const [micReady, setMicReady] = useState<boolean | null>(null);
+  const [camReady, setCamReady] = useState<boolean | null>(null);
+  const checkedRef = useRef(false);
+
+  useEffect(() => {
+    if (checkedRef.current) return;
+    checkedRef.current = true;
+    (async () => {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+        s.getTracks().forEach(t => t.stop());
+        setMicReady(true);
+      } catch { setMicReady(false); }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (format !== "video") { setCamReady(null); return; }
+    (async () => {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ video: true });
+        s.getTracks().forEach(t => t.stop());
+        setCamReady(true);
+      } catch { setCamReady(false); }
+    })();
+  }, [format]);
+
+  const circleName = circle.neighborhood_name ? `${circle.neighborhood_name} Circle` : `${circle.city_display} Circle`;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ y: 32, scale: 0.97 }}
+        animate={{ y: 0, scale: 1 }}
+        exit={{ y: 32, scale: 0.97 }}
+        transition={{ type: "spring", bounce: 0.2 }}
+        className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm space-y-5"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="font-black text-base">Host a Circle</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{circleName}</div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-muted -mt-1 -mr-1">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Format picker */}
+        <div className="space-y-2">
+          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Format</div>
+          <div className="grid grid-cols-2 gap-2">
+            {(["audio", "video"] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setFormat(f)}
+                className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${
+                  format === f
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:border-primary/30"
+                }`}
+              >
+                <span className="text-2xl">{f === "audio" ? "🎤" : "🎥"}</span>
+                <span className="text-xs font-black">{f === "audio" ? "Audio Circle" : "Video Circle"}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Device checks */}
+        <div className="space-y-2">
+          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Device Check</div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-2"><Mic className="w-4 h-4 text-muted-foreground" /> Microphone</span>
+              {micReady === null && <span className="text-xs text-muted-foreground animate-pulse">Checking…</span>}
+              {micReady === true && <span className="text-xs font-bold text-green-400">🟢 Ready</span>}
+              {micReady === false && <span className="text-xs font-bold text-red-400">🔴 Not available</span>}
+            </div>
+            {format === "video" && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2"><Video className="w-4 h-4 text-muted-foreground" /> Camera</span>
+                {camReady === null && <span className="text-xs text-muted-foreground animate-pulse">Checking…</span>}
+                {camReady === true && <span className="text-xs font-bold text-green-400">🟢 Ready</span>}
+                {camReady === false && <span className="text-xs font-bold text-red-400">🔴 Not available</span>}
+              </div>
+            )}
+          </div>
+          {micReady === false && (
+            <div className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+              Allow microphone access in your browser settings, then try again.
+            </div>
+          )}
+        </div>
+
+        {/* Start button */}
+        <Button
+          className="w-full"
+          disabled={starting || micReady === false}
+          onClick={() => onStart(circle, format === "video")}
+        >
+          {starting ? "Starting…" : `Start ${format === "audio" ? "Audio" : "Video"} Circle`}
+        </Button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ── Main screen ───────────────────────────────────────────────────────────────
 export default function AudioCirclesScreen() {
   const [, setLocation] = useLocation();
+  const search = useSearch();
   const { currentUser } = useAppContext();
 
-  // Restore last-browsed city from sessionStorage so leaving a room or
-  // refreshing the page keeps you looking at the same city's circles instead
-  // of silently snapping back to your profile default (which may have zero
-  // circles if you'd searched into a different city).
+  // Pull ?neighborhood= from URL so Community → Circles tab card navigates here correctly
+  const neighborhoodParam = new URLSearchParams(search).get("neighborhood");
+
   const [city, setCity] = useState(() => {
     try {
       return sessionStorage.getItem(SESSION_KEY) || currentUser?.city?.trim() || "Fort Worth";
@@ -60,34 +187,19 @@ export default function AudioCirclesScreen() {
   });
   const [cityInput, setCityInput] = useState(city);
   const [startingId, setStartingId] = useState<number | null>(null);
-  // Per-circle video toggle: Map<circleId, boolean>. When the host clicks the
-  // camera icon next to "Host", it toggles video_enabled for that circle's
-  // upcoming session. Defaults to audio-only (false) to preserve existing UX.
-  const [videoToggles, setVideoToggles] = useState<Map<number, boolean>>(new Map());
+  const [hostModal, setHostModal] = useState<CircleSummary | null>(null);
   const [recordingsByCircle, setRecordingsByCircle] = useState<Map<number, Recording[]>>(new Map());
   const [recordingsOpen, setRecordingsOpen] = useState<Set<number>>(new Set());
-  const toggleCircleVideo = (circleId: number) =>
-    setVideoToggles(prev => new Map(prev).set(circleId, !prev.get(circleId)));
+
+  // Ref for the highlighted neighborhood card (from Community tab navigation)
+  const highlightRef = useRef<HTMLDivElement | null>(null);
 
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
-  // Persist city to sessionStorage whenever it changes so navigating away and
-  // back (including a room exit that unmounts this screen) restores the right
-  // city instead of defaulting to the profile city every time.
   useEffect(() => {
     try { sessionStorage.setItem(SESSION_KEY, city); } catch { /* storage blocked */ }
   }, [city]);
 
-  // useCachedList replaces the manual useState/useEffect/fetch pattern.
-  //
-  // Key improvements over the old approach:
-  // 1. Synchronous hydration from sessionStorage on mount — no blank/loading
-  //    frame when the user navigates back to this screen.
-  // 2. On any network/server failure the last-known-good list is left on
-  //    screen untouched — a failed poll is never evidence the data is gone.
-  // 3. City-switch safety: the cache key includes the city name so switching
-  //    cities re-hydrates from the correct cache slot instead of flickering
-  //    stale data from the previous city.
   const fetcher = useCallback(async () => {
     const res = await fetch(
       `${base}/api/audio-circles?city=${encodeURIComponent(city.trim())}`,
@@ -110,11 +222,18 @@ export default function AudioCirclesScreen() {
     enabled: !!city.trim(),
   });
 
-  const startRoom = async (circle: CircleSummary) => {
+  // Scroll to the highlighted neighborhood when circles load
+  useEffect(() => {
+    if (neighborhoodParam && highlightRef.current) {
+      setTimeout(() => highlightRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 300);
+    }
+  }, [neighborhoodParam, circles]);
+
+  const startRoom = async (circle: CircleSummary, video_enabled = false) => {
     setStartingId(circle.id);
+    setHostModal(null);
     try {
       const title = circle.neighborhood_name ? `${circle.neighborhood_name} Circle` : `${circle.city_display} Circle`;
-      const video_enabled = videoToggles.get(circle.id) ?? false;
       const res = await fetch(`${base}/api/audio-circles/${circle.id}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -129,7 +248,6 @@ export default function AudioCirclesScreen() {
         toast({ title: "Couldn't start the circle", description: data.error ?? "Try again in a moment.", variant: "destructive" });
         return;
       }
-      // Refresh the list so the new live session appears immediately.
       await refresh();
       setLocation(`/audio-circle/${data.session.id}`);
     } catch {
@@ -140,6 +258,19 @@ export default function AudioCirclesScreen() {
   };
 
   const joinRoom = (sessionId: number) => setLocation(`/audio-circle/${sessionId}`);
+
+  const shareCircle = (circle: CircleSummary, live: LiveSessionSummary) => {
+    const url = `${window.location.origin}/audio-circle/${live.id}`;
+    if (navigator.share) {
+      navigator.share({ title: circle.neighborhood_name ? `${circle.neighborhood_name} Circle` : `${circle.city_display} Circle`, url }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(url).then(() => {
+        toast({ title: "Link copied!", description: "Share it with your neighbors." });
+      }).catch(() => {
+        toast({ title: "Circle link", description: url });
+      });
+    }
+  };
 
   const loadRecordings = async (circleId: number) => {
     const nextOpen = new Set(recordingsOpen);
@@ -162,18 +293,17 @@ export default function AudioCirclesScreen() {
 
   return (
     <div className="min-h-screen bg-background pb-24">
+      {/* Header */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3">
         <button onClick={() => setLocation("/community")} className="p-2 -ml-2 rounded-full hover:bg-muted">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="flex-1 min-w-0">
           <h1 className="font-black text-lg flex items-center gap-2">
-            <Radio className="w-5 h-5 text-primary" /> Audio Circles
+            <Radio className="w-5 h-5 text-primary" /> Circles
           </h1>
-          <p className="text-xs text-muted-foreground">Live voice rooms for your neighborhood</p>
+          <p className="text-xs text-muted-foreground">Live voice & video rooms for your neighborhood</p>
         </div>
-        {/* Stale indicator — shown only when a background poll failed but we
-            still have cached data to show. Never shown as a hard error. */}
         {stale && circles && circles.length > 0 && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground/70">
             <WifiOff className="w-3 h-3" />
@@ -204,8 +334,6 @@ export default function AudioCirclesScreen() {
           <Button type="submit" size="icon" variant="outline"><Search className="w-4 h-4" /></Button>
         </form>
 
-        {/* Show spinner only on the very first load (no cache, no data yet).
-            Background polls never re-show the spinner — the list stays visible. */}
         {loading && (
           <div className="text-center text-sm text-muted-foreground py-8">Loading circles…</div>
         )}
@@ -220,84 +348,100 @@ export default function AudioCirclesScreen() {
         <div className="space-y-3">
           {circles?.map((circle, i) => {
             const live = circle.live_session;
+            const isHighlighted = neighborhoodParam
+              ? circle.neighborhood_name?.toLowerCase() === neighborhoodParam.toLowerCase()
+              : false;
             return (
               <motion.div
                 key={circle.id}
+                ref={isHighlighted ? highlightRef : null}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.03 }}
-                className={`bg-card border rounded-2xl p-4 ${live ? "border-primary/50" : "border-border"}`}
+                className={`bg-card border rounded-2xl overflow-hidden transition-all ${
+                  live
+                    ? "border-primary/50"
+                    : isHighlighted
+                      ? "border-primary/60 ring-1 ring-primary/30"
+                      : "border-border"
+                }`}
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl shrink-0">
-                    {circle.neighborhood_emoji ?? "🌆"}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <div className="font-black text-sm">{circle.neighborhood_name ?? `${circle.city_display} (city-wide)`}</div>
-                      {live && (
-                        <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 flex items-center gap-1">
-                          <Radio className="w-2.5 h-2.5" /> Live
-                        </span>
+                {/* Circle header */}
+                <div className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl shrink-0">
+                      {circle.neighborhood_emoji ?? "🌆"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="font-black text-sm">{circle.neighborhood_name ?? `${circle.city_display} (city-wide)`}</div>
+                        {live && (
+                          <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 flex items-center gap-1">
+                            <Radio className="w-2.5 h-2.5" /> Live
+                          </span>
+                        )}
+                      </div>
+                      {live ? (
+                        <div className="mt-1 space-y-1">
+                          <div className="text-xs text-muted-foreground truncate">
+                            "{live.title}"
+                          </div>
+                          <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
+                            <span className="flex items-center gap-1"><Crown className="w-3 h-3 text-amber-400" /> {live.host_name}</span>
+                            <span className="flex items-center gap-1"><Mic className="w-3 h-3" /> {live.speaker_count} speaker{live.speaker_count !== 1 ? "s" : ""}</span>
+                            <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {live.listener_count} audience</span>
+                            {live.video_enabled && <span className="flex items-center gap-1 text-primary"><Video className="w-3 h-3" /> Video</span>}
+                            {live.is_recording && <span className="flex items-center gap-1 text-red-400"><Radio className="w-3 h-3" /> Recording</span>}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground mt-0.5">No live session right now</div>
                       )}
                     </div>
-                    {live ? (
-                      <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
-                        <span className="truncate">"{live.title}" · hosted by {live.host_name}</span>
-                      </div>
-                    ) : (
-                      <div className="text-xs text-muted-foreground mt-0.5">No live session right now</div>
-                    )}
-                    {live && (
-                      <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground flex-wrap">
-                        <span className="flex items-center gap-1"><Crown className="w-3 h-3 text-amber-400" /> {live.host_name}</span>
-                        <span className="flex items-center gap-1"><Mic className="w-3 h-3" /> {live.speaker_count} speaker{live.speaker_count !== 1 ? "s" : ""}</span>
-                        <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {live.listener_count} audience</span>
-                        {live.video_enabled && <span className="flex items-center gap-1"><Video className="w-3 h-3" /> Video</span>}
-                        {live.is_recording && <span className="flex items-center gap-1 text-red-400"><Radio className="w-3 h-3" /> Recording</span>}
-                      </div>
-                    )}
                   </div>
-                  {live ? (
-                    <Button size="sm" onClick={() => joinRoom(live.id)}>Join</Button>
-                  ) : (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {/* Video toggle — lets the host enable camera before starting */}
-                      <button
-                        onClick={() => toggleCircleVideo(circle.id)}
-                        title={videoToggles.get(circle.id) ? "Video on — click to turn off" : "Enable video for this circle"}
-                        className={`p-1.5 rounded-lg border transition-colors ${
-                          videoToggles.get(circle.id)
-                            ? "bg-primary/15 border-primary text-primary"
-                            : "border-border text-muted-foreground hover:border-primary/50"
-                        }`}
-                      >
-                        <Video className="w-3.5 h-3.5" />
-                      </button>
+
+                  {/* Action buttons */}
+                  <div className="mt-3 flex items-center gap-2">
+                    {live ? (
+                      <>
+                        <Button className="flex-1" onClick={() => joinRoom(live.id)}>
+                          Join Circle
+                        </Button>
+                        <button
+                          onClick={() => shareCircle(circle, live)}
+                          className="p-2.5 rounded-xl border border-border hover:border-primary/40 text-muted-foreground hover:text-primary transition-colors"
+                          title="Share this Circle"
+                        >
+                          <Share2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    ) : (
                       <Button
-                        size="sm"
                         variant="outline"
+                        className="flex-1"
                         disabled={startingId === circle.id}
-                        onClick={() => startRoom(circle)}
+                        onClick={() => setHostModal(circle)}
                       >
-                        {startingId === circle.id ? "Starting…" : "Host"}
+                        {startingId === circle.id ? "Starting…" : "Host a Circle"}
                       </Button>
-                    </div>
-                  )}
-                  <button
-                    onClick={() => loadRecordings(circle.id)}
-                    className="mt-3 text-[11px] font-bold text-primary underline underline-offset-2"
-                  >
-                    {recordingsOpen.has(circle.id) ? "Hide past recordings" : "Past recordings"}
-                  </button>
+                    )}
+                    <button
+                      onClick={() => loadRecordings(circle.id)}
+                      className="text-[11px] font-bold text-primary underline underline-offset-2 shrink-0"
+                    >
+                      {recordingsOpen.has(circle.id) ? "Hide recordings" : "Past recordings"}
+                    </button>
+                  </div>
                 </div>
+
+                {/* Recordings */}
                 {recordingsOpen.has(circle.id) && (
-                  <div className="mt-3 pt-3 border-t border-border space-y-2">
+                  <div className="border-t border-border p-4 space-y-2 bg-background/50">
                     {(recordingsByCircle.get(circle.id) ?? []).length === 0 ? (
                       <div className="text-xs text-muted-foreground">No recordings yet.</div>
                     ) : (
                       (recordingsByCircle.get(circle.id) ?? []).map(recording => (
-                        <div key={recording.id} className="rounded-xl bg-background/60 p-3">
+                        <div key={recording.id} className="rounded-xl bg-card p-3">
                           <div className="text-xs font-bold truncate">{recording.title}</div>
                           <div className="text-[10px] text-muted-foreground mb-2">
                             Hosted by {recording.host_name ?? "a former member"}
@@ -313,6 +457,18 @@ export default function AudioCirclesScreen() {
           })}
         </div>
       </div>
+
+      {/* Host pre-join modal */}
+      <AnimatePresence>
+        {hostModal && (
+          <HostCircleModal
+            circle={hostModal}
+            onClose={() => setHostModal(null)}
+            onStart={startRoom}
+            starting={startingId === hostModal.id}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
