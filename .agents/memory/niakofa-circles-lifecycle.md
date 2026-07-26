@@ -46,3 +46,10 @@ The room page must listen for the synthetic `ws_reconnected` event and re-fetch 
 **Why:** A dropped WebSocket could make successful hand-raise, moderation, mute, or kick actions appear unresponsive and leave the room stale until a manual reload.
 
 **How to apply:** Keep `ws_reconnected` in the shared client event path and use the room's authenticated session endpoint as the resync source of truth.
+
+## Media capability and role lifecycle
+The room checks browser media capabilities before enabling controls and gives actionable permission/device errors. Reacquiring a camera replaces the existing sender track and stops the old stream; demotion stops all local tracks; a host-muted speaker cannot locally unmute. ICE candidates that arrive before a remote description are queued and flushed after offer/answer application.
+
+**Why:** Mobile browsers commonly deliver ICE out of order, and permission/device failures otherwise look like controls that do nothing. Leaving tracks live after demotion can keep publishing audio or the camera after the UI removes the speaker controls.
+
+**How to apply:** Keep `publishLocalMedia`, `stopLocalMedia`, `stopVideoTracks`, and the room's role/mute handlers aligned. Preserve explicit capability feedback rather than silently disabling media.

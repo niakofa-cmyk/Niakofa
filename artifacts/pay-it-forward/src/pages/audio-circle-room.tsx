@@ -13,7 +13,12 @@ import { toast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { wsSend } from "@/lib/wsClient";
 import type { WsEvent } from "@/lib/wsClient";
-import { AudioCircleMesh, type RemoteStreamHandle } from "@/lib/audioCircleWebRTC";
+import {
+  AudioCircleMesh,
+  getAudioCircleMediaCapabilities,
+  type AudioCircleMediaCapabilities,
+  type RemoteStreamHandle,
+} from "@/lib/audioCircleWebRTC";
 
 interface Participant {
   user_id: number;
@@ -66,6 +71,20 @@ function startVolumeAnalyser(stream: MediaStream, onLevel: (v: number) => void):
   };
 }
 
+function mediaErrorMessage(error: unknown, device: "microphone" | "camera"): string {
+  const name = error instanceof DOMException ? error.name : "";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return `Allow ${device} access in your browser settings, then try again.`;
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return `No ${device} was found on this device.`;
+  }
+  if (name === "NotReadableError" || name === "TrackStartError") {
+    return `Your ${device} is already in use by another app.`;
+  }
+  return `Couldn't access your ${device}. Check browser permissions and try again.`;
+}
+
 // ── Recording timer ──────────────────────────────────────────────────────────
 function useRecordingTimer(running: boolean) {
   const [seconds, setSeconds] = useState(0);
@@ -97,6 +116,8 @@ export default function AudioCircleRoomScreen() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [meshReady, setMeshReady] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
+  const [mediaCapabilities, setMediaCapabilities] = useState<AudioCircleMediaCapabilities | null>(null);
+  const [mediaError, setMediaError] = useState<string | null>(null);
   // userId → 0–1 speaking volume
   const [speakingLevels, setSpeakingLevels] = useState<Map<number, number>>(new Map());
   const [localLevel, setLocalLevel] = useState(0);
@@ -117,6 +138,10 @@ export default function AudioCircleRoomScreen() {
   const host = participants.find(p => p.role === "host");
   const speakers = participants.filter(p => p.role === "speaker");
   const audience = participants.filter(p => p.role === "listener");
+
+  useEffect(() => {
+    setMediaCapabilities(getAudioCircleMediaCapabilities());
+  }, []);
 
   const recordingTimer = useRecordingTimer(!!session?.is_recording);
 
@@ -258,11 +283,23 @@ export default function AudioCircleRoomScreen() {
   // host-muted speaker cannot silently bypass the mute — we disable the mic
   // track immediately after getUserMedia rather than waiting for a new WS event.
   useEffect(() => {
-    if (!canSpeak || !meshRef.current) return;
+    if (!meshRef.current) return;
+    if (!canSpeak) {
+      // Demotion must stop the actual tracks, not only hide the controls.
+      // Otherwise a speaker can remain live after leaving the stage.
+      meshRef.current.stopLocalMedia();
+      setLocalStream(null);
+      setMicOn(false);
+      setVideoOn(false);
+      const cleanup = analyserCleanupsRef.current.get("local");
+      if (cleanup) { cleanup(); analyserCleanupsRef.current.delete("local"); }
+      return;
+    }
     // Capture muted state at the moment of promotion so the closure is stable.
     const startMuted = me?.muted ?? false;
     meshRef.current.publishLocalMedia({ video: !!session?.video_enabled && videoOn })
       .then((stream) => {
+        setMediaError(null);
         if (startMuted) {
           // Host had previously muted this speaker. Keep mic disabled so the
           // refresh doesn't give them an open mic until the host unmutes again.
@@ -279,7 +316,11 @@ export default function AudioCircleRoomScreen() {
         const cleanup = startVolumeAnalyser(stream, setLocalLevel);
         analyserCleanupsRef.current.set(key, cleanup);
       })
-      .catch(() => toast({ title: "Couldn't access your microphone", description: "Check your browser's permission settings.", variant: "destructive" }));
+      .catch((error) => {
+        setMicOn(false);
+        setMediaError(mediaErrorMessage(error, "microphone"));
+        toast({ title: "Microphone unavailable", description: mediaErrorMessage(error, "microphone"), variant: "destructive" });
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canSpeak]);
 
@@ -569,11 +610,38 @@ export default function AudioCircleRoomScreen() {
   };
 
   const toggleMic = () => {
-    setMicOn(prev => {
-      const next = !prev;
-      meshRef.current?.setMicEnabled(next);
-      return next;
-    });
+    const next = !micOn;
+    if (next && me?.muted) {
+      toast({ title: "Microphone muted by host", description: "The host must unmute you before you can speak." });
+      return;
+    }
+    if (!next) {
+      meshRef.current?.setMicEnabled(false);
+      setMicOn(false);
+      return;
+    }
+    if (localStream?.getAudioTracks().length) {
+      meshRef.current?.setMicEnabled(true);
+      setMicOn(true);
+      return;
+    }
+    // A denied permission can be corrected in browser settings while the
+    // room remains open; retry getUserMedia instead of making the button look
+    // like it worked when no audio track exists.
+    meshRef.current?.publishLocalMedia({ video: !!session?.video_enabled && videoOn })
+      .then((stream) => {
+        setLocalStream(stream);
+        setMicOn(true);
+        setMediaError(null);
+        const existing = analyserCleanupsRef.current.get("local");
+        if (existing) existing();
+        analyserCleanupsRef.current.set("local", startVolumeAnalyser(stream, setLocalLevel));
+      })
+      .catch((error) => {
+        setMicOn(false);
+        setMediaError(mediaErrorMessage(error, "microphone"));
+        toast({ title: "Microphone unavailable", description: mediaErrorMessage(error, "microphone"), variant: "destructive" });
+      });
   };
 
   const toggleVideo = async () => {
@@ -584,8 +652,11 @@ export default function AudioCircleRoomScreen() {
         const stream = await meshRef.current.publishLocalMedia({ video: true });
         setLocalStream(stream);
         setVideoOn(true);
-      } catch {
-        toast({ title: "Couldn't access camera", description: "Check browser permissions.", variant: "destructive" });
+        setMediaError(null);
+      } catch (error) {
+        const description = mediaErrorMessage(error, "camera");
+        setMediaError(description);
+        toast({ title: "Camera unavailable", description, variant: "destructive" });
       }
     } else {
       meshRef.current.stopVideoTracks();
@@ -601,6 +672,14 @@ export default function AudioCircleRoomScreen() {
   const toggleRecording = async () => {
     const next = !isRecordingRef.current;
     if (next) {
+      if (mediaCapabilities?.recording === false) {
+        toast({
+          title: "Recording is not supported",
+          description: "Use a current Safari, Chrome, or Firefox browser to record this Circle.",
+          variant: "destructive",
+        });
+        return;
+      }
       isRecordingRef.current = true;
       setSession(prev => prev ? { ...prev, is_recording: true } : prev);
       try {
@@ -675,6 +754,16 @@ export default function AudioCircleRoomScreen() {
             <span className="text-xs text-red-400 font-bold flex-1">This Circle is being recorded</span>
             {isHost && <span className="text-xs text-red-400 font-mono">{recordingTimer}</span>}
             {uploading && <Upload className="w-3 h-3 text-amber-400 animate-bounce" />}
+          </div>
+        )}
+        {mediaCapabilities && (!mediaCapabilities.microphone || !mediaCapabilities.recording || mediaError) && (
+          <div className="mt-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+            <div className="font-bold">Media status</div>
+            <div className="mt-0.5 text-amber-200/80">
+              {!mediaCapabilities.microphone && "This browser cannot access a microphone. "}
+              {!mediaCapabilities.recording && "Recording is unavailable in this browser. "}
+              {mediaError}
+            </div>
           </div>
         )}
       </div>
@@ -886,12 +975,24 @@ export default function AudioCircleRoomScreen() {
             </Button>
           )}
           {canSpeak && (
-            <Button variant={micOn ? "default" : "outline"} size="icon" onClick={toggleMic} title={micOn ? "Mute" : "Unmute"}>
+            <Button
+              variant={micOn ? "default" : "outline"}
+              size="icon"
+              onClick={toggleMic}
+              disabled={mediaCapabilities?.microphone === false}
+              title={micOn ? "Mute" : "Unmute"}
+            >
               {micOn ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
             </Button>
           )}
           {canSpeak && session.video_enabled && (
-            <Button variant={videoOn ? "default" : "outline"} size="icon" onClick={toggleVideo} title={videoOn ? "Turn off camera" : "Turn on camera"}>
+            <Button
+              variant={videoOn ? "default" : "outline"}
+              size="icon"
+              onClick={toggleVideo}
+              disabled={mediaCapabilities?.camera === false}
+              title={videoOn ? "Turn off camera" : "Turn on camera"}
+            >
               {videoOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
             </Button>
           )}
@@ -906,7 +1007,7 @@ export default function AudioCircleRoomScreen() {
               variant="outline"
               size="icon"
               onClick={toggleRecording}
-              disabled={uploading}
+              disabled={uploading || mediaCapabilities?.recording === false}
               title={session.is_recording ? "Stop recording" : "Start recording"}
             >
               <CircleIcon className={`w-4 h-4 ${session.is_recording ? "text-red-500 fill-red-500" : ""}`} />
