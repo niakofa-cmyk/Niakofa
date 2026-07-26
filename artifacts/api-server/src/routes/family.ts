@@ -64,6 +64,56 @@ import { stripTags } from "../lib/sanitize";
 
 const router = Router();
 
+// ─── GEDCOM parser (minimal — extracts INDI records) ─────────────────────────
+// Supports the GEDCOM 5.5.1 line structure:
+//   LEVEL TAG [VALUE]
+// Extracts given name + birth year for each individual.
+function parseGedcom(text: string): Array<{ name: string; birthYear?: string }> {
+  const result: Array<{ name: string; birthYear?: string }> = [];
+  let inIndi = false;
+  let inBirt = false;
+  let curName: string | undefined;
+  let curBirthYear: string | undefined;
+
+  function flush() {
+    if (inIndi && curName) result.push({ name: curName, birthYear: curBirthYear });
+  }
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const sp1 = line.indexOf(" ");
+    if (sp1 === -1) continue;
+    const level = parseInt(line.slice(0, sp1), 10);
+    if (isNaN(level)) continue;
+    const rest = line.slice(sp1 + 1).trim();
+    const sp2  = rest.indexOf(" ");
+    const tag   = sp2 === -1 ? rest : rest.slice(0, sp2);
+    const value = sp2 === -1 ? "" : rest.slice(sp2 + 1).trim();
+
+    if (level === 0) {
+      flush();
+      inIndi = false; inBirt = false; curName = undefined; curBirthYear = undefined;
+      // Detect: 0 @Ixx@ INDI  OR  0 INDI (non-standard)
+      if (value === "INDI" || (tag === "INDI" && value === "")) inIndi = true;
+    } else if (inIndi) {
+      if (level === 1 && tag === "NAME") {
+        // GEDCOM encodes surname in /slashes/ — remove them and collapse spaces
+        curName = value.replace(/\//g, " ").replace(/\s+/g, " ").trim();
+      } else if (level === 1 && tag === "BIRT") {
+        inBirt = true;
+      } else if (level === 1 && tag !== "BIRT") {
+        inBirt = false;
+      } else if (level === 2 && inBirt && tag === "DATE") {
+        const m = value.match(/\b(\d{4})\b/);
+        if (m) curBirthYear = m[1];
+      }
+    }
+  }
+  flush();
+  return result.filter(r => r.name.trim() !== "");
+}
+
 // ─── Asset serving ─────────────────────────────────────────────────────────────
 // Routes GET /family/assets/:key to the active storage backend:
 //   • Cloud (STORAGE_BUCKET set): 307 redirect to a presigned S3/R2 URL
@@ -1060,6 +1110,64 @@ router.get("/family/:id/interviews/:interviewId", generalApiLimiter, requireAuth
   if (!interview) return res.status(404).json({ error: "Interview not found" });
 
   return res.json({ interview });
+});
+
+// POST /family/:id/members/import-gedcom — parse a GEDCOM file and bulk-create member rows
+// Accepts { gedcom: string } (raw GEDCOM text). Creates family_members with status="invited"
+// and user_id=null (placeholder rows) for each INDI record found.
+router.post("/family/:id/members/import-gedcom", generalApiLimiter, requireAuth, async (req, res) => {
+  const userId   = req.authenticatedUserId!;
+  const familyId = Number(req.params.id);
+  if (!familyId) return res.status(400).json({ error: "Invalid family id" });
+
+  const membership = await getFamilyMembership(familyId, userId);
+  if (!membership || !CAN_MANAGE_ROLES.includes(membership.role as any)) {
+    return res.status(403).json({ error: "Owner or curator access required to import a family tree" });
+  }
+
+  const { gedcom } = (req.body ?? {}) as { gedcom?: string };
+  if (!gedcom || typeof gedcom !== "string") {
+    return res.status(400).json({ error: "gedcom (raw GEDCOM text string) is required" });
+  }
+  if (gedcom.length > 5_000_000) {
+    return res.status(413).json({ error: "GEDCOM file too large — max 5 MB" });
+  }
+
+  const individuals = parseGedcom(gedcom);
+  if (individuals.length === 0) {
+    return res.status(400).json({ error: "No individuals (INDI records) found in GEDCOM file" });
+  }
+  if (individuals.length > 500) {
+    return res.status(400).json({
+      error: `GEDCOM contains ${individuals.length} individuals — max 500 per import. Split the file and import in batches.`,
+    });
+  }
+
+  // Insert members; skip duplicates (same family + display_name collision is allowed —
+  // we use a try/catch per row since the unique index is only on family_id + user_id,
+  // and these rows have user_id=null so they won't conflict on that index).
+  const created: (typeof familyMembersTable.$inferSelect)[] = [];
+  for (const ind of individuals) {
+    try {
+      const [member] = await db
+        .insert(familyMembersTable)
+        .values({
+          family_id:    familyId,
+          display_name: ind.name.slice(0, 100),
+          relation_note: ind.birthYear ? `b. ${ind.birthYear}` : undefined,
+          role:         "viewer",
+          status:       "invited",
+          invited_by:   userId,
+        })
+        .returning();
+      if (member) created.push(member);
+    } catch {
+      // Skip any row that fails (constraint, etc.)
+    }
+  }
+
+  logger.info({ familyId, userId, imported: created.length, total: individuals.length }, "gedcom_import");
+  return res.json({ imported: created.length, total: individuals.length, members: created });
 });
 
 // PATCH /family/:id/interviews/:interviewId — update status
