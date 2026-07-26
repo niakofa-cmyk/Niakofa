@@ -23,7 +23,7 @@ import { CommunityTopPanel } from "@/components/CommunityTopPanel";
 import { CommunityListView } from "@/components/CommunityListView";
 import { ResourceDetailSheet } from "@/components/ResourceDetailSheet";
 import { RequestMarker } from "@/components/RequestMarker";
-import { SankofaBird } from "@/components/SankofaBird";
+ import { SpiritAnimalAvatar } from "@/components/SpiritAnimal/SpiritAnimalAvatar";
 import { useSolarTier } from "@/hooks/useTimeOfDay";
 import { useBatterySaver } from "@/hooks/useBatterySaver";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -1507,7 +1507,8 @@ export default function MapScreen() {
                 <MapPin className="w-6 h-6 text-primary" />
               </div>
             }>
-              <SankofaBird
+              <SpiritAnimalAvatar
+                species={userSettings?.spirit_animal}
                 heading={heldHeading}
                 mapBearing={0}
                 speed={0}
@@ -1625,7 +1626,8 @@ export default function MapScreen() {
             {/* ErrorBoundary: a CSS/SVG crash shows a teal dot fallback
                 instead of unmounting the whole map screen. */}
             <ErrorBoundary fallback={<div className="w-3 h-3 rounded-full bg-primary shadow-[0_0_8px_rgba(0,212,255,0.9)]" />}>
-              <SankofaBird
+              <SpiritAnimalAvatar
+                species={userSettings?.spirit_animal}
                 heading={
                   // locked-north: bird always faces north regardless of GPS.
                   // Doc: "Tap three times: Bird locks to North."

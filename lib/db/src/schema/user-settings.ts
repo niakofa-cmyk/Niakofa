@@ -24,6 +24,9 @@ export const userSettingsTable = pgTable("user_settings", {
   specialties: text("specialties"),
   // Language preference (migration 0017)
   preferred_language: text("preferred_language").notNull().default("en"),
+  // Map avatar / navigation companion. Existing users remain on the original
+  // Sankofa Bird when migration 0079 adds this field.
+  spirit_animal: text("spirit_animal").notNull().default("sankofa_bird"),
 
   updated_at: timestamp("updated_at").defaultNow().notNull(),
 });

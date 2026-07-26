@@ -26,6 +26,7 @@ import { logger } from "../lib/logger";
 import { requestSelect } from "../lib/request-select";
 import { userSelect } from "../lib/user-select";
 import { getDefaultCommunityId } from "../lib/community-pool";
+import { isValidSpiritAnimal } from "../lib/spirit-animal";
 
 // ── Per-account login attempt tracking ────────────────────────────────────────
 // Guards against distributed brute-force attacks where a single account is
@@ -875,13 +876,14 @@ router.put("/users/:id/settings", requireAuth, resolveMeParam, requireOwnership(
     "notif_wallet_updates", "notif_community_activity", "notif_pledge_reminders",
     "privacy_profile_visible", "privacy_live_location", "privacy_activity_sharing",
     "privacy_anonymous_giving", "service_radius_miles", "max_travel_miles", "specialties",
-    "preferred_language",
+    "preferred_language", "spirit_animal",
   ];
   const VALID_LANGUAGES = ["en", "sw", "zu", "tw", "yo", "ha", "am", "so", "pcm", "lg"];
   const updates: Record<string, unknown> = { updated_at: new Date() };
   for (const key of allowed) {
     if (req.body[key] === undefined) continue;
     if (key === "preferred_language" && !VALID_LANGUAGES.includes(req.body[key])) continue;
+    if (key === "spirit_animal" && !isValidSpiritAnimal(req.body[key])) continue;
     updates[key] = req.body[key];
   }
   // Atomic upsert on the user_id unique constraint. The previous

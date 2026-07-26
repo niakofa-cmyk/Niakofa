@@ -2905,6 +2905,7 @@ components:
         - privacy_anonymous_giving
         - service_radius_miles
         - preferred_language
+        - spirit_animal
         - updated_at
       properties:
         id:
@@ -2940,6 +2941,10 @@ components:
         preferred_language:
           type: string
           enum: [en, sw, zu, tw, yo, ha, am, so, pcm, lg]
+        spirit_animal:
+          type: string
+          description: Map avatar / navigation companion selected by the user
+          enum: [sankofa_bird, black_panther]
         updated_at:
           type: string
           format: date-time
@@ -2977,6 +2982,9 @@ components:
         preferred_language:
           type: string
           enum: [en, sw, zu, tw, yo, ha, am, so, pcm, lg]
+        spirit_animal:
+          type: string
+          enum: [sankofa_bird, black_panther]
 
     AvailabilityWindow:
       type: object

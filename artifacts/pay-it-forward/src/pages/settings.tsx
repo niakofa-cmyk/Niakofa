@@ -15,6 +15,7 @@ import {
   AlertCircle,
   Globe,
   Mic,
+  PawPrint,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
@@ -22,6 +23,8 @@ import { toast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import i18n from "../i18n";
+import { SpiritAnimalAvatar } from "@/components/SpiritAnimal/SpiritAnimalAvatar";
+import { SPIRIT_ANIMAL_IDS, SPIRIT_ANIMAL_LABELS, type SpiritAnimalId } from "@/components/SpiritAnimal/types";
 
 // ── API helpers (kept in sync with profile.tsx) ───────────────────────────────
 
@@ -133,6 +136,83 @@ function NotificationPreferences({ userId }: { userId: number }) {
           >
             {saving ? "Saving…" : "Save Preferences"}
           </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SpiritAnimalSettings({ userId }: { userId: number }) {
+  const [selected, setSelected] = useState<SpiritAnimalId>("sankofa_bird");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchSettings(userId)
+      .then((data) => {
+        const animal = data?.spirit_animal;
+        if (typeof animal === "string" && SPIRIT_ANIMAL_IDS.includes(animal as SpiritAnimalId)) {
+          setSelected(animal as SpiritAnimalId);
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  const handleSelect = async (id: SpiritAnimalId) => {
+    if (id === selected || saving) return;
+    const previous = selected;
+    setSelected(id);
+    setSaving(true);
+    try {
+      await saveSettings(userId, { spirit_animal: id });
+      toast({ title: `${SPIRIT_ANIMAL_LABELS[id]} is now your companion` });
+    } catch {
+      setSelected(previous);
+      toast({ title: "Failed to save", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const options: { id: SpiritAnimalId; blurb: string }[] = [
+    { id: "sankofa_bird", blurb: "Flies your route with memory, movement, and a view toward what matters." },
+    { id: "black_panther", blurb: "Moves with quiet strength, strategic focus, and gold-eyed protection." },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-xl font-bold">Spirit Animal</h2>
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin" />
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Choose the companion that travels the map with you. You can change it anytime.
+          </p>
+          {options.map((option) => (
+            <button
+              key={option.id}
+              onClick={() => handleSelect(option.id)}
+              disabled={saving}
+              className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-colors text-left active:scale-[0.98] disabled:opacity-60 ${
+                selected === option.id
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border bg-card text-foreground hover:border-primary/40"
+              }`}
+              style={{ touchAction: "manipulation" }}
+            >
+              <div className="w-12 h-12 shrink-0 rounded-full bg-background/60 flex items-center justify-center overflow-hidden">
+                <SpiritAnimalAvatar species={option.id} heading={0} size={38} mapZoom={16} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm">{SPIRIT_ANIMAL_LABELS[option.id]}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">{option.blurb}</div>
+              </div>
+              {selected === option.id && <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -774,6 +854,13 @@ export default function SettingsPage() {
       icon: KeyRound,
       component: ChangePassword,
       description: "Update your account password",
+    },
+    {
+      id: "spirit-animal",
+      title: "Spirit Animal",
+      icon: PawPrint,
+      component: SpiritAnimalSettings,
+      description: "Choose your map companion",
     },
     {
       id: "language",

@@ -7,7 +7,7 @@ import type mapboxgl from "mapbox-gl";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { detectVoiceLocale, pickBestVoice, detectUnits, detectMapLanguage } from "@/lib/locale-utils";
-import { useGetRequest, useGetRequests, useGetRoute, useCompleteRequest, useMarkEnRoute, useMarkArrived, getGetRequestQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey } from "@workspace/api-client-react";
+import { useGetRequest, useGetRequests, useGetRoute, useCompleteRequest, useMarkEnRoute, useMarkArrived, useGetUserSettings, getGetRequestQueryKey, getGetRequestsQueryKey, getGetRouteQueryKey, getGetUserSettingsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, DollarSign, Star, Navigation2, Clock, AlertTriangle, Share2, CheckCircle2, Car, PersonStanding, Bike, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ import { useMapOrientation } from "@/hooks/useMapOrientation";
 import { useTerrain } from "@/hooks/useTerrain";
 import { useTweenedPosition } from "@/hooks/useTweenedPosition";
 import { usePulse } from "@/hooks/usePulse";
-import { SankofaBird } from "@/components/SankofaBird";
+import { SpiritAnimalAvatar } from "@/components/SpiritAnimal/SpiritAnimalAvatar";
 import { useSolarTier } from "@/hooks/useTimeOfDay";
 import { useBatterySaver } from "@/hooks/useBatterySaver";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -113,6 +113,10 @@ export default function ActiveRequestScreen() {
   const [, params] = useRoute("/request/:id");
   const [, setLocation] = useLocation();
   const { currentUser, myLocation } = useAppContext();
+  const { data: userSettings } = useGetUserSettings(
+    currentUser?.id ?? 0,
+    { query: { queryKey: getGetUserSettingsQueryKey(currentUser?.id ?? 0), enabled: !!currentUser?.id } },
+  );
   // Solar sky tier — four-way lighting (day / golden / twilight / night) from
   // real-time NOAA sun position. Feeds SankofaBird skyTier prop for photorealistic
   // plumage shading that matches the actual sky the user is looking at.
@@ -834,7 +838,8 @@ export default function ActiveRequestScreen() {
       {!MAPBOX_TOKEN && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-background gap-3 px-6 z-10">
           <ErrorBoundary fallback={<div className="w-10 h-10 rounded-full bg-primary/20" />}>
-            <SankofaBird
+            <SpiritAnimalAvatar
+              species={userSettings?.spirit_animal}
               heading={heldHeading} mapBearing={0} speed={0} navigating={false} size={56}
               celebrating={false} newNotification={false} accepted={false}
               donated={false} nearbyUser={false} mapZoom={14} upcomingTurnDirection={null}
@@ -873,7 +878,8 @@ export default function ActiveRequestScreen() {
           {/* ErrorBoundary: a CSS/SVG crash in SankofaBird shows a teal dot
               instead of unmounting the entire navigation screen. */}
           <ErrorBoundary fallback={<div className="w-3 h-3 rounded-full bg-primary shadow-[0_0_8px_rgba(0,212,255,0.9)]" />}>
-            <SankofaBird
+            <SpiritAnimalAvatar
+              species={userSettings?.spirit_animal}
               heading={heldHeading}
               mapBearing={mode === "heading-up" ? (fusedHeading ?? 0) : 0}
               speed={myLocation.speed ?? 0}

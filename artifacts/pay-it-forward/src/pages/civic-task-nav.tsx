@@ -18,14 +18,14 @@ import { ArrowLeft, MapPin, Loader2, AlertCircle, CheckCircle } from "lucide-rea
 import { NavigationOverlay } from "@/components/NavigationOverlay";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "@/hooks/use-toast";
-import { SankofaBird } from "@/components/SankofaBird";
+import { SpiritAnimalAvatar } from "@/components/SpiritAnimal/SpiritAnimalAvatar";
 import { useAppContext } from "@/lib/AppContext";
 import { useSolarTier } from "@/hooks/useTimeOfDay";
 import { useBatterySaver } from "@/hooks/useBatterySaver";
 import { useFusedHeading } from "@/hooks/useFusedHeading";
 import { usePositionHeading } from "@/hooks/usePositionHeading";
 import { useHeadingWithHold } from "@/hooks/useHeadingWithHold";
-import { useGetRequests, getGetRequestsQueryKey } from "@workspace/api-client-react";
+import { useGetRequests, useGetUserSettings, getGetRequestsQueryKey, getGetUserSettingsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -70,7 +70,11 @@ export default function CivicTaskNav() {
   const queryClient = useQueryClient();
 
   // ── Solar / bird environment ────────────────────────────────────────────────
-  const { myLocation } = useAppContext();
+  const { myLocation, currentUser } = useAppContext();
+  const { data: userSettings } = useGetUserSettings(
+    currentUser?.id ?? 0,
+    { query: { queryKey: getGetUserSettingsQueryKey(currentUser?.id ?? 0), enabled: !!currentUser?.id } },
+  );
   const skyTier = useSolarTier(myLocation?.lat ?? null, myLocation?.lng ?? null);
   const batterySaverActive = useBatterySaver();
 
@@ -340,7 +344,8 @@ export default function CivicTaskNav() {
                   anticipatory turn gaze. Positioned bottom-right, above nav UI,
                   non-interactive (pointer-events-none). */}
               <div className="absolute bottom-36 right-4 z-20 pointer-events-none" aria-hidden>
-                <SankofaBird
+                <SpiritAnimalAvatar
+                  species={userSettings?.spirit_animal}
                   heading={civicHeldHeading}
                   navigating
                   isHelping

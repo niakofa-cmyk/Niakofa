@@ -377,6 +377,17 @@ export const UserSettingsPreferredLanguage = {
   lg: 'lg',
 } as const;
 
+/**
+ * Map avatar / navigation companion selected by the user
+ */
+export type UserSettingsSpiritAnimal = typeof UserSettingsSpiritAnimal[keyof typeof UserSettingsSpiritAnimal];
+
+
+export const UserSettingsSpiritAnimal = {
+  sankofa_bird: 'sankofa_bird',
+  black_panther: 'black_panther',
+} as const;
+
 export interface UserSettings {
   id: number;
   user_id: number;
@@ -396,6 +407,8 @@ export interface UserSettings {
   /** @nullable */
   specialties?: string | null;
   preferred_language: UserSettingsPreferredLanguage;
+  /** Map avatar / navigation companion selected by the user */
+  spirit_animal: UserSettingsSpiritAnimal;
   updated_at: string;
 }
 
@@ -413,6 +426,14 @@ export const UserSettingsUpdatePreferredLanguage = {
   so: 'so',
   pcm: 'pcm',
   lg: 'lg',
+} as const;
+
+export type UserSettingsUpdateSpiritAnimal = typeof UserSettingsUpdateSpiritAnimal[keyof typeof UserSettingsUpdateSpiritAnimal];
+
+
+export const UserSettingsUpdateSpiritAnimal = {
+  sankofa_bird: 'sankofa_bird',
+  black_panther: 'black_panther',
 } as const;
 
 /**
@@ -433,6 +454,7 @@ export interface UserSettingsUpdate {
   max_travel_miles?: number;
   specialties?: string;
   preferred_language?: UserSettingsUpdatePreferredLanguage;
+  spirit_animal?: UserSettingsUpdateSpiritAnimal;
 }
 
 export interface AvailabilityWindow {

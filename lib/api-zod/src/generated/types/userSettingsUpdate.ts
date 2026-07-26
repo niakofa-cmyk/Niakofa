@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { UserSettingsUpdatePreferredLanguage } from './userSettingsUpdatePreferredLanguage';
+import type { UserSettingsUpdateSpiritAnimal } from './userSettingsUpdateSpiritAnimal';
 
 /**
  * All fields optional — only provided keys are persisted (upsert)
@@ -25,4 +26,5 @@ export interface UserSettingsUpdate {
   max_travel_miles?: number;
   specialties?: string;
   preferred_language?: UserSettingsUpdatePreferredLanguage;
+  spirit_animal?: UserSettingsUpdateSpiritAnimal;
 }

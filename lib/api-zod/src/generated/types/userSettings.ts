@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { UserSettingsPreferredLanguage } from './userSettingsPreferredLanguage';
+import type { UserSettingsSpiritAnimal } from './userSettingsSpiritAnimal';
 
 export interface UserSettings {
   id: number;
@@ -26,5 +27,7 @@ export interface UserSettings {
   /** @nullable */
   specialties?: string | null;
   preferred_language: UserSettingsPreferredLanguage;
+  /** Map avatar / navigation companion selected by the user */
+  spirit_animal: UserSettingsSpiritAnimal;
   updated_at: Date;
 }
