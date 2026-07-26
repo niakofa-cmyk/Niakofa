@@ -1215,9 +1215,10 @@ export default function ActiveRequestScreen() {
         )}
       </div>
 
-      {showTip && request.helper_name && (
+      {showTip && request.helper_name && request.helper_id && (
         <TipModal
           requestId={requestId}
+          helperId={request.helper_id}
           helperName={request.helper_name}
           onClose={() => setShowTip(false)}
         />

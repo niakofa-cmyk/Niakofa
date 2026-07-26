@@ -35,6 +35,7 @@ export type WsEventType =
   | "helper_online"
   | "helper_offline"
   | "pledge_paid"
+  | "tip_paid"
   | "pledge_scheduled"
   | "leaderboard_update"
   | "trust_tier_change"

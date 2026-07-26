@@ -317,6 +317,56 @@ router.post("/stripe/webhook", async (req, res) => {
               notifType: "wallet" as const,
             }).catch(() => {});
           }
+        } else if (
+          txRow &&
+          txRow.payment_type === "tip" &&
+          txRow.request_id &&
+          txRow.helper_id
+        ) {
+          // Tips: only ever credited here, after Stripe confirms the charge
+          // actually succeeded. The client-facing /requests/:id/tip endpoint
+          // no longer credits directly — see requests.ts.
+          const amount = txRow.amount;
+
+          await db
+            .update(usersTable)
+            .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} + ${amount}` })
+            .where(eq(usersTable.id, txRow.helper_id));
+
+          await db.insert(transactionsTable).values({
+            user_id: txRow.helper_id,
+            request_id: txRow.request_id,
+            type: "tip_received",
+            amount,
+            description: "Tip received (Stripe)",
+          });
+
+          if (txRow.requester_id) {
+            await db.insert(transactionsTable).values({
+              user_id: txRow.requester_id,
+              request_id: txRow.request_id,
+              type: "tip_sent",
+              amount: -amount,
+              description: "Tip sent (Stripe)",
+            });
+          }
+
+          broadcast({
+            type: "tip_paid",
+            payload: {
+              request_id: txRow.request_id,
+              helper_id: txRow.helper_id,
+              requester_id: txRow.requester_id ?? null,
+              amount,
+            },
+          });
+
+          sendPushToUser(txRow.helper_id, {
+            title: "💚 Tip Received",
+            body: `You got a $${amount.toFixed(2)} tip! Check your Goodwill Fund.`,
+            requestId: txRow.request_id,
+            notifType: "wallet" as const,
+          }).catch(() => {});
         } else {
           broadcast({
             type: "payment_completed",
@@ -513,21 +563,24 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
     requestId: number;
     amount: number;
     helperId?: number;
-    
-    paymentType?: "immediate" | "pay_it_forward";
+    paymentType?: "immediate" | "pay_it_forward" | "tip";
   };
 
   if (!requestId || !amount || amount <= 0) {
     return res.status(400).json({ error: "requestId and amount (> 0) required" });
   }
 
-  // Cross-check the client-sent amount against the request's own stored amount —
-  // requireOwnership only verifies the caller IS the requester, not that the
-  // amount matches what this request actually says it pays. Without this, the
-  // PaymentIntent (charge) and the later payout transfer (which reads
-  // request.pay_it_forward_amount independently) can silently diverge.
+  // Cross-check the client-sent amount/request against the request's own stored
+  // state — requireOwnership only verifies the caller IS the requester, not that
+  // the amount or target helper are legitimate. Without this, a client could
+  // request a PaymentIntent for one thing (e.g. a tip) that silently diverges
+  // from what actually happened on the request.
   const [targetRequest] = await db
-    .select({ pay_it_forward_amount: requestsTable.pay_it_forward_amount })
+    .select({
+      pay_it_forward_amount: requestsTable.pay_it_forward_amount,
+      status: requestsTable.status,
+      helper_id: requestsTable.helper_id,
+    })
     .from(requestsTable)
     .where(eq(requestsTable.id, requestId))
     .limit(1);
@@ -535,7 +588,17 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
   if (!targetRequest) {
     return res.status(404).json({ error: "Request not found" });
   }
-  if (
+
+  if (paymentType === "tip") {
+    // Tips can only be created for a completed request with an assigned
+    // helper, and only for that helper — never a third party.
+    if (targetRequest.status !== "completed") {
+      return res.status(409).json({ error: "Can only tip completed requests" });
+    }
+    if (!targetRequest.helper_id || helperId !== targetRequest.helper_id) {
+      return res.status(400).json({ error: "helperId must match the request's assigned helper" });
+    }
+  } else if (
     targetRequest.pay_it_forward_amount != null &&
     Math.round(targetRequest.pay_it_forward_amount * 100) !== Math.round(amount * 100)
   ) {
@@ -570,7 +633,15 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
       automatic_payment_methods: { enabled: true },
       ...(transferData ? { transfer_data: transferData } : {}),
     },
-    { idempotencyKey: `payment-intent-${requestId}-${(req as any).authenticatedUserId}` }
+    {
+      // Tips are repeatable — the same requester may tip the same completed
+      // request more than once, so the key must not collide across attempts.
+      // Immediate/pledge payments are still one-per-request-per-payer.
+      idempotencyKey:
+        paymentType === "tip"
+          ? `payment-intent-tip-${requestId}-${(req as any).authenticatedUserId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+          : `payment-intent-${requestId}-${(req as any).authenticatedUserId}`,
+    }
   );
 
   // Record in payment_transactions — starts as "authorized"
