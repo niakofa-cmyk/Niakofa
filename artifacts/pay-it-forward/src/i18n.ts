@@ -142,6 +142,7 @@ const es: typeof en = {
     earnings: "Ganancias",
     nearby: "Cercanas",
     active_job: "Trabajo Activo",
+    family: "Familia",
   },
   common: {
     loading: "Cargando…",
