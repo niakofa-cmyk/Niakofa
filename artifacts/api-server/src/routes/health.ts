@@ -10,6 +10,7 @@ import { adminLimiter } from "../middlewares/rate-limit";
 import { getHubMetrics } from "../lib/ws-hub";
 import { getSystemSetting } from "../lib/db-helpers";
 import { getNavigationCircuitBreakerStatus } from "./navigation";
+import { getStorageDescription } from "../lib/storage";
 
 // ── Region bucketing ──────────────────────────────────────────────────────────
 // Maps a lat/lng point to one of the platform's target regions.
@@ -80,6 +81,7 @@ router.get("/healthz", async (_req, res) => {
       commit: GIT_COMMIT,
       started_at: PROCESS_STARTED_AT,
       db: "connected",
+      storage: getStorageDescription(),
       mapbox_circuit_breaker: navCb,
     });
   } catch (err) {
@@ -91,6 +93,7 @@ router.get("/healthz", async (_req, res) => {
       commit: GIT_COMMIT,
       started_at: PROCESS_STARTED_AT,
       db: "disconnected",
+      storage: getStorageDescription(),
       error: "Database unavailable",
       mapbox_circuit_breaker: navCb,
     });
@@ -248,6 +251,7 @@ router.get("/admin/global-ops", requireAuth, adminLimiter, async (req, res, next
         language_distribution,
         feature_checks: {
           database:         "ok",
+          storage:          getStorageDescription(),
           mapbox_token:     mapboxConfigured,
           nia_ai:           niaConfigured,
           internal_secret:  internalSecretSet,

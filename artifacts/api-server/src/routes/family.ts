@@ -34,8 +34,14 @@
  */
 
 import { Router } from "express";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
-import path from "path";
+import {
+  putAsset,
+  streamOrRedirectAsset,
+  getAssetUrl,
+  isCloudStorageConfigured,
+  getStorageBackend,
+  UPLOADS_BASE,
+} from "../lib/storage";
 import {
   db,
   familiesTable,
@@ -56,33 +62,21 @@ import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { stripTags } from "../lib/sanitize";
 
-// ─── Dev-mode asset storage ────────────────────────────────────────────────────
-// In production with S3/R2 configured, assets are served from the CDN via
-// signed URLs. In dev (and Replit) we store files on local disk under uploads/
-// and serve them via GET /family/assets/:key. The UPLOADS_BASE path is four
-// levels up from routes/ → api-server/ → artifacts/ → workspace root → uploads/.
-const UPLOADS_BASE = path.resolve(process.cwd(), "uploads");
-
 const router = Router();
 
-// ─── Dev-mode asset serving ────────────────────────────────────────────────────
-// Serve locally stored uploads. In production, assets are served from object
-// storage (S3/R2) via presigned URLs — this middleware only handles the dev path.
-// Must be registered BEFORE the /:id param route so "assets" isn't matched as
-// a family ID. No membership auth — storage keys are random, making them
-// effectively private; add auth if the privacy bar rises (e.g. DNA data).
-router.use("/family/assets", generalApiLimiter, (req, res, next) => {
+// ─── Asset serving ─────────────────────────────────────────────────────────────
+// Routes GET /family/assets/:key to the active storage backend:
+//   • Cloud (STORAGE_BUCKET set): 307 redirect to a presigned S3/R2 URL
+//   • Local disk (dev/Replit):    sendFile() from uploads/ directory
+//
+// Registered BEFORE the /:id param route so "assets" isn't matched as a family ID.
+// No membership auth — storage keys are unguessable UUIDs; elevate if needed.
+router.use("/family/assets", generalApiLimiter, async (req, res, next) => {
   if (req.method !== "GET") return next();
-  // Strip leading slash; reject path traversal attempts
-  const rel = req.path.replace(/^\/+/, "").replace(/\.\./g, "");
+  // Strip leading slash; normalise away any ".." segments
+  const rel = decodeURIComponent(req.path).replace(/^\/+/, "").replace(/\.\./g, "");
   if (!rel) return res.status(404).json({ error: "Not found" });
-  const abs = path.resolve(UPLOADS_BASE, rel);
-  // Verify the resolved path stays inside UPLOADS_BASE
-  if (!abs.startsWith(UPLOADS_BASE + path.sep) && abs !== UPLOADS_BASE) {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-  if (!existsSync(abs)) return res.status(404).json({ error: "Asset not found" });
-  res.sendFile(abs);
+  await streamOrRedirectAsset(rel, res);
 });
 
 // ─── Validation schemas ───────────────────────────────────────────────────────
@@ -708,29 +702,37 @@ router.post(
       return res.status(400).json({ error: "filename and mime_type are required" });
     }
 
-    const storageKey = `families/${familyId}/memories/${memoryId}/${Date.now()}_${filename}`;
+    const safeFile   = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
+    const storageKey = `families/${familyId}/memories/${memoryId}/${Date.now()}_${safeFile}`;
 
-    // If S3/R2 env vars are configured, generate a real presigned URL here.
-    // For Phase A dev/Replit, return a placeholder.
-    const awsKey    = process.env["AWS_ACCESS_KEY_ID"];
-    const awsBucket = process.env["S3_BUCKET"] ?? process.env["R2_BUCKET"];
-
-    if (awsKey && awsBucket) {
-      // Full presigned URL generation would go here using @aws-sdk/s3-request-presigner.
-      // Placeholder until object storage is provisioned (design doc §5 / §9.2).
-      return res.json({
-        upload_url:  `https://${awsBucket}.s3.amazonaws.com/${storageKey}`,
-        storage_key: storageKey,
-        expires_in:  900,
-      });
+    if (isCloudStorageConfigured()) {
+      // Generate a real presigned PutObject URL via the storage module.
+      // The client uploads directly to S3/R2 and then confirms with POST /assets.
+      const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+      const { getSignedUrl }     = await import("@aws-sdk/s3-request-presigner");
+      const { S3Client }         = await import("@aws-sdk/client-s3");
+      const endpoint = process.env["STORAGE_ENDPOINT"];
+      const region   = process.env["STORAGE_REGION"] ?? (endpoint ? "auto" : "us-east-1");
+      const s3 = new S3Client({ region, ...(endpoint ? { endpoint, forcePathStyle: false } : {}) });
+      const upload_url = await getSignedUrl(
+        s3,
+        new PutObjectCommand({
+          Bucket:      process.env["STORAGE_BUCKET"]!,
+          Key:         storageKey,
+          ContentType: mime_type,
+        }),
+        { expiresIn: 900 }, // 15 minutes
+      );
+      return res.json({ upload_url, storage_key: storageKey, expires_in: 900 });
     }
 
-    // Dev-mode stub: caller confirms directly using the storage_key
+    // Local-disk mode: caller should use upload-direct instead; return a stub
+    // so the flow stays testable without S3 credentials.
     return res.json({
       upload_url:  null,
       storage_key: storageKey,
       dev_mode:    true,
-      message:     "Object storage not configured. Confirm the asset with storage_key after a direct upload.",
+      message:     "Object storage not configured. Use the upload-direct endpoint instead.",
     });
   },
 );
@@ -766,10 +768,9 @@ router.post(
 );
 
 // POST /family/:id/memories/:memoryId/assets/upload-direct
-// Dev-mode: accepts a base64 data-URL JSON body and writes the file to local
-// disk under uploads/. Production deployments use the presigned upload-url flow
-// (design doc §5). Max file size enforced at 20 MB (body-parser limit is 10 MB
-// for JSON; the base64 overhead means ~7.5 MB real files fit comfortably).
+// Accepts a base64 data-URL JSON body and writes the file to the active storage
+// backend (S3/R2 when STORAGE_BUCKET is set; local disk otherwise).
+// Max decoded file size: 20 MB.
 router.post(
   "/family/:id/memories/:memoryId/assets/upload-direct",
   generalApiLimiter,
@@ -803,9 +804,9 @@ router.post(
 
     const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
     const storageKey   = `families/${familyId}/memories/${memoryId}/${Date.now()}_${safeFilename}`;
-    const destDir      = path.resolve(UPLOADS_BASE, `families/${familyId}/memories/${memoryId}`);
-    mkdirSync(destDir, { recursive: true });
-    writeFileSync(path.resolve(UPLOADS_BASE, storageKey), buffer);
+
+    // Write to S3/R2 or local disk depending on STORAGE_BUCKET config
+    await putAsset(storageKey, buffer, mimeType);
 
     const [asset] = await db
       .insert(familyMemoryAssetsTable)
@@ -819,7 +820,10 @@ router.post(
       })
       .returning();
 
-    logger.info({ familyId, memoryId, assetId: asset.id, assetType }, "family_asset_uploaded_direct");
+    logger.info(
+      { familyId, memoryId, assetId: asset.id, assetType, backend: getStorageBackend() },
+      "family_asset_uploaded_direct",
+    );
     return res.status(201).json({ asset });
   },
 );

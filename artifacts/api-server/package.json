@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
+    "@aws-sdk/client-s3": "^3.1095.0",
+    "@aws-sdk/s3-request-presigner": "^3.1095.0",
     "@types/compression": "^1.8.1",
     "@workspace/api-spec": "workspace:*",
     "@workspace/api-zod": "workspace:*",
