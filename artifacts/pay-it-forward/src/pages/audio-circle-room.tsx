@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Mic, MicOff, Hand, Video, VideoOff, Radio, Users, PhoneOff,
   Circle as CircleIcon, ChevronDown, Crown, Upload, Wifi, WifiOff,
-  VolumeX, UserMinus, Flag, Volume2,
+  VolumeX, UserMinus, Flag, Volume2, Shield, Ban, AlertTriangle,
+  MoreVertical, Check, X, Signal, SignalHigh, SignalMedium, SignalLow,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders, getToken } from "@/lib/auth";
@@ -20,6 +21,8 @@ import {
   type AudioCircleMediaCapabilities,
   type RemoteStreamHandle,
 } from "@/lib/audioCircleWebRTC";
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface Participant {
   user_id: number;
@@ -45,7 +48,6 @@ type ConnectionStatus = "connecting" | "connected" | "reconnecting" | "lost";
 const REACTION_EMOJIS = ["👏", "🔥", "❤️", "😂", "🙌"];
 
 // ── Speaking volume analyser ─────────────────────────────────────────────────
-// Returns a cleanup function. Calls onLevel(0–1) at ~30fps.
 function startVolumeAnalyser(stream: MediaStream, onLevel: (v: number) => void): () => void {
   let ctx: AudioContext | null = null;
   let animId = 0;
@@ -64,7 +66,7 @@ function startVolumeAnalyser(stream: MediaStream, onLevel: (v: number) => void):
     };
     animId = requestAnimationFrame(tick);
   } catch {
-    // AudioContext unavailable in some environments — fail silently
+    // AudioContext unavailable — fail silently
   }
   return () => {
     cancelAnimationFrame(animId);
@@ -99,6 +101,25 @@ function useRecordingTimer(running: boolean) {
   return `${mm}:${ss}`;
 }
 
+// ── Connection quality indicator ─────────────────────────────────────────────
+function ConnectionQualityIndicator({ status }: { status: ConnectionStatus }) {
+  const config = {
+    connected:    { icon: SignalHigh,   color: "text-green-400",  bg: "bg-green-500/10",  border: "border-green-500/30",  label: "Connected" },
+    reconnecting: { icon: SignalMedium, color: "text-amber-400",  bg: "bg-amber-500/10",  border: "border-amber-500/30",  label: "Reconnecting…" },
+    lost:         { icon: SignalLow,    color: "text-red-400",    bg: "bg-red-500/10",    border: "border-red-500/30",    label: "Connection lost" },
+    connecting:   { icon: Signal,       color: "text-muted-foreground", bg: "bg-muted", border: "border-border", label: "Connecting…" },
+  }[status];
+  const Icon = config.icon;
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${config.bg} ${config.border} border ${config.color}`}>
+      <Icon className="w-3 h-3" />
+      {config.label}
+    </span>
+  );
+}
+
+// ── Main component ───────────────────────────────────────────────────────────
+
 export default function AudioCircleRoomScreen() {
   const params = useParams<{ id: string }>();
   const sessionId = parseInt(params.id ?? "", 10);
@@ -106,6 +127,7 @@ export default function AudioCircleRoomScreen() {
   const { currentUser } = useAppContext();
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
 
+  // ── State ──────────────────────────────────────────────────────────────────
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,19 +141,25 @@ export default function AudioCircleRoomScreen() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
   const [mediaCapabilities, setMediaCapabilities] = useState<AudioCircleMediaCapabilities | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
-  // userId → 0–1 speaking volume
   const [speakingLevels, setSpeakingLevels] = useState<Map<number, number>>(new Map());
   const [localLevel, setLocalLevel] = useState(0);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
-  // moderation menu open for which speaker userId
   const [modMenuOpen, setModMenuOpen] = useState<number | null>(null);
+  const [showBlockConfirm, setShowBlockConfirm] = useState<number | null>(null);
+  const [showReportModal, setShowReportModal] = useState<number | null>(null);
+  const [reportReason, setReportReason] = useState("");
+  const [preJoinChecked, setPreJoinChecked] = useState(false);
+  const [preJoinMicReady, setPreJoinMicReady] = useState(false);
+  const [preJoinCameraReady, setPreJoinCameraReady] = useState(false);
 
+  // ── Refs ───────────────────────────────────────────────────────────────────
   const meshRef = useRef<AudioCircleMesh | null>(null);
   const audioElsRef = useRef<Map<number, HTMLAudioElement>>(new Map());
   const isRecordingRef = useRef(false);
-  // volume analyser cleanups keyed by userId ("local" for own mic)
   const analyserCleanupsRef = useRef<Map<string, () => void>>(new Map());
+  const signalHandlerRef = useRef<((e: WsEvent) => void) | null>(null);
 
+  // ── Derived state ──────────────────────────────────────────────────────────
   const myUserId = currentUser?.id;
   const me = participants.find(p => p.user_id === myUserId);
   const isHost = session?.host_id === myUserId;
@@ -140,22 +168,15 @@ export default function AudioCircleRoomScreen() {
   const speakers = participants.filter(p => p.role === "speaker");
   const audience = participants.filter(p => p.role === "listener");
 
-  useEffect(() => {
-    setMediaCapabilities(getAudioCircleMediaCapabilities());
-  }, []);
+  useEffect(() => { setMediaCapabilities(getAudioCircleMediaCapabilities()); }, []);
 
   const recordingTimer = useRecordingTimer(!!session?.is_recording);
 
-  // ── Connection status from WS + WebRTC states ────────────────────────────
-  // We derive overall status: if the WS is alive and we loaded, "connected";
-  // if circle_host_disconnected or a peer fails, "reconnecting".
+  // ── Connection status ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!loading && session) setConnectionStatus("connected");
   }, [loading, session]);
 
-  // Re-fetch session state after a WS reconnect. Controls and participant
-  // roles are normally kept current by broadcasts, but a reconnect can miss
-  // events that arrived while the socket was down.
   const resync = useCallback(async () => {
     try {
       const res = await fetch(`${base}/api/audio-circle-sessions/${sessionId}`, { headers: authHeaders() });
@@ -165,15 +186,13 @@ export default function AudioCircleRoomScreen() {
       setParticipants(data.participants ?? []);
       setConnectionStatus("connected");
     } catch {
-      // The next reconnect will retry; keep the last known state visible.
+      // Next reconnect will retry
     }
   }, [base, sessionId]);
 
-  useWebSocket("ws_reconnected", () => {
-    void resync();
-  });
+  useWebSocket("ws_reconnected", () => { void resync(); });
 
-  // ── Load initial state ───────────────────────────────────────────────────
+  // ── Load initial state ─────────────────────────────────────────────────────
   useEffect(() => {
     if (isNaN(sessionId)) return;
     let cancelled = false;
@@ -209,12 +228,7 @@ export default function AudioCircleRoomScreen() {
     return () => { cancelled = true; };
   }, [sessionId, base, setLocation]);
 
-  // ── WebRTC mesh setup ────────────────────────────────────────────────────
-  // ICE servers (STUN + a short-lived TURN credential, if configured) are
-  // fetched fresh per room join rather than baked into the client bundle —
-  // see fetchIceServers() in audioCircleWebRTC.ts. This makes construction
-  // async, so we guard against the effect having been cleaned up (session
-  // changed, component unmounted) before the fetch resolves.
+  // ── WebRTC mesh setup ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!session || !myUserId) return;
     let cancelled = false;
@@ -248,7 +262,6 @@ export default function AudioCircleRoomScreen() {
       meshRef.current?.destroy();
       meshRef.current = null;
       setMeshReady(false);
-      // tear down all analysers
       for (const cleanup of analyserCleanupsRef.current.values()) cleanup();
       analyserCleanupsRef.current.clear();
     };
@@ -259,10 +272,9 @@ export default function AudioCircleRoomScreen() {
     signalHandlerRef.current = handler;
     return () => { signalHandlerRef.current = null; };
   }
-  const signalHandlerRef = useRef<((e: WsEvent) => void) | null>(null);
   useWebSocket("circle_signal", (e) => signalHandlerRef.current?.(e));
 
-  // Wire volume analysers for remote streams as they arrive
+  // Wire volume analysers for remote streams
   useEffect(() => {
     for (const [userId, stream] of remoteStreams) {
       const key = `remote:${userId}`;
@@ -274,7 +286,7 @@ export default function AudioCircleRoomScreen() {
     }
   }, [remoteStreams]);
 
-  // Connect the mesh to peers
+  // Connect mesh to peers
   useEffect(() => {
     const mesh = meshRef.current;
     if (!mesh || !myUserId) return;
@@ -291,15 +303,10 @@ export default function AudioCircleRoomScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [participants.map(p => p.user_id).join(","), myUserId, canSpeak]);
 
-  // Publish mic when promoted to speaker.
-  // Critically: honour the DB-persisted muted flag so a page-refresh by a
-  // host-muted speaker cannot silently bypass the mute — we disable the mic
-  // track immediately after getUserMedia rather than waiting for a new WS event.
+  // Publish mic when promoted to speaker
   useEffect(() => {
     if (!meshRef.current) return;
     if (!canSpeak) {
-      // Demotion must stop the actual tracks, not only hide the controls.
-      // Otherwise a speaker can remain live after leaving the stage.
       meshRef.current.stopLocalMedia();
       setLocalStream(null);
       setMicOn(false);
@@ -308,21 +315,17 @@ export default function AudioCircleRoomScreen() {
       if (cleanup) { cleanup(); analyserCleanupsRef.current.delete("local"); }
       return;
     }
-    // Capture muted state at the moment of promotion so the closure is stable.
     const startMuted = me?.muted ?? false;
     meshRef.current.publishLocalMedia({ video: !!session?.video_enabled && videoOn })
       .then((stream) => {
         setMediaError(null);
         if (startMuted) {
-          // Host had previously muted this speaker. Keep mic disabled so the
-          // refresh doesn't give them an open mic until the host unmutes again.
           meshRef.current?.setMicEnabled(false);
           setMicOn(false);
         } else {
           setMicOn(true);
         }
         setLocalStream(stream);
-        // Start local volume analyser (only meaningful when unmuted, but cheap to run)
         const key = "local";
         const existing = analyserCleanupsRef.current.get(key);
         if (existing) existing();
@@ -394,7 +397,7 @@ export default function AudioCircleRoomScreen() {
     }
   }, [base, sessionId, isHost]);
 
-  // ── Leave / cleanup ──────────────────────────────────────────────────────
+  // ── Leave / cleanup ────────────────────────────────────────────────────────
   const leaveRoom = useCallback(() => {
     if (isNaN(sessionId)) return;
     const url = `${base}/api/audio-circle-sessions/${sessionId}/leave`;
@@ -416,7 +419,7 @@ export default function AudioCircleRoomScreen() {
     };
   }, [leaveRoom]);
 
-  // ── Realtime room events ─────────────────────────────────────────────────
+  // ── Realtime room events ───────────────────────────────────────────────────
   useWebSocket("circle_participant_joined", (e) => {
     const p = e.payload as { session_id: number; user_id: number; name?: string; avatar_url?: string | null; role?: string };
     if (p.session_id !== sessionId) return;
@@ -450,9 +453,7 @@ export default function AudioCircleRoomScreen() {
     const p = e.payload as { session_id: number; user_id: number | null; muted: boolean; all?: boolean };
     if (p.session_id !== sessionId) return;
     if (p.all) {
-      // Mute all speakers
       setParticipants(prev => prev.map(x => x.role === "speaker" ? { ...x, muted: true } : x));
-      // If I'm a speaker, mute my own mic
       if (me?.role === "speaker") {
         setMicOn(false);
         meshRef.current?.setMicEnabled(false);
@@ -542,9 +543,7 @@ export default function AudioCircleRoomScreen() {
     toast({ title: "Host is back" });
   });
 
-  // ── Actions ──────────────────────────────────────────────────────────────
-  // Always surface network failures. Without this guard, a dropped
-  // connection made controls appear to do nothing.
+  // ── Actions ──────────────────────────────────────────────────────────────────
   const post = async (path: string, body?: object) => {
     try {
       const res = await fetch(`${base}/api/audio-circle-sessions/${sessionId}${path}`, {
@@ -567,8 +566,6 @@ export default function AudioCircleRoomScreen() {
     }
   };
 
-  // Update the initiating user's view after the REST mutation succeeds rather
-  // than waiting for its WS echo. The broadcast still reconciles other tabs.
   const toggleHand = async () => {
     const raised = !me?.hand_raised;
     if (await post("/hand", { raised })) {
@@ -608,6 +605,24 @@ export default function AudioCircleRoomScreen() {
       setParticipants(prev => prev.filter(x => x.user_id !== userId));
     }
   };
+  const blockUser = async (userId: number) => {
+    setShowBlockConfirm(null);
+    if (await post("/block", { user_id: userId })) {
+      setParticipants(prev => prev.filter(x => x.user_id !== userId));
+      toast({ title: "User blocked", description: "They have been removed from this circle and blocked from rejoining." });
+    }
+  };
+  const reportUser = async (userId: number) => {
+    if (!reportReason.trim()) {
+      toast({ title: "Please provide a reason", variant: "destructive" });
+      return;
+    }
+    setShowReportModal(null);
+    if (await post("/report", { user_id: userId, reason: reportReason })) {
+      toast({ title: "Report submitted", description: "Thank you for helping keep our community safe." });
+      setReportReason("");
+    }
+  };
   const react = (emoji: string) => post("/react", { emoji });
 
   const endSession = async () => {
@@ -638,9 +653,6 @@ export default function AudioCircleRoomScreen() {
       setMicOn(true);
       return;
     }
-    // A denied permission can be corrected in browser settings while the
-    // room remains open; retry getUserMedia instead of making the button look
-    // like it worked when no audio track exists.
     meshRef.current?.publishLocalMedia({ video: !!session?.video_enabled && videoOn })
       .then((stream) => {
         setLocalStream(stream);
@@ -723,6 +735,34 @@ export default function AudioCircleRoomScreen() {
     if (blob && blob.size > 0) await uploadRecording(blob);
   };
 
+  // ── Pre-join device check ──────────────────────────────────────────────────
+  const checkPreJoinDevices = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop());
+      setPreJoinMicReady(true);
+    } catch {
+      setPreJoinMicReady(false);
+    }
+    if (session?.video_enabled) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach(t => t.stop());
+        setPreJoinCameraReady(true);
+      } catch {
+        setPreJoinCameraReady(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!loading && session && !preJoinChecked) {
+      checkPreJoinDevices();
+    }
+  }, [loading, session, preJoinChecked]);
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   if (loading || !session) {
     return <div className="min-h-screen bg-background flex items-center justify-center text-sm text-muted-foreground">Loading circle…</div>;
   }
@@ -731,17 +771,8 @@ export default function AudioCircleRoomScreen() {
     ([, s]) => s.getVideoTracks().length > 0
   );
 
-  // Connection status dot
-  const connDot = connectionStatus === "connected"
-    ? <span className="flex items-center gap-1 text-green-400 text-[10px]"><Wifi className="w-3 h-3" /> Connected</span>
-    : connectionStatus === "reconnecting"
-      ? <span className="flex items-center gap-1 text-amber-400 text-[10px] animate-pulse"><WifiOff className="w-3 h-3" /> Reconnecting…</span>
-      : connectionStatus === "lost"
-        ? <span className="flex items-center gap-1 text-red-400 text-[10px]"><WifiOff className="w-3 h-3" /> Connection lost</span>
-        : <span className="flex items-center gap-1 text-muted-foreground text-[10px]"><Wifi className="w-3 h-3" /> Connecting…</span>;
-
   return (
-    <div className="min-h-screen bg-background pb-40 relative overflow-hidden" onClick={() => setModMenuOpen(null)}>
+    <div className="min-h-screen bg-background pb-40 relative overflow-hidden" onClick={() => { setModMenuOpen(null); setShowBlockConfirm(null); }}>
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3">
         <div className="flex items-center justify-between">
@@ -751,7 +782,7 @@ export default function AudioCircleRoomScreen() {
               <div className="font-black text-sm truncate">{session.title}</div>
               <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
                 <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {participants.length} here</span>
-                {connDot}
+                <ConnectionQualityIndicator status={connectionStatus} />
               </div>
             </div>
           </div>
@@ -760,7 +791,7 @@ export default function AudioCircleRoomScreen() {
           </button>
         </div>
 
-        {/* Recording bar — visible to everyone */}
+        {/* Recording bar */}
         {session.is_recording && (
           <div className="mt-2 flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-1.5">
             <CircleIcon className="w-3 h-3 text-red-500 fill-red-500 animate-pulse shrink-0" />
@@ -769,6 +800,8 @@ export default function AudioCircleRoomScreen() {
             {uploading && <Upload className="w-3 h-3 text-amber-400 animate-bounce" />}
           </div>
         )}
+
+        {/* Media status warning */}
         {mediaCapabilities && (!mediaCapabilities.microphone || !mediaCapabilities.recording || mediaError) && (
           <div className="mt-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
             <div className="font-bold">Media status</div>
@@ -781,7 +814,7 @@ export default function AudioCircleRoomScreen() {
         )}
       </div>
 
-      {/* ── Floating reactions ───────────────────────────────────────────────── */}
+      {/* ── Floating reactions ──────────────────────────────────────────────── */}
       <div className="pointer-events-none fixed inset-x-0 bottom-48 flex justify-center z-20">
         <AnimatePresence>
           {floatingReactions.map(r => (
@@ -799,7 +832,7 @@ export default function AudioCircleRoomScreen() {
         </AnimatePresence>
       </div>
 
-      {/* ── End confirmation overlay ─────────────────────────────────────────── */}
+      {/* ── End confirmation overlay ────────────────────────────────────────── */}
       <AnimatePresence>
         {showEndConfirm && (
           <motion.div
@@ -821,6 +854,76 @@ export default function AudioCircleRoomScreen() {
               <div className="flex gap-3">
                 <Button variant="outline" className="flex-1" onClick={() => setShowEndConfirm(false)}>Cancel</Button>
                 <Button variant="destructive" className="flex-1" onClick={() => { setShowEndConfirm(false); endSession(); }}>End Circle</Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Block confirmation overlay ──────────────────────────────────────── */}
+      <AnimatePresence>
+        {showBlockConfirm !== null && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6"
+            onClick={(e) => { e.stopPropagation(); setShowBlockConfirm(null); }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 16 }}
+              className="bg-card border border-border rounded-2xl p-6 max-w-xs w-full space-y-4"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-2 text-base font-black text-red-400">
+                <Ban className="w-5 h-5" /> Block this user?
+              </div>
+              <div className="text-sm text-muted-foreground">
+                They will be removed from this Circle and blocked from rejoining any of your future Circles.
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={() => setShowBlockConfirm(null)}>Cancel</Button>
+                <Button variant="destructive" className="flex-1" onClick={() => blockUser(showBlockConfirm!)}>Block</Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Report modal ────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showReportModal !== null && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6"
+            onClick={(e) => { e.stopPropagation(); setShowReportModal(null); }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 16 }}
+              className="bg-card border border-border rounded-2xl p-6 max-w-xs w-full space-y-4"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-2 text-base font-black text-amber-400">
+                <AlertTriangle className="w-5 h-5" /> Report user
+              </div>
+              <div className="text-sm text-muted-foreground">
+                Please describe why you're reporting this user. This helps us keep the community safe.
+              </div>
+              <textarea
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value)}
+                placeholder="Describe the issue..."
+                className="w-full px-3 py-2 bg-background border border-border rounded-xl text-sm min-h-[80px] resize-none focus:outline-none focus:border-primary"
+              />
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={() => { setShowReportModal(null); setReportReason(""); }}>Cancel</Button>
+                <Button variant="destructive" className="flex-1" onClick={() => reportUser(showReportModal!)}>Submit Report</Button>
               </div>
             </motion.div>
           </motion.div>
@@ -864,7 +967,7 @@ export default function AudioCircleRoomScreen() {
           </div>
         )}
 
-        {/* ── Stage: HOST ──────────────────────────────────────────────────────── */}
+        {/* ── Stage: HOST ─────────────────────────────────────────────────────── */}
         <div>
           <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Host</div>
           {host ? (
@@ -879,6 +982,8 @@ export default function AudioCircleRoomScreen() {
               onMute={() => {}}
               onDemote={() => {}}
               onKick={() => {}}
+              onBlock={() => {}}
+              onReport={() => {}}
             />
           ) : (
             <div className="text-xs text-muted-foreground">Host has left</div>
@@ -917,13 +1022,15 @@ export default function AudioCircleRoomScreen() {
                   onMute={() => muteUser(s.user_id, !s.muted)}
                   onDemote={() => demote(s.user_id)}
                   onKick={() => kickUser(s.user_id)}
+                  onBlock={() => setShowBlockConfirm(s.user_id)}
+                  onReport={() => setShowReportModal(s.user_id)}
                 />
               ))}
             </div>
           )}
         </div>
 
-        {/* ── Raised hands (host-only) ─────────────────────────────────────────── */}
+        {/* ── Raised hands (host-only) ────────────────────────────────────────── */}
         {isHost && audience.some(l => l.hand_raised) && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 space-y-2">
             <div className="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-1">Raised Hands</div>
@@ -942,7 +1049,7 @@ export default function AudioCircleRoomScreen() {
           </div>
         )}
 
-        {/* ── Audience ─────────────────────────────────────────────────────────── */}
+        {/* ── Audience ────────────────────────────────────────────────────────── */}
         {audience.length > 0 && (
           <div>
             <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
@@ -1009,7 +1116,6 @@ export default function AudioCircleRoomScreen() {
               {videoOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
             </Button>
           )}
-          {/* Speaker can leave stage themselves */}
           {me?.role === "speaker" && (
             <Button variant="outline" size="icon" onClick={() => demote(myUserId!)} title="Leave stage">
               <UserMinus className="w-4 h-4" />
@@ -1040,11 +1146,11 @@ export default function AudioCircleRoomScreen() {
   );
 }
 
-// ── Speaker tile (used for both Host and Speakers sections) ────────────────────
+// ── Speaker tile ───────────────────────────────────────────────────────────────
 interface SpeakerTileProps {
   participant: Participant;
   isMe: boolean;
-  level: number; // 0–1 speaking volume
+  level: number;
   isHost: boolean;
   canMod: boolean;
   modMenuOpen: boolean;
@@ -1052,9 +1158,11 @@ interface SpeakerTileProps {
   onMute: () => void;
   onDemote: () => void;
   onKick: () => void;
+  onBlock: () => void;
+  onReport: () => void;
 }
 
-function SpeakerTile({ participant: s, isMe, level, canMod, modMenuOpen, onOpenMod, onMute, onDemote, onKick }: SpeakerTileProps) {
+function SpeakerTile({ participant: s, isMe, level, canMod, modMenuOpen, onOpenMod, onMute, onDemote, onKick, onBlock, onReport }: SpeakerTileProps) {
   const isSpeaking = level > 0.12;
   return (
     <div className="flex flex-col items-center gap-1 relative">
@@ -1097,26 +1205,23 @@ function SpeakerTile({ participant: s, isMe, level, canMod, modMenuOpen, onOpenM
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: -4 }}
             transition={{ duration: 0.12 }}
-            className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-30 bg-card border border-border rounded-xl shadow-xl py-1 min-w-[140px]"
+            className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-30 bg-card border border-border rounded-xl shadow-xl py-1 min-w-[160px]"
             onClick={e => e.stopPropagation()}
           >
-            <button
-              className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted"
-              onClick={onMute}
-            >
+            <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted" onClick={onMute}>
               {s.muted ? <><Mic className="w-3 h-3" /> Unmute</> : <><MicOff className="w-3 h-3" /> Mute</>}
             </button>
-            <button
-              className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted"
-              onClick={onDemote}
-            >
+            <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted" onClick={onDemote}>
               <UserMinus className="w-3 h-3" /> Move to Audience
             </button>
-            <button
-              className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-red-400"
-              onClick={onKick}
-            >
+            <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-red-400" onClick={onKick}>
               <Flag className="w-3 h-3" /> Remove from Circle
+            </button>
+            <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-amber-400" onClick={onBlock}>
+              <Ban className="w-3 h-3" /> Block user
+            </button>
+            <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-amber-400" onClick={onReport}>
+              <AlertTriangle className="w-3 h-3" /> Report user
             </button>
           </motion.div>
         )}
