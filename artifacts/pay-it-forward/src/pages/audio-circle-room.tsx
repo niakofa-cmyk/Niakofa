@@ -971,7 +971,7 @@ export default function AudioCircleRoomScreen() {
       </div>
 
       {/* ── Bottom controls ───────────────────────────────────────────────────── */}
-      <div className="fixed bottom-0 inset-x-0 bg-background/95 backdrop-blur border-t border-border p-4 space-y-3">
+      <div className="fixed bottom-0 inset-x-0 z-40 bg-background/95 backdrop-blur border-t border-border p-4 space-y-3" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
         {/* Reactions */}
         <div className="flex items-center justify-center gap-2">
           {REACTION_EMOJIS.map(e => (
