@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { Radio, Users, Mic, Video, ArrowLeft, Search, WifiOff } from "lucide-react";
+import { Radio, Users, Mic, Video, ArrowLeft, Search, WifiOff, Crown, Hand, Volume2 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -250,6 +250,7 @@ export default function AudioCirclesScreen() {
                     )}
                     {live && (
                       <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1"><Crown className="w-3 h-3 text-amber-400" /> {live.host_name}</span>
                         <span className="flex items-center gap-1"><Mic className="w-3 h-3" /> {live.speaker_count} speaker{live.speaker_count !== 1 ? "s" : ""}</span>
                         <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {live.listener_count} audience</span>
                         {live.video_enabled && <span className="flex items-center gap-1"><Video className="w-3 h-3" /> Video</span>}
