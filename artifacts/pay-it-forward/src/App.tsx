@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider, keepPreviousData, useQueryClient } fr
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppProvider, useAppContext } from "@/lib/AppContext";
+import { SpiritEnvironmentProvider } from "@/components/SpiritAnimal/SpiritEnvironmentProvider";
 import { BottomNav } from "@/components/BottomNav";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
@@ -383,9 +384,11 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <AppProvider>
+            <SpiritEnvironmentProvider>
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <AppContent />
             </WouterRouter>
+            </SpiritEnvironmentProvider>
             <Toaster />
           </AppProvider>
         </TooltipProvider>

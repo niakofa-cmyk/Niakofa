@@ -7,7 +7,7 @@
  * to that animal's renderer, passing the shared SpiritCompanionProps
  * straight through.
  *
- * Adding a third Spirit Animal later means: build its component under
+ * Adding a new Spirit Animal means: build its component under
  * components/<NewAnimal>/, add its id to SPIRIT_ANIMAL_IDS, and add one
  * case here — no changes needed at any call site.
  */
@@ -15,6 +15,9 @@
 import type { ReactElement } from "react";
 import { SankofaBird } from "@/components/SankofaBird";
 import { BlackPanther } from "@/components/BlackPanther";
+import { Elephant } from "@/components/Elephant";
+import { Lion } from "@/components/Lion";
+import { FishEagle } from "@/components/FishEagle";
 import type { SpiritAnimalId, SpiritCompanionProps } from "./types";
 
 export interface SpiritAnimalAvatarProps extends SpiritCompanionProps {
@@ -31,6 +34,12 @@ export function SpiritAnimalAvatar({
   switch (species) {
     case "black_panther":
       return <BlackPanther {...companionProps} />;
+    case "elephant":
+      return <Elephant {...companionProps} />;
+    case "lion":
+      return <Lion {...companionProps} />;
+    case "fish_eagle":
+      return <FishEagle {...companionProps} />;
     case "sankofa_bird":
     default:
       return <SankofaBird {...companionProps} />;

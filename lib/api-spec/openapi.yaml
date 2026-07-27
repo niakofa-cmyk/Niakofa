@@ -2944,7 +2944,7 @@ components:
         spirit_animal:
           type: string
           description: Map avatar / navigation companion selected by the user
-          enum: [sankofa_bird, black_panther]
+          enum: [sankofa_bird, black_panther, elephant, lion, fish_eagle]
         updated_at:
           type: string
           format: date-time
@@ -2984,7 +2984,7 @@ components:
           enum: [en, sw, zu, tw, yo, ha, am, so, pcm, lg]
         spirit_animal:
           type: string
-          enum: [sankofa_bird, black_panther]
+          enum: [sankofa_bird, black_panther, elephant, lion, fish_eagle]
 
     AvailabilityWindow:
       type: object

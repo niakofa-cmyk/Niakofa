@@ -24,7 +24,14 @@ import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import i18n from "../i18n";
 import { SpiritAnimalAvatar } from "@/components/SpiritAnimal/SpiritAnimalAvatar";
-import { SPIRIT_ANIMAL_IDS, SPIRIT_ANIMAL_LABELS, type SpiritAnimalId } from "@/components/SpiritAnimal/types";
+import {
+  SPIRIT_ANIMAL_IDS,
+  SPIRIT_ANIMAL_LABELS,
+  SPIRIT_ANIMAL_FEEL,
+  SPIRIT_ANIMAL_BLURBS,
+  type SpiritAnimalId,
+} from "@/components/SpiritAnimal/types";
+import { getSpiritEnvironment } from "@/components/SpiritAnimal/environments";
 
 // ── API helpers (kept in sync with profile.tsx) ───────────────────────────────
 
@@ -174,11 +181,6 @@ function SpiritAnimalSettings({ userId }: { userId: number }) {
     }
   };
 
-  const options: { id: SpiritAnimalId; blurb: string }[] = [
-    { id: "sankofa_bird", blurb: "Flies your route with memory, movement, and a view toward what matters." },
-    { id: "black_panther", blurb: "Moves with quiet strength, strategic focus, and gold-eyed protection." },
-  ];
-
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-bold">Spirit Animal</h2>
@@ -189,30 +191,88 @@ function SpiritAnimalSettings({ userId }: { userId: number }) {
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Choose the companion that travels the map with you. You can change it anytime.
+            Each companion changes the entire feel of the app — shadows, transitions, palette, and more. Choose the one that moves with you.
           </p>
-          {options.map((option) => (
-            <button
-              key={option.id}
-              onClick={() => handleSelect(option.id)}
-              disabled={saving}
-              className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-colors text-left active:scale-[0.98] disabled:opacity-60 ${
-                selected === option.id
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border bg-card text-foreground hover:border-primary/40"
-              }`}
-              style={{ touchAction: "manipulation" }}
-            >
-              <div className="w-12 h-12 shrink-0 rounded-full bg-background/60 flex items-center justify-center overflow-hidden">
-                <SpiritAnimalAvatar species={option.id} heading={0} size={38} mapZoom={16} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-sm">{SPIRIT_ANIMAL_LABELS[option.id]}</div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">{option.blurb}</div>
-              </div>
-              {selected === option.id && <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />}
-            </button>
-          ))}
+          {SPIRIT_ANIMAL_IDS.map((id) => {
+            const env = getSpiritEnvironment(id);
+            const isSelected = selected === id;
+            return (
+              <button
+                key={id}
+                onClick={() => handleSelect(id)}
+                disabled={saving}
+                className={`w-full flex items-start gap-3 p-4 rounded-xl border transition-all text-left active:scale-[0.98] disabled:opacity-60 ${
+                  isSelected
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-card text-foreground hover:border-primary/40"
+                }`}
+                style={{
+                  touchAction: "manipulation",
+                  borderColor: isSelected ? env.particleColor : undefined,
+                  background: isSelected
+                    ? `${env.cssVars["--spirit-surface-tint"]}`
+                    : undefined,
+                }}
+              >
+                {/* Avatar */}
+                <div
+                  className="w-14 h-14 shrink-0 rounded-xl flex items-center justify-center overflow-hidden"
+                  style={{
+                    background: `${env.cssVars["--spirit-bg-gradient"]}, rgba(0,0,0,0.15)`,
+                    boxShadow: isSelected
+                      ? `0 0 12px ${env.particleColor}55`
+                      : undefined,
+                  }}
+                >
+                  <SpiritAnimalAvatar species={id} heading={0} size={44} mapZoom={16} />
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0 pt-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm">{SPIRIT_ANIMAL_LABELS[id]}</span>
+                    {isSelected && (
+                      <CheckCircle2
+                        className="w-3.5 h-3.5 shrink-0"
+                        style={{ color: env.particleColor }}
+                      />
+                    )}
+                  </div>
+
+                  {/* Feel tag */}
+                  <div
+                    className="text-[10px] font-semibold mt-0.5 mb-1 tracking-wide uppercase"
+                    style={{ color: env.particleColor, opacity: 0.85 }}
+                  >
+                    {SPIRIT_ANIMAL_FEEL[id]}
+                  </div>
+
+                  {/* Blurb */}
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    {SPIRIT_ANIMAL_BLURBS[id]}
+                  </p>
+
+                  {/* Accent swatches */}
+                  <div className="flex items-center gap-1.5 mt-2">
+                    {[
+                      env.cssVars["--spirit-accent"],
+                      env.particleColor,
+                      env.cssVars["--spirit-nav-glow"]?.replace(/rgba?\([^)]+\)/, env.particleColor) ?? env.particleColor,
+                    ].filter((c, i, a) => a.indexOf(c) === i).slice(0, 3).map((color, i) => (
+                      <div
+                        key={i}
+                        className="w-3 h-3 rounded-full border border-white/10"
+                        style={{ background: color }}
+                      />
+                    ))}
+                    <span className="text-[10px] text-muted-foreground ml-1">
+                      {env.atmosphere}
+                    </span>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

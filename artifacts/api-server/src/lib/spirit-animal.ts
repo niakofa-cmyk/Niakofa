@@ -1,5 +1,11 @@
 /** Persisted Spirit Animal values accepted by the API. */
-export const VALID_SPIRIT_ANIMALS = ["sankofa_bird", "black_panther"] as const;
+export const VALID_SPIRIT_ANIMALS = [
+  "sankofa_bird",
+  "black_panther",
+  "elephant",
+  "lion",
+  "fish_eagle",
+] as const;
 
 export type SpiritAnimalId = typeof VALID_SPIRIT_ANIMALS[number];
 
