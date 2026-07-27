@@ -69,7 +69,7 @@ async function processScheduledReminders(): Promise<void> {
         .update(scheduledPaymentsTable)
         .set({ last_reminder_sent_at: new Date() })
         .where(eq(scheduledPaymentsTable.id, payment.id))
-        .catch(() => {});
+        .catch(err => logger.warn({ err, payment_id: payment.id }, "scheduled-payment reminder: last_reminder_sent_at update failed — continuing"));
     }
   }
 }
@@ -254,7 +254,7 @@ export async function processPledgeDefaults(): Promise<void> {
         body: `Your pledge has been marked as overdue after ${PLEDGE_DEFAULT_DAYS / 365} years. When you're able, even a small payment keeps the cycle going for the next neighbor. No rush — we're here for you.`,
         urgency: "normal",
         notifType: "wallet" as const,
-      }).catch(() => {});
+      }).catch(err => logger.warn({ err, requester_id: req.requester_id }, "sendPushToUser (pledge-default): non-critical side effect failed — continuing"));
 
       // Look up requester email for mailer — fire-and-forget, never throws
       db.select({ email: usersTable.email, name: usersTable.name })
@@ -280,11 +280,11 @@ export async function processPledgeDefaults(): Promise<void> {
                 ].join("\n"),
                 ctaText: "Open My Wallet",
                 ctaUrl: `${process.env["APP_URL"] ?? "https://niakofa.com"}/wallet`,
-              }).catch(() => {})
+              }).catch(err => logger.warn({ err }, "sendAlertEmail (pledge-default): non-critical side effect failed — continuing"))
             )
-            .catch(() => {});
+            .catch(err => logger.warn({ err }, "sendAlertEmail (pledge-default): non-critical side effect failed — continuing"));
         })
-        .catch(() => {});
+        .catch(err => logger.warn({ err }, "pledge-default: email lookup failed — continuing"));
 
       logger.info(
         { request_id: req.id, requester_id: req.requester_id, days: PLEDGE_DEFAULT_DAYS },

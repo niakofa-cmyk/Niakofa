@@ -235,7 +235,7 @@ async function handleCashoutFailure(job: Job<CashoutJobData>, err: Error): Promi
               updated_at: new Date(),
             })
             .where(eq(walletCashoutsTable.id, cashout_id))
-            .catch(() => {});
+            .catch(err => logger.warn({ err, cashout_id }, "cashout-worker: reconciliation_required state update failed — continuing"));
           return;
         }
         // Definitive Stripe error (e.g. invalid account, insufficient balance) —
@@ -309,7 +309,7 @@ export function startCashoutWorker(): Worker<CashoutJobData> | null {
   );
 
   worker.on("failed", (job, err) => {
-    if (job) handleCashoutFailure(job, err).catch(() => {});
+    if (job) handleCashoutFailure(job, err).catch(err2 => logger.warn({ err: err2, job_id: job?.id }, "handleCashoutFailure: non-critical side effect failed — continuing"));
     logger.error({ jobId: job?.id, attempt: job?.attemptsMade, err }, "cashout-worker: job failed");
   });
 

@@ -282,8 +282,8 @@ router.post("/users/register", authLimiter, async (req, res) => {
       subject,
       title: "Welcome to Niakofa",
       body: `Hi ${user.name},\n\nThank you for joining Niakofa — a community where neighbors help neighbors and everyone pays it forward.\n\nYou can now sign in at any time to request help, offer your skills, and connect with your community.${pendingNote}\n\nWith community love,\nThe Niakofa Team`,
-    }).catch(() => {}); // swallow — mailer may not be configured in dev
-  }).catch(() => {});
+    }).catch(err => logger.warn({ err }, "sendAlertEmail: non-critical side effect failed — continuing"));
+  }).catch(err => logger.warn({ err }, "sendAlertEmail: non-critical side effect failed — continuing"));
 
   return res.status(201).json({ user: safeUser, token });
 });

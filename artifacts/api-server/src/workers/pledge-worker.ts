@@ -147,7 +147,7 @@ When you're ready, you can pay through the Niakofa app — every contribution ke
           .update(scheduledPaymentsTable)
           .set({ last_reminder_sent_at: new Date() })
           .where(eq(scheduledPaymentsTable.id, scheduled.id))
-          .catch(() => {});
+          .catch(err => logger.warn({ err, scheduled_id: scheduled.id }, "pledge-worker: last_reminder_sent_at update failed — continuing"));
       }
     }
 

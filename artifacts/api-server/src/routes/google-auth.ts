@@ -218,9 +218,9 @@ router.post("/auth/google", authLimiter, async (req: Request, res: Response) => 
                 "With community love,",
                 "The Niakofa Team",
               ].join("\n"),
-            }).catch(() => {})
+            }).catch(err => logger.warn({ err }, "sendAlertEmail: non-critical side effect failed — continuing"))
           )
-          .catch(() => {});
+          .catch(err => logger.warn({ err }, "sendAlertEmail: non-critical side effect failed — continuing"));
 
       } catch (err: unknown) {
         // PostgreSQL unique-constraint violation code = '23505'

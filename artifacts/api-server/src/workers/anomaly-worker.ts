@@ -75,10 +75,10 @@ export function startAnomalyDetectionWorker(): NodeJS.Timeout {
   logger.info("anomaly: detection worker started");
   detectAnomalies()
     .then(() => import("../lib/worker-registry.js").then(m => m.workerRan("anomaly-worker", true)))
-    .catch(() => import("../lib/worker-registry.js").then(m => m.workerRan("anomaly-worker", false)).catch(() => {}));
+    .catch(() => import("../lib/worker-registry.js").then(m => m.workerRan("anomaly-worker", false)).catch(err => logger.warn({ err }, "anomaly-worker: registry report failed")));
   return setInterval(() => {
     detectAnomalies()
       .then(() => import("../lib/worker-registry.js").then(m => m.workerRan("anomaly-worker", true)))
-      .catch(() => import("../lib/worker-registry.js").then(m => m.workerRan("anomaly-worker", false)).catch(() => {}));
+      .catch(() => import("../lib/worker-registry.js").then(m => m.workerRan("anomaly-worker", false)).catch(err => logger.warn({ err }, "anomaly-worker: registry report failed")));
   }, INTERVAL_MS);
 }

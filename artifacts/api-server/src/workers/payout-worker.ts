@@ -123,7 +123,7 @@ export function startPayoutWorker(): Worker<PayoutJobData> | null {
   );
 
   worker.on("failed", (job, err) => {
-    if (job) handlePayoutFailure(job, err).catch(() => {});
+    if (job) handlePayoutFailure(job, err).catch(err2 => logger.warn({ err: err2, job_id: job?.id }, "handlePayoutFailure: non-critical side effect failed — continuing"));
     logger.error({ jobId: job?.id, attempt: job?.attemptsMade, err }, "payout-worker: job failed");
   });
 

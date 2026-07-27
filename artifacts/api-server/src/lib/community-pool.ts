@@ -717,7 +717,7 @@ export async function processPendingMinimums(): Promise<number> {
             body: `The pool was replenished — $${row.amount.toFixed(2)} was just added to your Goodwill Fund for: "${row.request_title}".`,
             requestId: row.request_id,
             notifType: "wallet" as const,
-          }).catch(() => {});
+          }).catch(err => logger.warn({ err, helper_id: row.helper_id }, "sendPushToUser (backfill): non-critical side effect failed — continuing"));
         }
       } else if (outcome === "insufficient") {
         // FIFO: stop at the first one the pool can't cover
@@ -782,7 +782,7 @@ export async function maybeAlertLowBalance(): Promise<void> {
         title: "⚠️ Community Pool low balance",
         body: `Pool balance is $${balance.toFixed(2)} (threshold $${threshold.toFixed(2)}). Guaranteed minimums may be queued until the pool is replenished.`,
         notifType: "wallet" as const,
-      }).catch(() => {});
+      }).catch(err => logger.warn({ err, admin_id: admin.id }, "sendPushToUser (admin low-balance): non-critical side effect failed — continuing"));
     }
   } catch (err) {
     logger.error({ err }, "maybeAlertLowBalance failed");

@@ -1426,7 +1426,7 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
       }
 
       // Warn admins (deduped) whenever completions run against a low pool
-      maybeAlertLowBalance().catch(() => {});
+      maybeAlertLowBalance().catch(err => logger.warn({ err }, "maybeAlertLowBalance: non-critical side effect failed — continuing"));
     }
   } catch (err) {
     // Never block completion on pool payment issues
@@ -1544,7 +1544,7 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
     helperId,
     helperBefore?.help_count ?? 0,
     helperBefore?.trust_score ?? 0
-  ).catch(() => {});
+  ).catch(err => logger.warn({ err }, "broadcastLeaderboardUpdate: non-critical side effect failed — continuing"));
 
 
   // Fire receipt email async (non-blocking)
@@ -1559,7 +1559,7 @@ router.post("/requests/:id/complete", requireAuth, requireApproved, async (req, 
       amount: request.payment_type === "immediate" ? (request.pay_it_forward_amount ?? undefined) : undefined,
       paymentType: request.payment_type,
       completedAt: new Date(),
-    }).catch(() => {});
+    }).catch(err => logger.warn({ err }, "sendReceipt: non-critical side effect failed — continuing"));
   }
 
   // Prompt the requester to write a public thank-you post

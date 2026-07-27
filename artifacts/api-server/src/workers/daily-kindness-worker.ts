@@ -168,7 +168,7 @@ export function startDailyKindnessWorker(): () => void {
       workerRan("daily-kindness", true);
     } catch (err) {
       logger.error({ err }, "daily-kindness: startup run failed");
-      import("../lib/worker-registry.js").then(m => m.workerRan("daily-kindness", false)).catch(() => {});
+      import("../lib/worker-registry.js").then(m => m.workerRan("daily-kindness", false)).catch(err => logger.warn({ err }, "daily-kindness: registry report failed"));
     }
   }, 5 * 60 * 1000);
 
@@ -179,7 +179,7 @@ export function startDailyKindnessWorker(): () => void {
       workerRan("daily-kindness", true);
     } catch (err) {
       logger.error({ err }, "daily-kindness: scheduled run failed");
-      import("../lib/worker-registry.js").then(m => m.workerRan("daily-kindness", false)).catch(() => {});
+      import("../lib/worker-registry.js").then(m => m.workerRan("daily-kindness", false)).catch(err => logger.warn({ err }, "daily-kindness: registry report failed"));
     }
   }, FOUR_HOURS_MS);
 
