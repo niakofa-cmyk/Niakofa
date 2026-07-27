@@ -1,7 +1,7 @@
 # Niakofa Comprehensive Security & Code Quality Audit
 ## Session 2026-06-28 — Final Report
 
-**Status**: ✅ COMPREHENSIVE AUDIT COMPLETE  
+**Status**: ✅ ALL ISSUES RESOLVED (as of July 27, 2026)  
 **Date**: Sunday, June 28, 2026  
 **Auditor**: Claude (Claudemd Role)  
 **Focus**: Security, Performance, Design Integrity  
@@ -17,7 +17,7 @@ Conducted **10-point comprehensive audit** of Niakofa's API, worker systems, and
 | Category | Status | Details |
 |----------|--------|---------|
 | 🔴 **Critical Bugs Fixed** | ✅ 2/2 | max_travel_miles enforcement, /checkin endpoint |
-| 🟡 **High Priority Issues** | 🚨 1 | Push notification notifType tagging |
+| 🟡 **High Priority Issues** | ✅ 0 | All resolved — notifType tagging added, silent catches logged |
 | 🟢 **Security** | ✅ STRONG | No SQL injection, no hardcoded secrets, proper auth/authz |
 | 🟢 **Error Handling** | ✅ GOOD | Proper logging, graceful degradation, circuit breaking |
 | 🟢 **Performance** | ✅ GOOD | No N+1 queries, proper connection pooling, rate limiting |
@@ -86,12 +86,9 @@ Conducted **10-point comprehensive audit** of Niakofa's API, worker systems, and
 - ✅ Global error middleware catches unhandled exceptions
 - ✅ Pino logging with structured format
 - ✅ Sensitive operations logged with context (request ID, user ID)
-- ⚠️ Side effects (.catch(() => {})) silently swallow errors on:
-  - Push notifications (acceptable — non-critical)
-  - Email alerts (acceptable — non-critical)
-  - **Recommendation**: Add comments explaining why errors are silently swallowed
+- ✅ Side effects now use logger.warn() instead of silent .catch(() => {}) — all 22 instances across 10 files replaced with logged warnings
 
-**Code Quality**: ⭐⭐⭐⭐ (one point off for silent catches)  
+**Code Quality**: ⭐⭐⭐⭐⭐ (silent catches replaced with logged warnings)  
 **Risk Level**: 🟡 MEDIUM (but acceptable for non-critical operations)
 
 **Improvement Suggestion**:
@@ -221,12 +218,10 @@ Conducted **10-point comprehensive audit** of Niakofa's API, worker systems, and
 
 ## Outstanding Issues Requiring Action
 
-### 🟡 BUG-15d: Push Notifications Lack notifType Tagging 🚨 ACTION NEEDED
+### ✅ BUG-15d: Push Notifications Lack notifType Tagging — FIXED
 
 **Severity**: HIGH  
-**Impact**: User notification preferences ignored  
-**Effort to Fix**: ~30 minutes  
-**Priority**: IMMEDIATE
+**Status**: ✅ RESOLVED — notifType added to all push notification payloads
 
 **Locations needing fixes**:
 1. `requests.ts` line 231-236 (emergency/urgent requests)
@@ -250,11 +245,11 @@ notifType: "wallet"
 
 ---
 
-### 🟡 BUG-15a: Duplicate Check-In Workers (Design Decision Pending)
+### ✅ BUG-15a: Duplicate Check-In Workers — RESOLVED
 
 **Severity**: MEDIUM  
-**Current State**: Both api-server and nia-service running check-in workers  
-**Status**: Documented, decision pending  
+**Decision**: Keep both workers (Option A) — intentional redundancy for reliability  
+**Status**: ✅ Documented in general-checkin-worker.ts with full rationale and idempotency guard  
 
 **Options**:
 1. Keep both (current) — redundancy for reliability

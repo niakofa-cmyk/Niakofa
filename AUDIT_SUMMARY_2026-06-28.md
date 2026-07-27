@@ -1,6 +1,6 @@
 # Niakofa Codebase Audit — Session 2026-06-28
 
-**Status**: 🟡 IN PROGRESS  
+**Status**: ✅ COMPLETE (all issues resolved as of July 27, 2026)  
 **Auditor**: Claude (Claudemd Role)  
 **Date**: 2026-06-28 (Sunday)  
 **Focus Area**: Core API Routes & Workers
@@ -14,8 +14,8 @@ Comprehensive audit of Niakofa's critical systems identified **3 major bugs** an
 **Critical Findings:**
 - ✅ **BUG-15b** (Fixed): `max_travel_miles` not enforced at claim time
 - ✅ **BUG-15c** (Fixed): Missing `/checkin` endpoint causing nia-checkin-worker to fail silently
-- 🔴 **BUG-15d** (Identified): Push notifications lack notifType tagging, breaking user preferences
-- 🟡 **BUG-15a** (Design): Duplicate check-in logic across services (architectural redundancy)
+- ✅ **BUG-15d** (Fixed): Push notifications now include notifType tagging — user preferences respected
+- ✅ **BUG-15a** (Resolved): Duplicate check-in workers documented as intentional redundancy with idempotency guard
 
 ---
 
@@ -169,7 +169,7 @@ Created `artifacts/nia-service/src/routes/checkin.ts` that:
 ### 🔴 BUG-15d: Push Notifications Lack notifType Tagging
 
 **Severity**: 🔴 HIGH (Affects User Preferences)  
-**Status**: 🚨 IDENTIFIED, NOT YET FIXED  
+**Status**: ✅ FIXED — notifType added to all push notification payloads  
 **Locations**: Multiple routes
 
 #### Issue
@@ -277,7 +277,7 @@ sendPushToUser(txRow.helper_id, {
 ### 🟡 BUG-15a: Duplicate Check-In Logic (Design)
 
 **Severity**: 🟡 MEDIUM (Architectural Smell)  
-**Status**: DOCUMENTED, DECISION PENDING
+**Status**: ✅ RESOLVED — Option A chosen (keep both workers). Documented in general-checkin-worker.ts with full rationale and idempotency guard explanation.
 
 #### Issue
 Both services have hourly check-in workers:
