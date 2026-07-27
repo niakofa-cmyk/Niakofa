@@ -519,8 +519,8 @@ export default function AudioCircleRoomScreen() {
     const p = e.payload as { session_id: number; user_id: number | null; muted: boolean; all?: boolean };
     if (p.session_id !== sessionId) return;
     if (p.all) {
-      setParticipants(prev => prev.map(x => (x.role === "speaker" || x.role === "co_host") ? { ...x, muted: true } : x));
-      if (me?.role === "speaker" || me?.role === "co_host") {
+      setParticipants(prev => prev.map(x => x.role === "speaker" ? { ...x, muted: true } : x));
+      if (me?.role === "speaker") {
         setMicOn(false);
         meshRef.current?.setMicEnabled(false);
         toast({ title: "The host muted everyone" });
@@ -680,7 +680,7 @@ export default function AudioCircleRoomScreen() {
   };
   const muteAll = async () => {
     if (await post("/mute-all")) {
-      setParticipants(prev => prev.map(x => (x.role === "speaker" || x.role === "co_host") ? { ...x, muted: true } : x));
+      setParticipants(prev => prev.map(x => x.role === "speaker" ? { ...x, muted: true } : x));
     }
   };
   const kickUser = async (userId: number) => {
@@ -758,7 +758,7 @@ export default function AudioCircleRoomScreen() {
     const next = !videoOn;
     if (next) {
       try {
-        const stream = await meshRef.current.publishLocalMedia({ video: true });
+        const stream = await meshRef.current.addVideoTrack();
         setLocalStream(stream);
         setVideoOn(true);
         setMediaError(null);

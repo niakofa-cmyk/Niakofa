@@ -203,6 +203,31 @@ export class AudioCircleMesh {
     this.localStream?.getVideoTracks().forEach(t => { t.enabled = enabled; });
   }
 
+  /** Acquires only a camera track and adds it to the existing local stream,
+   *  avoiding re-acquiring the mic (which causes a brief audio dropout). */
+  async addVideoTrack(): Promise<MediaStream> {
+    if (!this.localStream) {
+      // No existing stream — fall back to full publish.
+      return this.publishLocalMedia({ video: true });
+    }
+    const videoStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { width: 320, height: 240 },
+    });
+    for (const track of videoStream.getTracks()) {
+      this.localStream.addTrack(track);
+      for (const pc of this.peers.values()) {
+        const sender = pc.getSenders().find(s => s.track?.kind === "video");
+        if (sender) {
+          await sender.replaceTrack(track);
+        } else {
+          pc.addTrack(track, this.localStream);
+        }
+      }
+    }
+    return this.localStream;
+  }
+
   /** Opens (or re-opens) a peer connection to another participant and starts signaling. */
   connectToPeer(remoteUserId: number): void {
     if (this.peers.has(remoteUserId)) return;
@@ -385,7 +410,18 @@ export class AudioCircleMesh {
     };
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+      if (pc.connectionState === "failed") {
+        // ICE restart: re-negotiate instead of tearing down. A transient
+        // network blip (switching from wifi to cellular, a brief NAT remap)
+        // shouldn't permanently kill the peer connection. Restart ICE by
+        // creating a new offer with iceRestart, which triggers onnegotiationneeded.
+        try {
+          pc.restartIce();
+        } catch {
+          // restartIce not supported on all browsers — fall back to teardown
+          this.disconnectFromPeer(remoteUserId);
+        }
+      } else if (pc.connectionState === "closed") {
         this.disconnectFromPeer(remoteUserId);
       }
     };
