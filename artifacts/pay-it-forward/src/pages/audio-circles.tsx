@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { Radio, Users, Mic, Video, ArrowLeft, Search, WifiOff, Crown, Volume2, X, Share2 } from "lucide-react";
+import { Radio, Users, Mic, Video, ArrowLeft, Search, WifiOff, Crown, Volume2, X, Share2, Bell, BellOff } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ interface CircleSummary {
   neighborhood_name: string | null;
   neighborhood_emoji: string | null;
   live_session: LiveSessionSummary | null;
+  is_following: boolean;
 }
 
 interface Recording {
@@ -47,12 +48,17 @@ const SESSION_KEY = "niakofa_circles_city";
 interface HostModalProps {
   circle: CircleSummary;
   onClose: () => void;
-  onStart: (circle: CircleSummary, videoEnabled: boolean) => void;
+  onStart: (circle: CircleSummary, videoEnabled: boolean, title: string, description: string, topic: string) => void;
   starting: boolean;
 }
 
 function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps) {
   const [format, setFormat] = useState<"audio" | "video">("audio");
+  const [title, setTitle] = useState(() =>
+    circle.neighborhood_name ? `${circle.neighborhood_name} Circle` : `${circle.city_display} Circle`
+  );
+  const [description, setDescription] = useState("");
+  const [topic, setTopic] = useState("");
   const [micReady, setMicReady] = useState<boolean | null>(null);
   const [camReady, setCamReady] = useState<boolean | null>(null);
   const checkedRef = useRef(false);
@@ -82,6 +88,8 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
 
   const circleName = circle.neighborhood_name ? `${circle.neighborhood_name} Circle` : `${circle.city_display} Circle`;
 
+  const canStart = title.trim().length > 0 && micReady !== false && (format !== "video" || camReady !== false);
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -95,7 +103,7 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
         animate={{ y: 0, scale: 1 }}
         exit={{ y: 32, scale: 0.97 }}
         transition={{ type: "spring", bounce: 0.2 }}
-        className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm space-y-5"
+        className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm space-y-5 max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -107,6 +115,42 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
           <button onClick={onClose} className="p-1.5 rounded-full hover:bg-muted -mt-1 -mr-1">
             <X className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Title input */}
+        <div className="space-y-2">
+          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Circle Title</div>
+          <input
+            value={title}
+            onChange={e => setTitle(e.target.value.slice(0, 140))}
+            placeholder="e.g. Southside Community Conversation"
+            style={{ fontSize: "16px" }}
+            className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+          />
+        </div>
+
+        {/* Description input */}
+        <div className="space-y-2">
+          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Description (optional)</div>
+          <textarea
+            value={description}
+            onChange={e => setDescription(e.target.value.slice(0, 500))}
+            placeholder="What's this circle about? e.g. Discuss neighborhood safety and development."
+            rows={2}
+            className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary resize-none"
+          />
+        </div>
+
+        {/* Topic input */}
+        <div className="space-y-2">
+          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Topic / Category (optional)</div>
+          <input
+            value={topic}
+            onChange={e => setTopic(e.target.value.slice(0, 100))}
+            placeholder="e.g. Safety, Education, Development"
+            style={{ fontSize: "16px" }}
+            className="w-full px-3 py-2.5 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+          />
         </div>
 
         {/* Format picker */}
@@ -159,8 +203,8 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
         {/* Start button */}
         <Button
           className="w-full"
-          disabled={starting || micReady === false}
-          onClick={() => onStart(circle, format === "video")}
+          disabled={starting || !canStart}
+          onClick={() => onStart(circle, format === "video", title.trim(), description.trim(), topic.trim())}
         >
           {starting ? "Starting…" : `Start ${format === "audio" ? "Audio" : "Video"} Circle`}
         </Button>
@@ -190,6 +234,7 @@ export default function AudioCirclesScreen() {
   const [hostModal, setHostModal] = useState<CircleSummary | null>(null);
   const [recordingsByCircle, setRecordingsByCircle] = useState<Map<number, Recording[]>>(new Map());
   const [recordingsOpen, setRecordingsOpen] = useState<Set<number>>(new Set());
+  const [followingSet, setFollowingSet] = useState<Set<number>>(new Set());
 
   // Ref for the highlighted neighborhood card (from Community tab navigation)
   const highlightRef = useRef<HTMLDivElement | null>(null);
@@ -222,6 +267,13 @@ export default function AudioCirclesScreen() {
     enabled: !!city.trim(),
   });
 
+  // Track which circles the user follows
+  useEffect(() => {
+    if (circles) {
+      setFollowingSet(new Set(circles.filter(c => c.is_following).map(c => c.id)));
+    }
+  }, [circles]);
+
   // Scroll to the highlighted neighborhood when circles load
   useEffect(() => {
     if (neighborhoodParam && highlightRef.current) {
@@ -229,15 +281,14 @@ export default function AudioCirclesScreen() {
     }
   }, [neighborhoodParam, circles]);
 
-  const startRoom = async (circle: CircleSummary, video_enabled = false) => {
+  const startRoom = async (circle: CircleSummary, video_enabled = false, title: string, description: string, topic: string) => {
     setStartingId(circle.id);
     setHostModal(null);
     try {
-      const title = circle.neighborhood_name ? `${circle.neighborhood_name} Circle` : `${circle.city_display} Circle`;
       const res = await fetch(`${base}/api/audio-circles/${circle.id}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ title, video_enabled }),
+        body: JSON.stringify({ title, video_enabled, description: description || undefined, topic: topic || undefined }),
       });
       const data = await res.json();
       if (res.status === 409 && data.session_id) {
@@ -269,6 +320,40 @@ export default function AudioCirclesScreen() {
       }).catch(() => {
         toast({ title: "Circle link", description: url });
       });
+    }
+  };
+
+  const toggleFollow = async (circle: CircleSummary) => {
+    const isFollowing = followingSet.has(circle.id);
+    // Optimistic update
+    setFollowingSet(prev => {
+      const next = new Set(prev);
+      if (isFollowing) next.delete(circle.id);
+      else next.add(circle.id);
+      return next;
+    });
+    try {
+      const endpoint = isFollowing ? "unfollow" : "follow";
+      const res = await fetch(`${base}/api/audio-circles/${circle.id}/${endpoint}`, {
+        method: "POST",
+        headers: { ...authHeaders() },
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      toast({
+        title: isFollowing ? "Unfollowed" : "Following",
+        description: isFollowing
+          ? "You won't get notified when this circle goes live."
+          : "You'll get notified when this circle goes live.",
+      });
+    } catch {
+      // Revert on error
+      setFollowingSet(prev => {
+        const next = new Set(prev);
+        if (isFollowing) next.add(circle.id);
+        else next.delete(circle.id);
+        return next;
+      });
+      toast({ title: "Couldn't update follow status", description: "Try again in a moment.", variant: "destructive" });
     }
   };
 
@@ -316,7 +401,8 @@ export default function AudioCirclesScreen() {
         <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-background border border-primary/30 rounded-2xl p-4">
           <p className="text-xs text-muted-foreground leading-relaxed">
             Think call-in radio, live. Host a room, raise your hand to speak, or just listen in —
-            every neighborhood (and your whole city) has its own circle.
+            every neighborhood (and your whole city) has its own circle. Follow a circle to get
+            notified when it goes live.
           </p>
         </div>
 
@@ -348,6 +434,7 @@ export default function AudioCirclesScreen() {
         <div className="space-y-3">
           {circles?.map((circle, i) => {
             const live = circle.live_session;
+            const isFollowing = followingSet.has(circle.id);
             const isHighlighted = neighborhoodParam
               ? circle.neighborhood_name?.toLowerCase() === neighborhoodParam.toLowerCase()
               : false;
@@ -378,6 +465,11 @@ export default function AudioCirclesScreen() {
                         {live && (
                           <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 flex items-center gap-1">
                             <Radio className="w-2.5 h-2.5" /> Live
+                          </span>
+                        )}
+                        {isFollowing && (
+                          <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30 flex items-center gap-1">
+                            <Bell className="w-2.5 h-2.5" /> Following
                           </span>
                         )}
                       </div>
@@ -414,16 +506,40 @@ export default function AudioCirclesScreen() {
                         >
                           <Share2 className="w-4 h-4" />
                         </button>
+                        <button
+                          onClick={() => toggleFollow(circle)}
+                          className={`p-2.5 rounded-xl border transition-colors ${
+                            isFollowing
+                              ? "border-primary/40 text-primary"
+                              : "border-border text-muted-foreground hover:text-primary hover:border-primary/40"
+                          }`}
+                          title={isFollowing ? "Unfollow this Circle" : "Follow this Circle for live notifications"}
+                        >
+                          {isFollowing ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                        </button>
                       </>
                     ) : (
-                      <Button
-                        variant="outline"
-                        className="flex-1"
-                        disabled={startingId === circle.id}
-                        onClick={() => setHostModal(circle)}
-                      >
-                        {startingId === circle.id ? "Starting…" : "Host a Circle"}
-                      </Button>
+                      <>
+                        <Button
+                          variant="outline"
+                          className="flex-1"
+                          disabled={startingId === circle.id}
+                          onClick={() => setHostModal(circle)}
+                        >
+                          {startingId === circle.id ? "Starting…" : "Host a Circle"}
+                        </Button>
+                        <button
+                          onClick={() => toggleFollow(circle)}
+                          className={`p-2.5 rounded-xl border transition-colors ${
+                            isFollowing
+                              ? "border-primary/40 text-primary"
+                              : "border-border text-muted-foreground hover:text-primary hover:border-primary/40"
+                          }`}
+                          title={isFollowing ? "Unfollow this Circle" : "Follow this Circle for live notifications"}
+                        >
+                          {isFollowing ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                        </button>
+                      </>
                     )}
                     <button
                       onClick={() => loadRecordings(circle.id)}
