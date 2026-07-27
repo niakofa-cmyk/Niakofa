@@ -28,6 +28,19 @@ import { userSelect } from "../lib/user-select";
 import { getDefaultCommunityId } from "../lib/community-pool";
 import { isValidSpiritAnimal } from "../lib/spirit-animal";
 
+// Constant-time string comparison to prevent timing-based enumeration of
+// short reset codes. Compares character-by-character and always processes
+// the full length of the expected value, even on early mismatch.
+function timingSafeEqualStr(expected: string, actual: string): boolean {
+  const a = Buffer.from(expected);
+  const b = Buffer.from(actual);
+  if (a.length !== b.length) {
+    a.compare(a);
+    return false;
+  }
+  return a.compare(b) === 0;
+}
+
 // ── Per-account login attempt tracking ────────────────────────────────────────
 // Guards against distributed brute-force attacks where a single account is
 // targeted from many IPs, bypassing the IP-based authLimiter above.
@@ -374,7 +387,7 @@ router.post(["/users/set-initial-password", "/users/reset-password"], authLimite
 
   if (!user) return res.status(RESET_FAIL.status).json(RESET_FAIL.body);
 
-  if (!user.password_reset_code || user.password_reset_code !== code.trim()) {
+  if (!user.password_reset_code || !timingSafeEqualStr(user.password_reset_code, code.trim())) {
     return res.status(RESET_FAIL.status).json(RESET_FAIL.body);
   }
   if (!user.password_reset_expires_at || user.password_reset_expires_at.getTime() < Date.now()) {
@@ -1000,6 +1013,8 @@ router.delete("/users/me", requireAuth, async (req, res) => {
         blocking_pledge_ids: blockingPledges.map(p => p.id),
       });
     }
+    await db.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
+    await db.delete(paymentTransactionsTable).where(eq(paymentTransactionsTable.requester_id, userId));
     await db.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
     await db.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
     await db.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));
@@ -1034,6 +1049,8 @@ router.delete("/users/:id", requireAuth, requireAdmin(), adminLimiter, async (re
     }
     // Delete user from all related tables. help_requests.requester_id is ON DELETE
     // RESTRICT (migration 0070) so the database itself backs up the check above.
+    await db.delete(transactionsTable).where(eq(transactionsTable.user_id, userId));
+    await db.delete(paymentTransactionsTable).where(eq(paymentTransactionsTable.requester_id, userId));
     await db.delete(scheduledPaymentsTable).where(eq(scheduledPaymentsTable.user_id, userId));
     await db.delete(stripeAccountsTable).where(eq(stripeAccountsTable.user_id, userId));
     await db.delete(userSettingsTable).where(eq(userSettingsTable.user_id, userId));

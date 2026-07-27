@@ -1728,6 +1728,7 @@ router.post("/requests/:id/tip-wallet", requireAuth, requireApproved, async (req
 
   const tipDollars = tip_amount_cents / 100;
 
+  let txFailed = false;
   await db.transaction(async tx => {
     const [requesterRow] = await tx.select({ wallet: usersTable.benevolence_wallet })
       .from(usersTable).where(eq(usersTable.id, callerId)).limit(1);
@@ -1750,10 +1751,15 @@ router.post("/requests/:id/tip-wallet", requireAuth, requireApproved, async (req
     ]);
   }).catch((err: Error & { code?: string; status?: number }) => {
     if (err.code === "insufficient_balance") {
+      txFailed = true;
       return res.status(402).json({ error: err.message, code: err.code });
     }
     throw err;
   });
+
+  // If the transaction failed (insufficient balance), the response was already
+  // sent inside .catch — do not fall through to sendToUser or res.json.
+  if (txFailed) return;
 
   sendToUser(request.helper_id, {
     type: "payment_completed",
@@ -2017,9 +2023,13 @@ router.post("/admin/requests/:id/moderate", requireAuth, requireAdmin(), adminLi
 //   - Only the original requester can submit a repayment
 //   - Only on active or defaulted pledges (forgiven/written_off are closed)
 //   - Amount must be > 0 and ≤ outstanding balance
+//   - Funds are debited from the user's benevolence_wallet (funded via Stripe
+//     webhook) — no raw client-supplied amount is credited without verification.
+//     This closes the same class of fraud that /requests/:id/tip had: crediting
+//     an arbitrary client-supplied amount with no Stripe payment verification.
 //   - Ledger entry recorded for audit trail
 //   - 'defaulted' status flips back to 'active' on any repayment
-//   - Full repayment flips status to 'forgiven' (pledge completed)
+//   - Full repayment flips status to 'repaid' (pledge completed)
 router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
   const requesterId = req.authenticatedUserId!;
   const requestId = parseInt(String(req.params.id), 10);
@@ -2056,9 +2066,38 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
   // Atomic SQL increment — avoids lost-update race when two repayments hit concurrently.
   // Status is computed inside the DB from the post-update pledge_paid value, never from
   // stale application-layer reads.  RETURNING captures what was actually written.
+  //
+  // SECURITY: the repayment amount is debited from the user's benevolence_wallet,
+  // which is only credited by the Stripe webhook handler. This ensures every
+  // pledge_repayment is backed by real Stripe-verified funds — not a raw
+  // client-supplied number. Same pattern as /requests/:id/tip-wallet.
   let updated: { pledge_paid: number | null; pledge_status: string | null; pledge_amount: number | null } | undefined;
   try {
     [updated] = await db.transaction(async (tx) => {
+      // Verify the user has sufficient wallet balance (funded via Stripe webhook)
+      const [requesterRow] = await tx.select({ wallet: usersTable.benevolence_wallet })
+        .from(usersTable).where(eq(usersTable.id, requesterId)).limit(1);
+      if (!requesterRow) throw Object.assign(new Error("User not found"), { status: 404 });
+      if ((requesterRow.wallet ?? 0) < safeAmount) {
+        throw Object.assign(new Error("Insufficient wallet balance to cover this repayment"), { code: "insufficient_balance", status: 402 });
+      }
+
+      // Debit the wallet — atomically, with a guard to prevent going negative
+      const debitResult = await tx
+        .update(usersTable)
+        .set({ benevolence_wallet: sql`${usersTable.benevolence_wallet} - ${safeAmount}` })
+        .where(
+          and(
+            eq(usersTable.id, requesterId),
+            sql`COALESCE(${usersTable.benevolence_wallet}, 0) >= ${safeAmount}`,
+          ),
+        )
+        .returning({ wallet: usersTable.benevolence_wallet });
+
+      if (!debitResult[0]) {
+        throw Object.assign(new Error("Insufficient wallet balance to cover this repayment"), { code: "insufficient_balance", status: 402 });
+      }
+
       const rows = await tx
         .update(requestsTable)
         .set({
@@ -2104,6 +2143,15 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
       const row = rows[0];
       const amountActuallyApplied = Math.min(safeAmount, (row.pledge_amount ?? 0) - ((row.pledge_paid ?? 0) - safeAmount));
 
+      // Record the wallet debit as a transaction for the audit trail.
+      await tx.insert(transactionsTable).values({
+        user_id: requesterId,
+        type: "pledge_repayment",
+        amount: -safeAmount,
+        description: `Pledge repayment for request #${requestId}`,
+        request_id: requestId,
+      });
+
       // Record the repayment in the pool ledger for the audit trail.
       await tx.insert(communityPoolLedgerTable).values({
         entry_type: "pledge_repayment",
@@ -2118,6 +2166,9 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
   } catch (err) {
     if (err instanceof Error && err.message === "already_paid") {
       return res.status(409).json({ error: "This pledge is already fully paid or resolved." });
+    }
+    if ((err as Error & { code?: string }).code === "insufficient_balance") {
+      return res.status(402).json({ error: err.message, code: "insufficient_balance" });
     }
     throw err;
   }
