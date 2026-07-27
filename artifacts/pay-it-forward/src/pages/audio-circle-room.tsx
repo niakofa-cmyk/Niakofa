@@ -6,6 +6,7 @@ import {
   Circle as CircleIcon, ChevronDown, Crown, Upload, WifiOff,
   VolumeX, UserMinus, Flag, Volume2, Ban, AlertTriangle,
   Signal, SignalHigh, SignalMedium, SignalLow, Share2,
+  Shield, Star,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders, getToken } from "@/lib/auth";
@@ -26,7 +27,7 @@ import {
 
 interface Participant {
   user_id: number;
-  role: "host" | "speaker" | "listener";
+  role: "host" | "co_host" | "speaker" | "listener";
   hand_raised: boolean;
   muted: boolean;
   name: string;
@@ -184,9 +185,11 @@ export default function AudioCircleRoomScreen() {
   const myUserId = currentUser?.id;
   const me = participants.find(p => p.user_id === myUserId);
   const isHost = session?.host_id === myUserId;
-  const canSpeak = me?.role === "host" || me?.role === "speaker";
+  const isCohost = me?.role === "co_host";
+  const canSpeak = me?.role === "host" || me?.role === "co_host" || me?.role === "speaker";
+  const canMod = isHost || isCohost;
   const host = participants.find(p => p.role === "host");
-  const speakers = participants.filter(p => p.role === "speaker");
+  const speakers = participants.filter(p => p.role === "speaker" || p.role === "co_host");
   const audience = participants.filter(p => p.role === "listener");
 
   useEffect(() => { setMediaCapabilities(getAudioCircleMediaCapabilities()); }, []);
@@ -343,7 +346,7 @@ export default function AudioCircleRoomScreen() {
         if (p.user_id !== myUserId) mesh.connectToPeer(p.user_id);
       }
     } else {
-      const stageUsers = participants.filter(p => p.role === "host" || p.role === "speaker");
+      const stageUsers = participants.filter(p => p.role === "host" || p.role === "speaker" || p.role === "co_host");
       for (const s of stageUsers) {
         if (s.user_id !== myUserId) mesh.connectToPeer(s.user_id);
       }
@@ -497,12 +500,26 @@ export default function AudioCircleRoomScreen() {
     if (p.user_id !== myUserId && p.role === "listener") meshRef.current?.disconnectFromPeer(p.user_id);
   });
 
+  useWebSocket("circle_cohost_assigned", (e) => {
+    const p = e.payload as { session_id: number; user_id: number };
+    if (p.session_id !== sessionId) return;
+    setParticipants(prev => prev.map(x => x.user_id === p.user_id ? { ...x, role: "co_host" as const, hand_raised: false } : x));
+    if (p.user_id === myUserId) toast({ title: "You are now a co-host", description: "You can promote, demote, mute, and remove participants." });
+  });
+
+  useWebSocket("circle_cohost_removed", (e) => {
+    const p = e.payload as { session_id: number; user_id: number };
+    if (p.session_id !== sessionId) return;
+    setParticipants(prev => prev.map(x => x.user_id === p.user_id ? { ...x, role: "listener" as const } : x));
+    if (p.user_id === myUserId) toast({ title: "You are no longer a co-host" });
+  });
+
   useWebSocket("circle_muted", (e) => {
     const p = e.payload as { session_id: number; user_id: number | null; muted: boolean; all?: boolean };
     if (p.session_id !== sessionId) return;
     if (p.all) {
-      setParticipants(prev => prev.map(x => x.role === "speaker" ? { ...x, muted: true } : x));
-      if (me?.role === "speaker") {
+      setParticipants(prev => prev.map(x => (x.role === "speaker" || x.role === "co_host") ? { ...x, muted: true } : x));
+      if (me?.role === "speaker" || me?.role === "co_host") {
         setMicOn(false);
         meshRef.current?.setMicEnabled(false);
         toast({ title: "The host muted everyone" });
@@ -628,6 +645,24 @@ export default function AudioCircleRoomScreen() {
         : x));
     }
   };
+  const assignCohost = async (userId: number) => {
+    setModMenuOpen(null);
+    if (await post("/assign-cohost", { user_id: userId })) {
+      setParticipants(prev => prev.map(x => x.user_id === userId
+        ? { ...x, role: "co_host" as const, hand_raised: false }
+        : x));
+      toast({ title: "Co-host assigned" });
+    }
+  };
+  const removeCohost = async (userId: number) => {
+    setModMenuOpen(null);
+    if (await post("/remove-cohost", { user_id: userId })) {
+      setParticipants(prev => prev.map(x => x.user_id === userId
+        ? { ...x, role: "listener" as const }
+        : x));
+      toast({ title: "Co-host removed" });
+    }
+  };
   const demote = async (userId: number) => {
     setModMenuOpen(null);
     if (await post("/demote", { user_id: userId })) {
@@ -644,7 +679,7 @@ export default function AudioCircleRoomScreen() {
   };
   const muteAll = async () => {
     if (await post("/mute-all")) {
-      setParticipants(prev => prev.map(x => x.role === "speaker" ? { ...x, muted: true } : x));
+      setParticipants(prev => prev.map(x => (x.role === "speaker" || x.role === "co_host") ? { ...x, muted: true } : x));
     }
   };
   const kickUser = async (userId: number) => {
@@ -1069,7 +1104,7 @@ export default function AudioCircleRoomScreen() {
             <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
               Speakers ({speakers.length})
             </div>
-            {isHost && speakers.length > 0 && (
+            {canMod && speakers.length > 0 && (
               <button
                 onClick={(e) => { e.stopPropagation(); muteAll(); }}
                 className="text-[10px] font-bold text-amber-400 flex items-center gap-1 hover:opacity-70"
@@ -1089,7 +1124,7 @@ export default function AudioCircleRoomScreen() {
                   isMe={s.user_id === myUserId}
                   level={s.user_id === myUserId ? localLevel : (speakingLevels.get(s.user_id) ?? 0)}
                   isHost={isHost}
-                  canMod={isHost && s.user_id !== myUserId}
+                  canMod={canMod && s.user_id !== myUserId && s.role !== "host"}
                   modMenuOpen={modMenuOpen === s.user_id}
                   onOpenMod={() => setModMenuOpen(prev => prev === s.user_id ? null : s.user_id)}
                   onMute={() => muteUser(s.user_id, !s.muted)}
@@ -1097,6 +1132,8 @@ export default function AudioCircleRoomScreen() {
                   onKick={() => kickUser(s.user_id)}
                   onBlock={() => setShowBlockConfirm(s.user_id)}
                   onReport={() => setShowReportModal(s.user_id)}
+                  onAssignCohost={isHost && s.role === "speaker" ? () => assignCohost(s.user_id) : undefined}
+                  onRemoveCohost={isHost && s.role === "co_host" ? () => removeCohost(s.user_id) : undefined}
                 />
               ))}
             </div>
@@ -1104,7 +1141,7 @@ export default function AudioCircleRoomScreen() {
         </div>
 
         {/* ── Raised hands (host-only) — ordered queue ───────────────────────── */}
-        {isHost && audience.some(l => l.hand_raised) && (
+        {canMod && audience.some(l => l.hand_raised) && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 space-y-2">
             <div className="flex items-center justify-between mb-1">
               <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">
@@ -1148,7 +1185,7 @@ export default function AudioCircleRoomScreen() {
                     )}
                   </div>
                   <span className="text-[9px] truncate max-w-[52px] text-center">{l.name}</span>
-                  {isHost && l.hand_raised && (
+                  {canMod && l.hand_raised && (
                     <button onClick={() => promote(l.user_id)} className="text-[9px] text-primary font-bold underline">bring up</button>
                   )}
                 </div>
@@ -1204,7 +1241,7 @@ export default function AudioCircleRoomScreen() {
               {videoOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
             </Button>
           )}
-          {me?.role === "speaker" && (
+          {(me?.role === "speaker" || me?.role === "co_host") && (
             <Button variant="outline" size="icon" onClick={() => demote(myUserId!)} title="Leave stage">
               <UserMinus className="w-4 h-4" />
             </Button>
@@ -1248,9 +1285,11 @@ interface SpeakerTileProps {
   onKick: () => void;
   onBlock: () => void;
   onReport: () => void;
+  onAssignCohost?: () => void;
+  onRemoveCohost?: () => void;
 }
 
-function SpeakerTile({ participant: s, isMe, level, canMod, modMenuOpen, onOpenMod, onMute, onDemote, onKick, onBlock, onReport }: SpeakerTileProps) {
+function SpeakerTile({ participant: s, isMe, level, canMod, modMenuOpen, onOpenMod, onMute, onDemote, onKick, onBlock, onReport, onAssignCohost, onRemoveCohost }: SpeakerTileProps) {
   const isSpeaking = level > 0.12;
   return (
     <div className="flex flex-col items-center gap-1 relative">
@@ -1275,6 +1314,9 @@ function SpeakerTile({ participant: s, isMe, level, canMod, modMenuOpen, onOpenM
         </button>
         {s.role === "host" && (
           <Crown className="w-3.5 h-3.5 text-amber-400 absolute -top-1 -right-1 drop-shadow" />
+        )}
+        {s.role === "co_host" && (
+          <Shield className="w-3 h-3 text-blue-400 absolute -top-1 -right-1 drop-shadow" />
         )}
         {s.muted && (
           <MicOff className="w-3 h-3 text-red-400 absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5" />
@@ -1302,6 +1344,16 @@ function SpeakerTile({ participant: s, isMe, level, canMod, modMenuOpen, onOpenM
             <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted" onClick={onDemote}>
               <UserMinus className="w-3 h-3" /> Move to Audience
             </button>
+            {onAssignCohost && (
+              <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-blue-400" onClick={onAssignCohost}>
+                <Shield className="w-3 h-3" /> Make Co-host
+              </button>
+            )}
+            {onRemoveCohost && (
+              <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-blue-400" onClick={onRemoveCohost}>
+                <Shield className="w-3 h-3" /> Remove Co-host
+              </button>
+            )}
             <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-red-400" onClick={onKick}>
               <Flag className="w-3 h-3" /> Remove from Circle
             </button>
