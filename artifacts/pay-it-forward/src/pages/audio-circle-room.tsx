@@ -6,7 +6,7 @@ import {
   Circle as CircleIcon, ChevronDown, Crown, Upload, WifiOff,
   VolumeX, UserMinus, Flag, Volume2, Ban, AlertTriangle,
   Signal, SignalHigh, SignalMedium, SignalLow, Share2,
-  Shield, Star,
+  Shield, Star, MoreVertical,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders, getToken } from "@/lib/auth";
@@ -189,7 +189,8 @@ export default function AudioCircleRoomScreen() {
   const canSpeak = me?.role === "host" || me?.role === "co_host" || me?.role === "speaker";
   const canMod = isHost || isCohost;
   const host = participants.find(p => p.role === "host");
-  const speakers = participants.filter(p => p.role === "speaker" || p.role === "co_host");
+  const cohosts = participants.filter(p => p.role === "co_host");
+  const speakers = participants.filter(p => p.role === "speaker");
   const audience = participants.filter(p => p.role === "listener");
 
   useEffect(() => { setMediaCapabilities(getAudioCircleMediaCapabilities()); }, []);
@@ -1098,13 +1099,46 @@ export default function AudioCircleRoomScreen() {
           )}
         </div>
 
+        {/* ── Stage: CO-HOSTS ─────────────────────────────────────────────────── */}
+        {cohosts.length > 0 && (
+          <div>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Shield className="w-3 h-3 text-blue-400" />
+              <div className="text-[10px] font-black uppercase tracking-widest text-blue-400">
+                Co-Hosts ({cohosts.length})
+              </div>
+            </div>
+            <div className="grid grid-cols-4 gap-3" onClick={e => e.stopPropagation()}>
+              {cohosts.map(c => (
+                <SpeakerTile
+                  key={c.user_id}
+                  participant={c}
+                  isMe={c.user_id === myUserId}
+                  level={c.user_id === myUserId ? localLevel : (speakingLevels.get(c.user_id) ?? 0)}
+                  isHost={isHost}
+                  canMod={canMod && c.user_id !== myUserId && c.role !== "host"}
+                  modMenuOpen={modMenuOpen === c.user_id}
+                  onOpenMod={() => setModMenuOpen(prev => prev === c.user_id ? null : c.user_id)}
+                  onMute={() => muteUser(c.user_id, !c.muted)}
+                  onDemote={() => demote(c.user_id)}
+                  onKick={() => kickUser(c.user_id)}
+                  onBlock={() => setShowBlockConfirm(c.user_id)}
+                  onReport={() => setShowReportModal(c.user_id)}
+                  onAssignCohost={undefined}
+                  onRemoveCohost={isHost ? () => removeCohost(c.user_id) : undefined}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── Stage: SPEAKERS ─────────────────────────────────────────────────── */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
               Speakers ({speakers.length})
             </div>
-            {canMod && speakers.length > 0 && (
+            {canMod && (speakers.length > 0 || cohosts.length > 0) && (
               <button
                 onClick={(e) => { e.stopPropagation(); muteAll(); }}
                 className="text-[10px] font-bold text-amber-400 flex items-center gap-1 hover:opacity-70"
@@ -1159,6 +1193,11 @@ export default function AudioCircleRoomScreen() {
                 </div>
                 <span className="flex-1 text-sm font-bold truncate">{l.name}</span>
                 <div className="flex gap-1.5">
+                  {isHost && (
+                    <Button size="sm" variant="outline" className="h-7 text-xs px-2 text-blue-400 border-blue-400/40" onClick={() => assignCohost(l.user_id)}>
+                      <Shield className="w-3 h-3" /> Co-host
+                    </Button>
+                  )}
                   <Button size="sm" className="h-7 text-xs px-2" onClick={() => promote(l.user_id)}>Bring up</Button>
                   <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={() => post("/hand", { raised: false, user_id: l.user_id })}>Dismiss</Button>
                 </div>
@@ -1304,8 +1343,8 @@ function SpeakerTile({ participant: s, isMe, level, canMod, modMenuOpen, onOpenM
         )}
         <button
           className={`w-14 h-14 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 ${
-            isSpeaking ? "border-primary" : s.role === "host" ? "border-amber-400/60" : "border-primary/30"
-          }`}
+            isSpeaking ? "border-primary" : s.role === "host" ? "border-amber-400/60" : s.role === "co_host" ? "border-blue-400/60" : "border-primary/30"
+          } ${canMod ? "cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all" : ""}`}
           onClick={canMod ? onOpenMod : undefined}
         >
           {s.avatar_url
@@ -1316,7 +1355,12 @@ function SpeakerTile({ participant: s, isMe, level, canMod, modMenuOpen, onOpenM
           <Crown className="w-3.5 h-3.5 text-amber-400 absolute -top-1 -right-1 drop-shadow" />
         )}
         {s.role === "co_host" && (
-          <Shield className="w-3 h-3 text-blue-400 absolute -top-1 -right-1 drop-shadow" />
+          <Shield className="w-3.5 h-3.5 text-blue-400 absolute -top-1 -right-1 drop-shadow" />
+        )}
+        {canMod && !modMenuOpen && (
+          <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 bg-background rounded-full p-0.5">
+            <MoreVertical className="w-2.5 h-2.5 text-muted-foreground" />
+          </div>
         )}
         {s.muted && (
           <MicOff className="w-3 h-3 text-red-400 absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5" />
@@ -1325,7 +1369,10 @@ function SpeakerTile({ participant: s, isMe, level, canMod, modMenuOpen, onOpenM
           <Volume2 className="w-3 h-3 text-primary absolute -bottom-0.5 -left-0.5 bg-background rounded-full p-0.5" />
         )}
       </div>
-      <span className="text-[10px] font-bold truncate max-w-[64px]">{isMe ? "You" : s.name}</span>
+      <span className={`text-[10px] font-bold truncate max-w-[64px] ${s.role === "co_host" ? "text-blue-400" : ""}`}>{isMe ? "You" : s.name}</span>
+      {s.role === "co_host" && (
+        <span className="text-[8px] font-bold text-blue-400/80 uppercase tracking-wide">Co-host</span>
+      )}
 
       {/* Host moderation dropdown */}
       <AnimatePresence>
