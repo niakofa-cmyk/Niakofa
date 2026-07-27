@@ -315,7 +315,7 @@ router.post("/stripe/webhook", async (req, res) => {
               body: `$${amount.toFixed(2)} was paid forward for: "${requestTitle}". Check your Goodwill Fund.`,
               requestId: txRow.request_id,
               notifType: "wallet" as const,
-            }).catch(() => {});
+            }).catch(err => logger.warn({ err, helper_id: txRow.helper_id }, "sendPushToUser (wallet): non-critical side effect failed — continuing"));
           }
         } else if (
           txRow &&
@@ -366,7 +366,7 @@ router.post("/stripe/webhook", async (req, res) => {
             body: `You got a $${amount.toFixed(2)} tip! Check your Goodwill Fund.`,
             requestId: txRow.request_id,
             notifType: "wallet" as const,
-          }).catch(() => {});
+          }).catch(err => logger.warn({ err, helper_id: txRow.helper_id }, "sendPushToUser (tip): non-critical side effect failed — continuing"));
         } else {
           broadcast({
             type: "payment_completed",
