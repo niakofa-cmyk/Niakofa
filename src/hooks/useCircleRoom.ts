@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type {
   Participant,
   RaisedHandEntry,
@@ -143,6 +143,29 @@ export function useCircleRoom() {
     setState(s => ({ ...s, isRecording: !s.isRecording }));
   }, []);
 
+  const raiseHand = useCallback(() => {
+    setState(s => {
+      const isOnStage = s.participants.find(p => p.id === s.currentUserId)?.role !== 'audience';
+      if (isOnStage) return s;
+      return {
+        ...s,
+        participants: s.participants.map(p =>
+          p.id === s.currentUserId ? { ...p, hasRaisedHand: !p.hasRaisedHand } : p
+        ),
+        raisedHands: (() => {
+          const existing = s.raisedHands.find(rh => rh.participantId === s.currentUserId);
+          if (existing) {
+            return s.raisedHands.filter(rh => rh.participantId !== s.currentUserId);
+          }
+          const p = s.participants.find(pp => pp.id === s.currentUserId);
+          return p
+            ? [...s.raisedHands, { participantId: s.currentUserId, participant: p, timestamp: Date.now() }]
+            : s.raisedHands;
+        })(),
+      };
+    });
+  }, []);
+
   const setRightTab = useCallback((tab: RightPanelTab) => {
     setState(s => ({ ...s, rightTab: tab }));
   }, []);
@@ -191,6 +214,7 @@ export function useCircleRoom() {
   const coHost = state.participants.find(p => p.role === 'co-host');
   const speakers = state.participants.filter(p => p.role === 'speaker');
   const currentUser = state.participants.find(p => p.id === state.currentUserId);
+  const currentUserRole = currentUser?.role ?? 'audience';
 
   return {
     state,
@@ -201,6 +225,7 @@ export function useCircleRoom() {
     coHost,
     speakers,
     currentUser,
+    currentUserRole,
     toggleMic,
     toggleCamera,
     bringUpSpeaker,
@@ -212,6 +237,7 @@ export function useCircleRoom() {
     moveToAudience,
     removeParticipant,
     toggleRecording,
+    raiseHand,
     setRightTab,
     setLeftTab,
     toggleMobilePanel,

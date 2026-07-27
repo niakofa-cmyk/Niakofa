@@ -18,21 +18,38 @@ export function CircleRoom({ circle, onLeave }: CircleRoomProps) {
   return (
     <div className="flex h-full flex-col bg-room-bg">
       <div className="flex items-center justify-between border-b border-room-border bg-room-panel px-4 py-2.5">
-        <button
-          onClick={onLeave}
-          className="flex items-center gap-1 text-xs font-medium text-gray-400 transition-colors hover:text-white"
-        >
-          <ChevronRight size={14} className="rotate-180" />
-          Back to Circles
-        </button>
         <div className="flex items-center gap-3">
-          <div className="hidden items-center gap-1.5 text-xs font-medium text-brand-green sm:flex">
+          <button
+            onClick={onLeave}
+            className="flex items-center gap-1 text-xs font-medium text-gray-400 transition-colors hover:text-white"
+            aria-label="Back to Circles"
+          >
+            <ChevronRight size={14} className="rotate-180" />
+            Back to Circles
+          </button>
+          <div className="hidden items-center gap-2 sm:flex">
+            <span className="text-sm font-bold text-white">{circle.title}</span>
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-brand-green">
+              <span className="h-2 w-2 animate-pulse-live rounded-full bg-brand-green" />
+              LIVE
+            </span>
+            {circle.isRecording && (
+              <span className="flex items-center gap-1 text-xs font-semibold text-brand-red">
+                <Radio size={12} />
+                {recordingTime}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="hidden items-center gap-1.5 text-xs font-medium text-brand-green sm:flex" role="status" aria-live="polite">
             <Signal size={14} />
             Excellent Connection
           </div>
           <button
             onClick={room.toggleMobilePanel}
             className="rounded-full p-1.5 text-gray-400 transition-colors hover:bg-room-hover hover:text-white lg:hidden"
+            aria-label="Open moderation panel"
           >
             <MoreHorizontal size={16} />
           </button>
@@ -60,6 +77,7 @@ export function CircleRoom({ circle, onLeave }: CircleRoomProps) {
             speakers={room.speakers}
             audienceParticipants={room.audienceParticipants}
             currentUserId={room.state.currentUserId}
+            currentUserRole={room.currentUserRole}
             isMicOn={room.state.isMicOn}
             isCameraOn={room.state.isCameraOn}
             raisedHandsCount={room.state.raisedHands.length}
@@ -67,6 +85,7 @@ export function CircleRoom({ circle, onLeave }: CircleRoomProps) {
             onToggleCamera={room.toggleCamera}
             onLeave={onLeave}
             onShowRaisedHands={room.toggleMobilePanel}
+            onRaiseHand={room.raiseHand}
           />
         </div>
 
@@ -120,6 +139,7 @@ export function CircleRoom({ circle, onLeave }: CircleRoomProps) {
               <button
                 onClick={room.closeMobilePanel}
                 className="rounded-full p-1.5 text-gray-400 hover:bg-room-hover hover:text-white"
+                aria-label="Close moderation panel"
               >
                 <X size={18} />
               </button>
