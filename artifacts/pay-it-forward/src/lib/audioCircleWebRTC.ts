@@ -413,6 +413,8 @@ export class AudioCircleMesh {
 
     try {
       if (signal.kind === "offer") {
+        // Skip if the connection was already torn down
+        if (pc.connectionState === "closed") return;
         const polite = this.selfUserId > from_user_id;
         const offerCollision = this.makingOffer.has(from_user_id) || pc.signalingState !== "stable";
         if (offerCollision && !polite) return;
@@ -422,8 +424,12 @@ export class AudioCircleMesh {
         await pc.setLocalDescription(answer);
         this.sendSignal(from_user_id, { kind: "answer", data: pc.localDescription });
       } else if (signal.kind === "answer") {
+        if (pc.connectionState === "closed") return;
         await pc.setRemoteDescription(new RTCSessionDescription(signal.data as RTCSessionDescriptionInit));
       } else if (signal.kind === "ice") {
+        // Guard: skip if the connection was already closed (e.g. peer left
+        // while ICE was still trickling in — avoids InvalidStateError).
+        if (pc.connectionState === "closed" || pc.signalingState === "closed") return;
         const candidate = signal.data as RTCIceCandidateInit;
         // ICE can arrive before the offer/answer has established a remote
         // description, especially on mobile networks. Queue it until the

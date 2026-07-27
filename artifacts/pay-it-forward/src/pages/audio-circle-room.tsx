@@ -48,18 +48,35 @@ type ConnectionStatus = "connecting" | "connected" | "reconnecting" | "lost";
 const REACTION_EMOJIS = ["👏", "🔥", "❤️", "😂", "🙌"];
 
 // ── Speaking volume analyser ─────────────────────────────────────────────────
-function startVolumeAnalyser(stream: MediaStream, onLevel: (v: number) => void): () => void {
+// Accepts an optional shared AudioContext so callers can avoid hitting the
+// browser's per-page AudioContext limit (typically 6–50 across all tabs).
+// When a sharedCtx is provided the analyser is connected to it and the
+// returned cleanup only disconnects the nodes — it does NOT close the context.
+// When no sharedCtx is provided a private one is created and closed on cleanup.
+function startVolumeAnalyser(
+  stream: MediaStream,
+  onLevel: (v: number) => void,
+  sharedCtx?: AudioContext | null,
+): () => void {
   let ctx: AudioContext | null = null;
+  let ownsCtx = false;
   let animId = 0;
+  let src: MediaStreamAudioSourceNode | null = null;
+  let analyser: AnalyserNode | null = null;
   try {
-    ctx = new AudioContext();
-    const src = ctx.createMediaStreamSource(stream);
-    const analyser = ctx.createAnalyser();
+    if (sharedCtx && sharedCtx.state !== "closed") {
+      ctx = sharedCtx;
+    } else {
+      ctx = new AudioContext();
+      ownsCtx = true;
+    }
+    src = ctx.createMediaStreamSource(stream);
+    analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
     src.connect(analyser);
     const data = new Uint8Array(analyser.frequencyBinCount);
     const tick = () => {
-      analyser.getByteFrequencyData(data);
+      analyser!.getByteFrequencyData(data);
       const avg = data.reduce((a, b) => a + b, 0) / data.length;
       onLevel(Math.min(1, avg / 80));
       animId = requestAnimationFrame(tick);
@@ -70,7 +87,8 @@ function startVolumeAnalyser(stream: MediaStream, onLevel: (v: number) => void):
   }
   return () => {
     cancelAnimationFrame(animId);
-    ctx?.close().catch(() => {});
+    try { src?.disconnect(); } catch { /* ignore */ }
+    if (ownsCtx) ctx?.close().catch(() => {});
   };
 }
 
@@ -158,6 +176,9 @@ export default function AudioCircleRoomScreen() {
   const isRecordingRef = useRef(false);
   const analyserCleanupsRef = useRef<Map<string, () => void>>(new Map());
   const signalHandlerRef = useRef<((e: WsEvent) => void) | null>(null);
+  // One shared AudioContext for ALL volume analysers in this session — avoids
+  // hitting the browser's per-page AudioContext limit (Chrome: ~6 historically).
+  const sharedAudioCtxRef = useRef<AudioContext | null>(null);
 
   // ── Derived state ──────────────────────────────────────────────────────────
   const myUserId = currentUser?.id;
@@ -176,6 +197,16 @@ export default function AudioCircleRoomScreen() {
   useEffect(() => {
     if (!loading && session) setConnectionStatus("connected");
   }, [loading, session]);
+
+  // Timeout: if still "connecting" after 12 s (WebSocket never established),
+  // flip to "lost" so the UI shows a recoverable error instead of a spinner.
+  useEffect(() => {
+    if (connectionStatus !== "connecting") return;
+    const id = setTimeout(() => {
+      setConnectionStatus(prev => prev === "connecting" ? "lost" : prev);
+    }, 12000);
+    return () => clearTimeout(id);
+  }, [connectionStatus]);
 
   const resync = useCallback(async () => {
     try {
@@ -264,6 +295,9 @@ export default function AudioCircleRoomScreen() {
       setMeshReady(false);
       for (const cleanup of analyserCleanupsRef.current.values()) cleanup();
       analyserCleanupsRef.current.clear();
+      // Close the shared AudioContext when the session ends
+      sharedAudioCtxRef.current?.close().catch(() => {});
+      sharedAudioCtxRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.id, myUserId]);
@@ -274,16 +308,30 @@ export default function AudioCircleRoomScreen() {
   }
   useWebSocket("circle_signal", (e) => signalHandlerRef.current?.(e));
 
-  // Wire volume analysers for remote streams
+  // Lazily create the shared AudioContext for all volume analysers in this session.
+  // Must be done inside a user-gesture-adjacent path or after first interaction;
+  // browsers may auto-suspend it but that just means level readings pause — no crash.
+  const getSharedAudioCtx = (): AudioContext | null => {
+    if (!sharedAudioCtxRef.current || sharedAudioCtxRef.current.state === "closed") {
+      try { sharedAudioCtxRef.current = new AudioContext(); } catch { return null; }
+    }
+    if (sharedAudioCtxRef.current.state === "suspended") {
+      sharedAudioCtxRef.current.resume().catch(() => {});
+    }
+    return sharedAudioCtxRef.current;
+  };
+
+  // Wire volume analysers for remote streams (reusing shared AudioContext)
   useEffect(() => {
     for (const [userId, stream] of remoteStreams) {
       const key = `remote:${userId}`;
       if (analyserCleanupsRef.current.has(key)) continue;
       const cleanup = startVolumeAnalyser(stream, (level) => {
         setSpeakingLevels(prev => new Map(prev).set(userId, level));
-      });
+      }, getSharedAudioCtx());
       analyserCleanupsRef.current.set(key, cleanup);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remoteStreams]);
 
   // Connect mesh to peers
@@ -329,7 +377,7 @@ export default function AudioCircleRoomScreen() {
         const key = "local";
         const existing = analyserCleanupsRef.current.get(key);
         if (existing) existing();
-        const cleanup = startVolumeAnalyser(stream, setLocalLevel);
+        const cleanup = startVolumeAnalyser(stream, setLocalLevel, getSharedAudioCtx());
         analyserCleanupsRef.current.set(key, cleanup);
       })
       .catch((error) => {
@@ -660,7 +708,7 @@ export default function AudioCircleRoomScreen() {
         setMediaError(null);
         const existing = analyserCleanupsRef.current.get("local");
         if (existing) existing();
-        analyserCleanupsRef.current.set("local", startVolumeAnalyser(stream, setLocalLevel));
+        analyserCleanupsRef.current.set("local", startVolumeAnalyser(stream, setLocalLevel, getSharedAudioCtx()));
       })
       .catch((error) => {
         setMicOn(false);
@@ -736,7 +784,10 @@ export default function AudioCircleRoomScreen() {
   };
 
   // ── Pre-join device check ──────────────────────────────────────────────────
+  // IMPORTANT: setPreJoinChecked(true) must be called first so the effect
+  // guard prevents this from re-running on every re-render.
   const checkPreJoinDevices = async () => {
+    setPreJoinChecked(true); // guard must be set before the async ops
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach(t => t.stop());
@@ -757,9 +808,10 @@ export default function AudioCircleRoomScreen() {
 
   useEffect(() => {
     if (!loading && session && !preJoinChecked) {
-      checkPreJoinDevices();
+      void checkPreJoinDevices();
     }
-  }, [loading, session, preJoinChecked]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, session?.id, preJoinChecked]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
