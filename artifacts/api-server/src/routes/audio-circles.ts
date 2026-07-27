@@ -772,13 +772,13 @@ router.post("/audio-circle-sessions/:id/mute-all", requireAuth, generalApiLimite
   if (!session) return res.status(404).json({ error: "Session not live" });
   if (!modParticipant) return res.status(403).json({ error: "Only the host or co-host can mute everyone" });
 
-  // Mute all non-host speakers and co-hosts
+  // Mute all speakers — co-hosts are moderators and are NOT muted.
   await db
     .update(audioCircleParticipantsTable)
     .set({ muted: true })
     .where(and(
       eq(audioCircleParticipantsTable.session_id, sessionId),
-      sql`${audioCircleParticipantsTable.role} IN ('speaker', 'co_host')`,
+      sql`${audioCircleParticipantsTable.role} = 'speaker'`,
       isNull(audioCircleParticipantsTable.left_at),
     ));
 
@@ -907,6 +907,11 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
   const body = req.body as Buffer;
   if (!Buffer.isBuffer(body) || body.length === 0) {
     return res.status(400).json({ error: "Empty or non-audio body" });
+  }
+  // Reject recordings larger than 500 MB to prevent disk exhaustion.
+  const MAX_RECORDING_BYTES = 500 * 1024 * 1024;
+  if (body.length > MAX_RECORDING_BYTES) {
+    return res.status(413).json({ error: "Recording too large (500 MB max)" });
   }
 
   // Determine uploads dir — two levels up from routes/ gets us to the artifact
