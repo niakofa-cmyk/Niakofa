@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, boolean, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { communitiesTable } from "./communities";
 import { cityNeighborhoodsTable } from "./city-neighborhoods";
 import { usersTable } from "./users";
@@ -81,12 +81,16 @@ export const audioCircleSessionsTable = pgTable("audio_circle_sessions", {
  * row — see routes/audio-circles.ts. "Currently in the room" is computed as
  * "most recent row for this (session_id, user_id) has left_at IS NULL" —
  * same left_at-based pattern the rest of this codebase uses for milestones.
+ *
+ * Roles: host | co_host | speaker | listener
+ * co_host can promote/demote/mute/kick/block but cannot end the session or
+ * control recording — see migration 0084.
  */
 export const audioCircleParticipantsTable = pgTable("audio_circle_participants", {
   id:           serial("id").primaryKey(),
   session_id:   integer("session_id").notNull().references(() => audioCircleSessionsTable.id, { onDelete: "cascade" }),
   user_id:      integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
-  role:         text("role").notNull().default("listener"), // host | speaker | listener
+  role:         text("role").notNull().default("listener"), // host | co_host | speaker | listener
   hand_raised:  boolean("hand_raised").notNull().default(false),
   muted:        boolean("muted").notNull().default(false),
   joined_at:    timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
@@ -96,9 +100,65 @@ export const audioCircleParticipantsTable = pgTable("audio_circle_participants",
   index("audio_circle_participants_user_idx").on(t.user_id),
 ]);
 
+/**
+ * A user's subscription to a circle channel. When a new session starts in a
+ * followed circle the server sends a `circle_went_live` WS event so the user
+ * can join immediately without polling. One row per (user, circle).
+ */
+export const audioCircleFollowsTable = pgTable("audio_circle_follows", {
+  id:        serial("id").primaryKey(),
+  user_id:   integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  circle_id: integer("circle_id").notNull().references(() => audioCirclesTable.id, { onDelete: "cascade" }),
+  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("audio_circle_follows_user_circle_uidx").on(t.user_id, t.circle_id),
+  index("audio_circle_follows_user_idx").on(t.user_id),
+  index("audio_circle_follows_circle_idx").on(t.circle_id),
+]);
+
+/**
+ * Persistent host-initiated blocks. A blocked user cannot rejoin any future
+ * session hosted by the same host. Survives session end.
+ */
+export const circleBlocksTable = pgTable("circle_blocks", {
+  id:              serial("id").primaryKey(),
+  host_id:         integer("host_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  blocked_user_id: integer("blocked_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  session_id:      integer("session_id").references(() => audioCircleSessionsTable.id, { onDelete: "set null" }),
+  created_at:      timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("circle_blocks_host_blocked_uidx").on(t.host_id, t.blocked_user_id),
+  index("circle_blocks_host_idx").on(t.host_id),
+  index("circle_blocks_blocked_idx").on(t.blocked_user_id),
+]);
+
+/**
+ * Incident reports from circle participants, logged for admin review.
+ * Survives session end so reports can be investigated after the session ends.
+ */
+export const circleReportsTable = pgTable("circle_reports", {
+  id:          serial("id").primaryKey(),
+  session_id:  integer("session_id").references(() => audioCircleSessionsTable.id, { onDelete: "set null" }),
+  reporter_id: integer("reporter_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  reported_id: integer("reported_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  reason:      text("reason").notNull(),
+  reviewed:    boolean("reviewed").notNull().default(false),
+  created_at:  timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("circle_reports_session_idx").on(t.session_id),
+  index("circle_reports_reported_idx").on(t.reported_id),
+  index("circle_reports_reviewed_idx").on(t.reviewed),
+]);
+
 export type AudioCircle = typeof audioCirclesTable.$inferSelect;
 export type InsertAudioCircle = typeof audioCirclesTable.$inferInsert;
 export type AudioCircleSession = typeof audioCircleSessionsTable.$inferSelect;
 export type InsertAudioCircleSession = typeof audioCircleSessionsTable.$inferInsert;
 export type AudioCircleParticipant = typeof audioCircleParticipantsTable.$inferSelect;
 export type InsertAudioCircleParticipant = typeof audioCircleParticipantsTable.$inferInsert;
+export type AudioCircleFollow = typeof audioCircleFollowsTable.$inferSelect;
+export type InsertAudioCircleFollow = typeof audioCircleFollowsTable.$inferInsert;
+export type CircleBlock = typeof circleBlocksTable.$inferSelect;
+export type InsertCircleBlock = typeof circleBlocksTable.$inferInsert;
+export type CircleReport = typeof circleReportsTable.$inferSelect;
+export type InsertCircleReport = typeof circleReportsTable.$inferInsert;
