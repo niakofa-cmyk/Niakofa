@@ -466,3 +466,193 @@ describe("Audio Circles — auth gates", () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ── Co-host role tests ────────────────────────────────────────────────────────
+//
+// PR #6 introduced the co_host role (host | co_host | speaker | listener).
+// Co-hosts can promote/demote/mute/kick/block but cannot end the session or
+// control recording. These tests verify the authorization gates and the
+// assign/remove endpoints behave correctly.
+
+describe("Audio Circles — co-host role", () => {
+  it("blocks a non-host from assigning a co-host", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "speaker" }])); // not host
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/assign-cohost")
+      .set("Authorization", bearerToken(42))
+      .send({ user_id: 7 });
+    expect(res.status).toBe(403);
+  });
+
+  it("blocks a co-host from assigning another co-host (host-only)", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "co_host" }])); // co_host, not host
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/assign-cohost")
+      .set("Authorization", bearerToken(42))
+      .send({ user_id: 7 });
+    expect(res.status).toBe(403);
+  });
+
+  it("lets the host successfully assign a co-host", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "host" }])); // host participant
+    (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
+      Promise.resolve([
+        { user_id: 42, role: "host" },
+        { user_id: 7, role: "speaker" },
+      ]).then(resolve, reject)
+    );
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/assign-cohost")
+      .set("Authorization", bearerToken(42))
+      .send({ user_id: 7 });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it("refuses to assign the host as a co-host", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "host" }])); // host participant
+    (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
+      Promise.resolve([{ user_id: 42, role: "host" }]).then(resolve, reject)
+    );
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/assign-cohost")
+      .set("Authorization", bearerToken(42))
+      .send({ user_id: 42 });
+    expect(res.status).toBe(400);
+  });
+
+  it("blocks a non-host from removing a co-host", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "co_host" }])); // co_host, not host
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/remove-cohost")
+      .set("Authorization", bearerToken(42))
+      .send({ user_id: 7 });
+    expect(res.status).toBe(403);
+  });
+
+  it("lets the host remove a co-host", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "host" }])); // host participant
+    (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
+      Promise.resolve([{ user_id: 7, role: "co_host" }]).then(resolve, reject)
+    );
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/remove-cohost")
+      .set("Authorization", bearerToken(42))
+      .send({ user_id: 7 });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it("refuses to remove co-host from a user who isn't one", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "host" }])); // host participant
+    (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
+      Promise.resolve([{ user_id: 7, role: "speaker" }]).then(resolve, reject)
+    );
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/remove-cohost")
+      .set("Authorization", bearerToken(42))
+      .send({ user_id: 7 });
+    expect(res.status).toBe(400);
+  });
+
+  it("lets a co-host mute a speaker (host_or_cohost gate)", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "co_host" }])); // co-host acting
+    (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
+      Promise.resolve([{ user_id: 7, role: "speaker" }]).then(resolve, reject)
+    );
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/mute")
+      .set("Authorization", bearerToken(42))
+      .send({ user_id: 7, muted: true });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it("lets a co-host mute-all speakers (host_or_cohost gate)", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "co_host" }])); // co-host acting
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/mute-all")
+      .set("Authorization", bearerToken(42));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it("lets a co-host kick a speaker but not the host", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "co_host" }])); // co-host acting
+    (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
+      Promise.resolve([{ user_id: 7, role: "speaker" }]).then(resolve, reject)
+    );
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/kick")
+      .set("Authorization", bearerToken(42))
+      .send({ user_id: 7 });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it("blocks a co-host from kicking the host", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "co_host" }])); // co-host acting
+    (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
+      Promise.resolve([{ user_id: 7, role: "host" }]).then(resolve, reject)
+    );
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/kick")
+      .set("Authorization", bearerToken(42))
+      .send({ user_id: 7 });
+    expect(res.status).toBe(403);
+  });
+
+  it("blocks a co-host from ending the session (host-only)", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "co_host" }])); // co-host, not host
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/end")
+      .set("Authorization", bearerToken(42));
+    expect(res.status).toBe(403);
+  });
+
+  it("blocks a co-host from toggling recording (host-only)", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "co_host" }])); // co-host, not host
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/recording")
+      .set("Authorization", bearerToken(42))
+      .send({ is_recording: true });
+    expect(res.status).toBe(403);
+  });
+
+  it("blocks a co-host from demoting themselves", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "co_host" }])); // co-host acting
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/demote")
+      .set("Authorization", bearerToken(42))
+      .send({ user_id: 42 }); // self
+    expect(res.status).toBe(400);
+  });
+});

@@ -98,6 +98,12 @@ export type WsEventType =
   | "circle_host_reconnected"
   | "circle_muted"
   | "circle_kicked"
+  // Co-host role transitions (host assigns/removes the co_host role).
+  | "circle_cohost_assigned"
+  | "circle_cohost_removed"
+  // Targeted at users who follow a circle when a new live session starts in
+  // it — sent via sendToUser, not broadcast (see routes/audio-circles.ts).
+  | "circle_went_live"
   // WebRTC mesh signaling relay (offer/answer/ICE) between two specific
   // participants in the same session — see sendCircleSignal below.
   | "circle_signal";
@@ -351,14 +357,26 @@ export interface CircleParticipantEventPayload {
   user_id: number;
   name?: string;
   avatar_url?: string | null;
-  role?: "host" | "speaker" | "listener";
+  role?: "host" | "co_host" | "speaker" | "listener";
 }
 
 export interface CircleRoleChangedPayload {
   session_id: number;
   user_id: number;
-  role: "host" | "speaker" | "listener";
+  role: "host" | "co_host" | "speaker" | "listener";
   muted?: boolean;
+}
+
+export interface CircleCohostEventPayload {
+  session_id: number;
+  user_id: number;
+}
+
+export interface CircleWentLivePayload {
+  session_id: number;
+  circle_id: number;
+  title: string;
+  host_name?: string;
 }
 
 export interface CircleReactionPayload {
