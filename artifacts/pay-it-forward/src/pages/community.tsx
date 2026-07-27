@@ -328,17 +328,15 @@ function CivicResourcesTab() {
   );
 }
 
-const FORT_WORTH_NEIGHBORHOODS = [
-  { id: "southside",       name: "Southside",         emoji: "🏘️", description: "Historic community south of downtown" },
-  { id: "near_southside",  name: "Near Southside",    emoji: "🌳", description: "Creative district near Magnolia Ave" },
-  { id: "polytechnic",     name: "Polytechnic",       emoji: "🎓", description: "Home of Texas Wesleyan University" },
-  { id: "riverside",       name: "Riverside",         emoji: "🌊", description: "Diverse neighborhood along the Trinity River" },
-  { id: "downtown",        name: "Downtown",          emoji: "🏙️", description: "Urban core of Fort Worth" },
-  { id: "east_fort_worth", name: "East Fort Worth",   emoji: "🌅", description: "Working-class roots and tight-knit community" },
-  { id: "north_fort_worth",name: "North Fort Worth",  emoji: "🤠", description: "Stockyards district and growing suburbs" },
-  { id: "stop_six",        name: "Stop Six",          emoji: "✊", description: "Resilient community with deep history" },
-  { id: "wedgwood",        name: "Wedgwood",          emoji: "🏡", description: "Family-friendly neighborhood in southwest FW" },
-];
+interface NeighborhoodInfo {
+  id: number;
+  neighborhood_id: string;
+  name: string;
+  emoji: string | null;
+  description: string | null;
+  city_key: string;
+  city_display: string;
+}
 
 interface NeighborhoodLiveStatus {
   session_id: number | null;
@@ -351,14 +349,36 @@ interface NeighborhoodLiveStatus {
 function NeighborhoodCirclesTab() {
   const [, setLocation] = useLocation();
   const { currentUser } = useAppContext();
-  const userHood = currentUser?.neighborhood?.toLowerCase().replace(/\s+/g, "_");
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
+  const city = currentUser?.city?.trim() || "Fort Worth";
+  const userHood = currentUser?.neighborhood?.toLowerCase().replace(/\s+/g, "_");
+
+  const [neighborhoods, setNeighborhoods] = useState<NeighborhoodInfo[]>([]);
+  const [hoodLoading, setHoodLoading] = useState(true);
+  const [hoodError, setHoodError] = useState(false);
+
+  // Fetch real neighborhoods for the user's city (auto-provisioned by the
+  // backend for any city — not just Fort Worth). Falls back gracefully on
+  // error so the city-wide Circle card below still works.
+  useEffect(() => {
+    let cancelled = false;
+    setHoodLoading(true);
+    setHoodError(false);
+    fetch(`${base}/api/community/neighborhoods?city=${encodeURIComponent(city)}`, { headers: authHeaders() })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((data: { neighborhoods?: NeighborhoodInfo[] }) => {
+        if (cancelled) return;
+        setNeighborhoods(Array.isArray(data.neighborhoods) ? data.neighborhoods : []);
+        setHoodLoading(false);
+      })
+      .catch(() => { if (!cancelled) { setHoodError(true); setHoodLoading(false); } });
+    return () => { cancelled = true; };
+  }, [base, city]);
 
   // Fetch live circle data so cards show real-time status
   const [liveByHood, setLiveByHood] = useState<Map<string, NeighborhoodLiveStatus>>(new Map());
   const [fetchedCity, setFetchedCity] = useState<string | null>(null);
-
-  const city = currentUser?.city?.trim() || "Fort Worth";
 
   useEffect(() => {
     if (fetchedCity === city) return;
@@ -387,9 +407,11 @@ function NeighborhoodCirclesTab() {
     return () => { cancelled = true; };
   }, [base, city, fetchedCity]);
 
-  const openCircle = (hood: typeof FORT_WORTH_NEIGHBORHOODS[0]) => {
-    // Prefer direct navigation to the live session if one is running
-    const live = liveByHood.get(hood.id);
+  const hoodKey = (n: NeighborhoodInfo) => (n.neighborhood_id || n.name).toLowerCase().replace(/\s+/g, "_");
+
+  const openCircle = (hood: NeighborhoodInfo) => {
+    const key = hoodKey(hood);
+    const live = liveByHood.get(key);
     if (live?.session_id) {
       setLocation(`/audio-circle/${live.session_id}`);
     } else {
@@ -408,9 +430,25 @@ function NeighborhoodCirclesTab() {
         </p>
       </div>
 
-      {FORT_WORTH_NEIGHBORHOODS.map((hood, i) => {
-        const isYours = userHood === hood.id || currentUser?.neighborhood?.toLowerCase() === hood.name.toLowerCase();
-        const live = liveByHood.get(hood.id);
+      {hoodLoading && (
+        <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground">
+          <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm">Loading neighborhoods…</span>
+        </div>
+      )}
+
+      {!hoodLoading && hoodError && neighborhoods.length === 0 && (
+        <div className="bg-card/50 border border-dashed border-border rounded-2xl p-6 text-center space-y-2">
+          <AlertTriangle className="w-8 h-8 text-muted-foreground/40 mx-auto" />
+          <div className="text-sm font-bold text-muted-foreground">Couldn't load neighborhoods</div>
+          <div className="text-xs text-muted-foreground/60">We had trouble reaching the server. You can still browse all circles below.</div>
+        </div>
+      )}
+
+      {neighborhoods.map((hood, i) => {
+        const key = hoodKey(hood);
+        const isYours = userHood === key || currentUser?.neighborhood?.toLowerCase() === hood.name.toLowerCase();
+        const live = liveByHood.get(key);
         const isLive = !!live?.session_id;
         return (
           <motion.div
@@ -429,7 +467,7 @@ function NeighborhoodCirclesTab() {
           >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl shrink-0">
-                {hood.emoji}
+                {hood.emoji ?? "🏘️"}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -457,7 +495,7 @@ function NeighborhoodCirclesTab() {
                     </div>
                   </div>
                 ) : (
-                  <div className="text-xs text-muted-foreground mt-0.5">{hood.description}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{hood.description ?? "Neighborhood Circle"}</div>
                 )}
               </div>
               {isLive ? (

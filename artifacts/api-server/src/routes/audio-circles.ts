@@ -260,6 +260,30 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
   return res.json({ circles: withLiveInfo, city_key: cityKey, city_display: cityRaw });
 });
 
+// GET /audio-circles/followed — list all circles the current user follows.
+// Registered BEFORE /audio-circles/:id so the literal "followed" segment
+// isn't captured by the :id param (Express matches top-down). Moving this
+// above the :id route is the fix — otherwise GET /audio-circles/followed
+// hits the :id handler, parseInt("followed") → NaN, and this never runs.
+router.get("/audio-circles/followed", requireAuth, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const followed = await db
+    .select({
+      id: audioCirclesTable.id,
+      city_key: audioCirclesTable.city_key,
+      city_display: audioCirclesTable.city_display,
+      neighborhood_id: audioCirclesTable.neighborhood_id,
+      name: audioCirclesTable.name,
+      neighborhood_name: cityNeighborhoodsTable.name,
+      neighborhood_emoji: cityNeighborhoodsTable.emoji,
+    })
+    .from(audioCircleFollowsTable)
+    .innerJoin(audioCirclesTable, eq(audioCirclesTable.id, audioCircleFollowsTable.circle_id))
+    .leftJoin(cityNeighborhoodsTable, eq(cityNeighborhoodsTable.id, audioCirclesTable.neighborhood_id))
+    .where(eq(audioCircleFollowsTable.user_id, userId));
+  return res.json({ followed });
+});
+
 // GET /audio-circles/:id — one circle + its live session + full participant list.
 router.get("/audio-circles/:id", requireAuth, generalApiLimiter, async (req, res) => {
   const circleId = parseInt(String(req.params.id ?? ""), 10);
@@ -1015,26 +1039,6 @@ router.post("/audio-circles/:id/unfollow", requireAuth, generalApiLimiter, async
     .delete(audioCircleFollowsTable)
     .where(and(eq(audioCircleFollowsTable.user_id, userId), eq(audioCircleFollowsTable.circle_id, circleId)));
   return res.json({ ok: true, following: false });
-});
-
-// GET /audio-circles/followed — list all circles the current user follows.
-router.get("/audio-circles/followed", requireAuth, generalApiLimiter, async (req, res) => {
-  const userId = req.authenticatedUserId!;
-  const followed = await db
-    .select({
-      id: audioCirclesTable.id,
-      city_key: audioCirclesTable.city_key,
-      city_display: audioCirclesTable.city_display,
-      neighborhood_id: audioCirclesTable.neighborhood_id,
-      name: audioCirclesTable.name,
-      neighborhood_name: cityNeighborhoodsTable.name,
-      neighborhood_emoji: cityNeighborhoodsTable.emoji,
-    })
-    .from(audioCircleFollowsTable)
-    .innerJoin(audioCirclesTable, eq(audioCirclesTable.id, audioCircleFollowsTable.circle_id))
-    .leftJoin(cityNeighborhoodsTable, eq(cityNeighborhoodsTable.id, audioCirclesTable.neighborhood_id))
-    .where(eq(audioCircleFollowsTable.user_id, userId));
-  return res.json({ followed });
 });
 
 // ── Block & Report ──────────────────────────────────────────────────────────

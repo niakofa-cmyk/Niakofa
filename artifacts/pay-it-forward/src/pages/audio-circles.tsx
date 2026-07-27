@@ -259,6 +259,7 @@ export default function AudioCirclesScreen() {
     data: circles,
     loading,
     stale,
+    hasFetchedOnce,
     refresh,
   } = useCachedList<CircleSummary[]>({
     cacheKey: `niakofa_circles_cache_${city.trim().toLowerCase()}`,
@@ -422,6 +423,20 @@ export default function AudioCirclesScreen() {
 
         {loading && (
           <div className="text-center text-sm text-muted-foreground py-8">Loading circles…</div>
+        )}
+
+        {!loading && !circles && hasFetchedOnce && (
+          <div className="bg-card/50 border border-dashed border-border rounded-2xl p-6 text-center space-y-3">
+            <WifiOff className="w-8 h-8 text-muted-foreground/40 mx-auto" />
+            <div className="text-sm font-bold text-muted-foreground">Couldn't load circles</div>
+            <div className="text-xs text-muted-foreground/60">We had trouble reaching the server. Check your connection and try again.</div>
+            <button
+              onClick={refresh}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-primary bg-primary/10 border border-primary/20 px-4 py-2 rounded-xl active:scale-95 transition-transform"
+            >
+              Try again
+            </button>
+          </div>
         )}
 
         {circles?.length === 0 && !loading && (

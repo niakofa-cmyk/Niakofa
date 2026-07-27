@@ -62,13 +62,18 @@ interface UseCachedListResult<T> {
    *  first network response have both had a chance to resolve. */
   data: T | null;
   /** True only while there is nothing at all to show yet (no cache, no
-   *  successful fetch). Never true again once any data has been painted —
-   *  background polls/revalidation should never re-trigger a loading state. */
+   *  successful fetch) AND a fetch has not yet completed (success or failure).
+   *  Never true again once any fetch has resolved — a failed first fetch must
+   *  surface an error/retry state, not collapse to a blank screen. */
   loading: boolean;
   /** Set when the most recent fetch failed. Data (if any) is still valid —
    *  this is purely informational so the UI can show a subtle "reconnecting"
    *  hint without ever wiping the list. */
   stale: boolean;
+  /** True once the first fetch attempt has completed (success or failure).
+   *  Lets the UI distinguish "still loading" from "first fetch failed, show
+   *  an explicit error/retry state instead of a blank void." */
+  hasFetchedOnce: boolean;
   /** Manually trigger a revalidation (e.g. pull-to-refresh, after an action). */
   refresh: () => Promise<void>;
 }
@@ -103,6 +108,11 @@ export function useCachedList<T>({
   // data (if any) is already in state.
   const [data, setData] = useState<T | null>(() => readCache<T>(cacheKey));
   const [stale, setStale] = useState(false);
+  // Tracks whether the first fetch attempt has resolved at all (success or
+  // failure). Without this, a failed first-ever fetch collapses to a blank
+  // screen: `loading` would be false (stale is true) and `data` is null, so
+  // none of the loading/empty/list branches in the render ever fire.
+  const [hasFetchedOnce, setHasFetchedOnce] = useState(false);
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
   const cacheKeyRef = useRef(cacheKey);
@@ -114,6 +124,7 @@ export function useCachedList<T>({
   useEffect(() => {
     setData(readCache<T>(cacheKey));
     setStale(false);
+    setHasFetchedOnce(false);
   }, [cacheKey]);
 
   const load = useCallback(async () => {
@@ -132,6 +143,11 @@ export function useCachedList<T>({
       // completely untouched. This is the core "never disappear" guarantee —
       // a failed request is not evidence the data is gone.
       if (cacheKeyRef.current === cacheKey) setStale(true);
+    } finally {
+      // Whether the first fetch succeeded or failed, it has now completed —
+      // the UI can stop showing "loading" and instead show an explicit
+      // error/retry state when there is no data to fall back on.
+      if (cacheKeyRef.current === cacheKey) setHasFetchedOnce(true);
     }
   }, [cacheKey, enabled]);
 
@@ -142,5 +158,15 @@ export function useCachedList<T>({
     return () => clearInterval(id);
   }, [load, pollMs]);
 
-  return { data, loading: data === null && !stale, stale, refresh: load };
+  return {
+    data,
+    // Loading only while we have no data AND the first fetch hasn't
+    // completed yet. Once a fetch has resolved (even by failing), loading
+    // is false so the caller can render an error/empty/retry state instead
+    // of a blank void.
+    loading: data === null && !hasFetchedOnce,
+    stale,
+    hasFetchedOnce,
+    refresh: load,
+  };
 }
