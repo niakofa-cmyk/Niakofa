@@ -7,7 +7,7 @@ import {
   VolumeX, UserMinus, Flag, Volume2, Ban, AlertTriangle,
   Signal, SignalHigh, SignalMedium, SignalLow, Share2,
   Shield, MoreVertical, ArrowLeft, MessageSquare, Settings,
-  UserPlus, Send, X, PlayCircle, ExternalLink,
+  UserPlus, Send, X, PlayCircle, ExternalLink, Check,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders, getToken } from "@/lib/auth";
@@ -68,6 +68,29 @@ interface ChatMessage {
   avatar_url: string | null;
   body: string;
   created_at: string;
+}
+
+// ── Audio level bar visualizer ───────────────────────────────────────────────
+// Renders 5 thin animated bars whose heights track the audio level (0–1).
+// Used inside speaker/host tiles to give a real-time speaking indicator.
+function AudioLevelBars({ level, active }: { level: number; active?: boolean }) {
+  const bars = 5;
+  const color = active ? "bg-green-400" : "bg-primary";
+  return (
+    <div className="flex items-end gap-0.5 h-4" aria-hidden="true">
+      {Array.from({ length: bars }).map((_, i) => {
+        const threshold = (i + 1) / (bars + 1); // 0.17, 0.33, 0.50, 0.67, 0.83
+        const height = level >= threshold ? Math.min(100, 20 + level * 80) : 20;
+        return (
+          <div
+            key={i}
+            className={`w-0.5 rounded-full transition-all duration-75 ${color}`}
+            style={{ height: `${height}%`, opacity: level >= threshold ? 1 : 0.25 }}
+          />
+        );
+      })}
+    </div>
+  );
 }
 
 // ── Speaking volume analyser ─────────────────────────────────────────────────
@@ -282,13 +305,18 @@ function HostHeroTile({
             : <div className="bg-black/50 rounded-full p-1"><Mic className="w-3 h-3 text-white" /></div>}
         </div>
 
-        {/* Name / mod button overlay at bottom */}
-        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 flex items-center justify-between">
-          <span className="text-white text-sm font-black truncate">{isMe ? "You" : p.name}</span>
+        {/* Name / level / mod button overlay at bottom */}
+        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 to-transparent px-3 py-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-white text-sm font-black truncate">{isMe ? "You" : p.name}</span>
+            {!p.muted && level > 0.05 && (
+              <AudioLevelBars level={level} active={isSpeaking} />
+            )}
+          </div>
           {canMod && (
             <button
               onClick={(e) => { e.stopPropagation(); onOpenMod?.(); }}
-              className="p-1 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+              className="p-1 rounded-full bg-white/10 hover:bg-white/20 transition-colors shrink-0"
             >
               <MoreVertical className="w-3.5 h-3.5 text-white" />
             </button>
@@ -497,6 +525,14 @@ export default function AudioCircleRoomScreen() {
 
   // ── Pending recording recovery (blob saved to IDB before upload) ──────────
   const [pendingRecoveryBlob, setPendingRecoveryBlob] = useState<Blob | null>(null);
+
+  // ── Device picker (mic / camera selection) ─────────────────────────────────
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedAudioDeviceId, setSelectedAudioDeviceId] = useState<string>("");
+  const [selectedVideoDeviceId, setSelectedVideoDeviceId] = useState<string>("");
+  const [showMicPicker, setShowMicPicker] = useState(false);
+  const [showCamPicker, setShowCamPicker] = useState(false);
 
   // ── Refs ───────────────────────────────────────────────────────────────────
   const meshRef = useRef<AudioCircleMesh | null>(null);
@@ -1246,6 +1282,32 @@ export default function AudioCircleRoomScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.circle_id]);
 
+  // ── Device enumeration — runs once after mic permission is granted ─────────
+  // After getUserMedia succeeds (localStream is set), enumerate devices so
+  // the labels are populated (browsers hide labels until permission is granted).
+  // Also re-enumerate when the OS reports a devicechange (plug/unplug).
+  useEffect(() => {
+    if (!canSpeak || !localStream) return;
+    const refresh = () => {
+      AudioCircleMesh.enumerateAudioDevices().then(devices => {
+        setAudioDevices(devices);
+        const currentId = localStream.getAudioTracks()[0]?.getSettings().deviceId ?? "";
+        setSelectedAudioDeviceId(id => id || currentId);
+      });
+      if (session?.video_enabled) {
+        AudioCircleMesh.enumerateVideoDevices().then(devices => {
+          setVideoDevices(devices);
+          const currentId = localStream.getVideoTracks()[0]?.getSettings().deviceId ?? "";
+          setSelectedVideoDeviceId(id => id || currentId);
+        });
+      }
+    };
+    refresh();
+    navigator.mediaDevices.addEventListener("devicechange", refresh);
+    return () => navigator.mediaDevices.removeEventListener("devicechange", refresh);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canSpeak, !!localStream, session?.video_enabled]);
+
   // ── Presence heartbeat ────────────────────────────────────────────────────
   // Pings /heartbeat every 30s with the current loudest speaker so the server
   // can (a) keep last_seen_at fresh for ghost-participant sweeps and (b) fan
@@ -1369,6 +1431,35 @@ export default function AudioCircleRoomScreen() {
 
   const loadRecordingArchive = async () => {
     setShowRecordingArchive(true);
+  };
+
+  // ── Device switching ─────────────────────────────────────────────────────────
+  const switchAudioDevice = async (deviceId: string) => {
+    if (!meshRef.current) return;
+    try {
+      const stream = await meshRef.current.switchAudioDevice(deviceId);
+      setLocalStream(stream);
+      setSelectedAudioDeviceId(deviceId);
+      setShowMicPicker(false);
+      // Re-wire volume analyser to the new track
+      const existing = analyserCleanupsRef.current.get("local");
+      if (existing) existing();
+      analyserCleanupsRef.current.set("local", startVolumeAnalyser(stream, setLocalLevel, getSharedAudioCtx()));
+    } catch (error) {
+      toast({ title: "Couldn't switch microphone", description: mediaErrorMessage(error, "microphone"), variant: "destructive" });
+    }
+  };
+
+  const switchVideoDevice = async (deviceId: string) => {
+    if (!meshRef.current) return;
+    try {
+      const stream = await meshRef.current.switchVideoDevice(deviceId);
+      setLocalStream(stream);
+      setSelectedVideoDeviceId(deviceId);
+      setShowCamPicker(false);
+    } catch (error) {
+      toast({ title: "Couldn't switch camera", description: mediaErrorMessage(error, "camera"), variant: "destructive" });
+    }
   };
 
   const shareCircle = () => {
@@ -1543,7 +1634,7 @@ export default function AudioCircleRoomScreen() {
 
 
   return (
-    <div className="min-h-screen bg-background pb-40 relative overflow-hidden" onClick={() => { setModMenuOpen(null); setShowBlockConfirm(null); }}>
+    <div className="min-h-screen bg-background pb-40 relative overflow-hidden" onClick={() => { setModMenuOpen(null); setShowBlockConfirm(null); setShowMicPicker(false); setShowCamPicker(false); }}>
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3">
         <button
@@ -2018,12 +2109,12 @@ export default function AudioCircleRoomScreen() {
                 Speakers ({speakers.length})
               </div>
               <div className="flex items-center gap-3">
-                {speakers.length > 3 && (
+                {speakers.length > 4 && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowSpeakersAll(v => !v); }}
                     className="text-[10px] font-bold text-primary hover:opacity-70"
                   >
-                    {showSpeakersAll ? "Show less" : "View All"}
+                    {showSpeakersAll ? "Show less" : `View All (${speakers.length})`}
                   </button>
                 )}
                 {canMod && speakers.length > 0 && (
@@ -2038,9 +2129,21 @@ export default function AudioCircleRoomScreen() {
             </div>
             {speakers.length === 0 ? (
               <div className="text-xs text-muted-foreground/60 italic">No speakers yet — bring up a hand-raiser above</div>
-            ) : (
+            ) : (() => {
+              // Sort: active speaker first, then by speaking level (loudest first)
+              const sortedSpeakers = [...speakers].sort((a, b) => {
+                if (a.user_id === activeSpeakerId) return -1;
+                if (b.user_id === activeSpeakerId) return 1;
+                const la = a.user_id === myUserId ? localLevel : (speakingLevels.get(a.user_id) ?? 0);
+                const lb = b.user_id === myUserId ? localLevel : (speakingLevels.get(b.user_id) ?? 0);
+                return lb - la;
+              });
+              const SPEAKER_CAP = 4;
+              const visible = showSpeakersAll ? sortedSpeakers : sortedSpeakers.slice(0, SPEAKER_CAP);
+              const overflow = sortedSpeakers.length - SPEAKER_CAP;
+              return (
               <div className="grid grid-cols-4 gap-3" onClick={e => e.stopPropagation()}>
-                {(showSpeakersAll ? speakers : speakers.slice(0, 3)).map(s => (
+                {visible.map(s => (
                   <SpeakerTile
                     key={s.user_id}
                     participant={s}
@@ -2059,19 +2162,20 @@ export default function AudioCircleRoomScreen() {
                     onAssignCohost={isHost ? () => assignCohost(s.user_id) : undefined}
                   />
                 ))}
-                {!showSpeakersAll && speakers.length > 3 && (
+                {!showSpeakersAll && overflow > 0 && (
                   <button
                     className="flex flex-col items-center gap-1"
                     onClick={(e) => { e.stopPropagation(); setShowSpeakersAll(true); }}
                   >
                     <div className="w-14 h-14 rounded-full bg-muted/80 border-2 border-dashed border-border flex items-center justify-center">
-                      <span className="text-xs font-black text-muted-foreground">+{speakers.length - 3}</span>
+                      <span className="text-xs font-black text-muted-foreground">+{overflow}</span>
                     </div>
                     <span className="text-[10px] text-muted-foreground">More</span>
                   </button>
                 )}
               </div>
-            )}
+              );
+            })()}
           </div>
         )}
 
@@ -2120,7 +2224,54 @@ export default function AudioCircleRoomScreen() {
         )}
         </div>
 
-        {/* ── Desktop-only right sidebar: Raised Hands / Room Controls / Host Controls ── */}
+        {/* ── Desktop-only right sidebar: Chat (all users) + Management (mods) ─── */}
+        {!canMod && (
+          <div className="hidden lg:flex lg:flex-col lg:w-72 shrink-0 sticky top-24 gap-2 max-h-[calc(100vh-7rem)]">
+            {/* Chat panel for non-mods */}
+            <div className="bg-card border border-border rounded-2xl flex flex-col flex-1 overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
+                <MessageSquare className="w-3.5 h-3.5 text-primary" />
+                <span className="text-xs font-black">Chat</span>
+                {unreadChatCount > 0 && activeTab !== "chat" && (
+                  <span className="ml-auto inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary text-[9px] font-black text-primary-foreground">
+                    {unreadChatCount > 9 ? "9+" : unreadChatCount}
+                  </span>
+                )}
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {chatMessages.length === 0 ? (
+                  <div className="text-center text-xs text-muted-foreground py-6">No messages yet</div>
+                ) : (
+                  chatMessages.map(m => (
+                    <div key={m.id} className={`flex items-start gap-1.5 ${m.user_id === myUserId ? "flex-row-reverse" : ""}`}>
+                      <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[9px] font-black">
+                        {m.avatar_url ? <img src={m.avatar_url} className="w-full h-full object-cover" alt="" /> : (m.name?.[0] ?? "?")}
+                      </div>
+                      <div className={`max-w-[80%] rounded-xl px-2.5 py-1.5 text-xs ${m.user_id === myUserId ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                        {m.user_id !== myUserId && <div className="text-[9px] font-black mb-0.5 opacity-70">{m.name}</div>}
+                        {m.body}
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div ref={chatEndRef} />
+              </div>
+              <div className="flex items-center gap-1.5 px-2 py-2 border-t border-border shrink-0">
+                <input
+                  value={chatInput}
+                  onChange={(e) => { setChatInput(e.target.value); setUnreadChatCount(0); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { sendChat(); setUnreadChatCount(0); } }}
+                  placeholder="Message…"
+                  className="flex-1 px-2.5 py-1.5 bg-background border border-border rounded-full text-xs focus:outline-none focus:border-primary"
+                  style={{ fontSize: "16px" }}
+                />
+                <Button size="icon" className="h-7 w-7 shrink-0" onClick={() => { sendChat(); setUnreadChatCount(0); }} disabled={!chatInput.trim()}>
+                  <Send className="w-3 h-3" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
         {canMod && (
           <div className="hidden lg:block lg:w-72 shrink-0 sticky top-24">
             <ManagementPanelBody
@@ -2490,36 +2641,80 @@ export default function AudioCircleRoomScreen() {
             </button>
           )}
           {canSpeak && (
-            <button
-              onClick={toggleMic}
-              disabled={mediaCapabilities?.microphone === false}
-              className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl border transition-all min-w-[56px] disabled:opacity-40 ${
-                micOn
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border text-muted-foreground hover:border-primary/40"
-              }`}
-            >
-              {micOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
-              <span className="text-[9px] font-bold uppercase tracking-wide leading-none mt-0.5">
-                {micOn ? "Mute" : "Unmute"}
-              </span>
-            </button>
+            <div className="relative">
+              {/* Mic toggle + device-picker chevron */}
+              <div className={`flex items-stretch rounded-xl border transition-all ${
+                micOn ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
+              } ${mediaCapabilities?.microphone === false ? "opacity-40" : ""}`}>
+                <button
+                  onClick={toggleMic}
+                  disabled={mediaCapabilities?.microphone === false}
+                  className="flex flex-col items-center gap-0.5 px-3 py-2 min-w-[48px] disabled:cursor-not-allowed"
+                >
+                  {micOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+                  <span className="text-[9px] font-bold uppercase tracking-wide leading-none mt-0.5">
+                    {micOn ? "Mute" : "Unmute"}
+                  </span>
+                </button>
+                {/* Chevron — only shown when multiple mics are available */}
+                {audioDevices.length > 1 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowMicPicker(v => !v); setShowCamPicker(false); }}
+                    className="flex items-center px-1 border-l border-current/20 hover:bg-primary/5 rounded-r-xl"
+                    title="Choose microphone"
+                  >
+                    <ChevronDown className={`w-3 h-3 transition-transform ${showMicPicker ? "rotate-180" : ""}`} />
+                  </button>
+                )}
+              </div>
+              {/* Mic device picker dropdown */}
+              {showMicPicker && audioDevices.length > 0 && (
+                <DevicePickerDropdown
+                  devices={audioDevices}
+                  selectedId={selectedAudioDeviceId}
+                  onSelect={switchAudioDevice}
+                  onClose={() => setShowMicPicker(false)}
+                />
+              )}
+            </div>
           )}
           {canSpeak && session.video_enabled && (
-            <button
-              onClick={toggleVideo}
-              disabled={mediaCapabilities?.camera === false}
-              className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl border transition-all min-w-[56px] disabled:opacity-40 ${
-                videoOn
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border text-muted-foreground hover:border-primary/40"
-              }`}
-            >
-              {videoOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-              <span className="text-[9px] font-bold uppercase tracking-wide leading-none mt-0.5">
-                {videoOn ? "Cam Off" : "Camera"}
-              </span>
-            </button>
+            <div className="relative">
+              {/* Camera toggle + device-picker chevron */}
+              <div className={`flex items-stretch rounded-xl border transition-all ${
+                videoOn ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
+              } ${mediaCapabilities?.camera === false ? "opacity-40" : ""}`}>
+                <button
+                  onClick={toggleVideo}
+                  disabled={mediaCapabilities?.camera === false}
+                  className="flex flex-col items-center gap-0.5 px-3 py-2 min-w-[48px] disabled:cursor-not-allowed"
+                >
+                  {videoOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                  <span className="text-[9px] font-bold uppercase tracking-wide leading-none mt-0.5">
+                    {videoOn ? "Cam Off" : "Camera"}
+                  </span>
+                </button>
+                {/* Chevron — only shown when multiple cameras are available */}
+                {videoDevices.length > 1 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowCamPicker(v => !v); setShowMicPicker(false); }}
+                    className="flex items-center px-1 border-l border-current/20 hover:bg-primary/5 rounded-r-xl"
+                    title="Choose camera"
+                  >
+                    <ChevronDown className={`w-3 h-3 transition-transform ${showCamPicker ? "rotate-180" : ""}`} />
+                  </button>
+                )}
+              </div>
+              {/* Camera device picker dropdown */}
+              {showCamPicker && videoDevices.length > 0 && (
+                <DevicePickerDropdown
+                  devices={videoDevices}
+                  selectedId={selectedVideoDeviceId}
+                  onSelect={switchVideoDevice}
+                  onClose={() => setShowCamPicker(false)}
+                />
+              )}
+            </div>
           )}
           {(me?.role === "speaker" || me?.role === "co_host") && (
             <button
@@ -2558,6 +2753,61 @@ export default function AudioCircleRoomScreen() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Device picker dropdown ───────────────────────────────────────────────────
+// Floats above the control bar; renders a list of MediaDeviceInfo choices and
+// calls onSelect with the chosen deviceId.  Closes on outside click via the
+// main screen's onClick handler (which calls setModMenuOpen(null) etc.).
+function DevicePickerDropdown({
+  devices,
+  selectedId,
+  onSelect,
+  onClose,
+}: {
+  devices: MediaDeviceInfo[];
+  selectedId: string;
+  onSelect: (deviceId: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95, y: 8 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95, y: 8 }}
+      transition={{ duration: 0.12 }}
+      className="absolute bottom-full mb-2 left-0 z-50 bg-card border border-border rounded-xl shadow-xl py-1 min-w-[200px] max-w-[280px]"
+      onClick={e => e.stopPropagation()}
+    >
+      {devices.map((d, i) => {
+        const isSelected = d.deviceId === selectedId;
+        // Browsers set label to "" when permission hasn't been granted yet
+        const label = d.label || `Device ${i + 1}`;
+        return (
+          <button
+            key={d.deviceId}
+            onClick={() => onSelect(d.deviceId)}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-colors hover:bg-muted ${
+              isSelected ? "text-primary" : "text-foreground"
+            }`}
+          >
+            {isSelected
+              ? <Check className="w-3 h-3 shrink-0 text-primary" />
+              : <span className="w-3 h-3 shrink-0" />}
+            <span className="truncate">{label}</span>
+          </button>
+        );
+      })}
+      <div className="border-t border-border mt-1 pt-1">
+        <button
+          onClick={onClose}
+          className="w-full text-center text-[10px] text-muted-foreground py-1.5 hover:bg-muted rounded-b-xl"
+        >
+          Close
+        </button>
+      </div>
+    </motion.div>
   );
 }
 
@@ -2706,7 +2956,13 @@ function SpeakerTile({ participant: s, isMe, level, isActiveSpeaker, canMod, mod
         <span className="text-[8px] font-bold text-blue-400/80 uppercase tracking-wide">Co-host</span>
       )}
       {isActiveSpeaker && (
-        <span className="text-[8px] font-bold text-green-400/80 uppercase tracking-wide">Speaking</span>
+        <div className="flex items-center gap-1">
+          <AudioLevelBars level={level} active />
+          <span className="text-[8px] font-bold text-green-400/80 uppercase tracking-wide">Speaking</span>
+        </div>
+      )}
+      {!isActiveSpeaker && !s.muted && level > 0.08 && (
+        <AudioLevelBars level={level} />
       )}
 
       {/* Host moderation dropdown */}

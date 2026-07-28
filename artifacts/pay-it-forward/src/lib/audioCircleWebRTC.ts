@@ -334,6 +334,116 @@ export class AudioCircleMesh {
     });
   }
 
+  // ── Device enumeration & hot-swap ─────────────────────────────────────────
+
+  /**
+   * Returns all available audio-input devices.
+   * Requires getUserMedia permission to have been granted at least once;
+   * before that, enumerateDevices returns blank labels.
+   */
+  static async enumerateAudioDevices(): Promise<MediaDeviceInfo[]> {
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices();
+      return all.filter(d => d.kind === "audioinput");
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Returns all available video-input (camera) devices.
+   * Same permission requirement as enumerateAudioDevices.
+   */
+  static async enumerateVideoDevices(): Promise<MediaDeviceInfo[]> {
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices();
+      return all.filter(d => d.kind === "videoinput");
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Hot-swaps the outgoing audio track to a different microphone device
+   * without re-acquiring video or dropping existing peer connections.
+   * Replaces the track in-place on each sender so no renegotiation is
+   * needed. Returns the updated localStream.
+   */
+  async switchAudioDevice(deviceId: string): Promise<MediaStream> {
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: { exact: deviceId },
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: false,
+    });
+    const newAudio = newStream.getAudioTracks()[0];
+    if (!newAudio) {
+      newStream.getTracks().forEach(t => t.stop());
+      return this.localStream ?? new MediaStream();
+    }
+
+    // Replace on every sender so remote peers switch transparently
+    for (const pc of this.peers.values()) {
+      const sender = pc.getSenders().find(s => s.track?.kind === "audio");
+      if (sender) await sender.replaceTrack(newAudio);
+    }
+
+    // Swap track in the local stream
+    if (this.localStream) {
+      this.localStream.getAudioTracks().forEach(t => {
+        this.localStream!.removeTrack(t);
+        t.stop();
+      });
+      this.localStream.addTrack(newAudio);
+    } else {
+      this.localStream = newStream;
+    }
+
+    // Re-wire recording mix if active
+    if (this.mediaRecorder && this.audioContext && this.mixDestination) {
+      const stream = new MediaStream([newAudio]);
+      this.addStreamToMix(stream, "local");
+    }
+
+    return this.localStream!;
+  }
+
+  /**
+   * Hot-swaps the outgoing video track to a different camera device.
+   * Only works when video is already active; if not, use addVideoTrack.
+   */
+  async switchVideoDevice(deviceId: string): Promise<MediaStream> {
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { deviceId: { exact: deviceId }, width: 320, height: 240 },
+    });
+    const newVideo = newStream.getVideoTracks()[0];
+    if (!newVideo) {
+      newStream.getTracks().forEach(t => t.stop());
+      return this.localStream ?? new MediaStream();
+    }
+
+    for (const pc of this.peers.values()) {
+      const sender = pc.getSenders().find(s => s.track?.kind === "video");
+      if (sender) await sender.replaceTrack(newVideo);
+    }
+
+    if (this.localStream) {
+      this.localStream.getVideoTracks().forEach(t => {
+        this.localStream!.removeTrack(t);
+        t.stop();
+      });
+      this.localStream.addTrack(newVideo);
+    } else {
+      this.localStream = newStream;
+    }
+
+    return this.localStream!;
+  }
+
   /** Stops outgoing video tracks so the camera indicator light turns off.
    * Replaces the sender track with null on each peer connection so remote
    * participants stop receiving video without a full renegotiation. */
