@@ -86,6 +86,8 @@ export type WsEventType =
   | "circle_chat_message"
   | "circle_hands_lowered"
   | "circle_went_live"
+  | "circle_invite"
+  | "circle_host_transfer"
   | "circle_signal"
   | "circle_settings_updated"
   | "connected"

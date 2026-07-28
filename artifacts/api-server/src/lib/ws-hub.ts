@@ -107,6 +107,10 @@ export type WsEventType =
   // Targeted at users who follow a circle when a new live session starts in
   // it — sent via sendToUser, not broadcast (see routes/audio-circles.ts).
   | "circle_went_live"
+  // Sent to a specific user to invite them into a live circle session.
+  | "circle_invite"
+  // Sent to all participants when the host transfers ownership to a co-host.
+  | "circle_host_transfer"
   // WebRTC mesh signaling relay (offer/answer/ICE) between two specific
   // participants in the same session — see sendCircleSignal below.
   | "circle_signal";

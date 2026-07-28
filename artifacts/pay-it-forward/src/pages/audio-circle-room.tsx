@@ -105,6 +105,58 @@ function startVolumeAnalyser(
   };
 }
 
+// ── IndexedDB recording recovery ─────────────────────────────────────────────
+// Stores the recording blob before upload so a page refresh doesn't lose it.
+// Key: `circle-rec-${sessionId}`, DB: "niakofa-circles", store: "recordings"
+const IDB_NAME = "niakofa-circles";
+const IDB_STORE = "recordings";
+
+function openRecordingIdb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveRecordingToIdb(sessionId: number, blob: Blob): Promise<void> {
+  try {
+    const db = await openRecordingIdb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      const req = tx.objectStore(IDB_STORE).put(blob, `circle-rec-${sessionId}`);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+  } catch { /* IDB unavailable — best effort */ }
+}
+
+async function loadRecordingFromIdb(sessionId: number): Promise<Blob | null> {
+  try {
+    const db = await openRecordingIdb();
+    return await new Promise<Blob | null>((resolve) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const req = tx.objectStore(IDB_STORE).get(`circle-rec-${sessionId}`);
+      req.onsuccess = () => resolve((req.result as Blob | undefined) ?? null);
+      req.onerror = () => resolve(null);
+      tx.oncomplete = () => db.close();
+    });
+  } catch { return null; }
+}
+
+async function clearRecordingFromIdb(sessionId: number): Promise<void> {
+  try {
+    const db = await openRecordingIdb();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      tx.objectStore(IDB_STORE).delete(`circle-rec-${sessionId}`);
+      tx.oncomplete = () => { db.close(); resolve(); };
+    });
+  } catch { /* ignore */ }
+}
+
 function mediaErrorMessage(error: unknown, device: "microphone" | "camera"): string {
   const name = error instanceof DOMException ? error.name : "";
   if (name === "NotAllowedError" || name === "SecurityError") {
@@ -393,6 +445,25 @@ export default function AudioCircleRoomScreen() {
   const [reactionLog, setReactionLog] = useState<{ id: string; emoji: string; name: string }[]>([]);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
+  // ── Chat unread count ──────────────────────────────────────────────────────
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+
+  // ── Raised hand timestamps (userId → epoch ms when raised) ────────────────
+  const handRaisedAtRef = useRef<Map<number, number>>(new Map());
+
+  // ── Host transfer modal ────────────────────────────────────────────────────
+  const [showTransferModal, setShowTransferModal] = useState(false);
+
+  // ── In-app invite user search ──────────────────────────────────────────────
+  const [inviteSearch, setInviteSearch] = useState("");
+  const [inviteResults, setInviteResults] = useState<{ id: number; name: string; avatar_url: string | null }[]>([]);
+  const [invitingSending, setInvitingSending] = useState<number | null>(null);
+
+  // ── Pending recording recovery (blob saved to IDB before upload) ──────────
+  const [pendingRecoveryBlob, setPendingRecoveryBlob] = useState<Blob | null>(null);
+
   // ── Refs ───────────────────────────────────────────────────────────────────
   const meshRef = useRef<AudioCircleMesh | null>(null);
   const audioElsRef = useRef<Map<number, HTMLAudioElement>>(new Map());
@@ -414,6 +485,12 @@ export default function AudioCircleRoomScreen() {
   const cohosts = participants.filter(p => p.role === "co_host");
   const speakers = participants.filter(p => p.role === "speaker");
   const audience = participants.filter(p => p.role === "listener");
+
+  // Guard: speaker slots currently filled vs limit. Backend also enforces this;
+  // the frontend check gives instant UX feedback before the round-trip.
+  const onStageCurrent = (host ? 1 : 0) + cohosts.length + speakers.length;
+  const atSpeakerLimit = session ? onStageCurrent >= session.max_speakers : false;
+  const nearSpeakerLimit = session ? onStageCurrent >= session.max_speakers - 1 : false;
 
   useEffect(() => { setMediaCapabilities(getAudioCircleMediaCapabilities()); }, []);
 
@@ -668,31 +745,52 @@ export default function AudioCircleRoomScreen() {
     }
   }, [remoteStreams]);
 
-  // ── Upload recording blob ────────────────────────────────────────────────
+  // ── Upload recording blob (with retry + IndexedDB recovery) ─────────────
   const uploadRecording = useCallback(async (blob: Blob) => {
     if (!isHost) return;
+    // Persist to IDB first — if the upload fails, the blob is recoverable
+    // after a page reload (see the on-mount recovery check below).
+    await saveRecordingToIdb(sessionId, blob);
     setUploading(true);
-    try {
-      const token = getToken();
-      const res = await fetch(`${base}/api/audio-circle-sessions/${sessionId}/recording-upload`, {
-        method: "POST",
-        headers: {
-          "Content-Type": blob.type || "audio/webm",
-          Authorization: token ? `Bearer ${token}` : "",
-        },
-        body: blob,
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        toast({ title: "Recording upload failed", description: err.error ?? "Check your connection.", variant: "destructive" });
-      } else {
-        toast({ title: "Recording saved", description: "The circle recording is now available in past recordings." });
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const token = getToken();
+        const res = await fetch(`${base}/api/audio-circle-sessions/${sessionId}/recording-upload`, {
+          method: "POST",
+          headers: {
+            "Content-Type": blob.type || "audio/webm",
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+          body: blob,
+        });
+        if (res.ok) {
+          await clearRecordingFromIdb(sessionId);
+          toast({ title: "Recording saved", description: "The circle recording is now available in past recordings." });
+          setUploading(false);
+          return;
+        }
+        const errData = await res.json().catch(() => ({}));
+        if (attempt === MAX_ATTEMPTS) {
+          toast({
+            title: "Recording upload failed",
+            description: (errData.error ?? "Check your connection.") + " Recording saved locally — reload to retry.",
+            variant: "destructive",
+          });
+        }
+      } catch {
+        if (attempt === MAX_ATTEMPTS) {
+          toast({
+            title: "Recording upload failed",
+            description: "Recording saved locally — reload the page to retry uploading.",
+            variant: "destructive",
+          });
+        }
       }
-    } catch {
-      toast({ title: "Recording upload failed", description: "Check your connection.", variant: "destructive" });
-    } finally {
-      setUploading(false);
+      // Exponential backoff: 2 s, 4 s
+      if (attempt < MAX_ATTEMPTS) await new Promise(r => setTimeout(r, 2000 * attempt));
     }
+    setUploading(false);
   }, [base, sessionId, isHost]);
 
   // ── Leave / cleanup ────────────────────────────────────────────────────────
@@ -731,6 +829,7 @@ export default function AudioCircleRoomScreen() {
     const p = e.payload as { session_id: number; user_id: number };
     if (p.session_id !== sessionId) return;
     setParticipants(prev => prev.filter(x => x.user_id !== p.user_id));
+    handRaisedAtRef.current.delete(p.user_id);
     meshRef.current?.disconnectFromPeer(p.user_id);
   });
 
@@ -738,6 +837,11 @@ export default function AudioCircleRoomScreen() {
     const p = e.payload as { session_id: number; user_id: number; raised: boolean };
     if (p.session_id !== sessionId) return;
     setParticipants(prev => prev.map(x => x.user_id === p.user_id ? { ...x, hand_raised: p.raised } : x));
+    if (p.raised) {
+      handRaisedAtRef.current.set(p.user_id, Date.now());
+    } else {
+      handRaisedAtRef.current.delete(p.user_id);
+    }
   });
 
   useWebSocket("circle_role_changed", (e) => {
@@ -813,6 +917,10 @@ export default function AudioCircleRoomScreen() {
       if (prev.some(m => m.id === p.id)) return prev;
       return [...prev, { id: p.id, user_id: p.user_id, name: p.name, avatar_url: p.avatar_url, body: p.body, created_at: p.created_at }];
     });
+    // Increment unread badge when the user is on the Room tab
+    if (activeTabRef.current !== "chat") {
+      setUnreadChatCount(c => c + 1);
+    }
   });
 
   useWebSocket("circle_hands_lowered", (e) => {
@@ -884,6 +992,32 @@ export default function AudioCircleRoomScreen() {
     if (p.session_id !== sessionId) return;
     setConnectionStatus("connected");
     toast({ title: "Host is back" });
+  });
+
+  useWebSocket("circle_invite", (e) => {
+    const p = e.payload as { session_id: number; circle_title: string; topic?: string | null; invited_by: string };
+    // This event is sent directly to the invited user; show a toast with a
+    // link so they can join with one tap.
+    toast({
+      title: `You've been invited to "${p.circle_title}"`,
+      description: `${p.invited_by} invited you${p.topic ? ` · ${p.topic}` : ""}. Tap to join.`,
+    });
+  });
+
+  useWebSocket("circle_host_transfer", (e) => {
+    const p = e.payload as { session_id: number; new_host_id: number; former_host_id: number };
+    if (p.session_id !== sessionId) return;
+    // Swap roles in local state
+    setParticipants(prev => prev.map(x => {
+      if (x.user_id === p.new_host_id) return { ...x, role: "host" as const };
+      if (x.user_id === p.former_host_id) return { ...x, role: "co_host" as const };
+      return x;
+    }));
+    if (p.new_host_id === myUserId) {
+      toast({ title: "You are now the host of this circle!" });
+    } else if (p.former_host_id === myUserId) {
+      toast({ title: "Host role transferred", description: "You are now a co-host." });
+    }
   });
 
   // ── Actions ──────────────────────────────────────────────────────────────────
@@ -1038,6 +1172,83 @@ export default function AudioCircleRoomScreen() {
       setShowSettingsModal(false);
       toast({ title: "Settings updated" });
     }
+  };
+
+  // ── Pending recording recovery (on-mount IDB check) ──────────────────────
+  useEffect(() => {
+    if (!isHost || !session) return;
+    loadRecordingFromIdb(sessionId).then(blob => {
+      if (blob && blob.size > 0) setPendingRecoveryBlob(blob);
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHost, session?.id]);
+
+  // ── Invite user search ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!showInviteModal) { setInviteResults([]); setInviteSearch(""); return; }
+    const q = inviteSearch.trim();
+    if (q.length < 2) { setInviteResults([]); return; }
+    const controller = new AbortController();
+    fetch(`${base}/api/users?q=${encodeURIComponent(q)}&limit=8`, {
+      headers: authHeaders(), signal: controller.signal,
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        const results = (data.users ?? []) as { id: number; name: string; avatar_url: string | null }[];
+        // Filter out users already in the room
+        const inRoom = new Set(participants.map(p => p.user_id));
+        setInviteResults(results.filter(u => !inRoom.has(u.id)));
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inviteSearch, showInviteModal]);
+
+  const sendInvite = async (userId: number) => {
+    setInvitingSending(userId);
+    try {
+      const res = await fetch(`${base}/api/audio-circle-sessions/${sessionId}/invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ user_id: userId }),
+      });
+      if (res.ok) {
+        const name = inviteResults.find(u => u.id === userId)?.name ?? "them";
+        toast({ title: "Invite sent!", description: `Sent a notification to ${name}.` });
+        setInviteResults(prev => prev.filter(u => u.id !== userId));
+      } else {
+        const d = await res.json().catch(() => ({}));
+        toast({ title: "Couldn't send invite", description: d.error ?? "Try again.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Connection issue", description: "Couldn't send invite.", variant: "destructive" });
+    } finally {
+      setInvitingSending(null);
+    }
+  };
+
+  const transferHost = async (userId: number) => {
+    setShowTransferModal(false);
+    const ok = await (async () => {
+      try {
+        const res = await fetch(`${base}/api/audio-circle-sessions/${sessionId}/transfer-host`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ user_id: userId }),
+        });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          toast({ title: "Transfer failed", description: d.error ?? "Try again.", variant: "destructive" });
+          return false;
+        }
+        return true;
+      } catch {
+        toast({ title: "Connection issue", variant: "destructive" });
+        return false;
+      }
+    })();
+    if (ok) toast({ title: "Host role transferred" });
   };
 
   const shareCircle = () => {
@@ -1265,12 +1476,39 @@ export default function AudioCircleRoomScreen() {
             Room
           </button>
           <button
-            onClick={() => setActiveTab("chat")}
+            onClick={() => { setActiveTab("chat"); setUnreadChatCount(0); }}
             className={`pb-2 text-sm font-bold border-b-2 transition-colors flex items-center gap-1.5 ${activeTab === "chat" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
           >
             <MessageSquare className="w-3.5 h-3.5" /> Chat
+            {unreadChatCount > 0 && activeTab !== "chat" && (
+              <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary text-[9px] font-black text-primary-foreground leading-none">
+                {unreadChatCount > 9 ? "9+" : unreadChatCount}
+              </span>
+            )}
           </button>
         </div>
+
+        {/* Pending recording recovery banner */}
+        {pendingRecoveryBlob && isHost && (
+          <div className="mt-2 flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-1.5">
+            <Upload className="w-3 h-3 text-amber-400 shrink-0" />
+            <span className="text-xs text-amber-300 flex-1">Unsent recording from last session found.</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 text-[10px] px-2 text-amber-400 border-amber-400/40"
+              onClick={() => { void uploadRecording(pendingRecoveryBlob); setPendingRecoveryBlob(null); }}
+            >
+              Upload
+            </Button>
+            <button
+              onClick={() => { void clearRecordingFromIdb(sessionId); setPendingRecoveryBlob(null); }}
+              className="p-0.5 text-amber-400/60 hover:text-amber-400"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
 
         {/* Recording bar */}
         {session.is_recording && (
@@ -1575,6 +1813,18 @@ export default function AudioCircleRoomScreen() {
           </div>
         )}
 
+        {/* ── Speaker limit warning ────────────────────────────────────────────── */}
+        {canMod && nearSpeakerLimit && audience.some(l => l.hand_raised) && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2 flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="text-xs text-amber-300">
+              {atSpeakerLimit
+                ? `Speaker limit reached (${session.max_speakers}). Lower the limit in Settings or demote a speaker to bring up more hands.`
+                : `Almost at the speaker limit (${onStageCurrent}/${session.max_speakers}).`}
+            </span>
+          </div>
+        )}
+
         {/* ── Stage: SPEAKERS ─────────────────────────────────────────────────── */}
         {(speakers.length > 0 || canMod) && (
           <div>
@@ -1642,15 +1892,26 @@ export default function AudioCircleRoomScreen() {
         {/* ── Raised hands (host-only) — ordered queue ───────────────────────── */}
         {canMod && audience.some(l => l.hand_raised) && (() => {
           const raised = audience.filter(l => l.hand_raised);
+          const now = Date.now();
           return (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 space-y-2">
             <div className="flex items-center justify-between mb-1">
               <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">
                 ✋ Raised Hands ({raised.length})
               </div>
-              <span className="text-[10px] text-amber-400/70">Tap "Bring up" in order</span>
+              {atSpeakerLimit
+                ? <span className="text-[10px] text-amber-400 bg-amber-500/20 px-2 py-0.5 rounded-full">Stage full</span>
+                : <span className="text-[10px] text-amber-400/70">Tap "Bring up" in order</span>
+              }
             </div>
-            {raised.map((l, idx) => (
+            {raised.map((l, idx) => {
+              const raisedAt = handRaisedAtRef.current.get(l.user_id);
+              const waitMin = raisedAt ? Math.floor((now - raisedAt) / 60000) : 0;
+              const waitSec = raisedAt ? Math.floor(((now - raisedAt) % 60000) / 1000) : 0;
+              const waitLabel = raisedAt
+                ? waitMin > 0 ? `${waitMin}m ${waitSec}s` : `${waitSec}s`
+                : null;
+              return (
               <div key={l.user_id} className="flex items-center gap-3">
                 <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
                   <span className="text-[10px] font-black text-amber-400">{idx + 1}</span>
@@ -1660,7 +1921,9 @@ export default function AudioCircleRoomScreen() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-bold truncate">{l.name}</div>
-                  <div className="text-[10px] text-amber-400/80">Wants to speak</div>
+                  <div className="text-[10px] text-amber-400/80">
+                    Wants to speak{waitLabel ? ` · ${waitLabel}` : ""}
+                  </div>
                 </div>
                 <div className="flex gap-1.5 shrink-0">
                   {isHost && (
@@ -1668,11 +1931,14 @@ export default function AudioCircleRoomScreen() {
                       <Shield className="w-3 h-3" /> Co-host
                     </Button>
                   )}
-                  <Button size="sm" className="h-7 text-xs px-2" onClick={() => promote(l.user_id)}>Bring up</Button>
+                  <Button size="sm" className="h-7 text-xs px-2" disabled={atSpeakerLimit} onClick={() => promote(l.user_id)}>
+                    Bring up
+                  </Button>
                   <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={() => post("/hand", { raised: false, user_id: l.user_id })}>Dismiss</Button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
           );
         })()}
@@ -1711,6 +1977,7 @@ export default function AudioCircleRoomScreen() {
               onBlockUser={(userId) => setShowBlockConfirm(userId)}
               onReportUser={(userId) => setShowReportModal(userId)}
               onAssignCohostUser={assignCohost}
+              onOpenTransfer={isHost ? () => setShowTransferModal(true) : undefined}
             />
           </div>
         )}
@@ -1766,6 +2033,7 @@ export default function AudioCircleRoomScreen() {
                 onBlockUser={(userId) => setShowBlockConfirm(userId)}
                 onReportUser={(userId) => setShowReportModal(userId)}
                 onAssignCohostUser={assignCohost}
+                onOpenTransfer={isHost ? () => { setShowManagePanel(false); setShowTransferModal(true); } : undefined}
               />
             </motion.div>
           </motion.div>
@@ -1797,24 +2065,119 @@ export default function AudioCircleRoomScreen() {
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="text-sm text-muted-foreground">
-                Share this link to invite people directly to <span className="font-bold text-foreground">{session?.title}</span>.
-              </div>
-              <div className="flex items-center gap-2 bg-muted rounded-xl px-3 py-2 border border-border">
-                <span className="flex-1 text-xs font-mono truncate text-muted-foreground select-all">
-                  {window.location.origin}/audio-circle/{sessionId}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <Button className="flex-1" onClick={copyInviteLink}>
-                  Copy Link
-                </Button>
-                {typeof navigator.share === "function" && (
-                  <Button variant="outline" className="flex-1" onClick={shareCircle}>
-                    Share
-                  </Button>
+
+              {/* In-app invite: search community members */}
+              <div>
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1.5 block">Send in-app notification</label>
+                <input
+                  value={inviteSearch}
+                  onChange={e => setInviteSearch(e.target.value)}
+                  placeholder="Search community members…"
+                  className="w-full px-3 py-2 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+                  style={{ fontSize: "16px" }}
+                />
+                {inviteResults.length > 0 && (
+                  <div className="mt-1.5 space-y-1 max-h-40 overflow-y-auto">
+                    {inviteResults.map(u => (
+                      <div key={u.id} className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-muted">
+                        <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black">
+                          {u.avatar_url ? <img src={u.avatar_url} className="w-full h-full object-cover" alt="" /> : (u.name?.[0] ?? "?")}
+                        </div>
+                        <span className="flex-1 text-sm font-bold truncate">{u.name}</span>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs px-3"
+                          disabled={invitingSending === u.id}
+                          onClick={() => sendInvite(u.id)}
+                        >
+                          {invitingSending === u.id ? "Sending…" : "Invite"}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {inviteSearch.length >= 2 && inviteResults.length === 0 && invitingSending === null && (
+                  <div className="text-xs text-muted-foreground mt-1.5">No community members found</div>
                 )}
               </div>
+
+              {/* Shareable link fallback */}
+              <div>
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1.5 block">Or share a link</label>
+                <div className="flex items-center gap-2 bg-muted rounded-xl px-3 py-2 border border-border">
+                  <span className="flex-1 text-xs font-mono truncate text-muted-foreground select-all">
+                    {window.location.origin}/audio-circle/{sessionId}
+                  </span>
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <Button className="flex-1" onClick={copyInviteLink}>
+                    Copy Link
+                  </Button>
+                  {typeof navigator.share === "function" && (
+                    <Button variant="outline" className="flex-1" onClick={shareCircle}>
+                      Share
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Host transfer modal ───────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showTransferModal && isHost && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6"
+            onClick={() => setShowTransferModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 16 }}
+              className="bg-card border border-border rounded-2xl p-6 max-w-sm w-full space-y-4"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-base font-black flex items-center gap-2">
+                  <Crown className="w-4 h-4 text-amber-400" /> Transfer Host Role
+                </div>
+                <button onClick={() => setShowTransferModal(false)} className="p-1.5 rounded-full hover:bg-muted">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                Choose a co-host to become the new host. You will become a co-host.
+              </div>
+              {cohosts.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No co-hosts yet. Assign a co-host first.</div>
+              ) : (
+                <div className="space-y-2">
+                  {cohosts.map(c => (
+                    <div key={c.user_id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-muted">
+                      <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-sm font-black">
+                        {c.avatar_url ? <img src={c.avatar_url} className="w-full h-full object-cover" alt="" /> : (c.name?.[0] ?? "?")}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-bold truncate">{c.name}</div>
+                        <div className="text-[10px] text-blue-400">Co-Host</div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs px-3 text-amber-400 border-amber-400/40"
+                        onClick={() => transferHost(c.user_id)}
+                      >
+                        Make Host
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
@@ -2161,6 +2524,7 @@ interface ManagementPanelBodyProps {
   onBlockUser: (userId: number) => void;
   onReportUser: (userId: number) => void;
   onAssignCohostUser: (userId: number) => void;
+  onOpenTransfer?: () => void;
 }
 
 function RoomControlButton({ icon: Icon, label, onClick, disabled, tone }: {
@@ -2190,6 +2554,7 @@ function ManagementPanelBody({
   recordingOn, recordingDisabled,
   onEndCircle, speakerCount, onlineParticipants, myUserId,
   onMuteUser, onDemoteUser, onKickUser, onBlockUser, onReportUser, onAssignCohostUser,
+  onOpenTransfer,
 }: ManagementPanelBodyProps) {
   const raisedHands = audience.filter(l => l.hand_raised);
   const [showAllHands, setShowAllHands] = useState(false);
@@ -2264,6 +2629,9 @@ function ManagementPanelBody({
             disabled={recordingDisabled || !isHost}
             tone="record"
           />
+          {isHost && onOpenTransfer && (
+            <RoomControlButton icon={Crown} label="Transfer Host" onClick={onOpenTransfer} />
+          )}
           <RoomControlButton icon={PhoneOff} label="End Circle" onClick={onEndCircle} tone="danger" />
         </div>
       </div>

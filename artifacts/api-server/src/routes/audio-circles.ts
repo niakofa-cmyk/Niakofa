@@ -1206,6 +1206,111 @@ router.patch("/audio-circle-sessions/:id/settings", requireAuth, generalApiLimit
   return res.json({ ok: true, ...updates });
 });
 
+// ── In-app invite ────────────────────────────────────────────────────────────
+
+const InviteBody = z.object({
+  user_id: z.number().int().positive(),
+});
+
+// POST /audio-circle-sessions/:id/invite — host or co-host sends a targeted
+// in-app invite to a community member. Sends a circle_invite WS event to
+// that user so they see a notification wherever they are in the app.
+router.post("/audio-circle-sessions/:id/invite", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const sessionId = parseInt(String(req.params.id ?? ""), 10);
+  if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
+  const parsed = InviteBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "user_id is required" });
+
+  const actingUserId = req.authenticatedUserId!;
+  const { session, participant: modParticipant } = await requireActiveParticipant(sessionId, actingUserId, "host_or_cohost");
+  if (!session) return res.status(404).json({ error: "Session not live" });
+  if (!modParticipant) return res.status(403).json({ error: "Only the host or co-host can send invites" });
+
+  if (parsed.data.user_id === actingUserId) {
+    return res.status(400).json({ error: "You can't invite yourself" });
+  }
+
+  // Look up the inviter's name for the notification
+  const [inviter] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, actingUserId)).limit(1);
+
+  sendToUser(parsed.data.user_id, {
+    type: "circle_invite",
+    payload: {
+      session_id: sessionId,
+      circle_title: session.title,
+      topic: session.topic ?? null,
+      invited_by: inviter?.name ?? "Someone",
+      invited_by_id: actingUserId,
+    },
+  });
+
+  return res.json({ ok: true });
+});
+
+// ── Host transfer ─────────────────────────────────────────────────────────────
+
+const TransferHostBody = z.object({
+  user_id: z.number().int().positive(),
+});
+
+// POST /audio-circle-sessions/:id/transfer-host — current host transfers
+// ownership to a co-host. The caller becomes a co-host; the target becomes
+// the new host. Broadcasts circle_host_transfer to all participants.
+router.post("/audio-circle-sessions/:id/transfer-host", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
+  const sessionId = parseInt(String(req.params.id ?? ""), 10);
+  if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
+  const parsed = TransferHostBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "user_id is required" });
+
+  const actingUserId = req.authenticatedUserId!;
+  const { session, participant: hostParticipant } = await requireActiveParticipant(sessionId, actingUserId, "host");
+  if (!session) return res.status(404).json({ error: "Session not live" });
+  if (!hostParticipant) return res.status(403).json({ error: "Only the host can transfer ownership" });
+
+  if (parsed.data.user_id === actingUserId) {
+    return res.status(400).json({ error: "You are already the host" });
+  }
+
+  const activeParticipants = await getActiveParticipants(sessionId);
+  const target = activeParticipants.find(p => p.user_id === parsed.data.user_id);
+  if (!target) return res.status(404).json({ error: "That user isn't in this session" });
+  if (target.role !== "co_host") return res.status(400).json({ error: "You can only transfer host to a co-host" });
+
+  // Atomic swap: former host → co_host, new host → host
+  await db
+    .update(audioCircleParticipantsTable)
+    .set({ role: "co_host" })
+    .where(and(
+      eq(audioCircleParticipantsTable.session_id, sessionId),
+      eq(audioCircleParticipantsTable.user_id, actingUserId),
+    ));
+
+  await db
+    .update(audioCircleParticipantsTable)
+    .set({ role: "host" })
+    .where(and(
+      eq(audioCircleParticipantsTable.session_id, sessionId),
+      eq(audioCircleParticipantsTable.user_id, parsed.data.user_id),
+    ));
+
+  // Update the session's host_id
+  await db
+    .update(audioCircleSessionsTable)
+    .set({ host_id: parsed.data.user_id })
+    .where(eq(audioCircleSessionsTable.id, sessionId));
+
+  sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
+    type: "circle_host_transfer",
+    payload: {
+      session_id: sessionId,
+      new_host_id: parsed.data.user_id,
+      former_host_id: actingUserId,
+    },
+  });
+
+  return res.json({ ok: true, new_host_id: parsed.data.user_id });
+});
+
 // ── Follow / Unfollow ────────────────────────────────────────────────────────
 
 // POST /audio-circles/:id/follow — subscribe to a circle so the user receives
