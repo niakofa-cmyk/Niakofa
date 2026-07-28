@@ -238,6 +238,8 @@ interface HostHeroTileProps {
   participant: Participant;
   isMe: boolean;
   level: number;
+  isActiveSpeaker?: boolean;
+  isLoudest?: boolean;
   videoStream?: MediaStream | null;
   videoOn?: boolean;
   size?: "full" | "half";
@@ -254,23 +256,33 @@ interface HostHeroTileProps {
 }
 
 function HostHeroTile({
-  participant: p, isMe, level, videoStream, videoOn, size = "full",
+  participant: p, isMe, level, isActiveSpeaker, isLoudest, videoStream, videoOn, size = "full",
   canMod, modMenuOpen, onOpenMod, onMute, onDemote, onKick, onBlock, onReport,
   onAssignCohost, onRemoveCohost,
 }: HostHeroTileProps) {
-  const isSpeaking = level > 0.1;
+  const isSpeaking = level > 0.08 || isActiveSpeaker || isLoudest;
   const hasVideo = videoStream && videoOn && videoStream.getVideoTracks().length > 0;
   const roleLabel = p.role === "host" ? "Host" : "Co-Host";
   const roleBg = p.role === "host" ? "bg-amber-500" : "bg-blue-500";
+  // Green = server-confirmed active speaker, yellow = locally loudest, primary = generic speaking
+  const ringColor = isActiveSpeaker ? "border-green-400" : isLoudest ? "border-yellow-400" : "border-primary";
 
   return (
     <div className={`relative ${size === "full" ? "w-full" : "flex-1"} rounded-2xl overflow-hidden`}>
-      {/* Speaking ring */}
+      {/* Speaking ring — colour-coded by speaker status */}
       {isSpeaking && (
         <motion.div
-          className="absolute inset-0 rounded-2xl border-2 border-primary z-10 pointer-events-none"
-          animate={{ opacity: [0.9, 0.3, 0.9] }}
-          transition={{ duration: 0.8, repeat: Infinity }}
+          className={`absolute inset-0 rounded-2xl border-2 ${ringColor} z-10 pointer-events-none`}
+          animate={{ opacity: [0.95, 0.25, 0.95] }}
+          transition={{ duration: isActiveSpeaker ? 0.6 : 0.9, repeat: Infinity }}
+        />
+      )}
+      {/* Extra outer pulse for server-confirmed active speaker */}
+      {isActiveSpeaker && (
+        <motion.div
+          className="absolute -inset-0.5 rounded-2xl border border-green-400/40 z-10 pointer-events-none"
+          animate={{ opacity: [0.5, 0, 0.5] }}
+          transition={{ duration: 1.2, repeat: Infinity }}
         />
       )}
 
@@ -284,7 +296,7 @@ function HostHeroTile({
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <div className={`w-20 h-20 rounded-full bg-muted flex items-center justify-center overflow-hidden border-4 ${isSpeaking ? "border-primary" : p.role === "host" ? "border-amber-400/60" : "border-blue-400/60"}`}>
+            <div className={`w-20 h-20 rounded-full bg-muted flex items-center justify-center overflow-hidden border-4 ${isSpeaking ? ringColor : p.role === "host" ? "border-amber-400/60" : "border-blue-400/60"}`}>
               {p.avatar_url
                 ? <img src={p.avatar_url} className="w-full h-full object-cover" alt="" />
                 : <span className="text-3xl font-black text-foreground">{p.name?.[0] ?? "?"}</span>}
@@ -311,6 +323,16 @@ function HostHeroTile({
             <span className="text-white text-sm font-black truncate">{isMe ? "You" : p.name}</span>
             {!p.muted && level > 0.05 && (
               <AudioLevelBars level={level} active={isSpeaking} />
+            )}
+            {isActiveSpeaker && (
+              <span className="text-[9px] font-black text-green-400 bg-green-400/10 px-1.5 py-0.5 rounded-full shrink-0">
+                Speaking
+              </span>
+            )}
+            {isLoudest && !isActiveSpeaker && (
+              <span className="text-[9px] font-black text-yellow-400 bg-yellow-400/10 px-1.5 py-0.5 rounded-full shrink-0">
+                Loudest
+              </span>
             )}
           </div>
           {canMod && (
@@ -385,7 +407,9 @@ function AudienceStrip({ audience, canMod, onPromote }: {
   onPromote: (userId: number) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const visible = showAll ? audience : audience.slice(0, AUDIENCE_STRIP_MAX);
+  // Sort hand-raisers to the front of the strip so they're immediately visible
+  const sorted = [...audience].sort((a, b) => (b.hand_raised ? 1 : 0) - (a.hand_raised ? 1 : 0));
+  const visible = showAll ? sorted : sorted.slice(0, AUDIENCE_STRIP_MAX);
   const overflow = audience.length - AUDIENCE_STRIP_MAX;
 
   if (audience.length === 0) return null;
@@ -2095,6 +2119,8 @@ export default function AudioCircleRoomScreen() {
               participant={host}
               isMe={host.user_id === myUserId}
               level={host.user_id === myUserId ? localLevel : (speakingLevels.get(host.user_id) ?? 0)}
+              isActiveSpeaker={activeSpeakerId === host.user_id}
+              isLoudest={loudestSpeakerId === host.user_id && loudestSpeakerId !== activeSpeakerId}
               videoStream={host.user_id === myUserId ? localStream : (remoteStreams.get(host.user_id) ?? null)}
               videoOn={host.user_id === myUserId ? videoOn : (remoteStreams.get(host.user_id)?.getVideoTracks().length ?? 0) > 0}
               size="full"
@@ -2121,6 +2147,8 @@ export default function AudioCircleRoomScreen() {
                   participant={c}
                   isMe={c.user_id === myUserId}
                   level={c.user_id === myUserId ? localLevel : (speakingLevels.get(c.user_id) ?? 0)}
+                  isActiveSpeaker={activeSpeakerId === c.user_id}
+                  isLoudest={loudestSpeakerId === c.user_id && loudestSpeakerId !== activeSpeakerId}
                   videoStream={c.user_id === myUserId ? localStream : (remoteStreams.get(c.user_id) ?? null)}
                   videoOn={c.user_id === myUserId ? videoOn : (remoteStreams.get(c.user_id)?.getVideoTracks().length ?? 0) > 0}
                   size="half"
