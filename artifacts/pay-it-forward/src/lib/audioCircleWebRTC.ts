@@ -344,7 +344,30 @@ export class AudioCircleMesh {
   static async enumerateAudioDevices(): Promise<MediaDeviceInfo[]> {
     try {
       const all = await navigator.mediaDevices.enumerateDevices();
-      return all.filter(d => d.kind === "audioinput");
+      return all
+        .filter(d => d.kind === "audioinput")
+        // Filter out virtual audio cables, loopback devices, and OS routing
+        // artifacts that appear as real mics but produce no usable audio.
+        // Windows exposes "Default" and "Communications" aliases of every real
+        // device — deduplicate by keeping only the first occurrence of each
+        // deviceId so the user sees each physical device exactly once.
+        .filter(d => {
+          if (!d.label) return true; // no label yet — permission not granted, keep it
+          const l = d.label.toLowerCase();
+          // Virtual cable / loopback keywords (VB-Audio, Voicemeeter, BlackHole, etc.)
+          if (/virtual|cable|loopback|blackhole|voicemeeter|vb-audio|soundflower|stereomix|what u hear|wave link|obs|ndi/i.test(l)) return false;
+          return true;
+        })
+        // Deduplicate: "Default - Microphone (USB)" and "Microphone (USB)" share
+        // the same groupId so only keep the non-default/non-comms alias.
+        .filter((d, _idx, arr) => {
+          if (!d.label) return true;
+          const l = d.label.toLowerCase();
+          const isAlias = /^default\s*[-–]|^communications\s*[-–]/i.test(d.label);
+          if (!isAlias) return true;
+          // Only keep the alias when no canonical device with the same groupId exists
+          return !arr.some(other => other !== d && other.groupId === d.groupId && !/^default\s*[-–]|^communications\s*[-–]/i.test(other.label));
+        });
     } catch {
       return [];
     }
@@ -357,7 +380,14 @@ export class AudioCircleMesh {
   static async enumerateVideoDevices(): Promise<MediaDeviceInfo[]> {
     try {
       const all = await navigator.mediaDevices.enumerateDevices();
-      return all.filter(d => d.kind === "videoinput");
+      return all
+        .filter(d => d.kind === "videoinput")
+        // Filter out virtual cameras (OBS Virtual Camera, NDI HX Camera, etc.)
+        .filter(d => {
+          if (!d.label) return true;
+          if (/virtual|obs|ndi|snap camera|manycam|xsplit|mmhmm/i.test(d.label)) return false;
+          return true;
+        });
     } catch {
       return [];
     }

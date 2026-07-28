@@ -69,6 +69,7 @@ export type WsEventType =
   // Niakofa Audio Circles
   | "family_memory_created"
   | "family_interview_status_changed"
+  | "circle_session_started"
   | "circle_session_ended"
   | "circle_participant_joined"
   | "circle_participant_left"

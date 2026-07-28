@@ -463,7 +463,7 @@ export default function AudioCircleRoomScreen() {
   const [micOn, setMicOn] = useState(false);
   const [videoOn, setVideoOn] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [floatingReactions, setFloatingReactions] = useState<{ id: string; emoji: string; x: number }[]>([]);
+  const [floatingReactions, setFloatingReactions] = useState<{ id: string; emoji: string; x: number; drift: number }[]>([]);
   const [remoteStreams, setRemoteStreams] = useState<Map<number, MediaStream>>(new Map());
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [meshReady, setMeshReady] = useState(false);
@@ -1006,8 +1006,9 @@ export default function AudioCircleRoomScreen() {
     // Skip: sender already saw an optimistic reaction via react()
     if (p.user_id === myUserId) return;
     const id = `ws-${Date.now()}-${Math.random()}`;
-    const x = (Math.random() - 0.5) * 160; // spread reactions ±80px around center
-    setFloatingReactions(prev => [...prev, { id, emoji: p.emoji, x }]);
+    const x = (Math.random() - 0.5) * 160;   // horizontal spread ±80 px
+    const drift = (Math.random() - 0.5) * 40; // pre-computed lateral drift
+    setFloatingReactions(prev => [...prev, { id, emoji: p.emoji, x, drift }]);
     setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2400);
     const senderName = participants.find(x => x.user_id === p.user_id)?.name ?? "Someone";
     setReactionLog(prev => [...prev.slice(-19), { id, emoji: p.emoji, name: senderName }]);
@@ -1274,7 +1275,8 @@ export default function AudioCircleRoomScreen() {
     // Optimistic: sender sees reaction immediately without waiting for the WS round-trip.
     const id = `opt-${Date.now()}-${Math.random()}`;
     const x = (Math.random() - 0.5) * 160;
-    setFloatingReactions(prev => [...prev, { id, emoji, x }]);
+    const drift = (Math.random() - 0.5) * 40;
+    setFloatingReactions(prev => [...prev, { id, emoji, x, drift }]);
     setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2400);
     const myName = participants.find(p => p.user_id === myUserId)?.name ?? "You";
     setReactionLog(prev => [...prev.slice(-19), { id, emoji, name: myName }]);
@@ -1798,7 +1800,7 @@ export default function AudioCircleRoomScreen() {
             <motion.div
               key={r.id}
               initial={{ opacity: 1, y: 0, x: r.x, scale: 1 }}
-              animate={{ opacity: 0, y: -220, x: r.x + (Math.random() - 0.5) * 30, scale: 1.4 }}
+              animate={{ opacity: 0, y: -220, x: r.x + r.drift, scale: 1.4 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 2.2, ease: "easeOut" }}
               className="absolute text-3xl select-none"
