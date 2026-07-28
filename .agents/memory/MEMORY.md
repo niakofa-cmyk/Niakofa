@@ -124,3 +124,4 @@
 - [Niakofa SankofaBird Phase 23](niakofa-sankofa-bird-phase23.md) — structural iridescence: heading-reactive wing filter (8 quadrants), feather depth gradients (-fo/-fm/-fi/-fs), bank burst, cascade shimmer; --diagonal-pose-intensity @property added to base.ts.
 - [Niakofa SankofaBird Phase 27](niakofa-sankofa-bird-phase27.md) — verified living-feather baseline: four Safari @property registrations, wing-rig wingtips, night/aerodynamic selectors, and Phase 27 contract test.
 - [Niakofa Circles lifecycle fixes](niakofa-circles-lifecycle.md) — async stopRecording (onstop), stopVideoTracks (camera light off), stale audio-element cleanup, WsEventType both-file parity, requireApproved action-route pitfall.
+- [Niakofa Circle chat persistence](niakofa-circle-chat-persistence.md) — audioCircleMessagesTable (migration 0086); POST /chat persists before broadcast; GET /chat history returns last 200 oldest-first; WS handler deduplicates by "db-<id>" to survive reconnects.
