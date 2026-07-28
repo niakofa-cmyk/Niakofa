@@ -84,6 +84,8 @@ export type WsEventType =
   | "circle_kicked"
   | "circle_cohost_assigned"
   | "circle_cohost_removed"
+  | "circle_chat_message"
+  | "circle_hands_lowered"
   | "circle_went_live"
   | "circle_signal"
   | "connected"

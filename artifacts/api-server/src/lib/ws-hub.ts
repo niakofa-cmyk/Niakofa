@@ -97,6 +97,8 @@ export type WsEventType =
   | "circle_host_disconnected"
   | "circle_host_reconnected"
   | "circle_muted"
+  | "circle_chat_message"
+  | "circle_hands_lowered"
   | "circle_kicked"
   // Co-host role transitions (host assigns/removes the co_host role).
   | "circle_cohost_assigned"

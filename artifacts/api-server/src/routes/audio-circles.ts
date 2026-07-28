@@ -49,6 +49,7 @@ const MAX_TITLE_LEN = 140;
 const MAX_DESC_LEN = 500;
 const MAX_TOPIC_LEN = 100;
 const MAX_EMOJI_LEN = 8;
+const MAX_CHAT_LEN = 500; // characters per ephemeral chat message
 // How long a host has to reconnect (e.g. after a page refresh) before the
 // session is actually ended. See migration 0074 — this is what stops an
 // accidental refresh from instantly killing the room for every other
@@ -831,6 +832,73 @@ router.post("/audio-circle-sessions/:id/kick", requireAuth, generalApiLimiter, a
   sendToCircleParticipants(remaining.map(p => p.user_id).concat(parsed.data.user_id), {
     type: "circle_kicked",
     payload: { session_id: sessionId, user_id: parsed.data.user_id },
+  });
+  return res.json({ ok: true });
+});
+
+// ── Ephemeral chat ───────────────────────────────────────────────────────────
+// Messages are never persisted — each client holds its own in-memory list.
+// The server only validates length and broadcasts the circle_chat_message event.
+
+const ChatBody = z.object({ body: z.string().trim().min(1).max(MAX_CHAT_LEN) });
+
+// POST /audio-circle-sessions/:id/chat — any active participant sends a chat message.
+router.post("/audio-circle-sessions/:id/chat", requireAuth, generalApiLimiter, async (req, res) => {
+  const sessionId = parseInt(String(req.params.id ?? ""), 10);
+  if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
+  const parsed = ChatBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: `body is required and must be ≤ ${MAX_CHAT_LEN} characters` });
+
+  const userId = req.authenticatedUserId!;
+  const { session, participant } = await requireActiveParticipant(sessionId, userId);
+  if (!session) return res.status(404).json({ error: "Session not live" });
+  if (!participant) return res.status(403).json({ error: "You're not in this session" });
+
+  const [user] = await db
+    .select({ name: usersTable.name, avatar_url: usersTable.avatar_url })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+
+  const activeParticipants = await getActiveParticipants(sessionId);
+  const messageId = `${Date.now()}-${userId}`;
+  sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
+    type: "circle_chat_message",
+    payload: {
+      session_id: sessionId,
+      id: messageId,
+      user_id: userId,
+      name: user?.name ?? "Someone",
+      avatar_url: user?.avatar_url ?? null,
+      body: parsed.data.body,
+      created_at: new Date().toISOString(),
+    },
+  });
+  return res.json({ ok: true });
+});
+
+// POST /audio-circle-sessions/:id/lower-all-hands — host or co-host clears
+// every raised hand in one action (sets hand_raised = false for all audience).
+router.post("/audio-circle-sessions/:id/lower-all-hands", requireAuth, generalApiLimiter, async (req, res) => {
+  const sessionId = parseInt(String(req.params.id ?? ""), 10);
+  if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
+
+  const { session, participant: modParticipant } = await requireActiveParticipant(sessionId, req.authenticatedUserId!, "host_or_cohost");
+  if (!session) return res.status(404).json({ error: "Session not live" });
+  if (!modParticipant) return res.status(403).json({ error: "Only the host or co-host can lower all hands" });
+
+  await db
+    .update(audioCircleParticipantsTable)
+    .set({ hand_raised: false })
+    .where(and(
+      eq(audioCircleParticipantsTable.session_id, sessionId),
+      isNull(audioCircleParticipantsTable.left_at),
+    ));
+
+  const activeParticipants = await getActiveParticipants(sessionId);
+  sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
+    type: "circle_hands_lowered",
+    payload: { session_id: sessionId },
   });
   return res.json({ ok: true });
 });

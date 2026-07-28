@@ -6,7 +6,8 @@ import {
   Circle as CircleIcon, ChevronDown, Crown, Upload,
   VolumeX, UserMinus, Flag, Volume2, Ban, AlertTriangle,
   Signal, SignalHigh, SignalMedium, SignalLow, Share2,
-  Shield, MoreVertical,
+  Shield, MoreVertical, ArrowLeft, MessageSquare, Settings,
+  UserPlus, Send, X,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders, getToken } from "@/lib/auth";
@@ -41,11 +42,21 @@ interface SessionInfo {
   status: string;
   video_enabled: boolean;
   is_recording: boolean;
+  max_speakers: number;
 }
 
 type ConnectionStatus = "connecting" | "connected" | "reconnecting" | "lost";
 
-const REACTION_EMOJIS = ["👏", "🔥", "❤️", "😂", "🙌"];
+const REACTION_EMOJIS = ["👏", "❤️", "😂", "😮", "🤔", "🔥", "💯"];
+
+interface ChatMessage {
+  id: string;
+  user_id: number;
+  name: string;
+  avatar_url: string | null;
+  body: string;
+  created_at: string;
+}
 
 // ── Speaking volume analyser ─────────────────────────────────────────────────
 // Accepts an optional shared AudioContext so callers can avoid hitting the
@@ -169,6 +180,15 @@ export default function AudioCircleRoomScreen() {
   const [preJoinChecked, setPreJoinChecked] = useState(false);
   const [preJoinMicReady, setPreJoinMicReady] = useState(false);
   const [preJoinCameraReady, setPreJoinCameraReady] = useState(false);
+
+  // Room / Chat tabs + management panel (Raised Hands / Room Controls / Host Controls)
+  const [activeTab, setActiveTab] = useState<"room" | "chat">("room");
+  const [showManagePanel, setShowManagePanel] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<"people" | "reactions">("people");
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [reactionLog, setReactionLog] = useState<{ id: string; emoji: string; name: string }[]>([]);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   // ── Refs ───────────────────────────────────────────────────────────────────
   const meshRef = useRef<AudioCircleMesh | null>(null);
@@ -547,11 +567,25 @@ export default function AudioCircleRoomScreen() {
   });
 
   useWebSocket("circle_reaction", (e) => {
-    const p = e.payload as { session_id: number; emoji: string };
+    const p = e.payload as { session_id: number; emoji: string; user_id?: number };
     if (p.session_id !== sessionId) return;
     const id = `${Date.now()}-${Math.random()}`;
     setFloatingReactions(prev => [...prev, { id, emoji: p.emoji }]);
     setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2000);
+    const senderName = participants.find(x => x.user_id === p.user_id)?.name ?? "Someone";
+    setReactionLog(prev => [...prev.slice(-19), { id, emoji: p.emoji, name: senderName }]);
+  });
+
+  useWebSocket("circle_chat_message", (e) => {
+    const p = e.payload as ChatMessage & { session_id: number };
+    if (p.session_id !== sessionId) return;
+    setChatMessages(prev => [...prev, { id: p.id, user_id: p.user_id, name: p.name, avatar_url: p.avatar_url, body: p.body, created_at: p.created_at }]);
+  });
+
+  useWebSocket("circle_hands_lowered", (e) => {
+    const p = e.payload as { session_id: number };
+    if (p.session_id !== sessionId) return;
+    setParticipants(prev => prev.map(x => ({ ...x, hand_raised: false })));
   });
 
   useWebSocket("circle_recording_changed", (e) => {
@@ -708,6 +742,30 @@ export default function AudioCircleRoomScreen() {
   };
   const react = (emoji: string) => post("/react", { emoji });
 
+  const sendChat = async () => {
+    const body = chatInput.trim();
+    if (!body) return;
+    setChatInput("");
+    await post("/chat", { body });
+  };
+
+  const lowerAllHands = async () => {
+    if (await post("/lower-all-hands")) {
+      setParticipants(prev => prev.map(x => ({ ...x, hand_raised: false })));
+    }
+  };
+
+  const shareCircle = () => {
+    const url = `${window.location.origin}/audio-circle/${sessionId}`;
+    if (navigator.share) {
+      navigator.share({ title: session?.title, url }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(url).then(() => {
+        toast({ title: "Link copied!", description: "Share it with your neighbors." });
+      }).catch(() => {});
+    }
+  };
+
   const endSession = async () => {
     if (isRecordingRef.current) await toggleRecording();
     await post("/end");
@@ -848,6 +906,10 @@ export default function AudioCircleRoomScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, session?.id, preJoinChecked]);
 
+  useEffect(() => {
+    if (activeTab === "chat") chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages, activeTab]);
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (loading || !session) {
@@ -862,46 +924,63 @@ export default function AudioCircleRoomScreen() {
     <div className="min-h-screen bg-background pb-40 relative overflow-hidden" onClick={() => { setModMenuOpen(null); setShowBlockConfirm(null); }}>
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3">
+        <button
+          onClick={leaveAndExit}
+          className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground mb-2 lg:hidden"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to Circles
+        </button>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
             <div className="min-w-0">
               <div className="font-black text-sm truncate">{session.title}</div>
               <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
-                <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {participants.length} here</span>
+                <span className="font-bold text-green-400">LIVE</span>
+                <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {participants.length} in room</span>
+                <span className="flex items-center gap-1"><Mic className="w-3 h-3" /> {speakers.length + cohosts.length + (host ? 1 : 0)} on stage</span>
                 <ConnectionQualityIndicator status={connectionStatus} />
               </div>
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={() => {
-                const url = `${window.location.origin}/audio-circle/${sessionId}`;
-                if (navigator.share) {
-                  navigator.share({ title: session.title, url }).catch(() => {});
-                } else {
-                  navigator.clipboard.writeText(url).then(() => {
-                    // toast is imported below
-                  }).catch(() => {});
-                  import("@/hooks/use-toast").then(({ toast }) => {
-                    toast({ title: "Link copied!", description: "Share it with your neighbors." });
-                  });
-                }
-              }}
-              className="p-2 rounded-full hover:bg-muted"
-              title="Share this Circle"
-            >
+            <button onClick={shareCircle} className="p-2 rounded-full hover:bg-muted" title="Share this Circle">
               <Share2 className="w-4 h-4" />
             </button>
-            <button onClick={leaveAndExit} className="p-2 rounded-full hover:bg-muted">
+            {canMod && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowManagePanel(true); }}
+                className="p-2 rounded-full hover:bg-muted"
+                title="Manage circle"
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+            )}
+            <button onClick={leaveAndExit} className="p-2 rounded-full hover:bg-muted hidden lg:inline-flex" title="Back to Circles">
               <ChevronDown className="w-5 h-5" />
             </button>
           </div>
         </div>
 
+        {/* Room / Chat tabs */}
+        <div className="mt-3 flex items-center gap-6 border-b border-border -mb-3">
+          <button
+            onClick={() => setActiveTab("room")}
+            className={`pb-2 text-sm font-bold border-b-2 transition-colors ${activeTab === "room" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+          >
+            Room
+          </button>
+          <button
+            onClick={() => setActiveTab("chat")}
+            className={`pb-2 text-sm font-bold border-b-2 transition-colors flex items-center gap-1.5 ${activeTab === "chat" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+          >
+            <MessageSquare className="w-3.5 h-3.5" /> Chat
+          </button>
+        </div>
+
         {/* Recording bar */}
         {session.is_recording && (
-          <div className="mt-2 flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-1.5">
+          <div className="mt-3 flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-1.5">
             <CircleIcon className="w-3 h-3 text-red-500 fill-red-500 animate-pulse shrink-0" />
             <span className="text-xs text-red-400 font-bold flex-1">This Circle is being recorded</span>
             {isHost && <span className="text-xs text-red-400 font-mono">{recordingTimer}</span>}
@@ -1038,7 +1117,115 @@ export default function AudioCircleRoomScreen() {
         )}
       </AnimatePresence>
 
-      <div className="p-4 space-y-5">
+      <div className="lg:flex lg:items-start lg:gap-4 lg:px-4 lg:pt-4">
+
+        {/* ── Desktop-only left sidebar: People / Reactions ────────────────────── */}
+        <div className="hidden lg:block lg:w-64 shrink-0 sticky top-24">
+          <div className="bg-card border border-border rounded-2xl p-3">
+            <div className="flex items-center gap-4 border-b border-border mb-3">
+              <button
+                onClick={() => setSidebarTab("people")}
+                className={`pb-2 text-xs font-bold border-b-2 ${sidebarTab === "people" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+              >
+                People
+              </button>
+              <button
+                onClick={() => setSidebarTab("reactions")}
+                className={`pb-2 text-xs font-bold border-b-2 ${sidebarTab === "reactions" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+              >
+                Reactions
+              </button>
+            </div>
+            {sidebarTab === "people" ? (
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">
+                    On Stage ({(host ? 1 : 0) + cohosts.length + speakers.length})
+                  </div>
+                  <div className="space-y-1.5">
+                    {[...(host ? [host] : []), ...cohosts, ...speakers].map(p => (
+                      <div key={p.user_id} className="flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-muted/50">
+                        <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black">
+                          {p.avatar_url ? <img src={p.avatar_url} className="w-full h-full object-cover" alt="" /> : (p.name?.[0] ?? "?")}
+                        </div>
+                        <span className="flex-1 text-xs font-bold truncate">{p.user_id === myUserId ? "You" : p.name}</span>
+                        {p.muted ? <MicOff className="w-3 h-3 text-red-400 shrink-0" /> : <Mic className="w-3 h-3 text-green-400 shrink-0" />}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">
+                    Audience ({audience.length})
+                  </div>
+                  <div className="space-y-1.5">
+                    {audience.map(p => (
+                      <div key={p.user_id} className="flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-muted/50">
+                        <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black">
+                          {p.avatar_url ? <img src={p.avatar_url} className="w-full h-full object-cover" alt="" /> : (p.name?.[0] ?? "?")}
+                        </div>
+                        <span className="flex-1 text-xs font-bold truncate">{p.name}</span>
+                        {p.hand_raised && <Hand className="w-3 h-3 text-amber-400 shrink-0" />}
+                        <MicOff className="w-3 h-3 text-muted-foreground shrink-0" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
+                {reactionLog.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">No reactions yet</div>
+                ) : (
+                  [...reactionLog].reverse().map(r => (
+                    <div key={r.id} className="flex items-center gap-2 text-xs">
+                      <span className="text-base leading-none">{r.emoji}</span>
+                      <span className="font-bold truncate">{r.name}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Center: Room or Chat content ─────────────────────────────────────── */}
+        <div className="flex-1 min-w-0">
+        {activeTab === "chat" ? (
+          <div className="p-4 lg:p-0 flex flex-col" style={{ minHeight: "50vh" }}>
+            <div className="flex-1 space-y-3 overflow-y-auto max-h-[60vh]">
+              {chatMessages.length === 0 ? (
+                <div className="text-center text-xs text-muted-foreground py-8">No messages yet — say hello 👋</div>
+              ) : (
+                chatMessages.map(m => (
+                  <div key={m.id} className={`flex items-start gap-2 ${m.user_id === myUserId ? "flex-row-reverse" : ""}`}>
+                    <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black">
+                      {m.avatar_url ? <img src={m.avatar_url} className="w-full h-full object-cover" alt="" /> : (m.name?.[0] ?? "?")}
+                    </div>
+                    <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${m.user_id === myUserId ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                      {m.user_id !== myUserId && <div className="text-[10px] font-black mb-0.5 opacity-70">{m.name}</div>}
+                      {m.body}
+                    </div>
+                  </div>
+                ))
+              )}
+              <div ref={chatEndRef} />
+            </div>
+            <div className="flex items-center gap-2 pt-3 mt-3 border-t border-border">
+              <input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") sendChat(); }}
+                placeholder="Message the room…"
+                className="flex-1 px-3 py-2 bg-background border border-border rounded-full text-sm focus:outline-none focus:border-primary"
+              />
+              <Button size="icon" onClick={sendChat} disabled={!chatInput.trim()}>
+                <Send className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        ) : (
+        <div className="p-4 space-y-5 lg:p-0">
 
         {/* ── Video grid ──────────────────────────────────────────────────────── */}
         {session.video_enabled && (remoteVideoStreams.length > 0 || (localStream && localStream.getVideoTracks().length > 0 && videoOn)) && (
@@ -1231,7 +1418,94 @@ export default function AudioCircleRoomScreen() {
             </div>
           </div>
         )}
+        </div>
+        )}
+        </div>
+
+        {/* ── Desktop-only right sidebar: Raised Hands / Room Controls / Host Controls ── */}
+        {canMod && (
+          <div className="hidden lg:block lg:w-72 shrink-0 sticky top-24">
+            <ManagementPanelBody
+              audience={audience}
+              isHost={isHost}
+              session={session}
+              onPromote={promote}
+              onAssignCohost={assignCohost}
+              onDismissHand={(userId) => post("/hand", { raised: false, user_id: userId })}
+              onMuteAll={muteAll}
+              onLowerAll={lowerAllHands}
+              onShare={shareCircle}
+              onToggleRecording={toggleRecording}
+              recordingOn={!!session.is_recording}
+              recordingDisabled={uploading || mediaCapabilities?.recording === false}
+              onEndCircle={() => setShowEndConfirm(true)}
+              speakerCount={(host ? 1 : 0) + cohosts.length + speakers.length}
+              onlineParticipants={participants}
+              myUserId={myUserId}
+              onMuteUser={muteUser}
+              onDemoteUser={demote}
+              onKickUser={kickUser}
+              onBlockUser={(userId) => setShowBlockConfirm(userId)}
+              onReportUser={(userId) => setShowReportModal(userId)}
+              onAssignCohostUser={assignCohost}
+            />
+          </div>
+        )}
       </div>
+
+      {/* ── Mobile management drawer (Room / Host controls) ──────────────────── */}
+      <AnimatePresence>
+        {showManagePanel && canMod && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/60 flex items-end lg:hidden"
+            onClick={() => setShowManagePanel(false)}
+          >
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 28, stiffness: 300 }}
+              className="bg-background border-t border-border rounded-t-3xl w-full max-h-[85vh] overflow-y-auto p-4"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="w-10 h-1.5 bg-muted rounded-full mx-auto mb-4" />
+              <div className="flex items-center justify-between mb-4">
+                <div className="font-black text-base">Manage Circle</div>
+                <button onClick={() => setShowManagePanel(false)} className="p-1.5 rounded-full hover:bg-muted">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <ManagementPanelBody
+                audience={audience}
+                isHost={isHost}
+                session={session}
+                onPromote={promote}
+                onAssignCohost={assignCohost}
+                onDismissHand={(userId) => post("/hand", { raised: false, user_id: userId })}
+                onMuteAll={muteAll}
+                onLowerAll={lowerAllHands}
+                onShare={shareCircle}
+                onToggleRecording={toggleRecording}
+                recordingOn={!!session.is_recording}
+                recordingDisabled={uploading || mediaCapabilities?.recording === false}
+                onEndCircle={() => { setShowManagePanel(false); setShowEndConfirm(true); }}
+                speakerCount={(host ? 1 : 0) + cohosts.length + speakers.length}
+                onlineParticipants={participants}
+                myUserId={myUserId}
+                onMuteUser={muteUser}
+                onDemoteUser={demote}
+                onKickUser={kickUser}
+                onBlockUser={(userId) => setShowBlockConfirm(userId)}
+                onReportUser={(userId) => setShowReportModal(userId)}
+                onAssignCohostUser={assignCohost}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Bottom controls ───────────────────────────────────────────────────── */}
       <div className="fixed bottom-0 inset-x-0 z-40 bg-background/95 backdrop-blur border-t border-border p-4 space-y-3" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
@@ -1412,6 +1686,168 @@ function SpeakerTile({ participant: s, isMe, level, canMod, modMenuOpen, onOpenM
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Management panel body (Raised Hands / Room Controls / Host Controls) ────
+// Shared between the desktop right sidebar and the mobile bottom-sheet drawer.
+interface ManagementPanelBodyProps {
+  audience: Participant[];
+  isHost: boolean;
+  session: SessionInfo;
+  onPromote: (userId: number) => void;
+  onAssignCohost: (userId: number) => void;
+  onDismissHand: (userId: number) => void;
+  onMuteAll: () => void;
+  onLowerAll: () => void;
+  onShare: () => void;
+  onToggleRecording: () => void;
+  recordingOn: boolean;
+  recordingDisabled: boolean;
+  onEndCircle: () => void;
+  speakerCount: number;
+  onlineParticipants: Participant[];
+  myUserId?: number;
+  onMuteUser: (userId: number, muted: boolean) => void;
+  onDemoteUser: (userId: number) => void;
+  onKickUser: (userId: number) => void;
+  onBlockUser: (userId: number) => void;
+  onReportUser: (userId: number) => void;
+  onAssignCohostUser: (userId: number) => void;
+}
+
+function RoomControlButton({ icon: Icon, label, onClick, disabled, tone }: {
+  icon: typeof Mic; label: string; onClick: () => void; disabled?: boolean; tone?: "danger" | "record";
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex flex-col items-center justify-center gap-1.5 rounded-xl border p-3 text-center transition-colors disabled:opacity-40 ${
+        tone === "danger"
+          ? "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20"
+          : tone === "record"
+          ? "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20"
+          : "border-border bg-muted/40 hover:bg-muted"
+      }`}
+    >
+      <Icon className="w-4 h-4" />
+      <span className="text-[10px] font-bold leading-tight">{label}</span>
+    </button>
+  );
+}
+
+function ManagementPanelBody({
+  audience, isHost, session, onPromote, onAssignCohost, onDismissHand,
+  onMuteAll, onLowerAll, onShare, onToggleRecording, recordingOn, recordingDisabled,
+  onEndCircle, speakerCount, onlineParticipants, myUserId,
+  onMuteUser, onDemoteUser, onKickUser, onBlockUser, onReportUser, onAssignCohostUser,
+}: ManagementPanelBodyProps) {
+  const raisedHands = audience.filter(l => l.hand_raised);
+  const [showAllHands, setShowAllHands] = useState(false);
+  const visibleHands = showAllHands ? raisedHands : raisedHands.slice(0, 5);
+  const [targetId, setTargetId] = useState<number | "">("");
+  const targetable = onlineParticipants.filter(p => p.user_id !== myUserId && p.role !== "host");
+  const target = onlineParticipants.find(p => p.user_id === targetId);
+
+  return (
+    <div className="space-y-4">
+      {/* Raised Hands */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+            Raised Hands ({raisedHands.length})
+          </div>
+          {raisedHands.length > 5 && (
+            <button onClick={() => setShowAllHands(v => !v)} className="text-[10px] font-bold text-primary">
+              {showAllHands ? "Show less" : "View All"}
+            </button>
+          )}
+        </div>
+        {raisedHands.length === 0 ? (
+          <div className="text-xs text-muted-foreground">No one has raised their hand</div>
+        ) : (
+          <div className="space-y-2">
+            {visibleHands.map(l => (
+              <div key={l.user_id} className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black">
+                  {l.avatar_url ? <img src={l.avatar_url} className="w-full h-full object-cover" alt="" /> : (l.name?.[0] ?? "?")}
+                </div>
+                <span className="flex-1 text-xs font-bold truncate">{l.name}</span>
+                <Button size="sm" className="h-6 text-[10px] px-2" onClick={() => onPromote(l.user_id)}>Bring Up</Button>
+                <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => onDismissHand(l.user_id)}>Dismiss</Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Room Controls */}
+      <div>
+        <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Room Controls</div>
+        <div className="grid grid-cols-3 gap-2">
+          <RoomControlButton icon={VolumeX} label="Mute All" onClick={onMuteAll} />
+          <RoomControlButton icon={Hand} label="Lower All" onClick={onLowerAll} />
+          <div className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-border bg-muted/40 p-3 text-center">
+            <span className="text-sm font-black">{session.max_speakers}</span>
+            <span className="text-[10px] font-bold leading-tight text-muted-foreground">Speaker Limit</span>
+          </div>
+          <RoomControlButton icon={Share2} label="Share Circle" onClick={onShare} />
+          <RoomControlButton icon={UserPlus} label="Invite" onClick={onShare} />
+          <RoomControlButton
+            icon={Settings}
+            label="Settings"
+            onClick={() => toast({ title: "Room settings", description: "More room settings are coming soon." })}
+          />
+          <RoomControlButton
+            icon={CircleIcon}
+            label={recordingOn ? "Stop Recording" : "Start Recording"}
+            onClick={onToggleRecording}
+            disabled={recordingDisabled || !isHost}
+            tone="record"
+          />
+          <RoomControlButton icon={PhoneOff} label="End Circle" onClick={onEndCircle} tone="danger" />
+        </div>
+      </div>
+
+      {/* Host Controls — act on a selected participant */}
+      <div>
+        <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Host Controls</div>
+        <select
+          value={targetId}
+          onChange={(e) => setTargetId(e.target.value ? parseInt(e.target.value, 10) : "")}
+          className="w-full mb-2 px-3 py-2 bg-background border border-border rounded-xl text-xs focus:outline-none focus:border-primary"
+        >
+          <option value="">Select a participant…</option>
+          {targetable.map(p => (
+            <option key={p.user_id} value={p.user_id}>{p.name} — {p.role === "co_host" ? "Co-host" : p.role === "speaker" ? "Speaker" : "Audience"}</option>
+          ))}
+        </select>
+        <div className="grid grid-cols-3 gap-2">
+          <RoomControlButton
+            icon={Shield}
+            label="Make Co-Host"
+            disabled={!target || !isHost || target.role === "co_host"}
+            onClick={() => target && onAssignCohostUser(target.user_id)}
+          />
+          <RoomControlButton
+            icon={UserMinus}
+            label="Move to Audience"
+            disabled={!target || (target.role !== "speaker" && target.role !== "co_host")}
+            onClick={() => target && onDemoteUser(target.user_id)}
+          />
+          <RoomControlButton
+            icon={target?.muted ? Mic : MicOff}
+            label={target?.muted ? "Unmute" : "Mute"}
+            disabled={!target || target.role === "listener"}
+            onClick={() => target && onMuteUser(target.user_id, !target.muted)}
+          />
+          <RoomControlButton icon={UserMinus} label="Remove" disabled={!target} onClick={() => target && onKickUser(target.user_id)} tone="danger" />
+          <RoomControlButton icon={Ban} label="Block" disabled={!target} onClick={() => target && onBlockUser(target.user_id)} tone="danger" />
+          <RoomControlButton icon={AlertTriangle} label="Report" disabled={!target} onClick={() => target && onReportUser(target.user_id)} />
+        </div>
+      </div>
     </div>
   );
 }
