@@ -103,7 +103,9 @@
       "@expo/ngrok-bin>@expo/ngrok-bin-linux-ia32": "-",
       "@expo/ngrok-bin>@expo/ngrok-bin-sunos-x64": "-",
       "@expo/ngrok-bin>@expo/ngrok-bin-win32-ia32": "-",
-      "@expo/ngrok-bin>@expo/ngrok-bin-win32-x64": "-"
+      "@expo/ngrok-bin>@expo/ngrok-bin-win32-x64": "-",
+      "@istanbuljs/load-nyc-config>js-yaml": "^3.15.0",
+      "orval>js-yaml": "^4.1.2"
     }
   }
 }
