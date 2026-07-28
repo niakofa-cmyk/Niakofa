@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -463,7 +463,7 @@ export default function AudioCircleRoomScreen() {
   const [micOn, setMicOn] = useState(false);
   const [videoOn, setVideoOn] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [floatingReactions, setFloatingReactions] = useState<{ id: string; emoji: string }[]>([]);
+  const [floatingReactions, setFloatingReactions] = useState<{ id: string; emoji: string; x: number }[]>([]);
   const [remoteStreams, setRemoteStreams] = useState<Map<number, MediaStream>>(new Map());
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [meshReady, setMeshReady] = useState(false);
@@ -518,6 +518,9 @@ export default function AudioCircleRoomScreen() {
   // ── Host transfer modal ────────────────────────────────────────────────────
   const [showTransferModal, setShowTransferModal] = useState(false);
 
+  // ── Desktop mod right-sidebar tab ─────────────────────────────────────────
+  const [desktopModTab, setDesktopModTab] = useState<"controls" | "chat">("controls");
+
   // ── In-app invite user search ──────────────────────────────────────────────
   const [inviteSearch, setInviteSearch] = useState("");
   const [inviteResults, setInviteResults] = useState<{ id: number; name: string; avatar_url: string | null }[]>([]);
@@ -559,6 +562,20 @@ export default function AudioCircleRoomScreen() {
   // Guard: speaker slots currently filled vs limit. Backend also enforces this;
   // the frontend check gives instant UX feedback before the round-trip.
   const onStageCurrent = (host ? 1 : 0) + cohosts.length + speakers.length;
+
+  // ── Loudest currently-speaking participant (for visual highlight) ──────────
+  // Computed from local audio level analysis each render frame — gives instant
+  // visual feedback to all speakers so they know who's talking over whom.
+  const loudestSpeakerId = useMemo(() => {
+    let loudestId: number | null = null;
+    let loudestLevel = 0.18; // must cross threshold to count as "speaking"
+    for (const [uid, level] of speakingLevels) {
+      if (level > loudestLevel) { loudestLevel = level; loudestId = uid; }
+    }
+    if (localLevel > loudestLevel && myUserId && canSpeak) loudestId = myUserId;
+    return loudestId;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [speakingLevels, localLevel, myUserId, canSpeak]);
   const atSpeakerLimit = session ? onStageCurrent >= session.max_speakers : false;
   const nearSpeakerLimit = session ? onStageCurrent >= session.max_speakers - 1 : false;
 
@@ -604,6 +621,22 @@ export default function AudioCircleRoomScreen() {
   }, [base, sessionId]);
 
   useWebSocket("ws_reconnected", () => { void resync(); });
+
+  // ── Reconnect on tab becoming visible again ────────────────────────────────
+  // If the user backgrounds the app for a while the WS may have gone quiet and
+  // the participant list can be stale. Re-sync the moment the tab is foregrounded.
+  useEffect(() => {
+    if (!session || !myUserId) return;
+    const handler = () => {
+      if (!document.hidden) {
+        setConnectionStatus("reconnecting");
+        void resync();
+      }
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id, myUserId]);
 
   // ── Load initial state + chat history ─────────────────────────────────────
   useEffect(() => {
@@ -970,9 +1003,12 @@ export default function AudioCircleRoomScreen() {
   useWebSocket("circle_reaction", (e) => {
     const p = e.payload as { session_id: number; emoji: string; user_id?: number };
     if (p.session_id !== sessionId) return;
-    const id = `${Date.now()}-${Math.random()}`;
-    setFloatingReactions(prev => [...prev, { id, emoji: p.emoji }]);
-    setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2000);
+    // Skip: sender already saw an optimistic reaction via react()
+    if (p.user_id === myUserId) return;
+    const id = `ws-${Date.now()}-${Math.random()}`;
+    const x = (Math.random() - 0.5) * 160; // spread reactions ±80px around center
+    setFloatingReactions(prev => [...prev, { id, emoji: p.emoji, x }]);
+    setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2400);
     const senderName = participants.find(x => x.user_id === p.user_id)?.name ?? "Someone";
     setReactionLog(prev => [...prev.slice(-19), { id, emoji: p.emoji, name: senderName }]);
   });
@@ -1234,7 +1270,16 @@ export default function AudioCircleRoomScreen() {
       setReportReason("");
     }
   };
-  const react = (emoji: string) => post("/react", { emoji });
+  const react = (emoji: string) => {
+    // Optimistic: sender sees reaction immediately without waiting for the WS round-trip.
+    const id = `opt-${Date.now()}-${Math.random()}`;
+    const x = (Math.random() - 0.5) * 160;
+    setFloatingReactions(prev => [...prev, { id, emoji, x }]);
+    setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 2400);
+    const myName = participants.find(p => p.user_id === myUserId)?.name ?? "You";
+    setReactionLog(prev => [...prev.slice(-19), { id, emoji, name: myName }]);
+    return post("/react", { emoji });
+  };
 
   const sendChat = async () => {
     const body = chatInput.trim();
@@ -1333,7 +1378,9 @@ export default function AudioCircleRoomScreen() {
       }).catch(() => {});
     };
     sendHeartbeat(); // fire immediately on join
-    const id = setInterval(sendHeartbeat, 30_000);
+    // 10 s interval (was 30 s) — more frequent reports means active-speaker
+    // highlights update in ~10 s rather than ~30 s across all clients.
+    const id = setInterval(sendHeartbeat, 10_000);
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.id, myUserId]);
@@ -1750,11 +1797,12 @@ export default function AudioCircleRoomScreen() {
           {floatingReactions.map(r => (
             <motion.div
               key={r.id}
-              initial={{ opacity: 1, y: 0 }}
-              animate={{ opacity: 0, y: -80 }}
+              initial={{ opacity: 1, y: 0, x: r.x, scale: 1 }}
+              animate={{ opacity: 0, y: -220, x: r.x + (Math.random() - 0.5) * 30, scale: 1.4 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 1.8 }}
-              className="absolute text-3xl"
+              transition={{ duration: 2.2, ease: "easeOut" }}
+              className="absolute text-3xl select-none"
+              style={{ left: "50%" }}
             >
               {r.emoji}
             </motion.div>
@@ -2150,6 +2198,7 @@ export default function AudioCircleRoomScreen() {
                     isMe={s.user_id === myUserId}
                     level={s.user_id === myUserId ? localLevel : (speakingLevels.get(s.user_id) ?? 0)}
                     isActiveSpeaker={activeSpeakerId === s.user_id}
+                    isLoudest={loudestSpeakerId === s.user_id && loudestSpeakerId !== activeSpeakerId}
                     isHost={isHost}
                     canMod={canMod && s.user_id !== myUserId}
                     modMenuOpen={modMenuOpen === s.user_id}
@@ -2224,83 +2273,90 @@ export default function AudioCircleRoomScreen() {
         )}
         </div>
 
-        {/* ── Desktop-only right sidebar: Chat (all users) + Management (mods) ─── */}
+        {/* ── Desktop-only right sidebar: Chat (all) + Management (mods) ─────── */}
+        {/* Non-mods: chat only */}
         {!canMod && (
           <div className="hidden lg:flex lg:flex-col lg:w-72 shrink-0 sticky top-24 gap-2 max-h-[calc(100vh-7rem)]">
-            {/* Chat panel for non-mods */}
-            <div className="bg-card border border-border rounded-2xl flex flex-col flex-1 overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
-                <MessageSquare className="w-3.5 h-3.5 text-primary" />
-                <span className="text-xs font-black">Chat</span>
-                {unreadChatCount > 0 && activeTab !== "chat" && (
-                  <span className="ml-auto inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary text-[9px] font-black text-primary-foreground">
-                    {unreadChatCount > 9 ? "9+" : unreadChatCount}
-                  </span>
-                )}
-              </div>
-              <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                {chatMessages.length === 0 ? (
-                  <div className="text-center text-xs text-muted-foreground py-6">No messages yet</div>
-                ) : (
-                  chatMessages.map(m => (
-                    <div key={m.id} className={`flex items-start gap-1.5 ${m.user_id === myUserId ? "flex-row-reverse" : ""}`}>
-                      <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[9px] font-black">
-                        {m.avatar_url ? <img src={m.avatar_url} className="w-full h-full object-cover" alt="" /> : (m.name?.[0] ?? "?")}
-                      </div>
-                      <div className={`max-w-[80%] rounded-xl px-2.5 py-1.5 text-xs ${m.user_id === myUserId ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-                        {m.user_id !== myUserId && <div className="text-[9px] font-black mb-0.5 opacity-70">{m.name}</div>}
-                        {m.body}
-                      </div>
-                    </div>
-                  ))
-                )}
-                <div ref={chatEndRef} />
-              </div>
-              <div className="flex items-center gap-1.5 px-2 py-2 border-t border-border shrink-0">
-                <input
-                  value={chatInput}
-                  onChange={(e) => { setChatInput(e.target.value); setUnreadChatCount(0); }}
-                  onKeyDown={(e) => { if (e.key === "Enter") { sendChat(); setUnreadChatCount(0); } }}
-                  placeholder="Message…"
-                  className="flex-1 px-2.5 py-1.5 bg-background border border-border rounded-full text-xs focus:outline-none focus:border-primary"
-                  style={{ fontSize: "16px" }}
-                />
-                <Button size="icon" className="h-7 w-7 shrink-0" onClick={() => { sendChat(); setUnreadChatCount(0); }} disabled={!chatInput.trim()}>
-                  <Send className="w-3 h-3" />
-                </Button>
-              </div>
-            </div>
+            <DesktopChatPanel
+              chatMessages={chatMessages}
+              chatInput={chatInput}
+              myUserId={myUserId}
+              unreadChatCount={unreadChatCount}
+              activeTab={activeTab}
+              chatEndRef={chatEndRef}
+              onInputChange={(v) => { setChatInput(v); setUnreadChatCount(0); }}
+              onSend={() => { sendChat(); setUnreadChatCount(0); }}
+            />
           </div>
         )}
+        {/* Mods: 3-pane — left (people/reactions) + center (stage) + right (controls + chat) */}
         {canMod && (
-          <div className="hidden lg:block lg:w-72 shrink-0 sticky top-24">
-            <ManagementPanelBody
-              audience={audience}
-              isHost={isHost}
-              session={session}
-              onPromote={promote}
-              onAssignCohost={assignCohost}
-              onDismissHand={(userId) => post("/hand", { raised: false, user_id: userId })}
-              onMuteAll={muteAll}
-              onLowerAll={lowerAllHands}
-              onShare={shareCircle}
-              onOpenInvite={() => setShowInviteModal(true)}
-              onOpenSettings={() => setShowSettingsModal(true)}
-              onToggleRecording={toggleRecording}
-              recordingOn={!!session.is_recording}
-              recordingDisabled={uploading || mediaCapabilities?.recording === false}
-              onEndCircle={() => setShowEndConfirm(true)}
-              speakerCount={(host ? 1 : 0) + cohosts.length + speakers.length}
-              onlineParticipants={participants}
-              myUserId={myUserId}
-              onMuteUser={muteUser}
-              onDemoteUser={demote}
-              onKickUser={kickUser}
-              onBlockUser={(userId) => setShowBlockConfirm(userId)}
-              onReportUser={(userId) => setShowReportModal(userId)}
-              onAssignCohostUser={assignCohost}
-              onOpenTransfer={isHost ? () => setShowTransferModal(true) : undefined}
-            />
+          <div className="hidden lg:flex lg:flex-col lg:w-72 shrink-0 sticky top-24 gap-2 max-h-[calc(100vh-7rem)]">
+            {/* Tab switcher: Room Controls | Chat */}
+            <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col flex-1">
+              <div className="flex items-center border-b border-border shrink-0">
+                <button
+                  onClick={() => setDesktopModTab("controls")}
+                  className={`flex-1 py-2 text-xs font-black border-b-2 transition-colors ${desktopModTab === "controls" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+                >
+                  Room
+                </button>
+                <button
+                  onClick={() => { setDesktopModTab("chat"); setUnreadChatCount(0); }}
+                  className={`flex-1 py-2 text-xs font-black border-b-2 transition-colors flex items-center justify-center gap-1 ${desktopModTab === "chat" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+                >
+                  Chat
+                  {unreadChatCount > 0 && desktopModTab !== "chat" && (
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary text-[9px] font-black text-primary-foreground">
+                      {unreadChatCount > 9 ? "9+" : unreadChatCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+              {desktopModTab === "controls" ? (
+                <div className="overflow-y-auto flex-1 p-3">
+                  <ManagementPanelBody
+                    audience={audience}
+                    isHost={isHost}
+                    session={session}
+                    onPromote={promote}
+                    onAssignCohost={assignCohost}
+                    onDismissHand={(userId) => post("/hand", { raised: false, user_id: userId })}
+                    onMuteAll={muteAll}
+                    onLowerAll={lowerAllHands}
+                    onShare={shareCircle}
+                    onOpenInvite={() => setShowInviteModal(true)}
+                    onOpenSettings={() => setShowSettingsModal(true)}
+                    onToggleRecording={toggleRecording}
+                    recordingOn={!!session.is_recording}
+                    recordingDisabled={uploading || mediaCapabilities?.recording === false}
+                    onEndCircle={() => setShowEndConfirm(true)}
+                    speakerCount={(host ? 1 : 0) + cohosts.length + speakers.length}
+                    onlineParticipants={participants}
+                    myUserId={myUserId}
+                    onMuteUser={muteUser}
+                    onDemoteUser={demote}
+                    onKickUser={kickUser}
+                    onBlockUser={(userId) => setShowBlockConfirm(userId)}
+                    onReportUser={(userId) => setShowReportModal(userId)}
+                    onAssignCohostUser={assignCohost}
+                    onOpenTransfer={isHost ? () => setShowTransferModal(true) : undefined}
+                  />
+                </div>
+              ) : (
+                <DesktopChatPanel
+                  chatMessages={chatMessages}
+                  chatInput={chatInput}
+                  myUserId={myUserId}
+                  unreadChatCount={unreadChatCount}
+                  activeTab={activeTab}
+                  chatEndRef={chatEndRef}
+                  onInputChange={(v) => { setChatInput(v); setUnreadChatCount(0); }}
+                  onSend={() => { sendChat(); setUnreadChatCount(0); }}
+                  noBorder
+                />
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -2756,6 +2812,96 @@ export default function AudioCircleRoomScreen() {
   );
 }
 
+// ── Device label cleaner ──────────────────────────────────────────────────────
+// Browsers expose raw OS labels like "Default - Microphone (Built-in)" or
+// "Communications - Microphone (USB Audio Device)" which are confusing to
+// end users who just want to pick the right mic or camera. This strips the
+// noisy prefixes and parenthetical suffixes so only the human-readable name
+// remains. Falls back to a numbered generic name when nothing useful is left.
+function cleanDeviceLabel(label: string, index: number, kind: MediaDeviceKind): string {
+  if (!label) {
+    return kind === "audioinput" ? `Microphone ${index + 1}` : `Camera ${index + 1}`;
+  }
+  const cleaned = label
+    .replace(/^Default\s*[-–]\s*/i, "")          // "Default - " prefix
+    .replace(/^Communications\s*[-–]\s*/i, "")    // "Communications - " prefix
+    .replace(/\(Built-?in\)/gi, "")               // "(Built-in)" suffix
+    .replace(/\(default\)/gi, "")                 // "(default)" suffix
+    .replace(/\s+/g, " ")
+    .trim();
+  // If we're left with something too generic ("Microphone", "Camera", "Device"),
+  // append the 1-based index so multiple generics are still distinguishable.
+  if (/^(microphone|camera|speaker|device)\s*\d*$/i.test(cleaned)) {
+    return `${cleaned || (kind === "audioinput" ? "Microphone" : "Camera")} ${index + 1}`;
+  }
+  return cleaned || (kind === "audioinput" ? `Microphone ${index + 1}` : `Camera ${index + 1}`);
+}
+
+// ── Desktop chat panel ────────────────────────────────────────────────────────
+// Extracted so both the non-mod sidebar and the mod's tabbed sidebar can
+// render the same chat UI without duplicating JSX.
+function DesktopChatPanel({
+  chatMessages, chatInput, myUserId, unreadChatCount, activeTab, chatEndRef,
+  onInputChange, onSend, noBorder,
+}: {
+  chatMessages: ChatMessage[];
+  chatInput: string;
+  myUserId?: number;
+  unreadChatCount: number;
+  activeTab: string;
+  chatEndRef: React.RefObject<HTMLDivElement | null>;
+  onInputChange: (v: string) => void;
+  onSend: () => void;
+  noBorder?: boolean;
+}) {
+  return (
+    <div className={`flex flex-col flex-1 overflow-hidden ${noBorder ? "" : "bg-card border border-border rounded-2xl"}`}>
+      {!noBorder && (
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
+          <MessageSquare className="w-3.5 h-3.5 text-primary" />
+          <span className="text-xs font-black">Chat</span>
+          {unreadChatCount > 0 && activeTab !== "chat" && (
+            <span className="ml-auto inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary text-[9px] font-black text-primary-foreground">
+              {unreadChatCount > 9 ? "9+" : unreadChatCount}
+            </span>
+          )}
+        </div>
+      )}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        {chatMessages.length === 0 ? (
+          <div className="text-center text-xs text-muted-foreground py-6">No messages yet</div>
+        ) : (
+          chatMessages.map(m => (
+            <div key={m.id} className={`flex items-start gap-1.5 ${m.user_id === myUserId ? "flex-row-reverse" : ""}`}>
+              <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[9px] font-black">
+                {m.avatar_url ? <img src={m.avatar_url} className="w-full h-full object-cover" alt="" /> : (m.name?.[0] ?? "?")}
+              </div>
+              <div className={`max-w-[80%] rounded-xl px-2.5 py-1.5 text-xs ${m.user_id === myUserId ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                {m.user_id !== myUserId && <div className="text-[9px] font-black mb-0.5 opacity-70">{m.name}</div>}
+                {m.body}
+              </div>
+            </div>
+          ))
+        )}
+        <div ref={chatEndRef} />
+      </div>
+      <div className="flex items-center gap-1.5 px-2 py-2 border-t border-border shrink-0">
+        <input
+          value={chatInput}
+          onChange={(e) => onInputChange(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") onSend(); }}
+          placeholder="Message…"
+          className="flex-1 px-2.5 py-1.5 bg-background border border-border rounded-full text-xs focus:outline-none focus:border-primary"
+          style={{ fontSize: "16px" }}
+        />
+        <Button size="icon" className="h-7 w-7 shrink-0" onClick={onSend} disabled={!chatInput.trim()}>
+          <Send className="w-3 h-3" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ── Device picker dropdown ───────────────────────────────────────────────────
 // Floats above the control bar; renders a list of MediaDeviceInfo choices and
 // calls onSelect with the chosen deviceId.  Closes on outside click via the
@@ -2782,8 +2928,7 @@ function DevicePickerDropdown({
     >
       {devices.map((d, i) => {
         const isSelected = d.deviceId === selectedId;
-        // Browsers set label to "" when permission hasn't been granted yet
-        const label = d.label || `Device ${i + 1}`;
+        const label = cleanDeviceLabel(d.label, i, d.kind);
         return (
           <button
             key={d.deviceId}
@@ -2889,6 +3034,8 @@ interface SpeakerTileProps {
   isMe: boolean;
   level: number;
   isActiveSpeaker?: boolean;
+  /** Locally-detected loudest speaker — gives instant visual feedback */
+  isLoudest?: boolean;
   isHost: boolean;
   canMod: boolean;
   modMenuOpen: boolean;
@@ -2902,7 +3049,7 @@ interface SpeakerTileProps {
   onRemoveCohost?: () => void;
 }
 
-function SpeakerTile({ participant: s, isMe, level, isActiveSpeaker, canMod, modMenuOpen, onOpenMod, onMute, onDemote, onKick, onBlock, onReport, onAssignCohost, onRemoveCohost }: SpeakerTileProps) {
+function SpeakerTile({ participant: s, isMe, level, isActiveSpeaker, isLoudest, canMod, modMenuOpen, onOpenMod, onMute, onDemote, onKick, onBlock, onReport, onAssignCohost, onRemoveCohost }: SpeakerTileProps) {
   const isSpeaking = level > 0.12 || isActiveSpeaker;
   return (
     <div className="flex flex-col items-center gap-1 relative">
@@ -2916,9 +3063,9 @@ function SpeakerTile({ participant: s, isMe, level, isActiveSpeaker, canMod, mod
           />
         )}
         {/* Extra outer glow for the active speaker — highest-energy state */}
-        {isActiveSpeaker && (
+        {(isActiveSpeaker || isLoudest) && (
           <motion.div
-            className="absolute -inset-1 rounded-full border border-green-400/40"
+            className={`absolute -inset-1 rounded-full border ${isLoudest ? "border-yellow-400/50" : "border-green-400/40"}`}
             animate={{ scale: [1, 1.25, 1], opacity: [0.4, 0, 0.4] }}
             transition={{ duration: 1.2, repeat: Infinity }}
           />
@@ -2954,6 +3101,12 @@ function SpeakerTile({ participant: s, isMe, level, isActiveSpeaker, canMod, mod
       <span className={`text-[10px] font-bold truncate max-w-[64px] ${s.role === "co_host" ? "text-blue-400" : isActiveSpeaker ? "text-green-400" : ""}`}>{isMe ? "You" : s.name}</span>
       {s.role === "co_host" && (
         <span className="text-[8px] font-bold text-blue-400/80 uppercase tracking-wide">Co-host</span>
+      )}
+      {isLoudest && !isActiveSpeaker && (
+        <div className="flex items-center gap-1">
+          <AudioLevelBars level={level} active />
+          <span className="text-[8px] font-bold text-yellow-400/90 uppercase tracking-wide">Loudest</span>
+        </div>
       )}
       {isActiveSpeaker && (
         <div className="flex items-center gap-1">
