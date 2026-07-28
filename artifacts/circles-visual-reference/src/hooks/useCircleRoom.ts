@@ -6,10 +6,20 @@ import type {
   RightPanelTab,
   LeftPanelTab,
   ChatMessage,
+  RoomSettings,
 } from '@/types/circles';
 import { MOCK_PARTICIPANTS, LIVE_CIRCLE, MOCK_CHAT_MESSAGES } from '@/data/mockData';
 
 const CURRENT_USER_ID = 'marcus';
+
+const DEFAULT_SETTINGS: RoomSettings = {
+  speakerLimit: 18,
+  chatEnabled: true,
+  recordingAllowed: true,
+  slowMode: false,
+  slowModeInterval: 5,
+  roomVisibility: 'public',
+};
 
 function buildInitialRaisedHands(participants: Participant[]): RaisedHandEntry[] {
   return participants
@@ -34,9 +44,11 @@ export function useCircleRoom() {
     isMicOn: true,
     isCameraOn: true,
     showMobilePanel: false,
-    speakerLimit: 18,
+    settings: DEFAULT_SETTINGS,
     chatInput: '',
   });
+
+  const lastChatTimeRef = useRef(0);
 
   const updateParticipant = useCallback((id: string, updates: Partial<Participant>) => {
     setState(s => ({
@@ -140,7 +152,10 @@ export function useCircleRoom() {
   }, []);
 
   const toggleRecording = useCallback(() => {
-    setState(s => ({ ...s, isRecording: !s.isRecording }));
+    setState(s => {
+      if (!s.settings.recordingAllowed) return s;
+      return { ...s, isRecording: !s.isRecording };
+    });
   }, []);
 
   const raiseHand = useCallback(() => {
@@ -188,7 +203,13 @@ export function useCircleRoom() {
 
   const sendChatMessage = useCallback(() => {
     setState(s => {
+      if (!s.settings.chatEnabled) return s;
       if (!s.chatInput.trim()) return s;
+      if (s.settings.slowMode) {
+        const now = Date.now();
+        if (now - lastChatTimeRef.current < s.settings.slowModeInterval * 1000) return s;
+        lastChatTimeRef.current = now;
+      }
       const currentUser = s.participants.find(p => p.id === s.currentUserId);
       if (!currentUser) return s;
       const newMsg: ChatMessage = {
@@ -204,6 +225,19 @@ export function useCircleRoom() {
         chatInput: '',
       };
     });
+  }, []);
+
+  const deleteChatMessage = useCallback((messageId: string) => {
+    setState(s => ({
+      ...s,
+      chatMessages: s.chatMessages.map(m =>
+        m.id === messageId ? { ...m, isDeleted: true } : m
+      ),
+    }));
+  }, []);
+
+  const updateSettings = useCallback((updates: Partial<RoomSettings>) => {
+    setState(s => ({ ...s, settings: { ...s.settings, ...updates } }));
   }, []);
 
   const stageParticipants = state.participants.filter(
@@ -244,5 +278,7 @@ export function useCircleRoom() {
     closeMobilePanel,
     setChatInput,
     sendChatMessage,
+    deleteChatMessage,
+    updateSettings,
   };
 }

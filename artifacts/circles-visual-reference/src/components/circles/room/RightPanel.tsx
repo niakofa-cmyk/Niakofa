@@ -30,16 +30,18 @@ import type {
   RightPanelTab,
   ConnectionQuality,
   Role,
+  RoomSettings,
 } from '@/types/circles';
 
 interface RightPanelProps {
   raisedHands: RaisedHandEntry[];
   participants: Participant[];
   currentUserId: string;
+  currentUserRole: Role;
   rightTab: RightPanelTab;
   connectionQuality: ConnectionQuality;
   isRecording: boolean;
-  speakerLimit: number;
+  settings: RoomSettings;
   chatMessages: ChatMessage[];
   chatInput: string;
   onSetRightTab: (tab: RightPanelTab) => void;
@@ -55,6 +57,8 @@ interface RightPanelProps {
   onEndCircle: () => void;
   onSetChatInput: (value: string) => void;
   onSendChat: () => void;
+  onDeleteChat: (id: string) => void;
+  onUpdateSettings: (updates: Partial<RoomSettings>) => void;
 }
 
 const CONNECTION_LABELS: Record<ConnectionQuality, { label: string; color: string }> = {
@@ -74,7 +78,7 @@ function timeAgo(timestamp: number): string {
 
 function RoleBadge({ role }: { role: Role }) {
   if (role === 'host') return <span className="rounded bg-brand-purple px-1 py-0.5 text-[9px] font-bold text-white">HOST</span>;
-  if (role === 'co-host') return <span className="rounded bg-blue-500 px-1 py-0.5 text-[9px] font-bold text-white">CO-HOST</span>;
+  if (role === 'co-host') return <span className="rounded bg-brand-blue px-1 py-0.5 text-[9px] font-bold text-white">CO-HOST</span>;
   return null;
 }
 
@@ -83,10 +87,11 @@ export function RightPanel(props: RightPanelProps) {
     raisedHands,
     participants,
     currentUserId,
+    currentUserRole,
     rightTab,
     connectionQuality,
     isRecording,
-    speakerLimit,
+    settings,
     chatMessages,
     chatInput,
     onSetRightTab,
@@ -102,6 +107,8 @@ export function RightPanel(props: RightPanelProps) {
     onEndCircle,
     onSetChatInput,
     onSendChat,
+    onDeleteChat,
+    onUpdateSettings,
   } = props;
 
   const [selectedParticipant, setSelectedParticipant] = useState<Participant | null>(null);
@@ -109,12 +116,10 @@ export function RightPanel(props: RightPanelProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [localSpeakerLimit, setLocalSpeakerLimit] = useState(speakerLimit);
-  const [chatEnabled, setChatEnabled] = useState(true);
-  const [recordingAllowed, setRecordingAllowed] = useState(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const conn = CONNECTION_LABELS[connectionQuality];
+  const isHost = currentUserRole === 'host' || currentUserRole === 'co-host';
 
   const stageParticipants = participants.filter(
     p => p.role === 'host' || p.role === 'co-host' || p.role === 'speaker'
@@ -184,9 +189,12 @@ export function RightPanel(props: RightPanelProps) {
               <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
                 Raised Hands ({sortedRaisedHands.length})
               </h3>
-              {sortedRaisedHands.length > 0 && (
-                <button className="text-[11px] font-medium text-brand-purple-light hover:text-brand-purple">
-                  View All
+              {sortedRaisedHands.length > 0 && isHost && (
+                <button
+                  onClick={onLowerAll}
+                  className="text-[11px] font-medium text-brand-purple-light hover:text-brand-purple"
+                >
+                  Lower All
                 </button>
               )}
             </div>
@@ -217,298 +225,353 @@ export function RightPanel(props: RightPanelProps) {
                         {timeAgo(rh.timestamp)}
                       </div>
                     </div>
-                    <button
-                      onClick={() => onBringUp(rh.participantId)}
-                      className="rounded-md bg-brand-purple px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-brand-purple-hover"
-                      aria-label={`Bring up ${rh.participant.name} to speak`}
-                    >
-                      Bring Up
-                    </button>
-                    <button
-                      onClick={() => onDismiss(rh.participantId)}
-                      className="flex h-6 w-6 items-center justify-center rounded-md bg-room-hover text-gray-400 transition-colors hover:text-white"
-                      aria-label={`Dismiss ${rh.participant.name}'s raised hand`}
-                    >
-                      <X size={12} />
-                    </button>
+                    {isHost && (
+                      <>
+                        <button
+                          onClick={() => onBringUp(rh.participantId)}
+                          className="rounded-md bg-brand-purple px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-brand-purple-hover"
+                          aria-label={`Bring up ${rh.participant.name} to speak`}
+                        >
+                          Bring Up
+                        </button>
+                        <button
+                          onClick={() => onDismiss(rh.participantId)}
+                          className="flex h-6 w-6 items-center justify-center rounded-md bg-room-hover text-gray-400 transition-colors hover:text-white"
+                          aria-label={`Dismiss ${rh.participant.name}'s raised hand`}
+                        >
+                          <X size={12} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          <div className="mb-4">
-            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-gray-500">
-              Room Controls
-            </h3>
-            <div className="grid grid-cols-3 gap-2">
-              <RoomControlButton icon={VolumeX} label="Mute All" onClick={onMuteAll} />
-              <RoomControlButton icon={ChevronDown} label="Lower All" onClick={onLowerAll} />
-              <RoomControlButton icon={MicOff} label={`Limit ${speakerLimit}`} />
-              <RoomControlButton icon={Share2} label="Share" />
-              <RoomControlButton icon={UserPlus} label="Invite" onClick={() => setShowInvite(s => !s)} />
-              <RoomControlButton icon={Settings} label="Settings" onClick={() => setShowSettings(s => !s)} />
-            </div>
-
-            {showInvite && (
-              <div className="mt-2 animate-fade-in rounded-lg bg-room-card p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <h4 className="text-xs font-semibold text-white">Invite to Circle</h4>
-                  <button
-                    onClick={() => setShowInvite(false)}
-                    className="rounded-full p-1 text-gray-400 hover:bg-room-hover hover:text-white"
-                    aria-label="Close invite panel"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 rounded-lg bg-room-hover px-3 py-2">
-                  <span className="flex-1 truncate text-xs text-gray-300">
-                    niakofa.com/circle/southside-community
-                  </span>
-                  <button
-                    onClick={handleCopyLink}
-                    className="flex items-center gap-1 text-xs font-medium text-brand-purple-light hover:text-brand-purple"
-                  >
-                    {copied ? <Check size={12} className="text-brand-green" /> : <Copy size={12} />}
-                    {copied ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <button className="rounded-lg bg-room-hover py-2 text-xs font-medium text-gray-300 transition-colors hover:bg-room-border">
-                    Share via Messages
-                  </button>
-                  <button className="rounded-lg bg-room-hover py-2 text-xs font-medium text-gray-300 transition-colors hover:bg-room-border">
-                    Share to Profile
-                  </button>
-                </div>
+          {isHost && (
+            <div className="mb-4">
+              <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                Room Controls
+              </h3>
+              <div className="grid grid-cols-3 gap-2">
+                <RoomControlButton icon={VolumeX} label="Mute All" onClick={onMuteAll} />
+                <RoomControlButton icon={ChevronDown} label="Lower All" onClick={onLowerAll} />
+                <RoomControlButton icon={MicOff} label={`Limit ${settings.speakerLimit}`} />
+                <RoomControlButton icon={Share2} label="Share" />
+                <RoomControlButton icon={UserPlus} label="Invite" onClick={() => setShowInvite(s => !s)} />
+                <RoomControlButton icon={Settings} label="Settings" onClick={() => setShowSettings(s => !s)} />
               </div>
-            )}
 
-            {showSettings && (
-              <div className="mt-2 animate-fade-in rounded-lg bg-room-card p-3">
-                <div className="mb-3 flex items-center justify-between">
-                  <h4 className="text-xs font-semibold text-white">Circle Settings</h4>
-                  <button
-                    onClick={() => setShowSettings(false)}
-                    className="rounded-full p-1 text-gray-400 hover:bg-room-hover hover:text-white"
-                    aria-label="Close settings panel"
-                  >
-                    <X size={14} />
-                  </button>
+              {showInvite && (
+                <div className="mt-2 animate-fade-in rounded-lg bg-room-card p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h4 className="text-xs font-semibold text-white">Invite to Circle</h4>
+                    <button
+                      onClick={() => setShowInvite(false)}
+                      className="rounded-full p-1 text-gray-400 hover:bg-room-hover hover:text-white"
+                      aria-label="Close invite panel"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-lg bg-room-hover px-3 py-2">
+                    <span className="flex-1 truncate text-xs text-gray-300">
+                      niakofa.com/circle/southside-community
+                    </span>
+                    <button
+                      onClick={handleCopyLink}
+                      className="flex items-center gap-1 text-xs font-medium text-brand-purple-light hover:text-brand-purple"
+                    >
+                      {copied ? <Check size={12} className="text-brand-green" /> : <Copy size={12} />}
+                      {copied ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <button className="rounded-lg bg-room-hover py-2 text-xs font-medium text-gray-300 transition-colors hover:bg-room-border">
+                      Share via Messages
+                    </button>
+                    <button className="rounded-lg bg-room-hover py-2 text-xs font-medium text-gray-300 transition-colors hover:bg-room-border">
+                      Share to Profile
+                    </button>
+                  </div>
                 </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="mb-1 block text-[11px] font-medium text-gray-400">Speaker Limit</label>
-                    <input
-                      type="number"
-                      value={localSpeakerLimit}
-                      onChange={e => setLocalSpeakerLimit(Number(e.target.value) || 0)}
-                      min={1}
-                      max={50}
-                      className="w-full rounded-lg border border-room-border bg-room-hover px-3 py-1.5 text-xs text-white outline-none focus:border-brand-purple"
+              )}
+
+              {showSettings && (
+                <div className="mt-2 animate-fade-in rounded-lg bg-room-card p-3">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h4 className="text-xs font-semibold text-white">Circle Settings</h4>
+                    <button
+                      onClick={() => setShowSettings(false)}
+                      className="rounded-full p-1 text-gray-400 hover:bg-room-hover hover:text-white"
+                      aria-label="Close settings panel"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="mb-1 block text-[11px] font-medium text-gray-400">Speaker Limit</label>
+                      <input
+                        type="number"
+                        value={settings.speakerLimit}
+                        onChange={e => onUpdateSettings({ speakerLimit: Number(e.target.value) || 0 })}
+                        min={1}
+                        max={50}
+                        className="w-full rounded-lg border border-room-border bg-room-hover px-3 py-1.5 text-xs text-white outline-none focus:border-brand-purple"
+                      />
+                    </div>
+                    <SettingsToggle
+                      label="Allow Chat"
+                      checked={settings.chatEnabled}
+                      onChange={v => onUpdateSettings({ chatEnabled: v })}
                     />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-medium text-gray-400">Allow Chat</span>
-                    <button
-                      onClick={() => setChatEnabled(v => !v)}
-                      className={`relative h-5 w-9 rounded-full transition-colors ${chatEnabled ? 'bg-brand-purple' : 'bg-room-border'}`}
-                      role="switch"
-                      aria-checked={chatEnabled}
-                      aria-label="Toggle chat"
-                    >
-                      <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${chatEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-medium text-gray-400">Allow Recording</span>
-                    <button
-                      onClick={() => setRecordingAllowed(v => !v)}
-                      className={`relative h-5 w-9 rounded-full transition-colors ${recordingAllowed ? 'bg-brand-purple' : 'bg-room-border'}`}
-                      role="switch"
-                      aria-checked={recordingAllowed}
-                      aria-label="Toggle recording permission"
-                    >
-                      <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${recordingAllowed ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <button
-                onClick={onToggleRecording}
-                className={`flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-colors ${
-                  isRecording
-                    ? 'bg-brand-red/20 text-brand-red hover:bg-brand-red/30'
-                    : 'bg-brand-red text-white hover:bg-brand-red-hover'
-                }`}
-                aria-label={isRecording ? 'Stop recording' : 'Start recording'}
-              >
-                <Radio size={13} />
-                {isRecording ? 'Stop Rec' : 'Start Rec'}
-              </button>
-              <button
-                onClick={() => setShowEndConfirm(true)}
-                className="flex items-center justify-center gap-1.5 rounded-lg bg-brand-red py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-red-hover"
-                aria-label="End circle"
-              >
-                <PhoneOff size={13} />
-                End Circle
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-gray-500">
-              Host Controls
-            </h3>
-            {selectedParticipant ? (
-              <div className="animate-fade-in rounded-lg bg-room-card p-3">
-                <div className="mb-3 flex items-center gap-2.5">
-                  <img
-                    src={selectedParticipant.avatar}
-                    alt={selectedParticipant.name}
-                    className="h-10 w-10 rounded-full object-cover ring-1 ring-room-border"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold text-white">
-                      {selectedParticipant.name}
-                    </div>
-                    <div className="text-[11px] capitalize text-gray-500">
-                      {selectedParticipant.role}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setSelectedParticipant(null)}
-                    className="rounded-full p-1 text-gray-400 hover:bg-room-hover hover:text-white"
-                    aria-label="Close moderation panel"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <HostControlButton
-                    icon={UserCog}
-                    label="Make Co-Host"
-                    onClick={() => {
-                      onMakeCoHost(selectedParticipant.id);
-                      setSelectedParticipant(null);
-                    }}
-                  />
-                  <HostControlButton
-                    icon={ArrowDownToLine}
-                    label="To Audience"
-                    onClick={() => {
-                      onMoveToAudience(selectedParticipant.id);
-                      setSelectedParticipant(null);
-                    }}
-                  />
-                  <HostControlButton
-                    icon={MicOff}
-                    label="Mute"
-                    onClick={() => {
-                      onMute(selectedParticipant.id);
-                      setSelectedParticipant(null);
-                    }}
-                  />
-                  <HostControlButton
-                    icon={UserMinus}
-                    label="Remove"
-                    onClick={() => {
-                      onRemove(selectedParticipant.id);
-                      setSelectedParticipant(null);
-                    }}
-                  />
-                  <HostControlButton icon={Shield} label="Block" onClick={() => setSelectedParticipant(null)} />
-                  <HostControlButton icon={Flag} label="Report" onClick={() => setSelectedParticipant(null)} />
-                </div>
-              </div>
-            ) : (
-              <>
-                <p className="mb-2 text-[11px] text-gray-500">
-                  Select a participant to moderate:
-                </p>
-                <div className="space-y-1">
-                  {stageParticipants
-                    .filter(p => p.id !== currentUserId)
-                    .map(p => (
-                      <button
-                        key={p.id}
-                        onClick={() => setSelectedParticipant(p)}
-                        className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-room-hover"
-                        aria-label={`Select ${p.name} for moderation`}
-                      >
-                        <img
-                          src={p.avatar}
-                          alt={p.name}
-                          className="h-7 w-7 rounded-full object-cover ring-1 ring-room-border"
+                    <SettingsToggle
+                      label="Allow Recording"
+                      checked={settings.recordingAllowed}
+                      onChange={v => onUpdateSettings({ recordingAllowed: v })}
+                    />
+                    <SettingsToggle
+                      label="Slow Mode"
+                      checked={settings.slowMode}
+                      onChange={v => onUpdateSettings({ slowMode: v })}
+                    />
+                    {settings.slowMode && (
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-gray-400">
+                          Slow Mode Interval (seconds)
+                        </label>
+                        <input
+                          type="number"
+                          value={settings.slowModeInterval}
+                          onChange={e => onUpdateSettings({ slowModeInterval: Number(e.target.value) || 1 })}
+                          min={1}
+                          max={60}
+                          className="w-full rounded-lg border border-room-border bg-room-hover px-3 py-1.5 text-xs text-white outline-none focus:border-brand-purple"
                         />
-                        <span className="flex-1 truncate text-xs font-medium text-gray-300">
-                          {p.name}
-                        </span>
-                        <span className="text-[10px] capitalize text-gray-500">{p.role}</span>
-                      </button>
-                    ))}
+                      </div>
+                    )}
+                    <div>
+                      <label className="mb-1 block text-[11px] font-medium text-gray-400">Room Visibility</label>
+                      <select
+                        value={settings.roomVisibility}
+                        onChange={e => onUpdateSettings({ roomVisibility: e.target.value as 'public' | 'followers' })}
+                        className="w-full rounded-lg border border-room-border bg-room-hover px-3 py-1.5 text-xs text-white outline-none focus:border-brand-purple"
+                      >
+                        <option value="public">Public — Anyone can join</option>
+                        <option value="followers">Followers only</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
-              </>
-            )}
-          </div>
+              )}
+
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button
+                  onClick={onToggleRecording}
+                  disabled={!settings.recordingAllowed}
+                  className={`flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                    isRecording
+                      ? 'bg-brand-red/20 text-brand-red hover:bg-brand-red/30'
+                      : 'bg-brand-red text-white hover:bg-brand-red-hover'
+                  }`}
+                  aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+                >
+                  <Radio size={13} />
+                  {isRecording ? 'Stop Rec' : 'Start Rec'}
+                </button>
+                <button
+                  onClick={() => setShowEndConfirm(true)}
+                  className="flex items-center justify-center gap-1.5 rounded-lg bg-brand-red py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-red-hover"
+                  aria-label="End circle"
+                >
+                  <PhoneOff size={13} />
+                  End Circle
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isHost && (
+            <div>
+              <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                Host Controls
+              </h3>
+              {selectedParticipant ? (
+                <div className="animate-fade-in rounded-lg bg-room-card p-3">
+                  <div className="mb-3 flex items-center gap-2.5">
+                    <img
+                      src={selectedParticipant.avatar}
+                      alt={selectedParticipant.name}
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-room-border"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold text-white">
+                        {selectedParticipant.name}
+                      </div>
+                      <div className="text-[11px] capitalize text-gray-500">
+                        {selectedParticipant.role}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedParticipant(null)}
+                      className="rounded-full p-1 text-gray-400 hover:bg-room-hover hover:text-white"
+                      aria-label="Close moderation panel"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <HostControlButton
+                      icon={UserCog}
+                      label="Make Co-Host"
+                      onClick={() => {
+                        onMakeCoHost(selectedParticipant.id);
+                        setSelectedParticipant(null);
+                      }}
+                    />
+                    <HostControlButton
+                      icon={ArrowDownToLine}
+                      label="To Audience"
+                      onClick={() => {
+                        onMoveToAudience(selectedParticipant.id);
+                        setSelectedParticipant(null);
+                      }}
+                    />
+                    <HostControlButton
+                      icon={MicOff}
+                      label="Mute"
+                      onClick={() => {
+                        onMute(selectedParticipant.id);
+                        setSelectedParticipant(null);
+                      }}
+                    />
+                    <HostControlButton
+                      icon={UserMinus}
+                      label="Remove"
+                      onClick={() => {
+                        onRemove(selectedParticipant.id);
+                        setSelectedParticipant(null);
+                      }}
+                    />
+                    <HostControlButton icon={Shield} label="Block" onClick={() => setSelectedParticipant(null)} />
+                    <HostControlButton icon={Flag} label="Report" onClick={() => setSelectedParticipant(null)} />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="mb-2 text-[11px] text-gray-500">
+                    Select a participant to moderate:
+                  </p>
+                  <div className="space-y-1">
+                    {stageParticipants
+                      .filter(p => p.id !== currentUserId)
+                      .map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => setSelectedParticipant(p)}
+                          className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-room-hover"
+                          aria-label={`Select ${p.name} for moderation`}
+                        >
+                          <img
+                            src={p.avatar}
+                            alt={p.name}
+                            className="h-7 w-7 rounded-full object-cover ring-1 ring-room-border"
+                          />
+                          <span className="flex-1 truncate text-xs font-medium text-gray-300">
+                            {p.name}
+                          </span>
+                          <span className="text-[10px] capitalize text-gray-500">{p.role}</span>
+                        </button>
+                      ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex h-full flex-col">
-          <div className="flex-1 space-y-3 overflow-y-auto p-3" role="log" aria-live="polite" aria-label="Chat messages">
-            {chatMessages.length === 0 ? (
-              <p className="text-center text-xs text-gray-500">No messages yet. Start the conversation!</p>
-            ) : (
-              chatMessages.map(msg => (
-                <div key={msg.id} className="group flex gap-2.5">
-                  <img
-                    src={msg.participant.avatar}
-                    alt={msg.participant.name}
-                    className="h-7 w-7 flex-shrink-0 rounded-full object-cover ring-1 ring-room-border"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xs font-semibold text-white">
-                        {msg.participant.name}
-                      </span>
-                      <RoleBadge role={msg.participant.role} />
-                      <span className="text-[10px] text-gray-500">
-                        {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+          {settings.chatEnabled ? (
+            <>
+              <div className="flex-1 space-y-3 overflow-y-auto p-3" role="log" aria-live="polite" aria-label="Chat messages">
+                {chatMessages.length === 0 ? (
+                  <p className="text-center text-xs text-gray-500">No messages yet. Start the conversation!</p>
+                ) : (
+                  chatMessages.map(msg => (
+                    <div key={msg.id} className="group flex gap-2.5">
+                      <img
+                        src={msg.participant.avatar}
+                        alt={msg.participant.name}
+                        className="h-7 w-7 flex-shrink-0 rounded-full object-cover ring-1 ring-room-border"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-xs font-semibold text-white">
+                            {msg.participant.name}
+                          </span>
+                          <RoleBadge role={msg.participant.role} />
+                          <span className="text-[10px] text-gray-500">
+                            {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          {isHost && !msg.isDeleted && (
+                            <button
+                              onClick={() => onDeleteChat(msg.id)}
+                              className="ml-auto text-[10px] text-gray-600 opacity-0 transition-opacity hover:text-brand-red group-hover:opacity-100"
+                              aria-label="Delete message"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                        {msg.isDeleted ? (
+                          <p className="text-xs italic text-gray-600">Message deleted</p>
+                        ) : (
+                          <p className="text-xs text-gray-300">{msg.text}</p>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-xs text-gray-300">{msg.text}</p>
-                  </div>
+                  ))
+                )}
+                <div ref={chatEndRef} />
+              </div>
+              {settings.slowMode && (
+                <div className="px-3 py-1 text-center text-[10px] text-gray-500">
+                  Slow mode: {settings.slowModeInterval}s between messages
                 </div>
-              ))
-            )}
-            <div ref={chatEndRef} />
-          </div>
-          <div className="border-t border-room-border p-3">
-            <div className="flex items-center gap-2 rounded-lg bg-room-card px-3 py-2">
-              <input
-                value={chatInput}
-                onChange={e => onSetChatInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') onSendChat();
-                }}
-                placeholder="Send a message..."
-                className="flex-1 bg-transparent text-xs text-white placeholder-gray-500 outline-none"
-                aria-label="Type a chat message"
-              />
-              <button
-                onClick={onSendChat}
-                className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-purple text-white transition-colors hover:bg-brand-purple-hover disabled:opacity-40"
-                aria-label="Send message"
-                disabled={!chatInput.trim()}
-              >
-                <Send size={13} />
-              </button>
+              )}
+              <div className="border-t border-room-border p-3">
+                <div className="flex items-center gap-2 rounded-lg bg-room-card px-3 py-2">
+                  <input
+                    value={chatInput}
+                    onChange={e => onSetChatInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') onSendChat();
+                    }}
+                    placeholder="Send a message..."
+                    className="flex-1 bg-transparent text-xs text-white placeholder-gray-500 outline-none"
+                    aria-label="Type a chat message"
+                  />
+                  <button
+                    onClick={onSendChat}
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-purple text-white transition-colors hover:bg-brand-purple-hover disabled:opacity-40"
+                    aria-label="Send message"
+                    disabled={!chatInput.trim()}
+                  >
+                    <Send size={13} />
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex h-full items-center justify-center p-6 text-center">
+              <div>
+                <X size={24} className="mx-auto mb-2 text-gray-600" />
+                <p className="text-xs text-gray-500">Chat has been disabled by the host.</p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -548,6 +611,31 @@ export function RightPanel(props: RightPanelProps) {
         </div>
       )}
     </aside>
+  );
+}
+
+function SettingsToggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-[11px] font-medium text-gray-400">{label}</span>
+      <button
+        onClick={() => onChange(!checked)}
+        className={`relative h-5 w-9 rounded-full transition-colors ${checked ? 'bg-brand-purple' : 'bg-room-border'}`}
+        role="switch"
+        aria-checked={checked}
+        aria-label={`Toggle ${label}`}
+      >
+        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
+      </button>
+    </div>
   );
 }
 
