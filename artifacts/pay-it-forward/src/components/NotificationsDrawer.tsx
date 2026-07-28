@@ -1,7 +1,9 @@
+import { useCallback } from "react";
+import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Bell, BellOff, ShieldAlert, CheckCircle2,
-  Heart, MapPin, DollarSign, Calendar, Users, MessageCircle,
+  Heart, MapPin, DollarSign, Calendar, Users, MessageCircle, Radio,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -16,10 +18,13 @@ export interface LiveNotification {
     | "nearby"
     | "helper_accepted"
     | "pledge_scheduled"
-    | "chat";
+    | "chat"
+    | "circle_went_live";
   title: string;
   body: string;
   time: Date;
+  /** Optional navigation target — clicking this notification navigates there */
+  actionUrl?: string;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -50,6 +55,7 @@ const TYPE_CFG: Record<LiveNotification["type"], TypeCfg> = {
   helper_accepted:  { Icon: Users,          iconColor: "text-green-400",    ringBg: "bg-green-500/10",     cardBorder: "border-green-500/20"   },
   pledge_scheduled: { Icon: Calendar,       iconColor: "text-purple-400",   ringBg: "bg-purple-500/10",    cardBorder: "border-purple-500/20"  },
   chat:             { Icon: MessageCircle,  iconColor: "text-primary",      ringBg: "bg-primary/10",       cardBorder: "border-primary/20"     },
+  circle_went_live: { Icon: Radio,          iconColor: "text-red-400",      ringBg: "bg-red-500/10",       cardBorder: "border-red-500/30"     },
 };
 
 const fallbackCfg: TypeCfg = {
@@ -61,8 +67,9 @@ const fallbackCfg: TypeCfg = {
 
 // ── NotificationItem ───────────────────────────────────────────────────────────
 
-function NotificationItem({ n, index }: { n: LiveNotification; index: number }) {
+function NotificationItem({ n, index, onNavigate }: { n: LiveNotification; index: number; onNavigate?: (url: string) => void }) {
   const cfg = TYPE_CFG[n.type] ?? fallbackCfg;
+  const isClickable = !!n.actionUrl;
 
   return (
     <motion.div
@@ -71,7 +78,8 @@ function NotificationItem({ n, index }: { n: LiveNotification; index: number }) 
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: -40, opacity: 0 }}
       transition={{ type: "spring", damping: 24, stiffness: 260, delay: Math.min(index * 0.03, 0.25) }}
-      className={`flex items-start gap-3 p-3.5 rounded-2xl border ${cfg.ringBg} ${cfg.cardBorder}`}
+      className={`flex items-start gap-3 p-3.5 rounded-2xl border ${cfg.ringBg} ${cfg.cardBorder} ${isClickable ? "cursor-pointer active:scale-[0.98] transition-transform" : ""}`}
+      onClick={isClickable && onNavigate ? () => onNavigate(n.actionUrl!) : undefined}
     >
       <div className={`w-9 h-9 rounded-full ${cfg.ringBg} border ${cfg.cardBorder} flex items-center justify-center shrink-0 mt-0.5`}>
         <cfg.Icon className={`w-[18px] h-[18px] ${cfg.iconColor}`} />
@@ -80,7 +88,12 @@ function NotificationItem({ n, index }: { n: LiveNotification; index: number }) 
       <div className="flex-1 min-w-0">
         <div className={`text-sm font-black leading-tight ${cfg.iconColor}`}>{n.title}</div>
         <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed line-clamp-2">{n.body}</div>
-        <div className="text-[10px] text-muted-foreground/50 mt-1 tabular-nums">{timeAgo(n.time)}</div>
+        <div className="flex items-center gap-2 mt-1">
+          <div className="text-[10px] text-muted-foreground/50 tabular-nums">{timeAgo(n.time)}</div>
+          {isClickable && (
+            <div className={`text-[10px] font-bold ${cfg.iconColor}`}>Tap to join →</div>
+          )}
+        </div>
       </div>
     </motion.div>
   );
@@ -95,6 +108,12 @@ interface Props {
 }
 
 export function NotificationsDrawer({ open, onClose, notifications }: Props) {
+  const [, setLocation] = useLocation();
+  const handleNavigate = useCallback((url: string) => {
+    onClose();
+    setLocation(url);
+  }, [onClose, setLocation]);
+
   return (
     <AnimatePresence>
       {open && (
@@ -171,7 +190,7 @@ export function NotificationsDrawer({ open, onClose, notifications }: Props) {
               ) : (
                 <AnimatePresence initial={false}>
                   {notifications.map((n, i) => (
-                    <NotificationItem key={n.id} n={n} index={i} />
+                    <NotificationItem key={n.id} n={n} index={i} onNavigate={handleNavigate} />
                   ))}
                 </AnimatePresence>
               )}

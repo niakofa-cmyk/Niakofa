@@ -250,6 +250,8 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
           video_enabled: live.video_enabled,
           is_recording: live.is_recording,
           started_at: live.started_at,
+          topic: live.topic ?? null,
+          description: live.description ?? null,
           speaker_count: participants.filter(p => p.role === "host" || p.role === "speaker" || p.role === "co_host").length,
           listener_count: participants.filter(p => p.role === "listener").length,
         },
@@ -322,11 +324,17 @@ router.get("/audio-circle-sessions/:id", requireAuth, requireApproved, generalAp
 
 // ── Session lifecycle ───────────────────────────────────────────────────────
 
+const VALID_SPEAKER_LIMITS = [4, 8, 12, 13, 18, 24] as const;
+
 const StartSessionBody = z.object({
   title: z.string().trim().min(1).max(MAX_TITLE_LEN),
   description: z.string().trim().max(MAX_DESC_LEN).optional(),
   topic: z.string().trim().max(MAX_TOPIC_LEN).optional(),
   video_enabled: z.boolean().optional(),
+  // host-configurable speaker limit; defaults to 13 (historic default)
+  max_speakers: z.number().int().refine(v => (VALID_SPEAKER_LIMITS as readonly number[]).includes(v), {
+    message: `max_speakers must be one of ${VALID_SPEAKER_LIMITS.join(", ")}`,
+  }).optional(),
 });
 
 // POST /audio-circles/:id/start — any approved user can host. Fails with 409
@@ -350,7 +358,10 @@ router.post("/audio-circles/:id/start", requireAuth, requireApproved, generalApi
       circle_id: circleId,
       host_id: hostId,
       title: parsed.data.title,
+      description: parsed.data.description ?? null,
+      topic: parsed.data.topic ?? null,
       video_enabled: parsed.data.video_enabled ?? false,
+      max_speakers: parsed.data.max_speakers ?? 13,
     })
     .returning();
   if (!session) return res.status(500).json({ error: "Failed to start session" });

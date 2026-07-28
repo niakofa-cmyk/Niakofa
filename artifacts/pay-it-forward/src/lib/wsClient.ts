@@ -67,7 +67,6 @@ export type WsEventType =
   // Fired when an admin approves/denies a pending account
   | "account_approval_decided"
   // Niakofa Audio Circles
-  | "circle_session_started"
   | "family_memory_created"
   | "family_interview_status_changed"
   | "circle_session_ended"

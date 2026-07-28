@@ -43,6 +43,8 @@ interface SessionInfo {
   video_enabled: boolean;
   is_recording: boolean;
   max_speakers: number;
+  topic?: string | null;
+  description?: string | null;
 }
 
 type ConnectionStatus = "connecting" | "connected" | "reconnecting" | "lost";
@@ -935,6 +937,9 @@ export default function AudioCircleRoomScreen() {
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
             <div className="min-w-0">
               <div className="font-black text-sm truncate">{session.title}</div>
+              {session.topic && (
+                <div className="text-[10px] font-bold text-primary/80 truncate">{session.topic}</div>
+              )}
               <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
                 <span className="font-bold text-green-400">LIVE</span>
                 <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {participants.length} in room</span>
@@ -1523,60 +1528,89 @@ export default function AudioCircleRoomScreen() {
           </div>
         )}
 
-        {/* Controls row */}
-        <div className="flex items-center justify-center gap-2.5">
+        {/* Controls row — labeled buttons */}
+        <div className="flex items-center justify-center gap-2">
           {!canSpeak && (
-            <Button variant={me?.hand_raised ? "default" : "outline"} onClick={toggleHand} className="gap-2">
-              <Hand className="w-4 h-4" />
-              {me?.hand_raised ? "Hand raised ✋" : "Raise hand"}
-            </Button>
+            <button
+              onClick={toggleHand}
+              className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl border transition-all min-w-[56px] ${
+                me?.hand_raised
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:border-primary/40"
+              }`}
+            >
+              <Hand className="w-5 h-5" />
+              <span className="text-[9px] font-bold uppercase tracking-wide leading-none mt-0.5">
+                {me?.hand_raised ? "Lower" : "Raise Hand"}
+              </span>
+            </button>
           )}
           {canSpeak && (
-            <Button
-              variant={micOn ? "default" : "outline"}
-              size="icon"
+            <button
               onClick={toggleMic}
               disabled={mediaCapabilities?.microphone === false}
-              title={micOn ? "Mute" : "Unmute"}
+              className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl border transition-all min-w-[56px] disabled:opacity-40 ${
+                micOn
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:border-primary/40"
+              }`}
             >
-              {micOn ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-            </Button>
+              {micOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+              <span className="text-[9px] font-bold uppercase tracking-wide leading-none mt-0.5">
+                {micOn ? "Mute" : "Unmute"}
+              </span>
+            </button>
           )}
           {canSpeak && session.video_enabled && (
-            <Button
-              variant={videoOn ? "default" : "outline"}
-              size="icon"
+            <button
               onClick={toggleVideo}
               disabled={mediaCapabilities?.camera === false}
-              title={videoOn ? "Turn off camera" : "Turn on camera"}
+              className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl border transition-all min-w-[56px] disabled:opacity-40 ${
+                videoOn
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:border-primary/40"
+              }`}
             >
-              {videoOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
-            </Button>
+              {videoOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+              <span className="text-[9px] font-bold uppercase tracking-wide leading-none mt-0.5">
+                {videoOn ? "Cam Off" : "Camera"}
+              </span>
+            </button>
           )}
           {(me?.role === "speaker" || me?.role === "co_host") && (
-            <Button variant="outline" size="icon" onClick={() => demote(myUserId!)} title="Leave stage">
-              <UserMinus className="w-4 h-4" />
-            </Button>
+            <button
+              onClick={() => demote(myUserId!)}
+              className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl border border-border text-muted-foreground hover:border-amber-400/40 hover:text-amber-400 transition-all min-w-[56px]"
+            >
+              <UserMinus className="w-5 h-5" />
+              <span className="text-[9px] font-bold uppercase tracking-wide leading-none mt-0.5">Leave Stage</span>
+            </button>
           )}
           {isHost && (
-            <Button
-              variant="outline"
-              size="icon"
+            <button
               onClick={toggleRecording}
               disabled={uploading || mediaCapabilities?.recording === false}
-              title={session.is_recording ? "Stop recording" : "Start recording"}
+              className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl border transition-all min-w-[56px] disabled:opacity-40 ${
+                session.is_recording
+                  ? "border-red-500/40 bg-red-500/10 text-red-400"
+                  : "border-border text-muted-foreground hover:border-red-400/40"
+              }`}
             >
-              <CircleIcon className={`w-4 h-4 ${session.is_recording ? "text-red-500 fill-red-500" : ""}`} />
-            </Button>
+              <CircleIcon className={`w-5 h-5 ${session.is_recording ? "fill-red-500 text-red-500" : ""}`} />
+              <span className="text-[9px] font-bold uppercase tracking-wide leading-none mt-0.5">
+                {session.is_recording ? "Stop Rec" : "Record"}
+              </span>
+            </button>
           )}
-          <Button
-            variant="destructive"
-            size="icon"
+          <button
             onClick={isHost ? () => setShowEndConfirm(true) : leaveAndExit}
-            title={isHost ? "End Circle" : "Leave"}
+            className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl border border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all min-w-[56px]"
           >
-            <PhoneOff className="w-4 h-4" />
-          </Button>
+            <PhoneOff className="w-5 h-5" />
+            <span className="text-[9px] font-bold uppercase tracking-wide leading-none mt-0.5">
+              {isHost ? "End Circle" : "Leave Room"}
+            </span>
+          </button>
         </div>
       </div>
     </div>

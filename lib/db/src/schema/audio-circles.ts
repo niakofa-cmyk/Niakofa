@@ -53,11 +53,15 @@ export const audioCircleSessionsTable = pgTable("audio_circle_sessions", {
   // becomes an orphaned reference instead of taking the room down with it.
   host_id:         integer("host_id").references(() => usersTable.id, { onDelete: "set null" }),
   title:           text("title").notNull(),
+  description:     text("description"),   // optional session description (set at start, never updated)
+  topic:           text("topic"),          // optional topic/category tag (e.g. "Safety", "Education")
   status:          text("status").notNull().default("live"), // live | ended
   video_enabled:   boolean("video_enabled").notNull().default(false),
   is_recording:    boolean("is_recording").notNull().default(false),
   recording_url:   text("recording_url"), // set once the host stops recording and it's uploaded
-  max_speakers:    integer("max_speakers").notNull().default(13), // host + up to 12 more, 13 total mic slots
+  // Host-configurable speaker limit (4 / 8 / 12 / 13 / 18 / 24).
+  // 13 = historic default (host + 12 speakers). Max enforced server-side in /promote.
+  max_speakers:    integer("max_speakers").notNull().default(13),
   started_at:      timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   ended_at:        timestamp("ended_at", { withTimezone: true }),
   // Set when the host disconnects (page refresh, tab close, network drop)

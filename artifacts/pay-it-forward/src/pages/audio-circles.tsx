@@ -18,6 +18,8 @@ interface LiveSessionSummary {
   started_at: string;
   speaker_count: number;
   listener_count: number;
+  topic?: string | null;
+  description?: string | null;
 }
 
 interface CircleSummary {
@@ -45,10 +47,12 @@ interface Recording {
 const SESSION_KEY = "niakofa_circles_city";
 
 // ── Pre-join host modal ──────────────────────────────────────────────────────
+const SPEAKER_LIMIT_OPTIONS = [4, 8, 12, 18, 24] as const;
+
 interface HostModalProps {
   circle: CircleSummary;
   onClose: () => void;
-  onStart: (circle: CircleSummary, videoEnabled: boolean, title: string, description: string, topic: string) => void;
+  onStart: (circle: CircleSummary, videoEnabled: boolean, title: string, description: string, topic: string, maxSpeakers: number) => void;
   starting: boolean;
 }
 
@@ -59,6 +63,7 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
   );
   const [description, setDescription] = useState("");
   const [topic, setTopic] = useState("");
+  const [maxSpeakers, setMaxSpeakers] = useState<number>(12);
   const [micReady, setMicReady] = useState<boolean | null>(null);
   const [camReady, setCamReady] = useState<boolean | null>(null);
   const checkedRef = useRef(false);
@@ -88,7 +93,7 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
 
   const circleName = circle.neighborhood_name ? `${circle.neighborhood_name} Circle` : `${circle.city_display} Circle`;
 
-  const canStart = title.trim().length > 0 && micReady !== false && (format !== "video" || camReady !== false);
+  const canStart = title.trim().length > 0 && micReady !== false && (format !== "video" || camReady !== false) && maxSpeakers > 0;
 
   return (
     <motion.div
@@ -153,6 +158,29 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
           />
         </div>
 
+        {/* Speaker limit */}
+        <div className="space-y-2">
+          <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Speaker Limit</div>
+          <div className="flex gap-1.5 flex-wrap">
+            {SPEAKER_LIMIT_OPTIONS.map(n => (
+              <button
+                key={n}
+                onClick={() => setMaxSpeakers(n)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-black border transition-all ${
+                  maxSpeakers === n
+                    ? "border-primary bg-primary/15 text-primary"
+                    : "border-border text-muted-foreground hover:border-primary/30"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <div className="text-[10px] text-muted-foreground">
+            Max microphone slots (you + up to {maxSpeakers - 1} speakers)
+          </div>
+        </div>
+
         {/* Format picker */}
         <div className="space-y-2">
           <div className="text-xs font-black uppercase tracking-wider text-muted-foreground">Format</div>
@@ -204,7 +232,7 @@ function HostCircleModal({ circle, onClose, onStart, starting }: HostModalProps)
         <Button
           className="w-full"
           disabled={starting || !canStart}
-          onClick={() => onStart(circle, format === "video", title.trim(), description.trim(), topic.trim())}
+          onClick={() => onStart(circle, format === "video", title.trim(), description.trim(), topic.trim(), maxSpeakers)}
         >
           {starting ? "Starting…" : `Start ${format === "audio" ? "Audio" : "Video"} Circle`}
         </Button>
@@ -235,6 +263,9 @@ export default function AudioCirclesScreen() {
   const [recordingsByCircle, setRecordingsByCircle] = useState<Map<number, Recording[]>>(new Map());
   const [recordingsOpen, setRecordingsOpen] = useState<Set<number>>(new Set());
   const [followingSet, setFollowingSet] = useState<Set<number>>(new Set());
+  const [followedCircles, setFollowedCircles] = useState<CircleSummary[]>([]);
+  const [followedLoading, setFollowedLoading] = useState(true);
+  const [activeSection, setActiveSection] = useState<"discover" | "following">("discover");
 
   // Ref for the highlighted neighborhood card (from Community tab navigation)
   const highlightRef = useRef<HTMLDivElement | null>(null);
@@ -275,6 +306,18 @@ export default function AudioCirclesScreen() {
     }
   }, [circles]);
 
+  // Load the "Following" list separately from the city-scoped list
+  useEffect(() => {
+    let cancelled = false;
+    setFollowedLoading(true);
+    fetch(`${base}/api/audio-circles/followed`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : { followed: [] })
+      .then(data => { if (!cancelled) setFollowedCircles(data.followed ?? []); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setFollowedLoading(false); });
+    return () => { cancelled = true; };
+  }, [base]);
+
   // Scroll to the highlighted neighborhood when circles load
   useEffect(() => {
     if (neighborhoodParam && highlightRef.current) {
@@ -282,14 +325,14 @@ export default function AudioCirclesScreen() {
     }
   }, [neighborhoodParam, circles]);
 
-  const startRoom = async (circle: CircleSummary, video_enabled = false, title: string, description: string, topic: string) => {
+  const startRoom = async (circle: CircleSummary, video_enabled = false, title: string, description: string, topic: string, maxSpeakers = 12) => {
     setStartingId(circle.id);
     setHostModal(null);
     try {
       const res = await fetch(`${base}/api/audio-circles/${circle.id}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ title, video_enabled, description: description || undefined, topic: topic || undefined }),
+        body: JSON.stringify({ title, video_enabled, description: description || undefined, topic: topic || undefined, max_speakers: maxSpeakers }),
       });
       const data = await res.json();
       if (res.status === 409 && data.session_id) {
@@ -407,6 +450,69 @@ export default function AudioCirclesScreen() {
           </p>
         </div>
 
+        {/* Discover / Following tabs */}
+        <div className="flex items-center border-b border-border -mb-1">
+          <button
+            onClick={() => setActiveSection("discover")}
+            className={`pb-2 px-1 mr-4 text-sm font-bold border-b-2 transition-colors ${activeSection === "discover" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+          >
+            Discover
+          </button>
+          <button
+            onClick={() => setActiveSection("following")}
+            className={`pb-2 px-1 text-sm font-bold border-b-2 transition-colors flex items-center gap-1.5 ${activeSection === "following" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+          >
+            Following
+            {followedCircles.length > 0 && (
+              <span className="text-[9px] font-black bg-primary/15 text-primary border border-primary/30 rounded-full px-1.5 py-0.5">{followedCircles.length}</span>
+            )}
+          </button>
+        </div>
+
+        {/* Following section */}
+        {activeSection === "following" && (
+          <div className="space-y-3">
+            {followedLoading ? (
+              <div className="text-center text-sm text-muted-foreground py-6">Loading…</div>
+            ) : followedCircles.length === 0 ? (
+              <div className="bg-card/50 border border-dashed border-border rounded-2xl p-6 text-center space-y-2">
+                <Bell className="w-8 h-8 text-muted-foreground/30 mx-auto" />
+                <div className="text-sm font-bold text-muted-foreground">No followed circles yet</div>
+                <div className="text-xs text-muted-foreground/60">Follow a circle and you'll get notified the moment it goes live.</div>
+              </div>
+            ) : (
+              followedCircles.map((circle) => {
+                const isFollowing = followingSet.has(circle.id);
+                return (
+                  <div key={circle.id} className="bg-card border border-border rounded-2xl p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl shrink-0">
+                      {circle.neighborhood_emoji ?? "🌆"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-black text-sm">{circle.neighborhood_name ?? `${circle.city_display} (city-wide)`}</div>
+                      <div className="text-xs text-muted-foreground">{circle.city_display}</div>
+                    </div>
+                    <button
+                      onClick={() => toggleFollow(circle)}
+                      className={`p-2.5 rounded-xl border transition-colors shrink-0 ${
+                        isFollowing
+                          ? "border-primary/40 text-primary"
+                          : "border-border text-muted-foreground hover:text-primary hover:border-primary/40"
+                      }`}
+                      title={isFollowing ? "Unfollow" : "Follow"}
+                    >
+                      {isFollowing ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {/* Discover section */}
+        {activeSection === "discover" && (
+        <>
         <form
           className="flex gap-2"
           onSubmit={(e) => { e.preventDefault(); setCity(cityInput); }}
@@ -507,6 +613,21 @@ export default function AudioCirclesScreen() {
                     </div>
                   </div>
 
+                            {/* Topic tag */}
+                  {live?.topic && (
+                    <div className="mt-2">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+                        {live.topic}
+                      </span>
+                    </div>
+                  )}
+                  {/* Description */}
+                  {live?.description && (
+                    <div className="mt-1.5 text-[11px] text-muted-foreground/70 line-clamp-2 leading-relaxed">
+                      {live.description}
+                    </div>
+                  )}
+
                   {/* Action buttons */}
                   <div className="mt-3 flex items-center gap-2">
                     {live ? (
@@ -587,6 +708,8 @@ export default function AudioCirclesScreen() {
             );
           })}
         </div>
+        </> // end discover section
+        )}
       </div>
 
       {/* Host pre-join modal */}

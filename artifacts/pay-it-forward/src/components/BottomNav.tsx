@@ -158,6 +158,16 @@ export function BottomNav() {
         body: `$${p.amount.toFixed(2)} saved for ${d} — we'll remind you`,
         time: new Date(),
       });
+    } else if (event.type === "circle_went_live") {
+      const p = event.payload as { session_id: number; circle_name: string; title: string; host_name: string; video_enabled?: boolean };
+      addNotif({
+        id: `circle-live-${p.session_id}`,
+        type: "circle_went_live",
+        title: `🔴 ${p.circle_name} is live`,
+        body: `"${p.title}" — hosted by ${p.host_name}${p.video_enabled ? " 🎥" : ""}`,
+        time: new Date(),
+        actionUrl: `/audio-circle/${p.session_id}`,
+      });
     }
   });
 
