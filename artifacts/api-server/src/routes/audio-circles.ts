@@ -303,15 +303,19 @@ router.get("/audio-circles/:id", requireAuth, generalApiLimiter, async (req, res
 // GET /audio-circle-sessions/:id — session + circle + participants, for the
 // room page to load its initial state directly by session id (as opposed to
 // GET /audio-circles/:id, which is keyed by the permanent circle/channel).
-router.get("/audio-circle-sessions/:id", requireAuth, generalApiLimiter, async (req, res) => {
+router.get("/audio-circle-sessions/:id", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
 
   const [session] = await db.select().from(audioCircleSessionsTable).where(eq(audioCircleSessionsTable.id, sessionId)).limit(1);
   if (!session) return res.status(404).json({ error: "Session not found" });
 
+  // Ended sessions are not re-joinable — treat as not found so the client
+  // can redirect back to the circles list rather than showing a stale room.
+  if (session.status !== "live") return res.status(404).json({ error: "Session not found or no longer live" });
+
   const [circle] = await db.select().from(audioCirclesTable).where(eq(audioCirclesTable.id, session.circle_id)).limit(1);
-  const participants = session.status === "live" ? await getActiveParticipants(sessionId) : [];
+  const participants = await getActiveParticipants(sessionId);
 
   return res.json({ session, circle: circle ?? null, participants });
 });
