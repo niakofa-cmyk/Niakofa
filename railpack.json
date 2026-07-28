@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "cache": [
+    { "id": "pnpm-store", "paths": ["/root/.local/share/pnpm/store"] }
+  ],
+  "steps": {
+    "build": {
+      "commands": [
+        "pnpm install --frozen-lockfile",
+        "pnpm run typecheck:libs",
+        "pnpm --filter @workspace/api-spec run codegen",
+        "pnpm --filter @workspace/api-server run build",
+        "NODE_ENV=production BASE_PATH=/ pnpm --filter @workspace/pay-it-forward run build",
+        "pnpm --filter nia-service run build"
+      ]
+    }
+  },
+  "deploy": {
+    "startCommand": "pnpm --filter @workspace/db run migrate && (while true; do PORT=3001 node artifacts/nia-service/dist/index.js; rc=$?; [ $rc -eq 0 ] && break; [ $rc -eq 143 ] && break; echo \"[supervisor] nia-service crashed (rc=$rc) — restarting in 5s\"; sleep 5; done &) && node --enable-source-maps artifacts/api-server/dist/index.mjs"
+  }
+}
