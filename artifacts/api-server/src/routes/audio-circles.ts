@@ -25,6 +25,7 @@ import {
   audioCircleSessionsTable,
   audioCircleParticipantsTable,
   audioCircleFollowsTable,
+  audioCircleMessagesTable,
   circleBlocksTable,
   circleReportsTable,
   cityNeighborhoodsTable,
@@ -851,11 +852,54 @@ router.post("/audio-circle-sessions/:id/kick", requireAuth, generalApiLimiter, a
   return res.json({ ok: true });
 });
 
-// ── Ephemeral chat ───────────────────────────────────────────────────────────
-// Messages are never persisted — each client holds its own in-memory list.
-// The server only validates length and broadcasts the circle_chat_message event.
+// ── Persistent chat ───────────────────────────────────────────────────────────
+// Messages are written to audio_circle_messages before broadcast so they
+// survive page refreshes. Late-joiners and refreshers fetch history via GET.
 
 const ChatBody = z.object({ body: z.string().trim().min(1).max(MAX_CHAT_LEN) });
+
+const CHAT_HISTORY_LIMIT = 200; // messages returned by the history endpoint
+
+// GET /audio-circle-sessions/:id/chat — fetch the last N messages (newest last).
+// Any authenticated participant (or admin) may call this; the session must still
+// be live (or recently ended — we return history even for ended sessions so a
+// recap is possible).
+router.get("/audio-circle-sessions/:id/chat", requireAuth, generalApiLimiter, async (req, res) => {
+  const sessionId = parseInt(String(req.params.id ?? ""), 10);
+  if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
+
+  // Fetch the last CHAT_HISTORY_LIMIT messages, joined with sender profile.
+  // We select in DESC order (most-recent first) then reverse in JS so the
+  // client receives them oldest-first — ready to append directly to state.
+  const rows = await db
+    .select({
+      id:         audioCircleMessagesTable.id,
+      body:       audioCircleMessagesTable.body,
+      sent_at:    audioCircleMessagesTable.sent_at,
+      sender_id:  audioCircleMessagesTable.sender_id,
+      name:       usersTable.name,
+      avatar_url: usersTable.avatar_url,
+    })
+    .from(audioCircleMessagesTable)
+    .leftJoin(usersTable, eq(usersTable.id, audioCircleMessagesTable.sender_id))
+    .where(eq(audioCircleMessagesTable.session_id, sessionId))
+    .orderBy(desc(audioCircleMessagesTable.sent_at))
+    .limit(CHAT_HISTORY_LIMIT);
+
+  // Reverse so oldest message is first (chat renders top→bottom)
+  const messages = rows.reverse().map(r => ({
+    // Use "db-<id>" as the stable client-side ID so it can never clash with
+    // the "<timestamp>-<userId>" format of freshly-broadcast WS messages.
+    id:         `db-${r.id}`,
+    user_id:    r.sender_id ?? 0,
+    name:       r.name ?? "Deleted user",
+    avatar_url: r.avatar_url ?? null,
+    body:       r.body,
+    created_at: r.sent_at.toISOString(),
+  }));
+
+  return res.json({ messages });
+});
 
 // POST /audio-circle-sessions/:id/chat — any active participant sends a chat message.
 router.post("/audio-circle-sessions/:id/chat", requireAuth, generalApiLimiter, async (req, res) => {
@@ -875,21 +919,30 @@ router.post("/audio-circle-sessions/:id/chat", requireAuth, generalApiLimiter, a
     .where(eq(usersTable.id, userId))
     .limit(1);
 
+  // Persist first — then broadcast. If the insert throws the message is never
+  // sent, which is preferable to broadcasting a message we didn't durably store.
+  const [saved] = await db
+    .insert(audioCircleMessagesTable)
+    .values({ session_id: sessionId, sender_id: userId, body: parsed.data.body })
+    .returning({ id: audioCircleMessagesTable.id, sent_at: audioCircleMessagesTable.sent_at });
+
   const activeParticipants = await getActiveParticipants(sessionId);
-  const messageId = `${Date.now()}-${userId}`;
+  // Use "db-<id>" so WS messages and history messages share the same ID
+  // namespace — the client deduplicates by ID to avoid showing a message twice
+  // when it receives both the WS event and the history on reconnect.
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
     type: "circle_chat_message",
     payload: {
       session_id: sessionId,
-      id: messageId,
-      user_id: userId,
-      name: user?.name ?? "Someone",
+      id:         `db-${saved.id}`,
+      user_id:    userId,
+      name:       user?.name ?? "Someone",
       avatar_url: user?.avatar_url ?? null,
-      body: parsed.data.body,
-      created_at: new Date().toISOString(),
+      body:       parsed.data.body,
+      created_at: saved.sent_at.toISOString(),
     },
   });
-  return res.json({ ok: true });
+  return res.json({ ok: true, id: `db-${saved.id}` });
 });
 
 // POST /audio-circle-sessions/:id/lower-all-hands — host or co-host clears

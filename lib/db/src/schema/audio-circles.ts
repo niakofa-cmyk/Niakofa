@@ -154,6 +154,28 @@ export const circleReportsTable = pgTable("circle_reports", {
   index("circle_reports_reviewed_idx").on(t.reviewed),
 ]);
 
+/**
+ * Persistent chat messages for a Circle session.
+ *
+ * Messages are written before broadcast so they survive page refreshes and
+ * late-joiners can fetch the last 200 on mount. sender_id uses SET NULL so a
+ * user deletion doesn't wipe the whole thread — the message text is preserved
+ * with a null sender, identical to the help-request chat pattern.
+ */
+export const audioCircleMessagesTable = pgTable("audio_circle_messages", {
+  id:         serial("id").primaryKey(),
+  session_id: integer("session_id").notNull().references(() => audioCircleSessionsTable.id, { onDelete: "cascade" }),
+  sender_id:  integer("sender_id").references(() => usersTable.id, { onDelete: "set null" }),
+  body:       text("body").notNull(),
+  sent_at:    timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("audio_circle_messages_session_idx").on(t.session_id),
+  index("audio_circle_messages_sent_at_idx").on(t.sent_at),
+]);
+
+export type AudioCircleMessage = typeof audioCircleMessagesTable.$inferSelect;
+export type InsertAudioCircleMessage = typeof audioCircleMessagesTable.$inferInsert;
+
 export type AudioCircle = typeof audioCirclesTable.$inferSelect;
 export type InsertAudioCircle = typeof audioCirclesTable.$inferInsert;
 export type AudioCircleSession = typeof audioCircleSessionsTable.$inferSelect;

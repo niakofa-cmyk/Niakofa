@@ -440,13 +440,14 @@ export default function AudioCircleRoomScreen() {
 
   useWebSocket("ws_reconnected", () => { void resync(); });
 
-  // ── Load initial state ─────────────────────────────────────────────────────
+  // ── Load initial state + chat history ─────────────────────────────────────
   useEffect(() => {
     if (isNaN(sessionId)) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
+        // Session info + join in sequence (join needs the session to exist)
         const res = await fetch(`${base}/api/audio-circle-sessions/${sessionId}`, { headers: authHeaders() });
         if (!res.ok) {
           if (!cancelled) toast({ title: "Circle not found", description: "This room may have ended.", variant: "destructive" });
@@ -462,11 +463,25 @@ export default function AudioCircleRoomScreen() {
         }
         setSession(data.session);
 
-        const joinRes = await fetch(`${base}/api/audio-circle-sessions/${sessionId}/join`, {
-          method: "POST", headers: authHeaders(),
-        });
-        const joinData = await joinRes.json();
-        if (!cancelled && joinRes.ok) setParticipants(joinData.participants ?? []);
+        // Join + chat history in parallel — both are independent of each other
+        const [joinRes, historyRes] = await Promise.all([
+          fetch(`${base}/api/audio-circle-sessions/${sessionId}/join`, {
+            method: "POST", headers: authHeaders(),
+          }),
+          fetch(`${base}/api/audio-circle-sessions/${sessionId}/chat`, { headers: authHeaders() }),
+        ]);
+
+        if (!cancelled) {
+          if (joinRes.ok) {
+            const joinData = await joinRes.json();
+            setParticipants(joinData.participants ?? []);
+          }
+          if (historyRes.ok) {
+            const historyData = await historyRes.json();
+            // Seed state with persisted history; WS handler deduplicates by id
+            setChatMessages(historyData.messages ?? []);
+          }
+        }
       } catch {
         if (!cancelled) toast({ title: "Couldn't load the circle", variant: "destructive" });
       } finally {
@@ -773,7 +788,13 @@ export default function AudioCircleRoomScreen() {
   useWebSocket("circle_chat_message", (e) => {
     const p = e.payload as ChatMessage & { session_id: number };
     if (p.session_id !== sessionId) return;
-    setChatMessages(prev => [...prev, { id: p.id, user_id: p.user_id, name: p.name, avatar_url: p.avatar_url, body: p.body, created_at: p.created_at }]);
+    // Deduplicate by id — prevents double-append when history was already
+    // loaded on mount (the sender receives the WS event AND may have fetched
+    // history that includes the same message if they reconnected quickly).
+    setChatMessages(prev => {
+      if (prev.some(m => m.id === p.id)) return prev;
+      return [...prev, { id: p.id, user_id: p.user_id, name: p.name, avatar_url: p.avatar_url, body: p.body, created_at: p.created_at }];
+    });
   });
 
   useWebSocket("circle_hands_lowered", (e) => {
