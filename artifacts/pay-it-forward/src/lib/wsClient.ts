@@ -90,6 +90,8 @@ export type WsEventType =
   | "circle_host_transfer"
   | "circle_signal"
   | "circle_settings_updated"
+  | "circle_active_speaker"
+  | "circle_heartbeat"
   | "connected"
   | "pong"
   | "ping";

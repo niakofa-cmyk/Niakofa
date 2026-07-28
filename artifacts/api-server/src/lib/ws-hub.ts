@@ -111,6 +111,13 @@ export type WsEventType =
   | "circle_invite"
   // Sent to all participants when the host transfers ownership to a co-host.
   | "circle_host_transfer"
+  // Broadcast whenever the loudest speaker changes. Clients use this to
+  // highlight the active speaker tile (speaking ring, name label) without
+  // running their own audio analysis on every remote stream.
+  | "circle_active_speaker"
+  // Sent to all when a participant's presence heartbeat is registered.
+  // (No-op on most clients — only used for diagnostics / admin views.)
+  | "circle_heartbeat"
   // WebRTC mesh signaling relay (offer/answer/ICE) between two specific
   // participants in the same session — see sendCircleSignal below.
   | "circle_signal";

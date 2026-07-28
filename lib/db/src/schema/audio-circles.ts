@@ -91,17 +91,24 @@ export const audioCircleSessionsTable = pgTable("audio_circle_sessions", {
  * control recording — see migration 0084.
  */
 export const audioCircleParticipantsTable = pgTable("audio_circle_participants", {
-  id:           serial("id").primaryKey(),
-  session_id:   integer("session_id").notNull().references(() => audioCircleSessionsTable.id, { onDelete: "cascade" }),
-  user_id:      integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
-  role:         text("role").notNull().default("listener"), // host | co_host | speaker | listener
-  hand_raised:  boolean("hand_raised").notNull().default(false),
-  muted:        boolean("muted").notNull().default(false),
-  joined_at:    timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
-  left_at:      timestamp("left_at", { withTimezone: true }),
+  id:             serial("id").primaryKey(),
+  session_id:     integer("session_id").notNull().references(() => audioCircleSessionsTable.id, { onDelete: "cascade" }),
+  user_id:        integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  role:           text("role").notNull().default("listener"), // host | co_host | speaker | listener
+  hand_raised:    boolean("hand_raised").notNull().default(false),
+  // Timestamp when the hand was raised — used to sort the queue (oldest first)
+  // and display a "Xm Ys waiting" counter that survives page refreshes.
+  hand_raised_at: timestamp("hand_raised_at", { withTimezone: true }),
+  muted:          boolean("muted").notNull().default(false),
+  joined_at:      timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+  left_at:        timestamp("left_at", { withTimezone: true }),
+  // Heartbeat: updated every ~30s by the client. Used to detect ghost
+  // participants (crashed tab, mobile backgrounding) in a lazy sweep.
+  last_seen_at:   timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("audio_circle_participants_session_idx").on(t.session_id),
   index("audio_circle_participants_user_idx").on(t.user_id),
+  index("audio_circle_participants_last_seen_idx").on(t.last_seen_at),
 ]);
 
 /**

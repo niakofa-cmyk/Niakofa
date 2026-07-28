@@ -7,7 +7,7 @@ import {
   VolumeX, UserMinus, Flag, Volume2, Ban, AlertTriangle,
   Signal, SignalHigh, SignalMedium, SignalLow, Share2,
   Shield, MoreVertical, ArrowLeft, MessageSquare, Settings,
-  UserPlus, Send, X,
+  UserPlus, Send, X, PlayCircle, ExternalLink,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders, getToken } from "@/lib/auth";
@@ -29,9 +29,19 @@ interface Participant {
   user_id: number;
   role: "host" | "co_host" | "speaker" | "listener";
   hand_raised: boolean;
+  hand_raised_at?: string | null; // ISO timestamp — set by server when hand raised
   muted: boolean;
   name: string;
   avatar_url: string | null;
+}
+
+interface RecordingArchiveEntry {
+  id: number;
+  title: string;
+  host_name: string | null;
+  recording_url: string;
+  started_at: string;
+  ended_at: string | null;
 }
 
 interface SessionInfo {
@@ -169,6 +179,22 @@ function mediaErrorMessage(error: unknown, device: "microphone" | "camera"): str
     return `Your ${device} is already in use by another app.`;
   }
   return `Couldn't access your ${device}. Check browser permissions and try again.`;
+}
+
+// ── Live "Xm Ys" tick hook ───────────────────────────────────────────────────
+// Counts up from a timestamp; re-renders once per second while active.
+function useElapsedLabel(isoTimestamp: string | null | undefined): string {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!isoTimestamp) return;
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [isoTimestamp]);
+  if (!isoTimestamp) return "";
+  const elapsed = Math.max(0, Date.now() - new Date(isoTimestamp).getTime());
+  const m = Math.floor(elapsed / 60000);
+  const s = Math.floor((elapsed % 60000) / 1000);
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
 // ── Recording timer ──────────────────────────────────────────────────────────
@@ -452,6 +478,14 @@ export default function AudioCircleRoomScreen() {
 
   // ── Raised hand timestamps (userId → epoch ms when raised) ────────────────
   const handRaisedAtRef = useRef<Map<number, number>>(new Map());
+
+  // ── Active speaker (from circle_active_speaker WS events) ─────────────────
+  const [activeSpeakerId, setActiveSpeakerId] = useState<number | null>(null);
+
+  // ── Recording archive ──────────────────────────────────────────────────────
+  const [showRecordingArchive, setShowRecordingArchive] = useState(false);
+  const [recordingArchive, setRecordingArchive] = useState<RecordingArchiveEntry[]>([]);
+  const [loadingArchive, setLoadingArchive] = useState(false);
 
   // ── Host transfer modal ────────────────────────────────────────────────────
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -995,13 +1029,40 @@ export default function AudioCircleRoomScreen() {
   });
 
   useWebSocket("circle_invite", (e) => {
-    const p = e.payload as { session_id: number; circle_title: string; topic?: string | null; invited_by: string };
-    // This event is sent directly to the invited user; show a toast with a
-    // link so they can join with one tap.
+    const p = e.payload as { session_id: number; circle_title: string; topic?: string | null; invited_by: string; join_path?: string };
+    // This event is sent directly to the invited user. Show a persistent
+    // (5s) toast with a join button so they can enter the room with one tap.
+    const joinPath = p.join_path ?? `/audio-circle/${p.session_id}`;
     toast({
       title: `You've been invited to "${p.circle_title}"`,
-      description: `${p.invited_by} invited you${p.topic ? ` · ${p.topic}` : ""}. Tap to join.`,
+      description: `${p.invited_by} invited you${p.topic ? ` · ${p.topic}` : ""}`,
+      duration: 10000, // 10s — enough time to read and decide
     });
+    // Also show a secondary action toast so they can navigate immediately.
+    // Using two toasts avoids needing a ToastAction element import.
+    setTimeout(() => {
+      toast({
+        title: "Tap to join the circle",
+        description: p.circle_title,
+        duration: 9000,
+        action: (
+          <button
+            onClick={() => setLocation(joinPath)}
+            className="text-xs font-bold text-primary hover:underline"
+          >
+            Join Now
+          </button>
+        ) as unknown as undefined,
+      });
+    }, 200);
+  });
+
+  useWebSocket("circle_active_speaker", (e) => {
+    const p = e.payload as { session_id: number; user_id: number; reporter_id: number };
+    if (p.session_id !== sessionId) return;
+    setActiveSpeakerId(p.user_id);
+    // Auto-clear after 3s if no fresh event arrives (speaker went quiet).
+    setTimeout(() => setActiveSpeakerId(prev => prev === p.user_id ? null : prev), 3000);
   });
 
   useWebSocket("circle_host_transfer", (e) => {
@@ -1174,6 +1235,61 @@ export default function AudioCircleRoomScreen() {
     }
   };
 
+  // ── Recording archive custom-event listener ──────────────────────────────
+  // The "Past Recordings" button lives inside ManagementPanelBody which
+  // can't close over this component's state setters directly — it uses a
+  // CustomEvent so the room component can handle it.
+  useEffect(() => {
+    const handler = () => loadRecordingArchive();
+    window.addEventListener("circle:open-archive", handler);
+    return () => window.removeEventListener("circle:open-archive", handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.circle_id]);
+
+  // ── Presence heartbeat ────────────────────────────────────────────────────
+  // Pings /heartbeat every 30s with the current loudest speaker so the server
+  // can (a) keep last_seen_at fresh for ghost-participant sweeps and (b) fan
+  // out circle_active_speaker events without each client running full audio
+  // analysis on every remote stream independently.
+  useEffect(() => {
+    if (!session || !myUserId) return;
+    const sendHeartbeat = () => {
+      // Find the loudest currently-speaking remote peer.
+      let loudestId: number | null = null;
+      let loudestLevel = 0.1; // threshold — must be actually speaking
+      for (const [uid, level] of speakingLevels) {
+        if (level > loudestLevel) { loudestLevel = level; loudestId = uid; }
+      }
+      // Also consider local mic (for speakers broadcasting their own volume).
+      if (localLevel > loudestLevel && myUserId && canSpeak) loudestId = myUserId;
+      const token = getToken();
+      fetch(`${base}/api/audio-circle-sessions/${sessionId}/heartbeat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: token ? `Bearer ${token}` : "" },
+        body: JSON.stringify({ active_speaker_id: loudestId }),
+        keepalive: true,
+      }).catch(() => {});
+    };
+    sendHeartbeat(); // fire immediately on join
+    const id = setInterval(sendHeartbeat, 30_000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id, myUserId]);
+
+  // ── Recording archive loader ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!showRecordingArchive || !session) return;
+    setLoadingArchive(true);
+    fetch(`${base}/api/audio-circles/${session.circle_id}/recordings`, { headers: authHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) setRecordingArchive(data.recordings ?? []);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingArchive(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showRecordingArchive, session?.circle_id]);
+
   // ── Pending recording recovery (on-mount IDB check) ──────────────────────
   useEffect(() => {
     if (!isHost || !session) return;
@@ -1249,6 +1365,10 @@ export default function AudioCircleRoomScreen() {
       }
     })();
     if (ok) toast({ title: "Host role transferred" });
+  };
+
+  const loadRecordingArchive = async () => {
+    setShowRecordingArchive(true);
   };
 
   const shareCircle = () => {
@@ -1649,6 +1769,71 @@ export default function AudioCircleRoomScreen() {
         )}
       </AnimatePresence>
 
+      {/* ── Recording Archive Modal ─────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showRecordingArchive && (
+          <motion.div
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setShowRecordingArchive(false)}
+          >
+            <motion.div
+              className="bg-card border border-border rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
+              initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+                <div className="flex items-center gap-2">
+                  <PlayCircle className="w-4 h-4 text-primary" />
+                  <span className="font-black text-sm">Past Recordings</span>
+                </div>
+                <button onClick={() => setShowRecordingArchive(false)} className="text-muted-foreground hover:text-foreground">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="overflow-y-auto flex-1 p-4 space-y-3">
+                {loadingArchive ? (
+                  <div className="text-center text-sm text-muted-foreground py-8">Loading recordings…</div>
+                ) : recordingArchive.length === 0 ? (
+                  <div className="text-center text-sm text-muted-foreground py-8">
+                    <PlayCircle className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                    No recordings yet for this circle.
+                  </div>
+                ) : (
+                  recordingArchive.map(rec => {
+                    const startedAt = rec.started_at ? new Date(rec.started_at).toLocaleString() : "Unknown date";
+                    return (
+                      <div key={rec.id} className="bg-muted/40 border border-border rounded-xl p-3 flex items-start gap-3">
+                        <div className="bg-primary/10 rounded-xl p-2 shrink-0">
+                          <PlayCircle className="w-5 h-5 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-bold truncate">{rec.title || "Circle Recording"}</div>
+                          <div className="text-[11px] text-muted-foreground">{startedAt}</div>
+                          {rec.host_name && (
+                            <div className="text-[11px] text-muted-foreground">Hosted by {rec.host_name}</div>
+                          )}
+                        </div>
+                        <a
+                          href={rec.recording_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          Play <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="lg:flex lg:items-start lg:gap-4 lg:px-4 lg:pt-4">
 
         {/* ── Desktop-only left sidebar: People / Reactions ────────────────────── */}
@@ -1861,6 +2046,7 @@ export default function AudioCircleRoomScreen() {
                     participant={s}
                     isMe={s.user_id === myUserId}
                     level={s.user_id === myUserId ? localLevel : (speakingLevels.get(s.user_id) ?? 0)}
+                    isActiveSpeaker={activeSpeakerId === s.user_id}
                     isHost={isHost}
                     canMod={canMod && s.user_id !== myUserId}
                     modMenuOpen={modMenuOpen === s.user_id}
@@ -1889,10 +2075,17 @@ export default function AudioCircleRoomScreen() {
           </div>
         )}
 
-        {/* ── Raised hands (host-only) — ordered queue ───────────────────────── */}
+        {/* ── Raised hands (host-only) — queue sorted by wait time ────────────── */}
         {canMod && audience.some(l => l.hand_raised) && (() => {
-          const raised = audience.filter(l => l.hand_raised);
-          const now = Date.now();
+          // Sort oldest (longest waiting) first using server-side hand_raised_at,
+          // falling back to client-side tracking for recently raised hands.
+          const raised = audience
+            .filter(l => l.hand_raised)
+            .sort((a, b) => {
+              const ta = a.hand_raised_at ? new Date(a.hand_raised_at).getTime() : (handRaisedAtRef.current.get(a.user_id) ?? Date.now());
+              const tb = b.hand_raised_at ? new Date(b.hand_raised_at).getTime() : (handRaisedAtRef.current.get(b.user_id) ?? Date.now());
+              return ta - tb;
+            });
           return (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 space-y-2">
             <div className="flex items-center justify-between mb-1">
@@ -1901,44 +2094,22 @@ export default function AudioCircleRoomScreen() {
               </div>
               {atSpeakerLimit
                 ? <span className="text-[10px] text-amber-400 bg-amber-500/20 px-2 py-0.5 rounded-full">Stage full</span>
-                : <span className="text-[10px] text-amber-400/70">Tap "Bring up" in order</span>
+                : <span className="text-[10px] text-amber-400/70">Oldest first</span>
               }
             </div>
-            {raised.map((l, idx) => {
-              const raisedAt = handRaisedAtRef.current.get(l.user_id);
-              const waitMin = raisedAt ? Math.floor((now - raisedAt) / 60000) : 0;
-              const waitSec = raisedAt ? Math.floor(((now - raisedAt) % 60000) / 1000) : 0;
-              const waitLabel = raisedAt
-                ? waitMin > 0 ? `${waitMin}m ${waitSec}s` : `${waitSec}s`
-                : null;
-              return (
-              <div key={l.user_id} className="flex items-center gap-3">
-                <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
-                  <span className="text-[10px] font-black text-amber-400">{idx + 1}</span>
-                </div>
-                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm font-black overflow-hidden shrink-0">
-                  {l.avatar_url ? <img src={l.avatar_url} className="w-full h-full object-cover" alt="" /> : l.name?.[0] ?? "?"}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold truncate">{l.name}</div>
-                  <div className="text-[10px] text-amber-400/80">
-                    Wants to speak{waitLabel ? ` · ${waitLabel}` : ""}
-                  </div>
-                </div>
-                <div className="flex gap-1.5 shrink-0">
-                  {isHost && (
-                    <Button size="sm" variant="outline" className="h-7 text-xs px-2 text-blue-400 border-blue-400/40" onClick={() => assignCohost(l.user_id)}>
-                      <Shield className="w-3 h-3" /> Co-host
-                    </Button>
-                  )}
-                  <Button size="sm" className="h-7 text-xs px-2" disabled={atSpeakerLimit} onClick={() => promote(l.user_id)}>
-                    Bring up
-                  </Button>
-                  <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={() => post("/hand", { raised: false, user_id: l.user_id })}>Dismiss</Button>
-                </div>
-              </div>
-              );
-            })}
+            {raised.map((l, idx) => (
+              <RaisedHandRow
+                key={l.user_id}
+                participant={l}
+                idx={idx}
+                isHost={isHost}
+                atSpeakerLimit={atSpeakerLimit}
+                handRaisedAtRef={handRaisedAtRef}
+                onPromote={() => promote(l.user_id)}
+                onAssignCohost={() => assignCohost(l.user_id)}
+                onDismiss={() => post("/hand", { raised: false, user_id: l.user_id })}
+              />
+            ))}
           </div>
           );
         })()}
@@ -2391,10 +2562,83 @@ export default function AudioCircleRoomScreen() {
 }
 
 // ── Speaker tile ───────────────────────────────────────────────────────────────
+// ── RaisedHandRow ─────────────────────────────────────────────────────────────
+// Displays a single entry in the raised-hand queue with a live "Xm Ys" wait
+// timer sourced from the server-side hand_raised_at timestamp (falls back to
+// the client-side ref when the server stamp isn't available yet).
+interface RaisedHandRowProps {
+  participant: Participant;
+  idx: number;
+  isHost: boolean;
+  atSpeakerLimit: boolean;
+  handRaisedAtRef: React.MutableRefObject<Map<number, number>>;
+  onPromote: () => void;
+  onAssignCohost: () => void;
+  onDismiss: () => void;
+}
+function RaisedHandRow({ participant: l, idx, isHost, atSpeakerLimit, handRaisedAtRef, onPromote, onAssignCohost, onDismiss }: RaisedHandRowProps) {
+  // Server timestamp takes priority; fall back to client-side tracking.
+  const serverTs = l.hand_raised_at ?? null;
+  const clientTs = handRaisedAtRef.current.get(l.user_id);
+  const isoTs = serverTs ?? (clientTs ? new Date(clientTs).toISOString() : null);
+  const waitLabel = useElapsedLabel(isoTs);
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
+        <span className="text-[10px] font-black text-amber-400">{idx + 1}</span>
+      </div>
+      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm font-black overflow-hidden shrink-0">
+        {l.avatar_url ? <img src={l.avatar_url} className="w-full h-full object-cover" alt="" /> : l.name?.[0] ?? "?"}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-bold truncate">{l.name}</div>
+        <div className="text-[10px] text-amber-400/80">
+          Wants to speak{waitLabel ? ` · ${waitLabel}` : ""}
+        </div>
+      </div>
+      <div className="flex gap-1.5 shrink-0">
+        {isHost && (
+          <Button size="sm" variant="outline" className="h-7 text-xs px-2 text-blue-400 border-blue-400/40" onClick={onAssignCohost}>
+            <Shield className="w-3 h-3" /> Co-host
+          </Button>
+        )}
+        <Button size="sm" className="h-7 text-xs px-2" disabled={atSpeakerLimit} onClick={onPromote}>
+          Bring up
+        </Button>
+        <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={onDismiss}>Dismiss</Button>
+      </div>
+    </div>
+  );
+}
+
+// ── ManagementHandRow ─────────────────────────────────────────────────────────
+// Same as RaisedHandRow but compact, used in the management panel sidebar.
+function ManagementHandRow({ participant: l, onPromote, onDismiss }: { participant: Participant; onPromote: () => void; onDismiss: () => void }) {
+  const isoTs = l.hand_raised_at ?? null;
+  const waitLabel = useElapsedLabel(isoTs);
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black">
+        {l.avatar_url ? <img src={l.avatar_url} className="w-full h-full object-cover" alt="" /> : (l.name?.[0] ?? "?")}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-bold truncate">{l.name}</div>
+        <div className="text-[9px] text-amber-400/80">
+          Wants to speak{waitLabel ? ` · ${waitLabel}` : ""}
+        </div>
+      </div>
+      <Button size="sm" className="h-6 text-[10px] px-2" onClick={onPromote}>Bring Up</Button>
+      <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={onDismiss}>Dismiss</Button>
+    </div>
+  );
+}
+
 interface SpeakerTileProps {
   participant: Participant;
   isMe: boolean;
   level: number;
+  isActiveSpeaker?: boolean;
   isHost: boolean;
   canMod: boolean;
   modMenuOpen: boolean;
@@ -2408,22 +2652,30 @@ interface SpeakerTileProps {
   onRemoveCohost?: () => void;
 }
 
-function SpeakerTile({ participant: s, isMe, level, canMod, modMenuOpen, onOpenMod, onMute, onDemote, onKick, onBlock, onReport, onAssignCohost, onRemoveCohost }: SpeakerTileProps) {
-  const isSpeaking = level > 0.12;
+function SpeakerTile({ participant: s, isMe, level, isActiveSpeaker, canMod, modMenuOpen, onOpenMod, onMute, onDemote, onKick, onBlock, onReport, onAssignCohost, onRemoveCohost }: SpeakerTileProps) {
+  const isSpeaking = level > 0.12 || isActiveSpeaker;
   return (
     <div className="flex flex-col items-center gap-1 relative">
       <div className="relative">
-        {/* Animated speaking ring */}
+        {/* Animated speaking ring — pulsing when speaking, glowing when active speaker */}
         {isSpeaking && (
           <motion.div
-            className="absolute inset-0 rounded-full border-2 border-primary"
+            className={`absolute inset-0 rounded-full border-2 ${isActiveSpeaker ? "border-green-400" : "border-primary"}`}
             animate={{ scale: [1, 1.15, 1], opacity: [0.8, 0.3, 0.8] }}
-            transition={{ duration: 0.8, repeat: Infinity }}
+            transition={{ duration: isActiveSpeaker ? 0.6 : 0.8, repeat: Infinity }}
+          />
+        )}
+        {/* Extra outer glow for the active speaker — highest-energy state */}
+        {isActiveSpeaker && (
+          <motion.div
+            className="absolute -inset-1 rounded-full border border-green-400/40"
+            animate={{ scale: [1, 1.25, 1], opacity: [0.4, 0, 0.4] }}
+            transition={{ duration: 1.2, repeat: Infinity }}
           />
         )}
         <button
           className={`w-14 h-14 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 ${
-            isSpeaking ? "border-primary" : s.role === "host" ? "border-amber-400/60" : s.role === "co_host" ? "border-blue-400/60" : "border-primary/30"
+            isActiveSpeaker ? "border-green-400" : isSpeaking ? "border-primary" : s.role === "host" ? "border-amber-400/60" : s.role === "co_host" ? "border-blue-400/60" : "border-primary/30"
           } ${canMod ? "cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all" : ""}`}
           onClick={canMod ? onOpenMod : undefined}
         >
@@ -2446,12 +2698,15 @@ function SpeakerTile({ participant: s, isMe, level, canMod, modMenuOpen, onOpenM
           <MicOff className="w-3 h-3 text-red-400 absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5" />
         )}
         {isSpeaking && !s.muted && (
-          <Volume2 className="w-3 h-3 text-primary absolute -bottom-0.5 -left-0.5 bg-background rounded-full p-0.5" />
+          <Volume2 className={`w-3 h-3 ${isActiveSpeaker ? "text-green-400" : "text-primary"} absolute -bottom-0.5 -left-0.5 bg-background rounded-full p-0.5`} />
         )}
       </div>
-      <span className={`text-[10px] font-bold truncate max-w-[64px] ${s.role === "co_host" ? "text-blue-400" : ""}`}>{isMe ? "You" : s.name}</span>
+      <span className={`text-[10px] font-bold truncate max-w-[64px] ${s.role === "co_host" ? "text-blue-400" : isActiveSpeaker ? "text-green-400" : ""}`}>{isMe ? "You" : s.name}</span>
       {s.role === "co_host" && (
         <span className="text-[8px] font-bold text-blue-400/80 uppercase tracking-wide">Co-host</span>
+      )}
+      {isActiveSpeaker && (
+        <span className="text-[8px] font-bold text-green-400/80 uppercase tracking-wide">Speaking</span>
       )}
 
       {/* Host moderation dropdown */}
@@ -2582,17 +2837,12 @@ function ManagementPanelBody({
         ) : (
           <div className="space-y-2">
             {visibleHands.map(l => (
-              <div key={l.user_id} className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black">
-                  {l.avatar_url ? <img src={l.avatar_url} className="w-full h-full object-cover" alt="" /> : (l.name?.[0] ?? "?")}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-bold truncate">{l.name}</div>
-                  <div className="text-[9px] text-amber-400/80">Wants to speak</div>
-                </div>
-                <Button size="sm" className="h-6 text-[10px] px-2" onClick={() => onPromote(l.user_id)}>Bring Up</Button>
-                <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => onDismissHand(l.user_id)}>Dismiss</Button>
-              </div>
+              <ManagementHandRow
+                key={l.user_id}
+                participant={l}
+                onPromote={() => onPromote(l.user_id)}
+                onDismiss={() => onDismissHand(l.user_id)}
+              />
             ))}
           </div>
         )}
@@ -2632,6 +2882,17 @@ function ManagementPanelBody({
           {isHost && onOpenTransfer && (
             <RoomControlButton icon={Crown} label="Transfer Host" onClick={onOpenTransfer} />
           )}
+          {/* Past recordings — always visible when the circle has ended recordings */}
+          <RoomControlButton
+            icon={PlayCircle}
+            label="Past Recordings"
+            onClick={() => {
+              // This button is rendered inside ManagementPanelBody which doesn't
+              // own the archive state directly. We bubble up via a custom event so
+              // the room component (which owns the state) can handle it.
+              window.dispatchEvent(new CustomEvent("circle:open-archive"));
+            }}
+          />
           <RoomControlButton icon={PhoneOff} label="End Circle" onClick={onEndCircle} tone="danger" />
         </div>
       </div>

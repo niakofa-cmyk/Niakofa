@@ -66,6 +66,7 @@ async function getActiveParticipants(sessionId: number) {
       user_id: audioCircleParticipantsTable.user_id,
       role: audioCircleParticipantsTable.role,
       hand_raised: audioCircleParticipantsTable.hand_raised,
+      hand_raised_at: audioCircleParticipantsTable.hand_raised_at,
       muted: audioCircleParticipantsTable.muted,
       name: usersTable.name,
       avatar_url: usersTable.avatar_url,
@@ -595,9 +596,14 @@ router.post("/audio-circle-sessions/:id/hand", requireAuth, generalApiLimiter, a
     return res.status(403).json({ error: "Only the host or co-host can lower another participant's hand" });
   }
 
+  // Set hand_raised_at when raising (null when lowering) so the queue
+  // can be ordered by wait time and the timer survives page refreshes.
   await db
     .update(audioCircleParticipantsTable)
-    .set({ hand_raised: parsed.data.raised })
+    .set({
+      hand_raised: parsed.data.raised,
+      hand_raised_at: parsed.data.raised ? new Date() : null,
+    })
     .where(and(
       eq(audioCircleParticipantsTable.session_id, sessionId),
       eq(audioCircleParticipantsTable.user_id, targetUserId),
@@ -1237,10 +1243,13 @@ router.post("/audio-circle-sessions/:id/invite", requireAuth, requireApproved, g
     type: "circle_invite",
     payload: {
       session_id: sessionId,
+      circle_id: session.circle_id,
       circle_title: session.title,
       topic: session.topic ?? null,
       invited_by: inviter?.name ?? "Someone",
       invited_by_id: actingUserId,
+      // Include host count / participant context for the invite toast
+      join_path: `/audio-circle/${sessionId}`,
     },
   });
 
