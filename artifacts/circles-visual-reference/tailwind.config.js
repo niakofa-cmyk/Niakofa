@@ -21,6 +21,8 @@ export default {
           'green-dim': '#16a34a',
           red: '#ef4444',
           'red-hover': '#dc2626',
+          blue: '#3b82f6',
+          amber: '#f59e0b',
         },
       },
       fontFamily: {
@@ -32,6 +34,7 @@ export default {
         'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
         'slide-right': 'slideRight 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
         'reaction-float': 'reactionFloat 1.8s ease-out forwards',
+        'scale-in': 'scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
       },
       keyframes: {
         pulseLive: {
@@ -49,6 +52,10 @@ export default {
         slideRight: {
           '0%': { transform: 'translateX(100%)', opacity: '0' },
           '100%': { transform: 'translateX(0)', opacity: '1' },
+        },
+        scaleIn: {
+          '0%': { transform: 'scale(0.95)', opacity: '0' },
+          '100%': { transform: 'scale(1)', opacity: '1' },
         },
         reactionFloat: {
           '0%': { transform: 'translateY(0) scale(0.8)', opacity: '1' },

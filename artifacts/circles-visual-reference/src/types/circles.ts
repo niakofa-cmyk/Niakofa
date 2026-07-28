@@ -3,6 +3,7 @@ export type ConnectionQuality = 'excellent' | 'good' | 'weak' | 'reconnecting' |
 export type CircleType = 'audio' | 'video';
 export type RightPanelTab = 'room' | 'chat';
 export type LeftPanelTab = 'people' | 'reactions';
+export type MobileView = 'stage' | 'people' | 'chat' | 'raised';
 
 export interface Participant {
   id: string;
@@ -13,6 +14,8 @@ export interface Participant {
   isMicOn: boolean;
   isCameraOn: boolean;
   hasRaisedHand: boolean;
+  isOnline: boolean;
+  joinedAt: number;
 }
 
 export interface RaisedHandEntry {
@@ -46,6 +49,16 @@ export interface ChatMessage {
   participant: Participant;
   text: string;
   timestamp: Date;
+  isDeleted?: boolean;
+}
+
+export interface RoomSettings {
+  speakerLimit: number;
+  chatEnabled: boolean;
+  recordingAllowed: boolean;
+  slowMode: boolean;
+  slowModeInterval: number;
+  roomVisibility: 'public' | 'followers';
 }
 
 export interface RoomState {
@@ -60,6 +73,6 @@ export interface RoomState {
   isMicOn: boolean;
   isCameraOn: boolean;
   showMobilePanel: boolean;
-  speakerLimit: number;
+  settings: RoomSettings;
   chatInput: string;
 }

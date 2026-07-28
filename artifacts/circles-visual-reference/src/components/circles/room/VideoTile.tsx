@@ -17,7 +17,7 @@ const ROLE_LABEL: Record<Role, string> = {
 
 const ROLE_BADGE_COLOR: Record<Role, string> = {
   host: 'bg-brand-purple text-white',
-  'co-host': 'bg-blue-500 text-white',
+  'co-host': 'bg-brand-blue text-white',
   speaker: 'bg-emerald-600 text-white',
   audience: 'bg-gray-600 text-white',
 };

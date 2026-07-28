@@ -65,42 +65,33 @@ export function LeftPanel({
             LIVE
           </span>
           {circle.isRecording && (
-            <span className="flex items-center gap-1.5 font-semibold text-brand-red">
+            <span className="flex items-center gap-1 font-semibold text-brand-red">
               <Radio size={12} />
               {recordingTime}
             </span>
           )}
-        </div>
-
-        <div className="mt-2.5 space-y-1.5 text-xs text-gray-400">
-          <div className="font-medium text-gray-300">{circle.topic}</div>
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1">
-              <Users size={12} />
-              {circle.participantCount} in room
-            </span>
-            <span className="flex items-center gap-1">
-              <Mic size={12} />
-              {stageParticipants.length} on stage
-            </span>
-          </div>
+          <span className="text-gray-500">{circle.topic}</span>
         </div>
       </div>
 
-      <div className="flex border-b border-room-border">
+      <div className="flex border-b border-room-border" role="tablist">
         <button
           onClick={() => onSetLeftTab('people')}
-          className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
+          role="tab"
+          aria-selected={leftTab === 'people'}
+          className={`flex-1 py-2 text-xs font-semibold transition-colors ${
             leftTab === 'people'
               ? 'border-b-2 border-brand-purple text-white'
               : 'text-gray-500 hover:text-gray-300'
           }`}
         >
-          People
+          People ({stageParticipants.length + audienceParticipants.length})
         </button>
         <button
           onClick={() => onSetLeftTab('reactions')}
-          className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
+          role="tab"
+          aria-selected={leftTab === 'reactions'}
+          className={`flex-1 py-2 text-xs font-semibold transition-colors ${
             leftTab === 'reactions'
               ? 'border-b-2 border-brand-purple text-white'
               : 'text-gray-500 hover:text-gray-300'
@@ -111,143 +102,142 @@ export function LeftPanel({
       </div>
 
       {leftTab === 'people' ? (
-        <div className="flex-1 overflow-y-auto">
-          <div className="p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
-                On Stage ({stageParticipants.length})
-              </h3>
-            </div>
-            <div className="space-y-1">
+        <div className="flex-1 overflow-y-auto p-3">
+          <div className="mb-4">
+            <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+              On Stage ({stageParticipants.length})
+            </h3>
+            <div className="space-y-1.5">
               {stageParticipants.map(p => (
                 <div
                   key={p.id}
-                  className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-room-hover"
+                  className="flex items-center gap-2.5 rounded-lg px-2 py-1.5"
                 >
-                  <img
-                    src={p.avatar}
-                    alt={p.name}
-                    className="h-8 w-8 rounded-full object-cover ring-1 ring-room-border"
-                  />
+                  <div className="relative flex-shrink-0">
+                    <img
+                      src={p.avatar}
+                      alt={p.name}
+                      className="h-8 w-8 rounded-full object-cover ring-1 ring-room-border"
+                    />
+                    {p.isOnline && (
+                      <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-brand-green ring-2 ring-room-panel" />
+                    )}
+                  </div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-medium text-white">
-                      {p.name}
-                      {p.id === currentUserId && (
-                        <span className="ml-1 text-gray-500">(You)</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-xs font-medium text-white">
+                        {p.name}
+                        {p.id === currentUserId && (
+                          <span className="ml-1 text-gray-500">(You)</span>
+                        )}
+                      </span>
+                      {p.role === 'host' && (
+                        <span className="rounded bg-brand-purple px-1 py-0.5 text-[8px] font-bold text-white">
+                          HOST
+                        </span>
+                      )}
+                      {p.role === 'co-host' && (
+                        <span className="rounded bg-brand-blue px-1 py-0.5 text-[8px] font-bold text-white">
+                          CO-HOST
+                        </span>
                       )}
                     </div>
-                    <div className="text-[10px] capitalize text-gray-500">{p.role}</div>
                   </div>
-                  <div className="flex items-center gap-1.5">
+                  <div
+                    className={`flex h-6 w-6 items-center justify-center rounded-full ${
+                      p.isMicOn ? 'bg-brand-green/20' : 'bg-red-500/20'
+                    }`}
+                  >
                     {p.isMicOn ? (
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-green/15">
-                        <Mic size={11} className="text-brand-green" />
-                      </div>
+                      <Mic size={11} className="text-brand-green" />
                     ) : (
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-red-500/15">
-                        <MicOff size={11} className="text-red-400" />
-                      </div>
-                    )}
-                    {p.isCameraOn ? (
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-purple/15">
-                        <Video size={11} className="text-brand-purple-light" />
-                      </div>
-                    ) : (
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-700/30">
-                        <VideoOff size={11} className="text-gray-500" />
-                      </div>
+                      <MicOff size={11} className="text-red-400" />
                     )}
                   </div>
+                  {circle.type === 'video' && (
+                    <div
+                      className={`flex h-6 w-6 items-center justify-center rounded-full ${
+                        p.isCameraOn ? 'bg-brand-green/20' : 'bg-room-hover'
+                      }`}
+                    >
+                      {p.isCameraOn ? (
+                        <Video size={11} className="text-brand-green" />
+                      ) : (
+                        <VideoOff size={11} className="text-gray-500" />
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="border-t border-room-border p-3">
+          <div>
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+              <h3 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                <Users size={12} />
                 Audience ({audienceParticipants.length})
               </h3>
             </div>
             <div className="relative mb-2">
               <Search
                 size={12}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500"
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600"
               />
               <input
                 value={audienceSearch}
                 onChange={e => setAudienceSearch(e.target.value)}
-                placeholder="Search audience"
-                className="w-full rounded-lg border border-room-border bg-room-card py-1.5 pl-7 pr-2 text-xs text-white placeholder-gray-500 outline-none focus:border-brand-purple"
+                placeholder="Search audience..."
+                className="w-full rounded-lg border border-room-border bg-room-card py-1.5 pl-7 pr-2 text-[11px] text-white placeholder-gray-600 outline-none focus:border-brand-purple"
+                aria-label="Search audience members"
               />
             </div>
             <div className="space-y-1">
               {visibleAudience.map(p => (
                 <div
                   key={p.id}
-                  className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-room-hover"
+                  className="flex items-center gap-2.5 rounded-lg px-2 py-1.5"
                 >
-                  <img
-                    src={p.avatar}
-                    alt={p.name}
-                    className="h-7 w-7 rounded-full object-cover ring-1 ring-room-border"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-medium text-gray-300">
-                      {p.name}
-                      {p.id === currentUserId && (
-                        <span className="ml-1 text-gray-500">(You)</span>
-                      )}
-                    </div>
+                  <div className="relative flex-shrink-0">
+                    <img
+                      src={p.avatar}
+                      alt={p.name}
+                      className="h-7 w-7 rounded-full object-cover ring-1 ring-room-border"
+                    />
+                    {p.isOnline && (
+                      <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-brand-green ring-2 ring-room-panel" />
+                    )}
                   </div>
-                  {p.hasRaisedHand ? (
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500/15">
-                      <Hand size={11} className="text-amber-400" />
-                    </div>
-                  ) : (
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-700/30">
-                      <MicOff size={11} className="text-gray-600" />
-                    </div>
+                  <span className="flex-1 truncate text-xs text-gray-400">{p.name}</span>
+                  {p.hasRaisedHand && (
+                    <Hand size={12} className="text-amber-400" />
                   )}
                 </div>
               ))}
             </div>
-            {filteredAudience.length > 8 && !showAllAudience && (
+            {filteredAudience.length > 8 && (
               <button
-                onClick={() => setShowAllAudience(true)}
-                className="mt-2 w-full rounded-lg py-1.5 text-xs font-medium text-brand-purple-light transition-colors hover:bg-room-hover"
+                onClick={() => setShowAllAudience(v => !v)}
+                className="mt-2 w-full rounded-lg py-1.5 text-center text-[11px] font-medium text-brand-purple-light transition-colors hover:text-brand-purple"
               >
-                See all ({filteredAudience.length})
-              </button>
-            )}
-            {showAllAudience && (
-              <button
-                onClick={() => setShowAllAudience(false)}
-                className="mt-2 w-full rounded-lg py-1.5 text-xs font-medium text-gray-400 transition-colors hover:bg-room-hover"
-              >
-                Show less
+                {showAllAudience ? 'Show Less' : `See All (${filteredAudience.length})`}
               </button>
             )}
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto p-4">
-          <h3 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-gray-500">
-            Live Reactions
-          </h3>
-          <div className="grid grid-cols-4 gap-3">
+        <div className="flex-1 overflow-y-auto p-3">
+          <div className="grid grid-cols-4 gap-2">
             {REACTIONS.map(emoji => (
               <button
                 key={emoji}
-                className="flex aspect-square items-center justify-center rounded-full bg-room-card text-2xl transition-transform hover:scale-110 hover:bg-room-hover"
+                className="flex h-12 items-center justify-center rounded-lg bg-room-card text-2xl transition-transform hover:scale-110 hover:bg-room-hover"
+                aria-label={`Send ${emoji} reaction`}
               >
                 {emoji}
               </button>
             ))}
           </div>
-          <p className="mt-4 text-xs text-gray-500">
-            Tap a reaction to share it with the room. Reactions appear for everyone in real time.
-          </p>
         </div>
       )}
     </aside>

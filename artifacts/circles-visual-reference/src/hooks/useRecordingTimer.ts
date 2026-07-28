@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 
 export function useRecordingTimer(isRecording: boolean, initialSeconds = 1965) {
   const [seconds, setSeconds] = useState(initialSeconds);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>();
+  const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   useEffect(() => {
     if (isRecording) {

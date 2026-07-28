@@ -11,9 +11,9 @@ export function BottomNav({ onNavigate }: BottomNavProps) {
   const items = [
     { id: 'home', label: 'Home', icon: Home, badge: 0 },
     { id: 'events', label: 'Events', icon: Calendar, badge: 0 },
-    { id: 'marketplace', label: 'Marketplace', icon: ShoppingBag, badge: 0 },
+    { id: 'marketplace', label: 'Market', icon: ShoppingBag, badge: 0 },
     { id: 'messages', label: 'Messages', icon: MessageCircle, badge: 8 },
-    { id: 'notifications', label: 'Notifications', icon: Bell, badge: 12 },
+    { id: 'notifications', label: 'Alerts', icon: Bell, badge: 12 },
     { id: 'community', label: 'Community', icon: Users, badge: 0 },
     { id: 'profile', label: 'Profile', icon: User, badge: 0 },
   ];
@@ -24,7 +24,7 @@ export function BottomNav({ onNavigate }: BottomNavProps) {
   };
 
   return (
-    <nav className="flex items-center justify-between border-t border-room-border bg-room-panel px-2 py-2 sm:px-4">
+    <nav className="hidden items-center justify-between border-t border-room-border bg-room-panel px-2 py-2 sm:flex sm:px-4">
       {items.map(item => {
         const Icon = item.icon;
         const isActive = active === item.id;
