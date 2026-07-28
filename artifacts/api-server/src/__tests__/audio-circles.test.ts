@@ -28,6 +28,7 @@ jest.unstable_mockModule("@workspace/db", () => {
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn(),
     returning: jest.fn(),
+    execute: jest.fn().mockImplementation(() => Promise.resolve([])),
     then: jest.fn().mockImplementation((resolve: any, reject: any) =>
       Promise.resolve([]).then(resolve, reject)
     ),
@@ -48,6 +49,9 @@ jest.unstable_mockModule("@workspace/db", () => {
     },
     cityNeighborhoodsTable: { id: "id", name: "name", emoji: "emoji" },
     usersTable: { id: "id", name: "name", avatar_url: "avatar_url", is_admin: "is_admin", approval_status: "approval_status" },
+    audioCircleFollowsTable: { id: "id", user_id: "user_id", circle_id: "circle_id" },
+    circleBlocksTable: { id: "id", host_id: "host_id", blocked_user_id: "blocked_user_id", session_id: "session_id" },
+    circleReportsTable: { id: "id", session_id: "session_id", reporter_id: "reporter_id", reported_id: "reported_id", reason: "reason" },
   };
 });
 
@@ -59,10 +63,15 @@ jest.unstable_mockModule("drizzle-orm", () => ({
 }));
 
 jest.unstable_mockModule("../lib/ws-hub.js", () => ({
+  sendToUser: jest.fn(),
+  sendToUsers: jest.fn(),
   sendToCircleParticipants: jest.fn(),
+  sendCircleSignal: jest.fn(),
   addCircleParticipant: jest.fn(),
   removeCircleParticipant: jest.fn(),
   clearCircleSession: jest.fn(),
+  isCircleParticipant: jest.fn().mockReturnValue(true),
+  broadcast: jest.fn(),
 }));
 
 let app: Express;
@@ -89,6 +98,7 @@ beforeEach(() => {
   (db.select as jest.Mock).mockReset().mockReturnThis();
   (db.update as jest.Mock).mockReset().mockReturnThis();
   (db.insert as jest.Mock).mockReset().mockReturnThis();
+  (db.delete as jest.Mock).mockReset().mockReturnThis();
   (db.from as jest.Mock).mockReset().mockReturnThis();
   (db.innerJoin as jest.Mock).mockReset().mockReturnThis();
   (db.leftJoin as jest.Mock).mockReset().mockReturnThis();
@@ -98,6 +108,7 @@ beforeEach(() => {
   (db.orderBy as jest.Mock).mockReset().mockReturnThis();
   (db.limit as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
   (db.returning as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
+  (db.execute as jest.Mock).mockReset().mockImplementation(() => Promise.resolve([]));
 });
 
 describe("Audio Circles — auth gates", () => {
@@ -424,6 +435,9 @@ describe("Audio Circles — auth gates", () => {
         }])
       ) // session lookup in /join — host_disconnected_at is set
       .mockImplementationOnce(() =>
+        Promise.resolve([]) // block check — no block found
+      )
+      .mockImplementationOnce(() =>
         Promise.resolve([{ id: 99, role: "host", user_id: 7 }])
       ) // existing active participant row (host already has a row)
       .mockImplementationOnce(() =>
@@ -654,5 +668,230 @@ describe("Audio Circles — co-host role", () => {
       .set("Authorization", bearerToken(42))
       .send({ user_id: 42 }); // self
     expect(res.status).toBe(400);
+  });
+});
+
+// ── Ephemeral chat (/chat) ────────────────────────────────────────────────────
+describe("Audio Circles — ephemeral chat", () => {
+  it("rejects a chat message without a token (401)", async () => {
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/chat")
+      .send({ body: "Hello!" });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects a chat message from a non-participant (403)", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }])) // session
+      .mockImplementationOnce(() => Promise.resolve([])); // no participant row for caller
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/chat")
+      .set("Authorization", bearerToken(42))
+      .send({ body: "Hello!" });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects an empty chat body (400)", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }]))
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "listener" }]));
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/chat")
+      .set("Authorization", bearerToken(42))
+      .send({ body: "" });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a chat message over 500 chars (400)", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }]))
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "listener" }]));
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/chat")
+      .set("Authorization", bearerToken(42))
+      .send({ body: "x".repeat(501) });
+    expect(res.status).toBe(400);
+  });
+
+  it("accepts exactly 500 chars and broadcasts circle_chat_message (200)", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }]))       // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "listener" }]))     // participant
+      .mockImplementationOnce(() => Promise.resolve([{ name: "Alice", avatar_url: null }])); // user profile
+    (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
+      Promise.resolve([{ user_id: 42, role: "listener" }]).then(resolve, reject)
+    ); // getActiveParticipants
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/chat")
+      .set("Authorization", bearerToken(42))
+      .send({ body: "x".repeat(500) });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it("accepts a normal message from a speaker and broadcasts (200)", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }]))
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "speaker" }]))
+      .mockImplementationOnce(() => Promise.resolve([{ name: "Bob", avatar_url: "https://x/b.jpg" }]));
+    (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
+      Promise.resolve([
+        { user_id: 42, role: "speaker" },
+        { user_id: 7,  role: "host" },
+      ]).then(resolve, reject)
+    );
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/chat")
+      .set("Authorization", bearerToken(42))
+      .send({ body: "Nice to meet everyone!" });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it("404s when the session is not live", async () => {
+    (db.limit as jest.Mock).mockImplementationOnce(() => Promise.resolve([])); // no live session
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/chat")
+      .set("Authorization", bearerToken(42))
+      .send({ body: "Hello?" });
+    expect(res.status).toBe(404);
+  });
+});
+
+// ── Lower all hands (/lower-all-hands) ───────────────────────────────────────
+describe("Audio Circles — lower all hands", () => {
+  it("rejects without a token (401)", async () => {
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/lower-all-hands");
+    expect(res.status).toBe(401);
+  });
+
+  it("blocks a listener from lowering all hands (403)", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }]))
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "listener" }])); // not host/co-host
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/lower-all-hands")
+      .set("Authorization", bearerToken(42));
+    expect(res.status).toBe(403);
+  });
+
+  it("blocks a speaker from lowering all hands (403)", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }]))
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "speaker" }]));
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/lower-all-hands")
+      .set("Authorization", bearerToken(42));
+    expect(res.status).toBe(403);
+  });
+
+  it("lets the host lower all hands and broadcasts circle_hands_lowered (200)", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }]))
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "host" }]));
+    (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
+      Promise.resolve([
+        { user_id: 7,  role: "host" },
+        { user_id: 10, role: "listener", hand_raised: true },
+        { user_id: 11, role: "listener", hand_raised: false },
+      ]).then(resolve, reject)
+    );
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/lower-all-hands")
+      .set("Authorization", bearerToken(7));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    // Verify db.update was issued (sets hand_raised = false for all)
+    expect((db.update as jest.Mock).mock.calls.length).toBeGreaterThan(0);
+  });
+
+  it("lets a co-host lower all hands (200)", async () => {
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }]))
+      .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "co_host" }]));
+    (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
+      Promise.resolve([
+        { user_id: 7,  role: "host" },
+        { user_id: 42, role: "co_host" },
+      ]).then(resolve, reject)
+    );
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/lower-all-hands")
+      .set("Authorization", bearerToken(42));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it("404s when the session is not live", async () => {
+    (db.limit as jest.Mock).mockImplementationOnce(() => Promise.resolve([]));
+    const res = await request(app)
+      .post("/api/audio-circle-sessions/1/lower-all-hands")
+      .set("Authorization", bearerToken(7));
+    expect(res.status).toBe(404);
+  });
+});
+
+// ── Room state re-hydration (resync after reload) ────────────────────────────
+describe("Audio Circles — room state resync (GET session)", () => {
+  it("returns 401 without a token", async () => {
+    const res = await request(app)
+      .get("/api/audio-circle-sessions/1");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns session + participants for an active participant (200)", async () => {
+    // requireApproved middleware fires a db.limit lookup before the route runs
+    (db.limit as jest.Mock).mockImplementationOnce(() =>
+      Promise.resolve([{ is_suspended: false, trust_score: 10, approval_status: "approved", token_version: 0 }])
+    );
+    (db.limit as jest.Mock)
+      .mockImplementationOnce(() =>
+        Promise.resolve([{
+          id: 1, circle_id: 10, host_id: 7, title: "Test Circle",
+          status: "live", video_enabled: false, is_recording: false,
+          max_speakers: 13, host_disconnected_at: null,
+        }])
+      ); // session lookup
+    // getActiveParticipants uses .then not .limit
+    (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
+      Promise.resolve([
+        { user_id: 7,  role: "host",     hand_raised: false, muted: false, name: "Host",    avatar_url: null },
+        { user_id: 42, role: "listener", hand_raised: true,  muted: false, name: "Watcher", avatar_url: null },
+      ]).then(resolve, reject)
+    );
+    const res = await request(app)
+      .get("/api/audio-circle-sessions/1")
+      .set("Authorization", bearerToken(42));
+    expect(res.status).toBe(200);
+    expect(res.body.session).toMatchObject({ id: 1, title: "Test Circle", status: "live" });
+    expect(res.body.participants).toHaveLength(2);
+    // hand_raised state is preserved on reload — listener's raised hand survives
+    const watcher = res.body.participants.find((p: { user_id: number }) => p.user_id === 42);
+    expect(watcher?.hand_raised).toBe(true);
+  });
+
+  it("404s for a session that doesn't exist", async () => {
+    (db.limit as jest.Mock).mockImplementationOnce(() =>
+      Promise.resolve([{ is_suspended: false, trust_score: 10, approval_status: "approved", token_version: 0 }])
+    );
+    (db.limit as jest.Mock).mockImplementationOnce(() => Promise.resolve([]));
+    const res = await request(app)
+      .get("/api/audio-circle-sessions/99")
+      .set("Authorization", bearerToken(42));
+    expect(res.status).toBe(404);
+  });
+
+  it("treats an ended session as a 404 (not re-joinable)", async () => {
+    (db.limit as jest.Mock).mockImplementationOnce(() =>
+      Promise.resolve([{ is_suspended: false, trust_score: 10, approval_status: "approved", token_version: 0 }])
+    );
+    (db.limit as jest.Mock).mockImplementationOnce(() =>
+      Promise.resolve([{ id: 1, status: "ended" }])
+    );
+    const res = await request(app)
+      .get("/api/audio-circle-sessions/1")
+      .set("Authorization", bearerToken(42));
+    expect(res.status).toBe(404);
   });
 });
