@@ -1147,6 +1147,65 @@ router.get("/audio-circles/:id/recordings", requireAuth, generalApiLimiter, asyn
   return res.json({ recordings });
 });
 
+// ── Mid-session settings update ──────────────────────────────────────────────
+
+const UpdateSessionSettingsBody = z.object({
+  topic: z.string().trim().max(MAX_TOPIC_LEN).optional(),
+  description: z.string().trim().max(MAX_DESC_LEN).optional(),
+  max_speakers: z.number().int().refine(v => (VALID_SPEAKER_LIMITS as readonly number[]).includes(v), {
+    message: `max_speakers must be one of ${VALID_SPEAKER_LIMITS.join(", ")}`,
+  }).optional(),
+});
+
+// PATCH /audio-circle-sessions/:id/settings — host updates topic, description,
+// or speaker limit mid-session. Speaker limit changes are enforced: can't lower
+// below the current number of active speakers.
+router.patch("/audio-circle-sessions/:id/settings", requireAuth, generalApiLimiter, async (req, res) => {
+  const sessionId = parseInt(String(req.params.id ?? ""), 10);
+  if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
+  const parsed = UpdateSessionSettingsBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+  if (Object.keys(parsed.data).length === 0) return res.status(400).json({ error: "Nothing to update" });
+
+  const { session, participant } = await requireActiveParticipant(sessionId, req.authenticatedUserId!, "host");
+  if (!session) return res.status(404).json({ error: "Session not live" });
+  if (!participant) return res.status(403).json({ error: "Only the host can update session settings" });
+
+  // If lowering the speaker limit, ensure it won't go below the current active speaker count.
+  if (parsed.data.max_speakers !== undefined) {
+    const activeParticipants = await getActiveParticipants(sessionId);
+    const currentSpeakerCount = activeParticipants.filter(
+      p => p.role === "host" || p.role === "speaker" || p.role === "co_host"
+    ).length;
+    if (parsed.data.max_speakers < currentSpeakerCount) {
+      return res.status(409).json({
+        error: `Can't lower limit below current speaker count (${currentSpeakerCount})`,
+      });
+    }
+  }
+
+  const updates: Partial<typeof audioCircleSessionsTable.$inferInsert> = {};
+  if (parsed.data.topic !== undefined) updates.topic = parsed.data.topic || null;
+  if (parsed.data.description !== undefined) updates.description = parsed.data.description || null;
+  if (parsed.data.max_speakers !== undefined) updates.max_speakers = parsed.data.max_speakers;
+
+  await db.update(audioCircleSessionsTable).set(updates).where(eq(audioCircleSessionsTable.id, sessionId));
+
+  // Broadcast settings change so all participants see the updated info live.
+  const activeParticipants = await getActiveParticipants(sessionId);
+  sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
+    type: "circle_settings_updated",
+    payload: {
+      session_id: sessionId,
+      topic: updates.topic ?? session.topic ?? null,
+      description: updates.description ?? session.description ?? null,
+      max_speakers: updates.max_speakers ?? session.max_speakers,
+    },
+  });
+
+  return res.json({ ok: true, ...updates });
+});
+
 // ── Follow / Unfollow ────────────────────────────────────────────────────────
 
 // POST /audio-circles/:id/follow — subscribe to a circle so the user receives

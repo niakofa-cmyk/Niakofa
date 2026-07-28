@@ -87,6 +87,7 @@ export type WsEventType =
   | "circle_hands_lowered"
   | "circle_went_live"
   | "circle_signal"
+  | "circle_settings_updated"
   | "connected"
   | "pong"
   | "ping";

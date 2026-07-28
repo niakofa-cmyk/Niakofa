@@ -103,6 +103,7 @@ export type WsEventType =
   // Co-host role transitions (host assigns/removes the co_host role).
   | "circle_cohost_assigned"
   | "circle_cohost_removed"
+  | "circle_settings_updated"
   // Targeted at users who follow a circle when a new live session starts in
   // it — sent via sendToUser, not broadcast (see routes/audio-circles.ts).
   | "circle_went_live"

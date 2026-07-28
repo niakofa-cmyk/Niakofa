@@ -375,6 +375,15 @@ export default function AudioCircleRoomScreen() {
   const [preJoinMicReady, setPreJoinMicReady] = useState(false);
   const [preJoinCameraReady, setPreJoinCameraReady] = useState(false);
 
+  // ── New modal states ───────────────────────────────────────────────────────
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settingsTopic, setSettingsTopic] = useState("");
+  const [settingsDesc, setSettingsDesc] = useState("");
+  const [settingsSpeakerLimit, setSettingsSpeakerLimit] = useState(13);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [showSpeakersAll, setShowSpeakersAll] = useState(false);
+
   // Room / Chat tabs + management panel (Raised Hands / Room Controls / Host Controls)
   const [activeTab, setActiveTab] = useState<"room" | "chat">("room");
   const [showManagePanel, setShowManagePanel] = useState(false);
@@ -409,6 +418,15 @@ export default function AudioCircleRoomScreen() {
   useEffect(() => { setMediaCapabilities(getAudioCircleMediaCapabilities()); }, []);
 
   const recordingTimer = useRecordingTimer(!!session?.is_recording);
+
+  // Sync settings form when modal opens
+  useEffect(() => {
+    if (showSettingsModal && session) {
+      setSettingsTopic(session.topic ?? "");
+      setSettingsDesc(session.description ?? "");
+      setSettingsSpeakerLimit(session.max_speakers);
+    }
+  }, [showSettingsModal, session?.id]);
 
   // ── Connection status ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -843,6 +861,17 @@ export default function AudioCircleRoomScreen() {
     setLocation("/audio-circles");
   });
 
+  useWebSocket("circle_settings_updated", (e) => {
+    const p = e.payload as { session_id: number; topic: string | null; description: string | null; max_speakers: number };
+    if (p.session_id !== sessionId) return;
+    setSession(prev => prev ? {
+      ...prev,
+      topic: p.topic,
+      description: p.description,
+      max_speakers: p.max_speakers,
+    } : prev);
+  });
+
   useWebSocket("circle_host_disconnected", (e) => {
     const p = e.payload as { session_id: number };
     if (p.session_id !== sessionId) return;
@@ -876,6 +905,25 @@ export default function AudioCircleRoomScreen() {
         description: "Couldn't reach the server — check your connection and try again.",
         variant: "destructive",
       });
+      return false;
+    }
+  };
+
+  const patchSession = async (body: object) => {
+    try {
+      const res = await fetch(`${base}/api/audio-circle-sessions/${sessionId}/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast({ title: "Update failed", description: data.error ?? "Try again.", variant: "destructive" });
+        return false;
+      }
+      return true;
+    } catch {
+      toast({ title: "Connection issue", description: "Check your connection and try again.", variant: "destructive" });
       return false;
     }
   };
@@ -970,6 +1018,28 @@ export default function AudioCircleRoomScreen() {
     }
   };
 
+  const updateSettings = async () => {
+    if (!session) return;
+    setSavingSettings(true);
+    const body: Record<string, unknown> = {};
+    if (settingsTopic !== (session.topic ?? "")) body.topic = settingsTopic;
+    if (settingsDesc !== (session.description ?? "")) body.description = settingsDesc;
+    if (settingsSpeakerLimit !== session.max_speakers) body.max_speakers = settingsSpeakerLimit;
+    if (Object.keys(body).length === 0) { setShowSettingsModal(false); setSavingSettings(false); return; }
+    const ok = await patchSession(body);
+    setSavingSettings(false);
+    if (ok) {
+      setSession(prev => prev ? {
+        ...prev,
+        topic: body.topic !== undefined ? (body.topic as string) || null : prev.topic,
+        description: body.description !== undefined ? (body.description as string) || null : prev.description,
+        max_speakers: body.max_speakers !== undefined ? (body.max_speakers as number) : prev.max_speakers,
+      } : prev);
+      setShowSettingsModal(false);
+      toast({ title: "Settings updated" });
+    }
+  };
+
   const shareCircle = () => {
     const url = `${window.location.origin}/audio-circle/${sessionId}`;
     if (navigator.share) {
@@ -979,6 +1049,15 @@ export default function AudioCircleRoomScreen() {
         toast({ title: "Link copied!", description: "Share it with your neighbors." });
       }).catch(() => {});
     }
+  };
+
+  const copyInviteLink = () => {
+    const url = `${window.location.origin}/audio-circle/${sessionId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      toast({ title: "Invite link copied!", description: "Paste it anywhere to invite people." });
+    }).catch(() => {
+      toast({ title: "Copy failed", description: url, variant: "destructive" });
+    });
   };
 
   const endSession = async () => {
@@ -1503,20 +1582,30 @@ export default function AudioCircleRoomScreen() {
               <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                 Speakers ({speakers.length})
               </div>
-              {canMod && speakers.length > 0 && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); muteAll(); }}
-                  className="text-[10px] font-bold text-amber-400 flex items-center gap-1 hover:opacity-70"
-                >
-                  <VolumeX className="w-3 h-3" /> Mute all
-                </button>
-              )}
+              <div className="flex items-center gap-3">
+                {speakers.length > 3 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowSpeakersAll(v => !v); }}
+                    className="text-[10px] font-bold text-primary hover:opacity-70"
+                  >
+                    {showSpeakersAll ? "Show less" : "View All"}
+                  </button>
+                )}
+                {canMod && speakers.length > 0 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); muteAll(); }}
+                    className="text-[10px] font-bold text-amber-400 flex items-center gap-1 hover:opacity-70"
+                  >
+                    <VolumeX className="w-3 h-3" /> Mute all
+                  </button>
+                )}
+              </div>
             </div>
             {speakers.length === 0 ? (
               <div className="text-xs text-muted-foreground/60 italic">No speakers yet — bring up a hand-raiser above</div>
             ) : (
               <div className="grid grid-cols-4 gap-3" onClick={e => e.stopPropagation()}>
-                {speakers.map(s => (
+                {(showSpeakersAll ? speakers : speakers.slice(0, 3)).map(s => (
                   <SpeakerTile
                     key={s.user_id}
                     participant={s}
@@ -1534,21 +1623,34 @@ export default function AudioCircleRoomScreen() {
                     onAssignCohost={isHost ? () => assignCohost(s.user_id) : undefined}
                   />
                 ))}
+                {!showSpeakersAll && speakers.length > 3 && (
+                  <button
+                    className="flex flex-col items-center gap-1"
+                    onClick={(e) => { e.stopPropagation(); setShowSpeakersAll(true); }}
+                  >
+                    <div className="w-14 h-14 rounded-full bg-muted/80 border-2 border-dashed border-border flex items-center justify-center">
+                      <span className="text-xs font-black text-muted-foreground">+{speakers.length - 3}</span>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground">More</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
         )}
 
         {/* ── Raised hands (host-only) — ordered queue ───────────────────────── */}
-        {canMod && audience.some(l => l.hand_raised) && (
+        {canMod && audience.some(l => l.hand_raised) && (() => {
+          const raised = audience.filter(l => l.hand_raised);
+          return (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3 space-y-2">
             <div className="flex items-center justify-between mb-1">
               <div className="text-[10px] font-black uppercase tracking-widest text-amber-400">
-                ✋ Raised Hands ({audience.filter(l => l.hand_raised).length})
+                ✋ Raised Hands ({raised.length})
               </div>
               <span className="text-[10px] text-amber-400/70">Tap "Bring up" in order</span>
             </div>
-            {audience.filter(l => l.hand_raised).map((l, idx) => (
+            {raised.map((l, idx) => (
               <div key={l.user_id} className="flex items-center gap-3">
                 <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
                   <span className="text-[10px] font-black text-amber-400">{idx + 1}</span>
@@ -1556,8 +1658,11 @@ export default function AudioCircleRoomScreen() {
                 <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm font-black overflow-hidden shrink-0">
                   {l.avatar_url ? <img src={l.avatar_url} className="w-full h-full object-cover" alt="" /> : l.name?.[0] ?? "?"}
                 </div>
-                <span className="flex-1 text-sm font-bold truncate">{l.name}</span>
-                <div className="flex gap-1.5">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold truncate">{l.name}</div>
+                  <div className="text-[10px] text-amber-400/80">Wants to speak</div>
+                </div>
+                <div className="flex gap-1.5 shrink-0">
                   {isHost && (
                     <Button size="sm" variant="outline" className="h-7 text-xs px-2 text-blue-400 border-blue-400/40" onClick={() => assignCohost(l.user_id)}>
                       <Shield className="w-3 h-3" /> Co-host
@@ -1569,7 +1674,8 @@ export default function AudioCircleRoomScreen() {
               </div>
             ))}
           </div>
-        )}
+          );
+        })()}
 
         {/* ── Audience strip with overflow ─────────────────────────────────────── */}
         <AudienceStrip audience={audience} canMod={canMod} onPromote={promote} />
@@ -1590,6 +1696,8 @@ export default function AudioCircleRoomScreen() {
               onMuteAll={muteAll}
               onLowerAll={lowerAllHands}
               onShare={shareCircle}
+              onOpenInvite={() => setShowInviteModal(true)}
+              onOpenSettings={() => setShowSettingsModal(true)}
               onToggleRecording={toggleRecording}
               recordingOn={!!session.is_recording}
               recordingDisabled={uploading || mediaCapabilities?.recording === false}
@@ -1643,6 +1751,8 @@ export default function AudioCircleRoomScreen() {
                 onMuteAll={muteAll}
                 onLowerAll={lowerAllHands}
                 onShare={shareCircle}
+                onOpenInvite={() => { setShowManagePanel(false); setShowInviteModal(true); }}
+                onOpenSettings={() => { setShowManagePanel(false); setShowSettingsModal(true); }}
                 onToggleRecording={toggleRecording}
                 recordingOn={!!session.is_recording}
                 recordingDisabled={uploading || mediaCapabilities?.recording === false}
@@ -1657,6 +1767,136 @@ export default function AudioCircleRoomScreen() {
                 onReportUser={(userId) => setShowReportModal(userId)}
                 onAssignCohostUser={assignCohost}
               />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Invite modal ──────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showInviteModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6"
+            onClick={() => setShowInviteModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 16 }}
+              className="bg-card border border-border rounded-2xl p-6 max-w-sm w-full space-y-4"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-base font-black flex items-center gap-2">
+                  <UserPlus className="w-4 h-4 text-primary" /> Invite to Circle
+                </div>
+                <button onClick={() => setShowInviteModal(false)} className="p-1.5 rounded-full hover:bg-muted">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                Share this link to invite people directly to <span className="font-bold text-foreground">{session?.title}</span>.
+              </div>
+              <div className="flex items-center gap-2 bg-muted rounded-xl px-3 py-2 border border-border">
+                <span className="flex-1 text-xs font-mono truncate text-muted-foreground select-all">
+                  {window.location.origin}/audio-circle/{sessionId}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <Button className="flex-1" onClick={copyInviteLink}>
+                  Copy Link
+                </Button>
+                {typeof navigator.share === "function" && (
+                  <Button variant="outline" className="flex-1" onClick={shareCircle}>
+                    Share
+                  </Button>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Settings modal ────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showSettingsModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6"
+            onClick={() => setShowSettingsModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 16 }}
+              className="bg-card border border-border rounded-2xl p-6 max-w-sm w-full space-y-4"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-base font-black flex items-center gap-2">
+                  <Settings className="w-4 h-4" /> Room Settings
+                </div>
+                <button onClick={() => setShowSettingsModal(false)} className="p-1.5 rounded-full hover:bg-muted">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1 block">Topic</label>
+                  <input
+                    value={settingsTopic}
+                    onChange={e => setSettingsTopic(e.target.value)}
+                    maxLength={100}
+                    placeholder="What's today's topic?"
+                    className="w-full px-3 py-2 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+                    style={{ fontSize: "16px" }}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1 block">Description</label>
+                  <textarea
+                    value={settingsDesc}
+                    onChange={e => setSettingsDesc(e.target.value)}
+                    maxLength={500}
+                    placeholder="Tell people what this circle is about…"
+                    className="w-full px-3 py-2 bg-background border border-border rounded-xl text-sm min-h-[72px] resize-none focus:outline-none focus:border-primary"
+                    style={{ fontSize: "16px" }}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1 block">
+                    Speaker Limit (currently {session?.max_speakers})
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {[4, 8, 12, 13, 18, 24].map(n => (
+                      <button
+                        key={n}
+                        onClick={() => setSettingsSpeakerLimit(n)}
+                        className={`w-10 h-10 rounded-xl border text-sm font-black transition-colors ${
+                          settingsSpeakerLimit === n
+                            ? "border-primary bg-primary/20 text-primary"
+                            : "border-border bg-muted/40 hover:bg-muted"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <Button variant="outline" className="flex-1" onClick={() => setShowSettingsModal(false)}>Cancel</Button>
+                <Button className="flex-1" disabled={savingSettings} onClick={updateSettings}>
+                  {savingSettings ? "Saving…" : "Save Changes"}
+                </Button>
+              </div>
             </motion.div>
           </motion.div>
         )}
@@ -1906,6 +2146,8 @@ interface ManagementPanelBodyProps {
   onMuteAll: () => void;
   onLowerAll: () => void;
   onShare: () => void;
+  onOpenInvite: () => void;
+  onOpenSettings: () => void;
   onToggleRecording: () => void;
   recordingOn: boolean;
   recordingDisabled: boolean;
@@ -1944,7 +2186,8 @@ function RoomControlButton({ icon: Icon, label, onClick, disabled, tone }: {
 
 function ManagementPanelBody({
   audience, isHost, session, onPromote, onAssignCohost, onDismissHand,
-  onMuteAll, onLowerAll, onShare, onToggleRecording, recordingOn, recordingDisabled,
+  onMuteAll, onLowerAll, onShare, onOpenInvite, onOpenSettings, onToggleRecording,
+  recordingOn, recordingDisabled,
   onEndCircle, speakerCount, onlineParticipants, myUserId,
   onMuteUser, onDemoteUser, onKickUser, onBlockUser, onReportUser, onAssignCohostUser,
 }: ManagementPanelBodyProps) {
@@ -1978,7 +2221,10 @@ function ManagementPanelBody({
                 <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black">
                   {l.avatar_url ? <img src={l.avatar_url} className="w-full h-full object-cover" alt="" /> : (l.name?.[0] ?? "?")}
                 </div>
-                <span className="flex-1 text-xs font-bold truncate">{l.name}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold truncate">{l.name}</div>
+                  <div className="text-[9px] text-amber-400/80">Wants to speak</div>
+                </div>
                 <Button size="sm" className="h-6 text-[10px] px-2" onClick={() => onPromote(l.user_id)}>Bring Up</Button>
                 <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => onDismissHand(l.user_id)}>Dismiss</Button>
               </div>
@@ -1993,17 +2239,24 @@ function ManagementPanelBody({
         <div className="grid grid-cols-3 gap-2">
           <RoomControlButton icon={VolumeX} label="Mute All" onClick={onMuteAll} />
           <RoomControlButton icon={Hand} label="Lower All" onClick={onLowerAll} />
-          <div className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-border bg-muted/40 p-3 text-center">
-            <span className="text-sm font-black">{session.max_speakers}</span>
-            <span className="text-[10px] font-bold leading-tight text-muted-foreground">Speaker Limit</span>
-          </div>
+          {isHost ? (
+            <button
+              onClick={onOpenSettings}
+              className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-border bg-muted/40 p-3 text-center hover:bg-muted transition-colors"
+              title="Edit in Settings"
+            >
+              <span className="text-sm font-black">{session.max_speakers}</span>
+              <span className="text-[10px] font-bold leading-tight text-muted-foreground">Speaker Limit</span>
+            </button>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-border bg-muted/40 p-3 text-center">
+              <span className="text-sm font-black">{session.max_speakers}</span>
+              <span className="text-[10px] font-bold leading-tight text-muted-foreground">Speaker Limit</span>
+            </div>
+          )}
           <RoomControlButton icon={Share2} label="Share Circle" onClick={onShare} />
-          <RoomControlButton icon={UserPlus} label="Invite" onClick={onShare} />
-          <RoomControlButton
-            icon={Settings}
-            label="Settings"
-            onClick={() => toast({ title: "Room settings", description: "More room settings are coming soon." })}
-          />
+          <RoomControlButton icon={UserPlus} label="Invite" onClick={onOpenInvite} />
+          <RoomControlButton icon={Settings} label="Settings" onClick={onOpenSettings} />
           <RoomControlButton
             icon={CircleIcon}
             label={recordingOn ? "Stop Recording" : "Start Recording"}
