@@ -208,6 +208,9 @@ function AppShell() {
   const [isLogin] = useRoute("/login");
   const [isOnboarding] = useRoute("/onboarding");
   const [isStripeConnected] = useRoute("/wallet/connected");
+  // Circles pages manage their own full-screen layout — suppress the global bottom nav
+  const [isAudioCircles] = useRoute("/audio-circles");
+  const [isAudioCircleRoom] = useRoute("/audio-circle/:id");
 
   // Admin page has its own auth — don't redirect to login
   if (isAdmin) return (
@@ -299,7 +302,7 @@ function AppShell() {
           </Switch>
         </Suspense>
       </ErrorBoundary>
-      {!isActiveRequest && !isTrackingRequest && !isAdmin && !isLogin && !isOnboarding && !isStripeConnected && <BottomNav />}
+      {!isActiveRequest && !isTrackingRequest && !isAdmin && !isLogin && !isOnboarding && !isStripeConnected && !isAudioCircles && !isAudioCircleRoom && <BottomNav />}
     </>
   );
 }

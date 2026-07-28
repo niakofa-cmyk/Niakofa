@@ -132,6 +132,198 @@ function useRecordingTimer(running: boolean) {
   return `${mm}:${ss}`;
 }
 
+// ── Host / Co-host hero broadcast tile ───────────────────────────────────────
+interface HostHeroTileProps {
+  participant: Participant;
+  isMe: boolean;
+  level: number;
+  videoStream?: MediaStream | null;
+  videoOn?: boolean;
+  size?: "full" | "half";
+  canMod?: boolean;
+  modMenuOpen?: boolean;
+  onOpenMod?: () => void;
+  onMute?: () => void;
+  onDemote?: () => void;
+  onKick?: () => void;
+  onBlock?: () => void;
+  onReport?: () => void;
+  onAssignCohost?: () => void;
+  onRemoveCohost?: () => void;
+}
+
+function HostHeroTile({
+  participant: p, isMe, level, videoStream, videoOn, size = "full",
+  canMod, modMenuOpen, onOpenMod, onMute, onDemote, onKick, onBlock, onReport,
+  onAssignCohost, onRemoveCohost,
+}: HostHeroTileProps) {
+  const isSpeaking = level > 0.1;
+  const hasVideo = videoStream && videoOn && videoStream.getVideoTracks().length > 0;
+  const roleLabel = p.role === "host" ? "Host" : "Co-Host";
+  const roleBg = p.role === "host" ? "bg-amber-500" : "bg-blue-500";
+
+  return (
+    <div className={`relative ${size === "full" ? "w-full" : "flex-1"} rounded-2xl overflow-hidden`}>
+      {/* Speaking ring */}
+      {isSpeaking && (
+        <motion.div
+          className="absolute inset-0 rounded-2xl border-2 border-primary z-10 pointer-events-none"
+          animate={{ opacity: [0.9, 0.3, 0.9] }}
+          transition={{ duration: 0.8, repeat: Infinity }}
+        />
+      )}
+
+      {/* Video or avatar area */}
+      <div className={`relative ${size === "full" ? "aspect-[4/3]" : "aspect-[4/3]"} bg-zinc-900`}>
+        {hasVideo ? (
+          <video
+            autoPlay playsInline muted={isMe}
+            ref={(el) => { if (el && el.srcObject !== videoStream) { el.srcObject = videoStream!; el.play().catch(() => {}); } }}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <div className={`w-20 h-20 rounded-full bg-muted flex items-center justify-center overflow-hidden border-4 ${isSpeaking ? "border-primary" : p.role === "host" ? "border-amber-400/60" : "border-blue-400/60"}`}>
+              {p.avatar_url
+                ? <img src={p.avatar_url} className="w-full h-full object-cover" alt="" />
+                : <span className="text-3xl font-black text-foreground">{p.name?.[0] ?? "?"}</span>}
+            </div>
+          </div>
+        )}
+
+        {/* Role badge top-left */}
+        <div className={`absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black text-white ${roleBg}`}>
+          {p.role === "host" ? <Crown className="w-2.5 h-2.5" /> : <Shield className="w-2.5 h-2.5" />}
+          {roleLabel}
+        </div>
+
+        {/* Mic icon top-right */}
+        <div className="absolute top-2 right-2">
+          {p.muted
+            ? <div className="bg-red-500/80 rounded-full p-1"><MicOff className="w-3 h-3 text-white" /></div>
+            : <div className="bg-black/50 rounded-full p-1"><Mic className="w-3 h-3 text-white" /></div>}
+        </div>
+
+        {/* Name / mod button overlay at bottom */}
+        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-2 flex items-center justify-between">
+          <span className="text-white text-sm font-black truncate">{isMe ? "You" : p.name}</span>
+          {canMod && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onOpenMod?.(); }}
+              className="p-1 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+            >
+              <MoreVertical className="w-3.5 h-3.5 text-white" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Moderation dropdown */}
+      <AnimatePresence>
+        {modMenuOpen && canMod && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: -4 }}
+            transition={{ duration: 0.12 }}
+            className="absolute bottom-10 right-2 z-30 bg-card border border-border rounded-xl shadow-xl py-1 min-w-[160px]"
+            onClick={e => e.stopPropagation()}
+          >
+            {onMute && (
+              <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted" onClick={onMute}>
+                {p.muted ? <><Mic className="w-3 h-3" /> Unmute</> : <><MicOff className="w-3 h-3" /> Mute</>}
+              </button>
+            )}
+            {onDemote && (
+              <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted" onClick={onDemote}>
+                <UserMinus className="w-3 h-3" /> Move to Audience
+              </button>
+            )}
+            {onAssignCohost && (
+              <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-blue-400" onClick={onAssignCohost}>
+                <Shield className="w-3 h-3" /> Make Co-host
+              </button>
+            )}
+            {onRemoveCohost && (
+              <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-blue-400" onClick={onRemoveCohost}>
+                <Shield className="w-3 h-3" /> Remove Co-host
+              </button>
+            )}
+            {onKick && (
+              <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-red-400" onClick={onKick}>
+                <Flag className="w-3 h-3" /> Remove from Circle
+              </button>
+            )}
+            {onBlock && (
+              <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-amber-400" onClick={onBlock}>
+                <Ban className="w-3 h-3" /> Block user
+              </button>
+            )}
+            {onReport && (
+              <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-amber-400" onClick={onReport}>
+                <AlertTriangle className="w-3 h-3" /> Report user
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Audience avatar strip with +N overflow ────────────────────────────────────
+const AUDIENCE_STRIP_MAX = 7;
+function AudienceStrip({ audience, canMod, onPromote }: {
+  audience: Participant[];
+  canMod: boolean;
+  onPromote: (userId: number) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? audience : audience.slice(0, AUDIENCE_STRIP_MAX);
+  const overflow = audience.length - AUDIENCE_STRIP_MAX;
+
+  if (audience.length === 0) return null;
+
+  return (
+    <div>
+      <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
+        Audience ({audience.length})
+      </div>
+      <div className="flex items-start flex-wrap gap-3">
+        {visible.map(l => (
+          <div key={l.user_id} className="flex flex-col items-center gap-1">
+            <div className="relative">
+              <div className={`w-11 h-11 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 ${l.hand_raised ? "border-amber-400" : "border-transparent"}`}>
+                {l.avatar_url
+                  ? <img src={l.avatar_url} className="w-full h-full object-cover" alt="" />
+                  : <span className="text-sm font-black">{l.name?.[0] ?? "?"}</span>}
+              </div>
+              {l.hand_raised && (
+                <span className="absolute -top-1 -right-1 text-sm leading-none">✋</span>
+              )}
+            </div>
+            <span className="text-[9px] truncate max-w-[48px] text-center text-muted-foreground">{l.name}</span>
+            {canMod && l.hand_raised && (
+              <button onClick={() => onPromote(l.user_id)} className="text-[9px] text-primary font-bold hover:underline">bring up</button>
+            )}
+          </div>
+        ))}
+        {!showAll && overflow > 0 && (
+          <button
+            onClick={() => setShowAll(true)}
+            className="flex flex-col items-center gap-1"
+          >
+            <div className="w-11 h-11 rounded-full bg-muted/80 border-2 border-dashed border-border flex items-center justify-center">
+              <span className="text-xs font-black text-muted-foreground">+{overflow}</span>
+            </div>
+            <span className="text-[9px] text-muted-foreground">More</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Connection quality indicator ─────────────────────────────────────────────
 function ConnectionQualityIndicator({ status }: { status: ConnectionStatus }) {
   const config = {
@@ -918,9 +1110,6 @@ export default function AudioCircleRoomScreen() {
     return <div className="min-h-screen bg-background flex items-center justify-center text-sm text-muted-foreground">Loading circle…</div>;
   }
 
-  const remoteVideoStreams = [...remoteStreams.entries()].filter(
-    ([, s]) => s.getVideoTracks().length > 0
-  );
 
   return (
     <div className="min-h-screen bg-background pb-40 relative overflow-hidden" onClick={() => { setModMenuOpen(null); setShowBlockConfirm(null); }}>
@@ -1232,82 +1421,46 @@ export default function AudioCircleRoomScreen() {
         ) : (
         <div className="p-4 space-y-5 lg:p-0">
 
-        {/* ── Video grid ──────────────────────────────────────────────────────── */}
-        {session.video_enabled && (remoteVideoStreams.length > 0 || (localStream && localStream.getVideoTracks().length > 0 && videoOn)) && (
-          <div>
-            <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Video</div>
-            <div className="grid grid-cols-2 gap-2">
-              {localStream && localStream.getVideoTracks().length > 0 && videoOn && (
-                <div className={`relative aspect-video bg-black rounded-xl overflow-hidden ${localLevel > 0.15 ? "ring-2 ring-primary" : ""}`}>
-                  <video
-                    autoPlay muted playsInline
-                    ref={(el) => { if (el && el.srcObject !== localStream) el.srcObject = localStream; }}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute bottom-1 left-1 text-[9px] font-bold text-white bg-black/60 px-1.5 py-0.5 rounded">You</div>
-                </div>
-              )}
-              {remoteVideoStreams.map(([userId, stream]) => {
-                const p = participants.find(x => x.user_id === userId);
-                const level = speakingLevels.get(userId) ?? 0;
-                return (
-                  <div key={userId} className={`relative aspect-video bg-black rounded-xl overflow-hidden ${level > 0.15 ? "ring-2 ring-primary" : ""}`}>
-                    <video
-                      autoPlay playsInline
-                      ref={(el) => { if (el && el.srcObject !== stream) { el.srcObject = stream; el.play().catch(() => {}); } }}
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute bottom-1 left-1 text-[9px] font-bold text-white bg-black/60 px-1.5 py-0.5 rounded truncate max-w-[80%]">
-                      {p?.name ?? "Speaker"}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        {/* Video is now embedded in the hero tiles (host/co-host) and speaker tiles — no separate grid */}
 
-        {/* ── Stage: HOST ─────────────────────────────────────────────────────── */}
+        {/* ── Stage: HOST hero tile ───────────────────────────────────────────── */}
         <div>
           <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Host</div>
           {host ? (
-            <SpeakerTile
+            <HostHeroTile
               participant={host}
               isMe={host.user_id === myUserId}
               level={host.user_id === myUserId ? localLevel : (speakingLevels.get(host.user_id) ?? 0)}
-              isHost={isHost}
+              videoStream={host.user_id === myUserId ? localStream : (remoteStreams.get(host.user_id) ?? null)}
+              videoOn={host.user_id === myUserId ? videoOn : (remoteStreams.get(host.user_id)?.getVideoTracks().length ?? 0) > 0}
+              size="full"
               canMod={false}
-              modMenuOpen={false}
-              onOpenMod={() => {}}
-              onMute={() => {}}
-              onDemote={() => {}}
-              onKick={() => {}}
-              onBlock={() => {}}
-              onReport={() => {}}
             />
           ) : (
-            <div className="text-xs text-muted-foreground">Host has left</div>
+            <div className="text-xs text-muted-foreground py-3">Host has left — hanging tight…</div>
           )}
         </div>
 
-        {/* ── Stage: CO-HOSTS ─────────────────────────────────────────────────── */}
+        {/* ── Stage: CO-HOST hero tiles ────────────────────────────────────────── */}
         {cohosts.length > 0 && (
           <div>
             <div className="flex items-center gap-1.5 mb-2">
               <Shield className="w-3 h-3 text-blue-400" />
               <div className="text-[10px] font-black uppercase tracking-widest text-blue-400">
-                Co-Hosts ({cohosts.length})
+                Co-Host{cohosts.length > 1 ? "s" : ""} ({cohosts.length})
               </div>
             </div>
-            <div className="grid grid-cols-4 gap-3" onClick={e => e.stopPropagation()}>
+            <div className={`flex gap-2 ${cohosts.length === 1 ? "" : "flex-wrap"}`} onClick={e => e.stopPropagation()}>
               {cohosts.map(c => (
-                <SpeakerTile
+                <HostHeroTile
                   key={c.user_id}
                   participant={c}
                   isMe={c.user_id === myUserId}
                   level={c.user_id === myUserId ? localLevel : (speakingLevels.get(c.user_id) ?? 0)}
-                  isHost={isHost}
-                  canMod={canMod && c.user_id !== myUserId && c.role !== "host"}
+                  videoStream={c.user_id === myUserId ? localStream : (remoteStreams.get(c.user_id) ?? null)}
+                  videoOn={c.user_id === myUserId ? videoOn : (remoteStreams.get(c.user_id)?.getVideoTracks().length ?? 0) > 0}
+                  size="half"
+                  canMod={canMod && c.user_id !== myUserId}
                   modMenuOpen={modMenuOpen === c.user_id}
                   onOpenMod={() => setModMenuOpen(prev => prev === c.user_id ? null : c.user_id)}
                   onMute={() => muteUser(c.user_id, !c.muted)}
@@ -1315,7 +1468,6 @@ export default function AudioCircleRoomScreen() {
                   onKick={() => kickUser(c.user_id)}
                   onBlock={() => setShowBlockConfirm(c.user_id)}
                   onReport={() => setShowReportModal(c.user_id)}
-                  onAssignCohost={undefined}
                   onRemoveCohost={isHost ? () => removeCohost(c.user_id) : undefined}
                 />
               ))}
@@ -1324,46 +1476,47 @@ export default function AudioCircleRoomScreen() {
         )}
 
         {/* ── Stage: SPEAKERS ─────────────────────────────────────────────────── */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-              Speakers ({speakers.length})
+        {(speakers.length > 0 || canMod) && (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                Speakers ({speakers.length})
+              </div>
+              {canMod && speakers.length > 0 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); muteAll(); }}
+                  className="text-[10px] font-bold text-amber-400 flex items-center gap-1 hover:opacity-70"
+                >
+                  <VolumeX className="w-3 h-3" /> Mute all
+                </button>
+              )}
             </div>
-            {canMod && (speakers.length > 0 || cohosts.length > 0) && (
-              <button
-                onClick={(e) => { e.stopPropagation(); muteAll(); }}
-                className="text-[10px] font-bold text-amber-400 flex items-center gap-1 hover:opacity-70"
-              >
-                <VolumeX className="w-3 h-3" /> Mute all
-              </button>
+            {speakers.length === 0 ? (
+              <div className="text-xs text-muted-foreground/60 italic">No speakers yet — bring up a hand-raiser above</div>
+            ) : (
+              <div className="grid grid-cols-4 gap-3" onClick={e => e.stopPropagation()}>
+                {speakers.map(s => (
+                  <SpeakerTile
+                    key={s.user_id}
+                    participant={s}
+                    isMe={s.user_id === myUserId}
+                    level={s.user_id === myUserId ? localLevel : (speakingLevels.get(s.user_id) ?? 0)}
+                    isHost={isHost}
+                    canMod={canMod && s.user_id !== myUserId}
+                    modMenuOpen={modMenuOpen === s.user_id}
+                    onOpenMod={() => setModMenuOpen(prev => prev === s.user_id ? null : s.user_id)}
+                    onMute={() => muteUser(s.user_id, !s.muted)}
+                    onDemote={() => demote(s.user_id)}
+                    onKick={() => kickUser(s.user_id)}
+                    onBlock={() => setShowBlockConfirm(s.user_id)}
+                    onReport={() => setShowReportModal(s.user_id)}
+                    onAssignCohost={isHost ? () => assignCohost(s.user_id) : undefined}
+                  />
+                ))}
+              </div>
             )}
           </div>
-          {speakers.length === 0 ? (
-            <div className="text-xs text-muted-foreground">No speakers yet</div>
-          ) : (
-            <div className="grid grid-cols-4 gap-3" onClick={e => e.stopPropagation()}>
-              {speakers.map(s => (
-                <SpeakerTile
-                  key={s.user_id}
-                  participant={s}
-                  isMe={s.user_id === myUserId}
-                  level={s.user_id === myUserId ? localLevel : (speakingLevels.get(s.user_id) ?? 0)}
-                  isHost={isHost}
-                  canMod={canMod && s.user_id !== myUserId && s.role !== "host"}
-                  modMenuOpen={modMenuOpen === s.user_id}
-                  onOpenMod={() => setModMenuOpen(prev => prev === s.user_id ? null : s.user_id)}
-                  onMute={() => muteUser(s.user_id, !s.muted)}
-                  onDemote={() => demote(s.user_id)}
-                  onKick={() => kickUser(s.user_id)}
-                  onBlock={() => setShowBlockConfirm(s.user_id)}
-                  onReport={() => setShowReportModal(s.user_id)}
-                  onAssignCohost={isHost && s.role === "speaker" ? () => assignCohost(s.user_id) : undefined}
-                  onRemoveCohost={isHost && s.role === "co_host" ? () => removeCohost(s.user_id) : undefined}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        )}
 
         {/* ── Raised hands (host-only) — ordered queue ───────────────────────── */}
         {canMod && audience.some(l => l.hand_raised) && (
@@ -1397,32 +1550,8 @@ export default function AudioCircleRoomScreen() {
           </div>
         )}
 
-        {/* ── Audience ────────────────────────────────────────────────────────── */}
-        {audience.length > 0 && (
-          <div>
-            <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
-              Audience ({audience.length})
-            </div>
-            <div className="grid grid-cols-5 gap-3">
-              {audience.map(l => (
-                <div key={l.user_id} className="flex flex-col items-center gap-1">
-                  <div className="relative">
-                    <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center overflow-hidden">
-                      {l.avatar_url ? <img src={l.avatar_url} className="w-full h-full object-cover" alt="" /> : <span className="text-sm font-black">{l.name?.[0] ?? "?"}</span>}
-                    </div>
-                    {l.hand_raised && (
-                      <span className="absolute -top-1 -right-1 text-base leading-none">✋</span>
-                    )}
-                  </div>
-                  <span className="text-[9px] truncate max-w-[52px] text-center">{l.name}</span>
-                  {canMod && l.hand_raised && (
-                    <button onClick={() => promote(l.user_id)} className="text-[9px] text-primary font-bold underline">bring up</button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* ── Audience strip with overflow ─────────────────────────────────────── */}
+        <AudienceStrip audience={audience} canMod={canMod} onPromote={promote} />
         </div>
         )}
         </div>
@@ -1521,10 +1650,30 @@ export default function AudioCircleRoomScreen() {
           ))}
         </div>
 
-        {/* Audience hint — only shown to listeners who haven't raised their hand */}
+        {/* "Want to speak?" CTA card — listeners who haven't raised their hand */}
         {!canSpeak && !me?.hand_raised && (
-          <div className="text-center text-xs text-muted-foreground bg-muted/50 rounded-xl px-3 py-2">
-            Want to speak? <span className="font-bold text-foreground">Raise your hand</span> — the Host can bring you onto the stage.
+          <div className="bg-muted/60 border border-border rounded-2xl px-4 py-3 flex items-center gap-3">
+            <Hand className="w-5 h-5 text-primary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-black">Want to speak?</div>
+              <div className="text-xs text-muted-foreground mt-0.5 leading-snug">Raise your hand and the host can bring you on stage.</div>
+            </div>
+            <Button size="sm" onClick={toggleHand} className="shrink-0">
+              Raise Hand
+            </Button>
+          </div>
+        )}
+        {/* Hand already raised confirmation */}
+        {!canSpeak && me?.hand_raised && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3 flex items-center gap-3">
+            <span className="text-xl shrink-0">✋</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-black text-amber-400">Hand raised!</div>
+              <div className="text-xs text-muted-foreground mt-0.5">Waiting for the host to bring you on stage…</div>
+            </div>
+            <Button size="sm" variant="outline" onClick={toggleHand} className="shrink-0 text-amber-400 border-amber-400/40">
+              Lower
+            </Button>
           </div>
         )}
 
@@ -1845,42 +1994,78 @@ function ManagementPanelBody({
         </div>
       </div>
 
-      {/* Host Controls — act on a selected participant */}
+      {/* Host Controls — click a participant to select, then act */}
       <div>
         <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Host Controls</div>
-        <select
-          value={targetId}
-          onChange={(e) => setTargetId(e.target.value ? parseInt(e.target.value, 10) : "")}
-          className="w-full mb-2 px-3 py-2 bg-background border border-border rounded-xl text-xs focus:outline-none focus:border-primary"
-        >
-          <option value="">Select a participant…</option>
-          {targetable.map(p => (
-            <option key={p.user_id} value={p.user_id}>{p.name} — {p.role === "co_host" ? "Co-host" : p.role === "speaker" ? "Speaker" : "Audience"}</option>
-          ))}
-        </select>
-        <div className="grid grid-cols-3 gap-2">
-          <RoomControlButton
-            icon={Shield}
-            label="Make Co-Host"
-            disabled={!target || !isHost || target.role === "co_host"}
-            onClick={() => target && onAssignCohostUser(target.user_id)}
-          />
-          <RoomControlButton
-            icon={UserMinus}
-            label="Move to Audience"
-            disabled={!target || (target.role !== "speaker" && target.role !== "co_host")}
-            onClick={() => target && onDemoteUser(target.user_id)}
-          />
-          <RoomControlButton
-            icon={target?.muted ? Mic : MicOff}
-            label={target?.muted ? "Unmute" : "Mute"}
-            disabled={!target || target.role === "listener"}
-            onClick={() => target && onMuteUser(target.user_id, !target.muted)}
-          />
-          <RoomControlButton icon={UserMinus} label="Remove" disabled={!target} onClick={() => target && onKickUser(target.user_id)} tone="danger" />
-          <RoomControlButton icon={Ban} label="Block" disabled={!target} onClick={() => target && onBlockUser(target.user_id)} tone="danger" />
-          <RoomControlButton icon={AlertTriangle} label="Report" disabled={!target} onClick={() => target && onReportUser(target.user_id)} />
-        </div>
+        {targetable.length === 0 ? (
+          <div className="text-xs text-muted-foreground">No other participants yet</div>
+        ) : (
+          <>
+            {/* Participant selector list */}
+            <div className="space-y-1 mb-3 max-h-36 overflow-y-auto">
+              {targetable.map(p => (
+                <button
+                  key={p.user_id}
+                  onClick={() => setTargetId(prev => prev === p.user_id ? "" : p.user_id)}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-xl border text-left transition-colors ${
+                    targetId === p.user_id
+                      ? "border-primary bg-primary/10"
+                      : "border-transparent hover:bg-muted"
+                  }`}
+                >
+                  <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black">
+                    {p.avatar_url ? <img src={p.avatar_url} className="w-full h-full object-cover" alt="" /> : (p.name?.[0] ?? "?")}
+                  </div>
+                  <span className="flex-1 text-xs font-bold truncate">{p.name}</span>
+                  <span className="text-[9px] text-muted-foreground shrink-0">
+                    {p.role === "co_host" ? "Co-host" : p.role === "speaker" ? "Speaker" : "Audience"}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {/* Action grid — enabled only when a participant is selected */}
+            <div className="grid grid-cols-3 gap-2">
+              <RoomControlButton
+                icon={Shield}
+                label="Make Co-Host"
+                disabled={!target || !isHost || target.role === "co_host"}
+                onClick={() => target && onAssignCohostUser(target.user_id)}
+              />
+              <RoomControlButton
+                icon={UserMinus}
+                label="Remove"
+                disabled={!target}
+                onClick={() => { if (target) { onKickUser(target.user_id); setTargetId(""); } }}
+                tone="danger"
+              />
+              <RoomControlButton
+                icon={Ban}
+                label="Block"
+                disabled={!target}
+                onClick={() => { if (target) { onBlockUser(target.user_id); setTargetId(""); } }}
+                tone="danger"
+              />
+              <RoomControlButton
+                icon={AlertTriangle}
+                label="Report"
+                disabled={!target}
+                onClick={() => target && onReportUser(target.user_id)}
+              />
+              <RoomControlButton
+                icon={target?.muted ? Mic : MicOff}
+                label={target?.muted ? "Unmute" : "Mute"}
+                disabled={!target || target.role === "listener"}
+                onClick={() => target && onMuteUser(target.user_id, !target.muted)}
+              />
+              <RoomControlButton
+                icon={UserMinus}
+                label="Move to Audience"
+                disabled={!target || (target.role !== "speaker" && target.role !== "co_host")}
+                onClick={() => { if (target) { onDemoteUser(target.user_id); setTargetId(""); } }}
+              />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
