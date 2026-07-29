@@ -4,7 +4,7 @@
  * Routes (all under /api/diaspora/...):
  *
  *  GET  /diaspora/dashboard              — stats + recent activity for the dashboard
- *  GET  /diaspora/dna/connections        — DNA match list (mock/seed data for now)
+ *  GET  /diaspora/dna/connections        — DNA match list (demo seed data)
  *  POST /diaspora/dna/import             — import DNA CSV from AncestryDNA / 23andMe
  *  GET  /diaspora/heritage               — curated heritage collection list
  *  GET  /diaspora/heritage/:slug         — single collection items
@@ -91,8 +91,8 @@ router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, re
         vault_items: vaultItems,
         oral_histories: interviews.length,
         family_tree_people: memberCount,
-        dna_connections: 0,
-        heritage_collections: 12,
+        dna_connections: 5,
+        heritage_collections: 9,
       },
       recent_activity: memories.slice(0, 5).map(m => ({
         type: "memory",
@@ -146,16 +146,24 @@ router.get("/diaspora/activity", requireAuth, generalApiLimiter, async (req, res
   }
 });
 
-// ─── DNA Connections (mock foundation — real import added later) ───────────────
+// ─── DNA Connections (demo seed data — real import added later) ────────────────
+const DEMO_DNA_MATCHES = [
+  { id: "m1", name: "Shawn Davis", relationship: "1st Cousin", shared_cm: 327, predicted_relation: "First Cousin", confidence: "high", avatar_color: "bg-amber-500/20 text-amber-400" },
+  { id: "m2", name: "Angela Brooks", relationship: "2nd Cousin", shared_cm: 166, predicted_relation: "Second Cousin", confidence: "high", avatar_color: "bg-emerald-500/20 text-emerald-400" },
+  { id: "m3", name: "Marcus Johnson", relationship: "2nd Cousin", shared_cm: 112, predicted_relation: "Second Cousin", confidence: "medium", avatar_color: "bg-blue-500/20 text-blue-400" },
+  { id: "m4", name: "Patricia Williams", relationship: "3rd Cousin", shared_cm: 78, predicted_relation: "Third Cousin", confidence: "medium", avatar_color: "bg-purple-500/20 text-purple-400" },
+  { id: "m5", name: "David Carter", relationship: "3rd Cousin", shared_cm: 54, predicted_relation: "Third Cousin", confidence: "low", avatar_color: "bg-rose-500/20 text-rose-400" },
+];
+
 router.get("/diaspora/dna/connections", requireAuth, generalApiLimiter, async (_req, res) => {
   return res.json({
     summary: {
-      total_matches: 0,
-      close_family: 0,
-      distant_cousins: 0,
+      total_matches: 5,
+      close_family: 1,
+      distant_cousins: 4,
       unreviewed: 0,
     },
-    matches: [],
+    matches: DEMO_DNA_MATCHES,
     import_providers: ["AncestryDNA", "23andMe", "MyHeritage", "LivingDNA", "FamilyTreeDNA"],
     info: "Import your DNA data CSV to discover matches and relatives across the African diaspora.",
   });
@@ -178,14 +186,15 @@ router.post("/diaspora/dna/import", requireAuth, generalApiLimiter, async (req, 
 
 // ─── Heritage Collections ──────────────────────────────────────────────────────
 const HERITAGE_COLLECTIONS = [
-  { slug: "great-migration", title: "Great Migration", description: "The movement of 6 million African Americans from the rural South to urban Northern and Western cities between 1910-1970.", item_count: 24, cover_image: null, tags: ["history", "migration", "1910s", "1970s"], themes: ["Movement", "Labor", "Urbanization"] },
-  { slug: "black-cowboys", title: "Black Cowboys", description: "Celebrating the often-overlooked history of African American cowboys, ranchers, and horsemen of the American West.", item_count: 18, cover_image: null, tags: ["cowboys", "west", "rodeo"], themes: ["Identity", "Labor", "Land"] },
-  { slug: "civil-rights", title: "Civil Rights Movement", description: "Documenting the struggle for equality through marches, sit-ins, legal battles, and everyday courage.", item_count: 31, cover_image: null, tags: ["civil rights", "equality", "1960s", "activism"], themes: ["Justice", "Community", "Resistance"] },
-  { slug: "family-recipes", title: "Family Recipes", description: "Preserving the culinary traditions, flavors, and techniques passed down through generations of Black families.", item_count: 12, cover_image: null, tags: ["food", "culture", "tradition"], themes: ["Community", "Ancestry", "Joy"] },
-  { slug: "church-history", title: "Church History", description: "The church as the heart of the Black community — from spirituals and sermons to social justice and education.", item_count: 16, cover_image: null, tags: ["church", "faith", "spirituals", "community"], themes: ["Faith", "Community", "Leadership"] },
-  { slug: "military-service", title: "Military Service", description: "Honoring the service and sacrifice of Black military members from the Civil War through today.", item_count: 22, cover_image: null, tags: ["military", "veterans", "Buffalo Soldiers"], themes: ["Service", "Sacrifice", "Honor"] },
-  { slug: "hbcu-legacy", title: "HBCU Legacy", description: "The history and impact of Historically Black Colleges and Universities in shaping generations of Black excellence.", item_count: 14, cover_image: null, tags: ["education", "HBCU", "excellence"], themes: ["Education", "Excellence", "Community"] },
-  { slug: "land-ownership", title: "Land Ownership", description: "Documenting the history of Black land ownership, the Freedmen's Bureau, and the ongoing fight for generational wealth.", item_count: 9, cover_image: null, tags: ["land", "property", "Freedmen", "wealth"], themes: ["Wealth", "Freedom", "Heritage"] },
+  { slug: "great-migration", title: "Great Migration", description: "The movement of 6 million African Americans from the rural South to urban Northern and Western cities between 1910-1970.", item_count: 24, cover_image: "https://images.pexels.com/photos/9151751/pexels-photo-9151751.jpeg?auto=compress&cs=tinysrgb&h=400&w=600", tags: ["history", "migration", "1910s", "1970s"], themes: ["Movement", "Labor", "Urbanization"] },
+  { slug: "black-cowboys", title: "Black Cowboys", description: "Celebrating the often-overlooked history of African American cowboys, ranchers, and horsemen of the American West.", item_count: 18, cover_image: "https://images.pexels.com/photos/9151750/pexels-photo-9151750.jpeg?auto=compress&cs=tinysrgb&h=400&w=600", tags: ["cowboys", "west", "rodeo"], themes: ["Identity", "Labor", "Land"] },
+  { slug: "civil-rights", title: "Civil Rights Movement", description: "Documenting the struggle for equality through marches, sit-ins, legal battles, and everyday courage.", item_count: 31, cover_image: "https://images.pexels.com/photos/16156767/pexels-photo-16156767.jpeg?auto=compress&cs=tinysrgb&h=400&w=600", tags: ["civil rights", "equality", "1960s", "activism"], themes: ["Justice", "Community", "Resistance"] },
+  { slug: "family-recipes", title: "Family Recipes", description: "Preserving the culinary traditions, flavors, and techniques passed down through generations of Black families.", item_count: 12, cover_image: "https://images.pexels.com/photos/6004140/pexels-photo-6004140.jpeg?auto=compress&cs=tinysrgb&h=400&w=600", tags: ["food", "culture", "tradition"], themes: ["Community", "Ancestry", "Joy"] },
+  { slug: "church-history", title: "Church History", description: "The church as the heart of the Black community — from spirituals and sermons to social justice and education.", item_count: 16, cover_image: "https://images.pexels.com/photos/7520351/pexels-photo-7520351.jpeg?auto=compress&cs=tinysrgb&h=400&w=600", tags: ["church", "faith", "spirituals", "community"], themes: ["Faith", "Community", "Leadership"] },
+  { slug: "fort-worth-stories", title: "Fort Worth Stories", description: "Local stories from the Fort Worth African American community — families, businesses, and landmarks that shaped the city.", item_count: 8, cover_image: "https://images.pexels.com/photos/4262426/pexels-photo-4262426.jpeg?auto=compress&cs=tinysrgb&h=400&w=600", tags: ["fort worth", "local", "texas"], themes: ["Community", "Heritage", "Local"] },
+  { slug: "military-service", title: "Military Service", description: "Honoring the service and sacrifice of Black military members from the Civil War through today.", item_count: 22, cover_image: "https://images.pexels.com/photos/5214869/pexels-photo-5214869.jpeg?auto=compress&cs=tinysrgb&h=400&w=600", tags: ["military", "veterans", "Buffalo Soldiers"], themes: ["Service", "Sacrifice", "Honor"] },
+  { slug: "hbcu-legacy", title: "HBCU Legacy", description: "The history and impact of Historically Black Colleges and Universities in shaping generations of Black excellence.", item_count: 14, cover_image: "https://images.pexels.com/photos/8790740/pexels-photo-8790740.jpeg?auto=compress&cs=tinysrgb&h=400&w=600", tags: ["education", "HBCU", "excellence"], themes: ["Education", "Excellence", "Community"] },
+  { slug: "land-ownership", title: "Land Ownership", description: "Documenting the history of Black land ownership, the Freedmen's Bureau, and the ongoing fight for generational wealth.", item_count: 9, cover_image: "https://images.pexels.com/photos/3234896/pexels-photo-3234896.jpeg?auto=compress&cs=tinysrgb&h=400&w=600", tags: ["land", "property", "Freedmen", "wealth"], themes: ["Wealth", "Freedom", "Heritage"] },
 ];
 
 router.get("/diaspora/heritage", requireAuth, generalApiLimiter, (_req, res) => {
@@ -207,6 +216,8 @@ const RESEARCH_GUIDES = [
   { id: "church-records", title: "Church & Vital Records", description: "Using church records, birth, death, and marriage certificates to fill gaps in your family history.", category: "Vital Records", difficulty: "beginner", estimated_time: "1 hour", resources: [] },
   { id: "dna-research", title: "Using DNA for Genealogy", description: "A primer on using AncestryDNA, 23andMe, and other DNA tests to break through brick walls and find living relatives.", category: "DNA", difficulty: "intermediate", estimated_time: "3-5 hours", resources: [] },
   { id: "migration-routes", title: "African Diaspora Migration Routes", description: "Understanding the paths of the African diaspora — from West Africa to the Americas and beyond — to contextualize your family history.", category: "History", difficulty: "beginner", estimated_time: "1-2 hours", resources: [] },
+  { id: "tarrant-county-records", title: "Tarrant County Land Records", description: "How to access land and property records specific to Tarrant County, Texas for local genealogy research.", category: "Government Records", difficulty: "intermediate", estimated_time: "2-3 hours", resources: [{ name: "Tarrant County Clerk", url: "https://www.tarrantcounty.com/" }] },
+  { id: "fort-worth-directories", title: "Fort Worth City Directories", description: "Using historical Fort Worth city directories to trace African American residences, businesses, and occupations from the 1800s onward.", category: "Archives", difficulty: "beginner", estimated_time: "1-2 hours", resources: [] },
 ];
 
 router.get("/diaspora/research/guides", requireAuth, generalApiLimiter, (_req, res) => {
