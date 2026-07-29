@@ -186,7 +186,7 @@ export default function AdminAnalyticsDashboard() {
           sub={`${overview.recent_completions_24h} in last 24h`} />
         <KpiCard icon={Users} label="Helpers Online" value={overview.total_helpers_online}
           sub={`${overview.total_open} open requests`} />
-        <KpiCard icon={Mic} label="Voice Rate (7d)" value={`${voice_activation.rate_pct}%`
+        <KpiCard icon={Mic} label="Voice Rate (7d)" value={`${voice_activation.rate_pct}%`}
           sub={`${voice_activation.voice_activated_7d} of ${voice_activation.total_requests_7d}`} />
       </div>
 
