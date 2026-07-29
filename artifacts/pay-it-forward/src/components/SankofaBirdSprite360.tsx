@@ -55,7 +55,6 @@ import {
   SankofaBirdDiagonalDownLeft,
   SankofaBirdDiagonalDownRight,
   SankofaBirdCrossView,
-  SankofaBirdAssetPipeline,
   type WingState,
   type TailState,
 } from "./SankofaBirdViews";

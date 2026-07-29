@@ -34,7 +34,7 @@
  *   Egg center:      (128,70)
  */
 
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useId } from "react";
 
 /** Stable per-instance gradient/marker ID prefix — avoids SVG id collisions
  *  when multiple bird view instances render simultaneously (e.g. the asset
@@ -439,7 +439,7 @@ export function SankofaBirdFront3QLeft({
 // Full profile: near (left) wing shown, far (right) wing hidden behind body.
 // Body squished horizontally to simulate 90° rotation.
 export function SankofaBirdLeftSide({
-  size = 120, wingState = "relaxed", tailState = "speed",
+  size = 120, wingState = "relaxed",
   className = "", label = "LEFT SIDE", showLabel = false,
 }: BirdViewProps) {
   const id = useBirdId("sbv-lside");
