@@ -12,6 +12,8 @@
  *  GET  /diaspora/preserve/cards         — preserve-the-culture card deck
  *  POST /diaspora/preserve/scan          — QR scan → link to memory
  *  GET  /family/:id/tree                 — family tree data (nodes + edges)
+ *  POST /family/:id/tree/relations       — add a parent/child or spouse relation
+ *  DELETE /family/:id/tree/relations/:relationId — remove a relation
  *  GET  /family/:id/timeline             — family legacy timeline events
  *  POST /family/:id/timeline             — add timeline event
  *  GET  /diaspora/activity               — recent activity across all user's families
@@ -20,7 +22,13 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
-import { db, familyMembersTable, familyMemoriesTable, familyInterviewsTable } from "@workspace/db";
+import {
+  db,
+  familyMembersTable,
+  familyMemoriesTable,
+  familyInterviewsTable,
+  familyTreeRelationsTable,
+} from "@workspace/db";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../lib/logger";
@@ -238,7 +246,7 @@ router.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, async (re
   });
 });
 
-// ─── Family Tree (visual data) ─────────────────────────────────────────────────
+// ─── Family Tree (visual data with relationship edges) ─────────────────────────
 router.get("/family/:id/tree", requireAuth, generalApiLimiter, async (req, res) => {
   try {
     const familyId = Number(req.params.id);
@@ -252,17 +260,28 @@ router.get("/family/:id/tree", requireAuth, generalApiLimiter, async (req, res) 
 
     if (!membership.length) return res.status(403).json({ error: "Not a member of this family" });
 
-    const members = await db
-      .select({
+    const [members, relations] = await Promise.all([
+      db.select({
         id: familyMembersTable.id,
         display_name: familyMembersTable.display_name,
         role: familyMembersTable.role,
         relation_note: familyMembersTable.relation_note,
         user_id: familyMembersTable.user_id,
+        status: familyMembersTable.status,
       })
       .from(familyMembersTable)
       .where(eq(familyMembersTable.family_id, familyId))
-      .orderBy(familyMembersTable.display_name);
+      .orderBy(familyMembersTable.display_name),
+
+      db.select({
+        id: familyTreeRelationsTable.id,
+        from_member_id: familyTreeRelationsTable.from_member_id,
+        to_member_id: familyTreeRelationsTable.to_member_id,
+        relation_type: familyTreeRelationsTable.relation_type,
+      })
+      .from(familyTreeRelationsTable)
+      .where(eq(familyTreeRelationsTable.family_id, familyId)),
+    ]);
 
     const nodes = members.map(m => ({
       id: m.id,
@@ -270,12 +289,142 @@ router.get("/family/:id/tree", requireAuth, generalApiLimiter, async (req, res) 
       role: m.role,
       relation: m.relation_note,
       is_linked_user: !!m.user_id,
+      status: m.status,
     }));
 
-    return res.json({ nodes, edges: [], total: members.length });
+    const edges = relations.map(r => ({
+      id: r.id,
+      from: r.from_member_id,
+      to: r.to_member_id,
+      type: r.relation_type,
+    }));
+
+    return res.json({ nodes, edges, total: members.length });
   } catch (err) {
     logger.error({ err }, "family tree error");
     return res.status(500).json({ error: "Failed to load family tree" });
+  }
+});
+
+// ─── Family Tree Relations CRUD ───────────────────────────────────────────────
+const CreateRelationSchema = z.object({
+  from_member_id: z.number().int().positive(),
+  to_member_id: z.number().int().positive(),
+  relation_type: z.enum(["parent", "spouse"]),
+});
+
+// POST /family/:id/tree/relations — add a relationship edge
+router.post("/family/:id/tree/relations", requireAuth, generalApiLimiter, async (req, res) => {
+  try {
+    const familyId = Number(req.params.id);
+    const userId = req.authenticatedUserId!;
+
+    const membership = await db
+      .select({ role: familyMembersTable.role })
+      .from(familyMembersTable)
+      .where(and(
+        eq(familyMembersTable.family_id, familyId),
+        eq(familyMembersTable.user_id, userId),
+        eq(familyMembersTable.status, "active"),
+      ))
+      .limit(1);
+
+    if (!membership.length) return res.status(403).json({ error: "Not a member of this family" });
+    if (!["owner", "curator", "contributor"].includes(membership[0].role)) {
+      return res.status(403).json({ error: "Contributor access or higher required" });
+    }
+
+    const parsed = CreateRelationSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+
+    const { from_member_id, to_member_id, relation_type } = parsed.data;
+    if (from_member_id === to_member_id) {
+      return res.status(400).json({ error: "Cannot create a relation to the same person" });
+    }
+
+    // Verify both members belong to this family
+    const memberRows = await db.select({ id: familyMembersTable.id })
+      .from(familyMembersTable)
+      .where(and(
+        eq(familyMembersTable.family_id, familyId),
+        inArray(familyMembersTable.id, [from_member_id, to_member_id]),
+      ));
+    if (memberRows.length !== 2) {
+      return res.status(400).json({ error: "Both members must belong to this family" });
+    }
+
+    // For spouse relations, check if reverse edge already exists (bidirectional)
+    if (relation_type === "spouse") {
+      const existing = await db.select({ id: familyTreeRelationsTable.id })
+        .from(familyTreeRelationsTable)
+        .where(and(
+          eq(familyTreeRelationsTable.family_id, familyId),
+          eq(familyTreeRelationsTable.relation_type, "spouse"),
+          or(
+            and(
+              eq(familyTreeRelationsTable.from_member_id, from_member_id),
+              eq(familyTreeRelationsTable.to_member_id, to_member_id),
+            ),
+            and(
+              eq(familyTreeRelationsTable.from_member_id, to_member_id),
+              eq(familyTreeRelationsTable.to_member_id, from_member_id),
+            ),
+          ),
+        ))
+        .limit(1);
+      if (existing.length) return res.status(409).json({ error: "Spouse relation already exists" });
+    }
+
+    const [relation] = await db.insert(familyTreeRelationsTable).values({
+      family_id: familyId,
+      from_member_id,
+      to_member_id,
+      relation_type,
+    }).returning();
+
+    logger.info({ familyId, relationId: relation.id, userId }, "family_tree_relation_created");
+    return res.status(201).json({ relation });
+  } catch (err) {
+    // Handle unique constraint violation (duplicate edge)
+    if (err && typeof err === "object" && "code" in err && err.code === "23505") {
+      return res.status(409).json({ error: "This relation already exists" });
+    }
+    logger.error({ err }, "family tree relation create error");
+    return res.status(500).json({ error: "Failed to create relation" });
+  }
+});
+
+// DELETE /family/:id/tree/relations/:relationId — remove a relationship edge
+router.delete("/family/:id/tree/relations/:relationId", requireAuth, generalApiLimiter, async (req, res) => {
+  try {
+    const familyId = Number(req.params.id);
+    const relationId = Number(req.params.relationId);
+    const userId = req.authenticatedUserId!;
+
+    const membership = await db
+      .select({ role: familyMembersTable.role })
+      .from(familyMembersTable)
+      .where(and(
+        eq(familyMembersTable.family_id, familyId),
+        eq(familyMembersTable.user_id, userId),
+        eq(familyMembersTable.status, "active"),
+      ))
+      .limit(1);
+
+    if (!membership.length) return res.status(403).json({ error: "Not a member of this family" });
+    if (!["owner", "curator", "contributor"].includes(membership[0].role)) {
+      return res.status(403).json({ error: "Contributor access or higher required" });
+    }
+
+    await db.delete(familyTreeRelationsTable).where(and(
+      eq(familyTreeRelationsTable.id, relationId),
+      eq(familyTreeRelationsTable.family_id, familyId),
+    ));
+
+    return res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "family tree relation delete error");
+    return res.status(500).json({ error: "Failed to delete relation" });
   }
 });
 
