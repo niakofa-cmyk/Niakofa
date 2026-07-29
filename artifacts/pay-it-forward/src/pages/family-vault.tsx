@@ -1150,10 +1150,18 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
   const timerRef         = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef        = useRef<MediaStream | null>(null);
 
+  // Web Audio API refs for live microphone level meter
+  const analyserRef  = useRef<AnalyserNode | null>(null);
+  const audioCtxRef  = useRef<AudioContext | null>(null);
+  const rafRef       = useRef<number | null>(null);
+  const [barLevels, setBarLevels] = useState<number[]>(() => Array.from({ length: 40 }, () => 0.15));
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      if (rafRef.current)   cancelAnimationFrame(rafRef.current);
+      audioCtxRef.current?.close().catch(() => {});
       streamRef.current?.getTracks().forEach(t => t.stop());
     };
   }, []);
@@ -1163,6 +1171,34 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+
+      // Wire up Web Audio API for the live level meter
+      try {
+        const ActxClass = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
+        const audioCtx  = new ActxClass();
+        const source    = audioCtx.createMediaStreamSource(stream);
+        const analyser  = audioCtx.createAnalyser();
+        analyser.fftSize = 128;
+        analyser.smoothingTimeConstant = 0.82;
+        source.connect(analyser);
+        analyserRef.current = analyser;
+        audioCtxRef.current = audioCtx;
+        const data     = new Uint8Array(analyser.frequencyBinCount);
+        const NUM_BARS = 40;
+        const tick = () => {
+          if (!analyserRef.current) return;
+          analyserRef.current.getByteFrequencyData(data);
+          setBarLevels(
+            Array.from({ length: NUM_BARS }, (_, i) => {
+              const bin = Math.floor((i / NUM_BARS) * data.length);
+              return Math.max(0.08, data[bin] / 255);
+            }),
+          );
+          rafRef.current = requestAnimationFrame(tick);
+        };
+        rafRef.current = requestAnimationFrame(tick);
+      } catch { /* AudioContext unavailable — bars stay at static height */ }
+
       const mime = getPreferredMime();
       const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       mediaRecorderRef.current = mr;
@@ -1183,6 +1219,9 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
     const mr = mediaRecorderRef.current;
     if (!mr || phase !== "recording") return;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (rafRef.current)   { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    audioCtxRef.current?.close().catch(() => {});
+    analyserRef.current = null;
     setPhase("uploading");
 
     // Wait for all chunks to be flushed
@@ -1333,30 +1372,16 @@ function RecordInterviewModal({ familyId, onClose, onDone }: RecordInterviewModa
 
             {phase === "recording" && (
               <div className="space-y-3">
-                {/* Waveform visualization */}
+                {/* Live microphone level meter — driven by Web Audio AnalyserNode */}
                 <div className="flex items-center justify-center gap-0.5 h-14 px-2">
-                  {Array.from({ length: 40 }).map((_, i) => (
+                  {barLevels.map((level, i) => (
                     <div
                       key={i}
-                      className="bg-primary/70 rounded-full flex-1"
-                      style={{
-                        height: `${20 + Math.random() * 60}%`,
-                        animationName: "waveBar",
-                        animationDuration: `${0.4 + Math.random() * 0.6}s`,
-                        animationDelay: `${i * 0.02}s`,
-                        animationIterationCount: "infinite",
-                        animationDirection: "alternate",
-                        animationTimingFunction: "ease-in-out",
-                      }}
+                      className="bg-primary/70 rounded-full flex-1 transition-[height] duration-75"
+                      style={{ height: `${Math.max(8, level * 100)}%` }}
                     />
                   ))}
                 </div>
-                <style>{`
-                  @keyframes waveBar {
-                    from { transform: scaleY(0.3); opacity: 0.5; }
-                    to   { transform: scaleY(1.0); opacity: 1.0; }
-                  }
-                `}</style>
 
                 <div className="flex items-center justify-center gap-3">
                   <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />

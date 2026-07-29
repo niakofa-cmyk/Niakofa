@@ -258,6 +258,7 @@ router.post("/family", generalApiLimiter, requireAuth, async (req, res) => {
 router.get("/family/mine", generalApiLimiter, requireAuth, async (req, res) => {
   const userId = req.authenticatedUserId!;
 
+  // Include both active members and pending invitations
   const rows = await db
     .select({
       family:     familiesTable,
@@ -268,15 +269,39 @@ router.get("/family/mine", generalApiLimiter, requireAuth, async (req, res) => {
     .where(
       and(
         eq(familyMembersTable.user_id, userId),
-        eq(familyMembersTable.status, "active"),
+        inArray(familyMembersTable.status, ["active", "invited"]),
       ),
     )
     .orderBy(desc(familiesTable.updated_at));
 
+  // Fetch active member counts for all returned families in one query
+  const familyIds = rows.map(r => r.family.id);
+  const memberCounts: Record<number, number> = {};
+  if (familyIds.length > 0) {
+    const counts = await db
+      .select({
+        family_id: familyMembersTable.family_id,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(familyMembersTable)
+      .where(
+        and(
+          inArray(familyMembersTable.family_id, familyIds),
+          eq(familyMembersTable.status, "active"),
+        ),
+      )
+      .groupBy(familyMembersTable.family_id);
+    for (const c of counts) {
+      memberCounts[c.family_id] = c.count;
+    }
+  }
+
   return res.json({
     families: rows.map(r => ({
       ...r.family,
-      my_role: r.membership.role,
+      my_role:      r.membership.role,
+      status:       r.membership.status,   // "active" | "invited"
+      member_count: memberCounts[r.family.id] ?? 0,
     })),
   });
 });

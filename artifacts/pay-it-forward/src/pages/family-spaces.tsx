@@ -18,9 +18,9 @@ interface FamilySpace {
   cover_image_url: string | null;
   created_at: string;
   my_role: "owner" | "curator" | "contributor" | "viewer";
-  member_count?: number;
+  member_count: number;   // active members (from API)
   memory_count?: number;
-  status?: string;
+  status: "active" | "invited"; // real membership status from API
 }
 
 type SpaceTab = "mine" | "invitations";
@@ -82,9 +82,8 @@ export default function FamilySpacesPage() {
     }
   }
 
-  // Invitations = spaces where I was invited (viewer/contributor from someone else) but haven't accepted
-  // We represent them as spaces where status would be "invited" — for now show pending-status members
-  const mySpaces = families.filter(f => f.my_role !== "viewer" || !f.status || f.status !== "invited");
+  // Split by real membership status returned from API
+  const mySpaces    = families.filter(f => f.status === "active");
   const invitations = families.filter(f => f.status === "invited");
 
   if (!currentUser) {

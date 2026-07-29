@@ -9,7 +9,7 @@
  *  - Relationship explorer — see how two people are connected
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import {
   ArrowLeft, TreePine, Users, Calendar, Plus, Search,
@@ -359,37 +359,14 @@ export default function FamilyTreePage() {
                   </div>
                 ) : (
                   <>
-                    {/* Generation rows */}
-                    {generations.map((gen, gi) => {
-                      const genLabel = gen[0]?.birth_year
-                        ? `Generation ${gi + 1} · ${parseInt(gen[0].birth_year)} era`
-                        : `Generation ${gi + 1}`;
-                      return (
-                        <div key={gi}>
-                          <p className="text-xs text-muted-foreground font-medium mb-2 uppercase tracking-wide">
-                            {genLabel}
-                          </p>
-                          {/* Connector line */}
-                          {gi < generations.length - 1 && (
-                            <div className="flex justify-center mb-1">
-                              <div className="w-px h-4 bg-border" />
-                            </div>
-                          )}
-                          <div className="flex flex-wrap gap-2 justify-center">
-                            {gen.map(p => (
-                              <TreePersonNode
-                                key={p.id}
-                                person={p}
-                                isSelected={selectedPerson?.id === p.id}
-                                onClick={() => setSelectedPerson(
-                                  selectedPerson?.id === p.id ? null : p
-                                )}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {/* Draggable canvas with real SVG connectors */}
+                    <DraggableTreeCanvas
+                      nodes={nodes}
+                      edges={edges}
+                      generations={generations}
+                      selectedPerson={selectedPerson}
+                      onSelect={setSelectedPerson}
+                    />
 
                     {/* Selected person detail with relations */}
                     {selectedPerson && (
@@ -625,6 +602,206 @@ export default function FamilyTreePage() {
           onClose={() => setShowExplorer(false)}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Draggable Tree Canvas ─────────────────────────────────────────────────────
+
+const NODE_W = 88;
+const NODE_H = 84;
+
+function DraggableTreeCanvas({
+  nodes,
+  edges,
+  generations,
+  selectedPerson,
+  onSelect,
+}: {
+  nodes: TreeNode[];
+  edges: TreeEdge[];
+  generations: TreeNode[][];
+  selectedPerson: TreeNode | null;
+  onSelect: (p: TreeNode | null) => void;
+}) {
+  const GEN_V_GAP = 68;
+  const H_GAP     = 14;
+  const CANVAS_REF_W = 340;
+
+  const computeInitial = useCallback((): Record<number, { x: number; y: number }> => {
+    const pos: Record<number, { x: number; y: number }> = {};
+    generations.forEach((gen, gi) => {
+      const rowW   = gen.length * NODE_W + Math.max(0, gen.length - 1) * H_GAP;
+      const startX = Math.max(8, (CANVAS_REF_W - rowW) / 2);
+      gen.forEach((node, ni) => {
+        pos[node.id] = {
+          x: startX + ni * (NODE_W + H_GAP),
+          y: gi * (NODE_H + GEN_V_GAP) + 8,
+        };
+      });
+    });
+    return pos;
+  }, [generations]);
+
+  const [positions, setPositions] = useState<Record<number, { x: number; y: number }>>(computeInitial);
+
+  // Sync positions when the node list changes (additions/removals)
+  useEffect(() => {
+    setPositions(prev => {
+      const initial = computeInitial();
+      const next: Record<number, { x: number; y: number }> = {};
+      for (const node of nodes) {
+        next[node.id] = prev[node.id] ?? initial[node.id] ?? { x: 8, y: 8 };
+      }
+      return next;
+    });
+  }, [nodes, computeInitial]);
+
+  const dragging = useRef<{
+    nodeId: number;
+    ptrId: number;
+    startPx: number; startPy: number;
+    origX: number; origY: number;
+  } | null>(null);
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>, nodeId: number) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.stopPropagation();
+    const pos = positions[nodeId] ?? { x: 0, y: 0 };
+    dragging.current = {
+      nodeId, ptrId: e.pointerId,
+      startPx: e.clientX, startPy: e.clientY,
+      origX: pos.x, origY: pos.y,
+    };
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragging.current || dragging.current.ptrId !== e.pointerId) return;
+    const { nodeId, startPx, startPy, origX, origY } = dragging.current;
+    setPositions(prev => ({
+      ...prev,
+      [nodeId]: {
+        x: Math.max(0, origX + (e.clientX - startPx)),
+        y: Math.max(0, origY + (e.clientY - startPy)),
+      },
+    }));
+  }
+
+  function onPointerUp(e: React.PointerEvent<HTMLDivElement>, nodeId: number) {
+    if (!dragging.current) return;
+    const moved = Math.abs(e.clientX - dragging.current.startPx) + Math.abs(e.clientY - dragging.current.startPy);
+    dragging.current = null;
+    if (moved < 6) {
+      const node = nodes.find(n => n.id === nodeId);
+      if (node) onSelect(selectedPerson?.id === nodeId ? null : node);
+    }
+  }
+
+  // Canvas bounds
+  const allPos = Object.values(positions);
+  const canvasW = Math.max(360, ...allPos.map(p => p.x + NODE_W + 16));
+  const canvasH = Math.max(240, ...allPos.map(p => p.y + NODE_H + 24));
+
+  // SVG bezier for parent→child; dashed line for spouse
+  function edgePath(fromId: number, toId: number, type: "parent" | "spouse"): string | null {
+    const from = positions[fromId];
+    const to   = positions[toId];
+    if (!from || !to) return null;
+    const fx = from.x + NODE_W / 2;
+    const tx = to.x   + NODE_W / 2;
+    if (type === "spouse") {
+      const fy = from.y + NODE_H / 2;
+      const ty = to.y   + NODE_H / 2;
+      return `M ${from.x + (from.x < to.x ? NODE_W : 0)} ${fy} L ${to.x + (from.x < to.x ? 0 : NODE_W)} ${ty}`;
+    }
+    // Parent → child: bezier from bottom-center to top-center
+    const fy = from.y + NODE_H;
+    const ty = to.y;
+    const cy = (fy + ty) / 2;
+    return `M ${fx} ${fy} C ${fx} ${cy}, ${tx} ${cy}, ${tx} ${ty}`;
+  }
+
+  return (
+    <div className="relative rounded-2xl border border-border bg-muted/10 overflow-auto" style={{ maxHeight: 420 }}>
+      <div
+        style={{ width: canvasW, height: canvasH, position: "relative" }}
+        onPointerMove={onPointerMove}
+        onPointerUp={() => { dragging.current = null; }}
+        onPointerLeave={() => { dragging.current = null; }}
+      >
+        {/* SVG connector layer */}
+        <svg
+          style={{
+            position: "absolute", inset: 0,
+            width: canvasW, height: canvasH,
+            pointerEvents: "none", overflow: "visible",
+          }}
+        >
+          {edges.map(edge => {
+            const d = edgePath(edge.from, edge.to, edge.type);
+            if (!d) return null;
+            return (
+              <path
+                key={edge.id}
+                d={d}
+                fill="none"
+                stroke={edge.type === "spouse" ? "#f43f5e" : "hsl(var(--primary))"}
+                strokeWidth={2}
+                strokeOpacity={edge.type === "spouse" ? 0.55 : 0.5}
+                strokeDasharray={edge.type === "spouse" ? "6 3" : undefined}
+              />
+            );
+          })}
+        </svg>
+
+        {/* Node layer */}
+        {nodes.map(node => {
+          const pos = positions[node.id];
+          if (!pos) return null;
+          const initials  = node.name.split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase();
+          const isSelected = selectedPerson?.id === node.id;
+          return (
+            <div
+              key={node.id}
+              style={{
+                position: "absolute",
+                left: pos.x, top: pos.y,
+                width: NODE_W,
+                touchAction: "none",
+                userSelect: "none",
+                zIndex: isSelected ? 10 : 1,
+              }}
+              onPointerDown={e => onPointerDown(e, node.id)}
+              onPointerMove={onPointerMove}
+              onPointerUp={e => onPointerUp(e, node.id)}
+            >
+              <div
+                className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-center cursor-grab active:cursor-grabbing ${
+                  isSelected
+                    ? "bg-primary/15 border-primary shadow-lg ring-1 ring-primary/40"
+                    : "bg-card border-border shadow-sm"
+                }`}
+              >
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                  node.is_linked_user ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                }`}>
+                  {initials}
+                </div>
+                <p className="text-[11px] font-medium leading-tight line-clamp-2 w-full">{node.name}</p>
+                {node.birth_year && (
+                  <p className="text-[10px] text-muted-foreground leading-none">{node.birth_year}</p>
+                )}
+                {node.relation && (
+                  <p className="text-[10px] text-primary/70 leading-tight line-clamp-1">{node.relation}</p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-center text-[10px] text-muted-foreground py-1.5 bg-background/80 sticky bottom-0 border-t border-border">
+        Drag nodes to rearrange · Tap to select
+      </p>
     </div>
   );
 }
