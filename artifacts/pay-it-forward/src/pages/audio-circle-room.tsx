@@ -35,6 +35,8 @@ interface Participant {
   muted: boolean;
   name: string;
   avatar_url: string | null;
+  joined_via?: "link" | "invite" | "direct"; // how this participant joined the circle
+  invited_by?: string | null; // name of the person who sent the in-app invite
 }
 
 interface ChapterMarker {
@@ -1007,11 +1009,12 @@ export default function AudioCircleRoomScreen() {
 
   // ── Realtime room events ───────────────────────────────────────────────────
   useWebSocket("circle_participant_joined", (e) => {
-    const p = e.payload as { session_id: number; user_id: number; name?: string; avatar_url?: string | null; role?: string };
+    const p = e.payload as { session_id: number; user_id: number; name?: string; avatar_url?: string | null; role?: string; join_path?: string; invited_by?: string | null };
     if (p.session_id !== sessionId) return;
+    const joinedVia: Participant["joined_via"] = p.join_path === "link" ? "link" : p.invited_by ? "invite" : "direct";
     setParticipants(prev => prev.some(x => x.user_id === p.user_id) ? prev : [
       ...prev,
-      { user_id: p.user_id, role: (p.role as Participant["role"]) ?? "listener", hand_raised: false, muted: false, name: p.name ?? "Someone", avatar_url: p.avatar_url ?? null },
+      { user_id: p.user_id, role: (p.role as Participant["role"]) ?? "listener", hand_raised: false, muted: false, name: p.name ?? "Someone", avatar_url: p.avatar_url ?? null, joined_via: joinedVia, invited_by: p.invited_by ?? null },
     ]);
   });
 
@@ -2712,23 +2715,24 @@ export default function AudioCircleRoomScreen() {
         )}
       </AnimatePresence>
 
-      {/* ── Invite modal ──────────────────────────────────────────────────────── */}
+      {/* ── Invite modal (invite depth: link share vs in-app invite graph) ───────── */}
       <AnimatePresence>
         {showInviteModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6"
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
             onClick={() => setShowInviteModal(false)}
           >
             <motion.div
               initial={{ scale: 0.9, y: 16 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 16 }}
-              className="bg-card border border-border rounded-2xl p-6 max-w-sm w-full space-y-4"
+              className="bg-card border border-border rounded-2xl p-5 max-w-sm w-full space-y-4 max-h-[90vh] overflow-y-auto"
               onClick={e => e.stopPropagation()}
             >
+              {/* Header */}
               <div className="flex items-center justify-between">
                 <div className="text-base font-black flex items-center gap-2">
                   <UserPlus className="w-4 h-4 text-primary" /> Invite to Circle
@@ -2738,9 +2742,17 @@ export default function AudioCircleRoomScreen() {
                 </button>
               </div>
 
-              {/* In-app invite: search community members */}
-              <div>
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1.5 block">Send in-app notification</label>
+              {/* ── SECTION 1: In-app invite (direct notification) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                    <UserPlus className="w-2.5 h-2.5 text-primary" />
+                  </div>
+                  <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">
+                    Notify a Member
+                  </label>
+                  <span className="ml-auto text-[10px] font-bold bg-primary/10 text-primary rounded-full px-2 py-0.5">In-app</span>
+                </div>
                 <input
                   value={inviteSearch}
                   onChange={e => setInviteSearch(e.target.value)}
@@ -2749,7 +2761,7 @@ export default function AudioCircleRoomScreen() {
                   style={{ fontSize: "16px" }}
                 />
                 {inviteResults.length > 0 && (
-                  <div className="mt-1.5 space-y-1 max-h-40 overflow-y-auto">
+                  <div className="mt-1 space-y-1 max-h-36 overflow-y-auto">
                     {inviteResults.map(u => (
                       <div key={u.id} className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-muted">
                         <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black">
@@ -2769,19 +2781,34 @@ export default function AudioCircleRoomScreen() {
                   </div>
                 )}
                 {inviteSearch.length >= 2 && inviteResults.length === 0 && invitingSending === null && (
-                  <div className="text-xs text-muted-foreground mt-1.5">No community members found</div>
+                  <div className="text-xs text-muted-foreground">No community members found</div>
                 )}
               </div>
 
-              {/* Shareable link fallback */}
-              <div>
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1.5 block">Or share a link</label>
+              {/* Divider */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">or</span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
+
+              {/* ── SECTION 2: Share link (open join path) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-5 h-5 rounded-full bg-amber-400/20 flex items-center justify-center shrink-0">
+                    <Share2 className="w-2.5 h-2.5 text-amber-400" />
+                  </div>
+                  <label className="text-xs font-black uppercase tracking-widest text-muted-foreground">
+                    Share a Link
+                  </label>
+                  <span className="ml-auto text-[10px] font-bold bg-amber-400/10 text-amber-400 rounded-full px-2 py-0.5">Open join</span>
+                </div>
                 <div className="flex items-center gap-2 bg-muted rounded-xl px-3 py-2 border border-border">
                   <span className="flex-1 text-xs font-mono truncate text-muted-foreground select-all">
                     {window.location.origin}/audio-circle/{sessionId}
                   </span>
                 </div>
-                <div className="flex gap-2 mt-2">
+                <div className="flex gap-2">
                   <Button className="flex-1" onClick={copyInviteLink}>
                     Copy Link
                   </Button>
@@ -2792,6 +2819,38 @@ export default function AudioCircleRoomScreen() {
                   )}
                 </div>
               </div>
+
+              {/* ── SECTION 3: Invite graph — who joined via what path */}
+              {participants.some(p => p.joined_via === "invite" || p.joined_via === "link") && (
+                <div className="space-y-1.5 pt-1 border-t border-border">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                    <Users className="w-3 h-3" /> Who's Here &amp; How They Joined
+                  </div>
+                  <div className="space-y-1 max-h-36 overflow-y-auto">
+                    {participants.filter(p => p.joined_via).map(p => (
+                      <div key={p.user_id} className="flex items-center gap-2 text-xs">
+                        <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[9px] font-black">
+                          {p.avatar_url ? <img src={p.avatar_url} className="w-full h-full object-cover" alt="" /> : (p.name?.[0] ?? "?")}
+                        </div>
+                        <span className="flex-1 font-medium truncate">{p.name}</span>
+                        {p.joined_via === "invite" ? (
+                          <div className="flex items-center gap-0.5 text-[9px] font-bold text-primary bg-primary/10 rounded-full px-1.5 py-0.5 shrink-0">
+                            <UserPlus className="w-2.5 h-2.5" />
+                            {p.invited_by ? `by ${p.invited_by}` : "Invited"}
+                          </div>
+                        ) : p.joined_via === "link" ? (
+                          <div className="flex items-center gap-0.5 text-[9px] font-bold text-amber-400 bg-amber-400/10 rounded-full px-1.5 py-0.5 shrink-0">
+                            <Share2 className="w-2.5 h-2.5" />
+                            Via link
+                          </div>
+                        ) : (
+                          <div className="text-[9px] text-muted-foreground shrink-0">Direct</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
