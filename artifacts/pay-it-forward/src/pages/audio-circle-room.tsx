@@ -1,4 +1,3 @@
-successfully downloaded text file (SHA: 64d083f2a6165ca1af2389e2da228ca66e4c76db)
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -2246,74 +2245,25 @@ export default function AudioCircleRoomScreen() {
       <div className="lg:flex lg:items-start lg:gap-4 lg:px-4 lg:pt-4">
 
         {/* ── Desktop-only left sidebar: People / Reactions ────────────────────── */}
-        <div className="hidden lg:block lg:w-64 shrink-0 sticky top-24">
-          <div className="bg-card border border-border rounded-2xl p-3">
-            <div className="flex items-center gap-4 border-b border-border mb-3">
-              <button
-                onClick={() => setSidebarTab("people")}
-                className={`pb-2 text-xs font-bold border-b-2 ${sidebarTab === "people" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
-              >
-                People
-              </button>
-              <button
-                onClick={() => setSidebarTab("reactions")}
-                className={`pb-2 text-xs font-bold border-b-2 ${sidebarTab === "reactions" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
-              >
-                Reactions
-              </button>
-            </div>
-            {sidebarTab === "people" ? (
-              <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-                <div>
-                  <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">
-                    On Stage ({(host ? 1 : 0) + cohosts.length + speakers.length})
-                  </div>
-                  <div className="space-y-1.5">
-                    {[...(host ? [host] : []), ...cohosts, ...speakers].map(p => (
-                      <div key={p.user_id} className="flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-muted/50">
-                        <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black">
-                          {p.avatar_url ? <img src={p.avatar_url} className="w-full h-full object-cover" alt="" /> : (p.name?.[0] ?? "?")}
-                        </div>
-                        <span className="flex-1 text-xs font-bold truncate">{p.user_id === myUserId ? "You" : p.name}</span>
-                        {p.muted ? <MicOff className="w-3 h-3 text-red-400 shrink-0" /> : <Mic className="w-3 h-3 text-green-400 shrink-0" />}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5">
-                    Audience ({audience.length})
-                  </div>
-                  <div className="space-y-1.5">
-                    {audience.map(p => (
-                      <div key={p.user_id} className="flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-muted/50">
-                        <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black">
-                          {p.avatar_url ? <img src={p.avatar_url} className="w-full h-full object-cover" alt="" /> : (p.name?.[0] ?? "?")}
-                        </div>
-                        <span className="flex-1 text-xs font-bold truncate">{p.name}</span>
-                        {p.hand_raised && <Hand className="w-3 h-3 text-amber-400 shrink-0" />}
-                        <MicOff className="w-3 h-3 text-muted-foreground shrink-0" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-1.5 max-h-[60vh] overflow-y-auto">
-                {reactionLog.length === 0 ? (
-                  <div className="text-xs text-muted-foreground">No reactions yet</div>
-                ) : (
-                  [...reactionLog].reverse().map(r => (
-                    <div key={r.id} className="flex items-center gap-2 text-xs">
-                      <span className="text-base leading-none">{r.emoji}</span>
-                      <span className="font-bold truncate">{r.name}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+        <DesktopPeopleRail
+          sidebarTab={sidebarTab}
+          onTabChange={setSidebarTab}
+          host={host}
+          cohosts={cohosts}
+          speakers={speakers}
+          audience={audience}
+          myUserId={myUserId}
+          canMod={canMod}
+          reactionLog={reactionLog}
+          onPromote={promote}
+          speakingLevels={speakingLevels}
+          localLevel={localLevel}
+          activeSpeakerId={activeSpeakerId}
+          videoEnabled={!!session.video_enabled}
+          remoteStreams={remoteStreams}
+          videoOn={videoOn}
+          localStream={localStream}
+        />
 
         {/* ── Center: Room or Chat content ─────────────────────────────────────── */}
         <div className="flex-1 min-w-0">
@@ -2493,38 +2443,76 @@ export default function AudioCircleRoomScreen() {
               const visible = showSpeakersAll ? sortedSpeakers : sortedSpeakers.slice(0, SPEAKER_CAP);
               const overflow = sortedSpeakers.length - SPEAKER_CAP;
               return (
-              <div className="grid grid-cols-4 gap-3" onClick={e => e.stopPropagation()}>
-                {visible.map(s => (
-                  <SpeakerTile
-                    key={s.user_id}
-                    participant={s}
-                    isMe={s.user_id === myUserId}
-                    level={s.user_id === myUserId ? localLevel : (speakingLevels.get(s.user_id) ?? 0)}
-                    isActiveSpeaker={activeSpeakerId === s.user_id}
-                    isLoudest={loudestSpeakerId === s.user_id && loudestSpeakerId !== activeSpeakerId}
-                    canMod={canMod && s.user_id !== myUserId}
-                    modMenuOpen={modMenuOpen === s.user_id}
-                    onOpenMod={() => setModMenuOpen(prev => prev === s.user_id ? null : s.user_id)}
-                    onMute={() => muteUser(s.user_id, !s.muted)}
-                    onDemote={() => demote(s.user_id)}
-                    onKick={() => kickUser(s.user_id)}
-                    onBlock={() => setShowBlockConfirm(s.user_id)}
-                    onReport={() => setShowReportModal(s.user_id)}
-                    onAssignCohost={isHost ? () => assignCohost(s.user_id) : undefined}
-                  />
-                ))}
-                {!showSpeakersAll && overflow > 0 && (
-                  <button
-                    className="flex flex-col items-center gap-1"
-                    onClick={(e) => { e.stopPropagation(); setShowSpeakersAll(true); }}
-                  >
-                    <div className="w-14 h-14 rounded-full bg-muted/80 border-2 border-dashed border-border flex items-center justify-center">
-                      <span className="text-xs font-black text-muted-foreground">+{overflow}</span>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground">More</span>
-                  </button>
-                )}
-              </div>
+              <>
+                {/* Desktop: 3-column video tiles */}
+                <div className="hidden lg:grid lg:grid-cols-3 gap-3" onClick={e => e.stopPropagation()}>
+                  {visible.map(s => (
+                    <DesktopSpeakerVideoTile
+                      key={s.user_id}
+                      participant={s}
+                      isMe={s.user_id === myUserId}
+                      level={s.user_id === myUserId ? localLevel : (speakingLevels.get(s.user_id) ?? 0)}
+                      isActiveSpeaker={activeSpeakerId === s.user_id}
+                      isLoudest={loudestSpeakerId === s.user_id && loudestSpeakerId !== activeSpeakerId}
+                      videoStream={s.user_id === myUserId ? localStream : (remoteStreams.get(s.user_id) ?? null)}
+                      videoOn={s.user_id === myUserId ? videoOn : (remoteStreams.get(s.user_id)?.getVideoTracks().length ?? 0) > 0}
+                      canMod={canMod && s.user_id !== myUserId}
+                      modMenuOpen={modMenuOpen === s.user_id}
+                      onOpenMod={() => setModMenuOpen(prev => prev === s.user_id ? null : s.user_id)}
+                      onMute={() => muteUser(s.user_id, !s.muted)}
+                      onDemote={() => demote(s.user_id)}
+                      onKick={() => kickUser(s.user_id)}
+                      onBlock={() => setShowBlockConfirm(s.user_id)}
+                      onReport={() => setShowReportModal(s.user_id)}
+                      onAssignCohost={isHost ? () => assignCohost(s.user_id) : undefined}
+                    />
+                  ))}
+                  {!showSpeakersAll && overflow > 0 && (
+                    <button
+                      className="aspect-[4/3] rounded-xl bg-muted/50 border-2 border-dashed border-border flex items-center justify-center"
+                      onClick={(e) => { e.stopPropagation(); setShowSpeakersAll(true); }}
+                    >
+                      <div className="text-center">
+                        <span className="block text-xl font-black text-muted-foreground">+{overflow}</span>
+                        <span className="text-[10px] text-muted-foreground">More</span>
+                      </div>
+                    </button>
+                  )}
+                </div>
+                {/* Mobile: compact circle tiles */}
+                <div className="grid grid-cols-4 gap-3 lg:hidden" onClick={e => e.stopPropagation()}>
+                  {visible.map(s => (
+                    <SpeakerTile
+                      key={s.user_id}
+                      participant={s}
+                      isMe={s.user_id === myUserId}
+                      level={s.user_id === myUserId ? localLevel : (speakingLevels.get(s.user_id) ?? 0)}
+                      isActiveSpeaker={activeSpeakerId === s.user_id}
+                      isLoudest={loudestSpeakerId === s.user_id && loudestSpeakerId !== activeSpeakerId}
+                      canMod={canMod && s.user_id !== myUserId}
+                      modMenuOpen={modMenuOpen === s.user_id}
+                      onOpenMod={() => setModMenuOpen(prev => prev === s.user_id ? null : s.user_id)}
+                      onMute={() => muteUser(s.user_id, !s.muted)}
+                      onDemote={() => demote(s.user_id)}
+                      onKick={() => kickUser(s.user_id)}
+                      onBlock={() => setShowBlockConfirm(s.user_id)}
+                      onReport={() => setShowReportModal(s.user_id)}
+                      onAssignCohost={isHost ? () => assignCohost(s.user_id) : undefined}
+                    />
+                  ))}
+                  {!showSpeakersAll && overflow > 0 && (
+                    <button
+                      className="flex flex-col items-center gap-1"
+                      onClick={(e) => { e.stopPropagation(); setShowSpeakersAll(true); }}
+                    >
+                      <div className="w-14 h-14 rounded-full bg-muted/80 border-2 border-dashed border-border flex items-center justify-center">
+                        <span className="text-xs font-black text-muted-foreground">+{overflow}</span>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground">More</span>
+                    </button>
+                  )}
+                </div>
+              </>
               );
             })()}
           </div>
@@ -2569,8 +2557,22 @@ export default function AudioCircleRoomScreen() {
           );
         })()}
 
-        {/* ── Audience strip with overflow ─────────────────────────────────────── */}
-        <AudienceStrip audience={audience} canMod={canMod} onPromote={promote} />
+        {/* ── Audience strip with overflow — hidden on desktop (shown in left rail) */}
+        <div className="lg:hidden">
+          <AudienceStrip audience={audience} canMod={canMod} onPromote={promote} />
+        </div>
+
+        {/* ── Desktop inline reactions strip ────────────────────────────────────── */}
+        <div className="hidden lg:flex items-center gap-2 pt-2 border-t border-border">
+          <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground shrink-0">Reactions</span>
+          <div className="flex items-center gap-1.5">
+            {REACTION_EMOJIS.map(e => (
+              <button key={e} onClick={() => react(e)} className="text-lg hover:scale-125 transition-transform px-0.5">
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
         </div>
         )}
         </div>
@@ -2578,7 +2580,7 @@ export default function AudioCircleRoomScreen() {
         {/* ── Desktop-only right sidebar: Chat (all) + Management (mods) ─────── */}
         {/* Non-mods: chat only */}
         {!canMod && (
-          <div className="hidden lg:flex lg:flex-col lg:w-72 shrink-0 sticky top-24 gap-2 max-h-[calc(100vh-7rem)]">
+          <div className="hidden lg:flex lg:flex-col lg:w-80 shrink-0 sticky top-24 gap-2 max-h-[calc(100vh-7rem)]">
             <DesktopChatPanel
               chatMessages={chatMessages}
               chatInput={chatInput}
@@ -2593,7 +2595,7 @@ export default function AudioCircleRoomScreen() {
         )}
         {/* Mods: 3-pane — left (people/reactions) + center (stage) + right (controls + chat) */}
         {canMod && (
-          <div className="hidden lg:flex lg:flex-col lg:w-72 shrink-0 sticky top-24 gap-2 max-h-[calc(100vh-7rem)]">
+          <div className="hidden lg:flex lg:flex-col lg:w-80 shrink-0 sticky top-24 gap-2 max-h-[calc(100vh-7rem)]">
             {/* Tab switcher: Room Controls | Chat */}
             <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col flex-1">
               <div className="flex items-center border-b border-border shrink-0">
@@ -3003,8 +3005,8 @@ export default function AudioCircleRoomScreen() {
 
       {/* ── Bottom controls ───────────────────────────────────────────────────── */}
       <div className="fixed bottom-0 inset-x-0 z-40 bg-background/95 backdrop-blur border-t border-border p-4 space-y-3" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
-        {/* Reactions */}
-        <div className="flex items-center justify-center gap-2">
+        {/* Reactions — hidden on desktop (reactions tab in left sidebar) */}
+        <div className="flex items-center justify-center gap-2 lg:hidden">
           {REACTION_EMOJIS.map(e => (
             <button key={e} onClick={() => react(e)} className="text-xl px-1 hover:scale-125 transition-transform">{e}</button>
           ))}
@@ -3311,6 +3313,270 @@ function DevicePickerDropdown({
         </button>
       </div>
     </motion.div>
+  );
+}
+
+// ── Desktop PEOPLE left rail ──────────────────────────────────────────────────
+// Full-height scrollable 3-section sidebar: ON STAGE | AUDIENCE | Reactions log.
+// Role badge colours: amber=host, blue=co_host, emerald=speaker.
+function DesktopPeopleRail({
+  sidebarTab, onTabChange,
+  host, cohosts, speakers, audience, myUserId, canMod, reactionLog,
+  onPromote, speakingLevels, localLevel, activeSpeakerId,
+  videoEnabled, remoteStreams, videoOn, localStream,
+}: {
+  sidebarTab: "people" | "reactions"; onTabChange: (t: "people" | "reactions") => void;
+  host: Participant | undefined; cohosts: Participant[]; speakers: Participant[]; audience: Participant[];
+  myUserId?: number; canMod: boolean;
+  reactionLog: { id: string; emoji: string; name: string }[];
+  onPromote: (id: number) => void;
+  speakingLevels: Map<number, number>; localLevel: number; activeSpeakerId: number | null;
+  videoEnabled: boolean; remoteStreams: Map<number, MediaStream>;
+  videoOn: boolean; localStream: MediaStream | null;
+}) {
+  const [showAllAudience, setShowAllAudience] = useState(false);
+  const onStage = [...(host ? [host] : []), ...cohosts, ...speakers];
+  const AUDIENCE_VISIBLE = 12;
+  const visibleAudience = showAllAudience ? audience : audience.slice(0, AUDIENCE_VISIBLE);
+  const audienceOverflow = audience.length - AUDIENCE_VISIBLE;
+
+  const roleBadge = (role: Participant["role"]) => {
+    if (role === "host") return <span className="text-[9px] font-black text-amber-400 bg-amber-400/10 rounded-full px-1.5 py-0.5 shrink-0">Host</span>;
+    if (role === "co_host") return <span className="text-[9px] font-black text-blue-400 bg-blue-400/10 rounded-full px-1.5 py-0.5 shrink-0">Co-Host</span>;
+    return <span className="text-[9px] font-black text-emerald-400 bg-emerald-400/10 rounded-full px-1.5 py-0.5 shrink-0">Speaker</span>;
+  };
+
+  return (
+    <div className="hidden lg:flex lg:flex-col lg:w-64 shrink-0 sticky top-24 max-h-[calc(100vh-7rem)]">
+      <div className="bg-card border border-border rounded-2xl flex flex-col overflow-hidden h-full">
+        {/* Tabs */}
+        <div className="flex items-center gap-4 px-3 pt-3 border-b border-border shrink-0">
+          <button
+            onClick={() => onTabChange("people")}
+            className={`pb-2 text-xs font-black border-b-2 transition-colors uppercase tracking-widest ${sidebarTab === "people" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+          >
+            People
+          </button>
+          <button
+            onClick={() => onTabChange("reactions")}
+            className={`pb-2 text-xs font-black border-b-2 transition-colors uppercase tracking-widest ${sidebarTab === "reactions" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+          >
+            Reactions
+          </button>
+        </div>
+
+        {sidebarTab === "people" ? (
+          <div className="flex-1 overflow-y-auto p-3 space-y-4">
+            {/* ON STAGE */}
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
+                On Stage ({onStage.length})
+              </div>
+              <div className="space-y-1">
+                {onStage.map(p => {
+                  const lvl = p.user_id === myUserId ? localLevel : (speakingLevels.get(p.user_id) ?? 0);
+                  const isActive = activeSpeakerId === p.user_id;
+                  const isSpeaking = lvl > 0.08 || isActive;
+                  const hasVideoStream = videoEnabled && (
+                    p.user_id === myUserId
+                      ? localStream && videoOn && (localStream.getVideoTracks().length > 0)
+                      : (remoteStreams.get(p.user_id)?.getVideoTracks().length ?? 0) > 0
+                  );
+                  return (
+                    <div key={p.user_id} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${isSpeaking ? "bg-primary/5" : "hover:bg-muted/50"}`}>
+                      <div className={`relative w-8 h-8 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black border-2 ${isSpeaking ? "border-primary" : "border-transparent"}`}>
+                        {p.avatar_url ? <img src={p.avatar_url} className="w-full h-full object-cover" alt="" /> : (p.name?.[0] ?? "?")}
+                        {isActive && <div className="absolute inset-0 rounded-full border-2 border-green-400 animate-pulse pointer-events-none" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold truncate leading-tight">{p.user_id === myUserId ? "You" : p.name}</div>
+                        {roleBadge(p.role)}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {videoEnabled && (
+                          hasVideoStream
+                            ? <Video className="w-3 h-3 text-primary" />
+                            : <VideoOff className="w-3 h-3 text-muted-foreground/40" />
+                        )}
+                        {p.muted
+                          ? <MicOff className="w-3 h-3 text-red-400" />
+                          : <Mic className={`w-3 h-3 ${isSpeaking ? "text-green-400" : "text-muted-foreground"}`} />}
+                      </div>
+                    </div>
+                  );
+                })}
+                {onStage.length === 0 && <div className="text-xs text-muted-foreground/60 italic px-2">No one on stage yet</div>}
+              </div>
+            </div>
+
+            {/* AUDIENCE */}
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">
+                Audience ({audience.length})
+              </div>
+              <div className="space-y-1">
+                {visibleAudience.map(p => (
+                  <div key={p.user_id} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted/50 transition-colors ${p.hand_raised ? "bg-amber-500/5" : ""}`}>
+                    <div className={`w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[9px] font-black border-2 ${p.hand_raised ? "border-amber-400" : "border-transparent"}`}>
+                      {p.avatar_url ? <img src={p.avatar_url} className="w-full h-full object-cover" alt="" /> : (p.name?.[0] ?? "?")}
+                    </div>
+                    <span className="flex-1 text-xs font-bold truncate">{p.user_id === myUserId ? "You" : p.name}</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {p.hand_raised && (
+                        <>
+                          <span className="text-xs leading-none">✋</span>
+                          {canMod && (
+                            <button
+                              onClick={() => onPromote(p.user_id)}
+                              className="text-[9px] font-black text-primary bg-primary/10 rounded-full px-2 py-0.5 hover:bg-primary/20 transition-colors"
+                            >
+                              Bring up
+                            </button>
+                          )}
+                        </>
+                      )}
+                      <MicOff className="w-3 h-3 text-muted-foreground/40" />
+                    </div>
+                  </div>
+                ))}
+                {!showAllAudience && audienceOverflow > 0 && (
+                  <button
+                    onClick={() => setShowAllAudience(true)}
+                    className="w-full text-center text-xs font-bold text-primary py-1.5 hover:bg-primary/5 rounded-lg transition-colors"
+                  >
+                    See all ({audienceOverflow} more)
+                  </button>
+                )}
+                {showAllAudience && audience.length > AUDIENCE_VISIBLE && (
+                  <button
+                    onClick={() => setShowAllAudience(false)}
+                    className="w-full text-center text-xs font-bold text-muted-foreground py-1.5 hover:bg-muted rounded-lg transition-colors"
+                  >
+                    Show less
+                  </button>
+                )}
+                {audience.length === 0 && <div className="text-xs text-muted-foreground/60 italic px-2">No audience yet</div>}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+            {reactionLog.length === 0 ? (
+              <div className="text-xs text-muted-foreground py-4 text-center">No reactions yet</div>
+            ) : (
+              [...reactionLog].reverse().map(r => (
+                <div key={r.id} className="flex items-center gap-2 text-xs px-1">
+                  <span className="text-base leading-none">{r.emoji}</span>
+                  <span className="font-bold truncate text-xs">{r.name}</span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Desktop speaker video tile ───────────────────────────────────────────────
+// On lg+ viewports speakers are shown as rectangular video/avatar tiles (3-per-row)
+// that match the HostHeroTile visual language. On mobile they stay as the compact circle.
+function DesktopSpeakerVideoTile({
+  participant: s, isMe, level, isActiveSpeaker, isLoudest,
+  videoStream, videoOn, canMod, modMenuOpen, onOpenMod,
+  onMute, onDemote, onKick, onBlock, onReport, onAssignCohost,
+}: {
+  participant: Participant; isMe: boolean; level: number;
+  isActiveSpeaker?: boolean; isLoudest?: boolean;
+  videoStream?: MediaStream | null; videoOn?: boolean;
+  canMod: boolean; modMenuOpen: boolean; onOpenMod: () => void;
+  onMute: () => void; onDemote: () => void; onKick: () => void;
+  onBlock: () => void; onReport: () => void; onAssignCohost?: () => void;
+}) {
+  const isSpeaking = level > 0.08 || isActiveSpeaker || isLoudest;
+  const hasVideo = videoStream && videoOn && videoStream.getVideoTracks().length > 0;
+  const ringColor = isActiveSpeaker ? "border-green-400" : isLoudest ? "border-yellow-400" : "border-primary";
+
+  return (
+    <div className="relative rounded-xl overflow-hidden">
+      {isSpeaking && (
+        <motion.div
+          className={`absolute inset-0 rounded-xl border-2 ${ringColor} z-10 pointer-events-none`}
+          animate={{ opacity: [0.95, 0.25, 0.95] }}
+          transition={{ duration: isActiveSpeaker ? 0.6 : 0.9, repeat: Infinity }}
+        />
+      )}
+      <div className="relative aspect-[4/3] bg-zinc-900">
+        {hasVideo ? (
+          <video
+            autoPlay playsInline muted={isMe}
+            ref={(el) => { if (el && el.srcObject !== videoStream) { el.srcObject = videoStream!; el.play().catch(() => {}); } }}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <div className={`w-14 h-14 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 ${isSpeaking ? ringColor : "border-primary/30"}`}>
+              {s.avatar_url
+                ? <img src={s.avatar_url} className="w-full h-full object-cover" alt="" />
+                : <span className="text-2xl font-black text-foreground">{s.name?.[0] ?? "?"}</span>}
+            </div>
+          </div>
+        )}
+        {/* Mic status */}
+        <div className="absolute top-1.5 right-1.5">
+          {s.muted
+            ? <div className="bg-red-500/80 rounded-full p-1"><MicOff className="w-2.5 h-2.5 text-white" /></div>
+            : isSpeaking && <div className="bg-black/50 rounded-full p-1"><Mic className="w-2.5 h-2.5 text-white" /></div>}
+        </div>
+        {/* Name overlay */}
+        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 to-transparent px-2 py-1.5 flex items-center justify-between gap-1">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-white text-xs font-black truncate">{isMe ? "You" : s.name}</span>
+            {!s.muted && level > 0.05 && <AudioLevelBars level={level} active={isSpeaking} />}
+            {isActiveSpeaker && <span className="text-[9px] font-black text-green-400 shrink-0">Speaking</span>}
+          </div>
+          {canMod && (
+            <button onClick={(e) => { e.stopPropagation(); onOpenMod(); }} className="p-0.5 rounded-full bg-white/10 hover:bg-white/20 shrink-0">
+              <MoreVertical className="w-3 h-3 text-white" />
+            </button>
+          )}
+        </div>
+      </div>
+      {/* Moderation dropdown */}
+      <AnimatePresence>
+        {modMenuOpen && canMod && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: -4 }}
+            transition={{ duration: 0.12 }}
+            className="absolute bottom-10 right-2 z-30 bg-card border border-border rounded-xl shadow-xl py-1 min-w-[160px]"
+            onClick={e => e.stopPropagation()}
+          >
+            <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted" onClick={onMute}>
+              {s.muted ? <><Mic className="w-3 h-3" /> Unmute</> : <><MicOff className="w-3 h-3" /> Mute</>}
+            </button>
+            <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted" onClick={onDemote}>
+              <UserMinus className="w-3 h-3" /> Move to Audience
+            </button>
+            {onAssignCohost && (
+              <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-blue-400" onClick={onAssignCohost}>
+                <Shield className="w-3 h-3" /> Make Co-host
+              </button>
+            )}
+            <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-red-400" onClick={onKick}>
+              <Flag className="w-3 h-3" /> Remove
+            </button>
+            <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-amber-400" onClick={onBlock}>
+              <Ban className="w-3 h-3" /> Block
+            </button>
+            <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-amber-400" onClick={onReport}>
+              <AlertTriangle className="w-3 h-3" /> Report
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -3672,36 +3938,57 @@ function ManagementPanelBody({
         </div>
       </div>
 
-      {/* Host Controls — click a participant to select, then act */}
+      {/* Host Controls — select participant then act */}
       <div>
         <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Host Controls</div>
         {targetable.length === 0 ? (
           <div className="text-xs text-muted-foreground">No other participants yet</div>
         ) : (
           <>
-            {/* Participant selector list */}
-            <div className="space-y-1 mb-3 max-h-36 overflow-y-auto">
-              {targetable.map(p => (
-                <button
-                  key={p.user_id}
-                  onClick={() => setTargetId(prev => prev === p.user_id ? "" : p.user_id)}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-xl border text-left transition-colors ${
-                    targetId === p.user_id
-                      ? "border-primary bg-primary/10"
-                      : "border-transparent hover:bg-muted"
-                  }`}
-                >
-                  <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black">
-                    {p.avatar_url ? <img src={p.avatar_url} className="w-full h-full object-cover" alt="" /> : (p.name?.[0] ?? "?")}
+            {/* Participant selector with avatar row */}
+            <div className="mb-3">
+              {target ? (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-primary bg-primary/10">
+                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[10px] font-black">
+                    {target.avatar_url ? <img src={target.avatar_url} className="w-full h-full object-cover" alt="" /> : (target.name?.[0] ?? "?")}
                   </div>
-                  <span className="flex-1 text-xs font-bold truncate">{p.name}</span>
-                  <span className="text-[9px] text-muted-foreground shrink-0">
-                    {p.role === "co_host" ? "Co-host" : p.role === "speaker" ? "Speaker" : "Audience"}
-                  </span>
-                </button>
-              ))}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-bold truncate">{target.name}</div>
+                    <div className="text-[9px] text-muted-foreground capitalize">{target.role.replace("_", "-")}</div>
+                  </div>
+                  <button onClick={() => setTargetId("")} className="p-1 rounded-full hover:bg-muted/80 text-muted-foreground">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ) : (
+                <div className="text-[10px] text-muted-foreground mb-2 italic">Select a participant to act on</div>
+              )}
+              <div className="space-y-0.5 max-h-32 overflow-y-auto mt-1">
+                {targetable.map(p => (
+                  <button
+                    key={p.user_id}
+                    onClick={() => setTargetId(prev => prev === p.user_id ? "" : p.user_id)}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg border text-left transition-colors ${
+                      targetId === p.user_id
+                        ? "border-primary bg-primary/10"
+                        : "border-transparent hover:bg-muted/60"
+                    }`}
+                  >
+                    <div className={`w-6 h-6 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0 text-[9px] font-black border ${p.role === "co_host" ? "border-blue-400/40" : p.role === "speaker" ? "border-primary/40" : "border-transparent"}`}>
+                      {p.avatar_url ? <img src={p.avatar_url} className="w-full h-full object-cover" alt="" /> : (p.name?.[0] ?? "?")}
+                    </div>
+                    <span className="flex-1 text-xs font-bold truncate">{p.name}</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {p.hand_raised && <span className="text-[10px]">✋</span>}
+                      <span className={`text-[9px] font-bold ${p.role === "co_host" ? "text-blue-400" : p.role === "speaker" ? "text-primary" : "text-muted-foreground"}`}>
+                        {p.role === "co_host" ? "Co-host" : p.role === "speaker" ? "Speaker" : "Audience"}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
-            {/* Action grid — enabled only when a participant is selected */}
+            {/* Action grid — 3×2 matching the design */}
             <div className="grid grid-cols-3 gap-2">
               <RoomControlButton
                 icon={Shield}
