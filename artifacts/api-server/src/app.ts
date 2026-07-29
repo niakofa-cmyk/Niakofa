@@ -6,6 +6,7 @@ import compression from "compression";
 import router from "./routes";
 import { voiceAudioRawParser } from "./routes/nia-voice";
 import { logger } from "./lib/logger";
+import { AppError, ErrorCode } from "./lib/errors";
 import { generalApiLimiter } from "./middlewares/rate-limit";
 import { parseAuth } from "./middlewares/auth";
 import { requestTimeout } from "./middlewares/timeout";
@@ -219,32 +220,40 @@ if (process.env.NODE_ENV === "production" && process.env.SERVE_FRONTEND === "tru
 // Must have 4 arguments so Express recognises it as an error-handling middleware.
 // Returns a structured { error, code, requestId } JSON body so frontend can
 // surface actionable messages and so monitoring tools can group by `code`.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  if (err instanceof AppError) {
+    const requestId = (_req as Request & { id?: unknown }).id;
+    if (err.status >= 500) {
+      logger.error({ err, status: err.status, code: err.code }, "express: unhandled error");
+    } else {
+      logger.warn({ status: err.status, code: err.code, msg: err.message }, "express: client error");
+    }
+    if (!res.headersSent) {
+      res.status(err.status).json({
+        error: err.expose ? err.message : "An unexpected error occurred",
+        code: err.code,
+        ...(requestId != null ? { requestId: String(requestId) } : {}),
+        ...(err.details ? { details: err.details } : {}),
+      });
+    }
+    return;
+  }
+
   const cast = err as { status?: number; statusCode?: number; code?: string; expose?: boolean };
   const status = cast?.status ?? cast?.statusCode ?? 500;
-  const message =
-    err instanceof Error ? err.message : "An unexpected error occurred";
-
-  // Derive a machine-readable error code: prefer explicit .code, fall back to
-  // HTTP-status-based codes so clients can branch on type without string matching.
+  const message = err instanceof Error ? err.message : "An unexpected error occurred";
   const code: string =
     (typeof cast?.code === "string" && cast.code) ||
-    (status === 400 ? "BAD_REQUEST" :
-     status === 401 ? "UNAUTHORIZED" :
-     status === 403 ? "FORBIDDEN" :
-     status === 404 ? "NOT_FOUND" :
-     status === 409 ? "CONFLICT" :
-     status === 422 ? "UNPROCESSABLE" :
-     status === 429 ? "RATE_LIMITED" :
-     "INTERNAL_ERROR");
-
-  // Only surface the message when safe: 4xx (client error, intentional) or
-  // errors with expose:true. For 5xx without expose, return a generic message
-  // so stack traces / DB details don't leak to clients.
+    (status === 400 ? ErrorCode.BAD_REQUEST :
+     status === 401 ? ErrorCode.UNAUTHORIZED :
+     status === 403 ? ErrorCode.FORBIDDEN :
+     status === 404 ? ErrorCode.NOT_FOUND :
+     status === 409 ? ErrorCode.CONFLICT :
+     status === 422 ? ErrorCode.UNPROCESSABLE :
+     status === 429 ? ErrorCode.RATE_LIMITED :
+     ErrorCode.INTERNAL_ERROR);
   const safeMessage =
     status < 500 || cast?.expose === true ? message : "An unexpected error occurred";
-
   const requestId = (_req as Request & { id?: unknown }).id;
   logger.error({ err, status, code }, "express: unhandled error");
   if (!res.headersSent) {

@@ -45,7 +45,7 @@ export async function injectLocation(
         // ipwho.is returns lat/lon as `latitude`/`longitude` and timezone as
         // an object `{ id, abbreviation, ... }`.
         const [lat, lon] = [geo.latitude, geo.longitude];
-        (req as any).locationContext = {
+        req.locationContext = {
           city: geo.city,
           region: geo.region,
           country: geo.country,

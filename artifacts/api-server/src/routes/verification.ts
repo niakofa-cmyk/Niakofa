@@ -191,7 +191,7 @@ router.post("/verification/sos", requireAuth, sosLimiter, requireOwnership("user
   }
 
   // SMS panic contacts if configured — best-effort.
-  const contacts: string[] = (user as any).panic_contacts ?? [];
+  const contacts: string[] = user.panic_contacts ?? [];
   const smsResults = await Promise.allSettled(
     contacts.map(phone => sendSms(phone, sosMessage))
   );
@@ -220,7 +220,7 @@ router.patch("/verification/panic-contacts/:userId", requireAuth, requireOwnersh
   const storedContacts = contacts.slice(0, 5);
 
   await db.update(usersTable)
-    .set({ panic_contacts: storedContacts } as any)
+    .set({ panic_contacts: storedContacts })
     .where(eq(usersTable.id, userId));
 
   return res.json({ ok: true, contacts: storedContacts });

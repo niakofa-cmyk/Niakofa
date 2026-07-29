@@ -217,8 +217,8 @@ async function getFamilyMembership(familyId: number, userId: number) {
   return row ?? null;
 }
 
-const CAN_WRITE_ROLES = ["owner", "curator", "contributor"] as const;
-const CAN_MANAGE_ROLES = ["owner", "curator"] as const;
+const CAN_WRITE_ROLES: string[] = ["owner", "curator", "contributor"];
+const CAN_MANAGE_ROLES: string[] = ["owner", "curator"];
 
 // ─── Family Space CRUD ────────────────────────────────────────────────────────
 
@@ -320,7 +320,7 @@ router.patch("/family/:id", generalApiLimiter, requireAuth, async (req, res) => 
   if (!familyId) return res.status(400).json({ error: "Invalid family id" });
 
   const membership = await getFamilyMembership(familyId, userId);
-  if (!membership || !CAN_MANAGE_ROLES.includes(membership.role as any)) {
+  if (!membership || !CAN_MANAGE_ROLES.includes(membership.role as string)) {
     return res.status(403).json({ error: "Owner or curator access required" });
   }
 
@@ -388,7 +388,7 @@ router.post("/family/:id/members", generalApiLimiter, requireAuth, async (req, r
   if (!familyId) return res.status(400).json({ error: "Invalid family id" });
 
   const membership = await getFamilyMembership(familyId, userId);
-  if (!membership || !CAN_MANAGE_ROLES.includes(membership.role as any)) {
+  if (!membership || !CAN_MANAGE_ROLES.includes(membership.role as string)) {
     return res.status(403).json({ error: "Owner or curator access required to invite members" });
   }
 
@@ -424,7 +424,7 @@ router.patch("/family/:id/members/:memberId", generalApiLimiter, requireAuth, as
   if (!familyId || !memberId) return res.status(400).json({ error: "Invalid ids" });
 
   const membership = await getFamilyMembership(familyId, userId);
-  if (!membership || !CAN_MANAGE_ROLES.includes(membership.role as any)) {
+  if (!membership || !CAN_MANAGE_ROLES.includes(membership.role as string)) {
     return res.status(403).json({ error: "Owner or curator access required" });
   }
 
@@ -483,7 +483,7 @@ router.delete("/family/:id/members/:memberId", generalApiLimiter, requireAuth, a
   if (!familyId || !memberId) return res.status(400).json({ error: "Invalid ids" });
 
   const membership = await getFamilyMembership(familyId, userId);
-  if (!membership || !CAN_MANAGE_ROLES.includes(membership.role as any)) {
+  if (!membership || !CAN_MANAGE_ROLES.includes(membership.role as string)) {
     return res.status(403).json({ error: "Owner or curator access required" });
   }
 
@@ -515,7 +515,7 @@ router.get("/family/:id/memories", generalApiLimiter, requireAuth, async (req, r
 
   // Visibility filter: viewer/contributor see family+private-own; curator/owner see all
   const visFilter =
-    CAN_MANAGE_ROLES.includes(membership.role as any)
+    CAN_MANAGE_ROLES.includes(membership.role as string)
       ? undefined
       : or(
           eq(familyMemoriesTable.visibility, "family"),
@@ -529,7 +529,7 @@ router.get("/family/:id/memories", generalApiLimiter, requireAuth, async (req, r
     eq(familyMemoriesTable.family_id, familyId),
     ...(visFilter ? [visFilter] : []),
     ...(q ? [or(ilike(familyMemoriesTable.title, `%${q}%`), ilike(familyMemoriesTable.description, `%${q}%`))] : []),
-    ...(source ? [eq(familyMemoriesTable.source, source as any)] : []),
+    ...(source ? [eq(familyMemoriesTable.source, source as "upload" | "interview" | "culture_card" | "import")] : []),
   ];
 
   const memories = await db
@@ -571,7 +571,7 @@ router.post("/family/:id/memories", generalApiLimiter, requireAuth, async (req, 
   if (!familyId) return res.status(400).json({ error: "Invalid family id" });
 
   const membership = await getFamilyMembership(familyId, userId);
-  if (!membership || !CAN_WRITE_ROLES.includes(membership.role as any)) {
+  if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
     return res.status(403).json({ error: "Contributor access or higher required" });
   }
 
@@ -630,7 +630,7 @@ router.get("/family/:id/memories/:memoryId", generalApiLimiter, requireAuth, asy
   if (
     memory.visibility === "private" &&
     memory.author_id !== userId &&
-    !CAN_MANAGE_ROLES.includes(membership.role as any)
+    !CAN_MANAGE_ROLES.includes(membership.role as string)
   ) {
     return res.status(403).json({ error: "This memory is private" });
   }
@@ -667,7 +667,7 @@ router.patch("/family/:id/memories/:memoryId", generalApiLimiter, requireAuth, a
   if (!memory) return res.status(404).json({ error: "Memory not found" });
 
   // Authors can edit their own; curators/owners can edit any
-  if (memory.author_id !== userId && !CAN_MANAGE_ROLES.includes(membership.role as any)) {
+  if (memory.author_id !== userId && !CAN_MANAGE_ROLES.includes(membership.role as string)) {
     return res.status(403).json({ error: "You can only edit your own memories" });
   }
 
@@ -718,7 +718,7 @@ router.delete("/family/:id/memories/:memoryId", generalApiLimiter, requireAuth, 
     .limit(1);
   if (!memory) return res.status(404).json({ error: "Memory not found" });
 
-  if (memory.author_id !== userId && !CAN_MANAGE_ROLES.includes(membership.role as any)) {
+  if (memory.author_id !== userId && !CAN_MANAGE_ROLES.includes(membership.role as string)) {
     return res.status(403).json({ error: "Only the author, a curator, or owner can delete this memory" });
   }
 
@@ -743,7 +743,7 @@ router.post(
     if (!familyId || !memoryId) return res.status(400).json({ error: "Invalid ids" });
 
     const membership = await getFamilyMembership(familyId, userId);
-    if (!membership || !CAN_WRITE_ROLES.includes(membership.role as any)) {
+    if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
       return res.status(403).json({ error: "Contributor access required" });
     }
 
@@ -799,7 +799,7 @@ router.post(
     if (!familyId || !memoryId) return res.status(400).json({ error: "Invalid ids" });
 
     const membership = await getFamilyMembership(familyId, userId);
-    if (!membership || !CAN_WRITE_ROLES.includes(membership.role as any)) {
+    if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
       return res.status(403).json({ error: "Contributor access required" });
     }
 
@@ -832,7 +832,7 @@ router.post(
     if (!familyId || !memoryId) return res.status(400).json({ error: "Invalid ids" });
 
     const membership = await getFamilyMembership(familyId, userId);
-    if (!membership || !CAN_WRITE_ROLES.includes(membership.role as any)) {
+    if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
       return res.status(403).json({ error: "Contributor access required" });
     }
 
@@ -862,7 +862,7 @@ router.post(
       .insert(familyMemoryAssetsTable)
       .values({
         memory_id:         memoryId,
-        asset_type:        assetType as any,
+        asset_type:        assetType as "photo" | "video" | "audio" | "document",
         storage_key:       storageKey,
         mime_type:         mimeType,
         byte_size:         buffer.length,
@@ -947,8 +947,9 @@ router.post(
 
       logger.info({ familyId, memoryId, targetLanguage, userId }, "family_oral_history_translated");
       return res.json({ translated, targetLanguage, langName });
-    } catch (err: any) {
-      logger.error({ err: err?.message, familyId, memoryId }, "family_translation_failed");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message, familyId, memoryId }, "family_translation_failed");
       return res.status(500).json({ error: "Translation failed — please try again." });
     }
   },
@@ -967,7 +968,7 @@ router.delete(
     if (!familyId || !memoryId || !assetId) return res.status(400).json({ error: "Invalid ids" });
 
     const membership = await getFamilyMembership(familyId, userId);
-    if (!membership || !CAN_WRITE_ROLES.includes(membership.role as any)) {
+    if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
       return res.status(403).json({ error: "Contributor access required" });
     }
 
@@ -1020,7 +1021,7 @@ router.post(
     if (!familyId || !memoryId) return res.status(400).json({ error: "Invalid ids" });
 
     const membership = await getFamilyMembership(familyId, userId);
-    if (!membership || !CAN_WRITE_ROLES.includes(membership.role as any)) {
+    if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
       return res.status(403).json({ error: "Contributor access required to comment" });
     }
 
@@ -1047,7 +1048,7 @@ router.post("/family/:id/interviews", generalApiLimiter, requireAuth, async (req
   if (!familyId) return res.status(400).json({ error: "Invalid family id" });
 
   const membership = await getFamilyMembership(familyId, userId);
-  if (!membership || !CAN_WRITE_ROLES.includes(membership.role as any)) {
+  if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
     return res.status(403).json({ error: "Contributor access required" });
   }
 
@@ -1121,7 +1122,7 @@ router.post("/family/:id/members/import-gedcom", generalApiLimiter, requireAuth,
   if (!familyId) return res.status(400).json({ error: "Invalid family id" });
 
   const membership = await getFamilyMembership(familyId, userId);
-  if (!membership || !CAN_MANAGE_ROLES.includes(membership.role as any)) {
+  if (!membership || !CAN_MANAGE_ROLES.includes(membership.role as string)) {
     return res.status(403).json({ error: "Owner or curator access required to import a family tree" });
   }
 
@@ -1178,7 +1179,7 @@ router.patch("/family/:id/interviews/:interviewId", generalApiLimiter, requireAu
   if (!familyId || !interviewId) return res.status(400).json({ error: "Invalid ids" });
 
   const membership = await getFamilyMembership(familyId, userId);
-  if (!membership || !CAN_WRITE_ROLES.includes(membership.role as any)) {
+  if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
     return res.status(403).json({ error: "Contributor access required" });
   }
 

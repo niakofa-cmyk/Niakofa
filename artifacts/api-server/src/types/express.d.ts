@@ -6,6 +6,8 @@ declare global {
       // Compared against the DB's current token_version in requireApproved()
       // to reject tokens invalidated by logout/password-change.
       authenticatedTokenVersion?: number;
+      // pino-http attaches a request ID for log correlation.
+      id?: string;
     }
   }
 }

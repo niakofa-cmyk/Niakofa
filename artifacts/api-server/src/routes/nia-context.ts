@@ -72,7 +72,7 @@ router.get("/nia/context", requireAuth, generalApiLimiter, async (req, res) => {
     return res.status(503).json({ error: "Nia is temporarily unavailable." });
   }
 
-  const userId = (req as any).authenticatedUserId as number | undefined;
+  const userId = req.authenticatedUserId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const latParam = req.query.lat ? parseFloat(req.query.lat as string) : null;

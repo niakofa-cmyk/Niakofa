@@ -92,8 +92,8 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   }
 
   if (gpsLat !== null && gpsLon !== null) {
-    (req as any).locationContext = {
-      ...(req as any).locationContext,
+    req.locationContext = {
+      ...req.locationContext,
       lat: gpsLat,
       lon: gpsLon,
       gpsAccurate: true,
@@ -141,8 +141,8 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
 
   // Merge client GPS place into locationContext (overrides coarse IP geo)
   if (clientCity || clientCounty || clientState) {
-    (req as any).locationContext = {
-      ...(req as any).locationContext,
+    req.locationContext = {
+      ...req.locationContext,
       ...(clientCity ? { city: clientCity } : {}),
       ...(clientCounty ? { county: clientCounty } : {}),
       ...(clientState ? { region: clientState } : {}),
@@ -157,8 +157,8 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
   // Inject live community awareness — open request count + online helpers.
   // Uses GPS coords if available, falls back to IP geo coords.
   const communityPrefix = await buildCommunityAwarenessPrefix({
-    lat: gpsLat ?? ((req as any).locationContext as LocationContext | undefined)?.lat ?? null,
-    lon: gpsLon ?? ((req as any).locationContext as LocationContext | undefined)?.lon ?? null,
+    lat: gpsLat ?? req.locationContext?.lat ?? null,
+    lon: gpsLon ?? req.locationContext?.lon ?? null,
   }).catch(() => "");
 
   res.setHeader("Content-Type", "text/event-stream");
@@ -316,7 +316,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       knowledgePrefixBlock +
       communityPrefix +
       buildFoodIntentPrefix(foodSignal, foodSignalCount, gpsLat, gpsLon) +
-      buildLocationPrefix((req as any).locationContext as LocationContext | undefined) +
+      buildLocationPrefix(req.locationContext) +
       buildAppContextPrefix({
         userName,
         accountType,
@@ -360,7 +360,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       let currentTextContent = "";
 
       for await (const chunk of stream) {
-        if (chunk.type === "content_block_start" && (chunk as any).content_block?.type === "tool_use") {
+        if (chunk.type === "content_block_start" && chunk.content_block?.type === "tool_use") {
           // tool_use block starting
         }
         if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
@@ -372,15 +372,15 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
         if (
           chunk.type === "content_block_delta" &&
           chunk.delta.type === "input_json_delta" &&
-          typeof (chunk.delta as any).partial_json === "string"
+          typeof (chunk.delta as { partial_json?: string }).partial_json === "string"
         ) {
           // accumulating tool input — no streaming needed
         }
-        if (chunk.type === "message_start" && (chunk as any).message?.usage?.input_tokens) {
-          inputTokens += (chunk as any).message.usage.input_tokens;
+        if (chunk.type === "message_start" && (chunk as { message?: { usage?: { input_tokens?: number } } }).message?.usage?.input_tokens) {
+          inputTokens += (chunk as { message: { usage: { input_tokens: number } } }).message.usage.input_tokens;
         }
-        if (chunk.type === "message_delta" && (chunk as any).usage?.output_tokens) {
-          outputTokens += (chunk as any).usage.output_tokens;
+        if (chunk.type === "message_delta" && (chunk as { usage?: { output_tokens?: number } }).usage?.output_tokens) {
+          outputTokens += (chunk as { usage: { output_tokens: number } }).usage.output_tokens;
         }
       }
 

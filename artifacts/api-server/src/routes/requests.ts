@@ -283,7 +283,7 @@ router.get("/requests", requireAuth, async (req, res) => {
   // Build WHERE conditions in the DB — never load the full table.
   const conditions = [];
   if (params.success && params.data.status) {
-    conditions.push(eq(requestsTable.status, params.data.status as any));
+    conditions.push(eq(requestsTable.status, params.data.status));
   }
   if (helperId) conditions.push(eq(requestsTable.helper_id, helperId));
   if (requesterId) conditions.push(eq(requestsTable.requester_id, requesterId));
@@ -641,8 +641,7 @@ router.post("/requests", requireAuth, requireApproved, requestCreationLimiter, a
     moderation_status: modStatus,
     moderation_reason: modReason,
     estimated_hours: estimatedHours,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any).returning();
+  }).returning();
 
   // ── Livable-wage floor transparency ────────────────────────────────────────
   // Compute the expected pool-backed floor for this request so the frontend
@@ -764,7 +763,7 @@ router.get("/requests/:id", requireAuth, async (req, res) => {
 });
 
 router.patch("/requests/:id", requireAuth, async (req, res) => {
-  const authenticatedUserId = (req as any).authenticatedUserId;
+  const authenticatedUserId = req.authenticatedUserId!;
   const requestId = parseInt(String(req.params.id));
   const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
   if (!request) return res.status(404).json({ error: "Request not found" });

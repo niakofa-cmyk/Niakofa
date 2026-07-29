@@ -1180,11 +1180,11 @@ Do not include any text outside the JSON block.`;
 
     if (!resp.ok) throw new Error(`Anthropic API returned ${resp.status}`);
 
-    const data = await resp.json() as any;
+    const data = await resp.json() as { content?: Array<{ text?: string }> };
     const text = data?.content?.[0]?.text ?? "";
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     let aiSummary: string | null = null;
-    let chapterMarkers: any = null;
+    let chapterMarkers: unknown = null;
     if (jsonMatch) {
       try {
         const parsed = JSON.parse(jsonMatch[0]);
@@ -1640,7 +1640,12 @@ router.get("/audio-circles/recommended", requireAuth, generalApiLimiter, async (
             .select({ count: sql<number>`count(*)::int` })
             .from(audioCircleFollowsTable)
             .where(eq(audioCircleFollowsTable.circle_id, c.id));
-          let liveData: any = null;
+          let liveData: {
+            id: number; title: string; host_id: number | null;
+            host_name: string; video_enabled: boolean; is_recording: boolean;
+            started_at: string; topic: string | null; description: string | null;
+            speaker_count: number; listener_count: number;
+          } | null = null;
           if (live) {
             const participants = await getActiveParticipants(live.id);
             const host = live.host_id != null
@@ -1777,7 +1782,12 @@ router.get("/audio-circles/nearby", requireAuth, generalApiLimiter, async (req, 
     const nearby = await Promise.all(
       nearbyCircles.slice(0, 20).map(async (c) => {
         const live = await getLiveSession(c.id);
-        let liveData: any = null;
+        let liveData: {
+          id: number; title: string; host_id: number | null;
+          host_name: string; video_enabled: boolean; is_recording: boolean;
+          started_at: string; topic: string | null; description: string | null;
+          speaker_count: number; listener_count: number;
+        } | null = null;
         if (live) {
           const participants = await getActiveParticipants(live.id);
           const host = live.host_id != null
@@ -1872,7 +1882,7 @@ router.get("/audio-circles/community-stats", requireAuth, generalApiLimiter, asy
     else if (trustScore >= 20) reputationLevel = "Regular";
 
     // Generate achievements based on activity
-    const achievements: any[] = [];
+    const achievements: Array<{ id: string; title: string; description: string; icon: string; earned_at: string }> = [];
     if (totalHosted >= 1) {
       achievements.push({
         id: "first-host", title: "First Circle", description: "Hosted your first Circle",
@@ -1899,7 +1909,7 @@ router.get("/audio-circles/community-stats", requireAuth, generalApiLimiter, asy
     }
 
     // Generate milestones (progress toward next achievement)
-    const milestones: any[] = [
+    const milestones: Array<{ id: string; title: string; description: string; progress: number; target: number; unit: string }> = [
       {
         id: "host-milestone", title: "Circle Master",
         description: "Host 25 Circles",

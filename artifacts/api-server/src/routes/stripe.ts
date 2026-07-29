@@ -627,7 +627,7 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
       metadata: {
         requestId: requestId.toString(),
         helperId: helperId?.toString() ?? "",
-        requesterId: (req as any).authenticatedUserId.toString(),
+        requesterId: req.authenticatedUserId!.toString(),
         paymentType: paymentType ?? "immediate",
       },
       automatic_payment_methods: { enabled: true },
@@ -639,8 +639,8 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
       // Immediate/pledge payments are still one-per-request-per-payer.
       idempotencyKey:
         paymentType === "tip"
-          ? `payment-intent-tip-${requestId}-${(req as any).authenticatedUserId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-          : `payment-intent-${requestId}-${(req as any).authenticatedUserId}`,
+          ? `payment-intent-tip-${requestId}-${req.authenticatedUserId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+          : `payment-intent-${requestId}-${req.authenticatedUserId}`,
     }
   );
 
@@ -650,7 +650,7 @@ router.post("/stripe/payment-intent", requireAuth, requireOwnership("requesterId
     .values({
       request_id: requestId,
       helper_id: helperId ?? null,
-      requester_id: (req as any).authenticatedUserId,
+      requester_id: req.authenticatedUserId!,
       amount,
       state: "authorized",
       payment_type: paymentType ?? "immediate",

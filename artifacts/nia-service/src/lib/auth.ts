@@ -62,7 +62,7 @@ export function parseOptionalAuth(req: Request, _res: Response, next: NextFuncti
     const token = authHeader.slice(7).trim();
     const { userId, valid } = verifyToken(token);
     if (valid) {
-      (req as Request & { authenticatedUserId?: number }).authenticatedUserId = userId;
+      req.authenticatedUserId = userId;
     }
   }
   next();

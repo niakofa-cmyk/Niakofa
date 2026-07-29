@@ -4,10 +4,20 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
-    "outDir": "dist",
-    "rootDir": "src",
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "useUnknownInCatchVariables": true,
+    "alwaysStrict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "outDir": "dist",
+    "rootDir": "src"
   },
   "include": ["src"],
   "exclude": ["src/__tests__"]

@@ -16,6 +16,7 @@ import { startCrisisFollowupWorker } from "./workers/crisis-followup-worker.js";
 import { startContinuousLearningWorker } from "./workers/continuous-learning-worker.js";
 import { startGeneralCheckinWorker } from "./workers/general-checkin-worker.js";
 import { startAmbientPresenceWorker } from "./workers/ambient-presence-worker.js";
+import { shutdownWorkers } from "./lib/worker-lifecycle.js";
 
 const logger = pino({ level: "info" });
 const app = express();
@@ -97,4 +98,14 @@ app.listen(port, () => {
   // Ambient presence worker — Nia proactively notices food signals, recurring needs, silent users.
   startAmbientPresenceWorker();
 });
+
+// Graceful shutdown — clear all worker intervals and exit cleanly
+async function gracefulShutdown(signal: string): Promise<void> {
+  logger.info({ signal }, "nia: received shutdown signal, gracefully stopping workers...");
+  await shutdownWorkers(10_000);
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => { void gracefulShutdown("SIGTERM"); });
+process.on("SIGINT", () => { void gracefulShutdown("SIGINT"); });
 // rebuilt: 1782611000
