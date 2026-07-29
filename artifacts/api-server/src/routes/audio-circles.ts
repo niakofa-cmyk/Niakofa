@@ -32,7 +32,7 @@ import {
   cityNeighborhoodsTable,
   usersTable,
 } from "@workspace/db";
-import { eq, and, isNull, desc, sql } from "drizzle-orm";
+import { eq, and, isNull, desc, asc, sql } from "drizzle-orm";
 import { requireAuth, requireApproved } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { normalizeCityKey, ensureNeighborhoodsForCity } from "./community-neighborhoods";
@@ -82,11 +82,58 @@ async function getActiveParticipants(sessionId: number) {
  * the grace period. Called from every read path that loads a "live" session
  * so this doesn't need its own background worker — the first request to
  * touch an expired session after the window closes is what actually ends it.
+ *
+ * HOST FAILOVER: If a co-host exists when the grace period expires, the
+ * co-host is auto-promoted to host instead of ending the session. This
+ * keeps the room alive for all participants when the original host drops
+ * and doesn't return. The session's host_id is updated to the new host.
  */
 async function expireIfHostGraceElapsed(session: typeof audioCircleSessionsTable.$inferSelect) {
   if (!session.host_disconnected_at) return session;
   const elapsed = Date.now() - new Date(session.host_disconnected_at).getTime();
   if (elapsed < HOST_GRACE_PERIOD_MS) return session;
+
+  // Check for a co-host to promote before ending the session.
+  const activeParticipants = await getActiveParticipants(session.id);
+  const cohost = activeParticipants.find(p => p.role === "co_host");
+  if (cohost) {
+    // Auto-promote the co-host to host.
+    await db
+      .update(audioCircleParticipantsTable)
+      .set({ role: "host" })
+      .where(and(
+        eq(audioCircleParticipantsTable.session_id, session.id),
+        eq(audioCircleParticipantsTable.user_id, cohost.user_id),
+      ));
+
+    // Update the session's host_id and clear the disconnect flag.
+    await db
+      .update(audioCircleSessionsTable)
+      .set({ host_id: cohost.user_id, host_disconnected_at: null })
+      .where(eq(audioCircleSessionsTable.id, session.id));
+
+    // Notify all participants of the host transfer.
+    sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
+      type: "circle_host_transfer",
+      payload: {
+        session_id: session.id,
+        new_host_id: cohost.user_id,
+        former_host_id: session.host_id,
+        auto: true,
+      },
+    });
+
+    logger.info({
+      session_id: session.id,
+      former_host_id: session.host_id,
+      new_host_id: cohost.user_id,
+    }, "audio-circles: host failover — co-host auto-promoted");
+
+    // Return the updated session so callers see it as still live.
+    return { ...session, host_id: cohost.user_id, host_disconnected_at: null };
+  }
+
+  // No co-host — end the session.
   await endSessionInternal(session.id);
   return { ...session, status: "ended" as const };
 }
@@ -141,6 +188,23 @@ async function requireActiveParticipant(
   return { session, participant } as const;
 }
 
+/** Structured moderation audit log entry. */
+function logModerationAction(
+  action: string,
+  sessionId: number,
+  actorId: number,
+  targetId: number | null,
+  extra?: Record<string, unknown>
+) {
+  logger.info({
+    action,
+    session_id: sessionId,
+    actor_id: actorId,
+    target_id: targetId,
+    ...extra,
+  }, `audio-circles: moderation action — ${action}`);
+}
+
 // ── Browse ───────────────────────────────────────────────────────────────────
 
 /**
@@ -172,14 +236,8 @@ async function requireActiveParticipant(
  */
 async function ensureCirclesForCity(cityRaw: string, cityKey: string) {
   try {
-    // Reuses community-neighborhoods.ts's own cache-or-generate logic so
-    // there is exactly one place that knows how to populate a city's
-    // neighborhoods — Circles just piggybacks on the result.
     await ensureNeighborhoodsForCity(cityRaw, cityKey);
 
-    // One circle per neighborhood this city_key now has (curated or
-    // freshly generated). ON CONFLICT DO NOTHING makes re-running this on
-    // every request cheap and safe — it's a no-op once circles exist.
     await db.execute(sql`
       INSERT INTO audio_circles (city_key, city_display, neighborhood_id, name)
       SELECT cn.city_key, cn.city_display, cn.id, cn.name || ' Circle'
@@ -188,8 +246,6 @@ async function ensureCirclesForCity(cityRaw: string, cityKey: string) {
       ON CONFLICT (neighborhood_id) WHERE neighborhood_id IS NOT NULL DO NOTHING
     `);
 
-    // The one city-wide circle (neighborhood_id IS NULL), always available
-    // even before/if neighborhood generation ever succeeds for this city.
     await db.execute(sql`
       INSERT INTO audio_circles (city_key, city_display, neighborhood_id, name)
       VALUES (${cityKey}, ${cityRaw}, NULL, ${cityRaw + " Circle"})
@@ -202,14 +258,13 @@ async function ensureCirclesForCity(cityRaw: string, cityKey: string) {
 
 // GET /audio-circles?city=Fort+Worth — every circle for this city (each
 // neighborhood's circle, plus the city-wide one), with live-session summary.
+// Circles with live sessions are sorted first ("Live Now" prioritization).
 router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) => {
   const cityRaw = (req.query.city as string | undefined)?.trim();
   if (!cityRaw) return res.status(400).json({ error: "city query param is required" });
   const cityKey = normalizeCityKey(cityRaw);
   if (!cityKey) return res.json({ circles: [] });
 
-  // Auto-provision circles for any city on first lookup — same pattern
-  // neighborhoods uses, so this is never a Fort-Worth-only feature again.
   await ensureCirclesForCity(cityRaw, cityKey);
 
   const circles = await db
@@ -230,7 +285,6 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
   const withLiveInfo = await Promise.all(
     circles.map(async (c) => {
       const live = await getLiveSession(c.id);
-      // Check if the current user follows this circle
       const [follow] = await db
         .select({ id: audioCircleFollowsTable.id })
         .from(audioCircleFollowsTable)
@@ -238,8 +292,6 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
         .limit(1);
       if (!live) return { ...c, live_session: null, is_following: !!follow };
       const participants = await getActiveParticipants(live.id);
-      // host_id can be null (data-loss fix: onDelete "set null" if the host's
-      // account was deleted) — skip the lookup rather than querying with null.
       const host = live.host_id != null
         ? (await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, live.host_id)).limit(1))[0]
         : undefined;
@@ -263,14 +315,25 @@ router.get("/audio-circles", requireAuth, generalApiLimiter, async (req, res) =>
     })
   );
 
+  // Sort: circles with live sessions first ("Live Now" prioritization),
+  // then by listener count (most active rooms first), then by name.
+  withLiveInfo.sort((a, b) => {
+    const aLive = !!a.live_session;
+    const bLive = !!b.live_session;
+    if (aLive && !bLive) return -1;
+    if (!aLive && bLive) return 1;
+    if (aLive && bLive) {
+      const aCount = (a.live_session!.listener_count ?? 0) + (a.live_session!.speaker_count ?? 0);
+      const bCount = (b.live_session!.listener_count ?? 0) + (b.live_session!.speaker_count ?? 0);
+      return bCount - aCount;
+    }
+    return a.name.localeCompare(b.name);
+  });
+
   return res.json({ circles: withLiveInfo, city_key: cityKey, city_display: cityRaw });
 });
 
 // GET /audio-circles/followed — list all circles the current user follows.
-// Registered BEFORE /audio-circles/:id so the literal "followed" segment
-// isn't captured by the :id param (Express matches top-down). Moving this
-// above the :id route is the fix — otherwise GET /audio-circles/followed
-// hits the :id handler, parseInt("followed") → NaN, and this never runs.
 router.get("/audio-circles/followed", requireAuth, generalApiLimiter, async (req, res) => {
   const userId = req.authenticatedUserId!;
   const followed = await db
@@ -306,8 +369,7 @@ router.get("/audio-circles/:id", requireAuth, generalApiLimiter, async (req, res
 });
 
 // GET /audio-circle-sessions/:id — session + circle + participants, for the
-// room page to load its initial state directly by session id (as opposed to
-// GET /audio-circles/:id, which is keyed by the permanent circle/channel).
+// room page to load its initial state directly by session id.
 router.get("/audio-circle-sessions/:id", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -315,8 +377,6 @@ router.get("/audio-circle-sessions/:id", requireAuth, requireApproved, generalAp
   const [session] = await db.select().from(audioCircleSessionsTable).where(eq(audioCircleSessionsTable.id, sessionId)).limit(1);
   if (!session) return res.status(404).json({ error: "Session not found" });
 
-  // Ended sessions are not re-joinable — treat as not found so the client
-  // can redirect back to the circles list rather than showing a stale room.
   if (session.status !== "live") return res.status(404).json({ error: "Session not found or no longer live" });
 
   const [circle] = await db.select().from(audioCirclesTable).where(eq(audioCirclesTable.id, session.circle_id)).limit(1);
@@ -334,14 +394,14 @@ const StartSessionBody = z.object({
   description: z.string().trim().max(MAX_DESC_LEN).optional(),
   topic: z.string().trim().max(MAX_TOPIC_LEN).optional(),
   video_enabled: z.boolean().optional(),
-  // host-configurable speaker limit; defaults to 13 (historic default)
   max_speakers: z.number().int().refine(v => (VALID_SPEAKER_LIMITS as readonly number[]).includes(v), {
     message: `max_speakers must be one of ${VALID_SPEAKER_LIMITS.join(", ")}`,
   }).optional(),
+  chat_enabled: z.boolean().optional(),
+  recording_allowed: z.boolean().optional(),
 });
 
-// POST /audio-circles/:id/start — any approved user can host. Fails with 409
-// if this circle already has a live session (join that one instead).
+// POST /audio-circles/:id/start — any approved user can host.
 router.post("/audio-circles/:id/start", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const circleId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(circleId)) return res.status(400).json({ error: "Invalid id" });
@@ -365,6 +425,8 @@ router.post("/audio-circles/:id/start", requireAuth, requireApproved, generalApi
       topic: parsed.data.topic ?? null,
       video_enabled: parsed.data.video_enabled ?? false,
       max_speakers: parsed.data.max_speakers ?? 13,
+      chat_enabled: parsed.data.chat_enabled ?? true,
+      recording_allowed: parsed.data.recording_allowed ?? true,
     })
     .returning();
   if (!session) return res.status(500).json({ error: "Failed to start session" });
@@ -376,9 +438,6 @@ router.post("/audio-circles/:id/start", requireAuth, requireApproved, generalApi
 
   logger.info({ session_id: session.id, circle_id: circleId, host_id: hostId }, "audio-circles: session started");
 
-  // Notify all followers of this circle that a new session went live.
-  // Each follower receives a targeted circle_went_live event via sendToUser
-  // — followers outside the room get a push-style notification.
   try {
     const followers = await db
       .select({ user_id: audioCircleFollowsTable.user_id })
@@ -407,8 +466,7 @@ router.post("/audio-circles/:id/start", requireAuth, requireApproved, generalApi
   return res.status(201).json({ session, host_name: host?.name ?? null });
 });
 
-// POST /audio-circle-sessions/:id/join — join as a listener. Idempotent —
-// rejoining after a leave is fine (re-inserts a fresh participant row).
+// POST /audio-circle-sessions/:id/join — join as a listener. Idempotent.
 router.post("/audio-circle-sessions/:id/join", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -419,7 +477,7 @@ router.post("/audio-circle-sessions/:id/join", requireAuth, requireApproved, gen
   const session = await expireIfHostGraceElapsed(rawSession);
   if (session.status !== "live") return res.status(404).json({ error: "Session not live" });
 
-  // Check if this user is blocked by the host — if so, deny the join.
+  // Check if this user is blocked by the host.
   if (session.host_id != null) {
     const [block] = await db
       .select({ id: circleBlocksTable.id })
@@ -453,9 +511,8 @@ router.post("/audio-circle-sessions/:id/join", requireAuth, requireApproved, gen
 
   addCircleParticipant(sessionId, userId);
 
-  // If this is the original host reconnecting (e.g. after a refresh) within
-  // the grace period, clear the disconnect flag so the session goes back to
-  // fully live instead of being lazily ended on some future request.
+  // If this is the original host reconnecting within the grace period,
+  // clear the disconnect flag.
   if (userId === session.host_id && session.host_disconnected_at) {
     await db
       .update(audioCircleSessionsTable)
@@ -481,8 +538,7 @@ router.post("/audio-circle-sessions/:id/join", requireAuth, requireApproved, gen
 });
 
 // POST /audio-circle-sessions/:id/leave — listener leaves; host leaving starts
-// a 90-second grace period instead of instantly ending the session (so an
-// accidental page refresh doesn't destroy a live room for everyone else).
+// a 90-second grace period instead of instantly ending the session.
 router.post("/audio-circle-sessions/:id/leave", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -490,27 +546,9 @@ router.post("/audio-circle-sessions/:id/leave", requireAuth, generalApiLimiter, 
 
   const { session, participant } = await requireActiveParticipant(sessionId, userId);
   if (!session) return res.status(404).json({ error: "Session not live" });
-  if (!participant) return res.json({ ok: true }); // already left — idempotent
+  if (!participant) return res.json({ ok: true });
 
   if (participant.role === "host") {
-    // BUG FIX: this used to mark the host's row left and call
-    // endSessionInternal() unconditionally — meaning a host's own accidental
-    // page refresh (which fires this exact endpoint via the beforeunload
-    // handler, with no way to tell it apart from an intentional "I'm
-    // leaving for good") instantly ended the session for every other
-    // participant. That's the literal "Circles disappear when you refresh
-    // the page" bug.
-    //
-    // Fix: leave the host's own participant row untouched (never marked
-    // left) and don't end the session — just record when they disconnected.
-    // If they reconnect within HOST_GRACE_PERIOD_MS, /join finds their
-    // still-active row and keeps their host role automatically, no separate
-    // reconnect path needed. If they don't come back in time, the session
-    // is lazily ended the next time anyone fetches it — see
-    // expireIfHostGraceElapsed. A deliberate "End Session" tap is the
-    // separate /end endpoint below and always ends immediately, unaffected
-    // by any of this. The host's WS registry entry still gets cleared since
-    // their actual socket really is gone; /join re-adds it on reconnect.
     removeCircleParticipant(sessionId, userId);
     await db
       .update(audioCircleSessionsTable)
@@ -556,9 +594,7 @@ async function endSessionInternal(sessionId: number) {
   });
 }
 
-// POST /audio-circle-sessions/:id/end — host deliberately ends the session for
-// everyone. This is the only path that ends a session immediately — the /leave
-// endpoint only sets a grace period for the host, not a hard end.
+// POST /audio-circle-sessions/:id/end — host deliberately ends the session.
 router.post("/audio-circle-sessions/:id/end", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -573,12 +609,9 @@ router.post("/audio-circle-sessions/:id/end", requireAuth, generalApiLimiter, as
 
 const HandRaiseBody = z.object({
   raised: z.boolean(),
-  // Optional: host or co-host can pass another user's id to dismiss their raised hand.
   user_id: z.number().int().positive().optional(),
 });
 
-// POST /audio-circle-sessions/:id/hand — listener raises/lowers their own hand.
-// The host or a co-host may also pass user_id to dismiss another participant's raised hand.
 router.post("/audio-circle-sessions/:id/hand", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -590,15 +623,12 @@ router.post("/audio-circle-sessions/:id/hand", requireAuth, generalApiLimiter, a
   if (!session) return res.status(404).json({ error: "Session not live" });
   if (!actingParticipant) return res.status(403).json({ error: "You're not in this session" });
 
-  // Host or co-host dismissing another participant's raised hand
   const targetUserId = parsed.data.user_id ?? actingUserId;
   const isModerator = actingParticipant.role === "host" || actingParticipant.role === "co_host";
   if (targetUserId !== actingUserId && !isModerator) {
     return res.status(403).json({ error: "Only the host or co-host can lower another participant's hand" });
   }
 
-  // Set hand_raised_at when raising (null when lowering) so the queue
-  // can be ordered by wait time and the timer survives page refreshes.
   await db
     .update(audioCircleParticipantsTable)
     .set({
@@ -621,9 +651,7 @@ router.post("/audio-circle-sessions/:id/hand", requireAuth, generalApiLimiter, a
 
 const RoleChangeBody = z.object({ user_id: z.number().int().positive() });
 
-// POST /audio-circle-sessions/:id/promote — host or co-host moves a listener to
-// speaker. Enforces the session's max_speakers cap (host + up to 12 more =
-// 13 total mic slots, matching "add up to 13 speakers at once").
+// POST /audio-circle-sessions/:id/promote — host or co-host promotes a listener.
 router.post("/audio-circle-sessions/:id/promote", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -648,6 +676,8 @@ router.post("/audio-circle-sessions/:id/promote", requireAuth, generalApiLimiter
     .set({ role: "speaker", hand_raised: false })
     .where(and(eq(audioCircleParticipantsTable.session_id, sessionId), eq(audioCircleParticipantsTable.user_id, parsed.data.user_id)));
 
+  logModerationAction("promote", sessionId, req.authenticatedUserId!, parsed.data.user_id);
+
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
     type: "circle_role_changed",
     payload: { session_id: sessionId, user_id: parsed.data.user_id, role: "speaker" },
@@ -655,8 +685,7 @@ router.post("/audio-circle-sessions/:id/promote", requireAuth, generalApiLimiter
   return res.json({ ok: true });
 });
 
-// POST /audio-circle-sessions/:id/demote — host or co-host moves a speaker back to
-// listener, or a speaker demotes themselves.
+// POST /audio-circle-sessions/:id/demote — host or co-host demotes a speaker.
 router.post("/audio-circle-sessions/:id/demote", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -680,6 +709,8 @@ router.post("/audio-circle-sessions/:id/demote", requireAuth, generalApiLimiter,
     .set({ role: "listener" })
     .where(and(eq(audioCircleParticipantsTable.session_id, sessionId), eq(audioCircleParticipantsTable.user_id, parsed.data.user_id)));
 
+  logModerationAction("demote", sessionId, userId, parsed.data.user_id);
+
   const activeParticipants = await getActiveParticipants(sessionId);
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
     type: "circle_role_changed",
@@ -690,9 +721,7 @@ router.post("/audio-circle-sessions/:id/demote", requireAuth, generalApiLimiter,
 
 // ── Co-host management ──────────────────────────────────────────────────────
 
-// POST /audio-circle-sessions/:id/assign-cohost — host assigns co-host role
-// to a participant. Co-hosts can promote/demote/mute/kick/block but cannot
-// end the session or control recording.
+// POST /audio-circle-sessions/:id/assign-cohost — host assigns co-host role.
 router.post("/audio-circle-sessions/:id/assign-cohost", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -713,6 +742,8 @@ router.post("/audio-circle-sessions/:id/assign-cohost", requireAuth, generalApiL
     .set({ role: "co_host", hand_raised: false })
     .where(and(eq(audioCircleParticipantsTable.session_id, sessionId), eq(audioCircleParticipantsTable.user_id, parsed.data.user_id)));
 
+  logModerationAction("assign_cohost", sessionId, req.authenticatedUserId!, parsed.data.user_id);
+
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
     type: "circle_cohost_assigned",
     payload: { session_id: sessionId, user_id: parsed.data.user_id },
@@ -720,8 +751,7 @@ router.post("/audio-circle-sessions/:id/assign-cohost", requireAuth, generalApiL
   return res.json({ ok: true });
 });
 
-// POST /audio-circle-sessions/:id/remove-cohost — host removes co-host role,
-// demoting them back to listener.
+// POST /audio-circle-sessions/:id/remove-cohost — host removes co-host role.
 router.post("/audio-circle-sessions/:id/remove-cohost", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -742,6 +772,8 @@ router.post("/audio-circle-sessions/:id/remove-cohost", requireAuth, generalApiL
     .set({ role: "listener" })
     .where(and(eq(audioCircleParticipantsTable.session_id, sessionId), eq(audioCircleParticipantsTable.user_id, parsed.data.user_id)));
 
+  logModerationAction("remove_cohost", sessionId, req.authenticatedUserId!, parsed.data.user_id);
+
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
     type: "circle_cohost_removed",
     payload: { session_id: sessionId, user_id: parsed.data.user_id },
@@ -751,10 +783,6 @@ router.post("/audio-circle-sessions/:id/remove-cohost", requireAuth, generalApiL
 
 // ── Mute ─────────────────────────────────────────────────────────────────────
 
-// POST /audio-circle-sessions/:id/mute — host or co-host mutes or unmutes a
-// specific speaker (without demoting them). The muted flag lives in the DB so
-// it survives page refreshes; the audio track itself is controlled
-// client-side by the speaker when they receive the circle_muted event.
 const MuteBody = z.object({
   user_id: z.number().int().positive(),
   muted: z.boolean(),
@@ -780,6 +808,8 @@ router.post("/audio-circle-sessions/:id/mute", requireAuth, generalApiLimiter, a
     .set({ muted: parsed.data.muted })
     .where(and(eq(audioCircleParticipantsTable.session_id, sessionId), eq(audioCircleParticipantsTable.user_id, parsed.data.user_id)));
 
+  logModerationAction(parsed.data.muted ? "mute" : "unmute", sessionId, req.authenticatedUserId!, parsed.data.user_id);
+
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
     type: "circle_muted",
     payload: { session_id: sessionId, user_id: parsed.data.user_id, muted: parsed.data.muted },
@@ -787,7 +817,7 @@ router.post("/audio-circle-sessions/:id/mute", requireAuth, generalApiLimiter, a
   return res.json({ ok: true });
 });
 
-// POST /audio-circle-sessions/:id/mute-all — host or co-host mutes every speaker at once.
+// POST /audio-circle-sessions/:id/mute-all — host or co-host mutes every speaker.
 router.post("/audio-circle-sessions/:id/mute-all", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -796,7 +826,6 @@ router.post("/audio-circle-sessions/:id/mute-all", requireAuth, generalApiLimite
   if (!session) return res.status(404).json({ error: "Session not live" });
   if (!modParticipant) return res.status(403).json({ error: "Only the host or co-host can mute everyone" });
 
-  // Mute all speakers — co-hosts are moderators and are NOT muted.
   await db
     .update(audioCircleParticipantsTable)
     .set({ muted: true })
@@ -805,6 +834,8 @@ router.post("/audio-circle-sessions/:id/mute-all", requireAuth, generalApiLimite
       sql`${audioCircleParticipantsTable.role} = 'speaker'`,
       isNull(audioCircleParticipantsTable.left_at),
     ));
+
+  logModerationAction("mute_all", sessionId, req.authenticatedUserId!, null);
 
   const activeParticipants = await getActiveParticipants(sessionId);
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
@@ -816,7 +847,6 @@ router.post("/audio-circle-sessions/:id/mute-all", requireAuth, generalApiLimite
 
 // ── Kick ──────────────────────────────────────────────────────────────────────
 
-// POST /audio-circle-sessions/:id/kick — host or co-host removes a user from the room.
 const KickBody = z.object({ user_id: z.number().int().positive() });
 
 router.post("/audio-circle-sessions/:id/kick", requireAuth, generalApiLimiter, async (req, res) => {
@@ -833,7 +863,6 @@ router.post("/audio-circle-sessions/:id/kick", requireAuth, generalApiLimiter, a
     return res.status(400).json({ error: "You can't kick yourself — use End Circle instead" });
   }
 
-  // A co-host cannot kick the host
   const activeParticipants = await getActiveParticipants(sessionId);
   const target = activeParticipants.find(p => p.user_id === parsed.data.user_id);
   if (!target) return res.status(404).json({ error: "That user isn't in this session" });
@@ -851,6 +880,8 @@ router.post("/audio-circle-sessions/:id/kick", requireAuth, generalApiLimiter, a
     ));
   removeCircleParticipant(sessionId, parsed.data.user_id);
 
+  logModerationAction("kick", sessionId, actingUserId, parsed.data.user_id);
+
   const remaining = await getActiveParticipants(sessionId);
   sendToCircleParticipants(remaining.map(p => p.user_id).concat(parsed.data.user_id), {
     type: "circle_kicked",
@@ -860,24 +891,16 @@ router.post("/audio-circle-sessions/:id/kick", requireAuth, generalApiLimiter, a
 });
 
 // ── Persistent chat ───────────────────────────────────────────────────────────
-// Messages are written to audio_circle_messages before broadcast so they
-// survive page refreshes. Late-joiners and refreshers fetch history via GET.
 
 const ChatBody = z.object({ body: z.string().trim().min(1).max(MAX_CHAT_LEN) });
 
-const CHAT_HISTORY_LIMIT = 200; // messages returned by the history endpoint
+const CHAT_HISTORY_LIMIT = 200;
 
-// GET /audio-circle-sessions/:id/chat — fetch the last N messages (newest last).
-// Any authenticated participant (or admin) may call this; the session must still
-// be live (or recently ended — we return history even for ended sessions so a
-// recap is possible).
+// GET /audio-circle-sessions/:id/chat — fetch the last N messages.
 router.get("/audio-circle-sessions/:id/chat", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
 
-  // Fetch the last CHAT_HISTORY_LIMIT messages, joined with sender profile.
-  // We select in DESC order (most-recent first) then reverse in JS so the
-  // client receives them oldest-first — ready to append directly to state.
   const rows = await db
     .select({
       id:         audioCircleMessagesTable.id,
@@ -893,10 +916,7 @@ router.get("/audio-circle-sessions/:id/chat", requireAuth, generalApiLimiter, as
     .orderBy(desc(audioCircleMessagesTable.sent_at))
     .limit(CHAT_HISTORY_LIMIT);
 
-  // Reverse so oldest message is first (chat renders top→bottom)
   const messages = rows.reverse().map(r => ({
-    // Use "db-<id>" as the stable client-side ID so it can never clash with
-    // the "<timestamp>-<userId>" format of freshly-broadcast WS messages.
     id:         `db-${r.id}`,
     user_id:    r.sender_id ?? 0,
     name:       r.name ?? "Deleted user",
@@ -909,6 +929,7 @@ router.get("/audio-circle-sessions/:id/chat", requireAuth, generalApiLimiter, as
 });
 
 // POST /audio-circle-sessions/:id/chat — any active participant sends a chat message.
+// Enforces chat_enabled setting — returns 403 if the host has disabled chat.
 router.post("/audio-circle-sessions/:id/chat", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -920,23 +941,23 @@ router.post("/audio-circle-sessions/:id/chat", requireAuth, generalApiLimiter, a
   if (!session) return res.status(404).json({ error: "Session not live" });
   if (!participant) return res.status(403).json({ error: "You're not in this session" });
 
+  // Server-side enforcement of chat_enabled setting.
+  if (!session.chat_enabled) {
+    return res.status(403).json({ error: "Chat has been disabled by the host" });
+  }
+
   const [user] = await db
     .select({ name: usersTable.name, avatar_url: usersTable.avatar_url })
     .from(usersTable)
     .where(eq(usersTable.id, userId))
     .limit(1);
 
-  // Persist first — then broadcast. If the insert throws the message is never
-  // sent, which is preferable to broadcasting a message we didn't durably store.
   const [saved] = await db
     .insert(audioCircleMessagesTable)
     .values({ session_id: sessionId, sender_id: userId, body: parsed.data.body })
     .returning({ id: audioCircleMessagesTable.id, sent_at: audioCircleMessagesTable.sent_at });
 
   const activeParticipants = await getActiveParticipants(sessionId);
-  // Use "db-<id>" so WS messages and history messages share the same ID
-  // namespace — the client deduplicates by ID to avoid showing a message twice
-  // when it receives both the WS event and the history on reconnect.
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
     type: "circle_chat_message",
     payload: {
@@ -952,8 +973,7 @@ router.post("/audio-circle-sessions/:id/chat", requireAuth, generalApiLimiter, a
   return res.json({ ok: true, id: `db-${saved.id}` });
 });
 
-// POST /audio-circle-sessions/:id/lower-all-hands — host or co-host clears
-// every raised hand in one action (sets hand_raised = false for all audience).
+// POST /audio-circle-sessions/:id/lower-all-hands — host or co-host clears hands.
 router.post("/audio-circle-sessions/:id/lower-all-hands", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -970,6 +990,8 @@ router.post("/audio-circle-sessions/:id/lower-all-hands", requireAuth, generalAp
       isNull(audioCircleParticipantsTable.left_at),
     ));
 
+  logModerationAction("lower_all_hands", sessionId, req.authenticatedUserId!, null);
+
   const activeParticipants = await getActiveParticipants(sessionId);
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
     type: "circle_hands_lowered",
@@ -982,9 +1004,7 @@ router.post("/audio-circle-sessions/:id/lower-all-hands", requireAuth, generalAp
 
 const ReactionBody = z.object({ emoji: z.string().trim().min(1).max(MAX_EMOJI_LEN) });
 
-// POST /audio-circle-sessions/:id/react — ephemeral emoji reaction, never
-// persisted to the DB (same "transient UI feedback, not a data record"
-// reasoning as elsewhere in this app) — just a WS broadcast.
+// POST /audio-circle-sessions/:id/react — ephemeral emoji reaction, WS broadcast only.
 router.post("/audio-circle-sessions/:id/react", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -1005,14 +1025,11 @@ router.post("/audio-circle-sessions/:id/react", requireAuth, generalApiLimiter, 
 });
 
 // ── Recording ────────────────────────────────────────────────────────────────
-// Recording itself happens client-side (Web Audio API mixing all peer tracks
-// + MediaRecorder — see lib/webrtcMesh.ts), since there's no media server in
-// this architecture to record server-side. These endpoints just track state
-// and the final uploaded URL.
 
 const RecordingStateBody = z.object({ is_recording: z.boolean() });
 
 // POST /audio-circle-sessions/:id/recording — host starts/stops recording.
+// Enforces recording_allowed setting — returns 403 if the host has disabled recording.
 router.post("/audio-circle-sessions/:id/recording", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -1022,6 +1039,11 @@ router.post("/audio-circle-sessions/:id/recording", requireAuth, generalApiLimit
   const { session, participant } = await requireActiveParticipant(sessionId, req.authenticatedUserId!, "host");
   if (!session) return res.status(404).json({ error: "Session not live" });
   if (!participant) return res.status(403).json({ error: "Only the host can control recording" });
+
+  // Server-side enforcement of recording_allowed setting.
+  if (parsed.data.is_recording && !session.recording_allowed) {
+    return res.status(403).json({ error: "Recording has been disabled for this session" });
+  }
 
   const newStatus = parsed.data.is_recording ? "recording" : "none";
   await db.update(audioCircleSessionsTable).set({
@@ -1041,11 +1063,7 @@ router.post("/audio-circle-sessions/:id/recording", requireAuth, generalApiLimit
   return res.json({ ok: true });
 });
 
-// POST /audio-circle-sessions/:id/recording-upload — host uploads the raw
-// audio blob (audio/webm) produced by the client-side MediaRecorder.  The
-// file is saved to disk under <repo-root>/uploads/recordings/ and the
-// resulting URL is persisted automatically so the host doesn't need to call
-// /recording-url separately.
+// POST /audio-circle-sessions/:id/recording-upload — host uploads the raw audio blob.
 router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -1059,30 +1077,21 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
   if (!Buffer.isBuffer(body) || body.length === 0) {
     return res.status(400).json({ error: "Empty or non-audio body" });
   }
-  // Reject recordings larger than 500 MB to prevent disk exhaustion.
   const MAX_RECORDING_BYTES = 500 * 1024 * 1024;
   if (body.length > MAX_RECORDING_BYTES) {
     return res.status(413).json({ error: "Recording too large (500 MB max)" });
   }
 
   const contentType = String(req.headers["content-type"] ?? "").split(";")[0].toLowerCase();
-  const extension = contentType === "audio/mp4"
-    ? "m4a"
-    : contentType === "audio/ogg"
-      ? "ogg"
-      : "webm";
+  const extension = contentType === "audio/mp4" ? "m4a" : contentType === "audio/ogg" ? "ogg" : "webm";
   const filename = `${sessionId}-${randomUUID()}.${extension}`;
   const storageKey = `recordings/${filename}`;
 
-  // Use the storage abstraction (S3/R2 when configured, local disk otherwise)
-  // instead of writing directly to disk. Falls back to local disk path if
-  // cloud storage is not configured so dev mode keeps working unchanged.
   let recording_url: string;
   if (isCloudStorageConfigured()) {
     await putAsset(storageKey, body, contentType || "audio/webm");
     recording_url = await getAssetUrl(storageKey);
   } else {
-    // Local-disk fallback — keep the same path the serve middleware expects
     const uploadsDir = path.join(import.meta.dirname, "..", "..", "..", "..", "uploads", "recordings");
     mkdirSync(uploadsDir, { recursive: true });
     const filePath = path.join(uploadsDir, filename);
@@ -1090,7 +1099,6 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
     recording_url = `/uploads/recordings/${filename}`;
   }
 
-  // Duration comes from the client (seconds) via a query param, if present.
   const durationSeconds = parseInt(String(req.query.duration ?? ""), 10);
   const updateData: Partial<typeof audioCircleSessionsTable.$inferInsert> = {
     recording_url,
@@ -1105,8 +1113,6 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
     .set(updateData)
     .where(eq(audioCircleSessionsTable.id, sessionId));
 
-  // Notify all past participants (session may now be ended) that a recording
-  // is available so they can navigate to past recordings without refreshing.
   const allParticipants = await db
     .select({ user_id: audioCircleParticipantsTable.user_id })
     .from(audioCircleParticipantsTable)
@@ -1120,10 +1126,6 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
     payload: { session_id: sessionId, recording_status: "processing" },
   });
 
-  // Async post-processing: generate AI summary + chapter markers if an
-  // Anthropic API key is configured. Runs in the background — the response
-  // is already sent to the client. Status moves to "ready" on success or
-  // "failed" on error. If no API key is configured, skip straight to ready.
   generateAiSummaryInBackground(sessionId).catch((err) => {
     logger.warn({ err, sessionId }, "audio-circles: AI summary generation failed");
   });
@@ -1131,12 +1133,6 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
   return res.json({ ok: true, recording_url });
 });
 
-/**
- * Background AI summary generation. If ANTHROPIC_API_KEY is set, sends the
- * recording metadata (title, topic, duration) to Claude to produce a summary
- * and chapter markers. If no key is configured, just marks the recording as
- * ready so the archive shows it immediately.
- */
 async function generateAiSummaryInBackground(sessionId: number) {
   try {
     const [session] = await db.select().from(audioCircleSessionsTable).where(eq(audioCircleSessionsTable.id, sessionId)).limit(1);
@@ -1144,7 +1140,6 @@ async function generateAiSummaryInBackground(sessionId: number) {
 
     const apiKey = process.env["ANTHROPIC_API_KEY"];
     if (!apiKey) {
-      // No AI configured — mark as ready immediately
       await db.update(audioCircleSessionsTable)
         .set({ recording_status: "ready" })
         .where(eq(audioCircleSessionsTable.id, sessionId));
@@ -1152,7 +1147,6 @@ async function generateAiSummaryInBackground(sessionId: number) {
       return;
     }
 
-    // Call Anthropic for a summary + chapter markers
     const durationMin = session.recording_duration_seconds
       ? Math.round(session.recording_duration_seconds / 60)
       : null;
@@ -1188,7 +1182,6 @@ Do not include any text outside the JSON block.`;
 
     const data = await resp.json() as any;
     const text = data?.content?.[0]?.text ?? "";
-    // Extract JSON from the response (it may be wrapped in ```json ... ```)
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     let aiSummary: string | null = null;
     let chapterMarkers: any = null;
@@ -1233,10 +1226,6 @@ function broadcastRecordingStatus(sessionId: number, status: string) {
 
 const RecordingUrlBody = z.object({ recording_url: z.string().url().max(2048) });
 
-// POST /audio-circle-sessions/:id/recording-url — host submits the final
-// recording URL after their client finishes uploading it (e.g. to whatever
-// object storage this deployment uses — out of scope here; this endpoint
-// just records the resulting URL once the client has one).
 router.post("/audio-circle-sessions/:id/recording-url", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -1252,10 +1241,6 @@ router.post("/audio-circle-sessions/:id/recording-url", requireAuth, generalApiL
   return res.json({ ok: true });
 });
 
-// PATCH /audio-circle-sessions/:id/recording-metadata — host updates
-// recording metadata (duration, size) after the upload completes. This
-// is called by the client right after a successful recording-upload so the
-// archive can show duration and file size even without AI processing.
 const RecordingMetadataBody = z.object({
   recording_duration_seconds: z.number().int().positive().max(86400).optional(),
   recording_size_bytes: z.number().int().positive().max(500 * 1024 * 1024).optional(),
@@ -1290,13 +1275,6 @@ router.get("/audio-circles/:id/recordings", requireAuth, generalApiLimiter, asyn
   const circleId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(circleId)) return res.status(400).json({ error: "Invalid id" });
 
-  // FIX (data-loss audit, follow-up): host_id is now onDelete "set null"
-  // (see lib/db/migrations/0068_fix_content_cascade_deletes.sql) — a
-  // completed session whose host later deleted their account has
-  // host_id = NULL. The old INNER JOIN silently excluded that entire
-  // recording from the archive, which is exactly the kind of disappearance
-  // the migration was meant to prevent. LEFT JOIN keeps the recording;
-  // host_name just comes back null for an orphaned host.
   const recordings = await db
     .select({
       id: audioCircleSessionsTable.id,
@@ -1335,11 +1313,11 @@ const UpdateSessionSettingsBody = z.object({
   max_speakers: z.number().int().refine(v => (VALID_SPEAKER_LIMITS as readonly number[]).includes(v), {
     message: `max_speakers must be one of ${VALID_SPEAKER_LIMITS.join(", ")}`,
   }).optional(),
+  chat_enabled: z.boolean().optional(),
+  recording_allowed: z.boolean().optional(),
 });
 
-// PATCH /audio-circle-sessions/:id/settings — host updates topic, description,
-// or speaker limit mid-session. Speaker limit changes are enforced: can't lower
-// below the current number of active speakers.
+// PATCH /audio-circle-sessions/:id/settings — host updates settings mid-session.
 router.patch("/audio-circle-sessions/:id/settings", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -1351,7 +1329,6 @@ router.patch("/audio-circle-sessions/:id/settings", requireAuth, generalApiLimit
   if (!session) return res.status(404).json({ error: "Session not live" });
   if (!participant) return res.status(403).json({ error: "Only the host can update session settings" });
 
-  // If lowering the speaker limit, ensure it won't go below the current active speaker count.
   if (parsed.data.max_speakers !== undefined) {
     const activeParticipants = await getActiveParticipants(sessionId);
     const currentSpeakerCount = activeParticipants.filter(
@@ -1368,10 +1345,11 @@ router.patch("/audio-circle-sessions/:id/settings", requireAuth, generalApiLimit
   if (parsed.data.topic !== undefined) updates.topic = parsed.data.topic || null;
   if (parsed.data.description !== undefined) updates.description = parsed.data.description || null;
   if (parsed.data.max_speakers !== undefined) updates.max_speakers = parsed.data.max_speakers;
+  if (parsed.data.chat_enabled !== undefined) updates.chat_enabled = parsed.data.chat_enabled;
+  if (parsed.data.recording_allowed !== undefined) updates.recording_allowed = parsed.data.recording_allowed;
 
   await db.update(audioCircleSessionsTable).set(updates).where(eq(audioCircleSessionsTable.id, sessionId));
 
-  // Broadcast settings change so all participants see the updated info live.
   const activeParticipants = await getActiveParticipants(sessionId);
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
     type: "circle_settings_updated",
@@ -1380,6 +1358,8 @@ router.patch("/audio-circle-sessions/:id/settings", requireAuth, generalApiLimit
       topic: updates.topic ?? session.topic ?? null,
       description: updates.description ?? session.description ?? null,
       max_speakers: updates.max_speakers ?? session.max_speakers,
+      chat_enabled: updates.chat_enabled ?? session.chat_enabled,
+      recording_allowed: updates.recording_allowed ?? session.recording_allowed,
     },
   });
 
@@ -1392,9 +1372,6 @@ const InviteBody = z.object({
   user_id: z.number().int().positive(),
 });
 
-// POST /audio-circle-sessions/:id/invite — host or co-host sends a targeted
-// in-app invite to a community member. Sends a circle_invite WS event to
-// that user so they see a notification wherever they are in the app.
 router.post("/audio-circle-sessions/:id/invite", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -1410,7 +1387,6 @@ router.post("/audio-circle-sessions/:id/invite", requireAuth, requireApproved, g
     return res.status(400).json({ error: "You can't invite yourself" });
   }
 
-  // Look up the inviter's name for the notification
   const [inviter] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, actingUserId)).limit(1);
 
   sendToUser(parsed.data.user_id, {
@@ -1422,7 +1398,6 @@ router.post("/audio-circle-sessions/:id/invite", requireAuth, requireApproved, g
       topic: session.topic ?? null,
       invited_by: inviter?.name ?? "Someone",
       invited_by_id: actingUserId,
-      // Include host count / participant context for the invite toast
       join_path: `/audio-circle/${sessionId}`,
     },
   });
@@ -1436,9 +1411,6 @@ const TransferHostBody = z.object({
   user_id: z.number().int().positive(),
 });
 
-// POST /audio-circle-sessions/:id/transfer-host — current host transfers
-// ownership to a co-host. The caller becomes a co-host; the target becomes
-// the new host. Broadcasts circle_host_transfer to all participants.
 router.post("/audio-circle-sessions/:id/transfer-host", requireAuth, requireApproved, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -1459,7 +1431,6 @@ router.post("/audio-circle-sessions/:id/transfer-host", requireAuth, requireAppr
   if (!target) return res.status(404).json({ error: "That user isn't in this session" });
   if (target.role !== "co_host") return res.status(400).json({ error: "You can only transfer host to a co-host" });
 
-  // Atomic swap: former host → co_host, new host → host
   await db
     .update(audioCircleParticipantsTable)
     .set({ role: "co_host" })
@@ -1476,11 +1447,12 @@ router.post("/audio-circle-sessions/:id/transfer-host", requireAuth, requireAppr
       eq(audioCircleParticipantsTable.user_id, parsed.data.user_id),
     ));
 
-  // Update the session's host_id
   await db
     .update(audioCircleSessionsTable)
     .set({ host_id: parsed.data.user_id })
     .where(eq(audioCircleSessionsTable.id, sessionId));
+
+  logModerationAction("transfer_host", sessionId, actingUserId, parsed.data.user_id);
 
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
     type: "circle_host_transfer",
@@ -1496,8 +1468,6 @@ router.post("/audio-circle-sessions/:id/transfer-host", requireAuth, requireAppr
 
 // ── Follow / Unfollow ────────────────────────────────────────────────────────
 
-// POST /audio-circles/:id/follow — subscribe to a circle so the user receives
-// a circle_went_live notification when a new session starts.
 router.post("/audio-circles/:id/follow", requireAuth, generalApiLimiter, async (req, res) => {
   const circleId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(circleId)) return res.status(400).json({ error: "Invalid id" });
@@ -1512,12 +1482,11 @@ router.post("/audio-circles/:id/follow", requireAuth, generalApiLimiter, async (
       .values({ user_id: userId, circle_id: circleId })
       .onConflictDoNothing();
   } catch {
-    // onConflictDoNothing handles the unique constraint; any other error is a real failure
+    // onConflictDoNothing handles the unique constraint
   }
   return res.json({ ok: true, following: true });
 });
 
-// POST /audio-circles/:id/unfollow — stop receiving went-live notifications.
 router.post("/audio-circles/:id/unfollow", requireAuth, generalApiLimiter, async (req, res) => {
   const circleId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(circleId)) return res.status(400).json({ error: "Invalid id" });
@@ -1530,16 +1499,9 @@ router.post("/audio-circles/:id/unfollow", requireAuth, generalApiLimiter, async
 });
 
 // ── Block & Report ──────────────────────────────────────────────────────────
-// These endpoints provide host moderation tools for community safety.
-// Block prevents a user from rejoining the host's circles; Report logs
-// an incident for admin review. Both now persist to dedicated tables
-// (migration 0084) so they survive session end.
 
 const BlockBody = z.object({ user_id: z.number().int().positive() });
 
-// POST /audio-circle-sessions/:id/block — host or co-host blocks a user from
-// this session and any future sessions they host. Persists to circle_blocks
-// so the block survives session end and is enforced on future joins.
 router.post("/audio-circle-sessions/:id/block", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -1554,7 +1516,6 @@ router.post("/audio-circle-sessions/:id/block", requireAuth, generalApiLimiter, 
     return res.status(400).json({ error: "You can't block yourself" });
   }
 
-  // A co-host can't block the host
   const activeParticipants = await getActiveParticipants(sessionId);
   const target = activeParticipants.find(p => p.user_id === parsed.data.user_id);
   if (!target) return res.status(404).json({ error: "That user isn't in this session" });
@@ -1562,12 +1523,8 @@ router.post("/audio-circle-sessions/:id/block", requireAuth, generalApiLimiter, 
     return res.status(403).json({ error: "A co-host can't block the host" });
   }
 
-  // Determine the host_id for the persistent block record. If a co-host is
-  // performing the block, the block is recorded against the session's host_id
-  // so it applies to the host's future circles.
   const blockHostId = session.host_id ?? actingUserId;
 
-  // Remove the user from the current session
   await db
     .update(audioCircleParticipantsTable)
     .set({ left_at: new Date() })
@@ -1578,7 +1535,6 @@ router.post("/audio-circle-sessions/:id/block", requireAuth, generalApiLimiter, 
     ));
   removeCircleParticipant(sessionId, parsed.data.user_id);
 
-  // Persist the block so they can't rejoin this host's future circles
   try {
     await db
       .insert(circleBlocksTable)
@@ -1587,6 +1543,8 @@ router.post("/audio-circle-sessions/:id/block", requireAuth, generalApiLimiter, 
   } catch (err) {
     logger.warn({ err, blockHostId, blocked_user_id: parsed.data.user_id }, "circle block persist failed");
   }
+
+  logModerationAction("block", sessionId, actingUserId, parsed.data.user_id, { blockHostId });
 
   const remaining = await getActiveParticipants(sessionId);
   sendToCircleParticipants(remaining.map(p => p.user_id).concat(parsed.data.user_id), {
@@ -1601,8 +1559,6 @@ const ReportBody = z.object({
   reason: z.string().trim().min(1).max(2000),
 });
 
-// POST /audio-circle-sessions/:id/report — any participant can report
-// another user. The report is persisted to circle_reports for admin review.
 router.post("/audio-circle-sessions/:id/report", requireAuth, generalApiLimiter, async (req, res) => {
   const sessionId = parseInt(String(req.params.id ?? ""), 10);
   if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
@@ -1617,7 +1573,6 @@ router.post("/audio-circle-sessions/:id/report", requireAuth, generalApiLimiter,
     return res.status(400).json({ error: "You can't report yourself" });
   }
 
-  // Persist the report for admin review
   try {
     await db
       .insert(circleReportsTable)
