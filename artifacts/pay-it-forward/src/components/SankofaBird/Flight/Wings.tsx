@@ -28,7 +28,6 @@ import { useBird } from "../Core/Context";
 
 export function RightWing(): React.ReactElement {
   const { wingGradRightId, bodyGradId } = useBird();
-  const wingCyanGradId = `${wingGradRightId}-cyan`;
   const iriCyanGradId      = `${bodyGradId}-iri-cyan`;
   const iriTurquoiseGradId = `${bodyGradId}-iri-turquoise`;
   const iriEmeraldGradId   = `${bodyGradId}-iri-emerald`;

@@ -67,10 +67,10 @@ export function Renderer({
 }: RendererProps): React.ReactElement {
   const {
     size, celebrating, newNotification, accepted, donated, nearbyUser,
-    isHelping, batterySaver, navigating, approaching,
+    isHelping, batterySaver, approaching,
     wairMode, soaring, matingDisplay, missionComplete, chirp,
     communityMilestone, weather,
-    upcomingTurnDirection, speedMs, mapZoom,
+    upcomingTurnDirection, speedMs,
     bankDeg: _bankDeg, effectiveBankDeg, landingPhase, zoomTier,
     isMoving, isGliding: _isGliding, isVisuallyGliding,
     flapPeriodMs, leanDeg, leftWingExtra, rightWingExtra,
