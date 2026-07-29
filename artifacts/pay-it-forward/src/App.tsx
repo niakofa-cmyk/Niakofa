@@ -61,6 +61,7 @@ const DnaConnectionsPage   = lazy(() => import("@/pages/dna-connections"));
 const HeritageCollectionsPage = lazy(() => import("@/pages/heritage-collections"));
 const ResearchCenterPage    = lazy(() => import("@/pages/research-center"));
 const PreserveCulturePage   = lazy(() => import("@/pages/preserve-culture"));
+const LegacyTimelinePage    = lazy(() => import("@/pages/legacy-timeline"));
 
 // Minimal spinner shown while a lazy chunk is loading.
 // Kept intentionally simple — just a centred, low-opacity dot so the
@@ -310,7 +311,7 @@ function AppShell() {
             <Route path="/diaspora/heritage" component={HeritageCollectionsPage} />
             <Route path="/diaspora/research" component={ResearchCenterPage} />
             <Route path="/diaspora/preserve" component={PreserveCulturePage} />
-            <Route path="/diaspora/timeline" component={FamilyTreePage} />
+            <Route path="/diaspora/timeline" component={LegacyTimelinePage} />
             <Route path="/diaspora" component={DiasporaDashboardPage} />
             <Route component={NotFound} />
           </Switch>
@@ -402,9 +403,9 @@ function App() {
         <TooltipProvider>
           <AppProvider>
             <SpiritEnvironmentProvider>
-            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <AppContent />
-            </WouterRouter>
+              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                <AppContent />
+              </WouterRouter>
             </SpiritEnvironmentProvider>
             <Toaster />
           </AppProvider>
