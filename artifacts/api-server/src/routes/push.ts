@@ -1,7 +1,7 @@
 import { Router } from "express";
 import webpush from "web-push";
 import { db, pushSubscriptionsTable, usersTable, userSettingsTable } from "@workspace/db";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { sendAlertEmail } from "../lib/mailer";
 import { logger } from "../lib/logger";
 import { requireAuth } from "../middlewares/auth";
@@ -12,7 +12,6 @@ const router = Router();
 const VAPID_PUBLIC = process.env["VAPID_PUBLIC_KEY"] ?? "";
 const VAPID_PRIVATE = process.env["VAPID_PRIVATE_KEY"] ?? "";
 
-let vapidConfigured = false;
 if (VAPID_PUBLIC && VAPID_PRIVATE) {
   try {
     webpush.setVapidDetails(
@@ -20,7 +19,6 @@ if (VAPID_PUBLIC && VAPID_PRIVATE) {
       VAPID_PUBLIC,
       VAPID_PRIVATE
     );
-    vapidConfigured = true;
     logger.info("web-push: VAPID keys loaded successfully");
   } catch (err) {
     // Invalid VAPID key — log and degrade gracefully. Push notifications will

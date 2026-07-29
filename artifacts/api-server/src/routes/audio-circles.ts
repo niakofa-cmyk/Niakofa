@@ -32,7 +32,7 @@ import {
   cityNeighborhoodsTable,
   usersTable,
 } from "@workspace/db";
-import { eq, and, isNull, desc, asc, sql } from "drizzle-orm";
+import { eq, and, isNull, desc, sql } from "drizzle-orm";
 import { requireAuth, requireApproved } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { normalizeCityKey, ensureNeighborhoodsForCity } from "./community-neighborhoods";
@@ -1631,11 +1631,6 @@ router.get("/audio-circles/recommended", requireAuth, generalApiLimiter, async (
         .slice(0, 20)
         .map(async (c) => {
           const live = await getLiveSession(c.id);
-          const [follow] = await db
-            .select({ id: audioCircleFollowsTable.id })
-            .from(audioCircleFollowsTable)
-            .where(eq(audioCircleFollowsTable.circle_id, c.id))
-            .limit(1);
           const followerCount = await db
             .select({ count: sql<number>`count(*)::int` })
             .from(audioCircleFollowsTable)
@@ -1654,7 +1649,7 @@ router.get("/audio-circles/recommended", requireAuth, generalApiLimiter, async (
             liveData = {
               id: live.id, title: live.title, host_id: live.host_id,
               host_name: host?.name ?? "Someone", video_enabled: live.video_enabled,
-              is_recording: live.is_recording, started_at: live.started_at,
+              is_recording: live.is_recording, started_at: live.started_at.toISOString(),
               topic: live.topic ?? null, description: live.description ?? null,
               speaker_count: participants.filter(p => p.role === "host" || p.role === "speaker" || p.role === "co_host").length,
               listener_count: participants.filter(p => p.role === "listener").length,
@@ -1687,7 +1682,7 @@ router.get("/audio-circles/recommended", requireAuth, generalApiLimiter, async (
 });
 
 // GET /audio-circles/trending — circles with the most active live sessions across all cities.
-router.get("/audio-circles/trending", requireAuth, generalApiLimiter, async (req, res) => {
+router.get("/audio-circles/trending", requireAuth, generalApiLimiter, async (_req, res) => {
   try {
     // Get all live sessions
     const liveSessions = await db
@@ -1796,7 +1791,7 @@ router.get("/audio-circles/nearby", requireAuth, generalApiLimiter, async (req, 
           liveData = {
             id: live.id, title: live.title, host_id: live.host_id,
             host_name: host?.name ?? "Someone", video_enabled: live.video_enabled,
-            is_recording: live.is_recording, started_at: live.started_at,
+            is_recording: live.is_recording, started_at: live.started_at.toISOString(),
             topic: live.topic ?? null, description: live.description ?? null,
             speaker_count: participants.filter(p => p.role === "host" || p.role === "speaker" || p.role === "co_host").length,
             listener_count: participants.filter(p => p.role === "listener").length,

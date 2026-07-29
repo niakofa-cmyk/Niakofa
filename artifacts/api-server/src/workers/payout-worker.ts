@@ -10,7 +10,6 @@
 import { Worker, type Job } from "bullmq";
 import Stripe from "stripe";
 import { db, paymentTransactionsTable, transactionsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
 import { getRedisConnection, QUEUE, type PayoutJobData } from "../lib/queue";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";

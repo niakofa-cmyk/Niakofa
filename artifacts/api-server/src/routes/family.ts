@@ -37,10 +37,8 @@ import { Router } from "express";
 import {
   putAsset,
   streamOrRedirectAsset,
-  getAssetUrl,
   isCloudStorageConfigured,
   getStorageBackend,
-  UPLOADS_BASE,
 } from "../lib/storage";
 import {
   db,

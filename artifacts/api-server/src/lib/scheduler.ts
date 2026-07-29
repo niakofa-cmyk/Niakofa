@@ -8,8 +8,8 @@
  * Users still control fulfillment via the "Pay Now" button, but they get
  * a nudge when their target date arrives.
  */
-import { db, scheduledPaymentsTable, walletCashoutsTable, usersTable, transactionsTable, civicInvoicesTable, civicNeedsTable, governmentSponsorsTable } from "@workspace/db";
-import { eq, and, lte, sql, gte, lt } from "drizzle-orm";
+import { db, scheduledPaymentsTable, walletCashoutsTable, usersTable, transactionsTable } from "@workspace/db";
+import { eq, and, lte, sql } from "drizzle-orm";
 import Stripe from "stripe";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "./logger";
@@ -181,7 +181,7 @@ const PLEDGE_DEFAULT_DAYS = 730;
 
 export async function processPledgeDefaults(): Promise<void> {
   const { db, requestsTable, usersTable } = await import("@workspace/db");
-  const { eq, and, sql, lt } = await import("drizzle-orm");
+  const { eq, and, sql } = await import("drizzle-orm");
 
   let overdue: { id: number; requester_id: number; completed_at: Date | null }[] = [];
   try {
@@ -700,7 +700,7 @@ async function checkLedgerStripeDrift(): Promise<void> {
 const _net30ReminderSent = new Set<string>(); // in-memory dedup (per restart)
 
 async function processNet30InvoiceReminders(): Promise<void> {
-  const { db: dbI, civicInvoicesTable: ciTable, civicNeedsTable: cnTable, governmentSponsorsTable: gsTable, usersTable: uTable } = await import("@workspace/db");
+  const { db: dbI, civicInvoicesTable: ciTable, civicNeedsTable: cnTable, governmentSponsorsTable: gsTable } = await import("@workspace/db");
   const { and: andI, eq: eqI, sql: sqlI, lte: lteI, gte: gteI } = await import("drizzle-orm");
 
   const now = new Date();

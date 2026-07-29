@@ -20,7 +20,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
-import { db, familiesTable, familyMembersTable, familyMemoriesTable, familyInterviewsTable, usersTable } from "@workspace/db";
+import { db, familyMembersTable, familyMemoriesTable, familyInterviewsTable } from "@workspace/db";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../lib/logger";
@@ -77,7 +77,7 @@ router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, re
       vaultItems = memories.length;
     }
 
-    res.json({
+    return res.json({
       stats: {
         family_spaces: familyIds.length,
         vault_items: vaultItems,
@@ -95,7 +95,7 @@ router.get("/diaspora/dashboard", requireAuth, generalApiLimiter, async (req, re
     });
   } catch (err) {
     logger.error({ err }, "diaspora dashboard error");
-    res.status(500).json({ error: "Failed to load dashboard" });
+    return res.status(500).json({ error: "Failed to load dashboard" });
   }
 });
 
@@ -123,7 +123,7 @@ router.get("/diaspora/activity", requireAuth, generalApiLimiter, async (req, res
     .orderBy(desc(familyMemoriesTable.created_at))
     .limit(20);
 
-    res.json({
+    return res.json({
       activities: memories.map(m => ({
         type: m.source === "interview" ? "oral_history" : "memory",
         title: m.title ?? "Untitled",
@@ -134,13 +134,13 @@ router.get("/diaspora/activity", requireAuth, generalApiLimiter, async (req, res
     });
   } catch (err) {
     logger.error({ err }, "diaspora activity error");
-    res.status(500).json({ error: "Failed to load activity" });
+    return res.status(500).json({ error: "Failed to load activity" });
   }
 });
 
 // ─── DNA Connections (mock foundation — real import added later) ───────────────
 router.get("/diaspora/dna/connections", requireAuth, generalApiLimiter, async (_req, res) => {
-  res.json({
+  return res.json({
     summary: {
       total_matches: 0,
       close_family: 0,
@@ -161,7 +161,7 @@ router.post("/diaspora/dna/import", requireAuth, generalApiLimiter, async (req, 
   const body = schema.safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: "Invalid request" });
 
-  res.json({
+  return res.json({
     status: "queued",
     message: `DNA data from ${body.data.provider} queued for processing. You'll be notified when matches are found.`,
     estimated_time: "24-48 hours",
@@ -181,13 +181,13 @@ const HERITAGE_COLLECTIONS = [
 ];
 
 router.get("/diaspora/heritage", requireAuth, generalApiLimiter, (_req, res) => {
-  res.json({ collections: HERITAGE_COLLECTIONS });
+  return res.json({ collections: HERITAGE_COLLECTIONS });
 });
 
 router.get("/diaspora/heritage/:slug", requireAuth, generalApiLimiter, (req, res) => {
   const collection = HERITAGE_COLLECTIONS.find(c => c.slug === req.params.slug);
   if (!collection) return res.status(404).json({ error: "Collection not found" });
-  res.json({ collection, items: [], message: "Community members can contribute items from their personal Family Vaults to shared Heritage Collections." });
+  return res.json({ collection, items: [], message: "Community members can contribute items from their personal Family Vaults to shared Heritage Collections." });
 });
 
 // ─── Research Center ───────────────────────────────────────────────────────────
@@ -202,7 +202,7 @@ const RESEARCH_GUIDES = [
 ];
 
 router.get("/diaspora/research/guides", requireAuth, generalApiLimiter, (_req, res) => {
-  res.json({ guides: RESEARCH_GUIDES });
+  return res.json({ guides: RESEARCH_GUIDES });
 });
 
 // ─── Preserve the Culture — Card Game ─────────────────────────────────────────
@@ -218,7 +218,7 @@ const CULTURE_CARDS = [
 ];
 
 router.get("/diaspora/preserve/cards", requireAuth, generalApiLimiter, (_req, res) => {
-  res.json({ cards: CULTURE_CARDS });
+  return res.json({ cards: CULTURE_CARDS });
 });
 
 router.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, async (req, res) => {
@@ -231,7 +231,7 @@ router.post("/diaspora/preserve/scan", requireAuth, generalApiLimiter, async (re
     return res.json({ type: "card", card, action: "record_story" });
   }
 
-  res.json({
+  return res.json({
     type: "memory_link",
     message: "QR code recognized. Link it to a memory in your Family Vault to preserve this story.",
     action: "link_memory",
@@ -258,7 +258,6 @@ router.get("/family/:id/tree", requireAuth, generalApiLimiter, async (req, res) 
         display_name: familyMembersTable.display_name,
         role: familyMembersTable.role,
         relation_note: familyMembersTable.relation_note,
-        birth_year: familyMembersTable.birth_year,
         user_id: familyMembersTable.user_id,
       })
       .from(familyMembersTable)
@@ -270,14 +269,13 @@ router.get("/family/:id/tree", requireAuth, generalApiLimiter, async (req, res) 
       name: m.display_name,
       role: m.role,
       relation: m.relation_note,
-      birth_year: m.birth_year,
       is_linked_user: !!m.user_id,
     }));
 
-    res.json({ nodes, edges: [], total: members.length });
+    return res.json({ nodes, edges: [], total: members.length });
   } catch (err) {
     logger.error({ err }, "family tree error");
-    res.status(500).json({ error: "Failed to load family tree" });
+    return res.status(500).json({ error: "Failed to load family tree" });
   }
 });
 
@@ -325,10 +323,10 @@ router.get("/family/:id/timeline", requireAuth, generalApiLimiter, async (req, r
       memory_id: m.id,
     }));
 
-    res.json({ events });
+    return res.json({ events });
   } catch (err) {
     logger.error({ err }, "family timeline error");
-    res.status(500).json({ error: "Failed to load timeline" });
+    return res.status(500).json({ error: "Failed to load timeline" });
   }
 });
 

@@ -208,7 +208,7 @@ function normCity(s: string): string {
  */
 export function getResourcesForCity(
   city?: string | null,
-  state?: string | null
+  _state?: string | null
 ): { cityResources: LocalResource[]; national: LocalResource[]; city211?: string } {
   if (!city) {
     return { cityResources: [], national: NATIONAL_RESOURCES };
@@ -235,7 +235,7 @@ export function buildResourceSummary(
   state?: string | null,
   category?: LocalResource["category"] | null
 ): string {
-  const { cityResources, national, city211 } = getResourcesForCity(city, state);
+  const { cityResources, city211 } = getResourcesForCity(city, state);
   
   const cityName = city && state ? `${city}, ${state}` : city ?? "your area";
   const localNumStr = city211 ? ` (call ${city211} for local services)` : " (call 211 for local services)";

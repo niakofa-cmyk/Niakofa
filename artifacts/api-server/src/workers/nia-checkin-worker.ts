@@ -44,8 +44,8 @@
  * misses their Nia check-in due to a single service failure.
  */
 
-import { db, requestsTable, usersTable, systemSettingsTable } from "@workspace/db";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { db, systemSettingsTable } from "@workspace/db";
+import { eq, sql } from "drizzle-orm";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
 

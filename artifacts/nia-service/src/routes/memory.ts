@@ -17,7 +17,6 @@ import { Router, Request, Response } from "express";
 import { getUserMemory, getStructuredMemory } from "../lib/db.js";
 import { parseOptionalAuth } from "../lib/auth.js";
 import { pino } from "pino";
-import pg from "pg";
 
 const logger = pino({ level: "info" });
 const router = Router();

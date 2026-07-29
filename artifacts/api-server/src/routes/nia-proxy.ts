@@ -20,7 +20,7 @@ import { crisisAwareChatLimiter, niaChatHistoryLimiter, adminLimiter } from "../
 import { logger } from "../lib/logger";
 import { db, systemSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { sendNiaEventToUser, broadcastNiaEvent } from "../lib/ws-hub";
+import { sendNiaEventToUser } from "../lib/ws-hub";
 
 const router = Router();
 

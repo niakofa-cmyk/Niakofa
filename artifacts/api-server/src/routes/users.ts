@@ -24,7 +24,6 @@ import { requireOwnership, requireAdmin, resolveMeParam } from "../middlewares/a
 import { signTokenById } from "../middlewares/auth";
 import { logger } from "../lib/logger";
 import { requestSelect } from "../lib/request-select";
-import { userSelect } from "../lib/user-select";
 import { getDefaultCommunityId } from "../lib/community-pool";
 import { isValidSpiritAnimal } from "../lib/spirit-animal";
 

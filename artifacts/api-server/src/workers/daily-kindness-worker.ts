@@ -17,7 +17,7 @@
  */
 
 import { db, requestsTable, usersTable, systemSettingsTable } from "@workspace/db";
-import { and, eq, sql, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { sendPushToUser } from "../routes/push";
 import { logger } from "../lib/logger";
 

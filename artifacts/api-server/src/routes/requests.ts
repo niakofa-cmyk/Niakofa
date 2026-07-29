@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, requireApproved } from "../middlewares/auth";
-import { requireOwnership, requireAdmin } from "../middlewares/authz";
-import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, helperAvailabilityTable, userSettingsTable, businessesTable, businessMembersTable, systemSettingsTable, communityPoolLedgerTable, ratingsTable, hubCommunityLeadersTable, scheduledPaymentsTable, chatMessagesTable, reportsTable } from "@workspace/db";
+import { requireAdmin } from "../middlewares/authz";
+import { db, requestsTable, usersTable, transactionsTable, stripeAccountsTable, paymentTransactionsTable, requestHelpersTable, userSettingsTable, businessesTable, businessMembersTable, systemSettingsTable, communityPoolLedgerTable, ratingsTable, hubCommunityLeadersTable, scheduledPaymentsTable, chatMessagesTable, reportsTable } from "@workspace/db";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import {
   GetRequestsQueryParams,
@@ -11,14 +11,11 @@ import {
   UpdateRequestParams,
   UpdateRequestBody,
   ClaimRequestParams,
-  ClaimRequestBody,
   CompleteRequestParams,
   CompleteRequestBody,
   GetNearbyRequestsQueryParams,
   MarkEnRouteParams,
-  MarkEnRouteBody,
   MarkArrivedParams,
-  MarkArrivedBody,
 } from "@workspace/api-zod";
 import { broadcast, broadcastRequestEvent, sendToUser, sendToRequestParticipants } from "../lib/ws-hub";
 import { requestCreationLimiter, adminLimiter } from "../middlewares/rate-limit";
@@ -26,7 +23,7 @@ import { enqueuePayoutRetry } from "../lib/queue";
 import { sendPushToNearbyHelpers, sendPushToAllHelpers, sendPushToUser, type PushPayload } from "./push";
 import { payHelperFromPool, payHelpersFromPool, getGuaranteedMinimum, isPoolEnabled, queuePendingMinimum, maybeAlertLowBalance, getHourlyMinimumRate, roundMoney } from "../lib/community-pool";
 import { broadcastLeaderboardUpdate } from "./leaderboard";
-import { getTrustTier, getEffectiveTier, meetsQualityGate, TIER_RANK, tierAtLeast, isSensitiveCategory, getHubLeadershipTrustBonus } from "@workspace/trust-tiers";
+import { getTrustTier, meetsQualityGate, TIER_RANK, tierAtLeast, isSensitiveCategory, getHubLeadershipTrustBonus } from "@workspace/trust-tiers";
 import type { TrustTier } from "@workspace/trust-tiers";
 import { stripTags } from "../lib/sanitize";
 import { logger } from "../lib/logger";
@@ -83,18 +80,6 @@ function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): 
     Math.sin(dLat / 2) ** 2 +
     Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function enrichRequest(r: typeof requestsTable.$inferSelect, userMap: Record<number, { name: string; avatar_url: string | null }>, helperName?: string | null, extraFields?: Record<string, unknown>) {
-  return {
-    ...r,
-    requester_name: userMap[r.requester_id]?.name ?? null,
-    requester_avatar: userMap[r.requester_id]?.avatar_url ?? null,
-    helper_name: helperName ?? null,
-    distance_miles: null,
-    estimated_duration_min: null,
-    ...extraFields,
-  };
 }
 
 router.get("/requests/stats", async (_req, res) => {
@@ -2167,7 +2152,7 @@ router.post("/requests/:id/pledge-repay", requireAuth, async (req, res) => {
       return res.status(409).json({ error: "This pledge is already fully paid or resolved." });
     }
     if ((err as Error & { code?: string }).code === "insufficient_balance") {
-      return res.status(402).json({ error: err.message, code: "insufficient_balance" });
+      return res.status(402).json({ error: (err as Error).message, code: "insufficient_balance" });
     }
     throw err;
   }

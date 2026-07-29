@@ -24,7 +24,7 @@
  *   streamOrRedirectAsset(key, res) → Promise<void>  (stream from S3 or sendFile locally)
  */
 
-import { existsSync, mkdirSync, writeFileSync, createReadStream } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import type { Response } from "express";
 import { logger } from "./logger";

@@ -23,8 +23,7 @@ import { startPoolMinimumsWorker } from "./workers/pool-minimums-worker";
 import { startDailyKindnessWorker } from "./workers/daily-kindness-worker";
 import { processRecurringRequests } from "./routes/recurring";
 const RECURRING_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-import { db, usersTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+
 
 const rawPort = process.env["PORT"];
 if (!rawPort) throw new Error("PORT environment variable is required but was not provided.");

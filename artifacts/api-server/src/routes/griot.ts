@@ -19,7 +19,7 @@ import Stripe from "stripe";
 import { db, griotStoriesTable, storyTranslationsTable, griotTranscriptionJobsTable, diasporaHubsTable, usersTable, requestsTable, communityPoolLedgerTable, reportsTable, hubCommunityLeadersTable, diasporaHubPledgesTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { requireAdmin } from "../middlewares/authz";
-import { generalApiLimiter, adminLimiter, paymentLimiter } from "../middlewares/rate-limit";
+import { generalApiLimiter, paymentLimiter } from "../middlewares/rate-limit";
 import { eq, and, desc, sql, gte } from "drizzle-orm";
 import { z } from "zod";
 import { moderatePostText } from "../lib/post-moderation";

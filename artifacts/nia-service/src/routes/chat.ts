@@ -96,7 +96,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
       ...req.locationContext,
       lat: gpsLat,
       lon: gpsLon,
-      gpsAccurate: true,
+      fromClientGPS: true,
     };
   }
 
@@ -441,7 +441,6 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
 
     clearTimeout(timeoutHandle);
     res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
-    res.end();
     await saveConversation(userId, sessionId, message, fullResponse);
 
     // Log cost for monitoring
@@ -459,6 +458,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
     if (userId) {
       extractAndUpdateMemory(userId, userMemory, message, fullResponse, anthropic).catch(() => {});
     }
+    return res.end();
   } catch (err) {
     clearTimeout(timeoutHandle);
     const isTimeout = err instanceof Error && err.name === "AbortError";
@@ -475,7 +475,7 @@ router.post("/chat", parseOptionalAuth, injectLocation, async (req: Request, res
     }).catch(() => {});
     
     res.write(`data: ${JSON.stringify({ type: "error", message: isTimeout ? "Nia took too long to respond. Please try again." : "Nia is unavailable right now. Please try again." })}\n\n`);
-    res.end();
+    return res.end();
   }
 });
 
@@ -681,7 +681,6 @@ router.post("/share-story", parseOptionalAuth, async (req: Request, res: Respons
   // BUG-H06: Require internal secret before doing any Anthropic work
   if (!requireInternalSecret(req, res)) return;
 
-  const userId = (req as Request & { authenticatedUserId?: number }).authenticatedUserId ?? null;
   const body = req.body as Record<string, unknown>;
   const transcript = typeof body.transcript === "string" ? body.transcript.trim() : "";
   const userName   = typeof body.userName   === "string" ? body.userName.trim()   : "A neighbor";

@@ -1065,7 +1065,7 @@ router.patch("/civic/needs/:id/complete", requireAuth, generalApiLimiter, async 
   );
 
   // Alert the sponsor that their need is done and an invoice is waiting.
-  notifySponsorOfCompletion(result.need.id, result.need.government_sponsor_id, result.need.title, result.invoice).catch((err) => {
+  notifySponsorOfCompletion(result.need.government_sponsor_id, result.need.title, result.invoice).catch((err) => {
     logger.error({ err, civic_need_id: id }, "civic-needs: failed to notify sponsor of completion");
   });
 
@@ -1074,7 +1074,6 @@ router.patch("/civic/needs/:id/complete", requireAuth, generalApiLimiter, async 
 
 /** Best-effort push+email alert to the sponsor when their need is completed and invoiced. */
 async function notifySponsorOfCompletion(
-  needId: number,
   govSponsorId: number,
   needTitle: string,
   invoice: { id: number; amount: string; due_date: string },
