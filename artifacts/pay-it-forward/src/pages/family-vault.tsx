@@ -167,6 +167,7 @@ export default function FamilyVaultPage() {
   const hasEverLoaded             = useRef(false);
 
   const [searchQ, setSearchQ]     = useState("");
+  const [mediaFilter, setMediaFilter] = useState<"all" | "photo" | "audio" | "video" | "document">("all");
   const [showAddMemory, setShowAddMemory]     = useState(false);
   const [showInvite, setShowInvite]           = useState(false);
   const [showGedcomImport, setShowGedcomImport] = useState(false);
@@ -431,7 +432,14 @@ export default function FamilyVaultPage() {
             <Loader2 className="w-3.5 h-3.5 animate-spin" /> Refreshing…
           </div>
         )}
-        {memories.map(m => (
+        {memories.filter(m => {
+          if (mediaFilter === "all") return true;
+          if (mediaFilter === "photo") return m.primary_asset?.asset_type === "photo";
+          if (mediaFilter === "audio") return m.source === "interview" || m.primary_asset?.asset_type === "audio";
+          if (mediaFilter === "video") return m.primary_asset?.asset_type === "video";
+          if (mediaFilter === "document") return m.source === "document" || m.primary_asset?.asset_type === "document";
+          return true;
+        }).map(m => (
           <div key={m.id} className="bg-card rounded-2xl border border-border overflow-hidden">
             <button
               onClick={() => navigate(`/family/${familyId}/memory/${m.id}`)}
@@ -598,6 +606,26 @@ export default function FamilyVaultPage() {
                 className="w-full pl-9 pr-3 py-2 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                 style={{ fontSize: "16px" }}
               />
+            </div>
+            {/* Media type filter chips */}
+            <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
+              {(["all","photo","audio","video","document"] as const).map(ft => {
+                const counts: Record<string, number> = {
+                  all: memories.length,
+                  photo: memories.filter(m => m.primary_asset?.asset_type === "photo").length,
+                  audio: memories.filter(m => m.source === "interview" || m.primary_asset?.asset_type === "audio").length,
+                  video: memories.filter(m => m.primary_asset?.asset_type === "video").length,
+                  document: memories.filter(m => m.source === "document" || m.primary_asset?.asset_type === "document").length,
+                };
+                const labels: Record<string,string> = { all: "All", photo: "Photos", audio: "Audio", video: "Videos", document: "Docs" };
+                if (ft !== "all" && counts[ft] === 0) return null;
+                return (
+                  <button key={ft} onClick={() => setMediaFilter(ft)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${mediaFilter === ft ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                    {labels[ft]} {counts[ft] > 0 && <span className="opacity-60">{counts[ft]}</span>}
+                  </button>
+                );
+              })}
             </div>
             {memoriesBody}
           </>
