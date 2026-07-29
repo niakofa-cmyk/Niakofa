@@ -14,7 +14,7 @@ import {
   BookHeart, Mic, TreePine, Dna, Library, GraduationCap,
   Layers, Clock, Users, ChevronRight, Star, Sparkles,
   ScrollText, Globe, History, MessageSquare, ArrowRight,
-  Loader2, Heart,
+  Loader2, Heart, Search,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -112,20 +112,32 @@ export default function DiasporaDashboardPage() {
       {/* Hero Header */}
       <div className="relative overflow-hidden bg-gradient-to-br from-[#1a0e00] via-[#2a1500] to-[#1a0e00] border-b border-amber-800/30">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-amber-600/10 via-transparent to-transparent" />
-        <div className="relative max-w-lg mx-auto px-4 pt-12 pb-8">
-          <p className="text-amber-400/70 text-sm font-medium mb-1">Welcome back,</p>
-          <h1 className="text-2xl font-bold text-amber-100 mb-2">{displayName}</h1>
-          <p className="text-amber-400/60 text-xs">
+        <div className="relative max-w-lg mx-auto px-4 pt-10 pb-6">
+          <p className="text-amber-400/70 text-sm font-medium mb-0.5">Welcome back,</p>
+          <h1 className="text-2xl font-bold text-amber-100 mb-1">{displayName}</h1>
+          <p className="text-amber-400/60 text-xs mb-4">
             Building our legacy in {locale} and beyond.
           </p>
 
+          {/* Search bar */}
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-400/50" />
+            <input
+              placeholder="Search memories, people, places…"
+              className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-amber-400/10 border border-amber-400/20 text-amber-100 placeholder:text-amber-400/40 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+              style={{ fontSize: "16px" }}
+              onFocus={() => navigate("/family")}
+              readOnly
+            />
+          </div>
+
           {loading ? (
-            <div className="flex items-center gap-2 mt-4">
+            <div className="flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin text-amber-400/60" />
               <span className="text-xs text-amber-400/60">Loading your legacy…</span>
             </div>
           ) : stats ? (
-            <div className="mt-5 grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {[
                 { label: "Family Spaces", value: stats.family_spaces, href: "/family" },
                 { label: "Vault Items", value: stats.vault_items, href: "/family" },

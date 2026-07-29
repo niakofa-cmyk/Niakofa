@@ -1,11 +1,12 @@
 /**
  * Family Spaces — Diaspora Platform
  * Lists all Family Spaces the current user belongs to and allows creating new ones.
+ * Includes My Spaces / Invitations tabs.
  */
 
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Users, Plus, ChevronRight, BookHeart, Lock, Globe, Loader2 } from "lucide-react";
+import { Users, Plus, ChevronRight, BookHeart, Lock, Globe, Loader2, Mail, Crown, UserCheck } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
@@ -17,7 +18,12 @@ interface FamilySpace {
   cover_image_url: string | null;
   created_at: string;
   my_role: "owner" | "curator" | "contributor" | "viewer";
+  member_count?: number;
+  memory_count?: number;
+  status?: string;
 }
+
+type SpaceTab = "mine" | "invitations";
 
 export default function FamilySpacesPage() {
   const { currentUser } = useAppContext();
@@ -28,6 +34,7 @@ export default function FamilySpacesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [formName, setFormName] = useState("");
   const [formDesc, setFormDesc] = useState("");
+  const [spaceTab, setSpaceTab] = useState<SpaceTab>("mine");
 
   useEffect(() => {
     if (!currentUser) return;
@@ -75,6 +82,11 @@ export default function FamilySpacesPage() {
     }
   }
 
+  // Invitations = spaces where I was invited (viewer/contributor from someone else) but haven't accepted
+  // We represent them as spaces where status would be "invited" — for now show pending-status members
+  const mySpaces = families.filter(f => f.my_role !== "viewer" || !f.status || f.status !== "invited");
+  const invitations = families.filter(f => f.status === "invited");
+
   if (!currentUser) {
     return (
       <div className="flex items-center justify-center h-full min-h-screen bg-background">
@@ -103,6 +115,34 @@ export default function FamilySpacesPage() {
           >
             <Plus className="w-4 h-4" />
             New Space
+          </button>
+        </div>
+
+        {/* My Spaces / Invitations Tabs */}
+        <div className="max-w-lg mx-auto flex mt-3 border-b border-border -mb-4">
+          <button
+            onClick={() => setSpaceTab("mine")}
+            className={`flex-1 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${
+              spaceTab === "mine" ? "text-primary border-b-2 border-primary" : "text-muted-foreground"
+            }`}
+          >
+            <BookHeart className="w-3.5 h-3.5" />
+            My Spaces
+            {mySpaces.length > 0 && (
+              <span className="ml-1 bg-primary/15 text-primary text-xs px-1.5 py-0.5 rounded-full">{mySpaces.length}</span>
+            )}
+          </button>
+          <button
+            onClick={() => setSpaceTab("invitations")}
+            className={`flex-1 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${
+              spaceTab === "invitations" ? "text-primary border-b-2 border-primary" : "text-muted-foreground"
+            }`}
+          >
+            <Mail className="w-3.5 h-3.5" />
+            Invitations
+            {invitations.length > 0 && (
+              <span className="ml-1 bg-amber-500/20 text-amber-500 text-xs px-1.5 py-0.5 rounded-full">{invitations.length}</span>
+            )}
           </button>
         </div>
       </div>
@@ -171,8 +211,46 @@ export default function FamilySpacesPage() {
           </div>
         )}
 
-        {/* Empty state */}
-        {!loading && families.length === 0 && (
+        {/* Invitations tab */}
+        {!loading && spaceTab === "invitations" && (
+          <div className="space-y-3">
+            {invitations.length === 0 ? (
+              <div className="text-center py-16 space-y-3">
+                <Mail className="w-12 h-12 text-muted-foreground/30 mx-auto" />
+                <p className="font-semibold text-muted-foreground">No pending invitations</p>
+                <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+                  When family members invite you to their Family Space, you'll see it here.
+                </p>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
+                  Pending Invitations ({invitations.length})
+                </p>
+                {invitations.map(f => (
+                  <div key={f.id} className="bg-card border border-amber-500/30 rounded-2xl p-4 flex items-center gap-3">
+                    <div className="w-14 h-14 rounded-xl bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                      <Mail className="w-7 h-7 text-amber-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-foreground truncate">{f.name}</p>
+                      <p className="text-xs text-amber-500 mt-0.5">Pending invitation</p>
+                    </div>
+                    <button
+                      onClick={() => navigate(`/family/${f.id}`)}
+                      className="bg-primary text-primary-foreground px-3 py-1.5 rounded-lg text-xs font-medium active:opacity-80"
+                    >
+                      View
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Empty state (My Spaces tab) */}
+        {!loading && spaceTab === "mine" && mySpaces.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-center gap-4 px-4">
             <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
               <BookHeart className="w-10 h-10 text-primary" />
@@ -197,23 +275,23 @@ export default function FamilySpacesPage() {
                 { icon: <Lock className="w-5 h-5" />, label: "Private by default" },
                 { icon: <Globe className="w-5 h-5" />, label: "Share oral histories" },
                 { icon: <Users className="w-5 h-5" />, label: "Invite family members" },
-              ].map(f => (
-                <div key={f.label} className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-muted/50 text-center">
-                  <div className="text-primary">{f.icon}</div>
-                  <span className="text-xs text-muted-foreground leading-tight">{f.label}</span>
+              ].map(ftr => (
+                <div key={ftr.label} className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-muted/50 text-center">
+                  <div className="text-primary">{ftr.icon}</div>
+                  <span className="text-xs text-muted-foreground leading-tight">{ftr.label}</span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Family list */}
-        {!loading && families.length > 0 && (
+        {/* Family list (My Spaces tab) */}
+        {!loading && spaceTab === "mine" && mySpaces.length > 0 && (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
-              Your Family Spaces
+              Your Family Spaces ({mySpaces.length})
             </p>
-            {families.map(f => (
+            {mySpaces.map(f => (
               <button
                 key={f.id}
                 onClick={() => navigate(`/family/${f.id}`)}
@@ -236,7 +314,11 @@ export default function FamilySpacesPage() {
                     <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{f.description}</p>
                   )}
                   <span className="inline-flex items-center gap-1 mt-1 text-xs text-primary font-medium capitalize">
+                    {f.my_role === "owner" ? <Crown className="w-3 h-3" /> : f.my_role === "curator" ? <UserCheck className="w-3 h-3" /> : <Users className="w-3 h-3 opacity-60" />}
                     {f.my_role}
+                    {f.member_count != null && (
+                      <span className="ml-1.5 text-muted-foreground font-normal">{f.member_count} members</span>
+                    )}
                   </span>
                 </div>
 

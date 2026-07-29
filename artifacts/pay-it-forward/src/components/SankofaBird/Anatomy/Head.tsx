@@ -572,7 +572,7 @@ export function Egg(): React.ReactElement {
           cy="15.6"
           r="1.45"
           fill={(celebrating || donated) ? `url(#${eggGoldGradId})` : `url(#${eggGradId})`}
-          stroke={(celebrating || donated) ? "#f0b800" : "#00D4FF"
+          stroke={(celebrating || donated) ? "#f0b800" : "#00D4FF"}
           strokeWidth="0.35"
         />
 
