@@ -92,7 +92,6 @@ function CardSkeleton() {
 
 export function DispatchIntelligenceCard({
   requestId,
-  requestTitle,
   requestCategory,
   onHelperAssigned,
   wsVersion,

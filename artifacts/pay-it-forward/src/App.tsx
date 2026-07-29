@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter, useRoute, useLocation } from "wouter";
+import { Switch, Route, Router as WouterRouter, useRoute } from "wouter";
 import { QueryClient, QueryClientProvider, keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Shield, CheckCircle2, Clock, X, ChevronRight, Camera, FileText, Loader2, AlertTriangle } from "lucide-react";
+import { Shield, CheckCircle2, Clock, ChevronRight, Camera, FileText, Loader2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -157,7 +157,7 @@ export function IdentityVerificationCard() {
         <AnimatePresence>
           {showPanicContacts && (
             <motion.div
-              initial={{ height: 0, opacity: 0 }}
+n              initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"

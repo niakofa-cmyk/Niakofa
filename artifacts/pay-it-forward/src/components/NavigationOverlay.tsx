@@ -126,7 +126,7 @@ function distanceToRoute(
 
 /** Remaining distance from current position to destination along route */
 function remainingDistance(
-  lat: number, lng: number,
+  _lat: number, _lng: number,
   steps: RouteStep[],
   currentStepIdx: number
 ): number {
@@ -159,7 +159,7 @@ export function NavigationOverlay({
   onDistanceUpdate,
   onStepAdvance,
 }: NavigationOverlayProps) {
-  const [, setLocation] = useLocation();
+  const [,] = useLocation();
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [offRoute, setOffRoute] = useState(false);
   const [arrived, setArrived] = useState(false);
