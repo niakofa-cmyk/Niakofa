@@ -157,7 +157,7 @@ export function IdentityVerificationCard() {
         <AnimatePresence>
           {showPanicContacts && (
             <motion.div
-n              initial={{ height: 0, opacity: 0 }}
+              initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
