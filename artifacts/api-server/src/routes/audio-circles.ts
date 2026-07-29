@@ -1221,7 +1221,7 @@ function broadcastRecordingStatus(sessionId: number, status: string) {
         payload: { session_id: sessionId, recording_status: status },
       });
     })
-    .catch(() => {});
+    .catch(err => { logger.warn({ err, sessionId }, "audio-circles: recording status WS notification failed"); });
 }
 
 const RecordingUrlBody = z.object({ recording_url: z.string().url().max(2048) });
