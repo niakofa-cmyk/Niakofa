@@ -27,7 +27,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, info: ErrorInfo) {
+  override componentDidCatch(error: Error, info: ErrorInfo) {
     // Log to console in development. In production you could send this
     // to a monitoring service (Sentry, Datadog, etc.)
     console.error("ErrorBoundary caught:", error, info.componentStack);
@@ -37,7 +37,7 @@ export class ErrorBoundary extends Component<Props, State> {
     window.location.reload();
   }
 
-  render() {
+  override render() {
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;
 

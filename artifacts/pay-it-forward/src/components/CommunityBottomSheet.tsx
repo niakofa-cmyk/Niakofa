@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { motion, useDragControls } from "framer-motion";
 import { useLocation } from "wouter";
 import { ChevronUp, HeartHandshake, Building2, Landmark, Clock } from "lucide-react";
@@ -22,15 +22,6 @@ interface CommunityBottomSheetProps {
   onSelectResource: (resource: CivicResourceNearby) => void;
 }
 
-/**
- * Community-mode counterpart to BottomSheet.tsx — same drag/collapse
- * mechanics, but the list mixes three data families (online helpers, open
- * civic needs, resources/help centers) instead of one. Kept as a separate
- * component rather than generalizing BottomSheet because the row shape,
- * sort key (distance only — no urgency), and tap targets are different
- * enough that a shared abstraction would need as many branches as just
- * having two components.
- */
 export function CommunityBottomSheet({ helpers, needs, resources, onSelectResource }: CommunityBottomSheetProps) {
   const [, setLocation] = useLocation();
   const [expanded, setExpanded] = useState(false);
@@ -44,8 +35,6 @@ export function CommunityBottomSheet({ helpers, needs, resources, onSelectResour
   }, [helpers, needs, resources]);
 
   const toggleExpanded = () => setExpanded(v => !v);
-
-  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   return (
     <motion.div

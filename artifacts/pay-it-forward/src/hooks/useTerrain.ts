@@ -1,21 +1,6 @@
 import { useEffect, type RefObject } from "react";
-import type mapboxgl from "mapbox-gl";
+import type * as mapboxgl from "mapbox-gl";
 
-/**
- * useTerrain
- *
- * Adds Mapbox 3D terrain elevation and extruded buildings after map load.
- * Building colors use Niakofa's navy palette (--card: hsl(222, 47%, 7%))
- * so they feel native to the dark-v11 map style.
- *
- * mapRef is a ref, so its identity never changes — a naive
- * `useEffect(..., [mapRef])` only runs once on mount, often before the
- * map has actually been created (mapRef.current is still null at that
- * point), and then never runs again. This version polls briefly for
- * mapRef.current to become available, then attaches setup() to that
- * map's load lifecycle, so terrain/3D buildings reliably appear
- * regardless of mount timing.
- */
 export function useTerrain(mapRef: RefObject<mapboxgl.Map | null>): void {
   useEffect(() => {
     let removed = false;
