@@ -1,5 +1,4 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import type mapboxgl from "mapbox-gl";
 import { useLocation } from "wouter";
 import Map, { Marker, Source, Layer } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -798,7 +797,7 @@ export default function MapScreen() {
   const handleMapLoad = useCallback(() => {
     const lang = detectMapLanguage();
     if (lang !== "en" && mapRef.current) {
-      localizeMapLabels(mapRef.current, lang);
+      localizeMapLabels(mapRef.current as any, lang);
     }
 
     mapRef.current?.on("moveend", () => {

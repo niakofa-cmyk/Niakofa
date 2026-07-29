@@ -12,7 +12,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { businessesTable, businessMembersTable, usersTable } from "@workspace/db";
-import { sql, eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {

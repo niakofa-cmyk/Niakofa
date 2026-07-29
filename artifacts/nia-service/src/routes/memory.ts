@@ -14,18 +14,13 @@
  * adds userId from token). These routes are the nia-service implementation.
  */
 import { Router, Request, Response } from "express";
-import { getUserMemory, getStructuredMemory, upsertUserMemory, upsertStructuredMemory } from "../lib/db.js";
+import { getUserMemory, getStructuredMemory } from "../lib/db.js";
 import { parseOptionalAuth } from "../lib/auth.js";
 import { pino } from "pino";
 import pg from "pg";
 
 const logger = pino({ level: "info" });
 const router = Router();
-
-// Internal helper to delete memory rows directly
-async function deleteUserMemory(pool: pg.Pool, userId: number): Promise<void> {
-  await pool.query(`DELETE FROM nia_memories WHERE user_id = $1`, [userId]);
-}
 
 // GET /memory/:userId — read memory for a user
 // Protected: Bearer token userId must match :userId

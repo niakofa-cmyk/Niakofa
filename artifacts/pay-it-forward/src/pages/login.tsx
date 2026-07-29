@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Heart, Mail, User, Lock, Eye, EyeOff, Loader2, MapPin, Shield,
+  Mail, User, Lock, Eye, EyeOff, Loader2, MapPin, Shield,
   KeyRound, CheckCircle2, ChevronDown, ChevronUp, Globe, Car, Wrench,
   Clock, AlertCircle, Sparkles, MessageCircle,
 } from "lucide-react";

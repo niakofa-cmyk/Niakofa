@@ -14,7 +14,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useLocation, useRoute } from "wouter";
 import {
   ChevronLeft, AlertCircle, ShieldCheck, Users, MapPin, DollarSign,
-  RefreshCw, CheckCircle2, Send, TrendingUp, Heart, Globe2, Coins,
+  RefreshCw, CheckCircle2, TrendingUp, Heart, Globe2, Coins,
   ArrowUpRight, BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";

@@ -46,7 +46,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import bcrypt from "bcryptjs";
 import { usersTable } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 // ── Database connection ──────────────────────────────────────────────────────
 

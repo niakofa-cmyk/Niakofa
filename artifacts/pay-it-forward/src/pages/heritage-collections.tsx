@@ -6,7 +6,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
-  ArrowLeft, Library, ChevronRight, Search, Loader2,
+  ArrowLeft, Library, Search, Loader2,
   Globe, Star, BookOpen, Layers, Users, ArrowRight,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";

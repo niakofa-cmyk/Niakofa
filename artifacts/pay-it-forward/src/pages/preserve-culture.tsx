@@ -12,8 +12,8 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowLeft, Layers, Mic, ChevronRight, Loader2,
-  QrCode, ArrowRight, BookHeart, X, RotateCcw,
-  Shuffle, Share2, ChevronLeft,
+  QrCode, BookHeart, X, RotateCcw,
+  Shuffle, ChevronLeft,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";

@@ -4,7 +4,7 @@ import { timingSafeEqual } from "node:crypto";
 import { checkSafety } from "../lib/safety.js";
 import { saveConversation, getRecentHistory, getScrollbackHistory, checkRateLimit, getActiveRequest, getUserMemory, upsertUserMemory, isNiaEnabled, logNiaCost, getDailyCostSummary } from "../lib/db.js";
 import { NIA_SYSTEM_PROMPT } from "../prompts/nia.js";
-import { injectLocation, buildLocationPrefix, buildAppContextPrefix, LocationContext } from "../middleware/location.js";
+import { injectLocation, buildLocationPrefix, buildAppContextPrefix } from "../middleware/location.js";
 import { pino } from "pino";
 import { parseOptionalAuth } from "../lib/auth.js";
 import { getFreshKnowledge } from "../workers/continuous-learning-worker.js";

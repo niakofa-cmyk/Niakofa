@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, boolean, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum } from "drizzle-orm/pg-core";
 
 export const reportTypeEnum = pgEnum("report_type", [
   "suspicious_request",

@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, boolean, timestamp, doublePrecision, pgEnum, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, boolean, timestamp, doublePrecision, pgEnum, index } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { requestsTable } from "./requests";
 import { gratitudePostsTable } from "./gratitude";
