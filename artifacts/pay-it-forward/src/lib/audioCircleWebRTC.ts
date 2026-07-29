@@ -362,7 +362,6 @@ export class AudioCircleMesh {
         // the same groupId so only keep the non-default/non-comms alias.
         .filter((d, _idx, arr) => {
           if (!d.label) return true;
-          const l = d.label.toLowerCase();
           const isAlias = /^default\s*[-–]|^communications\s*[-–]/i.test(d.label);
           if (!isAlias) return true;
           // Only keep the alias when no canonical device with the same groupId exists

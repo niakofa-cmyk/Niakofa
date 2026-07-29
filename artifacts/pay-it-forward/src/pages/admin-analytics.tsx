@@ -15,11 +15,11 @@ import { useEffect, useState } from "react";
 import { authHeaders } from "@/lib/auth";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
+  PieChart, Pie, Cell,
 } from "recharts";
 import {
-  Users, CheckCircle2, Mic, Globe, ShieldAlert,
-  TrendingUp, DollarSign, RefreshCw,
+  Users, CheckCircle2, Mic, ShieldAlert,
+  DollarSign, RefreshCw,
 } from "lucide-react";
 
 // ── types ────────────────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ export default function AdminAnalyticsDashboard() {
   }
 
   const { overview, requests_by_category, daily_request_volume,
-    pledge_pool, reports_by_status, reports_by_type,
+    pledge_pool, reports_by_status,
     trust_score_distribution, voice_activation, language_distribution } = data;
 
   const langData = language_distribution.map(l => ({
@@ -186,7 +186,7 @@ export default function AdminAnalyticsDashboard() {
           sub={`${overview.recent_completions_24h} in last 24h`} />
         <KpiCard icon={Users} label="Helpers Online" value={overview.total_helpers_online}
           sub={`${overview.total_open} open requests`} />
-        <KpiCard icon={Mic} label="Voice Rate (7d)" value={`${voice_activation.rate_pct}%`}
+        <KpiCard icon={Mic} label="Voice Rate (7d)" value={`${voice_activation.rate_pct}%`
           sub={`${voice_activation.voice_activated_7d} of ${voice_activation.total_requests_7d}`} />
       </div>
 
