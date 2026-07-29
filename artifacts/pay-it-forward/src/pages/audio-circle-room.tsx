@@ -55,6 +55,7 @@ interface SessionInfo {
   max_speakers: number;
   topic?: string | null;
   description?: string | null;
+  started_at?: string | null;
 }
 
 type ConnectionStatus = "connecting" | "connected" | "reconnecting" | "lost";
@@ -1726,6 +1727,12 @@ export default function AudioCircleRoomScreen() {
               )}
               <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
                 <span className="font-bold text-green-400">LIVE</span>
+                {session.is_recording && (
+                  <span className="inline-flex items-center gap-1 text-red-400 font-bold">
+                    <CircleIcon className="w-2.5 h-2.5 fill-red-500 text-red-500 animate-pulse" />
+                    {recordingTimer}
+                  </span>
+                )}
                 <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {participants.length} in room</span>
                 <span className="flex items-center gap-1"><Mic className="w-3 h-3" /> {speakers.length + cohosts.length + (host ? 1 : 0)} on stage</span>
                 <ConnectionQualityIndicator status={connectionStatus} />
@@ -3290,6 +3297,7 @@ function ManagementPanelBody({
       {/* Room Controls */}
       <div>
         <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Room Controls</div>
+        {/* 3-column grid for utility buttons */}
         <div className="grid grid-cols-3 gap-2">
           <RoomControlButton icon={VolumeX} label="Mute All" onClick={onMuteAll} />
           <RoomControlButton icon={Hand} label="Lower All" onClick={onLowerAll} />
@@ -3311,28 +3319,42 @@ function ManagementPanelBody({
           <RoomControlButton icon={Share2} label="Share Circle" onClick={onShare} />
           <RoomControlButton icon={UserPlus} label="Invite" onClick={onOpenInvite} />
           <RoomControlButton icon={Settings} label="Settings" onClick={onOpenSettings} />
-          <RoomControlButton
-            icon={CircleIcon}
-            label={recordingOn ? "Stop Recording" : "Start Recording"}
-            onClick={onToggleRecording}
-            disabled={recordingDisabled || !isHost}
-            tone="record"
-          />
           {isHost && onOpenTransfer && (
             <RoomControlButton icon={Crown} label="Transfer Host" onClick={onOpenTransfer} />
           )}
-          {/* Past recordings — always visible when the circle has ended recordings */}
           <RoomControlButton
             icon={PlayCircle}
             label="Past Recordings"
             onClick={() => {
-              // This button is rendered inside ManagementPanelBody which doesn't
-              // own the archive state directly. We bubble up via a custom event so
-              // the room component (which owns the state) can handle it.
+              // Bubble up via a custom event so the room component (which owns
+              // the archive state) can handle it without prop-drilling.
               window.dispatchEvent(new CustomEvent("circle:open-archive"));
             }}
           />
-          <RoomControlButton icon={PhoneOff} label="End Circle" onClick={onEndCircle} tone="danger" />
+        </div>
+        {/* Full-width primary action buttons */}
+        <div className="mt-2 space-y-2">
+          {isHost && (
+            <button
+              onClick={onToggleRecording}
+              disabled={recordingDisabled}
+              className={`w-full flex items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-bold transition-colors disabled:opacity-40 ${
+                recordingOn
+                  ? "border-red-500/40 bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                  : "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20"
+              }`}
+            >
+              <CircleIcon className={`w-4 h-4 ${recordingOn ? "fill-red-500 text-red-500 animate-pulse" : ""}`} />
+              {recordingOn ? "Stop Recording" : "Start Recording"}
+            </button>
+          )}
+          <button
+            onClick={onEndCircle}
+            className="w-full flex items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 py-2.5 text-sm font-bold text-red-400 hover:bg-red-500/20 transition-colors"
+          >
+            <PhoneOff className="w-4 h-4" />
+            End Circle
+          </button>
         </div>
       </div>
 
