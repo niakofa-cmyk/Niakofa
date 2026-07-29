@@ -6,6 +6,10 @@
  *  1. Draw a card with a conversation prompt
  *  2. Record a response as an oral history
  *  3. QR code links physical card → digital memory in vault
+ *
+ * Enhancements:
+ *  - Card fan display (previous cards fanned behind current card)
+ *  - Sticky bottom QR scan CTA bar
  */
 
 import { useState, useEffect } from "react";
@@ -116,8 +120,15 @@ export default function PreserveCulturePage() {
   const currentCard = cards[currentIdx];
   const colors = currentCard ? (COLOR_STYLES[currentCard.color] ?? COLOR_STYLES.amber) : COLOR_STYLES.amber;
 
+  // Previous cards for fan display (up to 3 behind current)
+  const fanCards = cards.length > 3 && currentIdx > 0
+    ? [Math.max(0, currentIdx - 3), Math.max(0, currentIdx - 2), Math.max(0, currentIdx - 1)]
+        .map((idx, i) => ({ card: cards[idx], offset: i - 2 }))
+        .filter(f => f.card && f.offset < 0)
+    : [];
+
   return (
-    <div className="min-h-screen bg-background pb-28">
+    <div className="min-h-screen bg-background pb-32">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
@@ -202,51 +213,82 @@ export default function PreserveCulturePage() {
               </div>
             </div>
 
-            {/* The Card */}
-            <div
-              className={`relative rounded-3xl overflow-hidden border ${colors.border} cursor-pointer select-none`}
-              style={{ minHeight: 280 }}
-              onClick={() => setFlipped(f => !f)}
-            >
-              <div className={`absolute inset-0 bg-gradient-to-br ${colors.cardBg}`} />
-              <div className="relative p-6 flex flex-col justify-between h-full" style={{ minHeight: 280 }}>
-                {/* Card header */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className={`text-xs font-semibold uppercase tracking-wider ${colors.text}`}>
-                      {currentCard.category}
-                    </span>
-                    <h3 className="text-xl font-bold text-white mt-1">{currentCard.title}</h3>
-                  </div>
-                  <div className={`w-10 h-10 rounded-xl ${colors.bg} flex items-center justify-center`}>
-                    <Layers className={`w-5 h-5 ${colors.text}`} />
-                  </div>
-                </div>
-
-                {/* Card body */}
-                {!flipped ? (
-                  <div className="mt-6">
-                    <p className="text-white/90 text-base leading-relaxed font-medium">{currentCard.prompt}</p>
-                    <div className="mt-4 flex items-center gap-1.5">
-                      <RotateCcw className={`w-3.5 h-3.5 ${colors.text} opacity-60`} />
-                      <p className={`text-xs ${colors.text} opacity-60`}>Tap for follow-up question</p>
+            {/* Card Fan + Current Card */}
+            <div className="relative" style={{ minHeight: 300 }}>
+              {/* Fan cards (previous cards behind current) */}
+              {fanCards.map((f, i) => {
+                const fc = COLOR_STYLES[f.card.color] ?? COLOR_STYLES.amber;
+                const rotate = f.offset * 6;
+                const translateX = f.offset * 12;
+                const scale = 1 + f.offset * 0.03;
+                return (
+                  <div
+                    key={f.card.id}
+                    className={`absolute inset-0 rounded-3xl overflow-hidden border ${fc.border} pointer-events-none`}
+                    style={{
+                      transform: `translateX(${translateX}px) rotate(${rotate}deg) scale(${scale})`,
+                      zIndex: i,
+                      opacity: 0.4 + (f.offset + 3) * 0.15,
+                      minHeight: 280,
+                    }}
+                  >
+                    <div className={`absolute inset-0 bg-gradient-to-br ${fc.cardBg}`} />
+                    <div className="relative p-6 flex flex-col items-center justify-center h-full" style={{ minHeight: 280 }}>
+                      <Layers className={`w-8 h-8 ${fc.text} opacity-40`} />
+                      <p className={`text-sm font-semibold ${fc.text} opacity-50 mt-2`}>{f.card.title}</p>
                     </div>
                   </div>
-                ) : (
-                  <div className="mt-6">
-                    <p className={`text-xs font-semibold ${colors.text} uppercase tracking-wider mb-2`}>Follow-up</p>
-                    <p className="text-white/90 text-base leading-relaxed font-medium">{currentCard.follow_up}</p>
-                    <div className="mt-4 flex items-center gap-1.5">
-                      <RotateCcw className={`w-3.5 h-3.5 ${colors.text} opacity-60`} />
-                      <p className={`text-xs ${colors.text} opacity-60`}>Tap to see main prompt</p>
+                );
+              })}
+
+              {/* Current card */}
+              <div
+                className={`relative rounded-3xl overflow-hidden border ${colors.border} cursor-pointer select-none transition-transform`}
+                style={{ minHeight: 280, zIndex: 10 }}
+                onClick={() => setFlipped(f => !f)}
+              >
+                <div className={`absolute inset-0 bg-gradient-to-br ${colors.cardBg}`} />
+                <div className="relative p-6 flex flex-col justify-between h-full" style={{ minHeight: 280 }}>
+                  {/* Card header */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className={`text-xs font-semibold uppercase tracking-wider ${colors.text}`}>
+                        {currentCard.category}
+                      </span>
+                      <h3 className="text-xl font-bold text-white mt-1">{currentCard.title}</h3>
+                    </div>
+                    <div className={`w-10 h-10 rounded-xl ${colors.bg} flex items-center justify-center`}>
+                      <Layers className={`w-5 h-5 ${colors.text}`} />
                     </div>
                   </div>
-                )}
 
-                {/* Card ID / QR reference */}
-                <div className="flex items-center justify-between mt-4">
-                  <span className="text-xs text-white/30 font-mono">{currentCard.id}</span>
-                  <QrCode className="w-4 h-4 text-white/20" />
+                  {/* Card body */}
+                  {!flipped ? (
+                    <div className="mt-6">
+                      <p className="text-white/90 text-base leading-relaxed font-medium">{currentCard.prompt}</p>
+                      <div className="mt-4 flex items-center gap-1.5">
+                        <RotateCcw className={`w-3.5 h-3.5 ${colors.text} opacity-60`} />
+                        <p className={`text-xs ${colors.text} opacity-60`}>Tap for follow-up question</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-6">
+                      <p className={`text-xs font-semibold ${colors.text} uppercase tracking-wider mb-2`}>Follow-up</p>
+                      <p className="text-white/90 text-base leading-relaxed font-medium">
+                        {currentCard.follow_up}
+                      </p>
+                      <div className="mt-4 flex items-center gap-1.5">
+                        <RotateCcw className={`w-3.5 h-3.5 ${colors.text} opacity-60`} />
+                        <p className={`text-xs ${colors.text} opacity-60`}>Tap to flip back</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Card footer */}
+                  <div className="mt-4 flex items-center justify-between">
+                    <span className={`text-xs ${colors.text} opacity-50`}>{currentCard.id}</span>
+                    <QrCode className="w-4 h-4 text-white/20" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -326,6 +368,18 @@ export default function PreserveCulturePage() {
             <p className="text-muted-foreground">No cards loaded</p>
           </div>
         )}
+      </div>
+
+      {/* Sticky bottom QR scan CTA */}
+      <div className="fixed bottom-0 left-0 right-0 z-20 bg-background/95 backdrop-blur border-t border-border px-4 py-3">
+        <div className="max-w-lg mx-auto">
+          <button
+            onClick={() => setShowQrScanner(true)}
+            className="w-full flex items-center justify-center gap-2 bg-orange-500 text-white rounded-xl py-3 text-sm font-bold active:opacity-80"
+          >
+            <QrCode className="w-5 h-5" /> Scan QR Code
+          </button>
+        </div>
       </div>
 
       {/* ── QR Scanner Modal ──────────────────────────────────────────── */}
