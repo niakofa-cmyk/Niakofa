@@ -1,6 +1,11 @@
 /**
  * Diaspora Dashboard — Hub for all Diaspora & Family features
  * Route: /diaspora
+ *
+ * Enhancements:
+ *  - Locale-aware subtitle ("Building our legacy in Fort Worth, TX and beyond.")
+ *  - Activity feed supports thumbnail images
+ *  - "Our Legacy Lives On" promotional banner before the Mission Footer
  */
 
 import { useState, useEffect } from "react";
@@ -9,7 +14,7 @@ import {
   BookHeart, Mic, TreePine, Dna, Library, GraduationCap,
   Layers, Clock, Users, ChevronRight, Star, Sparkles,
   ScrollText, Globe, History, MessageSquare, ArrowRight,
-  Loader2,
+  Loader2, Heart,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -30,6 +35,8 @@ interface ActivityItem {
   time: string;
   family_id: number;
   memory_id?: number;
+  thumbnail_url?: string;
+  media_type?: string;
 }
 
 const FEATURE_CARDS = [
@@ -96,6 +103,9 @@ export default function DiasporaDashboardPage() {
   }
 
   const displayName = currentUser.display_name ?? currentUser.username ?? "Welcome";
+  const locale = (currentUser as Record<string, unknown>).city as string | undefined
+    || (currentUser as Record<string, unknown>).locale as string | undefined
+    || "Fort Worth, TX";
 
   return (
     <div className="min-h-screen bg-background pb-28">
@@ -106,7 +116,7 @@ export default function DiasporaDashboardPage() {
           <p className="text-amber-400/70 text-sm font-medium mb-1">Welcome back,</p>
           <h1 className="text-2xl font-bold text-amber-100 mb-2">{displayName}</h1>
           <p className="text-amber-400/60 text-xs">
-            Diaspora Dashboard · Preserve Our Past. Empower Our Future.
+            Building our legacy in {locale} and beyond.
           </p>
 
           {loading ? (
@@ -202,13 +212,22 @@ export default function DiasporaDashboardPage() {
                   onClick={() => a.memory_id ? navigate(`/family/${a.family_id}/memory/${a.memory_id}`) : navigate(`/family/${a.family_id}`)}
                   className="w-full flex items-center gap-3 p-3 bg-card border border-border rounded-xl active:opacity-70 text-left"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    {a.type === "oral_history" ? (
-                      <Mic className="w-4 h-4 text-primary" />
-                    ) : (
-                      <BookHeart className="w-4 h-4 text-primary" />
-                    )}
-                  </div>
+                  {a.thumbnail_url ? (
+                    <img
+                      src={a.thumbnail_url}
+                      alt=""
+                      className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      {a.type === "oral_history" ? (
+                        <Mic className="w-4 h-4 text-primary" />
+                      ) : (
+                        <BookHeart className="w-4 h-4 text-primary" />
+                      )}
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{a.title}</p>
                     <p className="text-xs text-muted-foreground">{relativeTime(a.time)}</p>
@@ -237,7 +256,7 @@ export default function DiasporaDashboardPage() {
                 <Dna className="w-5 h-5 text-blue-400" />
               </div>
               <div>
-                <p className="font-semibold text-foreground text-sm">Discover Your Connections</p>
+                <p className="font-semibold text-sm">Discover Your Connections</p>
                 <p className="text-xs text-muted-foreground">Import DNA data from AncestryDNA, 23andMe & more</p>
               </div>
             </div>
@@ -274,7 +293,7 @@ export default function DiasporaDashboardPage() {
                 <button
                   key={c.slug}
                   onClick={() => navigate("/diaspora/heritage")}
-                  className={`flex items-center gap-2.5 p-3 rounded-xl ${c.bg} border border-transparent active:opacity-70 text-left`}
+                  className={`flex items-center gap-2 p-3 rounded-xl border ${c.bg} ${c.color} border-border/50 active:opacity-70`}
                 >
                   <Icon className={`w-4 h-4 ${c.color} flex-shrink-0`} />
                   <span className={`text-xs font-medium ${c.color} leading-tight`}>{c.label}</span>
@@ -344,6 +363,26 @@ export default function DiasporaDashboardPage() {
                 </button>
               );
             })}
+          </div>
+        </section>
+
+        {/* Our Legacy Lives On Banner */}
+        <section>
+          <div className="rounded-2xl bg-gradient-to-br from-amber-600/20 via-rose-600/10 to-amber-900/20 border border-amber-500/30 p-6 text-center">
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <Heart className="w-5 h-5 text-rose-400" />
+              <h2 className="text-lg font-bold text-amber-200">Our Legacy Lives On</h2>
+            </div>
+            <p className="text-sm text-amber-100/80 leading-relaxed mb-4 max-w-sm mx-auto">
+              Every photo you preserve, every story you record, every connection you make —
+              ensures that future generations will know where they came from and who they are.
+            </p>
+            <button
+              onClick={() => navigate("/family")}
+              className="bg-amber-500 text-amber-950 px-6 py-2.5 rounded-xl text-sm font-bold active:opacity-80"
+            >
+              Start Preserving Today
+            </button>
           </div>
         </section>
 
