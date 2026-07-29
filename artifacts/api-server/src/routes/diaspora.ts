@@ -29,7 +29,7 @@ import {
   familyInterviewsTable,
   familyTreeRelationsTable,
 } from "@workspace/db";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../lib/logger";
 
