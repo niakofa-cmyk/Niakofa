@@ -750,7 +750,7 @@ export function NiaDrawer({
   const locationLabel = resolvedCity
     ? (resolvedCounty ? `${resolvedCity}, ${resolvedCounty} Co.` : resolvedCity)
     : resolvedCounty ?? null;
-  const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const [userCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [liveContext, setLiveContext] = useState<NiaContext | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -830,11 +830,7 @@ export function NiaDrawer({
           const profile = getProfile(userLang);
           setMessages([{
             role: "nia",
-            content: `${profile.greetingResponse}
-
-${profile.niaIntro}
-
-${profile.helpPrompt}`,
+            content: `${profile.greetingResponse}\n\n${profile.niaIntro}\n\n${profile.helpPrompt}`,
             timestamp: new Date(),
             lang: userLang,
           }]);
@@ -844,9 +840,7 @@ ${profile.helpPrompt}`,
       .catch(() => {
         setMessages([{
           role: "nia",
-          content: `Sawubona — I see you. Akwaaba, you are welcome here.
-
-I am Nia. How can I support you today?`,
+          content: `Sawubona — I see you. Akwaaba, you are welcome here.\n\nI am Nia. How can I support you today?`,
           timestamp: new Date(),
         }]);
         setHistoryLoaded(true);
@@ -1031,11 +1025,7 @@ I am Nia. How can I support you today?`,
           if (last?.role === "nia" && last.streaming) {
             updated[updated.length - 1] = {
               role: "nia",
-              content: `Nia is resting right now 💙
-
-She'll be back soon. In the meantime, all of Niakofa's community features — the map, requests, helpers, and your wallet — are fully available.
-
-If this is an emergency: call 112 (most countries) · 999 (UK) · 911 (US/Canada). Crisis support worldwide: findahelpline.com`,
+              content: `Nia is resting right now 💙\n\nShe'll be back soon. In the meantime, all of Niakofa's community features — the map, requests, helpers, and your wallet — are fully available.\n\nIf this is an emergency: call 112 (most countries) · 999 (UK) · 911 (US/Canada). Crisis support worldwide: findahelpline.com`,
               streaming: false,
               timestamp: new Date(),
             };
@@ -1055,11 +1045,7 @@ If this is an emergency: call 112 (most countries) · 999 (UK) · 911 (US/Canada
           if (last?.role === "nia" && last.streaming) {
             updated[updated.length - 1] = {
               role: "nia",
-              content: `You've reached your daily message limit with me. 💜
-
-Your limit resets at ${reset}. Rest well — I'll be here when you return.
-
-🆘 Emergency: 112 (global) · 999 (UK) · 911 (US). Crisis support: findahelpline.com · 988 (US).`,
+              content: `You've reached your daily message limit with me. 💜\n\nYour limit resets at ${reset}. Rest well — I'll be here when you return.\n\n🆘 Emergency: 112 (global) · 999 (UK) · 911 (US). Crisis support: findahelpline.com · 988 (US).`,
               streaming: false,
               timestamp: new Date(),
             };
@@ -1491,8 +1477,6 @@ export function NiaFab({
   const [fabY, setFabY] = useState(() => safeRead("nia_fab_y", 0));
   const [isDragging, setIsDragging] = useState(false);
   const dragStartTime = useRef(0);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const dragStartPos = useRef({ x: 0, y: 0 });
 
   // Dormant tooltip — shown briefly on tap when Nia is disabled
   const [tooltipVisible, setTooltipVisible] = useState(false);

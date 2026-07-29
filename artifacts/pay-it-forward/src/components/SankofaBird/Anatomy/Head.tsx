@@ -29,9 +29,6 @@ import { useBird } from "../Core/Context";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function Neck(): React.ReactElement {
-  const { bodyGradId } = useBird();
-  const neckGradId = `${bodyGradId}-neck`;
-
   // Two-segment Bezier neck — lower bone (body→mid) + upper bone (mid→head).
   // Each bone rotates at its own pivot point, driven by the MotionSolver vars
   // --sme-neck-lower-deg (banking / body-roll) and --sme-neck-upper-deg
@@ -333,7 +330,7 @@ export function Crest(): React.ReactElement {
 export function Eye(): React.ReactElement {
   return (
     <>
-      {/*
+      { /*
        * Eye architecture:
        *
        *  sankofa-eye-scan-group  — slow 16-second micro-scan (CSS transform).
@@ -545,7 +542,6 @@ export function Egg(): React.ReactElement {
   const { celebrating, donated, eggGradId, eggGoldGradId, bankDeg, bodyGradId } = useBird();
   const glowHaloId    = `${bodyGradId}-halo`;
   const eggWarmGradId = `${bodyGradId}-egg-warm`;
-  const eggGlowFilterId = `${bodyGradId}-egg-glow`;
 
   return (
     <>
@@ -576,7 +572,7 @@ export function Egg(): React.ReactElement {
           cy="15.6"
           r="1.45"
           fill={(celebrating || donated) ? `url(#${eggGoldGradId})` : `url(#${eggGradId})`}
-          stroke={(celebrating || donated) ? "#f0b800" : "#00D4FF"}
+          stroke={(celebrating || donated) ? "#f0b800" : "#00D4FF"
           strokeWidth="0.35"
         />
 
