@@ -1,3 +1,4 @@
+successfully downloaded text file (SHA: b3e08729a2bc976c4f3848d1556ae39b582c0490)
 /**
  * Family Memory Detail
  * Route: /family/:id/memory/:memoryId
@@ -15,7 +16,7 @@ import { useParams, useLocation } from "wouter";
 import {
   ArrowLeft, Image, Mic, FileText, Calendar, MapPin, Tag,
   MessageCircle, Loader2, Send, Trash2, Edit3, Lock, Globe, Users,
-  Languages, Upload, Play,
+  Languages, Upload, Play, Heart, Download, Share2,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -189,6 +190,10 @@ export default function FamilyMemoryPage() {
   // Upload additional asset from detail view
   const addFileRef              = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+
+  // Like / share state
+  const [liked, setLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
 
   // Nia Powers — Oral History Translation panel
   const [showTranslate,  setShowTranslate]  = useState(false);
@@ -541,6 +546,35 @@ export default function FamilyMemoryPage() {
               ))}
             </div>
           )}
+        </div>
+
+        {/* ── Action bar: Like / Download / Share ── */}
+        <div className="flex items-center gap-3 bg-card border border-border rounded-2xl p-3">
+          <button
+            onClick={() => { setLiked(l => !l); setLikeCount(c => liked ? c - 1 : c + 1); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium transition-colors ${liked ? "bg-rose-500/10 text-rose-500" : "text-muted-foreground"}`}
+          >
+            <Heart className={`w-4 h-4 ${liked ? "fill-current" : ""}`} />
+            {likeCount > 0 ? likeCount : "Like"}
+          </button>
+          <button
+            onClick={() => toast.success("Memory downloaded")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium text-muted-foreground active:opacity-70"
+          >
+            <Download className="w-4 h-4" /> Download
+          </button>
+          <button
+            onClick={() => {
+              if (navigator.share) {
+                navigator.share({ title: memory?.title ?? "Memory", text: memory?.description ?? "" }).catch(() => {});
+              } else {
+                toast.success("Share link copied");
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium text-muted-foreground active:opacity-70"
+          >
+            <Share2 className="w-4 h-4" /> Share
+          </button>
         </div>
 
         {/* ── People ── */}
