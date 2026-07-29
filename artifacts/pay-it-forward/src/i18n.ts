@@ -14,6 +14,7 @@ const en = {
     nearby: "Nearby",
     active_job: "Active Job",
     family: "Family",
+    diaspora: "Diaspora",
   },
   common: {
     loading: "Loading…",
@@ -143,6 +144,7 @@ const es: typeof en = {
     nearby: "Cercanas",
     active_job: "Trabajo Activo",
     family: "Familia",
+    diaspora: "Diáspora",
   },
   common: {
     loading: "Cargando…",

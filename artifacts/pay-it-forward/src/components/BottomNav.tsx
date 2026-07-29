@@ -1,5 +1,5 @@
 import { useLocation, Link } from "wouter";
-import { Map, Users, DollarSign, Radio, Navigation2, Wallet, Bell, X, SlidersHorizontal, BookHeart } from "lucide-react";
+import { Map, Users, DollarSign, Radio, Navigation2, Wallet, Bell, X, SlidersHorizontal, BookHeart, Globe2 } from "lucide-react";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -25,8 +25,8 @@ type Tab = { path: string; icon: React.ElementType; labelKey: string; center?: b
 const BASE_TABS: Tab[] = [
   { path: "/community",     icon: Users,      labelKey: "nav.community" },
   { path: "/",              icon: Map,        labelKey: "nav.map"       },
+  { path: "/diaspora",      icon: Globe2,     labelKey: "nav.diaspora"  },
   { path: "/family",        icon: BookHeart,  labelKey: "nav.family"    },
-  { path: "/audio-circles", icon: Radio,      labelKey: "nav.circles"   },
   { path: "/wallet",        icon: Wallet,     labelKey: "nav.wallet"    },
 ];
 

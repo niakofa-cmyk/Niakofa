@@ -55,6 +55,12 @@ const CivicTaskNavPage     = lazy(() => import("@/pages/civic-task-nav"));
 const FamilySpacesPage     = lazy(() => import("@/pages/family-spaces"));
 const FamilyVaultPage      = lazy(() => import("@/pages/family-vault"));
 const FamilyMemoryPage     = lazy(() => import("@/pages/family-memory"));
+const DiasporaDashboardPage = lazy(() => import("@/pages/diaspora-dashboard"));
+const FamilyTreePage        = lazy(() => import("@/pages/family-tree"));
+const DnaConnectionsPage   = lazy(() => import("@/pages/dna-connections"));
+const HeritageCollectionsPage = lazy(() => import("@/pages/heritage-collections"));
+const ResearchCenterPage    = lazy(() => import("@/pages/research-center"));
+const PreserveCulturePage   = lazy(() => import("@/pages/preserve-culture"));
 
 // Minimal spinner shown while a lazy chunk is loading.
 // Kept intentionally simple — just a centred, low-opacity dot so the
@@ -298,6 +304,14 @@ function AppShell() {
             <Route path="/family" component={FamilySpacesPage} />
             <Route path="/family/:id/memory/:memoryId" component={FamilyMemoryPage} />
             <Route path="/family/:id" component={FamilyVaultPage} />
+            <Route path="/diaspora/tree" component={FamilyTreePage} />
+            <Route path="/diaspora/tree/:familyId" component={FamilyTreePage} />
+            <Route path="/diaspora/dna" component={DnaConnectionsPage} />
+            <Route path="/diaspora/heritage" component={HeritageCollectionsPage} />
+            <Route path="/diaspora/research" component={ResearchCenterPage} />
+            <Route path="/diaspora/preserve" component={PreserveCulturePage} />
+            <Route path="/diaspora/timeline" component={FamilyTreePage} />
+            <Route path="/diaspora" component={DiasporaDashboardPage} />
             <Route component={NotFound} />
           </Switch>
         </Suspense>
