@@ -3403,10 +3403,9 @@ interface SpeakerTileProps {
   onBlock: () => void;
   onReport: () => void;
   onAssignCohost?: () => void;
-  onRemoveCohost?: () => void;
 }
 
-function SpeakerTile({ participant: s, isMe, level, isActiveSpeaker, isLoudest, canMod, modMenuOpen, onOpenMod, onMute, onDemote, onKick, onBlock, onReport, onAssignCohost, onRemoveCohost }: SpeakerTileProps) {
+function SpeakerTile({ participant: s, isMe, level, isActiveSpeaker, isLoudest, canMod, modMenuOpen, onOpenMod, onMute, onDemote, onKick, onBlock, onReport, onAssignCohost }: SpeakerTileProps) {
   const isSpeaking = level > 0.12 || isActiveSpeaker;
   return (
     <div className="flex flex-col items-center gap-1 relative">
@@ -3495,11 +3494,6 @@ function SpeakerTile({ participant: s, isMe, level, isActiveSpeaker, isLoudest, 
             {onAssignCohost && (
               <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-blue-400" onClick={onAssignCohost}>
                 <Shield className="w-3 h-3" /> Make Co-host
-              </button>
-            )}
-            {onRemoveCohost && (
-              <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-blue-400" onClick={onRemoveCohost}>
-                <Shield className="w-3 h-3" /> Remove Co-host
               </button>
             )}
             <button className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted text-red-400" onClick={onKick}>
