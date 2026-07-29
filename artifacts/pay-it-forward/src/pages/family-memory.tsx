@@ -1,4 +1,3 @@
-successfully downloaded text file (SHA: b3e08729a2bc976c4f3848d1556ae39b582c0490)
 /**
  * Family Memory Detail
  * Route: /family/:id/memory/:memoryId
