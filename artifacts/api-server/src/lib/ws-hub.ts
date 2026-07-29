@@ -94,6 +94,7 @@ export type WsEventType =
   | "circle_reaction"
   | "circle_recording_changed"
   | "circle_recording_available"
+  | "circle_recording_status_updated"
   | "circle_host_disconnected"
   | "circle_host_reconnected"
   | "circle_muted"

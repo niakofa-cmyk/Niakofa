@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, boolean, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { communitiesTable } from "./communities";
 import { cityNeighborhoodsTable } from "./city-neighborhoods";
 import { usersTable } from "./users";
@@ -59,6 +59,13 @@ export const audioCircleSessionsTable = pgTable("audio_circle_sessions", {
   video_enabled:   boolean("video_enabled").notNull().default(false),
   is_recording:    boolean("is_recording").notNull().default(false),
   recording_url:   text("recording_url"), // set once the host stops recording and it's uploaded
+  // Recording lifecycle: none | recording | processing | ready | failed
+  recording_status: text("recording_status").notNull().default("none"),
+  recording_duration_seconds: integer("recording_duration_seconds"),
+  recording_size_bytes: integer("recording_size_bytes"),
+  transcript:      text("transcript"),
+  ai_summary:      text("ai_summary"),
+  chapter_markers: jsonb("chapter_markers"),
   // Host-configurable speaker limit (4 / 8 / 12 / 13 / 18 / 24).
   // 13 = historic default (host + 12 speakers). Max enforced server-side in /promote.
   max_speakers:    integer("max_speakers").notNull().default(13),

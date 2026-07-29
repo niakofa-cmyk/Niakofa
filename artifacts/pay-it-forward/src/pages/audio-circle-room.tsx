@@ -8,6 +8,7 @@ import {
   Signal, SignalHigh, SignalMedium, SignalLow, Share2,
   Shield, MoreVertical, ArrowLeft, MessageSquare, Settings,
   UserPlus, Send, X, PlayCircle, ExternalLink, Check,
+  Search, Pause, Play, FileText, Clock, HardDrive,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders, getToken } from "@/lib/auth";
@@ -35,11 +36,22 @@ interface Participant {
   avatar_url: string | null;
 }
 
+interface ChapterMarker {
+  start: number;
+  end?: number;
+  title: string;
+}
+
 interface RecordingArchiveEntry {
   id: number;
   title: string;
   host_name: string | null;
   recording_url: string;
+  recording_status: string;
+  recording_duration_seconds: number | null;
+  recording_size_bytes: number | null;
+  ai_summary: string | null;
+  chapter_markers: ChapterMarker[] | null;
   started_at: string;
   ended_at: string | null;
 }
@@ -222,7 +234,31 @@ function useElapsedLabel(isoTimestamp: string | null | undefined): string {
 }
 
 // ── Recording timer ──────────────────────────────────────────────────────────
-function useRecordingTimer(running: boolean) {
+function formatDuration(seconds: number | null | undefined): string {
+  if (!seconds || seconds <= 0) return "--:--";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function formatSeconds(seconds: number): string {
+  if (!seconds || seconds <= 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function formatFileSize(bytes: number | null | undefined): string {
+  if (!bytes || bytes <= 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function useRecordingTimer(running: boolean): [string, number] {
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
     if (!running) { setSeconds(0); return; }
@@ -231,7 +267,7 @@ function useRecordingTimer(running: boolean) {
   }, [running]);
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
-  return `${mm}:${ss}`;
+  return [`${mm}:${ss}`, seconds];
 }
 
 // ── Host / Co-host hero broadcast tile ───────────────────────────────────────
@@ -539,6 +575,11 @@ export default function AudioCircleRoomScreen() {
   const [showRecordingArchive, setShowRecordingArchive] = useState(false);
   const [recordingArchive, setRecordingArchive] = useState<RecordingArchiveEntry[]>([]);
   const [loadingArchive, setLoadingArchive] = useState(false);
+  const [archiveSearch, setArchiveSearch] = useState("");
+  const [selectedRecording, setSelectedRecording] = useState<RecordingArchiveEntry | null>(null);
+  const [audioPlayerTime, setAudioPlayerTime] = useState(0);
+  const [audioPlayerPlaying, setAudioPlayerPlaying] = useState(false);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   // ── Host transfer modal ────────────────────────────────────────────────────
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -566,6 +607,7 @@ export default function AudioCircleRoomScreen() {
   const meshRef = useRef<AudioCircleMesh | null>(null);
   const audioElsRef = useRef<Map<number, HTMLAudioElement>>(new Map());
   const isRecordingRef = useRef(false);
+  const recordingElapsedSecondsRef = useRef(0);
   const analyserCleanupsRef = useRef<Map<string, () => void>>(new Map());
   const signalHandlerRef = useRef<((e: WsEvent) => void) | null>(null);
   // One shared AudioContext for ALL volume analysers in this session — avoids
@@ -606,7 +648,10 @@ export default function AudioCircleRoomScreen() {
 
   useEffect(() => { setMediaCapabilities(getAudioCircleMediaCapabilities()); }, []);
 
-  const recordingTimer = useRecordingTimer(!!session?.is_recording);
+  const [recordingTimer, recordingElapsedSeconds] = useRecordingTimer(!!session?.is_recording);
+
+  // Keep the ref in sync so uploadRecording can send the actual elapsed duration
+  useEffect(() => { recordingElapsedSecondsRef.current = recordingElapsedSeconds; }, [recordingElapsedSeconds]);
 
   // Sync settings form when modal opens
   useEffect(() => {
@@ -874,7 +919,7 @@ export default function AudioCircleRoomScreen() {
   }, [remoteStreams]);
 
   // ── Upload recording blob (with retry + IndexedDB recovery) ─────────────
-  const uploadRecording = useCallback(async (blob: Blob) => {
+  const uploadRecording = useCallback(async (blob: Blob, elapsedSeconds?: number) => {
     if (!isHost) return;
     // Persist to IDB first — if the upload fails, the blob is recoverable
     // after a page reload (see the on-mount recovery check below).
@@ -884,7 +929,9 @@ export default function AudioCircleRoomScreen() {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
         const token = getToken();
-        const res = await fetch(`${base}/api/audio-circle-sessions/${sessionId}/recording-upload`, {
+        const duration = elapsedSeconds ?? recordingElapsedSecondsRef.current;
+        const uploadUrl = `${base}/api/audio-circle-sessions/${sessionId}/recording-upload${duration > 0 ? `?duration=${duration}` : ""}`;
+        const res = await fetch(uploadUrl, {
           method: "POST",
           headers: {
             "Content-Type": blob.type || "audio/webm",
@@ -895,6 +942,20 @@ export default function AudioCircleRoomScreen() {
         if (res.ok) {
           await clearRecordingFromIdb(sessionId);
           toast({ title: "Recording saved", description: "The circle recording is now available in past recordings." });
+          // Send metadata (duration + size) to the backend so the archive
+          // can show it even before AI processing completes.
+          if (duration > 0) {
+            try {
+              await fetch(`${base}/api/audio-circle-sessions/${sessionId}/recording-metadata`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json", ...authHeaders() },
+                body: JSON.stringify({
+                  recording_duration_seconds: duration,
+                  recording_size_bytes: blob.size,
+                }),
+              });
+            } catch { /* best-effort — metadata is nice-to-have */ }
+          }
           setUploading(false);
           return;
         }
@@ -1069,10 +1130,12 @@ export default function AudioCircleRoomScreen() {
     setSession(prev => prev ? { ...prev, is_recording: p.is_recording } : prev);
     if (isHost) {
       if (p.is_recording && !wasRecording) {
+        recordingElapsedSecondsRef.current = 0;
         meshRef.current?.startRecording();
       } else if (!p.is_recording && wasRecording) {
+        const elapsed = recordingElapsedSecondsRef.current;
         meshRef.current?.stopRecording().then((blob) => {
-          if (blob && blob.size > 0) uploadRecording(blob);
+          if (blob && blob.size > 0) uploadRecording(blob, elapsed);
         });
       }
     }
@@ -1092,6 +1155,22 @@ export default function AudioCircleRoomScreen() {
     const p = e.payload as { session_id: number };
     if (p.session_id !== sessionId) return;
     if (!isHost) toast({ title: "Recording available", description: "Check Past Recordings." });
+  });
+
+  useWebSocket("circle_recording_status_updated", (e) => {
+    const p = e.payload as { session_id: number; recording_status: string };
+    if (p.session_id !== sessionId) return;
+    // Refresh the archive if it's open so the new status/summary appears.
+    if (showRecordingArchive) {
+      setRecordingArchive(prev => prev.map(r =>
+        r.id === p.session_id ? { ...r, recording_status: p.recording_status } : r
+      ));
+    }
+    if (p.recording_status === "ready") {
+      toast({ title: "Recording processed", description: "AI summary and chapters are ready." });
+    } else if (p.recording_status === "failed") {
+      toast({ title: "AI processing failed", description: "The recording is still available without a summary.", variant: "destructive" });
+    }
   });
 
   useWebSocket("circle_session_ended", (e) => {
@@ -1637,6 +1716,7 @@ export default function AudioCircleRoomScreen() {
         return;
       }
       isRecordingRef.current = true;
+      recordingElapsedSecondsRef.current = 0;
       setSession(prev => prev ? { ...prev, is_recording: true } : prev);
       try {
         meshRef.current?.startRecording();
@@ -1663,7 +1743,7 @@ export default function AudioCircleRoomScreen() {
       return;
     }
     const blob = await meshRef.current?.stopRecording();
-    if (blob && blob.size > 0) await uploadRecording(blob);
+    if (blob && blob.size > 0) await uploadRecording(blob, recordingElapsedSecondsRef.current);
   };
 
   // ── Pre-join device check ──────────────────────────────────────────────────
@@ -1947,10 +2027,10 @@ export default function AudioCircleRoomScreen() {
           <motion.div
             className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={() => setShowRecordingArchive(false)}
+            onClick={() => { setShowRecordingArchive(false); setSelectedRecording(null); }}
           >
             <motion.div
-              className="bg-card border border-border rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
+              className="bg-card border border-border rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden"
               initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }}
               transition={{ duration: 0.2 }}
               onClick={e => e.stopPropagation()}
@@ -1960,46 +2040,193 @@ export default function AudioCircleRoomScreen() {
                   <PlayCircle className="w-4 h-4 text-primary" />
                   <span className="font-black text-sm">Past Recordings</span>
                 </div>
-                <button onClick={() => setShowRecordingArchive(false)} className="text-muted-foreground hover:text-foreground">
+                <button onClick={() => { setShowRecordingArchive(false); setSelectedRecording(null); }} className="text-muted-foreground hover:text-foreground">
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="overflow-y-auto flex-1 p-4 space-y-3">
+
+              {/* Hidden audio element for in-app playback */}
+              <audio
+                ref={audioPlayerRef}
+                src={selectedRecording?.recording_url ?? undefined}
+                onTimeUpdate={(e) => setAudioPlayerTime((e.target as HTMLAudioElement).currentTime)}
+                onPlay={() => setAudioPlayerPlaying(true)}
+                onPause={() => setAudioPlayerPlaying(false)}
+                onEnded={() => setAudioPlayerPlaying(false)}
+              />
+
+              {/* In-app player bar (shown when a recording is selected) */}
+              {selectedRecording && (
+                <div className="px-4 py-3 border-b border-border bg-muted/30 shrink-0">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        if (audioPlayerPlaying) audioPlayerRef.current?.pause();
+                        else audioPlayerRef.current?.play();
+                      }}
+                      className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 hover:opacity-90"
+                    >
+                      {audioPlayerPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold truncate">{selectedRecording.title || "Circle Recording"}</div>
+                      <div className="text-[11px] text-muted-foreground flex items-center gap-2">
+                        <Clock className="w-3 h-3" />
+                        {formatDuration(selectedRecording.recording_duration_seconds)}
+                        {selectedRecording.recording_size_bytes && (
+                          <span className="flex items-center gap-1">
+                            <HardDrive className="w-3 h-3" />
+                            {formatFileSize(selectedRecording.recording_size_bytes)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <a
+                      href={selectedRecording.recording_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 p-2 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground"
+                      onClick={e => e.stopPropagation()}
+                      title="Open in new tab"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  </div>
+                  {/* Seek bar */}
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground font-mono w-8 text-right">{formatSeconds(audioPlayerTime)}</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={selectedRecording.recording_duration_seconds ?? 0}
+                      value={audioPlayerTime}
+                      onChange={(e) => {
+                        const t = parseFloat(e.target.value);
+                        if (audioPlayerRef.current) audioPlayerRef.current.currentTime = t;
+                        setAudioPlayerTime(t);
+                      }}
+                      className="flex-1 h-1.5 accent-primary cursor-pointer"
+                    />
+                    <span className="text-[10px] text-muted-foreground font-mono w-8">{formatDuration(selectedRecording.recording_duration_seconds)}</span>
+                  </div>
+
+                  {/* AI Summary */}
+                  {selectedRecording.ai_summary && (
+                    <div className="mt-3 bg-primary/5 border border-primary/20 rounded-xl p-3">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <FileText className="w-3.5 h-3.5 text-primary" />
+                        <span className="text-[11px] font-black text-primary">AI Summary</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">{selectedRecording.ai_summary}</p>
+                    </div>
+                  )}
+
+                  {/* Chapter Markers */}
+                  {selectedRecording.chapter_markers && selectedRecording.chapter_markers.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Chapters</div>
+                      {selectedRecording.chapter_markers.map((ch, i) => (
+                        <button
+                          key={i}
+                          onClick={() => {
+                            if (audioPlayerRef.current) {
+                              audioPlayerRef.current.currentTime = ch.start;
+                              audioPlayerRef.current.play();
+                            }
+                          }}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted text-left text-xs transition-colors"
+                        >
+                          <span className="text-[10px] font-mono text-primary shrink-0 w-10">{formatSeconds(ch.start)}</span>
+                          <span className="font-bold truncate flex-1">{ch.title}</span>
+                          {audioPlayerTime >= ch.start && (!ch.end || audioPlayerTime < ch.end) && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Search bar */}
+              <div className="px-4 py-2 border-b border-border shrink-0">
+                <div className="relative">
+                  <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    value={archiveSearch}
+                    onChange={(e) => setArchiveSearch(e.target.value)}
+                    placeholder="Search recordings…"
+                    className="w-full pl-9 pr-3 py-2 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Recording list */}
+              <div className="overflow-y-auto flex-1 p-4 space-y-2">
                 {loadingArchive ? (
                   <div className="text-center text-sm text-muted-foreground py-8">Loading recordings…</div>
-                ) : recordingArchive.length === 0 ? (
-                  <div className="text-center text-sm text-muted-foreground py-8">
-                    <PlayCircle className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                    No recordings yet for this circle.
-                  </div>
-                ) : (
-                  recordingArchive.map(rec => {
-                    const startedAt = rec.started_at ? new Date(rec.started_at).toLocaleString() : "Unknown date";
+                ) : (() => {
+                  const filtered = archiveSearch.trim()
+                    ? recordingArchive.filter(r =>
+                        (r.title || "").toLowerCase().includes(archiveSearch.toLowerCase()) ||
+                        (r.host_name || "").toLowerCase().includes(archiveSearch.toLowerCase())
+                      )
+                    : recordingArchive;
+                  if (filtered.length === 0) {
                     return (
-                      <div key={rec.id} className="bg-muted/40 border border-border rounded-xl p-3 flex items-start gap-3">
-                        <div className="bg-primary/10 rounded-xl p-2 shrink-0">
+                      <div className="text-center text-sm text-muted-foreground py-8">
+                        <PlayCircle className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                        {archiveSearch ? "No recordings match your search." : "No recordings yet for this circle."}
+                      </div>
+                    );
+                  }
+                  return filtered.map(rec => {
+                    const startedAt = rec.started_at ? new Date(rec.started_at).toLocaleString() : "Unknown date";
+                    const isSelected = selectedRecording?.id === rec.id;
+                    return (
+                      <div
+                        key={rec.id}
+                        onClick={() => { setSelectedRecording(rec); setAudioPlayerTime(0); }}
+                        className={`bg-muted/40 border rounded-xl p-3 flex items-start gap-3 cursor-pointer transition-colors ${isSelected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/60"}`}
+                      >
+                        <div className={`rounded-xl p-2 shrink-0 ${isSelected ? "bg-primary/20" : "bg-primary/10"}`}>
                           <PlayCircle className="w-5 h-5 text-primary" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-bold truncate">{rec.title || "Circle Recording"}</div>
-                          <div className="text-[11px] text-muted-foreground">{startedAt}</div>
+                          <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
+                            <span>{startedAt}</span>
+                            {rec.recording_duration_seconds && (
+                              <span className="flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" />{formatDuration(rec.recording_duration_seconds)}</span>
+                            )}
+                          </div>
                           {rec.host_name && (
                             <div className="text-[11px] text-muted-foreground">Hosted by {rec.host_name}</div>
                           )}
+                          {/* Status badge */}
+                          {rec.recording_status && rec.recording_status !== "ready" && rec.recording_status !== "none" && (
+                            <span className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                              rec.recording_status === "processing" ? "bg-amber-500/20 text-amber-400" :
+                              rec.recording_status === "failed" ? "bg-red-500/20 text-red-400" :
+                              "bg-blue-500/20 text-blue-400"
+                            }`}>
+                              {rec.recording_status === "processing" && <Upload className="w-2.5 h-2.5 animate-bounce" />}
+                              {rec.recording_status === "recording" && <CircleIcon className="w-2.5 h-2.5 animate-pulse" />}
+                              {rec.recording_status === "failed" && <AlertTriangle className="w-2.5 h-2.5" />}
+                              {rec.recording_status.charAt(0).toUpperCase() + rec.recording_status.slice(1)}
+                            </span>
+                          )}
+                          {/* AI summary indicator */}
+                          {rec.ai_summary && (
+                            <div className="inline-flex items-center gap-1 mt-1 ml-1 text-[9px] text-primary font-bold">
+                              <FileText className="w-2.5 h-2.5" /> AI Summary
+                            </div>
+                          )}
                         </div>
-                        <a
-                          href={rec.recording_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
-                          onClick={e => e.stopPropagation()}
-                        >
-                          Play <ExternalLink className="w-3 h-3" />
-                        </a>
                       </div>
                     );
-                  })
-                )}
+                  });
+                })()}
               </div>
             </motion.div>
           </motion.div>

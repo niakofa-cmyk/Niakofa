@@ -19,6 +19,7 @@ import { randomUUID } from "crypto";
 import { mkdirSync } from "fs";
 import { writeFile } from "fs/promises";
 import path from "path";
+import { putAsset, getAssetUrl, isCloudStorageConfigured } from "../lib/storage";
 import {
   db,
   audioCirclesTable,
@@ -1022,12 +1023,20 @@ router.post("/audio-circle-sessions/:id/recording", requireAuth, generalApiLimit
   if (!session) return res.status(404).json({ error: "Session not live" });
   if (!participant) return res.status(403).json({ error: "Only the host can control recording" });
 
-  await db.update(audioCircleSessionsTable).set({ is_recording: parsed.data.is_recording }).where(eq(audioCircleSessionsTable.id, sessionId));
+  const newStatus = parsed.data.is_recording ? "recording" : "none";
+  await db.update(audioCircleSessionsTable).set({
+    is_recording: parsed.data.is_recording,
+    recording_status: newStatus,
+  }).where(eq(audioCircleSessionsTable.id, sessionId));
 
   const activeParticipants = await getActiveParticipants(sessionId);
   sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
     type: "circle_recording_changed",
     payload: { session_id: sessionId, is_recording: parsed.data.is_recording },
+  });
+  sendToCircleParticipants(activeParticipants.map(p => p.user_id), {
+    type: "circle_recording_status_updated",
+    payload: { session_id: sessionId, recording_status: newStatus },
   });
   return res.json({ ok: true });
 });
@@ -1056,11 +1065,6 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
     return res.status(413).json({ error: "Recording too large (500 MB max)" });
   }
 
-  // Determine uploads dir — two levels up from routes/ gets us to the artifact
-  // root; from there we go up two more to the monorepo root.
-  const uploadsDir = path.join(import.meta.dirname, "..", "..", "..", "..", "uploads", "recordings");
-  mkdirSync(uploadsDir, { recursive: true });
-
   const contentType = String(req.headers["content-type"] ?? "").split(";")[0].toLowerCase();
   const extension = contentType === "audio/mp4"
     ? "m4a"
@@ -1068,17 +1072,37 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
       ? "ogg"
       : "webm";
   const filename = `${sessionId}-${randomUUID()}.${extension}`;
-  const filePath = path.join(uploadsDir, filename);
-  // Use async writeFile — writeFileSync blocks the event loop for large blobs
-  await writeFile(filePath, body);
+  const storageKey = `recordings/${filename}`;
 
-  // Build a URL the client can use to play back the recording.
-  // In dev the API is on port 8080; in production behind a reverse proxy the
-  // origin is the same as the frontend, so a root-relative path is enough.
-  const recording_url = `/uploads/recordings/${filename}`;
+  // Use the storage abstraction (S3/R2 when configured, local disk otherwise)
+  // instead of writing directly to disk. Falls back to local disk path if
+  // cloud storage is not configured so dev mode keeps working unchanged.
+  let recording_url: string;
+  if (isCloudStorageConfigured()) {
+    await putAsset(storageKey, body, contentType || "audio/webm");
+    recording_url = await getAssetUrl(storageKey);
+  } else {
+    // Local-disk fallback — keep the same path the serve middleware expects
+    const uploadsDir = path.join(import.meta.dirname, "..", "..", "..", "..", "uploads", "recordings");
+    mkdirSync(uploadsDir, { recursive: true });
+    const filePath = path.join(uploadsDir, filename);
+    await writeFile(filePath, body);
+    recording_url = `/uploads/recordings/${filename}`;
+  }
+
+  // Duration comes from the client (seconds) via a query param, if present.
+  const durationSeconds = parseInt(String(req.query.duration ?? ""), 10);
+  const updateData: Partial<typeof audioCircleSessionsTable.$inferInsert> = {
+    recording_url,
+    recording_status: "processing",
+    recording_size_bytes: body.length,
+  };
+  if (!isNaN(durationSeconds) && durationSeconds > 0) {
+    updateData.recording_duration_seconds = durationSeconds;
+  }
 
   await db.update(audioCircleSessionsTable)
-    .set({ recording_url })
+    .set(updateData)
     .where(eq(audioCircleSessionsTable.id, sessionId));
 
   // Notify all past participants (session may now be ended) that a recording
@@ -1091,9 +1115,121 @@ router.post("/audio-circle-sessions/:id/recording-upload", requireAuth, generalA
     type: "circle_recording_available",
     payload: { session_id: sessionId, circle_id: session.circle_id, recording_url },
   });
+  sendToCircleParticipants(allParticipants.map(p => p.user_id), {
+    type: "circle_recording_status_updated",
+    payload: { session_id: sessionId, recording_status: "processing" },
+  });
+
+  // Async post-processing: generate AI summary + chapter markers if an
+  // Anthropic API key is configured. Runs in the background — the response
+  // is already sent to the client. Status moves to "ready" on success or
+  // "failed" on error. If no API key is configured, skip straight to ready.
+  generateAiSummaryInBackground(sessionId).catch((err) => {
+    logger.warn({ err, sessionId }, "audio-circles: AI summary generation failed");
+  });
 
   return res.json({ ok: true, recording_url });
 });
+
+/**
+ * Background AI summary generation. If ANTHROPIC_API_KEY is set, sends the
+ * recording metadata (title, topic, duration) to Claude to produce a summary
+ * and chapter markers. If no key is configured, just marks the recording as
+ * ready so the archive shows it immediately.
+ */
+async function generateAiSummaryInBackground(sessionId: number) {
+  try {
+    const [session] = await db.select().from(audioCircleSessionsTable).where(eq(audioCircleSessionsTable.id, sessionId)).limit(1);
+    if (!session) return;
+
+    const apiKey = process.env["ANTHROPIC_API_KEY"];
+    if (!apiKey) {
+      // No AI configured — mark as ready immediately
+      await db.update(audioCircleSessionsTable)
+        .set({ recording_status: "ready" })
+        .where(eq(audioCircleSessionsTable.id, sessionId));
+      broadcastRecordingStatus(sessionId, "ready");
+      return;
+    }
+
+    // Call Anthropic for a summary + chapter markers
+    const durationMin = session.recording_duration_seconds
+      ? Math.round(session.recording_duration_seconds / 60)
+      : null;
+
+    const prompt = `You are summarizing an audio recording of a community circle session.
+Title: ${session.title}
+Topic: ${session.topic ?? "General discussion"}
+Duration: ${durationMin ? `${durationMin} minutes` : "Unknown"}
+
+Provide:
+1. A concise 2-3 sentence summary of what was likely discussed.
+2. 3-6 chapter markers as JSON: [{"start": <seconds>, "title": "<short label>"}]
+
+Respond as valid JSON: {"summary": "...", "chapters": [...]}${'```'}
+
+Do not include any text outside the JSON block.`;
+
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 1024,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!resp.ok) throw new Error(`Anthropic API returned ${resp.status}`);
+
+    const data = await resp.json() as any;
+    const text = data?.content?.[0]?.text ?? "";
+    // Extract JSON from the response (it may be wrapped in ```json ... ```)
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    let aiSummary: string | null = null;
+    let chapterMarkers: any = null;
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        aiSummary = parsed.summary ?? null;
+        chapterMarkers = Array.isArray(parsed.chapters) ? parsed.chapters : null;
+      } catch { /* JSON parse failed — leave null */ }
+    }
+
+    await db.update(audioCircleSessionsTable)
+      .set({
+        recording_status: "ready",
+        ai_summary: aiSummary,
+        chapter_markers: chapterMarkers,
+      })
+      .where(eq(audioCircleSessionsTable.id, sessionId));
+    broadcastRecordingStatus(sessionId, "ready");
+  } catch (err) {
+    logger.warn({ err, sessionId }, "audio-circles: AI summary generation failed");
+    await db.update(audioCircleSessionsTable)
+      .set({ recording_status: "failed" })
+      .where(eq(audioCircleSessionsTable.id, sessionId));
+    broadcastRecordingStatus(sessionId, "failed");
+  }
+}
+
+function broadcastRecordingStatus(sessionId: number, status: string) {
+  db
+    .select({ user_id: audioCircleParticipantsTable.user_id })
+    .from(audioCircleParticipantsTable)
+    .where(eq(audioCircleParticipantsTable.session_id, sessionId))
+    .then((participants) => {
+      sendToCircleParticipants(participants.map(p => p.user_id), {
+        type: "circle_recording_status_updated",
+        payload: { session_id: sessionId, recording_status: status },
+      });
+    })
+    .catch(() => {});
+}
 
 const RecordingUrlBody = z.object({ recording_url: z.string().url().max(2048) });
 
@@ -1116,6 +1252,39 @@ router.post("/audio-circle-sessions/:id/recording-url", requireAuth, generalApiL
   return res.json({ ok: true });
 });
 
+// PATCH /audio-circle-sessions/:id/recording-metadata — host updates
+// recording metadata (duration, size) after the upload completes. This
+// is called by the client right after a successful recording-upload so the
+// archive can show duration and file size even without AI processing.
+const RecordingMetadataBody = z.object({
+  recording_duration_seconds: z.number().int().positive().max(86400).optional(),
+  recording_size_bytes: z.number().int().positive().max(500 * 1024 * 1024).optional(),
+});
+
+router.patch("/audio-circle-sessions/:id/recording-metadata", requireAuth, generalApiLimiter, async (req, res) => {
+  const sessionId = parseInt(String(req.params.id ?? ""), 10);
+  if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid id" });
+  const parsed = RecordingMetadataBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+
+  const userId = req.authenticatedUserId!;
+  const [session] = await db.select().from(audioCircleSessionsTable).where(eq(audioCircleSessionsTable.id, sessionId)).limit(1);
+  if (!session) return res.status(404).json({ error: "Session not found" });
+  if (session.host_id !== userId) return res.status(403).json({ error: "Only the host can update recording metadata" });
+
+  const updates: Partial<typeof audioCircleSessionsTable.$inferInsert> = {};
+  if (parsed.data.recording_duration_seconds !== undefined) {
+    updates.recording_duration_seconds = parsed.data.recording_duration_seconds;
+  }
+  if (parsed.data.recording_size_bytes !== undefined) {
+    updates.recording_size_bytes = parsed.data.recording_size_bytes;
+  }
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nothing to update" });
+
+  await db.update(audioCircleSessionsTable).set(updates).where(eq(audioCircleSessionsTable.id, sessionId));
+  return res.json({ ok: true, ...updates });
+});
+
 // GET /audio-circles/:id/recordings — past recordings for this circle.
 router.get("/audio-circles/:id/recordings", requireAuth, generalApiLimiter, async (req, res) => {
   const circleId = parseInt(String(req.params.id ?? ""), 10);
@@ -1135,6 +1304,11 @@ router.get("/audio-circles/:id/recordings", requireAuth, generalApiLimiter, asyn
       host_id: audioCircleSessionsTable.host_id,
       host_name: usersTable.name,
       recording_url: audioCircleSessionsTable.recording_url,
+      recording_status: audioCircleSessionsTable.recording_status,
+      recording_duration_seconds: audioCircleSessionsTable.recording_duration_seconds,
+      recording_size_bytes: audioCircleSessionsTable.recording_size_bytes,
+      ai_summary: audioCircleSessionsTable.ai_summary,
+      chapter_markers: audioCircleSessionsTable.chapter_markers,
       started_at: audioCircleSessionsTable.started_at,
       ended_at: audioCircleSessionsTable.ended_at,
     })
