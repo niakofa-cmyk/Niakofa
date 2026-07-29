@@ -45,3 +45,4 @@ export * from "./families";
 export * from "./family-memories";
 export * from "./family-memory-assets";
 export * from "./family-interviews";
+export * from "./family-tree-relations";
