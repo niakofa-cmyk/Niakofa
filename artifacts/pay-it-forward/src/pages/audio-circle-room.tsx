@@ -1,3 +1,4 @@
+successfully downloaded text file (SHA: 64d083f2a6165ca1af2389e2da228ca66e4c76db)
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -2345,61 +2346,90 @@ export default function AudioCircleRoomScreen() {
 
         {/* Video is now embedded in the hero tiles (host/co-host) and speaker tiles — no separate grid */}
 
-        {/* ── Stage: HOST hero tile ───────────────────────────────────────────── */}
+        {/* ── Stage: HOST + CO-HOST equal hero tiles (side-by-side) ─────────────── */}
         <div>
-          <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Host</div>
-          {host ? (
-            <HostHeroTile
-              participant={host}
-              isMe={host.user_id === myUserId}
-              level={host.user_id === myUserId ? localLevel : (speakingLevels.get(host.user_id) ?? 0)}
-              isActiveSpeaker={activeSpeakerId === host.user_id}
-              isLoudest={loudestSpeakerId === host.user_id && loudestSpeakerId !== activeSpeakerId}
-              videoStream={host.user_id === myUserId ? localStream : (remoteStreams.get(host.user_id) ?? null)}
-              videoOn={host.user_id === myUserId ? videoOn : (remoteStreams.get(host.user_id)?.getVideoTracks().length ?? 0) > 0}
-              size="full"
-              canMod={false}
-            />
-          ) : (
-            <div className="text-xs text-muted-foreground py-3">Host has left — hanging tight…</div>
-          )}
-        </div>
-
-        {/* ── Stage: CO-HOST hero tiles ────────────────────────────────────────── */}
-        {cohosts.length > 0 && (
-          <div>
-            <div className="flex items-center gap-1.5 mb-2">
-              <Shield className="w-3 h-3 text-blue-400" />
-              <div className="text-[10px] font-black uppercase tracking-widest text-blue-400">
-                Co-Host{cohosts.length > 1 ? "s" : ""} ({cohosts.length})
-              </div>
-            </div>
-            <div className={`flex gap-2 ${cohosts.length === 1 ? "" : "flex-wrap"}`} onClick={e => e.stopPropagation()}>
-              {cohosts.map(c => (
-                <HostHeroTile
-                  key={c.user_id}
-                  participant={c}
-                  isMe={c.user_id === myUserId}
-                  level={c.user_id === myUserId ? localLevel : (speakingLevels.get(c.user_id) ?? 0)}
-                  isActiveSpeaker={activeSpeakerId === c.user_id}
-                  isLoudest={loudestSpeakerId === c.user_id && loudestSpeakerId !== activeSpeakerId}
-                  videoStream={c.user_id === myUserId ? localStream : (remoteStreams.get(c.user_id) ?? null)}
-                  videoOn={c.user_id === myUserId ? videoOn : (remoteStreams.get(c.user_id)?.getVideoTracks().length ?? 0) > 0}
-                  size="half"
-                  canMod={canMod && c.user_id !== myUserId}
-                  modMenuOpen={modMenuOpen === c.user_id}
-                  onOpenMod={() => setModMenuOpen(prev => prev === c.user_id ? null : c.user_id)}
-                  onMute={() => muteUser(c.user_id, !c.muted)}
-                  onDemote={() => demote(c.user_id)}
-                  onKick={() => kickUser(c.user_id)}
-                  onBlock={() => setShowBlockConfirm(c.user_id)}
-                  onReport={() => setShowReportModal(c.user_id)}
-                  onRemoveCohost={isHost ? () => removeCohost(c.user_id) : undefined}
-                />
-              ))}
+          <div className="flex items-center gap-1.5 mb-2">
+            <Crown className="w-3 h-3 text-amber-400" />
+            <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+              Stage · Host{cohosts.length > 0 ? " + Co-Host" : ""}
             </div>
           </div>
-        )}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3" onClick={e => e.stopPropagation()}>
+            {/* Host hero */}
+            {host ? (
+              <HostHeroTile
+                participant={host}
+                isMe={host.user_id === myUserId}
+                level={host.user_id === myUserId ? localLevel : (speakingLevels.get(host.user_id) ?? 0)}
+                isActiveSpeaker={activeSpeakerId === host.user_id}
+                isLoudest={loudestSpeakerId === host.user_id && loudestSpeakerId !== activeSpeakerId}
+                videoStream={host.user_id === myUserId ? localStream : (remoteStreams.get(host.user_id) ?? null)}
+                videoOn={host.user_id === myUserId ? videoOn : (remoteStreams.get(host.user_id)?.getVideoTracks().length ?? 0) > 0}
+                size="full"
+                canMod={false}
+              />
+            ) : (
+              <div className="text-xs text-muted-foreground py-3">Host has left — hanging tight…</div>
+            )}
+            {/* First co-host as equal second hero */}
+            {cohosts[0] && (
+              <HostHeroTile
+                participant={cohosts[0]}
+                isMe={cohosts[0].user_id === myUserId}
+                level={cohosts[0].user_id === myUserId ? localLevel : (speakingLevels.get(cohosts[0].user_id) ?? 0)}
+                isActiveSpeaker={activeSpeakerId === cohosts[0].user_id}
+                isLoudest={loudestSpeakerId === cohosts[0].user_id && loudestSpeakerId !== activeSpeakerId}
+                videoStream={cohosts[0].user_id === myUserId ? localStream : (remoteStreams.get(cohosts[0].user_id) ?? null)}
+                videoOn={cohosts[0].user_id === myUserId ? videoOn : (remoteStreams.get(cohosts[0].user_id)?.getVideoTracks().length ?? 0) > 0}
+                size="full"
+                canMod={canMod && cohosts[0].user_id !== myUserId}
+                modMenuOpen={modMenuOpen === cohosts[0].user_id}
+                onOpenMod={() => setModMenuOpen(prev => prev === cohosts[0].user_id ? null : cohosts[0].user_id)}
+                onMute={() => muteUser(cohosts[0].user_id, !cohosts[0].muted)}
+                onDemote={() => demote(cohosts[0].user_id)}
+                onKick={() => kickUser(cohosts[0].user_id)}
+                onBlock={() => setShowBlockConfirm(cohosts[0].user_id)}
+                onReport={() => setShowReportModal(cohosts[0].user_id)}
+                onRemoveCohost={isHost ? () => removeCohost(cohosts[0].user_id) : undefined}
+              />
+            )}
+          </div>
+          {/* Additional co-hosts (3rd+) in a compact row below the heroes */}
+          {cohosts.length > 1 && (
+            <div className="mt-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Shield className="w-3 h-3 text-blue-400" />
+                <div className="text-[10px] font-black uppercase tracking-widest text-blue-400">
+                  Co-Hosts ({cohosts.length - 1})
+                </div>
+              </div>
+              <div className="flex gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
+                {cohosts.slice(1).map(c => (
+                  <HostHeroTile
+                    key={c.user_id}
+                    participant={c}
+                    isMe={c.user_id === myUserId}
+                    level={c.user_id === myUserId ? localLevel : (speakingLevels.get(c.user_id) ?? 0)}
+                    isActiveSpeaker={activeSpeakerId === c.user_id}
+                    isLoudest={loudestSpeakerId === c.user_id && loudestSpeakerId !== activeSpeakerId}
+                    videoStream={c.user_id === myUserId ? localStream : (remoteStreams.get(c.user_id) ?? null)}
+                    videoOn={c.user_id === myUserId ? videoOn : (remoteStreams.get(c.user_id)?.getVideoTracks().length ?? 0) > 0}
+                    size="half"
+                    canMod={canMod && c.user_id !== myUserId}
+                    modMenuOpen={modMenuOpen === c.user_id}
+                    onOpenMod={() => setModMenuOpen(prev => prev === c.user_id ? null : c.user_id)}
+                    onMute={() => muteUser(c.user_id, !c.muted)}
+                    onDemote={() => demote(c.user_id)}
+                    onKick={() => kickUser(c.user_id)}
+                    onBlock={() => setShowBlockConfirm(c.user_id)}
+                    onReport={() => setShowReportModal(c.user_id)}
+                    onRemoveCohost={isHost ? () => removeCohost(c.user_id) : undefined}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* ── Speaker limit warning ────────────────────────────────────────────── */}
         {canMod && nearSpeakerLimit && audience.some(l => l.hand_raised) && (
