@@ -69,6 +69,9 @@ export const audioCircleSessionsTable = pgTable("audio_circle_sessions", {
   // Host-configurable speaker limit (4 / 8 / 12 / 13 / 18 / 24).
   // 13 = historic default (host + 12 speakers). Max enforced server-side in /promote.
   max_speakers:    integer("max_speakers").notNull().default(13),
+  // Host-configurable toggles, enforced server-side.
+  chat_enabled:    boolean("chat_enabled").notNull().default(true),
+  recording_allowed: boolean("recording_allowed").notNull().default(true),
   started_at:      timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   ended_at:        timestamp("ended_at", { withTimezone: true }),
   // Set when the host disconnects (page refresh, tab close, network drop)
