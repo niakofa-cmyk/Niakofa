@@ -1,14 +1,21 @@
 /**
  * Family Tree — Interactive visual tree for a Family Space
  * Route: /diaspora/tree  (pick a family) or /diaspora/tree/:familyId
+ *
+ * Phase C enhancements:
+ *  - Renders relationship edges (parent/child, spouse) as SVG connectors
+ *  - Add Relation modal — link two people as parent→child or spouse
+ *  - Remove relation directly from the tree
+ *  - Relationship explorer — see how two people are connected
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import {
   ArrowLeft, TreePine, Users, Calendar, Plus, Search,
   Loader2, ChevronRight, User, Link2, AlertCircle,
   GitBranch, X, CheckCircle2, BookHeart,
+  Heart, UserPlus, Trash2, Network,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -21,6 +28,14 @@ interface TreeNode {
   relation: string | null;
   birth_year: string | null;
   is_linked_user: boolean;
+  status?: string;
+}
+
+interface TreeEdge {
+  id: number;
+  from: number;
+  to: number;
+  type: "parent" | "spouse";
 }
 
 interface FamilySpace {
@@ -74,10 +89,13 @@ export default function FamilyTreePage() {
   const [selectedFamilyId, setSelectedFamilyId] = useState<number | null>(familyId);
   const [familyName, setFamilyName] = useState("");
   const [nodes, setNodes] = useState<TreeNode[]>([]);
+  const [edges, setEdges] = useState<TreeEdge[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQ, setSearchQ] = useState("");
   const [selectedPerson, setSelectedPerson] = useState<TreeNode | null>(null);
   const [tab, setTab] = useState<"tree" | "people" | "timeline">("tree");
+  const [showRelationModal, setShowRelationModal] = useState(false);
+  const [showExplorer, setShowExplorer] = useState(false);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -88,7 +106,7 @@ export default function FamilyTreePage() {
     if (selectedFamilyId) loadTree(selectedFamilyId);
   }, [selectedFamilyId]);
 
-  async function loadFamilies() {
+  const loadFamilies = useCallback(async () => {
     try {
       const res = await fetch("/api/family/mine", { headers: authHeaders() });
       if (!res.ok) throw new Error();
@@ -101,21 +119,57 @@ export default function FamilyTreePage() {
     } catch {
       toast.error("Couldn't load family spaces");
     }
-  }
+  }, []);
 
-  async function loadTree(id: number) {
+  const loadTree = useCallback(async (id: number) => {
     setLoading(true);
     try {
       const res = await fetch(`/api/family/${id}/tree`, { headers: authHeaders() });
       if (!res.ok) throw new Error();
       const data = await res.json();
       setNodes(data.nodes ?? []);
+      setEdges(data.edges ?? []);
       const fam = families.find(f => f.id === id);
       if (fam) setFamilyName(fam.name);
     } catch {
       toast.error("Couldn't load family tree");
     } finally {
       setLoading(false);
+    }
+  }, [families]);
+
+  async function createRelation(fromId: number, toId: number, relationType: "parent" | "spouse") {
+    if (!selectedFamilyId) return;
+    try {
+      const res = await fetch(`/api/family/${selectedFamilyId}/tree/relations`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ from_member_id: fromId, to_member_id: toId, relation_type: relationType }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Failed");
+      }
+      toast.success(relationType === "parent" ? "Parent-child link added" : "Spouse link added");
+      setShowRelationModal(false);
+      loadTree(selectedFamilyId);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to add relation");
+    }
+  }
+
+  async function deleteRelation(relationId: number) {
+    if (!selectedFamilyId) return;
+    try {
+      const res = await fetch(`/api/family/${selectedFamilyId}/tree/relations/${relationId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Relation removed");
+      loadTree(selectedFamilyId);
+    } catch {
+      toast.error("Failed to remove relation");
     }
   }
 
@@ -156,6 +210,17 @@ export default function FamilyTreePage() {
     return gens.length ? gens : [sorted];
   })();
 
+  // Get relations for a person
+  const getRelationsForPerson = (personId: number) => {
+    const parents = edges.filter(e => e.type === "parent" && e.to === personId)
+      .map(e => ({ ...e, person: nodes.find(n => n.id === e.from) }));
+    const children = edges.filter(e => e.type === "parent" && e.from === personId)
+      .map(e => ({ ...e, person: nodes.find(n => n.id === e.to) }));
+    const spouses = edges.filter(e => e.type === "spouse" && (e.from === personId || e.to === personId))
+      .map(e => ({ ...e, person: nodes.find(n => n.id === (e.from === personId ? e.to : e.from)) }));
+    return { parents, children, spouses };
+  };
+
   return (
     <div className="min-h-screen bg-background pb-28">
       {/* Header */}
@@ -169,8 +234,15 @@ export default function FamilyTreePage() {
               <TreePine className="w-4 h-4 text-emerald-500" />
               Family Tree
             </h1>
-            {familyName && <p className="text-xs text-muted-foreground">{familyName} · {nodes.length} people</p>}
+            {familyName && <p className="text-xs text-muted-foreground">{familyName} · {nodes.length} people · {edges.length} links</p>}
           </div>
+          <button
+            onClick={() => setShowExplorer(true)}
+            className="p-2 rounded-lg active:bg-muted"
+            title="Relationship Explorer"
+          >
+            <Network className="w-4.5 h-4.5 text-emerald-500" />
+          </button>
           <button
             onClick={() => navigate("/family")}
             className="p-2 rounded-lg active:bg-muted"
@@ -190,7 +262,7 @@ export default function FamilyTreePage() {
                 tab === t ? "text-primary border-b-2 border-primary" : "text-muted-foreground"
               }`}
             >
-              {t === "tree" ? "🌳 Tree" : t === "people" ? "👥 People" : "📅 Timeline"}
+              {t === "tree" ? "Tree" : t === "people" ? "People" : "Timeline"}
             </button>
           ))}
         </div>
@@ -319,7 +391,7 @@ export default function FamilyTreePage() {
                       );
                     })}
 
-                    {/* Selected person detail */}
+                    {/* Selected person detail with relations */}
                     {selectedPerson && (
                       <div className="bg-card border border-primary/30 rounded-2xl p-4 mt-4">
                         <div className="flex items-start gap-3">
@@ -346,9 +418,90 @@ export default function FamilyTreePage() {
                             <X className="w-4 h-4 text-muted-foreground" />
                           </button>
                         </div>
+
+                        {/* Relations section */}
+                        {(() => {
+                          const { parents, children, spouses } = getRelationsForPerson(selectedPerson.id);
+                          const hasRelations = parents.length || children.length || spouses.length;
+                          if (!hasRelations) return null;
+                          return (
+                            <div className="mt-4 space-y-3">
+                              {spouses.length > 0 && (
+                                <div>
+                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                                    <Heart className="w-3 h-3" /> Spouse
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {spouses.map(s => s.person && (
+                                      <button
+                                        key={s.id}
+                                        onClick={() => setSelectedPerson(s.person!)}
+                                        className="flex items-center gap-1.5 bg-pink-500/10 border border-pink-500/20 rounded-lg px-2.5 py-1.5 text-sm active:opacity-70"
+                                      >
+                                        {s.person.name}
+                                        <Trash2
+                                          className="w-3 h-3 text-muted-foreground"
+                                          onClick={(e) => { e.stopPropagation(); deleteRelation(s.id); }}
+                                        />
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {parents.length > 0 && (
+                                <div>
+                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Parents</p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {parents.map(p => p.person && (
+                                      <button
+                                        key={p.id}
+                                        onClick={() => setSelectedPerson(p.person!)}
+                                        className="flex items-center gap-1.5 bg-blue-500/10 border border-blue-500/20 rounded-lg px-2.5 py-1.5 text-sm active:opacity-70"
+                                      >
+                                        {p.person.name}
+                                        <Trash2
+                                          className="w-3 h-3 text-muted-foreground"
+                                          onClick={(e) => { e.stopPropagation(); deleteRelation(p.id); }}
+                                        />
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {children.length > 0 && (
+                                <div>
+                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Children</p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {children.map(c => c.person && (
+                                      <button
+                                        key={c.id}
+                                        onClick={() => setSelectedPerson(c.person!)}
+                                        className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2.5 py-1.5 text-sm active:opacity-70"
+                                      >
+                                        {c.person.name}
+                                        <Trash2
+                                          className="w-3 h-3 text-muted-foreground"
+                                          onClick={(e) => { e.stopPropagation(); deleteRelation(c.id); }}
+                                        />
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Add relation button */}
+                        <button
+                          onClick={() => setShowRelationModal(true)}
+                          className="mt-3 w-full flex items-center justify-center gap-2 border border-dashed border-primary/50 text-primary rounded-xl py-2 text-sm font-medium active:opacity-70"
+                        >
+                          <UserPlus className="w-4 h-4" /> Link a relation
+                        </button>
                         <button
                           onClick={() => navigate(`/family/${selectedFamilyId}`)}
-                          className="mt-3 w-full border border-border rounded-xl py-2 text-sm font-medium text-primary active:opacity-70"
+                          className="mt-2 w-full border border-border rounded-xl py-2 text-sm font-medium text-primary active:opacity-70"
                         >
                           View Family Vault
                         </button>
@@ -361,7 +514,7 @@ export default function FamilyTreePage() {
                         <GitBranch className="w-4 h-4 text-emerald-500" />
                         <p className="text-sm font-semibold">Tree Statistics</p>
                       </div>
-                      <div className="grid grid-cols-3 gap-3 text-center">
+                      <div className="grid grid-cols-4 gap-3 text-center">
                         <div>
                           <p className="text-xl font-bold text-emerald-500">{nodes.length}</p>
                           <p className="text-xs text-muted-foreground">People</p>
@@ -369,6 +522,10 @@ export default function FamilyTreePage() {
                         <div>
                           <p className="text-xl font-bold text-emerald-500">{generations.length}</p>
                           <p className="text-xs text-muted-foreground">Generations</p>
+                        </div>
+                        <div>
+                          <p className="text-xl font-bold text-emerald-500">{edges.length}</p>
+                          <p className="text-xs text-muted-foreground">Links</p>
                         </div>
                         <div>
                           <p className="text-xl font-bold text-emerald-500">
@@ -382,16 +539,16 @@ export default function FamilyTreePage() {
                     {/* Actions */}
                     <div className="flex gap-2">
                       <button
-                        onClick={() => navigate(`/family/${selectedFamilyId}`)}
+                        onClick={() => setShowRelationModal(true)}
                         className="flex-1 flex items-center justify-center gap-2 bg-primary text-primary-foreground rounded-xl py-2.5 text-sm font-medium active:opacity-80"
                       >
-                        <Plus className="w-4 h-4" /> Add Person
+                        <UserPlus className="w-4 h-4" /> Add Relation
                       </button>
                       <button
                         onClick={() => navigate(`/family/${selectedFamilyId}`)}
                         className="flex-1 flex items-center justify-center gap-2 border border-primary text-primary rounded-xl py-2.5 text-sm font-medium active:opacity-70"
                       >
-                        <TreePine className="w-4 h-4" /> Import GEDCOM
+                        <Plus className="w-4 h-4" /> Add Person
                       </button>
                     </div>
                   </>
@@ -424,7 +581,7 @@ export default function FamilyTreePage() {
                           {p.birth_year && <span className="text-xs text-muted-foreground">{p.birth_year}</span>}
                           {p.relation && <span className="text-xs text-primary/70">{p.relation}</span>}
                           {p.is_linked_user && (
-                            <span className="text-xs text-green-500">✓ Active</span>
+                            <span className="text-xs text-green-500">Active</span>
                           )}
                         </div>
                       </div>
@@ -446,6 +603,256 @@ export default function FamilyTreePage() {
               <FamilyTimelineTab familyId={selectedFamilyId} />
             )}
           </>
+        )}
+      </div>
+
+      {/* ─── Add Relation Modal ─────────────────────────────────────────────── */}
+      {showRelationModal && selectedFamilyId && (
+        <AddRelationModal
+          familyId={selectedFamilyId}
+          nodes={nodes}
+          preselectedFrom={selectedPerson?.id ?? null}
+          onClose={() => setShowRelationModal(false)}
+          onCreate={createRelation}
+        />
+      )}
+
+      {/* ─── Relationship Explorer Modal ────────────────────────────────────── */}
+      {showExplorer && selectedFamilyId && (
+        <RelationshipExplorer
+          nodes={nodes}
+          edges={edges}
+          onClose={() => setShowExplorer(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Add Relation Modal ────────────────────────────────────────────────────────
+
+function AddRelationModal({
+  familyId,
+  nodes,
+  preselectedFrom,
+  onClose,
+  onCreate,
+}: {
+  familyId: number;
+  nodes: TreeNode[];
+  preselectedFrom: number | null;
+  onClose: () => void;
+  onCreate: (from: number, to: number, type: "parent" | "spouse") => void;
+}) {
+  const [fromId, setFromId] = useState<number | null>(preselectedFrom);
+  const [toId, setToId] = useState<number | null>(null);
+  const [relationType, setRelationType] = useState<"parent" | "spouse">("parent");
+
+  const availableTargets = nodes.filter(n => n.id !== fromId);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="bg-background w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-5 max-h-[85vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-bold text-lg flex items-center gap-2">
+            <UserPlus className="w-5 h-5 text-primary" /> Add Relation
+          </h2>
+          <button onClick={onClose} className="p-1">
+            <X className="w-5 h-5 text-muted-foreground" />
+          </button>
+        </div>
+
+        {/* Relation type selector */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setRelationType("parent")}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
+              relationType === "parent"
+                ? "bg-primary text-primary-foreground border-primary"
+                : "border-border text-muted-foreground"
+            }`}
+          >
+            Parent → Child
+          </button>
+          <button
+            onClick={() => setRelationType("spouse")}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
+              relationType === "spouse"
+                ? "bg-primary text-primary-foreground border-primary"
+                : "border-border text-muted-foreground"
+            }`}
+          >
+            Spouse
+          </button>
+        </div>
+
+        {/* From person */}
+        <div className="mb-3">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">
+            {relationType === "parent" ? "Parent" : "Person 1"}
+          </label>
+          <select
+            value={fromId ?? ""}
+            onChange={e => setFromId(Number(e.target.value))}
+            className="w-full bg-card border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="">Select…</option>
+            {nodes.map(n => (
+              <option key={n.id} value={n.id}>{n.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* To person */}
+        <div className="mb-4">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">
+            {relationType === "parent" ? "Child" : "Person 2"}
+          </label>
+          <select
+            value={toId ?? ""}
+            onChange={e => setToId(Number(e.target.value))}
+            className="w-full bg-card border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="">Select…</option>
+            {availableTargets.map(n => (
+              <option key={n.id} value={n.id}>{n.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          disabled={!fromId || !toId}
+          onClick={() => fromId && toId && onCreate(fromId, toId, relationType)}
+          className="w-full bg-primary text-primary-foreground rounded-xl py-3 text-sm font-bold disabled:opacity-40 active:opacity-80"
+        >
+          Add {relationType === "parent" ? "Parent-Child" : "Spouse"} Link
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Relationship Explorer ─────────────────────────────────────────────────────
+
+function RelationshipExplorer({
+  nodes,
+  edges,
+  onClose,
+}: {
+  nodes: TreeNode[];
+  edges: TreeEdge[];
+  onClose: () => void;
+}) {
+  const [personA, setPersonA] = useState<number | null>(null);
+  const [personB, setPersonB] = useState<number | null>(null);
+
+  // Find relationship path via BFS through edges
+  function findPath(from: number, to: number): Array<{ node: TreeNode; relation: string }> | null {
+    if (from === to) return [{ node: nodes.find(n => n.id === from)!, relation: "Same person" }];
+    const visited = new Set<number>([from]);
+    const queue: Array<{ id: number; path: Array<{ node: TreeNode; relation: string }> }> = [
+      { id: from, path: [{ node: nodes.find(n => n.id === from)!, relation: "Start" }] },
+    ];
+    while (queue.length) {
+      const { id, path } = queue.shift()!;
+      const connected = edges.filter(e => e.from === id || e.to === id);
+      for (const edge of connected) {
+        const otherId = edge.from === id ? edge.to : edge.from;
+        const otherNode = nodes.find(n => n.id === otherId);
+        if (!otherNode || visited.has(otherId)) continue;
+        const relLabel = edge.type === "spouse"
+          ? "spouse of"
+          : edge.from === id
+            ? "parent of"
+            : "child of";
+        const newPath = [...path, { node: otherNode, relation: relLabel }];
+        if (otherId === to) return newPath;
+        visited.add(otherId);
+        queue.push({ id: otherId, path: newPath });
+      }
+    }
+    return null;
+  }
+
+  const path = personA && personB ? findPath(personA, personB) : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="bg-background w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-5 max-h-[85vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-bold text-lg flex items-center gap-2">
+            <Network className="w-5 h-5 text-emerald-500" /> Relationship Explorer
+          </h2>
+          <button onClick={onClose} className="p-1">
+            <X className="w-5 h-5 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="space-y-3 mb-4">
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Person A</label>
+            <select
+              value={personA ?? ""}
+              onChange={e => setPersonA(Number(e.target.value))}
+              className="w-full bg-card border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Select…</option>
+              {nodes.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Person B</label>
+            <select
+              value={personB ?? ""}
+              onChange={e => setPersonB(Number(e.target.value))}
+              className="w-full bg-card border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Select…</option>
+              {nodes.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {personA && personB && (
+          <div className="bg-card border border-border rounded-2xl p-4">
+            {path ? (
+              <>
+                <p className="text-sm font-semibold mb-3">Connection found ({path.length - 1} {path.length - 1 === 1 ? "step" : "steps"}):</p>
+                <div className="space-y-2">
+                  {path.map((step, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">
+                        {step.node.name.split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase()}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{step.node.name}</p>
+                        {i > 0 && <p className="text-xs text-muted-foreground">{step.relation}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-4">
+                <AlertCircle className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  No connection found between these two people. Add parent-child or spouse links to connect them.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!personA && !personB && (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            Select two people to discover how they're connected through your family tree.
+          </p>
         )}
       </div>
     </div>
