@@ -1404,6 +1404,12 @@ export default function AudioCircleRoomScreen() {
     }
   };
 
+  const dismissHand = async (userId: number) => {
+    setParticipants(prev => prev.map(x => x.user_id === userId ? { ...x, hand_raised: false } : x));
+    handRaisedAtRef.current.delete(userId);
+    await post("/hand", { raised: false, user_id: userId });
+  };
+
   const updateSettings = async () => {
     if (!session) return;
     setSavingSettings(true);
@@ -2496,7 +2502,6 @@ export default function AudioCircleRoomScreen() {
                     level={s.user_id === myUserId ? localLevel : (speakingLevels.get(s.user_id) ?? 0)}
                     isActiveSpeaker={activeSpeakerId === s.user_id}
                     isLoudest={loudestSpeakerId === s.user_id && loudestSpeakerId !== activeSpeakerId}
-                    isHost={isHost}
                     canMod={canMod && s.user_id !== myUserId}
                     modMenuOpen={modMenuOpen === s.user_id}
                     onOpenMod={() => setModMenuOpen(prev => prev === s.user_id ? null : s.user_id)}
@@ -2557,7 +2562,7 @@ export default function AudioCircleRoomScreen() {
                 handRaisedAtRef={handRaisedAtRef}
                 onPromote={() => promote(l.user_id)}
                 onAssignCohost={() => assignCohost(l.user_id)}
-                onDismiss={() => post("/hand", { raised: false, user_id: l.user_id })}
+                onDismiss={() => dismissHand(l.user_id)}
               />
             ))}
           </div>
@@ -2618,7 +2623,7 @@ export default function AudioCircleRoomScreen() {
                     session={session}
                     onPromote={promote}
                     onAssignCohost={assignCohost}
-                    onDismissHand={(userId) => post("/hand", { raised: false, user_id: userId })}
+                    onDismissHand={dismissHand}
                     onMuteAll={muteAll}
                     onLowerAll={lowerAllHands}
                     onShare={shareCircle}
@@ -2689,7 +2694,7 @@ export default function AudioCircleRoomScreen() {
                 session={session}
                 onPromote={promote}
                 onAssignCohost={assignCohost}
-                onDismissHand={(userId) => post("/hand", { raised: false, user_id: userId })}
+                onDismissHand={dismissHand}
                 onMuteAll={muteAll}
                 onLowerAll={lowerAllHands}
                 onShare={shareCircle}
@@ -3389,7 +3394,6 @@ interface SpeakerTileProps {
   isActiveSpeaker?: boolean;
   /** Locally-detected loudest speaker — gives instant visual feedback */
   isLoudest?: boolean;
-  isHost: boolean;
   canMod: boolean;
   modMenuOpen: boolean;
   onOpenMod: () => void;
