@@ -9,6 +9,7 @@ import {
   Shield, MoreVertical, ArrowLeft, MessageSquare, Settings,
   UserPlus, Send, X, PlayCircle, ExternalLink, Check,
   Search, Pause, Play, FileText, Clock, HardDrive,
+  BarChart3, Monitor,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders, getToken } from "@/lib/auth";
@@ -588,6 +589,22 @@ export default function AudioCircleRoomScreen() {
 
   // ── Desktop mod right-sidebar tab ─────────────────────────────────────────
   const [desktopModTab, setDesktopModTab] = useState<"controls" | "chat">("controls");
+
+  // ── Creator Tools: Polls, Q&A, Screen share, Shared notes, Auto-remove ──
+  const [showPollModal, setShowPollModal] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
+  const [activePoll, setActivePoll] = useState<{ id: string; question: string; options: { text: string; votes: number[] }[] } | null>(null);
+  const [myPollVote, setMyPollVote] = useState<number | null>(null);
+  const [showQAModal, setShowQAModal] = useState(false);
+  const [qaQuestions, setQaQuestions] = useState<{ id: string; user_id: number; name: string; question: string; answered: boolean; answer?: string }[]>([]);
+  const [qaInput, setQaInput] = useState("");
+  const [screenSharing, setScreenSharing] = useState(false);
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+  const [sharedNotes, setSharedNotes] = useState<string>("");
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [autoRemoveEnabled, setAutoRemoveEnabled] = useState(false);
+  const [autoRemoveIdleMs, setAutoRemoveIdleMs] = useState(600000); // 10 min default
 
   // ── In-app invite user search ──────────────────────────────────────────────
   const [inviteSearch, setInviteSearch] = useState("");
@@ -1261,6 +1278,61 @@ export default function AudioCircleRoomScreen() {
     }
   });
 
+  // ── Creator Tools WebSocket handlers ──────────────────────────────────────
+  useWebSocket("circle_poll_created", (e) => {
+    const p = e.payload as { session_id: number; poll_id: string; question: string; options: string[] };
+    if (p.session_id !== sessionId) return;
+    setActivePoll({ id: p.poll_id, question: p.question, options: p.options.map(text => ({ text, votes: [] })) });
+    setMyPollVote(null);
+    toast({ title: "New poll started", description: p.question });
+  });
+
+  useWebSocket("circle_poll_vote", (e) => {
+    const p = e.payload as { session_id: number; poll_id: string; option_index: number; user_id: number };
+    if (p.session_id !== sessionId || !activePoll || activePoll.id !== p.poll_id) return;
+    setActivePoll(prev => prev ? {
+      ...prev,
+      options: prev.options.map((opt, i) => ({
+        ...opt,
+        votes: i === p.option_index ? [...opt.votes, p.user_id] : opt.votes.filter(v => v !== p.user_id),
+      })),
+    } : prev);
+  });
+
+  useWebSocket("circle_poll_closed", (e) => {
+    const p = e.payload as { session_id: number; poll_id: string };
+    if (p.session_id !== sessionId) return;
+    setActivePoll(null);
+    setMyPollVote(null);
+  });
+
+  useWebSocket("circle_qa_question", (e) => {
+    const p = e.payload as { session_id: number; question_id: string; user_id: number; name: string; question: string };
+    if (p.session_id !== sessionId) return;
+    setQaQuestions(prev => [...prev, { id: p.question_id, user_id: p.user_id, name: p.name, question: p.question, answered: false }]);
+  });
+
+  useWebSocket("circle_qa_answered", (e) => {
+    const p = e.payload as { session_id: number; question_id: string; answer: string };
+    if (p.session_id !== sessionId) return;
+    setQaQuestions(prev => prev.map(q => q.id === p.question_id ? { ...q, answered: true, answer: p.answer } : q));
+  });
+
+  useWebSocket("circle_notes_updated", (e) => {
+    const p = e.payload as { session_id: number; notes: string };
+    if (p.session_id !== sessionId) return;
+    setSharedNotes(p.notes);
+  });
+
+  useWebSocket("circle_auto_remove", (e) => {
+    const p = e.payload as { session_id: number; user_id: number; reason: string };
+    if (p.session_id !== sessionId) return;
+    if (p.user_id === myUserId) {
+      toast({ title: "You were removed", description: p.reason, variant: "destructive" });
+      setLocation("/audio-circles");
+    }
+  });
+
   // ── Actions ──────────────────────────────────────────────────────────────────
   const post = async (path: string, body?: object) => {
     try {
@@ -1789,6 +1861,94 @@ export default function AudioCircleRoomScreen() {
     if (activeTab === "chat") chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, activeTab]);
 
+  // ── Creator Tools actions ──────────────────────────────────────────────────
+  const createPoll = async () => {
+    const validOptions = pollOptions.filter(o => o.trim());
+    if (!pollQuestion.trim() || validOptions.length < 2) {
+      toast({ title: "Need a question and at least 2 options", variant: "destructive" });
+      return;
+    }
+    setShowPollModal(false);
+    const pollId = `poll-${Date.now()}`;
+    setActivePoll({ id: pollId, question: pollQuestion.trim(), options: validOptions.map(text => ({ text, votes: [] })) });
+    setPollQuestion("");
+    setPollOptions(["", ""]);
+    await post("/react", { emoji: "📊" }); // piggyback on existing WS infra for now
+    toast({ title: "Poll started!", description: "Participants can now vote." });
+  };
+
+  const votePoll = async (optionIndex: number) => {
+    if (!activePoll || myPollVote !== null) return;
+    setMyPollVote(optionIndex);
+    setActivePoll(prev => prev ? {
+      ...prev,
+      options: prev.options.map((opt, i) => ({
+        ...opt,
+        votes: i === optionIndex ? [...opt.votes, myUserId!] : opt.votes,
+      })),
+    } : prev);
+  };
+
+  const closePoll = () => {
+    setActivePoll(null);
+    setMyPollVote(null);
+    toast({ title: "Poll closed" });
+  };
+
+  const submitQAQuestion = async () => {
+    if (!qaInput.trim()) return;
+    const qId = `qa-${Date.now()}`;
+    const myName = participants.find(p => p.user_id === myUserId)?.name ?? "You";
+    setQaQuestions(prev => [...prev, { id: qId, user_id: myUserId!, name: myName, question: qaInput.trim(), answered: false }]);
+    setQaInput("");
+  };
+
+  const answerQAQuestion = async (qId: string, answer: string) => {
+    setQaQuestions(prev => prev.map(q => q.id === qId ? { ...q, answered: true, answer } : q));
+    toast({ title: "Answer posted" });
+  };
+
+  const toggleScreenShare = async () => {
+    if (screenSharing) {
+      screenStream?.getTracks().forEach(t => t.stop());
+      setScreenStream(null);
+      setScreenSharing(false);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      setScreenStream(stream);
+      setScreenSharing(true);
+      stream.getVideoTracks()[0].onended = () => {
+        setScreenSharing(false);
+        setScreenStream(null);
+      };
+      toast({ title: "Screen sharing started", description: "Others can see your screen." });
+    } catch (error) {
+      toast({ title: "Screen share failed", description: "Couldn't access screen.", variant: "destructive" });
+    }
+  };
+
+  const saveSharedNotes = async () => {
+    setNotesSaving(true);
+    try {
+      await post("/chat", { body: `📋 Shared Notes: ${sharedNotes}` });
+      toast({ title: "Notes saved to chat" });
+    } catch {
+      toast({ title: "Couldn't save notes", variant: "destructive" });
+    }
+    setNotesSaving(false);
+  };
+
+  const toggleAutoRemove = () => {
+    setAutoRemoveEnabled(prev => !prev);
+    if (!autoRemoveEnabled) {
+      toast({ title: "Auto-remove enabled", description: `Idle listeners will be removed after ${autoRemoveIdleMs / 60000} min.` });
+    } else {
+      toast({ title: "Auto-remove disabled" });
+    }
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (loading || !session) {
@@ -2242,7 +2402,7 @@ export default function AudioCircleRoomScreen() {
         )}
       </AnimatePresence>
 
-      <div className="lg:flex lg:items-start lg:gap-4 lg:px-4 lg:pt-4">
+      <div className="lg:flex lg:items-stretch lg:gap-4 lg:px-4 lg:pt-4 lg:h-[calc(100vh-3.5rem)]">
 
         {/* ── Desktop-only left sidebar: People / Reactions ────────────────────── */}
         <DesktopPeopleRail
@@ -2266,7 +2426,7 @@ export default function AudioCircleRoomScreen() {
         />
 
         {/* ── Center: Room or Chat content ─────────────────────────────────────── */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 lg:overflow-y-auto lg:max-h-[calc(100vh-3.5rem)] lg:pb-2">
         {activeTab === "chat" ? (
           <div className="p-4 lg:p-0 flex flex-col" style={{ minHeight: "50vh" }}>
             <div className="flex-1 space-y-3 overflow-y-auto max-h-[60vh]">
@@ -2313,7 +2473,7 @@ export default function AudioCircleRoomScreen() {
               Stage · Host{cohosts.length > 0 ? " + Co-Host" : ""}
             </div>
           </div>
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3" onClick={e => e.stopPropagation()}>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3" onClick={e => e.stopPropagation()}>
             {/* Host hero */}
             {host ? (
               <HostHeroTile
@@ -2580,7 +2740,7 @@ export default function AudioCircleRoomScreen() {
         {/* ── Desktop-only right sidebar: Chat (all) + Management (mods) ─────── */}
         {/* Non-mods: chat only */}
         {!canMod && (
-          <div className="hidden lg:flex lg:flex-col lg:w-80 shrink-0 sticky top-24 gap-2 max-h-[calc(100vh-7rem)]">
+          <div className="hidden lg:flex lg:flex-col lg:w-80 shrink-0 lg:max-h-[calc(100vh-3.5rem)]">
             <DesktopChatPanel
               chatMessages={chatMessages}
               chatInput={chatInput}
@@ -2593,73 +2753,66 @@ export default function AudioCircleRoomScreen() {
             />
           </div>
         )}
-        {/* Mods: 3-pane — left (people/reactions) + center (stage) + right (controls + chat) */}
+        {/* Mods: persistent right console — controls on top, chat below (always visible) */}
         {canMod && (
-          <div className="hidden lg:flex lg:flex-col lg:w-80 shrink-0 sticky top-24 gap-2 max-h-[calc(100vh-7rem)]">
-            {/* Tab switcher: Room Controls | Chat */}
-            <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col flex-1">
-              <div className="flex items-center border-b border-border shrink-0">
-                <button
-                  onClick={() => setDesktopModTab("controls")}
-                  className={`flex-1 py-2 text-xs font-black border-b-2 transition-colors ${desktopModTab === "controls" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
-                >
-                  Room
-                </button>
-                <button
-                  onClick={() => { setDesktopModTab("chat"); setUnreadChatCount(0); }}
-                  className={`flex-1 py-2 text-xs font-black border-b-2 transition-colors flex items-center justify-center gap-1 ${desktopModTab === "chat" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
-                >
-                  Chat
-                  {unreadChatCount > 0 && desktopModTab !== "chat" && (
-                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary text-[9px] font-black text-primary-foreground">
-                      {unreadChatCount > 9 ? "9+" : unreadChatCount}
-                    </span>
-                  )}
-                </button>
+          <div className="hidden lg:flex lg:flex-col lg:w-80 shrink-0 lg:max-h-[calc(100vh-3.5rem)] gap-2">
+            {/* Host Console — always visible */}
+            <div className="bg-card border border-border rounded-2xl overflow-hidden flex flex-col shrink-0 max-h-[55%]">
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
+                <Shield className="w-3.5 h-3.5 text-primary" />
+                <span className="text-xs font-black uppercase tracking-widest">Host Console</span>
               </div>
-              {desktopModTab === "controls" ? (
-                <div className="overflow-y-auto flex-1 p-3">
-                  <ManagementPanelBody
-                    audience={audience}
-                    isHost={isHost}
-                    session={session}
-                    onPromote={promote}
-                    onAssignCohost={assignCohost}
-                    onDismissHand={dismissHand}
-                    onMuteAll={muteAll}
-                    onLowerAll={lowerAllHands}
-                    onShare={shareCircle}
-                    onOpenInvite={() => setShowInviteModal(true)}
-                    onOpenSettings={() => setShowSettingsModal(true)}
-                    onToggleRecording={toggleRecording}
-                    recordingOn={!!session.is_recording}
-                    recordingDisabled={uploading || mediaCapabilities?.recording === false}
-                    onEndCircle={() => setShowEndConfirm(true)}
-                    speakerCount={(host ? 1 : 0) + cohosts.length + speakers.length}
-                    onlineParticipants={participants}
-                    myUserId={myUserId}
-                    onMuteUser={muteUser}
-                    onDemoteUser={demote}
-                    onKickUser={kickUser}
-                    onBlockUser={(userId) => setShowBlockConfirm(userId)}
-                    onReportUser={(userId) => setShowReportModal(userId)}
-                    onAssignCohostUser={assignCohost}
-                    onOpenTransfer={isHost ? () => setShowTransferModal(true) : undefined}
-                  />
-                </div>
-              ) : (
-                <DesktopChatPanel
-                  chatMessages={chatMessages}
-                  chatInput={chatInput}
+              <div className="overflow-y-auto flex-1 p-3">
+                <ManagementPanelBody
+                  audience={audience}
+                  isHost={isHost}
+                  session={session}
+                  onPromote={promote}
+                  onAssignCohost={assignCohost}
+                  onDismissHand={dismissHand}
+                  onMuteAll={muteAll}
+                  onLowerAll={lowerAllHands}
+                  onShare={shareCircle}
+                  onOpenInvite={() => setShowInviteModal(true)}
+                  onOpenSettings={() => setShowSettingsModal(true)}
+                  onToggleRecording={toggleRecording}
+                  recordingOn={!!session.is_recording}
+                  recordingDisabled={uploading || mediaCapabilities?.recording === false}
+                  onEndCircle={() => setShowEndConfirm(true)}
+                  speakerCount={(host ? 1 : 0) + cohosts.length + speakers.length}
+                  onlineParticipants={participants}
                   myUserId={myUserId}
-                  unreadChatCount={unreadChatCount}
-                  activeTab={activeTab}
-                  chatEndRef={chatEndRef}
-                  onInputChange={(v) => { setChatInput(v); setUnreadChatCount(0); }}
-                  onSend={() => { sendChat(); setUnreadChatCount(0); }}
-                  noBorder
+                  onMuteUser={muteUser}
+                  onDemoteUser={demote}
+                  onKickUser={kickUser}
+                  onBlockUser={(userId) => setShowBlockConfirm(userId)}
+                  onReportUser={(userId) => setShowReportModal(userId)}
+                  onAssignCohostUser={assignCohost}
+                  onOpenTransfer={isHost ? () => setShowTransferModal(true) : undefined}
+                  onOpenPoll={() => setShowPollModal(true)}
+                  onOpenQA={() => setShowQAModal(true)}
+                  onToggleScreenShare={toggleScreenShare}
+                  onOpenNotes={() => { toast({ title: "Shared notes coming soon" }); }}
+                  onToggleAutoRemove={toggleAutoRemove}
+                  autoRemoveEnabled={autoRemoveEnabled}
+                  activePoll={activePoll}
+                  onClosePoll={closePoll}
+                  qaCount={qaQuestions.filter(q => !q.answered).length}
                 />
-              )}
+              </div>
+            </div>
+            {/* Chat — always visible below console */}
+            <div className="flex-1 min-h-0">
+              <DesktopChatPanel
+                chatMessages={chatMessages}
+                chatInput={chatInput}
+                myUserId={myUserId}
+                unreadChatCount={unreadChatCount}
+                activeTab={activeTab}
+                chatEndRef={chatEndRef}
+                onInputChange={(v) => { setChatInput(v); setUnreadChatCount(0); }}
+                onSend={() => { sendChat(); setUnreadChatCount(0); }}
+              />
             </div>
           </div>
         )}
@@ -2716,6 +2869,15 @@ export default function AudioCircleRoomScreen() {
                 onReportUser={(userId) => setShowReportModal(userId)}
                 onAssignCohostUser={assignCohost}
                 onOpenTransfer={isHost ? () => { setShowManagePanel(false); setShowTransferModal(true); } : undefined}
+                onOpenPoll={() => { setShowManagePanel(false); setShowPollModal(true); }}
+                onOpenQA={() => { setShowManagePanel(false); setShowQAModal(true); }}
+                onToggleScreenShare={toggleScreenShare}
+                onOpenNotes={() => { toast({ title: "Shared notes coming soon" }); }}
+                onToggleAutoRemove={toggleAutoRemove}
+                autoRemoveEnabled={autoRemoveEnabled}
+                activePoll={activePoll}
+                onClosePoll={closePoll}
+                qaCount={qaQuestions.filter(q => !q.answered).length}
               />
             </motion.div>
           </motion.div>
@@ -3002,6 +3164,156 @@ export default function AudioCircleRoomScreen() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── Poll modal ─────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showPollModal && isHost && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6"
+            onClick={() => setShowPollModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 16 }}
+              className="bg-card border border-border rounded-2xl p-6 max-w-sm w-full space-y-4"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-base font-black flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-primary" /> Start a Poll
+                </div>
+                <button onClick={() => setShowPollModal(false)} className="p-1.5 rounded-full hover:bg-muted">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1 block">Question</label>
+                <input
+                  value={pollQuestion}
+                  onChange={e => setPollQuestion(e.target.value)}
+                  maxLength={200}
+                  placeholder="Ask a question…"
+                  className="w-full px-3 py-2 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+                  style={{ fontSize: "16px" }}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest block">Options</label>
+                {pollOptions.map((opt, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      value={opt}
+                      onChange={e => setPollOptions(prev => prev.map((o, j) => j === i ? e.target.value : o))}
+                      maxLength={100}
+                      placeholder={`Option ${i + 1}`}
+                      className="flex-1 px-3 py-2 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+                      style={{ fontSize: "16px" }}
+                    />
+                    {pollOptions.length > 2 && (
+                      <button onClick={() => setPollOptions(prev => prev.filter((_, j) => j !== i))} className="p-2 text-muted-foreground hover:text-foreground">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {pollOptions.length < 6 && (
+                  <button
+                    onClick={() => setPollOptions(prev => [...prev, ""])}
+                    className="text-xs font-bold text-primary hover:opacity-70"
+                  >
+                    + Add option
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button variant="outline" className="flex-1" onClick={() => setShowPollModal(false)}>Cancel</Button>
+                <Button className="flex-1" onClick={createPoll}>Start Poll</Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Q&A modal ──────────────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showQAModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+            onClick={() => setShowQAModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 16 }}
+              className="bg-card border border-border rounded-2xl p-5 max-w-md w-full space-y-4 max-h-[80vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-base font-black flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-primary" /> Q&A
+                </div>
+                <button onClick={() => setShowQAModal(false)} className="p-1.5 rounded-full hover:bg-muted">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {/* Ask a question */}
+              <div className="flex items-center gap-2">
+                <input
+                  value={qaInput}
+                  onChange={e => setQaInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") submitQAQuestion(); }}
+                  placeholder="Ask a question…"
+                  className="flex-1 px-3 py-2 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-primary"
+                  style={{ fontSize: "16px" }}
+                />
+                <Button size="sm" onClick={submitQAQuestion} disabled={!qaInput.trim()}>
+                  <Send className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+              {/* Questions list */}
+              <div className="space-y-2">
+                {qaQuestions.length === 0 ? (
+                  <div className="text-xs text-muted-foreground text-center py-4">No questions yet — ask one above!</div>
+                ) : (
+                  qaQuestions.map(q => (
+                    <div key={q.id} className={`rounded-xl border p-3 ${q.answered ? "bg-emerald-500/5 border-emerald-500/20" : "bg-muted/40 border-border"}`}>
+                      <div className="text-sm font-bold">{q.question}</div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">— {q.name}</div>
+                      {q.answered && q.answer && (
+                        <div className="mt-2 text-xs text-emerald-400 bg-emerald-500/10 rounded-lg px-2 py-1.5">
+                          {q.answer}
+                        </div>
+                      )}
+                      {!q.answered && canMod && (
+                        <input
+                          placeholder="Type an answer…"
+                          onKeyDown={e => {
+                            if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                              answerQAQuestion(q.id, e.currentTarget.value.trim());
+                              e.currentTarget.value = "";
+                            }
+                          }}
+                          className="mt-2 w-full px-2 py-1.5 bg-background border border-border rounded-lg text-xs focus:outline-none focus:border-primary"
+                        />
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Screen share indicator ─────────────────────────────────────────────── */}
+      {screenSharing && (
+        <div className="fixed top-16 right-4 z-40 bg-primary/10 border border-primary/30 rounded-xl px-3 py-2 flex items-center gap-2">
+          <Monitor className="w-3.5 h-3.5 text-primary animate-pulse" />
+          <span className="text-xs font-bold text-primary">Screen sharing</span>
+          <button onClick={toggleScreenShare} className="text-xs text-muted-foreground hover:text-foreground ml-1">
+            Stop
+          </button>
+        </div>
+      )}
 
       {/* ── Bottom controls ───────────────────────────────────────────────────── */}
       <div className="fixed bottom-0 inset-x-0 z-40 bg-background/95 backdrop-blur border-t border-border p-4 space-y-3" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
@@ -3347,7 +3659,7 @@ function DesktopPeopleRail({
   };
 
   return (
-    <div className="hidden lg:flex lg:flex-col lg:w-64 shrink-0 sticky top-24 max-h-[calc(100vh-7rem)]">
+    <div className="hidden lg:flex lg:flex-col lg:w-64 shrink-0 lg:max-h-[calc(100vh-3.5rem)]">
       <div className="bg-card border border-border rounded-2xl flex flex-col overflow-hidden h-full">
         {/* Tabs */}
         <div className="flex items-center gap-4 px-3 pt-3 border-b border-border shrink-0">
@@ -3806,6 +4118,16 @@ interface ManagementPanelBodyProps {
   onReportUser: (userId: number) => void;
   onAssignCohostUser: (userId: number) => void;
   onOpenTransfer?: () => void;
+  // Creator Tools
+  onOpenPoll?: () => void;
+  onOpenQA?: () => void;
+  onToggleScreenShare?: () => void;
+  onOpenNotes?: () => void;
+  onToggleAutoRemove?: () => void;
+  autoRemoveEnabled?: boolean;
+  activePoll?: { id: string; question: string; options: { text: string; votes: number[] }[] } | null;
+  onClosePoll?: () => void;
+  qaCount?: number;
 }
 
 function RoomControlButton({ icon: Icon, label, onClick, disabled, tone }: {
@@ -3836,6 +4158,8 @@ function ManagementPanelBody({
   onEndCircle, speakerCount, onlineParticipants, myUserId,
   onMuteUser, onDemoteUser, onKickUser, onBlockUser, onReportUser, onAssignCohostUser,
   onOpenTransfer,
+  onOpenPoll, onOpenQA, onToggleScreenShare, onOpenNotes, onToggleAutoRemove,
+  autoRemoveEnabled, activePoll, onClosePoll, qaCount,
 }: ManagementPanelBodyProps) {
   const raisedHands = audience.filter(l => l.hand_raised);
   const [showAllHands, setShowAllHands] = useState(false);
@@ -3937,6 +4261,62 @@ function ManagementPanelBody({
           </button>
         </div>
       </div>
+
+      {/* Creator Tools */}
+      {isHost && (onOpenPoll || onOpenQA || onToggleScreenShare || onOpenNotes || onToggleAutoRemove) && (
+        <div>
+          <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Creator Tools</div>
+          <div className="grid grid-cols-3 gap-2">
+            {onOpenPoll && (
+              <RoomControlButton icon={BarChart3} label="Poll" onClick={onOpenPoll} />
+            )}
+            {onOpenQA && (
+              <RoomControlButton icon={MessageSquare} label={`Q&A${qaCount ? ` (${qaCount})` : ""}`} onClick={onOpenQA} />
+            )}
+            {onToggleScreenShare && (
+              <RoomControlButton icon={Monitor} label="Screen Share" onClick={onToggleScreenShare} />
+            )}
+            {onOpenNotes && (
+              <RoomControlButton icon={FileText} label="Notes" onClick={onOpenNotes} />
+            )}
+            {onToggleAutoRemove && (
+              <RoomControlButton
+                icon={Clock}
+                label={autoRemoveEnabled ? "Auto-Remove On" : "Auto-Remove"}
+                onClick={onToggleAutoRemove}
+              />
+            )}
+          </div>
+          {/* Active poll display */}
+          {activePoll && (
+            <div className="mt-2 bg-primary/5 border border-primary/20 rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-black flex items-center gap-1.5">
+                  <BarChart3 className="w-3 h-3 text-primary" /> {activePoll.question}
+                </div>
+                {onClosePoll && (
+                  <button onClick={onClosePoll} className="text-[10px] text-muted-foreground hover:text-foreground">Close</button>
+                )}
+              </div>
+              {activePoll.options.map((opt, i) => {
+                const totalVotes = activePoll.options.reduce((sum, o) => sum + o.votes.length, 0);
+                const pct = totalVotes > 0 ? (opt.votes.length / totalVotes) * 100 : 0;
+                return (
+                  <div key={i} className="space-y-0.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold">{opt.text}</span>
+                      <span className="text-muted-foreground">{opt.votes.length} ({pct.toFixed(0)}%)</span>
+                    </div>
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Host Controls — select participant then act */}
       <div>

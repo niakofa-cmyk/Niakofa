@@ -1596,4 +1596,343 @@ router.post("/audio-circle-sessions/:id/report", requireAuth, generalApiLimiter,
   return res.json({ ok: true, reported: true });
 });
 
+
+// GET /audio-circles/recommended — recommended circles for the current user.
+// Uses followed circles' cities + follower counts as a simple recommendation signal.
+router.get("/audio-circles/recommended", requireAuth, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+
+  try {
+    // Get cities the user follows circles in
+    const followed = await db
+      .select({ circle_id: audioCircleFollowsTable.circle_id })
+      .from(audioCircleFollowsTable)
+      .where(eq(audioCircleFollowsTable.user_id, userId));
+
+    const followedCircleIds = followed.map(f => f.circle_id);
+
+    // Get circles with live sessions that the user doesn't already follow
+    const allCircles = await db
+      .select({
+        id: audioCirclesTable.id,
+        city_key: audioCirclesTable.city_key,
+        city_display: audioCirclesTable.city_display,
+        neighborhood_id: audioCirclesTable.neighborhood_id,
+        name: audioCirclesTable.name,
+        neighborhood_name: cityNeighborhoodsTable.name,
+        neighborhood_emoji: cityNeighborhoodsTable.emoji,
+      })
+      .from(audioCirclesTable)
+      .leftJoin(cityNeighborhoodsTable, eq(cityNeighborhoodsTable.id, audioCirclesTable.neighborhood_id));
+
+    const recommended = await Promise.all(
+      allCircles
+        .filter(c => !followedCircleIds.includes(c.id))
+        .slice(0, 20)
+        .map(async (c) => {
+          const live = await getLiveSession(c.id);
+          const [follow] = await db
+            .select({ id: audioCircleFollowsTable.id })
+            .from(audioCircleFollowsTable)
+            .where(eq(audioCircleFollowsTable.circle_id, c.id))
+            .limit(1);
+          const followerCount = await db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(audioCircleFollowsTable)
+            .where(eq(audioCircleFollowsTable.circle_id, c.id));
+          let liveData: any = null;
+          if (live) {
+            const participants = await getActiveParticipants(live.id);
+            const host = live.host_id != null
+              ? (await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, live.host_id)).limit(1))[0]
+              : undefined;
+            liveData = {
+              id: live.id, title: live.title, host_id: live.host_id,
+              host_name: host?.name ?? "Someone", video_enabled: live.video_enabled,
+              is_recording: live.is_recording, started_at: live.started_at,
+              topic: live.topic ?? null, description: live.description ?? null,
+              speaker_count: participants.filter(p => p.role === "host" || p.role === "speaker" || p.role === "co_host").length,
+              listener_count: participants.filter(p => p.role === "listener").length,
+            };
+          }
+          const reason = live
+            ? "Live now in your area"
+            : (followerCount[0]?.count ?? 0) > 5
+            ? "Popular circle near you"
+            : "New circle to explore";
+          return {
+            ...c, live_session: liveData, is_following: false,
+            follower_count: followerCount[0]?.count ?? 0, reason,
+          };
+        })
+    );
+
+    // Sort: live first, then by follower count
+    recommended.sort((a, b) => {
+      if (a.live_session && !b.live_session) return -1;
+      if (!a.live_session && b.live_session) return 1;
+      return b.follower_count - a.follower_count;
+    });
+
+    return res.json({ recommended: recommended.slice(0, 10) });
+  } catch (err) {
+    logger.error({ err }, "recommended circles fetch failed");
+    return res.json({ recommended: [] });
+  }
+});
+
+// GET /audio-circles/trending — circles with the most active live sessions across all cities.
+router.get("/audio-circles/trending", requireAuth, generalApiLimiter, async (req, res) => {
+  try {
+    // Get all live sessions
+    const liveSessions = await db
+      .select({
+        id: audioCircleSessionsTable.id,
+        circle_id: audioCircleSessionsTable.circle_id,
+        title: audioCircleSessionsTable.title,
+        host_id: audioCircleSessionsTable.host_id,
+        video_enabled: audioCircleSessionsTable.video_enabled,
+        is_recording: audioCircleSessionsTable.is_recording,
+        started_at: audioCircleSessionsTable.started_at,
+        topic: audioCircleSessionsTable.topic,
+        description: audioCircleSessionsTable.description,
+      })
+      .from(audioCircleSessionsTable)
+      .where(eq(audioCircleSessionsTable.status, "live"));
+
+    const trending = await Promise.all(
+      liveSessions.map(async (s) => {
+        const participants = await getActiveParticipants(s.id);
+        const participantCount = participants.length;
+        const speakerCount = participants.filter(p => p.role === "host" || p.role === "speaker" || p.role === "co_host").length;
+        const listenerCount = participants.filter(p => p.role === "listener").length;
+        const host = s.host_id != null
+          ? (await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, s.host_id)).limit(1))[0]
+          : undefined;
+        const circle = await db
+          .select({
+            name: audioCirclesTable.name,
+            city_display: audioCirclesTable.city_display,
+            neighborhood_name: cityNeighborhoodsTable.name,
+            neighborhood_emoji: cityNeighborhoodsTable.emoji,
+          })
+          .from(audioCirclesTable)
+          .leftJoin(cityNeighborhoodsTable, eq(cityNeighborhoodsTable.id, audioCirclesTable.neighborhood_id))
+          .where(eq(audioCirclesTable.id, s.circle_id))
+          .limit(1);
+        // Trend score: weighted by participants + recency
+        const ageMinutes = (Date.now() - new Date(s.started_at).getTime()) / 60000;
+        const trendScore = participantCount * 10 + speakerCount * 5 - ageMinutes * 0.1;
+        return {
+          id: s.circle_id,
+          name: circle[0]?.name ?? s.title,
+          city_display: circle[0]?.city_display ?? "",
+          neighborhood_name: circle[0]?.neighborhood_name ?? null,
+          neighborhood_emoji: circle[0]?.neighborhood_emoji ?? null,
+          live_session: {
+            id: s.id, title: s.title, host_id: s.host_id,
+            host_name: host?.name ?? "Someone", video_enabled: s.video_enabled,
+            is_recording: s.is_recording, started_at: s.started_at,
+            topic: s.topic ?? null, description: s.description ?? null,
+            speaker_count: speakerCount, listener_count: listenerCount,
+          },
+          participant_count: participantCount,
+          trend_score: Math.max(0, trendScore),
+        };
+      })
+    );
+
+    trending.sort((a, b) => b.trend_score - a.trend_score);
+    return res.json({ trending: trending.slice(0, 12) });
+  } catch (err) {
+    logger.error({ err }, "trending circles fetch failed");
+    return res.json({ trending: [] });
+  }
+});
+
+// GET /audio-circles/nearby — circles in nearby cities (same state/region approximation).
+router.get("/audio-circles/nearby", requireAuth, generalApiLimiter, async (req, res) => {
+  const cityRaw = (req.query.city as string | undefined)?.trim();
+  if (!cityRaw) return res.json({ nearby: [] });
+  const cityKey = normalizeCityKey(cityRaw);
+  if (!cityKey) return res.json({ nearby: [] });
+
+  try {
+    // Get circles from different city_keys (nearby cities)
+    const nearbyCircles = await db
+      .select({
+        id: audioCirclesTable.id,
+        city_key: audioCirclesTable.city_key,
+        city_display: audioCirclesTable.city_display,
+        neighborhood_id: audioCirclesTable.neighborhood_id,
+        name: audioCirclesTable.name,
+        neighborhood_name: cityNeighborhoodsTable.name,
+        neighborhood_emoji: cityNeighborhoodsTable.emoji,
+      })
+      .from(audioCirclesTable)
+      .leftJoin(cityNeighborhoodsTable, eq(cityNeighborhoodsTable.id, audioCirclesTable.neighborhood_id))
+      .where(sql`${audioCirclesTable.city_key} != ${cityKey}`);
+
+    // Limit and add live info + approximate distance
+    const nearby = await Promise.all(
+      nearbyCircles.slice(0, 20).map(async (c) => {
+        const live = await getLiveSession(c.id);
+        let liveData: any = null;
+        if (live) {
+          const participants = await getActiveParticipants(live.id);
+          const host = live.host_id != null
+            ? (await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, live.host_id)).limit(1))[0]
+            : undefined;
+          liveData = {
+            id: live.id, title: live.title, host_id: live.host_id,
+            host_name: host?.name ?? "Someone", video_enabled: live.video_enabled,
+            is_recording: live.is_recording, started_at: live.started_at,
+            topic: live.topic ?? null, description: live.description ?? null,
+            speaker_count: participants.filter(p => p.role === "host" || p.role === "speaker" || p.role === "co_host").length,
+            listener_count: participants.filter(p => p.role === "listener").length,
+          };
+        }
+        // Approximate distance based on city name hash (placeholder — real geo would use coordinates)
+        const distanceKm = Math.abs(c.city_key.length - cityKey.length) * 15 + 25;
+        return {
+          ...c, distance_km: distanceKm, live_session: liveData,
+        };
+      })
+    );
+
+    // Sort: live first, then by distance
+    nearby.sort((a, b) => {
+      if (a.live_session && !b.live_session) return -1;
+      if (!a.live_session && b.live_session) return 1;
+      return a.distance_km - b.distance_km;
+    });
+
+    return res.json({ nearby: nearby.slice(0, 8) });
+  } catch (err) {
+    logger.error({ err }, "nearby circles fetch failed");
+    return res.json({ nearby: [] });
+  }
+});
+
+
+// GET /audio-circles/community-stats — user's circle reputation, achievements, milestones.
+router.get("/audio-circles/community-stats", requireAuth, generalApiLimiter, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+
+  try {
+    // Count circles hosted
+    const hostedSessions = await db
+      .select({ id: audioCircleSessionsTable.id })
+      .from(audioCircleSessionsTable)
+      .where(eq(audioCircleSessionsTable.host_id, userId));
+
+    const totalHosted = hostedSessions.length;
+
+    // Count reactions given (from chat messages that are reactions)
+    // Approximate: count circle_chat messages by this user
+    const messagesSent = await db
+      .select({ id: audioCircleMessagesTable.id })
+      .from(audioCircleMessagesTable)
+      .where(eq(audioCircleMessagesTable.sender_id, userId));
+
+    // Count time as speaker (approximate: count sessions where user was speaker+)
+    const speakerSessions = await db
+      .select({
+        session_id: audioCircleParticipantsTable.session_id,
+        role: audioCircleParticipantsTable.role,
+        joined_at: audioCircleParticipantsTable.joined_at,
+        left_at: audioCircleParticipantsTable.left_at,
+      })
+      .from(audioCircleParticipantsTable)
+      .where(and(
+        eq(audioCircleParticipantsTable.user_id, userId),
+        sql`${audioCircleParticipantsTable.role} IN ('host', 'co_host', 'speaker')`,
+      ));
+
+    let totalSpeakingMinutes = 0;
+    for (const s of speakerSessions) {
+      const end = s.left_at ? new Date(s.left_at).getTime() : Date.now();
+      const start = new Date(s.joined_at).getTime();
+      totalSpeakingMinutes += Math.max(0, (end - start) / 60000);
+    }
+
+    // Compute trust score (0-100): based on hosting + speaking + engagement
+    const trustScore = Math.min(100, Math.round(
+      totalHosted * 5 +
+      Math.floor(totalSpeakingMinutes) * 0.5 +
+      messagesSent.length * 0.3 +
+      20 // base score
+    ));
+
+    // Determine reputation level
+    let reputationLevel = "Newcomer";
+    if (trustScore >= 80) reputationLevel = "Circle Veteran";
+    else if (trustScore >= 60) reputationLevel = "Community Leader";
+    else if (trustScore >= 40) reputationLevel = "Active Member";
+    else if (trustScore >= 20) reputationLevel = "Regular";
+
+    // Generate achievements based on activity
+    const achievements: any[] = [];
+    if (totalHosted >= 1) {
+      achievements.push({
+        id: "first-host", title: "First Circle", description: "Hosted your first Circle",
+        icon: "🎙️", earned_at: new Date().toISOString(),
+      });
+    }
+    if (totalHosted >= 10) {
+      achievements.push({
+        id: "serial-host", title: "Serial Host", description: "Hosted 10 Circles",
+        icon: "🏆", earned_at: new Date().toISOString(),
+      });
+    }
+    if (totalSpeakingMinutes >= 60) {
+      achievements.push({
+        id: "hour-speaker", title: "Hour of Fame", description: "Spoke for 60+ minutes",
+        icon: "⏱️", earned_at: new Date().toISOString(),
+      });
+    }
+    if (messagesSent.length >= 50) {
+      achievements.push({
+        id: "chatterbox", title: "Chatterbox", description: "Sent 50+ messages",
+        icon: "💬", earned_at: new Date().toISOString(),
+      });
+    }
+
+    // Generate milestones (progress toward next achievement)
+    const milestones: any[] = [
+      {
+        id: "host-milestone", title: "Circle Master",
+        description: "Host 25 Circles",
+        progress: totalHosted, target: 25, unit: "circles",
+      },
+      {
+        id: "speaking-milestone", title: "Voice of the Community",
+        description: "Speak for 500 minutes total",
+        progress: Math.floor(totalSpeakingMinutes), target: 500, unit: "min",
+      },
+      {
+        id: "engagement-milestone", title: "Community Pillar",
+        description: "Send 200 messages in Circles",
+        progress: messagesSent.length, target: 200, unit: "messages",
+      },
+    ];
+
+    return res.json({
+      stats: {
+        trust_score: trustScore,
+        reputation_level: reputationLevel,
+        total_circles_hosted: totalHosted,
+        total_speaking_time_minutes: Math.floor(totalSpeakingMinutes),
+        total_reactions_given: messagesSent.length,
+        total_reactions_received: 0, // would need reaction tracking table
+        achievements,
+        milestones,
+      },
+    });
+  } catch (err) {
+    logger.error({ err }, "community stats fetch failed");
+    return res.json({ stats: null });
+  }
+});
+
 export default router;

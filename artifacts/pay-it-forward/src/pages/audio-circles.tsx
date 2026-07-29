@@ -44,6 +44,68 @@ interface Recording {
   ended_at: string | null;
 }
 
+interface RecommendedCircle {
+  id: number;
+  name: string;
+  city_display: string;
+  neighborhood_name: string | null;
+  neighborhood_emoji: string | null;
+  live_session: LiveSessionSummary | null;
+  is_following: boolean;
+  follower_count: number;
+  reason: string;
+}
+
+interface TrendingCircle {
+  id: number;
+  name: string;
+  city_display: string;
+  neighborhood_name: string | null;
+  neighborhood_emoji: string | null;
+  live_session: LiveSessionSummary | null;
+  participant_count: number;
+  trend_score: number;
+}
+
+interface NearbyCircle {
+  id: number;
+  name: string;
+  city_display: string;
+  city_key: string;
+  neighborhood_name: string | null;
+  neighborhood_emoji: string | null;
+  distance_km: number;
+  live_session: LiveSessionSummary | null;
+}
+
+interface CircleAchievement {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  earned_at: string;
+}
+
+interface CircleMilestone {
+  id: string;
+  title: string;
+  description: string;
+  progress: number;
+  target: number;
+  unit: string;
+}
+
+interface CommunityStats {
+  trust_score: number;
+  reputation_level: string;
+  total_circles_hosted: number;
+  total_speaking_time_minutes: number;
+  total_reactions_given: number;
+  total_reactions_received: number;
+  achievements: CircleAchievement[];
+  milestones: CircleMilestone[];
+}
+
 const SESSION_KEY = "niakofa_circles_city";
 
 // ── Pre-join host modal ──────────────────────────────────────────────────────
@@ -266,6 +328,12 @@ export default function AudioCirclesScreen() {
   const [followedCircles, setFollowedCircles] = useState<CircleSummary[]>([]);
   const [followedLoading, setFollowedLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<"discover" | "following">("discover");
+  const [recommended, setRecommended] = useState<RecommendedCircle[]>([]);
+  const [trending, setTrending] = useState<TrendingCircle[]>([]);
+  const [nearby, setNearby] = useState<NearbyCircle[]>([]);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [communityStats, setCommunityStats] = useState<CommunityStats | null>(null);
+  const [showStatsModal, setShowStatsModal] = useState(false);
 
   // Ref for the highlighted neighborhood card (from Community tab navigation)
   const highlightRef = useRef<HTMLDivElement | null>(null);
@@ -450,6 +518,47 @@ export default function AudioCirclesScreen() {
           </p>
         </div>
 
+        {/* Community Stats — reputation, trust score, achievements */}
+        {communityStats && (
+          <button
+            onClick={() => setShowStatsModal(true)}
+            className="w-full bg-card border border-border rounded-2xl p-4 flex items-center gap-4 hover:border-primary/40 transition-colors text-left"
+          >
+            <div className="relative w-14 h-14 shrink-0">
+              <svg className="w-14 h-14 -rotate-90" viewBox="0 0 56 56">
+                <circle cx="28" cy="28" r="24" fill="none" stroke="currentColor" strokeWidth="4" className="text-muted/30" />
+                <circle cx="28" cy="28" r="24" fill="none" stroke="currentColor" strokeWidth="4"
+                  className="text-primary transition-all"
+                  strokeDasharray={`${(communityStats.trust_score / 100) * 150.8} 150.8`}
+                  strokeLinecap="round" />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-sm font-black">{communityStats.trust_score}</span>
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-black">{communityStats.reputation_level}</span>
+                <span className="text-[10px] font-bold text-primary bg-primary/10 rounded-full px-2 py-0.5">Trust Score</span>
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-3 flex-wrap">
+                <span>{communityStats.total_circles_hosted} hosted</span>
+                <span>{Math.floor(communityStats.total_speaking_time_minutes)} min spoken</span>
+                <span>{communityStats.achievements.length} achievements</span>
+              </div>
+            </div>
+            {communityStats.achievements.length > 0 && (
+              <div className="flex -space-x-1 shrink-0">
+                {communityStats.achievements.slice(0, 3).map(a => (
+                  <div key={a.id} className="w-7 h-7 rounded-full bg-primary/15 border-2 border-background flex items-center justify-center text-sm" title={a.title}>
+                    {a.icon}
+                  </div>
+                ))}
+              </div>
+            )}
+          </button>
+        )}
+
         {/* Discover / Following tabs */}
         <div className="flex items-center border-b border-border -mb-1">
           <button
@@ -468,6 +577,121 @@ export default function AudioCirclesScreen() {
             )}
           </button>
         </div>
+
+        {/* Live Now — trending rooms across all cities */}
+        {activeSection === "discover" && trending.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Radio className="w-3.5 h-3.5 text-primary" />
+              <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                Trending Now · {trending.length}
+              </div>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-thin">
+              {trending.slice(0, 8).map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => t.live_session && joinRoom(t.live_session.id)}
+                  className="bg-card border border-border rounded-2xl p-3 flex flex-col gap-2 min-w-[200px] shrink-0 hover:border-primary/40 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{t.neighborhood_emoji ?? "🌆"}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-black truncate">{t.neighborhood_name ?? t.name}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">{t.city_display}</div>
+                    </div>
+                    {t.live_session && (
+                      <span className="flex items-center gap-1 text-[9px] font-black text-green-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                        LIVE
+                      </span>
+                    )}
+                  </div>
+                  {t.live_session && (
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                      <span className="flex items-center gap-0.5"><Users className="w-2.5 h-2.5" /> {t.participant_count}</span>
+                      <span className="flex items-center gap-0.5"><Mic className="w-2.5 h-2.5" /> {t.live_session.speaker_count}</span>
+                      {t.live_session.video_enabled && <Video className="w-2.5 h-2.5 text-primary" />}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Recommended for you */}
+        {activeSection === "discover" && recommended.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Crown className="w-3.5 h-3.5 text-amber-400" />
+              <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                Recommended · {recommended.length}
+              </div>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-thin">
+              {recommended.slice(0, 6).map(r => (
+                <button
+                  key={r.id}
+                  onClick={() => r.live_session && joinRoom(r.live_session.id)}
+                  className="bg-card border border-border rounded-2xl p-3 flex flex-col gap-2 min-w-[200px] shrink-0 hover:border-primary/40 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{r.neighborhood_emoji ?? "🌆"}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-black truncate">{r.neighborhood_name ?? r.name}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">{r.city_display}</div>
+                    </div>
+                  </div>
+                  <div className="text-[9px] text-primary/70 italic truncate">{r.reason}</div>
+                  {r.live_session && (
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                      <span className="flex items-center gap-0.5"><Users className="w-2.5 h-2.5" /> {r.live_session.listener_count + r.live_session.speaker_count}</span>
+                      <span className="flex items-center gap-1 text-[9px] font-black text-green-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> LIVE
+                      </span>
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Nearby cities */}
+        {activeSection === "discover" && nearby.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Search className="w-3.5 h-3.5 text-muted-foreground" />
+              <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                Nearby Cities · {nearby.length}
+              </div>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-thin">
+              {nearby.slice(0, 6).map(n => (
+                <button
+                  key={n.id}
+                  onClick={() => { setCity(n.city_display); setCityInput(n.city_display); }}
+                  className="bg-card border border-border rounded-2xl p-3 flex flex-col gap-1 min-w-[180px] shrink-0 hover:border-primary/40 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{n.neighborhood_emoji ?? "🌆"}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-black truncate">{n.neighborhood_name ?? n.name}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">{n.city_display}</div>
+                    </div>
+                  </div>
+                  <div className="text-[9px] text-muted-foreground">{n.distance_km.toFixed(0)} km away</div>
+                  {n.live_session && (
+                    <span className="flex items-center gap-1 text-[9px] font-black text-green-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> LIVE
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Following section */}
         {activeSection === "following" && (
