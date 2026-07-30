@@ -42,7 +42,7 @@ const HELPER_TABS: Tab[] = [
   { path: "/audio-circles",    icon: Radio,         labelKey: "nav.circles" },
 ];
 
-const SEED_NOTIFICATIONS: LiveNotification[] = [
+export const SEED_NOTIFICATIONS: LiveNotification[] = [
   {
     id: "seed-1",
     type: "emergency",
@@ -188,7 +188,7 @@ export function BottomNav() {
       <>
         {/* Floating corner nav — LEFT side to avoid Mapbox controls on the right */}
         <div
-          className="fixed bottom-28 left-4 flex flex-col items-start"
+          className="lg:hidden fixed bottom-28 left-4 flex flex-col items-start"
           style={{ zIndex: Z_NAV }}
         >
           <AnimatePresence>
@@ -410,7 +410,7 @@ export function BottomNav() {
       <nav
         aria-label="Main navigation"
         style={{ zIndex: Z_NAV }}
-        className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-xl border-t border-border pb-safe shadow-[0_-4px_30px_rgba(0,0,0,0.4)]"
+        className="lg:hidden fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-xl border-t border-border pb-safe shadow-[0_-4px_30px_rgba(0,0,0,0.4)]"
       >
         {/* ── Nav tabs ─────────────────────────────────────────────────────── */}
         <div className="flex items-end justify-around px-2 pt-2 pb-2">

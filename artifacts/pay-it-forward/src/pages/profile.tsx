@@ -7,7 +7,8 @@ import {
   DollarSign, Gift, Clock, ChevronRight, AlertCircle, CheckCircle2,
   ExternalLink, BookOpen, Bell, Lock, Trash2, X, Phone, FileText,
   Eye, Users, Info, ChevronLeft, Flag, Plus,
-  Camera, Sliders, CreditCard, Activity, Loader2, Building2, Award, Wrench
+  Camera, Sliders, CreditCard, Activity, Loader2, Building2, Award, Wrench,
+  LayoutDashboard,
 } from "lucide-react";
 import { ReportModal } from "@/components/ReportModal";
 import { Button } from "@/components/ui/button";
@@ -1267,6 +1268,22 @@ export default function ProfileScreen() {
                 </div>
               );
             })()}
+
+            {/* Dashboard — mobile's entry point to the distinct Dashboard page
+                (desktop reaches it directly via the sidebar) */}
+            <button
+              onClick={() => setLocation("/dashboard")}
+              className="w-full bg-card border border-border rounded-2xl p-4 flex items-center justify-between hover:border-primary/40 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <LayoutDashboard className="w-5 h-5 text-primary" />
+                <div className="text-left">
+                  <div className="font-black text-sm">My Dashboard</div>
+                  <div className="text-xs text-muted-foreground">Stats, quick access & recent activity</div>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
 
             {/* Wallet Summary */}
             <button

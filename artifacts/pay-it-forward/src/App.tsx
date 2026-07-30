@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppProvider, useAppContext } from "@/lib/AppContext";
 import { SpiritEnvironmentProvider } from "@/components/SpiritAnimal/SpiritEnvironmentProvider";
 import { BottomNav } from "@/components/BottomNav";
+import { DesktopSidebar } from "@/components/DesktopSidebar";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NiaFab, NiaDrawer } from "@/components/NiaDrawer";
 import { useState, useEffect, lazy, Suspense } from "react";
@@ -55,6 +56,7 @@ const CivicTaskNavPage     = lazy(() => import("@/pages/civic-task-nav"));
 const FamilySpacesPage     = lazy(() => import("@/pages/family-spaces"));
 const FamilyVaultPage      = lazy(() => import("@/pages/family-vault"));
 const FamilyMemoryPage     = lazy(() => import("@/pages/family-memory"));
+const DashboardPage        = lazy(() => import("@/pages/dashboard"));
 const DiasporaDashboardPage = lazy(() => import("@/pages/diaspora-dashboard"));
 const FamilyTreePage        = lazy(() => import("@/pages/family-tree"));
 const DnaConnectionsPage   = lazy(() => import("@/pages/dna-connections"));
@@ -245,6 +247,9 @@ function AppShell() {
     );
   }
 
+  const showShell = !isActiveRequest && !isTrackingRequest && !isAdmin && !isLogin &&
+    !isOnboarding && !isStripeConnected && !isAudioCircles && !isAudioCircleRoom;
+
   return (
     <>
       {/* Per-page ErrorBoundary: if one page's render throws, the shell
@@ -270,6 +275,7 @@ function AppShell() {
           </div>
         }
       >
+        <div className={showShell ? "lg:pl-60" : undefined}>
         <Suspense fallback={<PageFallback />}>
           <Switch>
             <Route path="/login" component={LoginScreen} />
@@ -278,6 +284,7 @@ function AppShell() {
             <Route path="/request/:id/view" component={RequestDetailScreen} />
             <Route path="/wallet/connected" component={StripeConnectedScreen} />
             <Route path="/" component={MapScreen} />
+            <Route path="/dashboard" component={DashboardPage} />
             <Route path="/community" component={CommunityScreen} />
             <Route path="/request/new" component={NewRequestScreen} />
             <Route path="/request/:id/track" component={RequesterTrackingScreen} />
@@ -318,8 +325,10 @@ function AppShell() {
             <Route component={NotFound} />
           </Switch>
         </Suspense>
+        </div>
       </ErrorBoundary>
-      {!isActiveRequest && !isTrackingRequest && !isAdmin && !isLogin && !isOnboarding && !isStripeConnected && !isAudioCircles && !isAudioCircleRoom && <BottomNav />}
+      {showShell && <BottomNav />}
+      {showShell && <DesktopSidebar />}
     </>
   );
 }

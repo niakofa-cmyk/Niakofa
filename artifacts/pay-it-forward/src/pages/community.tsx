@@ -746,7 +746,13 @@ function NiaStoryModal({ onClose, onPosted }: { onClose: () => void; onPosted: (
 
 export default function CommunityScreen() {
   const [, setLocation] = useLocation();
-  const [tab, setTab] = useState<Tab>("feed");
+  const initialTab = (() => {
+    if (typeof window === "undefined") return "feed" as Tab;
+    const t = new URLSearchParams(window.location.search).get("tab") as Tab | null;
+    const valid: Tab[] = ["feed", "heroes", "pool", "county", "impact", "resources", "circles", "skills"];
+    return t && valid.includes(t) ? t : "feed";
+  })();
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [showNiaStory, setShowNiaStory] = useState(false);
   const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
   const [posts, setPosts] = useState<GratitudePost[]>([]);
