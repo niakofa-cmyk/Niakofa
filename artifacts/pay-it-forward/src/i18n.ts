@@ -15,6 +15,7 @@ const en = {
     active_job: "Active Job",
     family: "Family",
     diaspora: "Diaspora",
+    legacy: "Legacy",
   },
   common: {
     loading: "Loading…",
