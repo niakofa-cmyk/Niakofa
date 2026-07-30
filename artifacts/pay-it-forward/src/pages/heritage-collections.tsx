@@ -175,9 +175,11 @@ export default function HeritageCollectionsPage() {
             <div className="flex-1 min-w-0">
               <h1 className="font-bold flex items-center gap-2">
                 <Icon className={`w-4 h-4 ${colors.text}`} />
-                {currentCollection?.title ?? "Collection"}
+                {currentCollection?.title ?? DEMO_COLLECTIONS.find(c => c.slug === slug)?.title ?? "Collection"}
               </h1>
-              <p className="text-xs text-muted-foreground">{items.length} items in this collection</p>
+              <p className="text-xs text-muted-foreground">
+                {detailLoading ? "Loading…" : `${items.length} items in this collection`}
+              </p>
             </div>
           </div>
         </div>

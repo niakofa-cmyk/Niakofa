@@ -12,9 +12,8 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
-  ArrowLeft, Dna, Upload, Users, ChevronRight,
-  Loader2, AlertCircle, CheckCircle2, X, Sparkles,
-  Globe, Share2, User,
+  ArrowLeft, Dna, Upload,
+  Loader2, CheckCircle2, X, Sparkles, User,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";

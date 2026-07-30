@@ -53,8 +53,10 @@ export default function LegacyTimelinePage() {
       const fams = data.families ?? [];
       setFamilies(fams.map((f: { id: number; name: string }) => ({ id: f.id, name: f.name })));
       if (fams.length > 0) setSelectedFamilyId(fams[0].id);
+      else setLoading(false); // no families → stop spinner
     } catch {
       toast.error("Couldn't load families");
+      setLoading(false); // always stop spinner on error
     }
   }
 
@@ -67,6 +69,7 @@ export default function LegacyTimelinePage() {
       setEvents(data.events ?? []);
     } catch {
       setEvents([]);
+      toast.error("Couldn't load timeline");
     } finally {
       setLoading(false);
     }

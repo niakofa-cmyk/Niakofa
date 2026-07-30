@@ -105,7 +105,7 @@ export default function FamilySpacesPage() {
       if (!memRes.ok) throw new Error("Failed to load members");
       const memData = await memRes.json();
       const myMember = (memData.members as Array<{ id: number; user_id: number | null; status: string }>)
-        .find(m => m.status === "invited");
+        .find(m => m.status === "invited" && (m.user_id === currentUser?.id || m.user_id === null));
       if (!myMember) throw new Error("Invitation not found");
 
       if (action === "accept") {
@@ -147,7 +147,7 @@ export default function FamilySpacesPage() {
   if (!currentUser) {
     return (
       <div className="flex items-center justify-center h-full min-h-screen bg-background">
-        <p className="text-muted-foreground">Sign in to access your Family Vault</p>
+        <p className="text-muted-foreground">Sign in to access your Family Spaces</p>
       </div>
     );
   }
