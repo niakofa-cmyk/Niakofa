@@ -47,16 +47,17 @@ interface ActivityItem {
 // recommended architecture:
 //   Dashboard | Family | Vault | Tree | Oral History | DNA | Heritage | Research | Legacy | More
 const DIASPORA_NAV_ITEMS = [
-  { key: "dashboard",  label: "Dashboard",   icon: Home,          href: "/diaspora"                 },
-  { key: "family",     label: "Family",      icon: Users,         href: "/diaspora/family"          },
-  { key: "vault",      label: "Vault",       icon: FolderOpen,    href: "/diaspora/family"          },
-  { key: "tree",       label: "Tree",        icon: TreePine,      href: "/diaspora/tree"            },
-  { key: "oral",       label: "Oral History",icon: Mic,           href: "/diaspora/family"          },
-  { key: "dna",        label: "DNA",         icon: Dna,           href: "/diaspora/dna"             },
-  { key: "heritage",   label: "Heritage",    icon: Globe,         href: "/diaspora/heritage"        },
-  { key: "research",   label: "Research",    icon: GraduationCap, href: "/diaspora/research"        },
-  { key: "legacy",     label: "Legacy",      icon: History,       href: "/diaspora/timeline"        },
-  { key: "more",       label: "More",        icon: MoreHorizontal,href: "/diaspora/preserve"        },
+  { key: "dashboard",    label: "Dashboard",   icon: Home,          href: "/diaspora"                    },
+  { key: "family",       label: "Family",      icon: Users,         href: "/diaspora/family"             },
+  { key: "vault",        label: "Vault",       icon: FolderOpen,    href: "/diaspora/family"             },
+  { key: "tree",         label: "Tree",        icon: TreePine,      href: "/diaspora/tree"               },
+  { key: "oral",         label: "Oral History",icon: Mic,           href: "/diaspora/family"             },
+  { key: "dna",          label: "DNA",         icon: Dna,           href: "/diaspora/dna"                },
+  { key: "globe",        label: "Globe",       icon: Globe,         href: "/diaspora/heritage/globe"     },
+  { key: "heritage",     label: "Collections", icon: Library,       href: "/diaspora/heritage"           },
+  { key: "research",     label: "Research",    icon: GraduationCap, href: "/diaspora/research"           },
+  { key: "legacy",       label: "Legacy",      icon: History,       href: "/diaspora/timeline"           },
+  { key: "more",         label: "More",        icon: MoreHorizontal,href: "/diaspora/preserve"           },
 ] as const;
 
 const FEATURE_CARDS = [
@@ -134,6 +135,8 @@ export default function DiasporaDashboardPage() {
     if (location.startsWith("/diaspora/family")) return "family";
     if (location.startsWith("/diaspora/tree")) return "tree";
     if (location.startsWith("/diaspora/dna")) return "dna";
+    // Globe must be checked before the generic /diaspora/heritage prefix
+    if (location === "/diaspora/heritage/globe" || location.startsWith("/diaspora/heritage/globe")) return "globe";
     if (location.startsWith("/diaspora/heritage")) return "heritage";
     if (location.startsWith("/diaspora/research")) return "research";
     if (location.startsWith("/diaspora/timeline")) return "legacy";
