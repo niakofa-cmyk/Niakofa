@@ -1,12 +1,17 @@
 /**
  * Family Spaces — Diaspora Platform
  * Lists all Family Spaces the current user belongs to and allows creating new ones.
- * Includes My Spaces / Invitations tabs.
+ * Includes My Spaces / Invitations tabs with real invitation status and member counts.
+ *
+ * Route: /diaspora/family (also accessible at legacy /family)
  */
 
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Users, Plus, ChevronRight, BookHeart, Lock, Globe, Loader2, Mail, Crown, UserCheck } from "lucide-react";
+import {
+  Users, Plus, ChevronRight, BookHeart, Lock, Globe, Loader2,
+  Mail, Crown, UserCheck, Check, X, Clock, UserPlus,
+} from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
@@ -25,6 +30,13 @@ interface FamilySpace {
 
 type SpaceTab = "mine" | "invitations";
 
+const ROLE_BADGE: Record<string, { icon: typeof Crown; label: string; color: string }> = {
+  owner:       { icon: Crown,      label: "Owner",       color: "text-amber-500" },
+  curator:     { icon: UserCheck,  label: "Curator",     color: "text-blue-500" },
+  contributor: { icon: Users,      label: "Contributor", color: "text-emerald-500" },
+  viewer:      { icon: Users,      label: "Viewer",      color: "text-muted-foreground" },
+};
+
 export default function FamilySpacesPage() {
   const { currentUser } = useAppContext();
   const [, navigate] = useLocation();
@@ -35,6 +47,7 @@ export default function FamilySpacesPage() {
   const [formName, setFormName] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [spaceTab, setSpaceTab] = useState<SpaceTab>("mine");
+  const [actionLoading, setActionLoading] = useState<number | null>(null);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -48,7 +61,7 @@ export default function FamilySpacesPage() {
       if (!res.ok) throw new Error("Failed to load families");
       const data = await res.json();
       setFamilies(data.families ?? []);
-    } catch (err) {
+    } catch {
       toast.error("Couldn't load your Family Spaces");
     } finally {
       setLoading(false);
@@ -75,16 +88,61 @@ export default function FamilySpacesPage() {
       setFormName("");
       setFormDesc("");
       navigate(`/family/${family.id}`);
-    } catch (err: any) {
-      toast.error(err.message ?? "Couldn't create Family Space");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Couldn't create Family Space";
+      toast.error(msg);
     } finally {
       setCreating(false);
+    }
+  }
+
+  // Accept or decline an invitation
+  async function handleInvitationAction(familyId: number, action: "accept" | "decline") {
+    setActionLoading(familyId);
+    try {
+      // Find the member record for this family
+      const memRes = await fetch(`/api/family/${familyId}/members`, { headers: authHeaders() });
+      if (!memRes.ok) throw new Error("Failed to load members");
+      const memData = await memRes.json();
+      const myMember = (memData.members as Array<{ id: number; user_id: number | null; status: string }>)
+        .find(m => m.status === "invited");
+      if (!myMember) throw new Error("Invitation not found");
+
+      if (action === "accept") {
+        const res = await fetch(`/api/family/${familyId}/members/${myMember.id}`, {
+          method: "PATCH",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "active" }),
+        });
+        if (!res.ok) throw new Error("Failed to accept invitation");
+        toast.success("Invitation accepted!");
+      } else {
+        const res = await fetch(`/api/family/${familyId}/members/${myMember.id}`, {
+          method: "DELETE",
+          headers: authHeaders(),
+        });
+        if (!res.ok) throw new Error("Failed to decline invitation");
+        toast.success("Invitation declined");
+      }
+      loadFamilies();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Action failed";
+      toast.error(msg);
+    } finally {
+      setActionLoading(null);
     }
   }
 
   // Split by real membership status returned from API
   const mySpaces    = families.filter(f => f.status === "active");
   const invitations = families.filter(f => f.status === "invited");
+
+  // Auto-switch to invitations tab if user has pending invites and no active spaces
+  useEffect(() => {
+    if (!loading && mySpaces.length === 0 && invitations.length > 0) {
+      setSpaceTab("invitations");
+    }
+  }, [loading, mySpaces.length, invitations.length]);
 
   if (!currentUser) {
     return (
@@ -102,10 +160,10 @@ export default function FamilySpacesPage() {
           <div>
             <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
               <BookHeart className="w-5 h-5 text-primary" />
-              Family Vault
+              Family Spaces
             </h1>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Community · Diaspora · Legacy
+              Diaspora · Legacy · Community
             </p>
           </div>
           <button
@@ -140,7 +198,7 @@ export default function FamilySpacesPage() {
             <Mail className="w-3.5 h-3.5" />
             Invitations
             {invitations.length > 0 && (
-              <span className="ml-1 bg-amber-500/20 text-amber-500 text-xs px-1.5 py-0.5 rounded-full">{invitations.length}</span>
+              <span className="ml-1 bg-amber-500/20 text-amber-500 text-xs px-1.5 py-0.5 rounded-full font-semibold">{invitations.length}</span>
             )}
           </button>
         </div>
@@ -227,20 +285,53 @@ export default function FamilySpacesPage() {
                   Pending Invitations ({invitations.length})
                 </p>
                 {invitations.map(f => (
-                  <div key={f.id} className="bg-card border border-amber-500/30 rounded-2xl p-4 flex items-center gap-3">
-                    <div className="w-14 h-14 rounded-xl bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                      <Mail className="w-7 h-7 text-amber-500" />
+                  <div
+                    key={f.id}
+                    className="bg-card border border-amber-500/30 rounded-2xl p-4 space-y-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-14 h-14 rounded-xl bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                        <Mail className="w-7 h-7 text-amber-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-foreground truncate">{f.name}</p>
+                        {f.description && (
+                          <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{f.description}</p>
+                        )}
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="inline-flex items-center gap-1 text-xs text-amber-500 font-medium">
+                            <Clock className="w-3 h-3" />
+                            Pending invitation
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <Users className="w-3 h-3" />
+                            {f.member_count} active {f.member_count === 1 ? "member" : "members"}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-foreground truncate">{f.name}</p>
-                      <p className="text-xs text-amber-500 mt-0.5">Pending invitation</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleInvitationAction(f.id, "accept")}
+                        disabled={actionLoading === f.id}
+                        className="flex-1 bg-primary text-primary-foreground px-3 py-2 rounded-lg text-sm font-medium active:opacity-80 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      >
+                        {actionLoading === f.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Check className="w-4 h-4" />
+                        )}
+                        Accept
+                      </button>
+                      <button
+                        onClick={() => handleInvitationAction(f.id, "decline")}
+                        disabled={actionLoading === f.id}
+                        className="flex-1 border border-input text-muted-foreground px-3 py-2 rounded-lg text-sm font-medium active:opacity-70 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      >
+                        <X className="w-4 h-4" />
+                        Decline
+                      </button>
                     </div>
-                    <button
-                      onClick={() => navigate(`/family/${f.id}`)}
-                      className="bg-primary text-primary-foreground px-3 py-1.5 rounded-lg text-xs font-medium active:opacity-80"
-                    >
-                      View
-                    </button>
                   </div>
                 ))}
               </>
@@ -290,48 +381,62 @@ export default function FamilySpacesPage() {
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-2">
               Your Family Spaces ({mySpaces.length})
             </p>
-            {mySpaces.map(f => (
-              <button
-                key={f.id}
-                onClick={() => navigate(`/family/${f.id}`)}
-                className="w-full flex items-center gap-3 p-4 rounded-2xl bg-card border border-border active:opacity-80 transition-opacity text-left"
-              >
-                {/* Cover / Avatar */}
-                <div
-                  className="w-14 h-14 rounded-xl flex-shrink-0 overflow-hidden bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center"
+            {mySpaces.map(f => {
+              const badge = ROLE_BADGE[f.my_role] ?? ROLE_BADGE.viewer;
+              const RoleIcon = badge.icon;
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => navigate(`/family/${f.id}`)}
+                  className="w-full flex items-center gap-3 p-4 rounded-2xl bg-card border border-border active:opacity-80 transition-opacity text-left"
                 >
-                  {f.cover_image_url ? (
-                    <img src={f.cover_image_url} alt={f.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <BookHeart className="w-7 h-7 text-primary" />
-                  )}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-foreground truncate">{f.name}</p>
-                  {f.description && (
-                    <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{f.description}</p>
-                  )}
-                  <span className="inline-flex items-center gap-1 mt-1 text-xs text-primary font-medium capitalize">
-                    {f.my_role === "owner" ? <Crown className="w-3 h-3" /> : f.my_role === "curator" ? <UserCheck className="w-3 h-3" /> : <Users className="w-3 h-3 opacity-60" />}
-                    {f.my_role}
-                    {f.member_count != null && (
-                      <span className="ml-1.5 text-muted-foreground font-normal">{f.member_count} members</span>
+                  {/* Cover / Avatar */}
+                  <div
+                    className="w-14 h-14 rounded-xl flex-shrink-0 overflow-hidden bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center"
+                  >
+                    {f.cover_image_url ? (
+                      <img src={f.cover_image_url} alt={f.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <BookHeart className="w-7 h-7 text-primary" />
                     )}
-                  </span>
-                </div>
+                  </div>
 
-                <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-              </button>
-            ))}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-foreground truncate">{f.name}</p>
+                    {f.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{f.description}</p>
+                    )}
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <span className={`inline-flex items-center gap-1 text-xs font-medium ${badge.color}`}>
+                        <RoleIcon className="w-3 h-3" />
+                        {badge.label}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        <Users className="w-3 h-3" />
+                        {f.member_count} {f.member_count === 1 ? "member" : "members"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                </button>
+              );
+            })}
+
+            {/* Invite hint */}
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-primary/5 border border-primary/15 text-xs text-muted-foreground">
+              <UserPlus className="w-4 h-4 text-primary flex-shrink-0" />
+              <span>Tap a space to invite family members and preserve memories together.</span>
+            </div>
           </div>
         )}
 
         {/* Diaspora mission strip */}
         <div className="mt-8 p-4 rounded-2xl bg-gradient-to-br from-primary/5 to-primary/15 border border-primary/20">
-          <p className="text-sm font-semibold text-foreground mb-1">Community · Diaspora · Legacy</p>
+          <p className="text-sm font-semibold text-foreground mb-1">Diaspora · Legacy · Community</p>
           <p className="text-xs text-muted-foreground">
-            Family Vault is the emotional and technical center of Niakofa's Diaspora Platform — preserve who you are, where you came from, and what you pass on.
+            Family Spaces are the heart of Niakofa's Diaspora Platform — preserve who you are,
+            where you came from, and what you pass on.
           </p>
         </div>
       </div>

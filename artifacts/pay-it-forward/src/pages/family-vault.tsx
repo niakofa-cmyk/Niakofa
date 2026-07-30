@@ -204,7 +204,7 @@ export default function FamilyVaultPage() {
   async function loadFamily() {
     try {
       const res = await fetch(`/api/family/${familyId}`, { headers: authHeaders() });
-      if (res.status === 403) { navigate("/family"); return; }
+      if (res.status === 403) { navigate("/diaspora/family"); return; }
       if (!res.ok) throw new Error();
       const data = await res.json();
       setFamily(data.family);
@@ -213,7 +213,7 @@ export default function FamilyVaultPage() {
       setMemoryCount(data.memory_count ?? 0);
     } catch {
       toast.error("Couldn't load Family Space");
-      navigate("/family");
+      navigate("/diaspora/family");
     }
   }
 
@@ -524,7 +524,7 @@ export default function FamilyVaultPage() {
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate("/family")} className="p-2 -ml-2 rounded-lg active:bg-muted">
+          <button onClick={() => navigate("/diaspora/family")} className="p-2 -ml-2 rounded-lg active:bg-muted">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1 min-w-0">

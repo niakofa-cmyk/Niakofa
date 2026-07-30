@@ -135,6 +135,27 @@ export default function HeritageCollectionsPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 pt-4">
+        {/* Heritage Globe — centerpiece of Heritage within Diaspora */}
+        <button
+          onClick={() => navigate("/diaspora/heritage/globe")}
+          className="w-full bg-gradient-to-br from-teal-500/15 via-emerald-500/10 to-transparent border border-teal-500/25 rounded-2xl p-5 text-left active:opacity-70 mb-4"
+        >
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-12 h-12 rounded-xl bg-teal-500/15 flex items-center justify-center">
+              <Globe className="w-6 h-6 text-teal-400" />
+            </div>
+            <div>
+              <p className="font-bold text-sm">Diaspora Heritage Globe</p>
+              <p className="text-xs text-muted-foreground">Visualize ancestral origins & migration routes</p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-teal-400 ml-auto" />
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Interactive globe of diaspora hubs worldwide. Trace migration routes,
+            explore communities, and connect with your ancestral homeland.
+          </p>
+        </button>
+
         {/* Search */}
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -215,7 +236,7 @@ export default function HeritageCollectionsPage() {
                 Contribute photos, documents, and oral histories from your Family Vault to these shared collections.
               </p>
               <button
-                onClick={() => navigate("/family")}
+                onClick={() => navigate("/diaspora/family")}
                 className="bg-purple-500 text-white px-5 py-2 rounded-xl text-sm font-medium active:opacity-80"
               >
                 Share from Family Vault

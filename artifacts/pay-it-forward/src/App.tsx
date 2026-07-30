@@ -300,15 +300,16 @@ function AppShell() {
             <Route path="/civic-task-nav/:needId" component={CivicTaskNavPage} />
             <Route path="/civic-needs" component={CivicNeedsPage} />
             <Route path="/requests" component={RequestsBrowsePage} />
-            <Route path="/globe" component={GlobePage} />
             <Route path="/hub-leader/:id" component={HubLeaderDashboard} />
-            <Route path="/family" component={FamilySpacesPage} />
             <Route path="/family/:id/memory/:memoryId" component={FamilyMemoryPage} />
             <Route path="/family/:id" component={FamilyVaultPage} />
+            <Route path="/diaspora/family" component={FamilySpacesPage} />
+            <Route path="/diaspora/vault/:familyId" component={FamilyVaultPage} />
             <Route path="/diaspora/tree" component={FamilyTreePage} />
             <Route path="/diaspora/tree/:familyId" component={FamilyTreePage} />
             <Route path="/diaspora/dna" component={DnaConnectionsPage} />
             <Route path="/diaspora/heritage" component={HeritageCollectionsPage} />
+            <Route path="/diaspora/heritage/globe" component={GlobePage} />
             <Route path="/diaspora/research" component={ResearchCenterPage} />
             <Route path="/diaspora/preserve" component={PreserveCulturePage} />
             <Route path="/diaspora/timeline" component={LegacyTimelinePage} />

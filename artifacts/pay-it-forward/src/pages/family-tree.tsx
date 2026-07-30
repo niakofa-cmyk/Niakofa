@@ -721,6 +721,13 @@ function DraggableTreeCanvas({
     return `M ${fx} ${fy} C ${fx} ${cy}, ${tx} ${cy}, ${tx} ${ty}`;
   }
 
+  // Generation guide line Y positions for visual generation connectors
+  const genLineYs = generations.map((_, gi) => gi * (NODE_H + GEN_V_GAP) + 8);
+
+  function resetLayout() {
+    setPositions(computeInitial());
+  }
+
   return (
     <div className="relative rounded-2xl border border-border bg-muted/10 overflow-auto" style={{ maxHeight: 420 }}>
       <div
@@ -729,7 +736,7 @@ function DraggableTreeCanvas({
         onPointerUp={() => { dragging.current = null; }}
         onPointerLeave={() => { dragging.current = null; }}
       >
-        {/* SVG connector layer */}
+        {/* SVG connector + generation guide layer */}
         <svg
           style={{
             position: "absolute", inset: 0,
@@ -737,6 +744,29 @@ function DraggableTreeCanvas({
             pointerEvents: "none", overflow: "visible",
           }}
         >
+          {/* Generation guide lines — horizontal dashed separators between rows */}
+          {genLineYs.map((y, gi) => (
+            <g key={`gen-${gi}`}>
+              <line
+                x1={0} y1={y - GEN_V_GAP / 2 + 4}
+                x2={canvasW} y2={y - GEN_V_GAP / 2 + 4}
+                stroke="hsl(var(--border))"
+                strokeWidth={1}
+                strokeDasharray="4 6"
+                opacity={0.35}
+              />
+              <text
+                x={6}
+                y={y + 12}
+                fill="hsl(var(--muted-foreground))"
+                fontSize={9}
+                opacity={0.5}
+                style={{ userSelect: "none" }}
+              >
+                Gen {gi + 1}
+              </text>
+            </g>
+          ))}
           {edges.map(edge => {
             const d = edgePath(edge.from, edge.to, edge.type);
             if (!d) return null;
@@ -799,9 +829,17 @@ function DraggableTreeCanvas({
           );
         })}
       </div>
-      <p className="text-center text-[10px] text-muted-foreground py-1.5 bg-background/80 sticky bottom-0 border-t border-border">
-        Drag nodes to rearrange · Tap to select
-      </p>
+      <div className="flex items-center justify-between px-3 py-1.5 bg-background/80 sticky bottom-0 border-t border-border">
+        <p className="text-[10px] text-muted-foreground">
+          Drag nodes to rearrange · Tap to select
+        </p>
+        <button
+          onClick={resetLayout}
+          className="text-[10px] text-primary font-medium active:opacity-70"
+        >
+          Reset Layout
+        </button>
+      </div>
     </div>
   );
 }

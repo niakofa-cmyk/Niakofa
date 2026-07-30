@@ -171,7 +171,7 @@ export default function LegacyTimelinePage() {
               Add memories with dates to your Family Vault to build your legacy timeline.
             </p>
             <button
-              onClick={() => navigate(selectedFamilyId ? `/family/${selectedFamilyId}` : "/family")}
+              onClick={() => navigate(selectedFamilyId ? `/family/${selectedFamilyId}` : "/diaspora/family")}
               className="bg-rose-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium active:opacity-80"
             >
               Add Memories
