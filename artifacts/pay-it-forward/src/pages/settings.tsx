@@ -16,6 +16,7 @@ import {
   Globe,
   Mic,
   PawPrint,
+  HeartHandshake,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
@@ -65,7 +66,6 @@ function NotificationPreferences({ userId }: { userId: number }) {
     notif_task_accepted: true,
     notif_wallet_updates: true,
     notif_community_activity: false,
-    notif_pledge_reminders: true,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -80,7 +80,6 @@ function NotificationPreferences({ userId }: { userId: number }) {
             notif_task_accepted: data.notif_task_accepted ?? true,
             notif_wallet_updates: data.notif_wallet_updates ?? true,
             notif_community_activity: data.notif_community_activity ?? false,
-            notif_pledge_reminders: data.notif_pledge_reminders ?? true,
           });
       })
       .finally(() => setLoading(false));
@@ -95,7 +94,6 @@ function NotificationPreferences({ userId }: { userId: number }) {
     notif_task_accepted: "Task accepted / en route",
     notif_wallet_updates: "Wallet & pledge updates",
     notif_community_activity: "Community activity feed",
-    notif_pledge_reminders: "Niakofa reminders",
   };
 
   const handleSave = async () => {
@@ -420,12 +418,103 @@ function NiaVoiceSettings(_: { userId: number }) {
   );
 }
 
+// ── Niakofa Mission ("Help Today, Pay It Forward Tomorrow") ──────────────────
+// Groups the pay-it-forward-specific preferences that used to be scattered
+// across Privacy and Notifications into one branded destination, reachable
+// directly from the Map screen's floating nav (see BottomNav.tsx).
+function NiaMissionSettings({ userId }: { userId: number }) {
+  const [prefs, setPrefs] = useState({
+    privacy_anonymous_giving: false,
+    notif_pledge_reminders: true,
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchSettings(userId)
+      .then((data) => {
+        if (data)
+          setPrefs({
+            privacy_anonymous_giving: data.privacy_anonymous_giving ?? false,
+            notif_pledge_reminders: data.notif_pledge_reminders ?? true,
+          });
+      })
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  const toggle = (key: keyof typeof prefs) =>
+    setPrefs((p) => ({ ...p, [key]: !p[key] }));
+
+  const items: { key: keyof typeof prefs; label: string; desc: string }[] = [
+    {
+      key: "privacy_anonymous_giving",
+      label: "Anonymous giving",
+      desc: "Your Niakofa contributions appear as anonymous to the person you help",
+    },
+    {
+      key: "notif_pledge_reminders",
+      label: "Pay-it-forward reminders",
+      desc: "Nudge me when a scheduled pledge is coming due",
+    },
+  ];
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await saveSettings(userId, prefs);
+      toast({ title: "Niakofa settings saved" });
+    } catch {
+      toast({ title: "Failed to save", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-xl font-bold">Niakofa</h2>
+      <p className="text-xs font-black uppercase tracking-widest text-primary/80">
+        Help Today, Pay It Forward Tomorrow
+      </p>
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin" />
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {items.map((item) => (
+            <div
+              key={item.key}
+              className="p-3 bg-background rounded-xl border border-border mb-2"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm">{item.label}</span>
+                <Switch
+                  checked={prefs[item.key]}
+                  onCheckedChange={() => toggle(item.key)}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">{item.desc}</p>
+            </div>
+          ))}
+          <Button
+            className="w-full mt-2"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Save Preferences"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AccountPrivacy({ userId }: { userId: number }) {
   const [prefs, setPrefs] = useState({
     privacy_profile_visible: true,
     privacy_live_location: false,
     privacy_activity_sharing: true,
-    privacy_anonymous_giving: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -438,7 +527,6 @@ function AccountPrivacy({ userId }: { userId: number }) {
             privacy_profile_visible: data.privacy_profile_visible ?? true,
             privacy_live_location: data.privacy_live_location ?? false,
             privacy_activity_sharing: data.privacy_activity_sharing ?? true,
-            privacy_anonymous_giving: data.privacy_anonymous_giving ?? false,
           });
       })
       .finally(() => setLoading(false));
@@ -462,11 +550,6 @@ function AccountPrivacy({ userId }: { userId: number }) {
       key: "privacy_activity_sharing",
       label: "Activity sharing",
       desc: "Show recent help activity on your public profile",
-    },
-    {
-      key: "privacy_anonymous_giving",
-      label: "Anonymous giving",
-      desc: "Niakofa contributions appear as anonymous",
     },
   ];
 
@@ -876,7 +959,15 @@ interface SettingsSection {
   description?: string;
   icon: React.ComponentType<{ className?: string }>;
   component: SectionComponent | null;
+  group: "mission" | "account" | "diaspora" | "helper";
 }
+
+const GROUP_LABELS: Record<SettingsSection["group"], string> = {
+  mission: "Niakofa Mission",
+  account: "Account",
+  diaspora: "Diaspora & Personalization",
+  helper: "Helper Tools",
+};
 
 // ── Main Settings Page ────────────────────────────────────────────────────────
 
@@ -895,11 +986,20 @@ export default function SettingsPage() {
 
   const sections: SettingsSection[] = [
     {
+      id: "mission",
+      title: "Niakofa Mission",
+      icon: HeartHandshake,
+      component: NiaMissionSettings,
+      description: "Help Today, Pay It Forward Tomorrow — giving & pledge preferences",
+      group: "mission",
+    },
+    {
       id: "notifications",
       title: "Notification Preferences",
       icon: Bell,
       component: NotificationPreferences,
       description: "Nearby requests, alerts & pledge reminders",
+      group: "account",
     },
     {
       id: "privacy",
@@ -907,6 +1007,7 @@ export default function SettingsPage() {
       icon: Lock,
       component: AccountPrivacy,
       description: "Profile visibility, live location & activity",
+      group: "account",
     },
     {
       id: "change-password",
@@ -914,6 +1015,7 @@ export default function SettingsPage() {
       icon: KeyRound,
       component: ChangePassword,
       description: "Update your account password",
+      group: "account",
     },
     {
       id: "spirit-animal",
@@ -921,6 +1023,7 @@ export default function SettingsPage() {
       icon: PawPrint,
       component: SpiritAnimalSettings,
       description: "Choose your map companion",
+      group: "diaspora",
     },
     {
       id: "language",
@@ -928,6 +1031,7 @@ export default function SettingsPage() {
       icon: Globe,
       component: LanguageSwitcher,
       description: "App language & Nia's response language",
+      group: "diaspora",
     },
     {
       id: "nia-voice",
@@ -935,6 +1039,7 @@ export default function SettingsPage() {
       icon: Mic,
       component: NiaVoiceSettings,
       description: "Choose how Nia speaks to you",
+      group: "diaspora",
     },
     {
       id: "delete-account",
@@ -942,6 +1047,7 @@ export default function SettingsPage() {
       icon: Trash2,
       component: null,
       description: "Permanently remove your account and data",
+      group: "account",
     },
   ];
 
@@ -953,6 +1059,7 @@ export default function SettingsPage() {
         icon: Sliders,
         component: HelperSettings,
         description: "Service radius & max travel distance",
+        group: "helper",
       },
       {
         id: "payout-setup",
@@ -960,6 +1067,7 @@ export default function SettingsPage() {
         icon: CreditCard,
         component: PayoutSetup,
         description: "Connect Stripe to receive payments",
+        group: "helper",
       }
     );
   }
@@ -990,42 +1098,54 @@ export default function SettingsPage() {
       {/* Body — combined calc() keeps last card clear of nav + notch on all devices */}
       <div className="flex-1 overflow-y-auto p-4 max-w-lg mx-auto w-full" style={{ paddingBottom: "calc(7rem + env(safe-area-inset-bottom))" }}>
         {!activeSection ? (
-          /* Section list — full-height tappable cards with descriptions */
-          <div className="space-y-2 pt-2">
-            {sections.map((section) => {
-              const isDelete = section.id === "delete-account";
+          /* Section list — grouped under category headers, full-height
+             tappable cards with descriptions within each group */
+          <div className="space-y-5 pt-2">
+            {(["mission", "account", "diaspora", "helper"] as const).map((group) => {
+              const groupSections = sections.filter((s) => s.group === group);
+              if (groupSections.length === 0) return null;
               return (
-                <button
-                  key={section.id}
-                  style={{ touchAction: "manipulation", minHeight: "68px" }}
-                  className={`w-full flex items-center justify-between px-4 py-4 bg-card border rounded-2xl transition-all active:scale-[0.98] text-left ${
-                    isDelete
-                      ? "border-destructive/30 hover:border-destructive/50"
-                      : "border-border hover:border-primary/40 hover:bg-card/80"
-                  }`}
-                  onClick={() => setActiveSection(section.id)}
-                >
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                      isDelete ? "bg-destructive/10" : "bg-muted"
-                    }`}>
-                      <section.icon className={`w-5 h-5 ${
-                        isDelete ? "text-destructive" : "text-muted-foreground"
-                      }`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className={`text-sm font-bold leading-tight ${isDelete ? "text-destructive" : ""}`}>
-                        {section.title}
-                      </div>
-                      {section.description && (
-                        <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                          {section.description}
-                        </div>
-                      )}
-                    </div>
+                <div key={group} className="space-y-2">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">
+                    {GROUP_LABELS[group]}
                   </div>
-                  <ChevronRight className={`w-4 h-4 shrink-0 ml-2 ${isDelete ? "text-destructive/50" : "text-muted-foreground"}`} />
-                </button>
+                  {groupSections.map((section) => {
+                    const isDelete = section.id === "delete-account";
+                    return (
+                      <button
+                        key={section.id}
+                        style={{ touchAction: "manipulation", minHeight: "68px" }}
+                        className={`w-full flex items-center justify-between px-4 py-4 bg-card border rounded-2xl transition-all active:scale-[0.98] text-left ${
+                          isDelete
+                            ? "border-destructive/30 hover:border-destructive/50"
+                            : "border-border hover:border-primary/40 hover:bg-card/80"
+                        }`}
+                        onClick={() => setActiveSection(section.id)}
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                            isDelete ? "bg-destructive/10" : "bg-muted"
+                          }`}>
+                            <section.icon className={`w-5 h-5 ${
+                              isDelete ? "text-destructive" : "text-muted-foreground"
+                            }`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className={`text-sm font-bold leading-tight ${isDelete ? "text-destructive" : ""}`}>
+                              {section.title}
+                            </div>
+                            {section.description && (
+                              <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                                {section.description}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <ChevronRight className={`w-4 h-4 shrink-0 ml-2 ${isDelete ? "text-destructive/50" : "text-muted-foreground"}`} />
+                      </button>
+                    );
+                  })}
+                </div>
               );
             })}
           </div>

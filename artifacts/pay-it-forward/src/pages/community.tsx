@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { useNiaStory } from "@/hooks/useNiaStory";
@@ -11,7 +11,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { useGetSponsorHistory } from "@/hooks/useGetSponsorHistory";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
-const GlobePage = lazy(() => import("@/pages/globe"));
 
 interface GratitudePost {
   id: number;
@@ -56,7 +55,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   other: "💙 Other",
 };
 
-type Tab = "feed" | "heroes" | "pool" | "county" | "impact" | "resources" | "circles" | "skills" | "globe";
+type Tab = "feed" | "heroes" | "pool" | "county" | "impact" | "resources" | "circles" | "skills";
 
 interface CommunityStats {
   id: number;
@@ -935,7 +934,6 @@ export default function CommunityScreen() {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "feed",      label: "💙 Feed" },
-    { key: "globe",     label: "🌍 Globe" },
     { key: "circles",   label: "🏘️ Circles" },
     { key: "skills",    label: "🔧 Skills" },
     { key: "heroes",    label: "⭐ Heroes" },
@@ -975,6 +973,21 @@ export default function CommunityScreen() {
         {/* FEED TAB */}
         {tab === "feed" && (
           <div className="space-y-4">
+            {/* Diaspora Globe pointer — the Globe now lives in Diaspora only,
+                this card keeps it discoverable from Community without
+                duplicating the page here. */}
+            <button
+              onClick={() => setLocation("/diaspora/heritage/globe")}
+              className="w-full flex items-center gap-3 bg-gradient-to-br from-primary/15 to-background border border-primary/30 rounded-2xl p-4 text-left hover:border-primary/50 transition-colors"
+            >
+              <span className="text-2xl shrink-0">🌍</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-black">Explore the Diaspora Globe</div>
+                <div className="text-xs text-muted-foreground">See where our community's roots and stories connect worldwide</div>
+              </div>
+              <Globe className="w-4 h-4 text-primary shrink-0" />
+            </button>
+
             {/* Personal Impact Banner */}
             {currentUser && (
               <div className="bg-gradient-to-br from-primary/15 to-background border border-primary/30 rounded-2xl p-4">
@@ -1987,17 +2000,6 @@ export default function CommunityScreen() {
 
         {tab === "circles" && <NeighborhoodCirclesTab />}
         {tab === "skills" && <SkillsMarketplaceTab />}
-        {tab === "globe" && (
-          <div className="-mx-4 -mt-4">
-            <Suspense fallback={
-              <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">
-                Loading Diaspora Globe…
-              </div>
-            }>
-              <GlobePage />
-            </Suspense>
-          </div>
-        )}
       </div>
     </div>
   );

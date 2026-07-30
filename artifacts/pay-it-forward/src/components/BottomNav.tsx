@@ -1,5 +1,5 @@
 import { useLocation, Link } from "wouter";
-import { Map, Users, DollarSign, Radio, Navigation2, Wallet, Bell, X, SlidersHorizontal, Globe2 } from "lucide-react";
+import { Map, Users, DollarSign, Radio, Navigation2, Wallet, Bell, X, SlidersHorizontal, Globe2, HeartHandshake } from "lucide-react";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -237,6 +237,22 @@ export function BottomNav() {
                     </span>
                     <span className="text-xs font-bold text-white/85">Map Settings</span>
                   </button>
+
+                  {/* Niakofa Mission Settings — deep-links straight into the
+                      "Help Today, Pay It Forward Tomorrow" section of the
+                      main Settings page, distinct from the map-display
+                      settings above. */}
+                  <Link href="/settings?section=mission" onClick={() => setMapNavOpen(false)}>
+                    <div
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 active:bg-teal-500/10 transition-colors cursor-pointer"
+                      style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", touchAction: "manipulation" }}
+                    >
+                      <span className="w-6 h-6 rounded-lg bg-teal-500/15 flex items-center justify-center shrink-0">
+                        <HeartHandshake className="w-3.5 h-3.5 text-teal-400" aria-hidden="true" />
+                      </span>
+                      <span className="text-xs font-bold text-white/85">Niakofa Settings</span>
+                    </div>
+                  </Link>
 
                   {/* Notification bell */}
                   <button
