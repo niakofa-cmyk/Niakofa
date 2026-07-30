@@ -1,8 +1,9 @@
 import { useLocation, Link } from "wouter";
-import { Map, Users, DollarSign, Radio, Navigation2, Wallet, Bell, X, SlidersHorizontal, Globe2, HeartHandshake } from "lucide-react";
+import { Map, Users, DollarSign, Radio, Navigation2, Wallet, Bell, X, SlidersHorizontal, Globe2, HeartHandshake, Menu } from "lucide-react";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { MobileNavDrawer } from "./MobileNavDrawer";
 import { NotificationsDrawer, type LiveNotification } from "./NotificationsDrawer";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { useAppContext } from "@/lib/AppContext";
@@ -89,6 +90,7 @@ export function BottomNav() {
   // screen.
   const activeJobHref = activeRequestId ? `/request/${activeRequestId}` : "/";
   const [notifOpen, setNotifOpen] = useState(false);
+  const [navDrawerOpen, setNavDrawerOpen] = useState(false);
   const [notifications, setNotifications] = useState<LiveNotification[]>(SEED_NOTIFICATIONS);
   const [unreadCount, setUnreadCount] = useState(0);
   const seenIds = useRef(new Set<string>());
@@ -275,6 +277,21 @@ export function BottomNav() {
                     )}
                   </button>
 
+                  {/* More — opens the full nav drawer (Dashboard, Resources,
+                      Civic Engagement, Legacy, Nia, and everything else that
+                      doesn't fit in the tab bar below) */}
+                  <button
+                    onClick={() => { setNavDrawerOpen(true); setMapNavOpen(false); }}
+                    aria-label="More — full navigation menu"
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 active:bg-teal-500/10 transition-colors"
+                    style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", touchAction: "manipulation" }}
+                  >
+                    <span className="w-6 h-6 rounded-lg bg-teal-500/15 flex items-center justify-center shrink-0">
+                      <Menu className="w-3.5 h-3.5 text-teal-400" aria-hidden="true" />
+                    </span>
+                    <span className="text-xs font-bold text-white/85">More</span>
+                  </button>
+
                   {/* Nav tabs — reversed so the first tab is closest to the button */}
                   {[...tabs].reverse().map((tab, i, arr) => {
                     const href = tab.path === "__active_job__" ? activeJobHref : tab.path;
@@ -400,6 +417,7 @@ export function BottomNav() {
         </div>
 
         <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} notifications={notifications} />
+        <MobileNavDrawer open={navDrawerOpen} onClose={() => setNavDrawerOpen(false)} />
       </>
     );
   }
@@ -407,6 +425,18 @@ export function BottomNav() {
   // ── Non-map routes: classic full bottom nav bar ───────────────────────────
   return (
     <>
+      {/* Floating menu trigger — non-map pages have no TopBar of their own,
+          so this is the one predictable place to reach Dashboard, Resources,
+          Civic Engagement, Legacy, Nia, Notifications & Settings from here. */}
+      <button
+        onClick={() => setNavDrawerOpen(true)}
+        aria-label="Open navigation menu"
+        style={{ touchAction: "manipulation", zIndex: Z_NAV }}
+        className="lg:hidden fixed top-4 left-4 w-10 h-10 rounded-full flex items-center justify-center bg-card/90 backdrop-blur-sm border border-border shadow-lg active:scale-95 transition-transform"
+      >
+        <Menu className="w-4 h-4" />
+      </button>
+
       <nav
         aria-label="Main navigation"
         style={{ zIndex: Z_NAV }}
@@ -501,6 +531,7 @@ export function BottomNav() {
       </nav>
 
       <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} notifications={notifications} />
+      <MobileNavDrawer open={navDrawerOpen} onClose={() => setNavDrawerOpen(false)} />
     </>
   );
 }

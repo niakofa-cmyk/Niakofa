@@ -1,44 +1,22 @@
 /**
  * DesktopSidebar — left-rail navigation shown only on wide (lg+) viewports.
  *
- * The mobile IA (BottomNav + Diaspora's contextual sub-nav) stays exactly as
- * it is; this component is purely additive. On narrow screens it renders
- * nothing (`hidden lg:flex`) and BottomNav continues to own navigation. On
- * wide screens both can technically coexist, but BottomNav's own container
- * query hides it above the `lg` breakpoint in practice — this sidebar is the
- * intended desktop replacement for that space.
+ * The mobile IA (BottomNav + MobileNavDrawer + Diaspora's contextual
+ * sub-nav) stays exactly as it is; this component is purely additive. On
+ * narrow screens it renders nothing (`hidden lg:flex`) and BottomNav
+ * continues to own navigation.
  *
- * Route mapping notes (kept honest rather than inventing pages that don't
- * exist):
- *   - "Dashboard" is the new /dashboard page — real data, no fabricated stats.
- *   - "Map" is the app's home route ("/").
- *   - "Resources" deep-links into Community's Resources tab via ?tab=.
- *   - "Civic Engagement" points at /civic-needs, the same canonical entry
- *     point already used from Community, the Map, and the Globe page.
- *   - "AI Assistant (Nia)" doesn't navigate anywhere — Nia is a global
- *     drawer, not a page, so this opens it via the same window.openNia()
- *     hook the TopBar's Nia orb already uses.
- *   - "Notifications" opens the same <NotificationsDrawer> BottomNav uses,
- *     backed by the same shared SEED_NOTIFICATIONS list.
+ * Item list comes from lib/appNavItems.ts, shared with MobileNavDrawer so
+ * the two surfaces can never drift out of sync — see that file for the
+ * route-mapping notes (Dashboard vs Map, Resources deep-link, etc).
  */
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import {
-  Map, Users, ClipboardList, Landmark, Globe2, History,
-  Sparkles, Bell, Settings, Wallet, Radio, ChevronDown, LogOut, LayoutDashboard,
-} from "lucide-react";
+import { ChevronDown, LogOut } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { NotificationsDrawer } from "./NotificationsDrawer";
 import { SEED_NOTIFICATIONS } from "./BottomNav";
-
-interface NavItem {
-  key: string;
-  label: string;
-  icon: typeof Map;
-  href?: string;
-  onClick?: () => void;
-  isActive?: (location: string) => boolean;
-}
+import { getAppNavItems } from "@/lib/appNavItems";
 
 export function DesktopSidebar() {
   const [location] = useLocation();
@@ -46,31 +24,7 @@ export function DesktopSidebar() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
 
-  const items: NavItem[] = [
-    { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/dashboard",
-      isActive: (l) => l.startsWith("/dashboard") },
-    { key: "map", label: "Map", icon: Map, href: "/", isActive: (l) => l === "/" },
-    { key: "community", label: "Community", icon: Users, href: "/community",
-      isActive: (l) => l.startsWith("/community") },
-    { key: "resources", label: "Resources", icon: ClipboardList, href: "/community?tab=resources",
-      isActive: (l) => l.startsWith("/community") && l.includes("tab=resources") },
-    { key: "civic", label: "Civic Engagement", icon: Landmark, href: "/civic-needs",
-      isActive: (l) => l.startsWith("/civic-needs") || l.startsWith("/civic-portal") },
-    { key: "diaspora", label: "Diaspora", icon: Globe2, href: "/diaspora",
-      isActive: (l) => l.startsWith("/diaspora") || l.startsWith("/family") },
-    { key: "legacy", label: "Legacy", icon: History, href: "/diaspora/timeline",
-      isActive: (l) => l.startsWith("/diaspora/timeline") },
-    { key: "circles", label: "Circles", icon: Radio, href: "/audio-circles",
-      isActive: (l) => l.startsWith("/audio-circle") },
-    { key: "wallet", label: "Wallet", icon: Wallet, href: "/wallet",
-      isActive: (l) => l.startsWith("/wallet") },
-    { key: "nia", label: "AI Assistant (Nia)", icon: Sparkles,
-      onClick: () => (window as any).openNia?.() },
-    { key: "notifications", label: "Notifications", icon: Bell,
-      onClick: () => setNotifOpen(true) },
-    { key: "settings", label: "Settings", icon: Settings, href: "/settings",
-      isActive: (l) => l.startsWith("/settings") },
-  ];
+  const items = getAppNavItems({ openNotifications: () => setNotifOpen(true) });
 
   return (
     <>
