@@ -149,9 +149,9 @@ type TabId = "memories" | "members" | "interviews";
 
 export default function FamilyVaultPage() {
   const { currentUser } = useAppContext();
-  const { id }  = useParams<{ id: string }>();
+  const { id, familyId: fidParam } = useParams<{ id: string; familyId: string }>();
   const [, navigate] = useLocation();
-  const familyId = Number(id);
+  const familyId = Number(id ?? fidParam);
 
   const [tab, setTab]             = useState<TabId>("memories");
   const [family, setFamily]       = useState<Family | null>(null);

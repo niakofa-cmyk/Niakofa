@@ -1,24 +1,26 @@
 /**
  * Heritage Collections — Curated cultural collections
- * Route: /diaspora/heritage
+ * Route: /diaspora/heritage  (list view)
+ * Route: /diaspora/heritage/:slug  (detail view for a single collection)
  *
  * Enhancements:
  *  - 2-column image grid with photo thumbnails for each collection
  *  - 6 featured collections matching the reference screenshot
  *  - Fallback demo data when API returns empty
  *  - Theme tags and item counts
+ *  - Collection detail view when :slug param is present
+ *  - Heritage Globe featured as centerpiece of Heritage section
  */
 
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useParams } from "wouter";
 import {
   ArrowLeft, Library, Search, Loader2,
   Globe, Star, BookOpen, Layers, Users, ArrowRight,
-  Image,
+  ChevronRight, BookHeart, Mic, FileText,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
-import { toast } from "sonner";
 
 interface Collection {
   slug: string;
@@ -28,6 +30,15 @@ interface Collection {
   tags: string[];
   themes: string[];
   cover_image?: string | null;
+}
+
+interface CollectionItem {
+  id: number;
+  title: string;
+  description: string | null;
+  media_type: string;
+  source_name: string | null;
+  created_at: string;
 }
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -75,17 +86,38 @@ const DEMO_COLLECTIONS: Collection[] = [
   { slug: "fort-worth-stories", title: "Fort Worth Stories", description: "Local stories from the Fort Worth African American community — families, businesses, and landmarks that shaped the city.", item_count: 8, tags: ["fort worth", "local"], themes: ["Community", "Heritage"] },
 ];
 
+function mediaTypeIcon(type: string) {
+  switch (type) {
+    case "photo":   return <BookHeart className="w-4 h-4 text-amber-400" />;
+    case "audio":   return <Mic className="w-4 h-4 text-red-400" />;
+    case "video":   return <FileText className="w-4 h-4 text-blue-400" />;
+    default:        return <FileText className="w-4 h-4 text-muted-foreground" />;
+  }
+}
+
 export default function HeritageCollectionsPage() {
   const { currentUser } = useAppContext();
   const [, navigate] = useLocation();
+  const { slug } = useParams<{ slug?: string }>();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQ, setSearchQ] = useState("");
+
+  // Detail view state
+  const [items, setItems] = useState<CollectionItem[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [currentCollection, setCurrentCollection] = useState<Collection | null>(null);
 
   useEffect(() => {
     if (!currentUser) return;
     loadCollections();
   }, [currentUser]);
+
+  // Load collection detail when slug changes
+  useEffect(() => {
+    if (!slug || !currentUser) return;
+    loadCollectionItems(slug);
+  }, [slug, currentUser]);
 
   async function loadCollections() {
     setLoading(true);
@@ -102,6 +134,23 @@ export default function HeritageCollectionsPage() {
     }
   }
 
+  async function loadCollectionItems(slug: string) {
+    setDetailLoading(true);
+    setCurrentCollection(null);
+    try {
+      const res = await fetch(`/api/diaspora/heritage/${slug}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setItems(data.items ?? []);
+      setCurrentCollection(data.collection ?? DEMO_COLLECTIONS.find(c => c.slug === slug) ?? null);
+    } catch {
+      setCurrentCollection(DEMO_COLLECTIONS.find(c => c.slug === slug) ?? null);
+      setItems([]);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
   if (!currentUser) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -110,6 +159,94 @@ export default function HeritageCollectionsPage() {
     );
   }
 
+  // ── Collection Detail View ──────────────────────────────────────────────
+  if (slug) {
+    const colors = COLOR_MAP[slug] ?? COLOR_MAP["great-migration"];
+    const Icon = ICON_MAP[slug] ?? BookOpen;
+    const imageUrl = COLLECTION_IMAGES[slug];
+
+    return (
+      <div className="min-h-screen bg-background pb-28">
+        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border">
+          <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
+            <button onClick={() => navigate("/diaspora/heritage")} className="p-2 -ml-2 rounded-lg active:bg-muted">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div className="flex-1 min-w-0">
+              <h1 className="font-bold flex items-center gap-2">
+                <Icon className={`w-4 h-4 ${colors.text}`} />
+                {currentCollection?.title ?? "Collection"}
+              </h1>
+              <p className="text-xs text-muted-foreground">{items.length} items in this collection</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="max-w-lg mx-auto px-4 pt-4">
+          {/* Collection banner */}
+          <div className={`relative h-32 rounded-2xl overflow-hidden bg-gradient-to-br ${colors.gradient} mb-4`}>
+            {imageUrl && (
+              <img src={imageUrl} alt={currentCollection?.title} className="w-full h-full object-cover" loading="lazy" />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+            <div className="absolute bottom-3 left-3 right-3">
+              <p className="text-sm font-bold text-white drop-shadow">{currentCollection?.title}</p>
+              <p className="text-xs text-white/80 line-clamp-1">{currentCollection?.description}</p>
+            </div>
+          </div>
+
+          {detailLoading && (
+            <div className="flex justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          )}
+
+          {!detailLoading && items.length === 0 && (
+            <div className="text-center py-12 space-y-2">
+              <Library className="w-10 h-10 text-muted-foreground/30 mx-auto" />
+              <p className="text-sm font-medium text-muted-foreground">No items in this collection yet</p>
+              <p className="text-xs text-muted-foreground">Items from Family Vault contributions will appear here.</p>
+            </div>
+          )}
+
+          {!detailLoading && items.length > 0 && (
+            <div className="space-y-2">
+              {items.map(item => (
+                <div key={item.id} className="bg-card border border-border rounded-xl p-3 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                    {mediaTypeIcon(item.media_type)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{item.title}</p>
+                    {item.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-1">{item.description}</p>
+                    )}
+                    {item.source_name && (
+                      <p className="text-xs text-muted-foreground mt-0.5">From: {item.source_name}</p>
+                    )}
+                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Tags */}
+          {currentCollection?.themes && currentCollection.themes.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {currentCollection.themes.map(t => (
+                <span key={t} className={`text-xs px-2.5 py-1 rounded-full ${colors.bg} ${colors.text}`}>
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Collection List View ────────────────────────────────────────────────
   const filtered = collections.filter(c =>
     !searchQ ||
     c.title.toLowerCase().includes(searchQ.toLowerCase()) ||

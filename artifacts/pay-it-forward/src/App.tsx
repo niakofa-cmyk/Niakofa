@@ -312,6 +312,7 @@ function AppShell() {
             <Route path="/diaspora/dna" component={DnaConnectionsPage} />
             <Route path="/diaspora/heritage" component={HeritageCollectionsPage} />
             <Route path="/diaspora/heritage/globe" component={GlobePage} />
+            <Route path="/diaspora/heritage/:slug" component={HeritageCollectionsPage} />
             <Route path="/diaspora/research" component={ResearchCenterPage} />
             <Route path="/diaspora/preserve" component={PreserveCulturePage} />
             <Route path="/diaspora/timeline" component={LegacyTimelinePage} />
