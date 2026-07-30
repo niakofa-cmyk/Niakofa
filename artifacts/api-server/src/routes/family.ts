@@ -392,7 +392,19 @@ router.get("/family/:id/members", generalApiLimiter, requireAuth, async (req, re
   const familyId = Number(req.params.id);
   if (!familyId) return res.status(400).json({ error: "Invalid family id" });
 
-  const membership = await getFamilyMembership(familyId, userId);
+  // Allow both active and invited members to view the member list.
+  // Invited users need this to see who invited them and to accept/decline.
+  const [membership] = await db
+    .select()
+    .from(familyMembersTable)
+    .where(
+      and(
+        eq(familyMembersTable.family_id, familyId),
+        eq(familyMembersTable.user_id, userId),
+        inArray(familyMembersTable.status, ["active", "invited"]),
+      ),
+    )
+    .limit(1);
   if (!membership) return res.status(403).json({ error: "Not a member of this family" });
 
   const members = await db
@@ -446,9 +458,37 @@ router.patch("/family/:id/members/:memberId", generalApiLimiter, requireAuth, as
   const memberId = Number(req.params.memberId);
   if (!familyId || !memberId) return res.status(400).json({ error: "Invalid ids" });
 
-  const membership = await getFamilyMembership(familyId, userId);
-  if (!membership || !CAN_MANAGE_ROLES.includes(membership.role as string)) {
-    return res.status(403).json({ error: "Owner or curator access required" });
+  // Look up the caller's membership (active OR invited) and the target member.
+  const [callerMembership] = await db
+    .select()
+    .from(familyMembersTable)
+    .where(
+      and(
+        eq(familyMembersTable.family_id, familyId),
+        eq(familyMembersTable.user_id, userId),
+        inArray(familyMembersTable.status, ["active", "invited"]),
+      ),
+    )
+    .limit(1);
+
+  const [targetMember] = await db
+    .select()
+    .from(familyMembersTable)
+    .where(eq(familyMembersTable.id, memberId))
+    .limit(1);
+
+  if (!callerMembership) return res.status(403).json({ error: "Not a member of this family" });
+
+  // Self-service: an invited user can accept their own invitation (status → active)
+  const isSelfAccept = targetMember?.user_id === userId
+    && targetMember?.status === "invited"
+    && req.body?.status === "active";
+
+  if (!isSelfAccept) {
+    // All other changes require owner/curator privileges
+    if (!CAN_MANAGE_ROLES.includes(callerMembership.role as string)) {
+      return res.status(403).json({ error: "Owner or curator access required" });
+    }
   }
 
   const parsed = UpdateMemberSchema.safeParse(req.body);
@@ -505,9 +545,36 @@ router.delete("/family/:id/members/:memberId", generalApiLimiter, requireAuth, a
   const memberId = Number(req.params.memberId);
   if (!familyId || !memberId) return res.status(400).json({ error: "Invalid ids" });
 
-  const membership = await getFamilyMembership(familyId, userId);
-  if (!membership || !CAN_MANAGE_ROLES.includes(membership.role as string)) {
-    return res.status(403).json({ error: "Owner or curator access required" });
+  const [callerMembership] = await db
+    .select()
+    .from(familyMembersTable)
+    .where(
+      and(
+        eq(familyMembersTable.family_id, familyId),
+        eq(familyMembersTable.user_id, userId),
+        inArray(familyMembersTable.status, ["active", "invited"]),
+      ),
+    )
+    .limit(1);
+
+  if (!callerMembership) return res.status(403).json({ error: "Not a member of this family" });
+
+  // Look up the target member to check if this is a self-decline
+  const [targetMember] = await db
+    .select()
+    .from(familyMembersTable)
+    .where(eq(familyMembersTable.id, memberId))
+    .limit(1);
+
+  // Self-service: an invited user can decline their own invitation (delete their membership)
+  const isSelfDecline = targetMember?.user_id === userId
+    && targetMember?.status === "invited";
+
+  if (!isSelfDecline) {
+    // All other deletions require owner/curator privileges
+    if (!CAN_MANAGE_ROLES.includes(callerMembership.role as string)) {
+      return res.status(403).json({ error: "Owner or curator access required" });
+    }
   }
 
   await db

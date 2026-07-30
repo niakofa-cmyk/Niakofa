@@ -100,7 +100,7 @@ export default function PreserveCulturePage() {
       } else {
         toast.success("QR code recognized. Link it to a memory in your vault.");
         setShowQrScanner(false);
-        navigate("/family");
+        navigate("/diaspora/family");
       }
     } catch {
       toast.error("Couldn't read QR code");
@@ -296,13 +296,13 @@ export default function PreserveCulturePage() {
             {/* Action buttons */}
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => navigate("/family")}
+                onClick={() => navigate("/diaspora/family")}
                 className="flex items-center justify-center gap-2 bg-red-500 text-white rounded-xl py-3 text-sm font-semibold active:opacity-80"
               >
                 <Mic className="w-4 h-4" /> Record Story
               </button>
               <button
-                onClick={() => navigate("/family")}
+                onClick={() => navigate("/diaspora/family")}
                 className="flex items-center justify-center gap-2 border border-orange-500/30 text-orange-400 rounded-xl py-3 text-sm font-semibold active:opacity-70"
               >
                 <BookHeart className="w-4 h-4" /> Add to Vault

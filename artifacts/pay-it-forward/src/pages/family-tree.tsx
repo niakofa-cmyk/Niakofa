@@ -244,7 +244,7 @@ export default function FamilyTreePage() {
             <Network className="w-4.5 h-4.5 text-emerald-500" />
           </button>
           <button
-            onClick={() => navigate("/family")}
+            onClick={() => navigate("/diaspora/family")}
             className="p-2 rounded-lg active:bg-muted"
             title="Manage Family Vault"
           >
@@ -300,7 +300,7 @@ export default function FamilyTreePage() {
               Create a Family Space first, then add members to build your tree.
             </p>
             <button
-              onClick={() => navigate("/family")}
+              onClick={() => navigate("/diaspora/family")}
               className="bg-primary text-primary-foreground px-5 py-2.5 rounded-xl text-sm font-medium"
             >
               Create Family Space

@@ -303,6 +303,8 @@ function AppShell() {
             <Route path="/hub-leader/:id" component={HubLeaderDashboard} />
             <Route path="/family/:id/memory/:memoryId" component={FamilyMemoryPage} />
             <Route path="/family/:id" component={FamilyVaultPage} />
+            <Route path="/family" component={FamilySpacesPage} />
+            <Route path="/globe" component={GlobePage} />
             <Route path="/diaspora/family" component={FamilySpacesPage} />
             <Route path="/diaspora/vault/:familyId" component={FamilyVaultPage} />
             <Route path="/diaspora/tree" component={FamilyTreePage} />

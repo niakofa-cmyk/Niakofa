@@ -201,7 +201,7 @@ export default function HubLeaderDashboard() {
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background px-6 text-center">
         <AlertCircle className="w-8 h-8 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">{error ?? "Hub not found"}</p>
-        <Button variant="outline" onClick={() => setLocation("/globe")}>Back to Globe</Button>
+        <Button variant="outline" onClick={() => setLocation("/diaspora/heritage/globe")}>Back to Globe</Button>
       </div>
     );
   }
@@ -212,7 +212,7 @@ export default function HubLeaderDashboard() {
     <div className="min-h-screen bg-background pb-24">
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-2">
         <button
-          onClick={() => setLocation("/globe")}
+          onClick={() => setLocation("/diaspora/heritage/globe")}
           className="p-1.5 -ml-1.5 rounded-lg hover:bg-muted transition-colors"
         >
           <ChevronLeft className="w-5 h-5" />
