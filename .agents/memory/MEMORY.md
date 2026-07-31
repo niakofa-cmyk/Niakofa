@@ -125,4 +125,4 @@
 - [Niakofa SankofaBird Phase 27](niakofa-sankofa-bird-phase27.md) — verified living-feather baseline: four Safari @property registrations, wing-rig wingtips, night/aerodynamic selectors, and Phase 27 contract test.
 - [Niakofa Circles lifecycle fixes](niakofa-circles-lifecycle.md) — async stopRecording (onstop), stopVideoTracks (camera light off), stale audio-element cleanup, WsEventType both-file parity, requireApproved action-route pitfall.
 - [Niakofa Circle chat persistence](niakofa-circle-chat-persistence.md) — audioCircleMessagesTable (migration 0086); POST /chat persists before broadcast; GET /chat history returns last 200 oldest-first; WS handler deduplicates by "db-<id>" to survive reconnects.
-- [Niakofa Legacy Mode](niakofa-legacy-mode.md) — 5th bottom-nav tab (BookHeart, /legacy); replaces Wallet; derives game state from existing family APIs; Unlock screen gates users with <1 family.
+- [Niakofa Legacy Mode](niakofa-legacy-mode.md) — 5th bottom-nav tab (BookHeart, /legacy); AI quest engine via Anthropic Haiku + 24h Family Reservoir cache; es locale needs all nav keys (typeof en strict); legacyRouter must be in router.use() chain not just imported.
