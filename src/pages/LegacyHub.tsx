@@ -1,17 +1,18 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  BookHeart, Scroll, Trophy, Map, Users, Mic,
-  Star, Play, CheckCircle2, Clock, Loader2,
-  ChevronRight, Plus, Globe2, Heart,
-  Camera, FileText, Crown, Flame,
-  Sparkles, Shield, Zap, Target,
-  Volume2, BookOpen, Lock,
-  RefreshCw, ChevronLeft,
+  BookHeart, Trophy, Map, Users, Mic,
+  Star, Play, Loader2,
+  ChevronRight, Globe2, MapPin,
+  Camera, Crown, Flame,
+  Sparkles, Target,
+  BookOpen,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { calculateCompleteness, selectAncestorCandidates, generateChapters, createOrUpdateWorld, generateQuestsFromGaps, computeKnowledgeHash, recordKnowledgeVersion } from '@/lib/legacyEngine'
 import type { FamilyMember, FamilyMemory, FamilyPlace, FamilyEvent, FamilyInterview, FamilyArtifact, LegacyWorld, AncestorCandidate, GameMode } from '@/lib/types'
+
+const CHAPTER_UNLOCK_THRESHOLD = 40
 
 const GAME_MODES: { id: GameMode; label: string; icon: typeof BookHeart; description: string; color: string }[] = [
   { id: 'legacy', label: 'Legacy Mode', icon: Crown, description: 'Play an ancestor\'s life', color: 'text-legacy-400' },
@@ -416,8 +417,6 @@ function LegacyModeContent({ world, ancestors, completeness, quests, navigate }:
     </div>
   )
 }
-
-const CHAPTER_UNLOCK_THRESHOLD = 40
 
 // ── Exploration Mode ─────────────────────────────────────────────────────────
 

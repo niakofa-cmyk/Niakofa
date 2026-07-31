@@ -8,9 +8,19 @@ import { supabase } from '@/lib/supabase'
 import { selectAncestorCandidates, generateChapters, createOrUpdateWorld, createSession, calculateCompleteness } from '@/lib/legacyEngine'
 import type { FamilyMember, FamilyMemory, FamilyPlace, FamilyEvent, FamilyInterview, FamilyArtifact, AncestorCandidate } from '@/lib/types'
 
+interface LoadedFamilyData {
+  members: FamilyMember[]
+  memories: FamilyMemory[]
+  places: FamilyPlace[]
+  events: FamilyEvent[]
+  interviews: FamilyInterview[]
+  artifacts: FamilyArtifact[]
+}
+
 export default function LegacyStart() {
   const navigate = useNavigate()
   const [ancestors, setAncestors] = useState<AncestorCandidate[]>([])
+  const [familyData, setFamilyData] = useState<LoadedFamilyData>({ members: [], memories: [], places: [], events: [], interviews: [], artifacts: [] })
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [initializing, setInitializing] = useState(false)
@@ -37,6 +47,7 @@ export default function LegacyStart() {
 
       const candidates = selectAncestorCandidates(m, mem, ev, p, iv, art)
       setAncestors(candidates)
+      setFamilyData({ members: m, memories: mem, places: p, events: ev, interviews: iv, artifacts: art })
 
       const score = calculateCompleteness(m, mem, ev, p, iv)
       setReadiness(score)
@@ -56,7 +67,7 @@ export default function LegacyStart() {
     if (!candidate) return
     setInitializing(true)
     try {
-      const chapters = generateChapters(candidate.member, ancestors.flatMap(_ => []), [], [], [])
+      const chapters = generateChapters(candidate.member, familyData.memories, familyData.events, familyData.places, familyData.artifacts)
       const world = await createOrUpdateWorld(candidate.member.family_id, candidate.member, chapters)
       if (world) {
         const firstChapter = chapters[0]

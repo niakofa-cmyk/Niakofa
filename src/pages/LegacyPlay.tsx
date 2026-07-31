@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft, Loader2, MapPin, Calendar, BookOpen,
   CheckCircle2, ChevronRight, Sparkles, AlertCircle,
-  Shield, Clock, Volume2, Heart, Brain, Users,
+  Shield, Clock, Heart, Brain, Users,
   Globe2, Flame, Crown,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
