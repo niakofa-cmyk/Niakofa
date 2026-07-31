@@ -546,3 +546,219 @@ router.get(
 
 export default router;
 export { VALID_TRANSITIONS, generateChapterSeeds };
+
+// ── Session & Progress API ────────────────────────────────────────────────────
+// Tracks per-user session state so gameplay can be saved and resumed.
+
+// POST /api/legacy/sessions — create a new play session
+router.post(
+  "/legacy/sessions",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const { familyId, worldId, ancestorMemberId, chapterId } = req.body as {
+      familyId: number; worldId: number; ancestorMemberId?: number; chapterId?: number;
+    };
+
+    if (!familyId || !worldId) {
+      return res.status(400).json({ error: "familyId and worldId are required" });
+    }
+
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, familyId))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
+
+    try {
+      // End any existing active sessions for this user+family
+      await db
+        .update(legacySessionsTable)
+        .set({ status: "abandoned", ended_at: new Date(), updated_at: new Date() })
+        .where(
+          and(
+            eq(legacySessionsTable.family_id, familyId),
+            eq(legacySessionsTable.user_id, userId),
+            eq(legacySessionsTable.status, "active"),
+          ),
+        );
+
+      const [session] = await db
+        .insert(legacySessionsTable)
+        .values({
+          family_id: familyId,
+          world_id: worldId,
+          user_id: userId,
+          ancestor_member_id: ancestorMemberId ?? null,
+          current_chapter_id: chapterId ?? null,
+          status: "active",
+          session_state: { completedScenes: [] },
+        })
+        .returning();
+
+      logger.info({ sessionId: session.id, familyId, userId }, "legacy-sessions: created");
+      return res.json({ session });
+    } catch (err) {
+      logger.error({ err, familyId }, "legacy-sessions: create failed");
+      return res.status(500).json({ error: "Failed to create session" });
+    }
+  },
+);
+
+// GET /api/legacy/sessions/active/:familyId — get the user's active session
+router.get(
+  "/legacy/sessions/active/:familyId",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const familyId = parseInt(String(req.params.familyId), 10);
+    if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, familyId))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
+
+    try {
+      const [session] = await db
+        .select()
+        .from(legacySessionsTable)
+        .where(
+          and(
+            eq(legacySessionsTable.family_id, familyId),
+            eq(legacySessionsTable.user_id, userId),
+            eq(legacySessionsTable.status, "active"),
+          ),
+        )
+        .limit(1);
+
+      return res.json({ session: session ?? null });
+    } catch (err) {
+      logger.error({ err, familyId }, "legacy-sessions: get active failed");
+      return res.status(500).json({ error: "Failed to get active session" });
+    }
+  },
+);
+
+// POST /api/legacy/sessions/progress — save scene progress
+router.post(
+  "/legacy/sessions/progress",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const { chapterId, sceneNumber, completed } = req.body as {
+      chapterId: number; sceneNumber: number; completed: boolean;
+    };
+
+    if (!chapterId || sceneNumber === undefined) {
+      return res.status(400).json({ error: "chapterId and sceneNumber are required" });
+    }
+
+    const userId = req.authenticatedUserId!;
+
+    try {
+      const [chapter] = await db
+        .select()
+        .from(legacyChaptersTable)
+        .where(eq(legacyChaptersTable.id, chapterId))
+        .limit(1);
+
+      if (!chapter) return res.status(404).json({ error: "Chapter not found" });
+
+      if (!(await isMember(userId, chapter.family_id))) {
+        return res.status(403).json({ error: "Not a member of this family" });
+      }
+
+      // Find or create an active session for this user+family
+      let [session] = await db
+        .select()
+        .from(legacySessionsTable)
+        .where(
+          and(
+            eq(legacySessionsTable.family_id, chapter.family_id),
+            eq(legacySessionsTable.user_id, userId),
+            eq(legacySessionsTable.status, "active"),
+          ),
+        )
+        .limit(1);
+
+      if (!session) {
+        const [newSession] = await db
+          .insert(legacySessionsTable)
+          .values({
+            family_id: chapter.family_id,
+            world_id: chapter.world_id,
+            user_id: userId,
+            current_chapter_id: chapterId,
+            status: "active",
+            session_state: { completedScenes: [sceneNumber] },
+          })
+          .returning();
+        session = newSession;
+      } else {
+        // Update session state with completed scene
+        const currentState = session.session_state as { completedScenes?: number[] };
+        const completedScenes = new Set(currentState.completedScenes ?? []);
+        if (completed) completedScenes.add(sceneNumber);
+
+        const [updated] = await db
+          .update(legacySessionsTable)
+          .set({
+            current_chapter_id: chapterId,
+            session_state: { completedScenes: Array.from(completedScenes) },
+            updated_at: new Date(),
+          })
+          .where(eq(legacySessionsTable.id, session.id))
+          .returning();
+        session = updated;
+      }
+
+      return res.json({ session, sceneCompleted: completed });
+    } catch (err) {
+      logger.error({ err, chapterId }, "legacy-sessions: progress save failed");
+      return res.status(500).json({ error: "Failed to save progress" });
+    }
+  },
+);
+
+// PATCH /api/legacy/sessions/:sessionId/end — end a session (pause or complete)
+router.patch(
+  "/legacy/sessions/:sessionId/end",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const sessionId = parseInt(String(req.params.sessionId), 10);
+    if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid session ID" });
+
+    const { status } = req.body as { status: "paused" | "completed" | "abandoned" };
+
+    try {
+      const [session] = await db
+        .select()
+        .from(legacySessionsTable)
+        .where(eq(legacySessionsTable.id, sessionId))
+        .limit(1);
+
+      if (!session) return res.status(404).json({ error: "Session not found" });
+
+      const userId = req.authenticatedUserId!;
+      if (session.user_id !== userId) {
+        return res.status(403).json({ error: "Not your session" });
+      }
+
+      const [updated] = await db
+        .update(legacySessionsTable)
+        .set({
+          status: status ?? "completed",
+          ended_at: status === "paused" ? null : new Date(),
+          updated_at: new Date(),
+        })
+        .where(eq(legacySessionsTable.id, sessionId))
+        .returning();
+
+      return res.json({ session: updated });
+    } catch (err) {
+      logger.error({ err, sessionId }, "legacy-sessions: end failed");
+      return res.status(500).json({ error: "Failed to end session" });
+    }
+  },
+);

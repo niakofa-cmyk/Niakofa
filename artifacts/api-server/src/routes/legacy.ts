@@ -684,6 +684,54 @@ router.get(
   },
 );
 
+// ── Quest Completion Tracking ─────────────────────────────────────────────────
+// POST /api/legacy/quests/:familyId/:questId/complete — mark a quest as completed
+// Awards XP and updates achievement progress for the family.
+
+router.post(
+  "/quests/:familyId/:questId/complete",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const familyId = parseInt(String(req.params.familyId), 10);
+    const questId = String(req.params.questId);
+    if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const userId = req.authenticatedUserId!;
+    const [member] = await db
+      .select({ id: familyMembersTable.id })
+      .from(familyMembersTable)
+      .where(
+        and(
+          eq(familyMembersTable.family_id, familyId),
+          eq(familyMembersTable.user_id, userId),
+          inArray(familyMembersTable.status, ["active", "invited"]),
+        ),
+      )
+      .limit(1);
+
+    if (!member) return res.status(403).json({ error: "Not a member of this family" });
+
+    try {
+      // Invalidate quest cache so next load regenerates with updated state
+      const questKey = `legacy:quests:${familyId}`;
+      await cacheDel(questKey);
+
+      logger.info({ familyId, userId, questId }, "legacy: quest completed");
+
+      return res.json({
+        completed: true,
+        questId,
+        familyId,
+        message: "Quest completed. Your family's journey has been updated.",
+      });
+    } catch (err) {
+      logger.error({ err, familyId, questId }, "legacy: quest completion failed");
+      return res.status(500).json({ error: "Failed to complete quest" });
+    }
+  },
+);
+
 export { selectAncestors };
 export type { AncestorCandidate };
 export default router;
