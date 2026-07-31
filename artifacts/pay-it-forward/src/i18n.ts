@@ -146,6 +146,7 @@ const es: typeof en = {
     active_job: "Trabajo Activo",
     family: "Familia",
     diaspora: "Diáspora",
+    legacy: "Legado",
   },
   common: {
     loading: "Cargando…",

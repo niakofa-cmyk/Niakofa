@@ -1,5 +1,5 @@
 import { useLocation, Link } from "wouter";
-import { Map, Users, DollarSign, Radio, Navigation2, Wallet, Bell, X, SlidersHorizontal, Globe2, HeartHandshake, Menu, BookHeart } from "lucide-react";
+import { Map, Users, DollarSign, Radio, Navigation2, Bell, X, SlidersHorizontal, Globe2, HeartHandshake, Menu, BookHeart } from "lucide-react";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";

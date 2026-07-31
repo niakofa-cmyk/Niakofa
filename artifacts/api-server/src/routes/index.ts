@@ -37,6 +37,7 @@ import webrtcIceRouter from "./webrtc-ice";
 import coverageInterestRouter from "./coverage-interest";
 import familyRouter from "./family";
 import diasporaRouter from "./diaspora";
+import legacyRouter from "./legacy";
 
 const router: IRouter = Router();
 
@@ -78,5 +79,6 @@ router.use(webrtcIceRouter);
 router.use(coverageInterestRouter);
 router.use(familyRouter);
 router.use(diasporaRouter);
+router.use(legacyRouter);
 
 export default router;
