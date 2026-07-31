@@ -406,7 +406,7 @@ export default function LegacyHomePage() {
     try {
       const [compRes, ancestorRes, chaptersRes] = await Promise.all([
         fetch(`/api/legacy/completeness/${familyId}`, { headers: authHeaders() }),
-        fetch(`/api/legacy/ancestor/${familyId}`,     { headers: authHeaders() }),
+        fetch(`/api/legacy/ancestors/${familyId}`,    { headers: authHeaders() }),
         fetch(`/api/legacy/chapters/${familyId}`,      { headers: authHeaders() }),
       ]);
 
@@ -471,12 +471,35 @@ export default function LegacyHomePage() {
         try {
           const familyId = legacyState.families[0]?.id;
           if (!familyId) throw new Error("No family selected");
-          const formData = new FormData();
-          formData.append("audio", audioBlob, `oral-story-${Date.now()}.webm`);
-          formData.append("source", "interview");
-          formData.append("title", `Oral Story — ${ORAL_PROMPTS[promptIdx].slice(0, 40)}`);
-          const uploadRes = await fetch(`/api/family/${familyId}/memories/upload`, {
-            method: "POST", headers: { ...authHeaders() }, body: formData,
+
+          // 1. Create the memory record
+          const memRes = await fetch(`/api/family/${familyId}/memories`, {
+            method:  "POST",
+            headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title:  `Oral Story — ${ORAL_PROMPTS[promptIdx].slice(0, 40)}`,
+              source: "interview",
+            }),
+          });
+          if (!memRes.ok) throw new Error(`Failed to create memory (${memRes.status})`);
+          const { memory } = await memRes.json();
+
+          // 2. Upload the audio as a base64 data URL to the memory's asset endpoint
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload  = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(audioBlob);
+          });
+          const uploadRes = await fetch(`/api/family/${familyId}/memories/${memory.id}/assets/upload-direct`, {
+            method:  "POST",
+            headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({
+              dataUrl,
+              filename:  `oral-story-${Date.now()}.webm`,
+              mimeType:  "audio/webm",
+              assetType: "audio",
+            }),
           });
           if (!uploadRes.ok) throw new Error(`Upload failed (${uploadRes.status})`);
           toast.success("Story saved to your vault!");
