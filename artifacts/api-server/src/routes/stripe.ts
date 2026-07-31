@@ -516,6 +516,77 @@ router.post("/stripe/webhook", async (req, res) => {
         break;
       }
 
+      case "charge.refunded": {
+        // A Stripe charge was refunded. Update the payment_transactions row
+        // and the associated help_request so the system reflects the refund.
+        // Idempotency: the state guard (`!= 'failed'`) ensures duplicate
+        // webhook deliveries skip after the first one processes.
+        const charge = event.data.object as Stripe.Charge;
+        const piId = charge.payment_intent as string | null;
+        if (!piId) break;
+
+        const [txRow] = await db
+          .update(paymentTransactionsTable)
+          .set({ state: "failed", updated_at: new Date() })
+          .where(and(
+            eq(paymentTransactionsTable.stripe_payment_intent_id, piId),
+            sql`${paymentTransactionsTable.state} != 'failed'`
+          ))
+          .returning();
+
+        if (!txRow) {
+          logger.info({ pi: piId }, "charge.refunded: no unprocessed transaction row — skipping");
+          break;
+        }
+
+        const refundAmount = charge.amount_refunded / 100;
+
+        // Update the help_request status if the request was completed
+        const [reqRow] = await db
+          .select({ status: requestsTable.status, title: requestsTable.title })
+          .from(requestsTable)
+          .where(eq(requestsTable.id, txRow.request_id))
+          .limit(1);
+
+        if (reqRow && reqRow.status === "completed") {
+          await db
+            .update(requestsTable)
+            .set({
+              status: "cancelled",
+              cancelled_at: new Date(),
+            })
+            .where(eq(requestsTable.id, txRow.request_id));
+        }
+
+        // If the pool fronted this payment, reverse the pool ledger entry
+        const fronted = await wasRequestFronted(txRow.request_id);
+        if (fronted && refundAmount > 0) {
+          await db.insert(communityPoolLedgerTable).values({
+            entry_type: "pledge_repayment",
+            amount: -refundAmount,
+            request_id: txRow.request_id,
+            user_id: txRow.requester_id ?? null,
+            stripe_payment_intent_id: piId,
+            notes: "Refund reversed from pool (Stripe charge.refunded)",
+          }).onConflictDoNothing();
+        }
+
+        broadcast({
+          type: "payment_refunded",
+          payload: {
+            request_id: txRow.request_id,
+            amount: refundAmount,
+            payment_intent_id: piId,
+          },
+        });
+
+        logger.warn(
+          { request_id: txRow.request_id, pi: piId, amount: refundAmount },
+          "Stripe charge refunded — payment marked failed, request cancelled"
+        );
+        break;
+      }
+
       case "account.updated": {
         const account = event.data.object as Stripe.Account;
         const [existing] = await db

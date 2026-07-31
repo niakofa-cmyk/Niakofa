@@ -759,7 +759,10 @@ router.patch("/requests/:id", requireAuth, async (req, res) => {
   const bParsed = UpdateRequestBody.safeParse(req.body);
   if (!pParsed.success || !bParsed.success) return res.status(400).json({ error: "Invalid" });
   const updates: Record<string, unknown> = {};
-  if (bParsed.data.status !== undefined) updates.status = bParsed.data.status;
+  // status is intentionally NOT settable here — it must go through the
+  // dedicated state-transition endpoints (claim, en-route, arrived, complete,
+  // cancel) which enforce atomic guards and side effects. Allowing a raw
+  // status update here would bypass all state-machine checks.
   if (bParsed.data.description !== undefined) updates.description = bParsed.data.description != null ? stripTags(bParsed.data.description) : null;
   if (bParsed.data.urgency !== undefined) updates.urgency = bParsed.data.urgency;
   const [updatedRequest] = await db.update(requestsTable).set(updates).where(eq(requestsTable.id, pParsed.data.id)).returning();
@@ -2474,6 +2477,21 @@ router.post("/requests/:id/repayment-plan", requireAuth, requestCreationLimiter,
 router.get("/requests/:id/helpers", requireAuth, async (req, res) => {
   const requestId = parseInt(req.params.id as string);
   if (isNaN(requestId)) return res.status(400).json({ error: "Invalid id" });
+
+  // Only participants (requester or assigned helper) or admins may list helpers
+  const callerId = req.authenticatedUserId!;
+  const [request] = await db
+    .select({ requester_id: requestsTable.requester_id, helper_id: requestsTable.helper_id })
+    .from(requestsTable)
+    .where(eq(requestsTable.id, requestId))
+    .limit(1);
+  if (!request) return res.status(404).json({ error: "Request not found" });
+
+  const isParticipant = request.requester_id === callerId || request.helper_id === callerId;
+  const [caller] = await db.select({ is_admin: usersTable.is_admin }).from(usersTable).where(eq(usersTable.id, callerId)).limit(1);
+  if (!isParticipant && !caller?.is_admin) {
+    return res.status(403).json({ error: "Only participants or admins may view helpers on this request" });
+  }
 
   const members = await db
     .select({

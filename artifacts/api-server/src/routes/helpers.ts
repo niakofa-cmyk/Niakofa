@@ -190,6 +190,7 @@ router.post("/helpers/auto-assign/:requestId", requireAuth, requireAdmin(), asyn
   const [request] = await db.select().from(requestsTable).where(eq(requestsTable.id, requestId)).limit(1);
   if (!request) return res.status(404).json({ error: "Request not found" });
   if (request.status !== "open") return res.status(409).json({ error: "Request is not open" });
+  if (request.lat == null || request.lng == null) return res.status(400).json({ error: "Request has no location coordinates — cannot auto-assign" });
 
   // Configurable radius — default 10 mi, max 50 mi.
   // Larger defaults help sparse rural areas (rural Africa, tribal lands, Appalachia)

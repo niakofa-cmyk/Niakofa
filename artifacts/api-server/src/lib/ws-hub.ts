@@ -73,6 +73,7 @@ export type WsEventType =
   // Wallet cashout events — benevolence_wallet → Stripe transfer
   | "wallet_cashout"
   | "wallet_cashout_reversed"
+  | "payment_refunded"
   // Admin real-time notifications — new accounts / applications needing review
   | "new_account_pending"
   | "new_helper_application"

@@ -37,6 +37,7 @@
  */
 import { Router, type Request, type Response } from "express";
 import { requireAuth, requireApproved } from "../middlewares/auth";
+import { requireAdmin } from "../middlewares/authz";
 import Stripe from "stripe";
 import {
   db,
@@ -384,12 +385,10 @@ router.post(
 // ── GET /admin/cashouts — admin overview of all cashout records ───────────────
 // Returns latest 100 cashout records joined with user info for the admin panel.
 // Ordered by most-recent first so stuck/failed rows surface immediately.
-import { requireAdmin } from "../middlewares/authz";
 import { adminLimiter } from "../middlewares/rate-limit";
 import { desc } from "drizzle-orm";
 
-router.get("/admin/cashouts", requireAuth, adminLimiter, async (req: Request, res: Response) => {
-  await requireAdmin()(req, res, async () => {
+router.get("/admin/cashouts", requireAuth, requireAdmin(), adminLimiter, async (_req: Request, res: Response) => {
     const rows = await db
       .select({
         id: walletCashoutsTable.id,
@@ -409,7 +408,6 @@ router.get("/admin/cashouts", requireAuth, adminLimiter, async (req: Request, re
       .orderBy(desc(walletCashoutsTable.created_at))
       .limit(100);
     return res.json(rows);
-  });
 });
 
 // ── GET /wallet/cashout/history ───────────────────────────────────────────────

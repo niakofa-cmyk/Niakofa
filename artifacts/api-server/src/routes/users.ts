@@ -102,7 +102,7 @@ router.post("/users/login", authLimiter, async (req, res) => {
     .from(usersTable)
     .where(sql`lower(${usersTable.email}) = ${email.trim().toLowerCase()}`)
     .limit(1);
-  if (!user) return res.status(401).json({ error: "No account found with that email" });
+  if (!user) return res.status(401).json({ error: "Invalid email or password." });
 
   // Legacy accounts created before password auth was added have no
   // password_hash at all — distinct from "wrong password" so the client
@@ -133,9 +133,6 @@ router.post("/users/login", authLimiter, async (req, res) => {
   if (!user.password_hash) {
     return res.status(403).json({
       error_code: "LEGACY_PASSWORD_REQUIRED",
-      user_id: user.id,
-      user_email: user.email,
-      user_name: user.name,
     });
   }
 
@@ -160,7 +157,7 @@ router.post("/users/login", authLimiter, async (req, res) => {
     const hint = retryAfterSec > 0
       ? ` Account temporarily locked for ${retryAfterSec < 60 ? retryAfterSec + "s" : Math.ceil(retryAfterSec / 60) + " min"} — use "Forgot password?" to bypass.`
       : "";
-    return res.status(401).json({ error: `Incorrect password.${hint}` });
+    return res.status(401).json({ error: `Invalid email or password.${hint}` });
   }
 
   _clearAttempts(user.id); // successful login — reset the failure counter
