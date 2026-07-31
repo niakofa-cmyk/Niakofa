@@ -38,6 +38,8 @@ import coverageInterestRouter from "./coverage-interest";
 import familyRouter from "./family";
 import diasporaRouter from "./diaspora";
 import legacyRouter from "./legacy";
+import legacyCompletenessRouter from "./legacy-completeness";
+import legacyChaptersRouter from "./legacy-chapters";
 
 const router: IRouter = Router();
 
@@ -80,5 +82,7 @@ router.use(coverageInterestRouter);
 router.use(familyRouter);
 router.use(diasporaRouter);
 router.use(legacyRouter);
+router.use(legacyCompletenessRouter);
+router.use(legacyChaptersRouter);
 
 export default router;

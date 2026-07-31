@@ -26,8 +26,31 @@ interface Stats {
   heritage_collections: number;
 }
 
-// ── Achievement definitions (from Living Family Legacy document) ────────────
-const ACHIEVEMENTS = [
+// ── Achievement definitions ──────────────────────────────────────────────────
+// Achievements are categorized by how they unlock:
+//   vault_prompt   — unlocked by adding data to the Family Vault
+//   reconnection   — unlocked by reconnecting with relatives
+//   gameplay       — unlocked by playing Legacy Mode chapters
+//   preservation   — unlocked by preserving stories/interviews
+// Only vault_prompt and reconnection achievements are wired in Phase 1.
+
+interface AchievementDef {
+  id: string;
+  title: string;
+  desc: string;
+  hint: string;
+  icon: typeof BookOpen;
+  color: string;
+  bg: string;
+  border: string;
+  dot: string;
+  progress: (s: Stats) => number;
+  goal: number;
+  href: string;
+  category: "vault_prompt" | "reconnection" | "gameplay" | "preservation";
+}
+
+const ACHIEVEMENTS: AchievementDef[] = [
   {
     id: "story_keeper",
     title: "The Story Keeper",
@@ -41,6 +64,7 @@ const ACHIEVEMENTS = [
     progress: (s: Stats) => Math.min(s.vault_items, 100),
     goal: 100,
     href: "/diaspora/family",
+    category: "vault_prompt",
   },
   {
     id: "family_detective",
@@ -48,13 +72,14 @@ const ACHIEVEMENTS = [
     desc: "Find and add 10 ancestors to your family tree.",
     hint: "Add parents, grandparents, and great-grandparents to your tree.",
     icon: Compass,
-    color: "text-purple-400",
-    bg: "bg-purple-400/10",
-    border: "border-purple-400/25",
-    dot: "bg-purple-400",
+    color: "text-teal-400",
+    bg: "bg-teal-400/10",
+    border: "border-teal-400/25",
+    dot: "bg-teal-400",
     progress: (s: Stats) => Math.min(s.family_tree_people, 10),
     goal: 10,
     href: "/diaspora/tree",
+    category: "vault_prompt",
   },
   {
     id: "bridge_builder",
@@ -69,6 +94,7 @@ const ACHIEVEMENTS = [
     progress: (s: Stats) => Math.min(s.family_spaces, 5),
     goal: 5,
     href: "/diaspora/family",
+    category: "reconnection",
   },
   {
     id: "legacy_guardian",
@@ -83,6 +109,7 @@ const ACHIEVEMENTS = [
     progress: (s: Stats) => Math.min(s.vault_items, 50),
     goal: 50,
     href: "/diaspora/family",
+    category: "vault_prompt",
   },
   {
     id: "voice_of_elders",
@@ -97,6 +124,7 @@ const ACHIEVEMENTS = [
     progress: (s: Stats) => Math.min(s.oral_histories, 3),
     goal: 3,
     href: "/diaspora/family",
+    category: "preservation",
   },
   {
     id: "roots_traveler",
@@ -111,6 +139,7 @@ const ACHIEVEMENTS = [
     progress: (s: Stats) => Math.min(s.dna_connections, 10),
     goal: 10,
     href: "/diaspora/dna",
+    category: "reconnection",
   },
   {
     id: "memory_restorer",
@@ -125,6 +154,7 @@ const ACHIEVEMENTS = [
     progress: (s: Stats) => Math.min(s.vault_items, 25),
     goal: 25,
     href: "/diaspora/family",
+    category: "vault_prompt",
   },
   {
     id: "ancestor_walker",
@@ -139,6 +169,7 @@ const ACHIEVEMENTS = [
     progress: (s: Stats) => Math.min(s.heritage_collections, 5),
     goal: 5,
     href: "/diaspora/heritage",
+    category: "gameplay",
   },
 ];
 

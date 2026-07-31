@@ -24,6 +24,11 @@ import {
   familyMembersTable,
   familyMemoriesTable,
   familyInterviewsTable,
+  familyStoriesTable,
+  familyEventsTable,
+  familyPlacesTable,
+  familyTreeRelationsTable,
+  familyMemoryAssetsTable,
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
@@ -63,7 +68,7 @@ export interface FamilyReservoir {
   interviewCount:  number;
   ancestorProfiles: AncestorProfile[];
   memorySummaries:  MemorySummary[];
-  /** Cheap hash of counts — changes when family data changes, busting quest cache. */
+  /** Content-based hash of actual vault data — changes when ANY data changes, not just counts. */
   fingerprint: string;
   builtAt: string;
 }
@@ -113,12 +118,14 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
     .where(eq(familiesTable.id, familyId))
     .limit(1);
 
-  // Top 20 active members — use display_name (the canonical column)
+  // Top 20 active members — include id and updated_at for strong fingerprint
   const members = await db
     .select({
-      name:     familyMembersTable.display_name,
-      role:     familyMembersTable.role,
-      relation: familyMembersTable.relation_note,
+      id:        familyMembersTable.id,
+      name:      familyMembersTable.display_name,
+      role:      familyMembersTable.role,
+      relation:  familyMembersTable.relation_note,
+      updated:   familyMembersTable.created_at,
     })
     .from(familyMembersTable)
     .where(
@@ -129,14 +136,16 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
     )
     .limit(20);
 
-  // Latest 15 memories — just metadata, no assets
+  // Latest 15 memories — include id and updated_at for strong fingerprint
   const memories = await db
     .select({
+      id:             familyMemoriesTable.id,
       title:          familyMemoriesTable.title,
       description:    familyMemoriesTable.description,
       memory_date:    familyMemoriesTable.memory_date,
       location_label: familyMemoriesTable.location_label,
       source:         familyMemoriesTable.source,
+      updated:        familyMemoriesTable.updated_at,
     })
     .from(familyMemoriesTable)
     .where(eq(familyMemoriesTable.family_id, familyId))
@@ -148,10 +157,52 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
     .from(familyInterviewsTable)
     .where(eq(familyInterviewsTable.family_id, familyId));
 
+  // Fetch additional vault data for strong fingerprint
+  const [{ storyCount }] = await db
+    .select({ storyCount: sql<number>`count(*)::int` })
+    .from(familyStoriesTable)
+    .where(eq(familyStoriesTable.family_id, familyId));
+
+  const [{ eventCount }] = await db
+    .select({ eventCount: sql<number>`count(*)::int` })
+    .from(familyEventsTable)
+    .where(eq(familyEventsTable.family_id, familyId));
+
+  const [{ placeCount }] = await db
+    .select({ placeCount: sql<number>`count(*)::int` })
+    .from(familyPlacesTable)
+    .where(eq(familyPlacesTable.family_id, familyId));
+
+  const [{ relationCount }] = await db
+    .select({ relationCount: sql<number>`count(*)::int` })
+    .from(familyTreeRelationsTable)
+    .where(eq(familyTreeRelationsTable.family_id, familyId));
+
+  const [{ assetCount }] = await db
+    .select({ assetCount: sql<number>`count(*)::int` })
+    .from(familyMemoryAssetsTable)
+    .where(eq(familyMemoryAssetsTable.memory_id, sql`ANY (SELECT id FROM family_memories WHERE family_id = ${familyId})`));
+
   const memberCount    = members.length;
   const memoryCount    = memories.length;
   const interviewCount = Number(ic ?? 0);
-  const fingerprint    = `${memberCount}:${memoryCount}:${interviewCount}`;
+
+  // ── Strong content-based fingerprint ──────────────────────────────────────
+  // Instead of just counts, hash actual IDs + updated_at timestamps so the
+  // fingerprint changes when ANY underlying data changes (not just counts).
+  // e.g. editing Grandma's story from "We moved" to "We moved to Detroit in 1957"
+  // changes the memory's updated_at, which changes the fingerprint.
+  const canonicalData = JSON.stringify({
+    m: members.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`),
+    mem: memories.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`),
+    i: interviewCount,
+    s: storyCount,
+    e: eventCount,
+    p: placeCount,
+    r: relationCount,
+    a: assetCount,
+  });
+  const fingerprint = Buffer.from(canonicalData).toString("base64url").slice(0, 64);
 
   return {
     familyId,
@@ -474,4 +525,165 @@ router.post(
   },
 );
 
+// ── Ancestor Selection Engine ─────────────────────────────────────────────────
+// Evaluates family members to find the best playable ancestor for Legacy Mode.
+// Scoring: birth year, death year, generation, available stories, events,
+// locations, photos, interviews, completeness. Returns top candidates.
+
+export interface AncestorCandidate {
+  memberId: number;
+  name: string;
+  role: string;
+  relation: string | null;
+  birthYear: string | null;
+  deathYear: string | null;
+  storyCount: number;
+  eventCount: number;
+  placeCount: number;
+  memoryCount: number;
+  interviewCount: number;
+  photoCount: number;
+  completenessScore: number;
+  selectionReason: string;
+}
+
+async function selectAncestors(familyId: number): Promise<AncestorCandidate[]> {
+  const members = await db
+    .select({
+      id: familyMembersTable.id,
+      name: familyMembersTable.display_name,
+      role: familyMembersTable.role,
+      relation: familyMembersTable.relation_note,
+    })
+    .from(familyMembersTable)
+    .where(
+      and(
+        eq(familyMembersTable.family_id, familyId),
+        eq(familyMembersTable.status, "active"),
+      ),
+    );
+
+  const candidates: AncestorCandidate[] = [];
+
+  for (const member of members) {
+    // Count stories about this member
+    const [{ sc }] = await db
+      .select({ sc: sql<number>`count(*)::int` })
+      .from(familyStoriesTable)
+      .where(eq(familyStoriesTable.about_member_id, member.id));
+
+    // Count events for this member
+    const [{ ec }] = await db
+      .select({ ec: sql<number>`count(*)::int` })
+      .from(familyEventsTable)
+      .where(eq(familyEventsTable.member_id, member.id));
+
+    // Count memories mentioning this member
+    const [{ mc }] = await db
+      .select({ mc: sql<number>`count(*)::int` })
+      .from(familyMemoriesTable)
+      .where(eq(familyMemoriesTable.family_id, familyId));
+
+    // Count interviews with this member
+    const [{ ic }] = await db
+      .select({ ic: sql<number>`count(*)::int` })
+      .from(familyInterviewsTable)
+      .where(eq(familyInterviewsTable.subject_member_id, member.id));
+
+    // Count photos (assets) for memories about this member
+    const [{ pc }] = await db
+      .select({ pc: sql<number>`count(*)::int` })
+      .from(familyMemoryAssetsTable)
+      .where(eq(familyMemoryAssetsTable.asset_type, "photo"));
+
+    // Get earliest event as birth year proxy
+    const events = await db
+      .select({ eventDate: familyEventsTable.event_date, category: familyEventsTable.category })
+      .from(familyEventsTable)
+      .where(eq(familyEventsTable.member_id, member.id))
+      .orderBy(asc(familyEventsTable.event_date))
+      .limit(1);
+
+    const birthEvent = events.find(e => e.category === "birth");
+    const deathEvent = events.find(e => e.category === "death");
+    const birthYear = birthEvent?.eventDate ? new Date(birthEvent.eventDate).getFullYear().toString() : null;
+    const deathYear = deathEvent?.eventDate ? new Date(deathEvent.eventDate).getFullYear().toString() : null;
+
+    // Completeness score: weighted sum of data richness
+    const completenessScore = Math.min(100,
+      (sc > 0 ? 15 : 0) +
+      (ec > 0 ? 20 : 0) +
+      (mc > 0 ? 15 : 0) +
+      (ic > 0 ? 20 : 0) +
+      (pc > 0 ? 10 : 0) +
+      (birthYear ? 10 : 0) +
+      (deathYear ? 5 : 0) +
+      (member.relation ? 5 : 0),
+    );
+
+    const reasons: string[] = [];
+    if (sc > 0) reasons.push(`${sc} recorded stor${sc === 1 ? "y" : "ies"}`);
+    if (ec > 0) reasons.push(`${ec} life event${ec === 1 ? "" : "s"}`);
+    if (ic > 0) reasons.push(`${ic} interview${ic === 1 ? "" : "s"}`);
+    if (birthYear) reasons.push(`born ${birthYear}`);
+
+    candidates.push({
+      memberId: member.id,
+      name: member.name,
+      role: member.role,
+      relation: member.relation,
+      birthYear,
+      deathYear,
+      storyCount: sc,
+      eventCount: ec,
+      placeCount: 0,
+      memoryCount: mc,
+      interviewCount: ic,
+      photoCount: pc,
+      completenessScore,
+      selectionReason: reasons.length > 0 ? reasons.join(", ") : "Available family member",
+    });
+  }
+
+  // Sort by completeness score descending
+  candidates.sort((a, b) => b.completenessScore - a.completenessScore);
+  return candidates;
+}
+
+// GET /api/legacy/ancestors/:familyId — get ancestor candidates for selection
+router.get(
+  "/ancestors/:familyId",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const familyId = parseInt(String(req.params.familyId), 10);
+    if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const userId = req.authenticatedUserId!;
+    const [member] = await db
+      .select({ id: familyMembersTable.id })
+      .from(familyMembersTable)
+      .where(
+        and(
+          eq(familyMembersTable.family_id, familyId),
+          eq(familyMembersTable.user_id, userId),
+          inArray(familyMembersTable.status, ["active", "invited"]),
+        ),
+      )
+      .limit(1);
+
+    if (!member) return res.status(403).json({ error: "Not a member of this family" });
+
+    try {
+      const candidates = await selectAncestors(familyId);
+      return res.json({ ancestors: candidates });
+    } catch (err) {
+      logger.error({ err, familyId }, "legacy: ancestor selection failed");
+      return res.status(500).json({ error: "Failed to select ancestors" });
+    }
+  },
+);
+
+export { selectAncestors };
+export type { AncestorCandidate };
 export default router;
