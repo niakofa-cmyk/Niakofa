@@ -19,7 +19,7 @@ import {
   BookHeart, Scroll, Trophy, Map, Users, Mic,
   Star, Play, CheckCircle2, Clock, Loader2,
   ChevronRight, Plus, Globe2, Heart,
-  Camera, FileText, TreePine, Crown, Flame,
+  Camera, FileText, Crown, Flame,
   Sparkles, Shield, Zap, Target,
   Volume2, BookOpen, Lock,
   RefreshCw, ChevronLeft,
@@ -98,13 +98,13 @@ const MODE_COLORS: Record<string, { ring: string; bg: string; text: string; glow
 
 /** Fallback quests shown while AI loads or if API unavailable */
 const FALLBACK_QUESTS: AiQuest[] = [
-  { id: "t0", isAiGenerated: false, icon: Mic,      title: "Record an Elder's Story",  xp: 100, category: "record",   actionPath: "",               description: "Interview a living relative and preserve their voice for the family vault." },
-  { id: "t1", isAiGenerated: false, icon: Camera,   title: "Add a Family Photo",        xp: 50,  category: "document", actionPath: "",               description: "Upload a photograph — every image unlocks historical context." },
-  { id: "t2", isAiGenerated: false, icon: TreePine, title: "Expand the Family Tree",    xp: 75,  category: "connect",  actionPath: "/diaspora/tree", description: "Add an ancestor to your family tree to unlock a new playable chapter." },
-  { id: "t3", isAiGenerated: false, icon: Globe2,   title: "Visit a Family Landmark",   xp: 120, category: "explore",  actionPath: "",               description: "Go to a place meaningful to your family and check in with the app." },
-  { id: "t4", isAiGenerated: false, icon: BookOpen, title: "Write a Family Memory",     xp: 60,  category: "document", actionPath: "",               description: "Document a story from your family's past as a vault memory." },
-  { id: "t5", isAiGenerated: false, icon: Users,    title: "Invite a Family Member",    xp: 80,  category: "connect",  actionPath: "/diaspora/family", description: "Grow your family network — every cousin enriches everyone's game." },
-] as unknown as AiQuest[];
+  { id: "t0", isAiGenerated: false, title: "Record an Elder's Story",  xp: 100, category: "record",   actionPath: "",               description: "Interview a living relative and preserve their voice for the family vault." },
+  { id: "t1", isAiGenerated: false, title: "Add a Family Photo",        xp: 50,  category: "document", actionPath: "",               description: "Upload a photograph — every image unlocks historical context." },
+  { id: "t2", isAiGenerated: false, title: "Expand the Family Tree",    xp: 75,  category: "connect",  actionPath: "/diaspora/tree", description: "Add an ancestor to your family tree to unlock a new playable chapter." },
+  { id: "t3", isAiGenerated: false, title: "Visit a Family Landmark",   xp: 120, category: "explore",  actionPath: "",               description: "Go to a place meaningful to your family and check in with the app." },
+  { id: "t4", isAiGenerated: false, title: "Write a Family Memory",     xp: 60,  category: "document", actionPath: "",               description: "Document a story from your family's past as a vault memory." },
+  { id: "t5", isAiGenerated: false, title: "Invite a Family Member",    xp: 80,  category: "connect",  actionPath: "/diaspora/family", description: "Grow your family network — every cousin enriches everyone's game." },
+];
 
 const WORLD_STAGES = [
   { id: 1, label: "Ancestral Village",   chapter: "Origins",       locked: false },
