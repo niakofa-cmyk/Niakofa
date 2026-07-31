@@ -108,13 +108,40 @@ const FALLBACK_QUESTS: AiQuest[] = [
   { id: "t5", isAiGenerated: false, title: "Invite a Family Member",    xp: 80,  category: "connect",  actionPath: "/diaspora/family", description: "Grow your family network — every cousin enriches everyone's game." },
 ];
 
-const WORLD_STAGES = [
+const WORLD_STAGES_FALLBACK = [
   { id: 1, label: "Ancestral Village",   chapter: "Origins",       locked: false },
   { id: 2, label: "Mission School",      chapter: "Chapter 2",     locked: false },
   { id: 3, label: "Colonial Town",       chapter: "Chapter 3",     locked: false },
   { id: 4, label: "New Opportunities",   chapter: "Chapter 4",     locked: true  },
   { id: 5, label: "The Journey Continues", chapter: "Coming Soon", locked: true  },
 ];
+
+function generateWorldStages(memories: FamilyMemory[], members: FamilyMember[]): typeof WORLD_STAGES_FALLBACK {
+  const locationMap = new Map<string, { date: string | null; label: string }>();
+  for (const m of memories) {
+    if (m.location_label) {
+      const existing = locationMap.get(m.location_label);
+      if (!existing || (m.memory_date && (!existing.date || m.memory_date < existing.date))) {
+        locationMap.set(m.location_label, { date: m.memory_date, label: m.location_label });
+      }
+    }
+  }
+  for (const m of members) {
+    if (m.location && !locationMap.has(m.location)) {
+      locationMap.set(m.location, { date: null, label: m.location });
+    }
+  }
+  const locations = Array.from(locationMap.values()).sort((a, b) => {
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return a.date.localeCompare(b.date);
+  });
+  if (locations.length < 2) return WORLD_STAGES_FALLBACK;
+  return locations.slice(0, 6).map((loc, i) => {
+    const year = loc.date ? new Date(loc.date).getFullYear().toString() : "";
+    return { id: i + 1, label: year ? `${loc.label} — ${year}` : loc.label, chapter: `Chapter ${i + 1}`, locked: i > 2 };
+  });
+}
 
 const ORAL_PROMPTS = [
   "Tell me about Grandma's first home.",
@@ -128,15 +155,22 @@ const ORAL_PROMPTS = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function pickAncestor(members: FamilyMember[]): FamilyMember | null {
-  return members.length ? members[0] : null;
+  const scored = members.map(m => ({
+    member: m,
+    score: (m.birth_year ? 20 : 0) + (m.relation_note ? 10 : 0) + (m.location ? 10 : 0),
+  }));
+  scored.sort((a, b) => b.score - a.score);
+  return scored.length ? scored[0].member : null;
 }
 
 function deriveStats(memories: FamilyMemory[], members: FamilyMember[], interviewCount: number) {
-  const knowledge  = Math.min(100, memories.length  * 8 + 10);
-  const reputation = Math.min(100, members.length   * 12 + 5);
-  const health     = Math.min(100, interviewCount   * 20 + members.length * 5 + 20);
-  const faith      = Math.min(100, memories.filter(m => m.source === "upload").length * 6 + 15);
-  return { knowledge, reputation, health, faith };
+  const knowledge      = Math.min(100, memories.length  * 8 + 10);
+  const relationships  = Math.min(100, members.length   * 10 + (members.length > 1 ? 15 : 0));
+  const culturalWisdom = Math.min(100, memories.filter(m => m.source === "interview").length * 15 + interviewCount * 10 + 5);
+  const courage         = Math.min(100, interviewCount   * 15 + 10);
+  const reputation     = Math.min(100, members.length   * 8 + memories.length * 2);
+  const legacy          = Math.min(100, Math.round((knowledge + relationships + culturalWisdom + courage + reputation) / 5));
+  return { knowledge, relationships, culturalWisdom, courage, reputation, legacy };
 }
 
 function deriveProgress(state: LegacyState): number {
@@ -284,6 +318,11 @@ export default function LegacyHomePage() {
   const [promptIdx,     setPromptIdx]     = useState(0);
   const [setupDone,     setSetupDone]     = useState(false);
 
+  // Real audio recording state
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef   = useRef<Blob[]>([]);
+  const [uploading, setUploading] = useState(false);
+
   const [aiQuests,        setAiQuests]        = useState<AiQuest[]>([]);
   const [questsLoading,   setQuestsLoading]   = useState(false);
   const [questsRefreshing, setQuestsRefreshing] = useState(false);
@@ -332,6 +371,52 @@ export default function LegacyHomePage() {
   }, [currentUser]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // ── Real audio recording with MediaRecorder API ─────────────────────────────
+  const handleStartRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        setUploading(true);
+        try {
+          const familyId = legacyState.families[0]?.id;
+          if (!familyId) throw new Error("No family selected");
+          const formData = new FormData();
+          formData.append("audio", audioBlob, `oral-story-${Date.now()}.webm`);
+          formData.append("source", "interview");
+          formData.append("title", `Oral Story — ${ORAL_PROMPTS[promptIdx].slice(0, 40)}`);
+          const uploadRes = await fetch(`/api/family/${familyId}/memories/upload`, {
+            method: "POST", headers: { ...authHeaders() }, body: formData,
+          });
+          if (!uploadRes.ok) throw new Error(`Upload failed (${uploadRes.status})`);
+          toast.success("Story saved to your vault!");
+          fetch(`/api/legacy/reservoir/${familyId}/invalidate`, { method: "POST", headers: authHeaders() }).catch(() => {});
+          loadData();
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Failed to save recording");
+        } finally { setUploading(false); }
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+      setRecordSeconds(0);
+    } catch (err) {
+      toast.error(err instanceof Error ? `Microphone error: ${err.message}` : "Couldn't access microphone");
+    }
+  }, [legacyState.families, promptIdx, loadData]);
+
+  const handleStopRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    setRecording(false);
+    setRecordSeconds(0);
+    mediaRecorderRef.current = null;
+  }, []);
 
   // ── Load AI quests after family data is ready ─────────────────────────────
 
@@ -406,6 +491,7 @@ export default function LegacyHomePage() {
   const progress = deriveProgress(legacyState);
   const ancestor = pickAncestor(members);
   const stats    = deriveStats(memories, members, interviewCount);
+  const worldStages = generateWorldStages(memories, members);
   const mm       = Math.floor(recordSeconds / 60);
   const ss       = recordSeconds % 60;
 
@@ -584,7 +670,7 @@ export default function LegacyHomePage() {
               </div>
               <div className="flex gap-2 mt-4">
                 <button
-                  onClick={() => navigate("/diaspora/tree")}
+                  onClick={() => navigate("/legacy/start")}
                   className="flex-1 bg-amber-500 text-amber-950 font-black text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-80 flex items-center justify-center gap-1.5 transition-opacity"
                 >
                   <Play className="w-3.5 h-3.5" /> Continue Journey
@@ -650,10 +736,12 @@ export default function LegacyHomePage() {
                       )}
                     </div>
                     <div className="mt-2 space-y-1.5">
-                      <StatBar label="Health"     value={stats.health}     color="bg-rose-500" />
-                      <StatBar label="Knowledge"  value={stats.knowledge}  color="bg-blue-500" />
-                      <StatBar label="Reputation" value={stats.reputation} color="bg-amber-500" />
-                      <StatBar label="Faith"      value={stats.faith}      color="bg-purple-500" />
+                      <StatBar label="Knowledge"      value={stats.knowledge}     color="bg-blue-500" />
+                      <StatBar label="Relationships"   value={stats.relationships} color="bg-teal-500" />
+                      <StatBar label="Cultural Wisdom"  value={stats.culturalWisdom} color="bg-emerald-500" />
+                      <StatBar label="Courage"         value={stats.courage}       color="bg-rose-500" />
+                      <StatBar label="Reputation"      value={stats.reputation}    color="bg-amber-500" />
+                      <StatBar label="Legacy"         value={stats.legacy}        color="bg-purple-500" />
                     </div>
                   </div>
                 </div>
@@ -676,7 +764,7 @@ export default function LegacyHomePage() {
             </div>
             <div className="overflow-x-auto pb-2">
               <div className="flex gap-3 min-w-max px-1">
-                {WORLD_STAGES.map((stage, i) => {
+                {worldStages.map((stage, i) => {
                   const active = currentStage === stage.id;
                   const done   = currentStage > stage.id;
                   return (
@@ -704,7 +792,7 @@ export default function LegacyHomePage() {
                         </p>
                         <p className={`text-xs ${active ? "text-amber-500" : "text-amber-900"}`}>{stage.chapter}</p>
                       </button>
-                      {i < WORLD_STAGES.length - 1 && (
+                      {i < worldStages.length - 1 && (
                         <div className={`w-6 h-0.5 flex-shrink-0 ${done ? "bg-amber-500" : "bg-amber-900/40"}`} />
                       )}
                     </div>
@@ -785,7 +873,7 @@ export default function LegacyHomePage() {
                 </div>
                 <p className="text-xs text-amber-600 mb-3">Today's Goal: Preserve a family memory</p>
                 <button
-                  onClick={() => navigate("/diaspora/tree")}
+                  onClick={() => navigate("/legacy/start")}
                   className="w-full bg-amber-500/15 border border-amber-600/30 text-amber-300 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70 flex items-center justify-center gap-2"
                 >
                   <Play className="w-3.5 h-3.5" /> Begin Today's Journey
@@ -1126,28 +1214,14 @@ export default function LegacyHomePage() {
               <div className="flex gap-2">
                 <button
                   onClick={() => {
-                    if (recording) {
-                      setRecording(false);
-                      setRecordSeconds(0);
-                      toast.success("Story saved to your vault!");
-                      if (families[0]) {
-                        fetch(`/api/legacy/reservoir/${families[0].id}/invalidate`, {
-                          method: "POST", headers: authHeaders(),
-                        }).catch(() => { });
-                      }
-                    } else {
-                      setRecording(true);
-                      setRecordSeconds(0);
-                    }
+                    if (recording) { handleStopRecording(); } else { handleStartRecording(); }
                   }}
+                  disabled={uploading}
                   className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-xs uppercase tracking-wide transition-all ${
-                    recording
-                      ? "bg-rose-500/20 border border-rose-500/40 text-rose-400"
-                      : "bg-amber-500 text-amber-950"
-                  }`}
+                    recording ? "bg-rose-500/20 border border-rose-500/40 text-rose-400" : "bg-amber-500 text-amber-950"
+                  } ${uploading ? "opacity-50" : ""}`}
                 >
-                  <Mic className="w-4 h-4" />
-                  {recording ? "Stop & Save" : "Record Story"}
+                  {uploading ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : <><Mic className="w-4 h-4" /> {recording ? "Stop & Save" : "Record Story"}</>}
                 </button>
                 <button
                   onClick={() => setPromptIdx(i => (i + 1) % ORAL_PROMPTS.length)}
