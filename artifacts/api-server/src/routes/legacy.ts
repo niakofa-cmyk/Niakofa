@@ -344,7 +344,7 @@ router.get(
   generalApiLimiter,
   requireAuth,
   async (req, res) => {
-    const familyId = parseInt(req.params.familyId, 10);
+    const familyId = parseInt(String(req.params.familyId), 10);
     if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
 
     const userId = req.authenticatedUserId!;
@@ -370,7 +370,7 @@ router.get(
   generalApiLimiter,
   requireAuth,
   async (req, res) => {
-    const familyId = parseInt(req.params.familyId, 10);
+    const familyId = parseInt(String(req.params.familyId), 10);
     if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
 
     const userId = req.authenticatedUserId!;
@@ -417,7 +417,7 @@ router.post(
   generalApiLimiter,
   requireAuth,
   async (req, res) => {
-    const familyId = parseInt(req.params.familyId, 10);
+    const familyId = parseInt(String(req.params.familyId), 10);
     if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
 
     const userId = req.authenticatedUserId!;
@@ -460,7 +460,7 @@ router.post(
   generalApiLimiter,
   requireAuth,
   async (req, res) => {
-    const familyId = parseInt(req.params.familyId, 10);
+    const familyId = parseInt(String(req.params.familyId), 10);
     if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
 
     const userId = req.authenticatedUserId!;
