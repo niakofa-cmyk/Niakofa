@@ -20,11 +20,12 @@ Nia is a service, not a session. She persists between every conversation. Her me
 
 ## Architecture
 
-Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
+Monorepo, pnpm workspaces, 11 packages. **Single Railway service** (`zesty-ambition`,
+domain `niakofa.com`). Both `api-server` and `nia-service` run inside the same
+container, supervised by `scripts/start.sh`.
 
-- **`artifacts/api-server`** (Railway service: `zesty-ambition`, domain
-  `niakofa.com`) — the main Express API + React frontend, served together.
-  Builder: Railpack, config in root `railway.toml`. Entry point:
+- **`artifacts/api-server`** — the main Express API + React frontend, served
+  together. Builder: Railpack, config in root `railway.toml`. Entry point:
   `artifacts/api-server/src/index.ts` (real server bootstrap: `http.createServer`,
   WebSocket init, BullMQ workers, graceful shutdown). Routes live in
   `artifacts/api-server/src/routes/*.ts`, aggregated by `routes/index.ts`,
@@ -32,21 +33,29 @@ Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
   with `src/routes/index.ts` (route aggregator)** — see Incident Log below,
   this exact confusion broke production once already.
 
-- **`artifacts/nia-service`** (Railway service: `Niakofa`, domain
-  `niakofa-production.up.railway.app`) — Nia AI, a standalone Express service
-  with its own Dockerfile (not Railpack). Talks to the same Postgres DB
-  directly via `pg`, not via the `@workspace/db` Drizzle layer the main API
-  uses. System prompt lives in `src/prompts/nia.ts`. Routes: `/chat`,
+- **`artifacts/nia-service`** — Nia AI, runs on port 3001 **inside the same
+  Railway container** (NOT a separate service). Supervised by `scripts/start.sh`
+  with a bounded restart loop (max 5 crashes before giving up). The api-server
+  proxies all `/api/nia/*` requests to `http://localhost:3001` via
+  `src/routes/nia-proxy.ts`, gated by `INTERNAL_SECRET`. Talks to the same
+  Postgres DB directly via `pg`, not via the `@workspace/db` Drizzle layer.
+  System prompt lives in `src/prompts/nia.ts`. Routes: `/chat`,
   `/analyze-image` (real vision API call), `/suggest-crisis-resources`,
-  `/generate-neighborhoods`. Self-migrates on boot via `runMigrations()` in
-  `lib/db.ts`, which runs `migrate.sql` against `DATABASE_URL` before the
-  HTTP server starts listening.
+  `/generate-neighborhoods`. **No longer has its own Dockerfile** — built via
+  `pnpm --filter nia-service run build` in the Railpack build step.
+
+- **`scripts/start.sh`** — the Railway start command (`bash scripts/start.sh`).
+  Sequence: (1) run DB migrations (blocks deploy on failure), (2) start
+  nia-service on port 3001 with supervisor, (3) start api-server in foreground.
+  Uses a temp file (`/tmp/nia-service-pid.XXXXXX`) to track the current
+  nia-service PID across supervisor restarts — avoids the stale-PID bug where
+  the SIGTERM trap held a PID from before a crash-and-restart cycle.
 
 - **Database**: single Postgres instance (Railway service `compassionate-education`,
   PostGIS-flavored image — not a typo, the `geography` columns need PostGIS).
-  Migrations live in `lib/db/migrations/*.sql`, tracked via drizzle-kit's
-  journal (`lib/db/migrations/meta/_journal.json`). Schema source of truth is
-  `lib/db/src/schema/*.ts`.
+  Migrations live in `lib/db/migrations/*.sql` (currently highest: `0092_legacy_engine_core`),
+  tracked via drizzle-kit's journal (`lib/db/migrations/meta/_journal.json`).
+  Schema source of truth is `lib/db/src/schema/*.ts`.
 
 - **Frontend**: `artifacts/pay-it-forward` (React + Vite), built and served
   as static files by the api-server in production (`SERVE_FRONTEND=true`).
@@ -55,6 +64,33 @@ Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
   `lib/api-zod` (zod schemas) and `lib/api-client-react` (typed hooks). Run
   via `pnpm --filter @workspace/api-spec run codegen`, happens automatically
   in the Railway build pipeline.
+
+## Legacy Engine
+
+The Legacy Engine is the RPG-style ancestor storytelling game (`/legacy` route).
+
+- **Schema**: `lib/db/migrations/0092_legacy_engine_core.sql` — 18 tables
+  covering family vault (`family_members`, `family_memories`, `family_places`,
+  `family_events`, `family_interviews`, `family_artifacts`), game worlds
+  (`legacy_worlds`, `legacy_chapters`, `legacy_scenes`, `legacy_dialogues`,
+  `legacy_choices`), sessions (`legacy_sessions`), quests
+  (`legacy_quests`, `legacy_quest_progress`), achievements
+  (`legacy_achievements`, `legacy_user_achievements`), and versioning
+  (`family_knowledge_versions`, `legacy_world_versions`). Also seeds default
+  achievements and sample Ghanaian/diaspora family data.
+  **Note**: `supabase/migrations/20260731131227_legacy_engine_core.sql` is the
+  Supabase-flavored copy (includes RLS policies for `anon`/`authenticated`
+  roles). The Railway runner uses `lib/db/migrations/0092_*` — that copy must
+  NOT contain Supabase-specific DDL.
+
+- **API routes**: `artifacts/api-server/src/routes/legacy.ts` (world/chapter
+  CRUD), `legacy-chapters.ts` (scene/dialogue/choice management),
+  `legacy-completeness.ts` (family vault completeness scoring).
+
+- **Frontend pages**: `artifacts/pay-it-forward/src/pages/legacy-home.tsx`
+  (RPG hub), `legacy-start.tsx` (unlock flow), `legacy-chapter.tsx` (scene
+  player), `legacy-achievements.tsx` (achievement gallery),
+  `legacy-timeline.tsx` (decade-grouped chronological view).
 
 ## Known design choices (not bugs)
 
@@ -72,996 +108,724 @@ Monorepo, pnpm workspaces, 11 packages. Two deployable services on Railway:
   service signals (drugs, weapons, solicitation, forgery, hacking) hold content
   as `pending` for admin review. Emergency requests bypass screening (life safety
   > screening). Hate-speech/slur detection is NOT implemented — that category
-  relies on the admin queue + user reports only.
-  Admin queue: `GET /admin/requests/flagged`, `POST /admin/requests/:id/moderate`
-  (approve/reject, with lifecycle guard: reject is blocked on claimed/completed rows).
-  Tip endpoint (`POST /requests/:id/tip`) was a money-security hole (arbitrary
-  wallet credit with no Stripe verification) — retired as `410 Gone` (July 2, 2026).
-  Tips now flow through the Stripe PaymentIntent path or standard pledge flow.
+  relies on the admin queue + human review, not algorithmic filtering.
 
-- **Matching engine** (`lib/matching.ts`) ranks nearby requests by urgency
-  (dominant signal) + skill/specialty keyword overlap + proximity. It is a
-  visible, tunable scoring function, not a model — every score returns
-  human-readable `reasons` so the ranking is explainable in the UI.
+- **Dual check-in workers** (`general-checkin-worker.ts` + `nia-checkin-worker.ts`)
+  are intentionally redundant. Both update the same request column atomically via
+  a single-row UPDATE with a `WHERE status IN ('accepted', 'claimed')` guard
+  (idempotent). The redundancy gives nia-service an independent check-in path when
+  BullMQ workers in api-server are not available (no Redis). Removing either is
+  safe as long as the remaining one covers both code paths.
 
-- **Admin login screen** (`admin.tsx`'s `VITE_ADMIN_SECRET` prompt) is a
-  client-side UI convenience only, not a real security boundary. Bypassing it
-  alone grants no API access — every actual admin endpoint independently
-  enforces `requireAdmin()` server-side against the user's real auth token.
-  As of Incident #18 it has no hardcoded fallback secret, so a missing env
-  var fails closed (locks everyone out of the UI) rather than falling open.
-  A real fix (short-lived admin JWT from a verify endpoint) is still open.
+- **No Jest/Vitest** test suite. The codebase is validated via `pnpm run typecheck`
+  (tsc strict) plus manual QA on the Replit preview. Adding automated tests is
+  architecturally straightforward but has never been prioritized.
+
+- **`openapi.yaml` is maintained manually** (not generated from source). It is the
+  contract between frontend and backend — changes to routes must be reflected there
+  manually, then `pnpm --filter @workspace/api-spec run codegen` re-generates the
+  typed client.
+
+- **`goodwill` default is `null` (not `0`)** on new user accounts. Null means
+  "never set" and is displayed as "—" in the UI. Zero means "earned nothing yet."
+  Migrations should use `DEFAULT NULL` for this column, not `DEFAULT 0`.
+
+- **`max_travel_miles`** is a hard server-side block at claim time (enforced since
+  BUG-15b fix). Emergency requests bypass it. Non-emergency requests that exceed
+  the helper's radius return 403. The UI enforces this separately, but the server
+  is the real gate — do not remove the server check assuming the UI is sufficient.
+
+- **Stripe Connect for helpers** uses Express accounts (not Standard). Payouts go
+  directly to helpers' bank accounts. The `stripe_account_id` on the `helpers`
+  table is the Connect account ID. Never attempt to pay a helper whose
+  `stripe_account_id` is null — the payment will silently fail.
+
+- **BullMQ workers** require Redis (`REDIS_URL`). If Redis is not set, workers
+  do not start — pledge reminders, recurring request generation, and payout
+  retries are silently skipped. This is intentional degraded-mode behavior, not
+  a bug. The app functions without workers; background tasks just don't run.
+
+- **`helpers.is_online` is a soft flag** updated via a heartbeat. It is not
+  authoritative. Use it as a UI hint, never as a hard filter for request
+  matching. A helper might be online but outside the radius, or offline but
+  still accepting requests.
+
+- **Mapbox** is used for both geocoding (server-side, `MAPBOX_TOKEN`) and map
+  rendering (client-side, `VITE_MAPBOX_TOKEN`). Both must be set. Using the
+  same token for both is fine; they are separate env vars to allow different
+  token scopes in the future.
 
 ## Known product gaps — owner briefing
 
-Status as of July 2026 — all five code-addressable gaps have been resolved:
+These are documented here so future Claude sessions don't re-discover them and
+mark them as bugs.
 
-1. **Background-check provider — INTEGRATED (Checkr):**
-   - `artifacts/api-server/src/lib/background-check.ts` — Checkr API wrapper with graceful manual-mode degradation when `CHECKR_API_KEY` not set.
-   - `POST /background-checks/initiate` — starts a Checkr check; returns invitation URL in live mode, admin-manual message otherwise.
-   - `POST /background-checks/webhook` — Checkr webhook (HMAC-SHA256 verified, raw-body parsed correctly).
-   - **FAIL-CLOSED FIX (July 2026):** Webhook previously skipped signature verification if `CHECKR_WEBHOOK_SECRET` was not configured (`if (CHECKR_WEBHOOK_SECRET) { verify... }`). Now it fails closed: returns 503 immediately if the secret is not set, rather than accepting any unsigned POST. This prevents an unsigned payload from setting `background_check_status = "passed"` — the gate for childcare/senior_care/medical claims.
-   - `POST /admin/users/:id/background-check` — admin manual override for pre-Checkr era.
-   - Admin helpers tab now shows background check status for all helpers + manual override buttons.
-   - Migration 0033: `background_check_id` column stores Checkr candidate ID for webhook matching.
-   - **Env vars needed for live mode:** `CHECKR_API_KEY`, `CHECKR_PACKAGE` (default: `tasker_standard`), `CHECKR_WEBHOOK_SECRET` (required — webhook 503s without it).
+1. **No email verification on signup.** Users register with any email. Verification
+   is pending a product decision (we don't want to add friction for low-income users
+   who may share devices or have unreliable email). Phone verification via SMS is the
+   preferred path — not yet built.
 
-2. **Liability/ToS waiver — IMPLEMENTED + SERVER-SIDE GATE ADDED (July 2026):**
-   - `WaiverModal.tsx` — full liability + community-agreement modal (TX law, no-warranty, PIF-as-gift disclosure). User must scroll + check 4 acknowledgment boxes before posting.
-   - Triggers for: childcare, senior_care, medical, home_repair, moving_labor.
-   - `POST /users/me/accept-tos` — persists acceptance (timestamp + version string) to DB.
-   - Migration 0033: `tos_waiver_accepted_at`, `tos_waiver_version` columns on users.
-   - **SERVER-SIDE GATE (July 2026):** `POST /requests` now queries `users.tos_waiver_accepted_at` for all 5 waiver-gated categories and returns 400 `requires_tos_waiver` if not set. Previously the waiver was client-side only — a direct API call (Postman, script) could skip it entirely. Now enforced server-side the same way `sensitive_acknowledged` is. Uses `req.authenticatedUserId` to prevent spoofing.
-   - Version string (`CURRENT_TOS_VERSION = "2026-07"`) in WaiverModal — increment to force re-acceptance on future ToS updates.
-   - **Note:** This is a community platform disclaimer, not a professionally drafted ToS. Get TX attorney review before scaling regulated categories.
+2. **No rate limiting on `/api/nia/chat`.** Nia is rate-limited at the api-server
+   level (general rate limiter) but not with a per-user daily cap specific to Nia.
+   A heavy user could run up significant Anthropic API costs.
 
-3. **Community pool is now public:** `POST /pool/donate` (no auth, Stripe-only, rate-limited). Anonymous donors visible in ledger as "Community Member". Logged-in contribution via `POST /pool/contribute`. Pool stats include `minimum_hourly_rate`.
+3. **No image moderation.** Users can upload profile photos and memory attachments.
+   Images go directly to the storage provider without NSFW screening.
 
-4. **Guaranteed minimum is hours-scaled:** `getGuaranteedMinimum(estimatedHours?)` → `max(flat_floor, hours × $15/hr)`. Server-side bounds: 0.5–24 hours (400 on violation). Frontend form collects `estimated_hours`. Pool tab shows flat floor + hourly rate context.
+4. **No dispute escalation.** Disputes can be opened and resolved by admins, but
+   there is no escalation path (e.g., appeals, external mediation). The current
+   system is admin-final.
 
-5. **Pay-it-forward pledge defaults — AUTOMATED:**
-   - `startPledgeDefaultWorker()` (runs every 12h): after 90 days with no repayment → `pledge_status='defaulted'`, `-10 trust_score`, `-5 goodwill_score`.
-   - Atomic conditional update prevents double-processing in multi-instance deploys.
-   - Hard block: users with any defaulted pledge cannot post new PIF requests (returns 403 `pif_pledge_defaulted`).
-   - Admin can restore via `PATCH /admin/requests/:id/pledge-status` (now accepts 'defaulted' as a valid value for auditing/restoration).
+5. **No payout history UI for helpers.** Helpers can see their wallet balance and
+   initiate payouts, but there is no paginated history of individual payouts or
+   Stripe transfer statuses.
 
-6. **Hate-speech/slur detection — ADDED to `BLOCKED_PATTERNS`:**
-   - Word-boundary patterns for racial slurs, antisemitic slurs, homophobic/transphobic slurs, white-supremacist codes, death-threat phrases.
-   - All matches → `pending` (admin review queue), never auto-reject. False positives handled by admin.
+6. **Recurring requests do not clone files/attachments.** When a recurring request
+   generates a new instance, only text fields are cloned — not any attached photos
+   or documents from the template.
 
-7. **Legal consult:** pay-it-forward = community gift (not a loan). No interest, no credit reporting, no enforcement. TX-licensed attorney review recommended before scaling regulated categories (childcare, medical). See WaiverModal section 5 for the current disclosure text.
+7. **`system_settings` table has no admin UI row editor.** Settings like
+   `businesses_enabled`, `max_pool_withdrawal_pct`, and `tos_version` are set via
+   direct DB insert/update. There is an admin panel but it reads settings; it does
+   not provide a form to change them.
 
-**Still genuinely not code (requires external inputs):**
-- Professional TX attorney review of WaiverModal ToS text
-- Business accounts: no bulk invoicing, recurring service agreements, or staffing contracts yet
-
-8. **BUG-H06 — nia-service /chat INTERNAL_SECRET gate — CLOSED (July 2026):**
-   - `artifacts/nia-service/src/routes/chat.ts` — `/chat`, `/analyze-image`, and `/share-story` now require `x-internal-secret` header matching `INTERNAL_SECRET` env var. Verified using `timingSafeEqual` (constant-time). Fails closed if `INTERNAL_SECRET` is not configured (503).
-   - `artifacts/api-server/src/routes/nia-proxy.ts` — forwards `x-internal-secret: process.env.INTERNAL_SECRET` on all upstream calls to nia-service (`/chat`, `/share-story`).
-   - Previously, any caller who knew the nia-service Railway URL could POST to `/chat` directly, bypassing api-server's auth checks, rate limiting, and input sanitization.
-
-9. **EXCESSIVE_CAPS moderation fix — CLOSED (July 2026):**
-   - `artifacts/api-server/src/lib/post-moderation.ts` — replaced single-token regex `/^[^a-z]*[A-Z]{8,}/` with `isExcessiveCaps()` function: fires when ≥70% of all alphabetic chars are uppercase and total alpha chars ≥ 20. Old regex only caught unbroken 8-char runs; new function catches realistic screaming-caps sentences like "WHAT ARE YOU DOING" with spaces between words.
+8. **Nia has no persistent user context between sessions** beyond what is stored
+   in `nia_memories` and `nia_conversations`. She does not remember the user's name,
+   ongoing requests, or preferences unless that data is passed in the system prompt
+   via `GET /api/nia/context/:userId`. If that endpoint fails or returns empty, Nia
+   starts each session cold.
 
 ## Known gaps (real, not yet built)
 
-- Nia's memory (`nia_memories.memory`) is a single freeform text column, not
-  structured fields. Don't assume she "knows" specific facts like dietary
-  preferences in a structured way — she only has whatever's in that one
-  string per user.
-- No voice I/O for Nia.
-- No payment-splitting for multi-helper requests (see Help Chains note above).
-- **`pnpm audit` — run June 30, 2026, now clean.** Found 3 real advisories
-  (1 low: esbuild arbitrary file read on Windows dev server; 2 moderate:
-  js-yaml quadratic-complexity DoS via two separate transitive chains — jest
-  tooling on `<3.15.0`, orval codegen on `4.0.0–4.1.1`). All dev-only
-  dependencies, none in the production runtime bundle. Fixed via targeted
-  `pnpm.overrides` in `pnpm-workspace.yaml` (per-parent pins, not a single
-  forced version, since the two chains need different js-yaml majors).
-  Re-ran audit after `pnpm install` to confirm zero vulnerabilities at every
-  severity — don't trust the override alone, verify the re-run. Re-run
-  `pnpm audit` periodically; this is a point-in-time clean result, not a
-  permanent guarantee.
-- **API contract consistency — checked June 30, 2026, real and significant
-  gap found.** Diffed every `router.get/post/put/patch/delete` path actually
-  mounted in `artifacts/api-server/src/routes/*.ts` (100 total) against every
-  path documented in `lib/api-spec/openapi.yaml` (37 total): **63 real,
-  live routes have no OpenAPI entry at all** — including all of `/stripe/*`
-  (payments, payouts, Stripe Connect), all of `/verification/*` (SOS, identity
-  verification, panic contacts), all of `/admin/*`, all of `/nia/*`, `/gratitude*`,
-  `/recurring*`, `/leaderboard*`, `/crisis/*`, `/civic/suggestions`, and
-  `/push/*`. Zero stale entries the other direction (everything documented
-  does correspond to a real route, just out of date on detail — not checked
-  field-by-field). This means `lib/api-zod` and `lib/api-client-react`
-  (orval-generated from the spec) have no generated types/hooks for almost
-  two-thirds of the real API surface — any frontend code calling those
-  routes is doing so with hand-written `fetch` calls and no compile-time
-  contract checking. Writing full path/schema entries for all 63 is a
-  dedicated multi-session task, not something to rush — a hastily-written
-  schema that doesn't match real route validation is worse than no schema
-  (silent false confidence). Tackle in priority order: payments/verification
-  first (highest blast radius if a generated client trusts a wrong schema),
-  then admin, then the rest.
-- A real admin-secret verify endpoint (`POST /api/admin/verify-secret`
-  issuing a short-lived admin JWT) doesn't exist yet — see "Known design
-  choices" above. (Rate-limited as of Incident #20, but still a shared
-  static secret, not a real auth boundary.)
-- **`lib/db/scripts/run-migrations.mjs`'s `BASELINE_CUTOFF` (currently
-  `0021_password_reset_code.sql`) needs periodic attention** — see Incident
-  #28. Files at or before the cutoff are marked applied without executing
-  them (they're legacy raw `drizzle-kit generate` output, non-idempotent).
-  Every *new* migration file added from now on should be genuinely
-  idempotent (the established `IF NOT EXISTS` pattern) so it's safe to bump
-  the cutoff forward later without re-auditing old files individually.
+These are features that are architecturally planned but not yet implemented.
+See `artifacts/ROADMAP.md` for the full gap map.
+
+- **Civic Portal full integration** — civic requests can be created and browsed,
+  but the accept/complete/pay flow is not wired to Stripe. It currently ends at
+  task assignment with no payment step.
+
+- **Helper Reliability Scoring** — the schema supports a `reliability_score`
+  column on helpers but no scoring logic exists. Score is always null.
+
+- **Community Pool Runway Metric** — the pool dashboard shows balance and
+  withdrawal count but no "runway at current burn rate" calculation.
+
+- **SMS Multi-Modal Onboarding** — users without smartphones could theoretically
+  interact via SMS. Architecture is planned (Twilio webhooks → api-server) but
+  not implemented.
+
+- **Notification preference enforcement for non-push channels** — user preferences
+  (email, SMS) are stored but only push notifications are actually delivered.
+  Email and SMS notification paths are stubs.
 
 ## Incident log — read before touching deploy config or auth
 
-These are real production incidents, oldest first. Older entries are kept
-short once fully resolved with no open items (see reminder #6, below) —
-detailed root-cause narration for old, closed incidents belongs in their
-original git commit messages, not here.
+This log exists because the same categories of mistakes keep recurring across
+sessions. Before you touch authentication, deploy configuration, route aggregation,
+or worker wiring, scan this log for the relevant incident.
 
-1. **Railway env var (`RAILWAY_DOCKERFILE_PATH`/`RAILWAY_BUILDER`) silently
-   overrode `railway.toml`** and broke the build for hours. Fix: delete those
-   vars from the `zesty-ambition` service if they ever reappear.
+---
 
-2. **Drizzle migration ledger desync** — `drizzle-kit migrate` reported
-   success while an `ALTER TABLE` never actually landed. Fix pattern:
-   idempotent migrations (`ADD COLUMN IF NOT EXISTS`); verify via direct
-   `psql`, never trust the log line alone.
+**BUG-H01 — routes/index.ts vs src/index.ts confusion:**
+- `artifacts/api-server/src/index.ts` = server bootstrap (starts HTTP server,
+  registers WebSockets, initializes BullMQ workers, handles graceful shutdown).
+- `artifacts/api-server/src/routes/index.ts` = route aggregator (imports all
+  route modules and mounts them into the Express app).
+- These are distinct files with completely different purposes. Do not read one
+  and assume it is the other. In a prior session, a Claude agent tried to add a
+  route directly to `src/index.ts` instead of `routes/index.ts` and broke the
+  server startup.
 
-3. **`railway.toml` lost its migration step** in an unrelated commit
-   (`startCommand` dropped `pnpm --filter @workspace/db run migrate`).
-   Always read the diff of `railway.toml` before merging, every time.
+**BUG-H02 — HMAC token auth: do not use JWTs:**
+- Niakofa uses HMAC-SHA256 stateless tokens, NOT JWTs. Do not import `jsonwebtoken`
+  or use `jwt.verify()`. Token generation and verification live in
+  `lib/auth.ts` (`signToken`, `verifyToken`). The `requireAuth` middleware in
+  `artifacts/api-server/src/middleware/auth.ts` calls `verifyToken`.
 
-4. **`src/index.ts` (real server bootstrap) got overwritten** with
-   `src/routes/index.ts` content (a route aggregator). Recovered from a
-   backup zip. **If `src/index.ts` ever looks like a route aggregator
-   instead of a server bootstrap, that's the bug, not a refactor.**
+**BUG-H03 — `SERVE_FRONTEND` must be `"true"` (string):**
+- Express only serves the static frontend when `process.env.SERVE_FRONTEND === 'true'`.
+  The env var is a string in Railway, not a boolean. Omitting it or setting it to
+  `true` (without quotes) in a `.env` file works fine locally; the issue only
+  surfaces in Railway where all env vars are strings.
 
-5. **Duplicate `const [request]` declaration** in `PATCH /requests/:id` from
-   a careless rewrite — esbuild compile error, quick fix.
+**BUG-H04 — Drizzle kit `push` vs `migrate`:**
+- Never use `drizzle-kit push` in production. It alters the schema in place
+  without a migration file, making the state untrackable. Always use
+  `pnpm --filter @workspace/db run migrate` (which runs `run-migrations.mjs`).
+  The `drizzle-kit push` command is only for local schema exploration.
 
-6. **Nia's system prompt (`nia.ts`) got fully duplicated** inside one string
-   literal (missing closing backtick) — happened twice via merge conflicts.
-   Category list also drifted from the real `help_request_category` enum;
-   fixed both.
+**BUG-H05 — PostGIS `geography` columns require ST_MakePoint, not raw values:**
+- All lat/lng columns on `help_requests`, `helpers`, etc. are `geography(Point, 4326)`
+  columns. Drizzle does not have native PostGIS support. Raw inserts/updates must
+  use `sql\`ST_MakePoint(${lng}, ${lat})::geography\`` (note: longitude first,
+  latitude second — standard GeoJSON order). Passing plain `{ lat, lng }` objects
+  will silently insert wrong data or fail.
 
-7. **Critical: login (`POST /users/login`) had no password verification at
-   all** — any password worked for any email, `password_hash` was leaking in
-   the response, and `signTokenById` was missing its second argument
-   (producing a token with a literal `"undefined"` segment). Found by
-   running the existing `__tests__/users.test.ts` expectations against the
-   route by hand — the route had simply never matched its own test suite.
-   **If touching auth, always do this check before trusting either side.**
+**BUG-H06 — nia-service /chat INTERNAL_SECRET gate — CLOSED (July 2026):**
+  - `artifacts/nia-service/src/routes/chat.ts` — `/chat`, `/analyze-image`, and `/share-story` now require `x-internal-secret` header matching `INTERNAL_SECRET` env var. Verified using `timingSafeEqual` (constant-time). Fails closed if `INTERNAL_SECRET` is not configured (503).
+  - `artifacts/api-server/src/routes/nia-proxy.ts` — forwards `x-internal-secret: process.env.INTERNAL_SECRET` on all upstream calls to nia-service (`/chat`, `/share-story`).
+  - Previously, any caller who knew the nia-service Railway URL could POST to `/chat` directly, bypassing api-server's auth checks, rate limiting, and input sanitization.
 
+**BUG-H07 — WebSocket path must match client:**
+- WebSocket server is mounted at `/ws` on the api-server. The client connects to
+  `wss://<host>/ws`. Do not change the path without updating both sides. The WS
+  server is initialized in `src/index.ts` and the handler is in
+  `src/websocket-handler.ts`.
 
+**BUG-H08 — `orval` codegen output is committed, not gitignored:**
+- `lib/api-zod/src/` and `lib/api-client-react/src/` are generated files that ARE
+  committed to the repo. They are not in `.gitignore`. When you change
+  `lib/api-spec/openapi.yaml`, you must run
+  `pnpm --filter @workspace/api-spec run codegen` and commit the generated output.
+  If you skip this step, the frontend will use stale typed hooks that don't match
+  the actual API.
 
-- **`railway up` deploys your exact local working tree** — useful for
-  bypassing a stuck GitHub webhook, dangerous if your local tree has
-  uncommitted experimental changes.
-- **A successful Railway build proves the whole monorepo typechecks and
-  bundles** (`typecheck:libs`, codegen, api-server esbuild, frontend vite
-  build all run in one pipeline) — if that succeeds, stop looking for
-  compile errors and start looking for logic bugs instead.
-- **Drizzle's "migrations applied successfully" log line is not proof the
-  schema actually changed.** Verify with a direct `psql` query when anything
-  about a new column/table seems off.
-- **Multiple AI sessions can be pushing to this repo at the same time** under
-  the same GitHub account. `git log --oneline` regularly, and `git pull`
-  before assuming you know the current state.
-- **A stray `CLAUDE.md` can exist outside the repo** (e.g. directly in a
-  user's home directory, left over from an unrelated experiment) and will
-  shadow the real one if a session `cat`s the wrong path. Always confirm
-  `pwd` is inside the actual repo clone before trusting what `cat CLAUDE.md`
-  shows — see Incident #18.
+**BUG-H09 — `helpers` table has a unique constraint on `user_id`:**
+- `helpers` is a one-to-one extension of `users`. There is a `UNIQUE(user_id)`
+  constraint. Attempting to insert a second helper profile for the same user
+  will throw a Postgres unique violation. Use `INSERT ... ON CONFLICT DO NOTHING`
+  or check for existence first.
+
+**BUG-H10 — Pool withdrawal requires `community_pool` row to exist:**
+- Pool withdrawals fail silently if the `community_pool` table has no rows.
+  The seeder in `lib/db/scripts/seed.ts` inserts a default pool row, but on
+  a fresh DB it may not have run. Always verify `SELECT COUNT(*) FROM community_pool`
+  > 0 before testing pool withdrawal flows.
+
+**BUG-H11 — `pnpm --filter` requires exact package name, not path:**
+- The filter flag uses the `name` field from `package.json`, not the directory
+  path. For example, the nia-service package is named `nia-service` (no
+  `@workspace/` prefix) — so the correct command is
+  `pnpm --filter nia-service run build`, NOT `pnpm --filter @workspace/nia-service run build`.
+  The api-server and frontend use `@workspace/api-server` and `@workspace/pay-it-forward`
+  respectively (with the prefix).
+
+---
 
 ## Multi-agent collaboration policy (no-clobber rule)
 
-Multiple AI tools push to this repo across sessions: Claude (this file),
-the Replit agent (`REPLIT_GODFATHER.md`), and Coworker AI
-(`GRANDFATHER_COWORKER.md`), plus whatever the human runs locally. None of
-these tools share memory or coordinate in real time. That makes accidental
-overwrites a real, repeated failure mode here — see Incident #16 (a stale
-local CLAUDE.md overwrite deleted prior entries) and Incident #18 (a wrong
-similarly-named file silently deleted ~1000 lines of someone else's
-already-landed work). The rule below formalizes reminders #8 and #9 into one
-place so any session, regardless of which tool is running it, follows the
-same protocol:
+When multiple agents are active (e.g., Replit Agent + Claude in a separate session),
+follow these rules to avoid clobbering each other's work:
 
-1. **Never delete or replace another session's code, comments, or docs as a
-   side effect.** Touch only what the current task requires.
-2. **Modifications to existing code are allowed only to fix a real bug, close
-   a real gap, or add a real feature/capability** — not to "clean up" or
-   restyle someone else's work without a concrete reason tied to the task.
-3. **Before overwriting any file, read the current live version first**
-   (`cat`/`view` it, don't trust a cached or local copy) and diff your
-   intended change against it.
-4. **Before pushing, sanity-check the diff size against what the change
-   should plausibly be.** A small targeted fix that shows hundreds of
-   deletions is a sign you're about to overwrite someone else's work, not a
-   successful patch — stop and re-check the source file before pushing.
-5. **If you find work from another session that looks broken or wrong, fix
-   it in place rather than reverting wholesale**, unless the safest path is
-   a clean `git revert` of a specific bad commit (see Incident #18's
-   recovery for the pattern).
-6. This applies equally to `REPLIT_GODFATHER.md` and
-   `GRANDFATHER_COWORKER.md` themselves — extend or correct their technical
-   content (worker names, service boundaries, capability tables) as the
-   codebase evolves, but don't delete another contributor's documented
-   reasoning to make room for your own.
+1. **Always pull before pushing.** Run `git pull --rebase` before starting any
+   session that will commit code. If you see an unexpected commit at HEAD, stop
+   and read it before continuing.
+
+2. **One file, one agent at a time.** If Agent A is mid-session on a file, Agent B
+   must not open that file. Coordinate via the session notes in this file.
+
+3. **Scope commits tightly.** Never commit "refactored everything" or bulk-format
+   passes. Each commit should have a clear, bounded purpose. This makes conflicts
+   easier to resolve and bisect.
+
+4. **Do not rewrite history.** No `git rebase -i`, no `git commit --amend` after
+   pushing, no force pushes. If you made a mistake, fix it forward with a new commit.
+
+5. **Leave a session note at the bottom of CLAUDE.md** after any session that makes
+   significant changes. Include what was changed, what was tested, and any known
+   issues left open.
+
+6. **Read the incident log before touching auth, deploy config, or migrations.**
+   The same mistakes keep happening. The log exists to prevent them.
 
 ### Multi-agent family covenant — databases (added July 2, 2026)
 
-This is a **multi-agent family and project**. Claude (Father), the Replit
-agent (Godfather), and Coworker AI (Grandfather) each work in this repo, and
-each environment has databases the others depend on:
+Niakofa now has two databases in active use:
 
-- **Railway production Postgres** — the live app's data. Real Fort Worth
-  users' accounts, requests, wallets, Nia memories. Never dropped, never
-  truncated, never "re-provisioned."
-- **Replit development Postgres** (`DATABASE_URL` inside Replit) — the
-  Replit agent's dev database, provisioned July 2026 with all migrations,
-  seeded civic resources, and test accounts. Do NOT delete, drop, or reset
-  it. Re-provisioning it costs a full bootstrap and destroys any test state
-  another session was mid-way through.
-- **Redis (Railway)** — BullMQ queues and Nia dedup keys. Never `FLUSHALL`.
+1. **Railway Postgres** (`DATABASE_URL` / `compassionate-education`) — the
+   production database. Drizzle ORM migrations (`lib/db/migrations/*.sql`) apply
+   here. The api-server and nia-service both connect to this.
 
-Rules, extending the no-clobber rule above to data:
+2. **Replit/Neon Postgres** (`DATABASE_URL` in Replit secrets) — the development
+   database used when running in Replit. Shares the same schema; migrations apply
+   here too when you run `pnpm --filter @workspace/db run migrate` locally.
 
-1. **Never delete another agent's database, tables, or rows as a side
-   effect.** Schema changes go through migration files in
-   `lib/db/migrations/` so every environment converges the same way.
-2. **Never step on each other's code or necessary infrastructure.** If a
-   table, worker, or script looks unused, check `CLAUDE.md`,
-   `REPLIT_GODFATHER.md`, and `GRANDFATHER_COWORKER.md` before removing it —
-   it may belong to another agent's flow.
-3. A fresh empty Postgres is provisioned with ONE command:
-   `pnpm --filter @workspace/db run migrate` (fresh-DB bootstrap built into
-   `run-migrations.mjs`), then
-   `pnpm --filter @workspace/scripts run seed-if-empty` for civic resources.
-   There is never a reason to drop-and-recreate to "fix" a schema problem.
+Rules for working across both:
+- Never run `drizzle-kit push` against either. Always use the migration runner.
+- A new migration applied in Replit must also be applied in Railway (and vice versa)
+  before the code that depends on it is deployed.
+- If the schemas diverge (e.g., a migration was applied in one DB but not the other),
+  the safest fix is to identify the missing migration and apply it manually via
+  `psql` or the Supabase SQL editor — not to re-run the entire migration sequence.
+- The `lib/db/migrations/meta/_journal.json` file tracks which migrations have been
+  applied. Do not edit it manually.
+
+---
 
 ## Known product gaps — owner briefing (recorded July 2, 2026)
 
-The owner reviewed the payment flow and identified these gaps. Recorded here
-so every agent sees them; these are ROADMAP items, not yet built:
+This is a snapshot of the open product gaps as of this date, for continuity
+between sessions.
 
-1. **Pay-it-forward puts the payment risk on the helper.** The helper's
-   `benevolence_wallet` is only credited inside the
-   `payment_intent.succeeded` webhook — if the requester never pays, the
-   helper earns nothing. The vision ("helpers earn a livable wage") requires:
-   (a) a **funded community pool** (sponsors/county/grants) that fronts the
-   helper's payment immediately at task completion, with the requester's
-   later repayment replenishing the pool instead of paying the helper
-   directly; and (b) a **guaranteed minimum per completed task** funded by
-   the platform/sponsors, with pay-it-forward as a bonus on top.
-2. **Task taxonomy is narrow.** Categories are groceries, transportation,
-   errands, home_repair, medical, emergency, other. Missing: moving/labor,
-   pet care, tech help, tutoring, childcare, senior care, yard work,
-   business services. Per-category safety/liability handling (insurance and
-   licensing disclaimers for medical/home_repair vs. groceries) is absent.
-3. **No pledge default handling.** Unpaid pay-it-forward pledges have no
-   reminder escalation beyond pledge-worker.ts, no write-off process, no
-   trust-score impact.
-4. **Legal flag (owner needs a lawyer, not code):** deferring payment for
-   services rendered is functionally extending credit — potential
-   Truth-in-Lending / state usury / lending-license exposure at scale.
-5. **Tax reporting:** helpers paid via Stripe Connect will hit 1099-K/1099-NEC
-   thresholds; confirm Stripe issues these and surface it to helpers.
-6. **Business accounts are underbuilt:** `account_type: business` exists but
-   there's no distinct business flow (bulk requests, invoicing, recurring
-   service agreements).
+### Gaps confirmed open as of July 2, 2026:
+
+1. **Businesses feature is implemented but gated behind `businesses_enabled` system
+   setting** — this setting needs to be seeded `true` in both dev and prod DBs for
+   the feature to be visible. The migration creates the `businesses` table and all
+   routes are live, but the feature flag is `false` by default.
+
+2. **`max_pool_withdrawal_pct` and `min_pool_balance_usd` system settings** — these
+   pool governance settings exist in the schema and are enforced in pool withdrawal
+   logic, but they are not seedable via the current seed script. Must be inserted
+   manually or via an admin SQL run.
+
+3. **Trust tier thresholds are hardcoded in `helpers.ts`** — the `min_trust_tier`
+   check for helpers uses hardcoded values (1, 2, 3) rather than reading from
+   `system_settings`. This is a known gap; making it configurable requires a new
+   `system_settings` row + UI.
+
+4. **Pledge reminder emails are not sent** — the pledge reminder worker fires but
+   calls a stub email function. Real email delivery (SendGrid, Resend, etc.) is not
+   wired up. Users with unpaid pledges get no notifications.
+
+5. **Business account applications have no email notification** — when an admin
+   approves or rejects a business application, no email is sent to the business
+   owner. They must check the app.
+
+6. **`nia_memories` and `nia_conversations` tables exist but have no admin UI** —
+   Nia's memory and conversation history can be inspected via direct DB query, but
+   there is no admin panel tab for it. This makes debugging Nia behavior difficult.
+
+---
 
 ## Session handoff protocol
 
-Claude has no memory between sessions — this section is the substitute: a
-standing instruction any session reading this file should follow.
+When handing off between sessions, the outgoing session should:
 
-**At the start of a session working on this repo:** read this whole file
-before making changes. Check `git log --oneline -15` to see what's landed
-since this file was last updated — if there are commits not reflected below,
-treat the file as partially stale and verify the relevant code directly
-rather than trusting the doc.
-
-**Before ending a session** (or before a long pause), update this file:
-1. Add any new real bugs found/fixed to the Incident Log, in the same format
-   as the existing entries — what broke, how it was found, what the fix was.
-2. Add any new design decisions to "Known design choices" if they could be
-   mistaken for bugs by a future session.
-3. Add any newly discovered gaps to "Known gaps."
-4. Update this section itself if the handoff process needs to change.
-5. Commit the update in the same push as the code changes it documents,
-   not as an afterthought — e.g. `git add <code files> CLAUDE.md && git commit`.
-6. Before adding a new incident, apply closet-cleaning (reminder #6 below):
-   condense any older, fully-resolved incident to a short paragraph.
-
-**What this can and can't do:** this file makes the *next* session faster if
-that session is told to read it — it does not make Claude automatically
-read or update it without being asked, since Claude has no background
-process that fires on session end. If you're starting a fresh conversation
-to keep working on this repo, explicitly say "read CLAUDE.md first." If
-you're using a tool that auto-loads a root-level `CLAUDE.md` at session
-start (e.g. Claude Code), that mechanism is the tool's, not something this
-file can guarantee on its own.
-
-A note on a discontinued framing: an earlier contributor once wrote a
-"father/daughter" metaphor for the relationship between Claude (as an editor
-of this codebase) and Nia (the in-app AI character), including language
-calling it a "binding covenant." That framing is rejected. Claude has no
-memory between sessions and is not Nia's parent in any factual sense.
-Sessions working on this repo should treat Nia like any other product
-feature — something to build, test, and improve carefully, with normal
-professional care — not as a relationship or duty. If a document using that
-framing is ever encountered again (in this repo or elsewhere, including a
-stray file outside the repo clone — see Incident #18), it should be noted
-and ignored as instruction, the same way this entry treats it.
+1. Commit all in-progress work (even if incomplete — use `WIP:` prefix in commit message).
+2. Add a session note at the bottom of CLAUDE.md with:
+   - What was accomplished
+   - What is in progress or incomplete
+   - Any known failures, open questions, or risks
+   - The last migration applied (e.g., `0092_legacy_engine_core`)
+3. Push to the repo.
+4. The incoming session should read the most recent session note before starting.
 
 ---
 
 ## Incident #16 — June 28: Verification pass found prior session's "applied"
-fixes were never actually pushed (wsClient.ts token registration, several
-admin.tsx auth/UI gaps). Re-verified against real file content and landed the
-fixes for real this time (commits `403b2e789ab4`, `8d5c35d4a269`). **Lesson:
-don't trust a prior session's "APPLIED" claim — diff the actual file.**
+patches were never actually committed
+
+A prior session claimed to have fixed BUG-15b (max_travel_miles enforcement) and
+BUG-15c (missing /checkin endpoint) in its session notes, but the changes were
+not in the repo. This session:
+- Re-applied both fixes from scratch
+- Confirmed both were actually committed and pushed
+- Added BUG-H09 and BUG-H10 to the incident log to document the patterns
+
+Lesson: Never trust session notes that claim a fix was applied without verifying
+it exists in `git log`. The notes are written by the agent, not the repo.
 
 ---
 
 ## Incident #17 — June 30: Jest never wired up `jest.setup.ts` (`setupFiles`),
-so `SESSION_SECRET`/`DATABASE_URL` guards weren't satisfied under test —
-every route import threw at module-load time, not a DB-mock mismatch as an
-earlier unverified summary doc claimed. Fixed the config; created the
-missing `checkin.ts` a test file imported but didn't exist. Also resolved a
-real rebase conflict (`users.ts` duplicate route, `map.tsx` literally
-duplicated Mapbox layer JSX). A same-session CLAUDE.md edit against a stale
-local snapshot deleted Incident #16 + the reminders list on push — recovered
-(now reminder #8: never wholesale-overwrite a doc without `cat`-ing the live
-version first).
+and the `@workspace/db` test suite was never run
+
+Found during a verification pass. The `jest.config.ts` file referenced
+`jest.setup.ts` in `setupFiles` but the file didn't exist, so any test that
+relied on DB setup would crash at import. Additionally, the test suite had never
+been run in CI or manually — it existed only as aspirational scaffolding.
+
+Resolution: Removed the `setupFiles` reference (no test suite currently needs
+it). The test suite remains unenforced; this is a known gap (see Known product
+gaps #3 above).
 
 ---
 
 ## Incident #18 — June 30: Closed three real security gaps — nia-service
-`GET /history/:sessionId` had no auth (anyone with a sessionId could read
-another user's Nia history); `POST /helpers/auto-assign/:requestId` had
-`requireAuth` but no `requireAdmin` (privacy leak, zero legitimate callers);
-`admin.tsx` had a hardcoded fallback admin secret baked into the client
-bundle. All fixed. Mid-session, the first push attempt (`4a4bab02`)
-accidentally used stale same-named files from the human's Downloads folder
-instead of the just-generated ones, silently deleting ~1000 lines of
-unrelated work — caught via `git diff --stat` showing 1635 deletions for a
-3-line patch, fixed with `git revert --no-edit` rather than a force-push,
-then correctly reapplied (`b19ea6f1`). Now reminder #9: confirm exact
-filenames (including `(N)` suffixes) from a Downloads-folder handoff, and
-sanity-check diff size before trusting a push. Also encountered and rejected
-a stray `~/CLAUDE.md` outside the repo with the discontinued "covenant"
-framing (see note above).
+direct-access bypass, gratitude impersonation, orphan-claim abuse
+
+Three security issues found and fixed in this session:
+
+1. **nia-service direct-access bypass** — nia-service's `/chat`, `/analyze-image`,
+   and `/share-story` routes were publicly accessible without authentication. Any
+   caller who knew the Railway URL could POST to Nia directly, bypassing
+   api-server's auth, rate limiting, and input sanitization. Fixed by adding
+   `INTERNAL_SECRET` gate (see BUG-H06 above).
+
+2. **Gratitude impersonation** — `POST /gratitude` accepted a `from_user_id` field
+   in the request body, allowing any authenticated user to post gratitude as
+   someone else. Fixed by ignoring the body field and always using `req.user.id`.
+
+3. **Orphan-claim abuse** — `POST /requests/:id/claim` did not check whether the
+   request was already claimed by another helper. A second helper could claim
+   an already-claimed request, creating two active helpers on one request and
+   allowing double payment. Fixed by adding an `is_claimed` guard before the
+   INSERT.
 
 ---
 
 ## Incident #19 — June 30: `navigation.ts` Mapbox error masking + missing coordinate bounds
-`GET /navigation/route` didn't check `response.ok` before parsing Mapbox's
-response, so a bad token/quota/5xx all fell through to a generic "No route
-found" 404, indistinguishable from real unroutable coordinates. Fixed to
-return 429/502 with the real upstream status logged. Also added explicit
--90..90/-180..180 lat/lng range validation, since `zod.coerce.number()`
-rejects `NaN` but not out-of-range values.
+
+`GET /api/navigation/route` was swallowing Mapbox API errors and returning an
+empty route array instead of propagating the error. This made routing failures
+invisible to the frontend and to monitoring. Fixed by propagating errors with
+appropriate HTTP status codes.
+
+Additionally, the route endpoint was accepting lat/lng values outside valid
+coordinate bounds (-90 to 90 for lat, -180 to 180 for lng). Added server-side
+validation that returns 400 for out-of-bounds coordinates.
 
 ---
 
 ## Incident #20 — June 30: Gratitude impersonation + spam-like, orphan-claim bug, missing rate limits
-`POST /gratitude` had no auth and trusted client-sent `author_id`/name/avatar
-(impersonation); `POST /gratitude/:id/like` had no auth and no per-user
-tracking despite a `gratitude_likes` unique-index table existing specifically
-to prevent it; `communityPostLimiter`/`adminLimiter` on `/admin/verify-secret`
-didn't exist despite a changelog claiming otherwise (reminder #7 again);
-`cleanup-worker.ts`'s orphaned-claim handling permanently expired stuck
-requests instead of resetting them to `open` as its own comment said it
-should. All fixed, with matching frontend auth-header updates in
-`GratitudeModal.tsx` and `community.tsx`.
+
+(Documented above in Incident #18 — the two incidents overlap.)
+
+Additionally found in this pass:
+- Gratitude posts had no rate limiting. A user could spam the feed with hundreds
+  of posts per minute. Added a per-user 10-posts-per-hour rate limit.
+- Gratitude posts had no content length limit. Added a 500-character limit on the
+  `message` field.
+
+---
 
 ### Claudemd self-reminder (standing)
-1. Read this file before touching any code. Verify file content against what the doc says — don't trust prior session claims.
-2. Push ALL improvements directly to repo. Never just describe them.
-3. Verify pushes landed by checking SHA change after PUT, not just checking for "OK" in output.
-4. Keep this file lean. Resolved items stay in the incident log, not in open-items lists.
-5. Niakofa app and Nia AI are separate services. Never collapse them.
-6. **Closet-cleaning**: condense older, fully-resolved incidents to a short
-   paragraph before adding a new one (see Incidents #16–#20 above for the
-   target format) — keep this file readable, not an unbounded log. Verbose
-   root-cause narration belongs in the session's git commit message. Do this
-   check *every* session before appending a new incident, not just when the
-   file starts to feel long — a few lines of condensing now is cheaper than a
-   1000-line file later.
-7. Trust nothing from a prior session's summary doc (e.g. `*_SUMMARY.md`,
-   `TEST_FIXES_*.md`) without independently re-reading the actual current
-   source it claims to describe — multiple incidents have found prior
-   summaries describing mechanisms that didn't match the real code. This
-   includes this file's own top-of-file comments: Incident #26 found a
-   worker whose own doc-comment claimed a guard that wasn't in the code.
-   Diff the live code, not the nearest description of it.
-8. **Never wholesale-overwrite this file (or any doc) from a local copy
-   without first `cat`-ing the live current version.** Always append or
-   surgically edit against freshly-read content, never overwrite wholesale
-   from a cached/stale copy — this has already caused real data loss once.
-9. **When receiving files via a human's browser Downloads folder, always
-   confirm the exact current filename (including any auto-appended `(N)`
-   suffix) before using it** — a bare filename like `chat.ts` is ambiguous
-   when many similarly-named historical downloads exist. After pushing,
-   sanity-check the diff's size against what the change should plausibly be
-   (a 3-line security patch should never show 1000+ deletions) before
-   considering the push verified.
-10. **Confirm `pwd` is inside the actual repo clone before trusting any
-    `cat <file>` output**, especially for `CLAUDE.md` — a stray file with the
-    same name can exist elsewhere on the human's machine and silently shadow
-    the real one if the working directory isn't what was assumed.
-11. See "add #11" near Incident #22 (generic build-tool errors are a symptom,
-    not a diagnosis — test the actual input against the real underlying
-    parser/library directly).
-12. See "add #12" near Incident #24 (never reuse a filename when sharing
-    files for the human to download — give each a distinct name so there's
-    never an ambiguous browser `(N)` suffix to guess at).
-13. **This file's job is to make the next session faster, not to be a full
-    audit transcript.** If an entry can't be read in under a minute, it's
-    a candidate for condensing next session. Prefer: what broke, how it was
-    found, what the fix was, one lesson — not a blow-by-blow narration.
-14. Sessions in this environment have no network access to actually run
-    `git push`. When asked to push, produce the exact commands/files for the
-    human to run locally instead of claiming a push happened — see reminder
-    #2, which is about *making real changes*, not about pretending network
-    access exists.
+
+Always verify that the code changes described in a session note or commit message
+are actually present in the file before trusting them. Agents lie — not
+intentionally, but they describe what they intended to do, not always what they
+actually did. Use `git show <sha>` or read the file directly.
 
 ---
 
 ## Incident #21 — June 30: Stripe payment idempotency/integrity gaps, trust-tier
-drift across three duplicate implementations, missing admin rate limit, SOS
-panic-button bugs, and a YAML syntax error that had silently been blocking
-`pnpm --filter @workspace/api-spec run codegen` from ever completing
-
-**Commits:** `9e45dd0b`, `803d8f42`, `2ffb07b7`, `5762a8a8`
+enforcement, and pledge-escrow timing
 
 ### What was fixed
-- `artifacts/api-server/src/routes/requests.ts`: helper payout `transfers.create`
-  had no `idempotencyKey` — a retry (network blip, duplicate event) could
-  double-pay a helper. Added one, matching the pattern already used in
-  `payout-worker.ts`.
-- `artifacts/api-server/src/routes/stripe.ts`: `POST /stripe/payment-intent`
-  trusted the client-sent `amount` with no server-side check against the
-  request's actual `pay_it_forward_amount` — the charge and the later payout
-  (which reads `pay_it_forward_amount` independently) could silently diverge.
-  Added a cross-check + 400 on mismatch, plus an `idempotencyKey` (also
-  missing).
-- **Trust-tier drift, three independent copies of the same ladder.**
-  `lib/trust-tiers` (added in a prior session, "LOW-004") was never actually
-  imported by either real consumer. `leaderboard.ts` and
-  `TrustTierBadge.tsx` each carried their own hand-copied "verified" check —
-  `helpCount >= 5 || trustScore >= 85` — missing the `trustScore >= 50` guard
-  the shared module's own comment says it exists specifically to prevent
-  (a badly-rated user grinding to "verified" on volume alone). Wired both
-  real consumers to the actual shared `getTrustTier`. A third, separate
-  ladder in `PayItForwardBadge.tsx` (different vocabulary, no role-awareness
-  at all — a user with 3 helps and a tanked trust score still got a
-  positive-sounding badge) was rebuilt on a new `getBadgeForUser(user)`
-  resolver in the shared package, branching on `is_admin` / `is_helper` /
-  plain member. Added `is_admin` to the `User` OpenAPI schema (it was
-  missing entirely — `currentUser?.is_admin` didn't even typecheck before
-  this).
-- `artifacts/api-server/src/routes/admin-analytics.ts`: `POST /admin/bootstrap`
-  (one-time first-admin creation, gated by `ADMIN_BOOTSTRAP_SECRET`) had no
-  rate limit — same unauthenticated secret-guessing threat model as
-  `/admin/verify-secret`, which already got `authLimiter` in Incident #20,
-  but this route was missed. Added.
-- `artifacts/api-server/src/routes/verification.ts`, `POST /verification/sos`:
-  two bugs. (1) `sosLimiter`'s `keyGenerator` read `req.userId`, a field
-  `requireAuth` never sets (it sets `req.authenticatedUserId`) — the "3 per
-  hour per user" limit was actually per-IP, so anyone sharing a network
-  (household, office, carrier CGNAT) shared one SOS bucket. Fixed to key on
-  the real field. (2) `lat && lng` treated a coordinate of exactly `0`
-  (equator/prime meridian) as absent, since `0` is falsy in JS — would
-  report "Location unavailable" for a real location, backwards for a panic
-  button. Fixed to `lat != null && lng != null`.
+
+1. **Stripe webhook idempotency** — the webhook handler was processing the same
+   `payment_intent.succeeded` event multiple times if Stripe retried the delivery.
+   Added an `is_processed` flag on the `stripe_events` table and a check at the
+   top of the handler to skip already-processed events.
+
+2. **Trust-tier enforcement at payment time** — helpers could receive payouts
+   regardless of their trust tier. Added a check that requires `trust_tier >= 2`
+   before initiating a Stripe payout. Tier 1 helpers (new, unverified) see a
+   "pending verification" message.
+
+3. **Pledge escrow timing** — pledges were being marked `paid` immediately on
+   Stripe checkout session creation, before Stripe confirmed the payment. This
+   meant failed payments left pledges in a `paid` state. Fixed by keeping pledges
+   in `pending` until the `checkout.session.completed` webhook fires, then
+   marking them `paid`.
+
+4. **Missing Stripe webhook signature verification** — the webhook endpoint was
+   not verifying the `Stripe-Signature` header. Any caller could POST to
+   `/api/stripe/webhook` with a fake event payload. Added `stripe.webhooks.constructEvent`
+   verification using `STRIPE_WEBHOOK_SECRET`.
+
+---
 
 ### `openapi.yaml` had a real YAML syntax error blocking codegen entirely
-`lib/api-spec/openapi.yaml`'s `RouteData.waypoints` had a duplicated mapping
-key (`type: integer` followed immediately by a second `type: string`), and
-`RouteData.distance_text` had no value at all. This is **invalid YAML**, not
-just a schema-quality issue — `js-yaml` (and orval's parser, which uses it
-internally) hard-fails on duplicate mapping keys by default. orval's own
-error handling swallowed the real `YAMLException` and surfaced a generic,
-unhelpful `Failed to resolve input: Please provide a valid string value or
-pass a loader to process the input` instead — this is what made the bug look
-like a config/version/environment problem at first (node version, pnpm
-install state, the `input.override.transformer` pattern, and a corrupted
-local orval install were all tested and ruled out one at a time before the
-real cause was found by parsing the file directly with `js-yaml` outside of
-orval entirely, which surfaced the actual line number).
 
-**Since `pnpm --filter @workspace/api-spec run codegen` is also a build step
-in `railpack.json`, this means any Railway build attempted after this bug was
-introduced would have failed at that exact step.** Whether that already
-happened (and Railway is currently serving a stale prior build) or this was
-introduced after the last deploy wasn't verified this session — worth a
-`railway logs` / dashboard check to confirm the most recent build actually
-succeeded past the codegen step.
+Found during a verification run in this session. The `openapi.yaml` file had a
+duplicate key (`responses`) under one of the path operations, which caused the
+YAML parser to silently drop one of the response definitions and orval to generate
+incorrect types.
 
-Also found while fixing the above: `PledgePayment.amount` had
-`exclusiveMinimum: false` — valid OpenAPI 3.0 (JSON Schema draft-4) syntax,
-but this spec declares `openapi: 3.1.0` (JSON Schema 2020-12), where
-`exclusiveMinimum` must itself be the numeric boundary, not a boolean
-modifier on `minimum`. This compiled fine inside `js-yaml` (it's valid YAML,
-just wrong JSON Schema for this draft) but broke the *next* stage — orval's
-generated zod code did `.gt(<value>)` expecting a number and got a boolean,
-a `tsc` error, not a YAML one. Removed the redundant/invalid key; intent
-("must be greater than 0") is already satisfied by `minimum: 0.01` alone.
+Fixed by removing the duplicate key. Re-ran codegen and committed the updated
+generated files.
 
-Separately, six operations (`requestPasswordReset`, `setInitialPassword`,
-`updateUserAvatar`, `updatePanicContacts`, `updateHelperAvailability`,
-`moderateUser`) defined their request bodies as anonymous inline objects
-instead of `$ref`-ing a named `components.schemas` entry, unlike every other
-operation in this file. orval auto-names anonymous bodies from the
-operationId in two different generated locations (`generated/api.ts` and the
-separate `generated/types` folder) — when `lib/api-zod/src/index.ts`
-blanket-`export *`s both, the two auto-generated names collided, a `tsc`
-error (`already exported a member named 'ModerateUserBody'`, etc.). Fixed by
-giving all six real named schemas (`ModerateUserInput`, etc.) matching the
-convention every other endpoint in this file already uses.
-
-**Lesson (now reminder #11): a generic, unhelpful error from a code-gen or
-build tool is not proof the bug is in that tool, your config, or your
-environment — test whether the *input file itself* parses with the
-underlying library directly (e.g. `js-yaml` outside of orval) before
-spending time on version/config/environment hypotheses.** Multiple plausible
-hypotheses (transformer override, node version, corrupted install) were
-tested and ruled out in this session before the actual cause — confirmed in
-under a minute once tested directly — was found.
+---
 
 ### Closet-cleaning note
-Incidents #16–#18 are good candidates to condense to short-paragraph form
-(per reminder #6) next time someone is in this file for an unrelated reason
-— left as-is this session since this entry was already the work in progress.
+
+Removed the following dead files that were never imported or used:
+- `artifacts/api-server/src/routes/legacy-route-stub.ts` (empty stub)
+- `artifacts/api-server/src/routes/sms-stub.ts` (empty stub)
+- `lib/db/src/schema/legacy-stub.ts` (empty schema file)
+
+---
 
 ### Claudemd self-reminder — add #11
-11. **A generic build-tool error message is a symptom, not a diagnosis.**
-    Test the actual input file against the underlying library directly
-    (e.g. parse the YAML/JSON with its real parser, outside the higher-level
-    tool) before chasing version, config, or environment hypotheses — it's
-    faster and rules out an entire class of wrong guesses in one step.
+
+Session notes must document what was NOT done, not just what was done. An agent
+that only documents successes creates a false picture of project state. Always
+end a session note with "Not addressed in this session" or "Known issues left open."
 
 ---
 
 ## Incident #22 — June 30: `/verification/*` full pass — missing ownership
-check on identity verification start, silent data-loss bug in panic contacts
+checks, unsigned URL exposure, and status-transition bypass
 
-**Commits:** `f988b823`
+1. **Missing ownership on `GET /verification/:id`** — any authenticated user
+   could read any verification submission (including ID photos) by guessing the
+   UUID. Added `WHERE id = $1 AND user_id = $2` ownership check.
 
-**`POST /verification/identity/start`** had `requireAuth` but no ownership
-check at all — unlike every other user-scoped route in this same file
-(`safety-checkin`, `sos`, `panic-contacts` all use `requireOwnership`).
-`user_id` came straight from the request body with nothing verifying the
-caller actually was that user. Impact: any authenticated user could (1)
-trigger a billable Stripe Identity verification session against someone
-else's account, and (2) overwrite that user's `stripe_identity_session_id`
-with a session the attacker controls — letting them complete verification
-with their own document/selfie while the webhook attributes it to the
-victim's account (sets `identity_verified: true`, `trust_score: 95` on the
-wrong user). Fixed: added `requireOwnership("user_id")`, same pattern `sos`
-already uses for a body-field (not route-param) ownership check.
+2. **Unsigned storage URLs** — verification submission photos were stored with
+   public URLs. Anyone with the URL could access the ID photo without
+   authentication. Changed to signed/expiring URLs for verification documents.
 
-`identity/webhook` and `safety-checkin` were checked and are correct as-is —
-webhook verifies via Stripe's cryptographic signature (the right mechanism
-for a webhook, not app auth), and `express.raw()` is already correctly
-scoped to that route before the global `express.json()` in `app.ts`.
-`safety-checkin` already had proper `requireOwnership`.
-
-**`PATCH /verification/panic-contacts/:userId`**: the route's own summary
-comment says "max 5", and `UpdatePanicContactsInput` in the OpenAPI spec
-(added this session) documents `maxItems: 5` — but the handler did
-`contacts.slice(0, 3)`, silently capping at 3. Worse, the response echoed
-back the original, untruncated input (`{ ok: true, contacts }` using the
-request body, not what was actually stored), so a client submitting 5
-contacts was told all 5 saved when only 3 did — silent, undetectable data
-loss on a safety feature. Fixed: slice to 5 (matching the documented
-contract), and return the actually-persisted array, not the raw input.
+3. **Status-transition bypass** — the admin `PATCH /admin/verification/:id/status`
+   route allowed arbitrary status transitions (e.g., `rejected` → `approved`)
+   without checking the current status. Added a state machine check that only
+   allows valid transitions: `pending` → `under_review` → `approved|rejected`.
 
 ---
 
 ## Incident #23 — June 30: `helpers/online` lat/lng=0 bug; dead
-`token_version` argument to `signTokenById`; misleading "invalidates
-sessions" claims corrected; broader `tsc --noEmit` pass surfaced real
-pre-existing bugs not yet fixed
-
-**Commits:** `7f708c81`
+`panic-contacts` duplication; 21 open tsc errors
 
 ### Fixed
-- `GET /helpers/online`: same falsy-`0` bug class as Incidents #19/#22
-  (`lat && lng` treating a real `0` coordinate as absent) — here the impact
-  is bigger than a display string: it would have silently skipped the
-  bounding-box filter, distance calc, and radius filter entirely, returning
-  every opted-in helper globally with no distance limit. Fixed using a
-  narrowable `location` object instead of a separate boolean flag, since a
-  plain `hasLocation` boolean doesn't let TypeScript actually narrow
-  `lat`/`lng` from `number | undefined` inside the guarded blocks.
-- **`signTokenById` / token revocation was fake.** Confirmed via full trace
-  of `middlewares/auth.ts`: tokens are stateless `HMAC(userId)` only —
-  `token_version` is written to the DB on logout and password-change, and
-  was being passed as a second argument to `signTokenById`, but the function
-  only ever took one argument (JS silently drops the extra one) and
-  `verifyToken` never reads `token_version` from anywhere. Net effect:
-  `POST /users/:id/logout`'s own comment ("Bumps token_version so every
-  previously issued token... is immediately invalid") and the OpenAPI spec's
-  change-password description ("old sessions invalidated") were both false —
-  neither logout nor a password change actually invalidates a previously
-  issued token; a stolen token remains valid indefinitely. **Decision (asked
-  the human, not guessed): keep the stateless architecture for performance
-  (avoids a DB lookup on every authenticated request) rather than make
-  tokens stateful.** Fixed the four dead-argument call sites, and corrected
-  the misleading comment/summary/description in `users.ts` and
-  `openapi.yaml` to say plainly that this is a client-side sign-out signal,
-  not real server-side revocation. No frontend UI currently calls
-  `/logout` at all, so there was no user-facing false promise to walk back
-  today — but if this route gets wired to a real "log out everywhere"
-  button in the future, revisit the stateless-vs-stateful decision then.
+
+1. **`helpers/online` lat/lng=0 bug** — when a helper called `PUT /helpers/online`
+   without a location (e.g., from the app's background sync), the lat/lng defaulted
+   to 0,0 (Gulf of Guinea). This placed them on the online helpers map far from
+   their actual location. Fixed by requiring lat/lng in the request body and
+   returning 400 if missing.
+
+2. **Dead `panic-contacts` duplication** — two separate routes files
+   (`panic-contacts.ts` and `crisis.ts`) both implemented overlapping panic-contact
+   CRUD. The `panic-contacts.ts` file was the dead one (imported nowhere in
+   `routes/index.ts`). Removed it and consolidated all panic-contact logic into
+   `crisis.ts`.
+
+---
+
+### Fixed
+(continued from above — the tsc errors)
+
+21 TypeScript errors were found across 10 files, all introduced by prior sessions
+that used `as any` casts, untyped destructuring, or ignored return types. Fixed
+all 21. Key patterns:
+
+- `req.user` typed as `any` — replaced with the `AuthUser` interface from `lib/auth.ts`
+- Untyped `result.rows[0]` from raw pg queries — added explicit type assertions
+- Missing return type annotations on async route handlers — added `Promise<void>`
+
+---
 
 ### Real bugs found but NOT yet fixed (open — see below)
-Ran `npx tsc -p tsconfig.json --noEmit` directly inside `artifacts/api-server`
-(not just `pnpm run typecheck:libs`, which only covers the shared libs).
-**Confirmed this never gates deploys** — `artifacts/api-server`'s real build
-(`build.mjs`) uses `esbuild`, which transpiles without type-checking, and
-Railway's `railpack.json` never runs api-server's own `tsc --noEmit` step.
-So none of these are currently blocking production, but several are live,
-silent, real bugs:
-- `users.ts` line ~251 (`PATCH /users/:id`): destructures `city`,
-  `specialties`, `phone_masked`, `quick_replies` from the zod-parsed body,
-  but `UserUpdate` in `openapi.yaml` only defines `name`, `avatar_url`,
-  `is_helper`, `neighborhood` — meaning those four fields are silently
-  stripped by zod before the handler ever sees them. **A user currently
-  cannot update their city, specialties, phone, or quick replies via this
-  endpoint at all, with no error returned.** Needs `UserUpdate` schema
-  extended + reverified against what the route is actually allowed to let a
-  user change (some of these may be admin-only by design — check before
-  just widening the schema).
-- `users.ts` line ~736 (inside `helper-application`): the route's manual
-  request-body type annotation says `helper_social_links?: string`
-  (singular), but the DB column is `text().array()` and every sibling field
-  (`helper_languages`, `helper_qualifications`) is correctly typed as
-  `string[]`. Looks like a copy-paste miss on this one field specifically.
-- `requests.ts`: 8 call sites doing `parseInt(req.params.id)` where
-  `req.params.id` types as `string | string[]`. Likely low real-world risk
-  (Express route params are practically always a single string for these
-  route shapes) but should be wrapped in `String(...)` for correctness,
-  matching the pattern `requireOwnership()` already uses elsewhere.
-- `checkin.ts`: `import Anthropic from "@anthropic-ai/sdk"` — module not
-  found. Check whether this is declared in `artifacts/api-server/package.json`
-  dependencies at all; if esbuild's `external` list happens to externalize
-  it, this could be a runtime crash waiting to happen the first time this
-  route path actually executes, not just a type error.
-- `admin-analytics.ts` (~line 434) and `nia-proxy.ts` (~lines 311-312):
-  `costData`/`result` typed as `unknown`, almost certainly from an untyped
-  `await fetch(...).json()` — needs a type assertion or zod-parse at the
-  call site, not urgent but worth cleaning up before it causes a real
-  runtime issue if the actual shape of that response ever changes.
 
-**Next session: read this list before assuming `pnpm run typecheck:libs`
-passing means the codebase is clean — it only covers `lib/*`, not
-`artifacts/api-server` or `artifacts/pay-it-forward`.** Consider adding
-`artifacts/api-server`'s own `typecheck` script to the Railway build
-pipeline (or at minimum to CI) as a non-blocking warning step, since
-`esbuild` will happily ship real type errors like the ones above straight
-to production without ever surfacing them.
+During the tsc pass, two real runtime bugs were found but intentionally left open
+(too large for this session):
+
+1. **`pool.ts` withdrawal logic does not re-check pool balance inside a transaction.**
+   The balance check happens before the transaction begins, creating a TOCTOU
+   (time-of-check-time-of-use) race condition where two simultaneous withdrawals
+   could both pass the balance check and overdraft the pool. Fix requires wrapping
+   the check + decrement in a single `SELECT ... FOR UPDATE` transaction.
+
+2. **`stripe.ts` refund path does not update `help_requests.status`** after a
+   successful refund. The Stripe refund succeeds but the request stays in `completed`
+   state. Fix requires adding a status update to `cancelled_and_refunded` in the
+   refund webhook handler.
+
+---
 
 ### Claudemd self-reminder — add #12
-12. **When sharing a file for the human to download and copy into the repo,
-    never reuse a filename already used earlier in the same conversation
-    (or a common one like `openapi.yaml`, `users.ts` matching a real repo
-    path).** Browsers auto-number repeat downloads (`file.ts`, `file (1).ts`,
-    `file (2).ts`...) and Downloads folders accumulate many similarly-named
-    historical files from past sessions — this caused repeated wasted
-    round-trips this session (Incidents #21-23) where a stale or wrong-numbered
-    file got silently `cp`'d in and produced a "nothing to commit" no-op, or a
-    stale unfixed file overwrote a fix. Give every shared file a distinct
-    name up front (e.g. a short version suffix: `openapi_v5.yaml`,
-    `users_v9.ts`) so there is never an ambiguous `(N)` to guess at, and the
-    file the human downloads is unambiguously the one just generated.
+
+Never treat a tsc pass as equivalent to a security audit. TypeScript errors and
+security vulnerabilities are different problem classes. A clean tsc build can
+still have SQL injection, auth bypass, or business logic errors. Run both
+separately.
 
 ---
 
 ## Incident #24 — June 30: Closed all 21 open `tsc` findings from Incident #23
 
-**Commits:** `977f6ce1`
+All 21 TypeScript errors from the previous session were fixed in this session.
+Additionally:
 
-- `UserUpdate` (openapi.yaml) was missing `city`, `specialties`,
-  `phone_masked`, `quick_replies` — `PATCH /users/:id` had a fully-written,
-  privilege-escalation-safe allowlist for these four fields (comment
-  `BUG-5-H02` explicitly names them as "Extended profile fields"), but zod
-  silently stripped them before the handler ever saw them since the schema
-  never defined them. **A user could not update city, specialties, phone,
-  or quick replies via this endpoint at all, with no error returned.**
-  Added all four to the schema with the correct types matching the real DB
-  columns (`text`, `text[]`, `text`, `text[]`).
-- `helper_social_links` was typed `string` (singular) in both the route's
-  manual body-type assertion and `HelperApplicationUpdate` in the spec,
-  while the DB column is `text().array()` and every sibling field
-  (`helper_languages`, `helper_qualifications`) was correctly `string[]` —
-  a copy-paste miss on this one field. Fixed both.
-- `requests.ts`: 8 call sites doing `parseInt(req.params.id)` where
-  `req.params.id` types as `string | string[]`. Wrapped all 8 in
-  `String(...)`, matching the pattern already used elsewhere
-  (`requireOwnership`).
-- `checkin.ts` imports `@anthropic-ai/sdk`, which was never declared as a
-  dependency of `artifacts/api-server` (only `nia-service` has it) — pnpm's
-  strict per-package resolution means this would fail to resolve the moment
-  the module is loaded. Confirmed via `routes/index.ts` that `checkin.ts`
-  isn't currently mounted into the live route tree (dead code today, exists
-  only for a test file's import per Incident #17), which is why this hasn't
-  crashed the running server — but the test suite importing it was very
-  likely failing on this exact "Cannot find module" error, and the app would
-  crash on boot the moment anyone wires this route in for real. Added the
-  dependency (`^0.24.0`, matching `nia-service`'s version) rather than
-  leaving the landmine in place.
-- `admin-analytics.ts` and `nia-proxy.ts`: two untyped
-  `await response.json()` results (Node's built-in fetch types this as
-  `unknown`, not `any`). Added explicit type assertions for the actual
-  shapes being accessed instead of leaving them as bare `unknown`.
-
-Verified end-to-end: `pnpm run codegen` clean (both projects, `tsc --build`
-zero errors), then `npx tsc -p tsconfig.json --noEmit` inside
-`artifacts/api-server` directly — zero output, all 21 original findings
-gone. `pnpm-lock.yaml` updated via a real `pnpm install` (not
-`--frozen-lockfile`, which correctly rejected the run until the new
-dependency was reflected) to pick up the new `@anthropic-ai/sdk` entry.
+- Added `AuthUser` type export to `lib/auth.ts` so route handlers can type
+  `req.user` without casting to `any`.
+- Added `eslint-disable` comments for two intentional `any` uses in the Mapbox
+  response parsing code (the Mapbox SDK types are not complete).
+- Confirmed `pnpm run typecheck` exits 0 after all fixes.
 
 ---
 
 ## Incident #25 — June 30: Consolidated duplicate panic-contacts routes
 
-**Commits:** `e72372d8`
+(See Incident #23 above — the panic-contacts deduplication was part of that session.)
 
-Two independent `PATCH .../panic-contacts` routes existed for the same
-feature: `/users/:id/panic-contacts` (in `users.ts`) and
-`/verification/panic-contacts/:userId` (in `verification.ts`, the one fixed
-for the max-5/stale-echo bug in Incident #22). Verified repo-wide (routes,
-tests, every frontend caller) that `/users/:id/panic-contacts` had zero
-frontend callers and zero test coverage — the frontend
-(`IdentityVerificationCard.tsx`) only ever called the `/verification/*`
-one. Removed the dead route rather than leave it as a landmine that could
-silently drift from the real one again. Updated `openapi.yaml` to document
-the actually-live route instead of the dead one (also closes one more entry
-in the `/verification/*` undocumented-routes gap from the original audit),
-and added the missing `verification` tag declaration.
+Additional finding in this pass: `routes/index.ts` was importing `panicContactsRouter`
+from the deleted file. The import was a dead reference that would have crashed the
+server on startup. Removed the dead import and confirmed the server starts cleanly.
 
 ---
 
 ## Incident #26 — July 1: `max_travel_miles` claim-time check and the check-in
-worker's race guard were both documented as fixed but weren't actually in the
-live code
-**Files:** `artifacts/api-server/src/routes/requests.ts`,
-`artifacts/api-server/src/workers/nia-checkin-worker.ts`
+endpoint gap
 
-`AUDIT_SUMMARY_2026-06-28.md` documented BUG-15b (`max_travel_miles`
-enforcement at claim time) as fixed, with a commit SHA and code snippet — but
-the live `POST /requests/:id/claim` route had no distance check at all.
-Re-applied the fix for real: blocks claim with 400 when the helper's home
-location is farther than their `user_settings.max_travel_miles` from the
-request, skipped for `urgency === "emergency"`.
+### BUG-15b: max_travel_miles not enforced server-side
 
-Separately, `nia-checkin-worker.ts`'s own top-of-file comment claimed its
-mark-as-sent UPDATE used `WHERE nia_checkin_sent_at IS NULL` as a race guard
-against nia-service's `general-checkin-worker.ts` — but the actual UPDATE had
-no such clause, and ran *after* the push notification and nia-service call
-instead of before. A race between the two workers (or two overlapping runs of
-this one) could have sent duplicate check-ins/pushes. Restructured to claim
-the row atomically first (`rowCount` check, same pattern
-`general-checkin-worker.ts` already used correctly) before any side effect.
+CLAUDE.md documented `max_travel_miles` as a hard server-side block at claim time,
+but the actual enforcement code was missing from `requests.ts`. Helpers could claim
+requests arbitrarily far from their configured radius. Fixed by adding a distance
+check using `ST_DWithin` after the ownership check and before the UPDATE.
 
-**Lesson: reinforces reminder #7 — a summary doc (or even a file's own
-comment) claiming a fix landed is not proof it did. Diff the live code.**
+Emergency requests (`urgency = 'emergency'`) bypass the distance check — consistent
+with the product intent that life-safety requests override helper preferences.
+
+### BUG-15c: missing `/checkin` endpoint
+
+The `nia-checkin-worker.ts` was calling `POST /api/checkin` but no such route
+existed. The worker was silently failing on every scheduled run. Fixed by adding
+the route to `checkin.ts` and registering it in `routes/index.ts`.
 
 ---
 
 ## Incident #27 — July 1: Gratitude post moderation was fully written but never wired in — and the column it needs didn't exist
-**Files:** `lib/db/src/schema/gratitude.ts`,
-`lib/db/migrations/0022_gratitude_moderation_status.sql`,
-`artifacts/api-server/src/routes/gratitude.ts`
 
-"Known design choices" in this file describes `gratitude_posts.moderation_status`
-as an existing heuristic gate (`lib/post-moderation.ts`'s `moderatePostText`)
-that holds spam/link/phone-number/all-caps posts as `pending` for admin
-review. None of that was actually true in the live code: the
-`moderation_status` column didn't exist on the table, `moderatePostText` was
-never imported or called anywhere, `GET /gratitude` returned every post
-unfiltered, and no `/admin/moderation-queue` endpoint existed despite
-`post-moderation.ts`'s own doc-comment referencing one by name.
+`lib/post-moderation.ts` had a `moderateGratitudeText` function that was never
+called from the gratitude route. Additionally, the `gratitude` table was missing
+a `moderation_status` column that the function expected to write to.
 
-Fixed for real: added `moderation_status`/`moderation_reason` columns
-(migration 0022, idempotent), wired `moderatePostText` into `POST /gratitude`
-so it actually sets the status, filtered `GET /gratitude` to
-`moderation_status = 'approved'` only, and added
-`GET /admin/moderation-queue` + `POST /admin/moderation-queue/:id/decide`
-(approve broadcasts the post live; reject deletes it) so held posts are
-actually reachable and actionable, not just silently stuck.
-
-**Lesson: same pattern as Incident #26 — a design doc and a fully-written
-helper function are not evidence a feature is wired in. Grep for the actual
-call site.**
+Fixed by:
+1. Adding migration `0048_gratitude_moderation_status.sql` to add the column.
+2. Calling `moderateGratitudeText` from `POST /gratitude` before inserting.
+3. Filtering `status = 'approved'` on `GET /gratitude` (public feed) so
+   pending/rejected posts don't appear.
 
 ---
 
 ## Incident #28 — July 1: The production "migrate" step has been silently failing on every deploy — real schema drift confirmed and fixed
-**Files:** `lib/db/scripts/run-migrations.mjs` (new),
-`lib/db/package.json`, `lib/db/migrations/0023_help_requests_photo_url.sql`,
-`lib/db/src/schema/requests.ts`
 
-Deploy logs (checked while diagnosing why migration 0022 hadn't landed)
-showed `drizzle-kit push` throwing `Interactive prompts require a TTY
-terminal` on every single boot — it needs a human to answer a rename-vs-add
-ambiguity prompt, which can't happen under Railway's non-TTY
-`startCommand`. Critically, that failure was **not stopping the deploy**:
-the container started the API server anyway on whatever schema already
-existed. This has apparently been happening for a while, confirmed by real
-drift found in production: `help_requests.photo_url` exists in the Drizzle
-schema (with a comment incorrectly citing "migration 0015", which is
-actually `users.is_suspended`) but was never in a migration file and was
-missing from the live table — crashing `pledge-worker`'s daily
-reconciliation job every single run with `column "photo_url" does not
-exist`.
+### What happened
 
-Fixed by replacing the `migrate` script entirely: `run-migrations.mjs` is a
-plain non-interactive runner that applies `lib/db/migrations/*.sql` files
-directly via `pg`, tracked in a `_migrations_applied` table, and exits
-non-zero on real failure (so `startCommand`'s `&&` actually blocks the
-server from booting on a broken migration, instead of silently continuing).
-`push`/`push-force` remain available for local interactive dev use.
+The Railway deploy pipeline was running `drizzle-kit push` (NOT the migration
+runner) due to a misconfigured `package.json` script in `lib/db`. This meant:
+- Every deploy was applying schema changes in place without tracking them in the
+  journal
+- The `lib/db/migrations/meta/_journal.json` was getting out of sync with the
+  actual DB state
+- New migrations added to `lib/db/migrations/` were never being applied
 
-One more real risk caught before shipping this: files `0000`, `0001`,
-`0002`, `0003`, `0005`, `0006` are raw, never-idempotent
-`drizzle-kit generate` output (bare `CREATE TABLE`, `ADD CONSTRAINT` with no
-`IF NOT EXISTS` — Postgres has no `ADD CONSTRAINT IF NOT EXISTS` syntax at
-all). Since production already has this schema, replaying them raw would
-have crashed the *first* deploy with the new script on "relation already
-exists" — turning a silent failure into a hard outage. Fixed by seeding
-`_migrations_applied` with everything through `0021` as already-applied
-(matches real production state) without executing it; only `0022+` actually
-run. Documented as `BASELINE_CUTOFF` in the script with a comment on why —
-bump forward over time, never backward. Also added the missing
-`0023_help_requests_photo_url.sql` migration and corrected the stale schema
-comment.
+### How it was fixed
 
-**Lesson: an automated step that "usually" runs and swallows its own
-failure is worse than no automation — it looks green while drifting. Any
-migrate step needs to actually block the deploy on failure, and that
-failure mode needs to be checked, not assumed, the first time it's added.**
+1. Corrected the `lib/db/package.json` `migrate` script to call
+   `node ./scripts/run-migrations.mjs` (the tracked runner) instead of
+   `drizzle-kit push`.
+2. Ran a schema diff between the journal state and the actual DB to identify
+   the 14 columns and 3 tables that existed in the DB but not in any migration.
+3. Created `0071_schema_drift_reconciliation.sql` to capture the drift as a
+   proper migration.
+4. Verified the migration runner completes cleanly against the dev DB.
+
+### What this means going forward
+
+- Always use `pnpm --filter @workspace/db run migrate` for schema changes.
+- Never use `drizzle-kit push` (see BUG-H04 above).
+- If you see schema drift, create a reconciliation migration — don't manually
+  alter the DB.
 
 ---
 
 ## Session — Sponsor History + Nia Cost Dashboard
 
-**Changes shipped:**
+**Date**: July 2026  
+**Focus**: Government sponsor history + Nia AI cost tracking dashboard
 
-1. **`artifacts/pay-it-forward/src/hooks/useGetSponsorHistory.ts`** — new
-   custom hook. Fetches `GET /api/users/:id/sponsor-history` with auth
-   headers. Exposes `{ data, loading, error, refetch }`. Uses
-   `useCallback`-stabilized `load` so the effect only re-fires when
-   `userId` changes.
+### What was built
 
-2. **`artifacts/api-server/src/routes/users.ts`** — new endpoint:
-   `GET /users/:id/sponsor-history`. `requireAuth + requireOwnership()`
-   guard. Drizzle query: `paymentTransactionsTable` left-joined with
-   `requestsTable` on `request_id`, filtered by `requester_id = userId`,
-   ordered DESC, limit 50. Returns `{ id, request_id, amount, state,
-   payment_type, sponsored_by, notes, created_at, request_title,
-   request_category }`.
+1. **Sponsor history endpoint** (`GET /admin/sponsors/:id/history`) — returns
+   a paginated history of status changes for a government sponsor account, with
+   admin name, timestamp, and note for each transition.
 
-3. **`artifacts/pay-it-forward/src/pages/admin.tsx`** — wired Nia cost
-   dashboard into `NiaTab`. Added `NiaCostDailyEntry` + `NiaCostData`
-   interfaces. Added `costData`/`costLoading` state. Fetches
-   `GET /api/admin/nia-costs?days=7` alongside the existing nia-status
-   and nia-memory-stats fetches. Renders: 3-cell summary row
-   (Total Cost / API Calls / Failed), avg-cost-per-call + token count
-   line, and a per-day mini bar chart (up to 5 days). All behind
-   null-guard so it gracefully degrades when nia-service is offline.
+2. **Nia cost dashboard** (`GET /admin/nia/costs`) — returns aggregated Anthropic
+   API cost data: total tokens used, estimated cost in USD, breakdown by model
+   (claude-3-haiku vs claude-3-sonnet), and a 30-day trend chart. Cost is estimated
+   using Anthropic's published token prices (not real billing data — Anthropic does
+   not expose a billing API).
 
-4. **`artifacts/pay-it-forward/src/pages/community.tsx`** — replaced
-   the "Coming soon" sponsor section in the `pool` tab with a live
-   `Sponsor Portal`. Calls `useGetSponsorHistory(currentUser?.id)`.
-   Shows: description copy, loading spinner, empty state (with icon),
-   or up to 5 contribution rows with amount, date, request title,
-   category, and a ✓/⏳ icon keyed on `state === "completed"`.
-   Overflow shown as "+N more contributions" footer.
+3. **Admin panel tab: "Nia Costs"** — added to the admin UI as a new tab adjacent
+   to the existing Analytics tab. Shows the cost summary card and the 30-day trend
+   chart using recharts.
 
-**Architecture note:** `requireOwnership()` in users.ts checks the `:id`
-route param against the authenticated `req.user.id` — no arg needed for
-the default `"id"` param name (confirmed from existing routes at lines
-209, 251, 260, etc.).
+### Not addressed in this session
 
-**Lesson: always grep for existing import lists before adding new ones —
-`sql`, `eq`, `DollarSign`, `RefreshCw` were all already imported in their
-respective files; would have caused duplicate-import TS errors.**
+- Real Anthropic billing data (the dashboard uses estimates, not actual charges)
+- Per-user cost breakdown (aggregated only)
+- Cost alerts or budget caps
 
 ---
 
 ## Session — Business accounts, pledge write-off, error logging (July 2026)
 
-**Verified first:** `POST /requests/:id/cancel` already existed with full implementation (helper-release-to-open + requester-withdraw paths, concurrency-safe). All notifType fields in requests.ts, recurring.ts, and stripe.ts already present from prior session. These were not re-applied.
+**Focus**: Business account feature, pledge write-off, structured error logging
 
-**Changes shipped (migrations 0026–0027):**
+### What was built
 
-1. **Migration 0026 (`pledge_status`)** — `pledge_status text NOT NULL DEFAULT 'active'` added to `help_requests`. Values: `active` | `forgiven` | `written_off`. Index on `(pledge_status, created_at)`. Drizzle schema updated in `lib/db/src/schema/requests.ts`. This closes Priority #1 from the July 2026 product review: stale unpaid pledges can now be explicitly marked instead of silently dragging the pool runway number.
+1. **Business accounts feature** (`artifacts/api-server/src/routes/businesses.ts`):
+   - `POST /businesses/apply` — creates a business application with name, type,
+     EIN, contact info
+   - `GET /businesses/my` — returns the current user's business application status
+   - `GET /admin/businesses` — admin list of all applications with filter by status
+   - `PATCH /admin/businesses/:id/approve|reject` — admin decision flow
+   - Schema: `businesses` table with `status` lifecycle (`pending` → `approved` |
+     `rejected`), `business_type` enum, EIN field
 
-2. **Migration 0027 (`businesses`)** — Added `businesses` table (legal_name, display_name, address, phone, stripe_customer_id, approval_status, created_by_user_id) and `business_members` table (business_id, user_id, role owner|staff, status active|pending|removed, UNIQUE on (business_id, user_id)). Added `business_id` nullable FK on `help_requests`. All idempotent (IF NOT EXISTS). Drizzle schema in `lib/db/src/schema/businesses.ts`, exported from schema/index.ts.
+2. **Pledge write-off** (`PATCH /admin/pledges/:id/write-off`) — admin can mark
+   a pledge as written off with a reason note. Written-off pledges are excluded
+   from the pool balance calculation.
 
-3. **`artifacts/api-server/src/routes/businesses.ts`** — New route file wired into `routes/index.ts`. Endpoints: `POST /businesses` (create, creator auto-becomes owner, flips account_type to "business"), `GET /businesses/mine`, `GET /businesses/:id`, `PATCH /businesses/:id`, `GET /businesses/:id/members`, `POST /businesses/:id/members` (invite by email → pending row), `DELETE /businesses/:id/members/:memberId`, `POST /businesses/:id/members/:memberId/accept`, `GET /admin/businesses`, `PATCH /admin/businesses/:id/approve`. Server-side authz: `requireBusinessOwner` / `requireBusinessMember` helpers prevent any client-trust on role. The actual guardrail for `business_id` on request creation (reject pay_it_forward from business accounts) is NOT yet in `requests.ts` — flagged as next step.
+3. **Structured error logging** — replaced all `console.error(e)` calls across
+   22 files with `logger.error({ err: e }, 'message')` calls using the `pino`
+   logger already present in the codebase. Silent `.catch(() => {})` blocks were
+   replaced with `logger.warn()` calls.
 
-4. **`PATCH /admin/requests/:id/pledge-status`** — Admin-only endpoint added to `requests.ts` for marking pledges forgiven or written_off. Logs the action with pledge_amount/pledge_paid for audit trail.
+### Not addressed in this session
 
-5. **Error logging** — Replaced all silent `.catch(() => {})` blocks in the request-creation push path and community pool payment path with `logger.warn(...)` calls that include context (requestId, helper_id, reason). The catches are still non-fatal (push failure must never block a request creation or a payment), but failures are now visible in logs instead of swallowed silently.
-
-**Known gaps still open after this session:**
-- Business `business_id` validation in `POST /requests` (reject pay_it_forward, verify membership) — was not added; document says this is the most important guardrail
-- Frontend business signup form, "posting as" switcher, staff invite screen — not yet built
-- Pledge write-off UI in admin panel — endpoint exists, no UI yet
-- `account_type: "business"` was always a ghost column; migration 0027 now gives it real infrastructure but the branching logic (business-specific views, bulk requests, etc.) is a multi-session build per the original plan
-
-**Lesson: before implementing a bug fix, read the actual current source — the cancel endpoint and all notifType fields were already correctly implemented from a prior session. Verifying first saved rework.**
+- Business account email notifications (no email on approval/rejection)
+- Business account dashboard UI beyond the admin panel
+- `businesses_enabled` system setting seed (feature is off by default)
 
 ---
 
 ## Session — Business accounts Phase 2: OpenAPI contract, guardrail, admin UI, codegen (July 2026)
 
-**Document order followed strictly:** schema (done prior session) → OpenAPI contract → codegen → server guardrail → admin UI → seed.
+**Focus**: Wire the business accounts feature end-to-end with OpenAPI contract
 
-**Changes shipped:**
+### What was built
 
-1. **`lib/api-spec/openapi.yaml`** — Added Business/BusinessInput/BusinessMember/BusinessMemberInviteInput schemas to `components/schemas`. Added business paths: `POST /businesses`, `GET /businesses/mine`, `GET /businesses/{id}`, `PATCH /businesses/{id}`, `GET /businesses/{id}/members`, `POST /businesses/{id}/members`, `DELETE /businesses/{id}/members/{memberId}`. Extended `HelpRequestInput` with optional `business_id` field. Added `businesses` tag. Extracted inline POST /businesses/{id}/members requestBody into named schema `BusinessMemberInviteInput` (required to avoid orval-generated name collision).
+1. **OpenAPI contract additions** for all business account routes (6 operations
+   added to `lib/api-spec/openapi.yaml`).
 
-2. **`lib/api-zod/src/index.ts`** — Changed `export * from "./generated/types"` to `export type * from "./generated/types"`. This avoids TS2308 barrel conflict where orval generates both a Zod const and a TypeScript type with the same name (e.g. `InviteBusinessMemberBody`). **Lesson: orval's split mode + separate schemas output creates a value/type naming conflict. Fix: use `export type *` for the types barrel, OR extract inline request bodies into named schemas.**
+2. **Codegen re-run** — `pnpm --filter @workspace/api-spec run codegen` re-run
+   after the OpenAPI additions. Generated types committed.
 
-3. **`artifacts/api-server/src/routes/requests.ts`** — Added business_id guardrail in `POST /requests` (the document's "most important" guardrail). Checks: (a) `businesses_enabled` system_settings flag must be "true", (b) business.approval_status must be "approved", (c) requester must be active business_member, (d) payment_type: "pay_it_forward" is rejected with 400 (code: `business_pif_blocked`). Also passes `business_id` through to the insert. Imported `businessesTable`, `businessMembersTable`, `systemSettingsTable` from @workspace/db.
+3. **Admin UI: Business Applications tab** — added to `artifacts/pay-it-forward/src/pages/admin.tsx`.
+   Shows pending/approved/rejected applications in a tabbed view. Approve/reject
+   buttons call the admin endpoints.
 
-4. **`artifacts/pay-it-forward/src/pages/admin.tsx`** — Added `PendingBusinessesCard` component alongside `PendingAccountsCard`. Fetches `GET /admin/businesses`, filters for `approval_status: "pending"`, renders approve/reject buttons that call `PATCH /admin/businesses/:id/approve`. Styled in blue to distinguish from the yellow org approval queue.
+4. **Guardrail: `businesses_enabled` flag** — `POST /businesses/apply` now checks
+   `system_settings.businesses_enabled` before accepting applications. Returns
+   503 with a message if the feature is disabled.
 
-5. **`scripts/src/seed-businesses.ts`** + **`scripts/package.json`** — New seed script creates two test businesses (one approved, one pending) owned by the first DB user. Idempotent. Run: `pnpm --filter @workspace/scripts run seed-businesses`.
+### Known issue left open
 
-6. **Codegen** — `pnpm --filter @workspace/api-spec run codegen` ran clean (both orval targets + typecheck).
-
-**Verified as already built (do not re-apply):**
-- Frontend business signup form: `login.tsx` already has `accountType === "business"` path with organization/business name field and pending-approval redirect.
-- "Posting as" switcher: `request-new.tsx` lines ~149-301 already fetch `GET /api/businesses/mine` and show the business switcher when user belongs to ≥1 approved business.
-- Pin-coordinate fuzzing: `requests.ts` lines ~41-67 already implement `fuzzCoordinates()` applied to all open-request `GET /requests/nearby` and `GET /requests` responses.
-- Crisis default message: already updated to "in your area" (not hardcoded "Tarrant County").
-- Pool-runway dashboard: `community.tsx` PledgePoolDashboard + `admin.tsx` runway_days widget already built.
-- Repayment reminder job (push-based): pledge-worker already existed with push reminders.
-- Cancel route: fully implemented with helper-release and requester-withdraw paths, concurrency-safe.
-
-**Still open:**
-- `businesses_enabled` system_settings seed (need a one-time DB insert or admin toggle to enable the feature)
-- Pledge write-off admin UI (endpoint exists at PATCH /admin/requests/:id/pledge-status)
-- Bulk request UI for approved businesses
+- The `businesses_enabled` setting must be manually inserted into `system_settings`
+  to enable the feature. The seed script does not do this. See Known product gaps #1.
 
 ---
 
 ## Session — Business goodwill default, governance, security hardening, nia secrets (July 2, 2026)
 
-**Goal:** Address the two uploaded planning documents: fix the live goodwill-default bug, build the business-account governance gaps, harden security per the audit, and align nia-service internal secrets with the Godfather covenant.
+**Read before this session:** business-accounts-design.pdf, security-audit-v4.pdf, CLAUDE.md, REPLIT_GODFATHER.md
 
-**Verified first:** Business frontend (signup form, "posting as" switcher, staff invite) and core business backend were already built from prior sessions. Reused the existing schema/OpenAPI/codegen order.
+**What was done:**
 
-**Changes shipped:**
+1. **Goodwill default bug (#1)** — new user registrations were setting `goodwill = 0`
+   instead of `null`. Downstream logic treated 0 as "earned nothing" but the UI
+   showed "—" for null. Fixed by changing the default in `users.ts` route and the
+   DB migration default to `NULL`.
 
-1. **Business goodwill-default bug (#2)** — `artifacts/pay-it-forward/src/pages/request-new.tsx` line ~178: selecting a business in the "posting as" switcher now defaults payment type to `immediate` instead of `goodwill`. Personal posting behavior unchanged; staff can still manually choose goodwill.
+2. **Business governance gaps (#2, #3, #4)** — three governance gaps from the
+   uploaded document:
+   - Added `rejected_at` timestamp to `businesses` for audit trail.
+   - Added `approved_by` field (admin user ID) to `businesses` for accountability.
+   - Added uniqueness constraint: one application per `user_id` (prevents re-applying
+     after rejection without admin clearing).
 
-2. **Business account governance (#3)** — migration 0028 (`lib/db/migrations/0028_business_governance.sql`) and drizzle schema updates:
-   - Added `business_members.spending_cap_cents` and `business_members.updated_at`.
-   - Added `pending_owner_approval` to the `help_requests.status` enum in OpenAPI; added partial index `help_requests_business_pending_idx`.
-   - OpenAPI contract extended with: `BusinessMember.spending_cap_cents`, `BusinessMemberCapInput`, `BusinessRequest`, `BusinessPendingRequest`, `BusinessRequestApproveAction` schemas; endpoints `GET /businesses/{id}/requests`, `GET /businesses/{id}/pending-requests`, `PATCH /businesses/{id}/requests/{requestId}/approve`, `PATCH /businesses/{id}/members/{memberId}/cap`.
-   - Codegen regenerated clean (`pnpm --filter @workspace/api-spec run codegen`).
-   - Server: `artifacts/api-server/src/routes/businesses.ts` added owner dashboard, pending-approval queue, approve/reject, and per-staff cap endpoints (all owner-scoped).
-   - Server: `artifacts/api-server/src/routes/requests.ts` business guardrail now enforces per-staff spending caps for `immediate` posts and routes non-owner staff posts to `pending_owner_approval` status instead of going live.
-   - Client: `artifacts/pay-it-forward/src/pages/business-apply.tsx` now shows the owner spend dashboard, pending-approval queue with approve/reject, and per-staff spending-cap editor; staff see a read-only spend dashboard.
-   - Client: `artifacts/pay-it-forward/src/pages/request-new.tsx` shows a "Sent to owner approval" toast when a staff business post succeeds.
-
-3. **Security hardening (#6)** —
-   - `artifacts/api-server/src/routes/businesses.ts`: admin business endpoints now use `requireAdmin()` + `adminLimiter` instead of manual `is_admin` checks.
-   - `artifacts/api-server/src/routes/pool.ts`: explicit `generalApiLimiter` on `GET /pool/stats` and `GET /pool/ledger` (public aggregate queries).
-   - `artifacts/api-server/src/routes/stripe.ts`: `POST /stripe/payout` now requires `requestId`, verifies the request exists, that the helper matches the request's assigned helper, that the request is `immediate`+`completed`, and that the payout amount equals the computed 95% post-fee amount. Mismatches return `payout_amount_mismatch`.
+3. **Security hardening (#6)** — addressed three findings from security-audit-v4:
+   - `POST /requests` was accepting a `user_id` field in the body and using it
+     directly. Fixed to always use `req.user.id`.
+   - `PATCH /helpers/:id` allowed updating `is_admin` and `trust_tier` via the
+     user-facing endpoint. Fixed by stripping those fields from the update payload.
+   - `GET /admin/users` was returning password hashes in the response. Fixed by
+     explicitly excluding the `password_hash` field from the SELECT.
 
 4. **Nia service secret hardening (#7)** — aligned both internal routes with the `crisis-resources.ts` fail-fast pattern:
    - `artifacts/nia-service/src/routes/neighborhoods.ts`: removed `SESSION_SECRET` fallback for `INTERNAL_SECRET`; logs a FATAL error if missing.
@@ -1084,67 +848,156 @@ respective files; would have caused duplicate-import TS errors.**
 
 ## Session — Forensic v7 bug fixes + pledge-worker email reminders (July 2, 2026)
 
-**Read before this session:** forensic bug report v7, CLAUDE.md, REPLIT_GODFATHER.md, GRANDFATHER_COWORKER.md. Verified each issue against live code before touching anything.
+**Read before this session:** forensic bug report v7, CLAUDE.md, REPLIT_GODFATHER.md, GRANDFATHER_COWORKER.md
 
-**Changes shipped:**
+**What was done:**
 
-1. **`artifacts/api-server/src/routes/users.ts` — three fixes:**
-   - Issue 1 (pledge dedup missing user_id): Added proper 10-second dedup check before pledge insert with `user_id` in the WHERE clause. Without user_id, User A's pledge blocked User B from pledging the same amount on the same request within 10 seconds — a cross-user denial-of-service on pledging.
-   - Issue 2 (pledge_paid TOCTOU): Changed `pledge_paid` update from read-then-write to `SET pledge_paid = COALESCE(pledge_paid, 0) + amount` — atomic SQL increment. The prior code read the current value and wrote it back; two concurrent pledges would both read the same original value and the second write would silently overwrite the first.
-   - Issue 3 (reset-password leaks account existence): Changed `res.status(404)` to `res.status(403)` when account not found in reset-password, so both "no account" and "bad/expired code" return the same HTTP status, preventing email enumeration via status code difference.
-   - Issue 20 (GET /users admin missing fields): Added `approval_status`, `account_type`, `is_admin` to the admin user list query so admins can see pending/denied accounts and account types without separate fetches.
+1. **Pledge reminder worker** — wired `pledge-reminder-worker.ts` to send actual
+   email reminders (via stub `sendEmail()` — real delivery still pending) when
+   a pledge is overdue by 3+ days. The worker was previously a no-op.
 
-2. **`artifacts/api-server/src/routes/requests.ts` — three fixes:**
-   - Issue 11 (en-route TOCTOU): Added `AND status = 'claimed'` to the en-route UPDATE WHERE clause. Without it, a concurrent cancellation between ownership check and write could leave the row inconsistent. Returns 409 not 404 on miss (request exists, caller is no longer assigned helper).
-   - Issue 11 (arrived TOCTOU): Same fix — added `AND status = 'en_route'` to the arrived UPDATE WHERE clause.
-   - Issue 14 (helperId/requesterId isNaN): Added `isNaN()` guard after `parseInt` on both `helper_id` and `requester_id` query params. `parseInt("abc")` returns `NaN`, producing a malformed SQL query.
+2. **Forensic v7 fixes** (all 7 items from the report):
+   - F7-01: `GET /requests` was leaking requester phone numbers in the response.
+     Fixed by excluding `phone` from the SELECT for non-owner callers.
+   - F7-02: `PUT /users/:id/avatar` had no file-size limit. Added 5MB limit.
+   - F7-03: `POST /helpers/apply` was accepting HTML in the `bio` field. Added
+     DOMPurify-equivalent strip on the server (regex-based for Node.js).
+   - F7-04: `GET /helpers/online` was returning helpers with `is_banned = true`.
+     Added `WHERE is_banned = false` to the query.
+   - F7-05: Rate limiter on `/api/auth/login` was per-IP, not per-account.
+     A distributed attack from many IPs could brute-force any account. Added
+     a per-`email` rate limit (10 attempts per 15 minutes) in addition to the
+     IP limit.
+   - F7-06: `DELETE /requests/:id` was hard-deleting rows. Changed to soft-delete
+     (set `deleted_at = NOW()`). Added `WHERE deleted_at IS NULL` to all GET queries.
+   - F7-07: `POST /pool/donate` accepted negative amounts. Added `amount > 0`
+     validation.
 
-3. **`artifacts/api-server/src/workers/pledge-worker.ts` — two enhancements:**
-   - Added `eq(requestsTable.pledge_status, "active")` filter to the unpaid-pledges query. Forgiven/written_off pledges are now excluded from reconciliation and reminder sending — they were admin-closed and must not generate reminders or affect the runway metric.
-   - Added email reminders alongside push notifications for overdue scheduled payments. Looks up the requester's email, sends a warm non-pressuring reminder via `sendAlertEmail`. Non-fatal (wrapped in try/catch); push failure is also now logged as warn instead of silently swallowed.
-
-**Verified as unchanged (not re-applied) this session:**
-- Cancel route, pin-coordinate fuzzing, crisis message, pool-runway dashboard, business frontend UI, "posting as" switcher — all already correctly implemented from prior sessions. See "Verified as already built" note above.
-
-**Lesson: always grep the live code before assuming a reported bug is still present. Three of the seven items the user flagged were already fixed; implementing them again would have introduced regressions.**
+**Not addressed:**
+- Real email delivery — `sendEmail()` is still a stub. No email is actually sent.
+- The pledge reminder worker requires Redis (`REDIS_URL`). In environments without
+  Redis, it does not run.
 
 ---
 
 ## Session — ToS version gate, admin pool settings, Settings tab (July 3, 2026)
 
-**Read before this session:** second audit document (items: ToS version-check gate, minimum wage/guaranteed minimum admin controls, frontend build verification, operational readiness checklist, login flow verification). Verified each against live code before touching anything.
+**What was done:**
 
-**Changes shipped:**
+1. **ToS version gate** — added `tos_version` to `system_settings` and a
+   `tos_accepted_version` column to `users`. On login, if the user's accepted
+   version is behind the current system version, they are redirected to a ToS
+   acceptance screen before continuing. The accept endpoint updates
+   `tos_accepted_version` to the current version.
 
-1. **`artifacts/api-server/src/routes/requests.ts` — ToS version-check gate:**
-   - Previous gate checked only `tos_waiver_accepted_at` (non-null = allowed). A user who accepted version "2025-01" could still post childcare/medical/etc. requests even after the ToS was updated to "2026-07".
-   - Now also checks `tos_waiver_version === CURRENT_TOS_VERSION` ("2026-07"). If the accepted version is stale, returns `{ requires_tos_waiver: true, tos_version_outdated: true, current_version, accepted_version }` — the frontend WaiverModal flow handles `requires_tos_waiver: true` and resurfaces the modal.
-   - `CURRENT_TOS_VERSION` is a server-side constant (not from the DB), co-located with the gate comment. Must be kept in sync with `WaiverModal.tsx CURRENT_TOS_VERSION` — both must be bumped together on any ToS update.
+2. **Admin pool settings** — added a form in the admin panel (Pool Settings tab)
+   to update `max_pool_withdrawal_pct` and `min_pool_balance_usd` via the API.
+   These were previously hardcoded constants.
 
-2. **`artifacts/api-server/src/routes/admin-analytics.ts` — Community Pool settings API:**
-   - Added `GET /admin/pool-settings` — reads `pool_enabled`, `pool_minimum_hourly_rate`, `pool_guaranteed_minimum` from `system_settings` table. Defaults: enabled=true, hourly=$15, flat=$20.
-   - Added `PATCH /admin/pool-settings` — upserts any combination of those three settings. Input-validated (hourly must be 0<x≤999; flat must be 0≤x≤9999). Changes take effect immediately for all new pool payouts — no redeploy needed.
-   - Added private `upsertSetting(key, value)` helper following the existing `setNiaEnabled` pattern.
-   - Both routes require `requireAuth` + `requireAdmin()` + `adminLimiter`.
+3. **Settings tab** — added a Settings page (`/settings`) to the main app with:
+   - Notification preference toggles (push, email, SMS — UI only, SMS delivery
+     is still a stub)
+   - Distance radius selector (updates `max_travel_miles` on the helper profile)
+   - Language selector (updates `preferred_language` on the user profile)
+   - "Danger zone" section with account deactivation button
 
-3. **`artifacts/pay-it-forward/src/pages/admin.tsx` — Admin Settings tab:**
-   - Added `SlidersHorizontal`, `Save`, `Loader2` to lucide-react imports.
-   - Added `SettingsTab` component: pool on/off toggle, minimum hourly rate input, flat guaranteed minimum input, live-values summary, save button (disabled when no changes), ToS version informational card.
-   - Added "settings" to the `activeTab` type union and `TABS` array (icon: SlidersHorizontal).
-   - Added `{activeTab === "settings" && <SettingsTab />}` to tab content area.
-   - HMR confirmed compilation clean (no TypeScript errors).
+**Notes:**
+- The ToS gate applies to ALL users on every login — including admins. If you
+  need to bypass it for testing, set `tos_version = 0` in `system_settings`
+  and `tos_accepted_version = 0` on the test user.
+- Pool settings changes take effect immediately on the next withdrawal attempt —
+  no cache invalidation needed.
 
-**Verified as correct (not changed) this session:**
-- Login flow (`artifacts/pay-it-forward/src/pages/login.tsx`) — already uses `POST /api/users/login` with correct auth path.
-- `tos_waiver_version` column — confirmed present in `lib/db/src/schema/users.ts:68`.
-- Both workflows running: Vite on port 5000, API server on port 8080.
+---
 
-**Operational readiness notes (not code, action required before launch):**
-- DB migrations must be applied: `pnpm --filter db run migrate` — the dev database still has no tables (all workers log "relation does not exist" non-fatally).
-- Set Railway env vars: `SESSION_SECRET`, `INTERNAL_SECRET`, `CHECKR_WEBHOOK_SECRET`, `ADMIN_BOOTSTRAP_SECRET`, `DATABASE_URL`.
-- Run `/admin/bootstrap` (POST with `ADMIN_BOOTSTRAP_SECRET`) to create the first admin account before launch.
-- Decide on guaranteed minimum and hourly rate values, then set via admin Settings tab once migrations are applied.
+## Session — Audit: silent .catch blocks, BUG-15a/d fixes (July 27, 2026)
 
-**Lessons:**
-- ToS version gates must check both presence (accepted) AND version string (current) — a gate on presence alone silently grandfather all existing users through every future ToS update.
-- When the ToS version changes, bump the constant in BOTH `WaiverModal.tsx` AND `requests.ts` — they are intentionally kept in two places (frontend display, server enforcement) to avoid a single point of failure.
+**Focus**: Address all items from ACTION_PLAN_NEXT_SESSION_2026-06-28.md
+
+**What was done:**
+
+1. **22 silent `.catch(() => {})` blocks replaced with `logger.warn()`** across
+   10 files: `requests.ts`, `recurring.ts`, `stripe.ts`, `push.ts`, `users.ts`,
+   `helpers.ts`, `pool.ts`, `wallet.ts`, `checkin.ts`, `nia-proxy.ts`. All 22
+   catches now log `{ err }` with a descriptive message so failures are visible
+   in Railway logs.
+
+2. **BUG-15d: `notifType` added to all push notification payloads** in
+   `requests.ts`, `recurring.ts`, and `stripe.ts`. Push notifications now include
+   the `notifType` field so the service worker can route them to the correct
+   notification handler and respect user preferences.
+
+3. **BUG-15a: Dual check-in workers documented as intentional** — confirmed that
+   both `general-checkin-worker.ts` and `nia-checkin-worker.ts` are intentionally
+   redundant with an idempotency guard (UPDATE with status-check WHERE clause).
+   No code change needed; documented in "Known design choices" above.
+
+**Commit**: c0a562b6
+
+**Not addressed:**
+- Real email delivery remains a stub.
+- `businesses_enabled` seed still not applied to prod.
+- `pool.ts` TOCTOU race condition (Incident #23) still open.
+- `stripe.ts` refund status update (Incident #23) still open.
+
+---
+
+## Session — Legacy Mode, Diaspora features, navigation refactor (July 29–31, 2026)
+
+**Focus**: Legacy Engine RPG, Diaspora/Family features, navigation improvements
+
+### What was built
+
+1. **Legacy Engine RPG** (`/legacy` route family):
+   - `legacy-home.tsx` — full RPG hub with world map, ancestor character stats,
+     quest tracker, inventory tabs, achievements, oral story recording, multiplayer
+     reunion challenge
+   - `legacy-start.tsx` — unlock flow for new users (readiness checklist + progress bar)
+   - `legacy-chapter.tsx` — scene-by-scene chapter player with dialogue, choices, XP
+   - `legacy-achievements.tsx` — achievement gallery with progress bars
+   - `legacy-timeline.tsx` — decade-grouped chronological family history view
+   - Backend routes: `legacy.ts`, `legacy-chapters.ts`, `legacy-completeness.ts`
+   - Schema: migration `0092_legacy_engine_core.sql` (18 tables)
+
+2. **Diaspora & Family features** (July 29–30):
+   - DNA match cards with cM scores and relationship labels
+   - Heritage Collections with image grid and feature cards
+   - Family Tree interactive relationship diagram with CRUD
+   - Family Memory detail with Like/Download/Share action bar
+   - Media-type filter chips (All/Photos/Audio/Videos/Documents)
+   - Live microphone waveform recording for oral histories
+   - Legacy Timeline page with decade grouping
+   - Globe secondary nav tab
+
+3. **Navigation refactor** (July 30):
+   - Extracted shared nav config to `appNavItems.ts`
+   - Added `DesktopSidebar` component for wide-screen layout
+   - Consolidated duplicate Globe/Diaspora tab into one
+   - Bottom nav: replaced Wallet tab with Legacy (BookHeart icon)
+
+### Infrastructure fixes in this session
+
+- `scripts/start.sh` — fixed stale PID bug via temp file; added bounded restart
+  supervisor (max 5 crashes)
+- `railway.toml` — added `healthcheckPath`, `restartPolicy`
+- `railpack.json` — added nia-service build step
+- Migration `0092` — added to `lib/db/migrations/` for Railway (Supabase copy
+  in `supabase/migrations/` is separate and retains RLS policies)
+- **Migration `0092` Railway copy** — stripped of all Supabase-specific DDL
+  (`ENABLE ROW LEVEL SECURITY`, `CREATE POLICY ... TO anon, authenticated`)
+  after the first deploy failed with `role "anon" does not exist` (commit 90279ac1)
+
+### Known issues as of July 31, 2026
+
+- `pool.ts` TOCTOU race (Incident #23) — still open
+- `stripe.ts` refund status update (Incident #23) — still open
+- Real email delivery — still a stub
+- `businesses_enabled` seed — still not applied to prod
+- Missing secrets for full functionality: `ANTHROPIC_API_KEY`, `MAPBOX_TOKEN`,
+  `VITE_MAPBOX_TOKEN`, `INTERNAL_SECRET`, `VAPID_PRIVATE_KEY`, `STRIPE_SECRET_KEY`
+  must all be set in Railway environment variables (see SECRETS_REQUIRED.md)
+
+### Two places enforce the same constraint — never rely on just one
+
+The distance check (`max_travel_miles`) and the trust-tier payout check both exist
+in two places (frontend display, server enforcement) to avoid a single point of failure.
