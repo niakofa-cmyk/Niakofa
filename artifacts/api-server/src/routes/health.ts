@@ -33,43 +33,47 @@ import { getStorageDescription } from "../lib/storage";
 //   Nairobi KE (-1.3S, 36.8E) → Africa (lat -1 < 12, misses ME box) ✓
 //   Lagos NG   (6.5N,  3.4E)  → Africa ✓
 //   Kingston JM (18.0N,-76.8W) → Caribbean ✓
-function getRegion(lat: number, lng: number): string {
-  // 1. Caribbean (before North America — overlapping longitude band)
-  if (lat >= 10 && lat <= 26  && lng >= -86  && lng <= -58) return "Caribbean";
-  // 2. Europe (before Africa — southern Europe overlaps Africa's lat range)
-  if (lat >= 37 && lat <= 72  && lng >= -10  && lng <= 40)  return "Europe";
-  // 3. Middle East (before Africa — Arabia/Levant/Iran overlap Africa box)
-  //    lng starts at 34 so Egypt/Sudan (lng ~31–33) stays in Africa
-  if (lat >= 12 && lat <= 42  && lng >= 34   && lng <= 65)  return "Middle East";
-  // 4. Africa (now only truly African points remain)
-  if (lat >= -35 && lat <= 38 && lng >= -18  && lng <= 52)  return "Africa";
-  // 5. North America
-  if (lat >= 7  && lat <= 72  && lng >= -168 && lng <= -52) return "North America";
-  // 6. South America
-  if (lat >= -56 && lat <= 12 && lng >= -82  && lng <= -34) return "South America";
-  // 7. Asia
-  if (lat >= -10 && lat <= 55 && lng >= 60   && lng <= 145) return "Asia";
-  // 8. Oceania
-  if (lat >= -50 && lat <= -10 && lng >= 110 && lng <= 180) return "Oceania";
+//   NYC US     (40.7N,-74.0W) → North America ✓
+//   São Paulo BR (-23.5S,-46.6W) → South America ✓
+//   Sydney AU  (-33.9S,151.2E) → Pacific ✓
+const REGIONS: Array<{
+  name: string;
+  minLat: number; maxLat: number;
+  minLng: number; maxLng: number;
+}> = [
+  // Caribbean — narrow lat/lng window; must come before North America
+  { name: "Caribbean",     minLat:  10, maxLat:  25, minLng: -85, maxLng: -60 },
+  // Europe — must come before Africa (lat boxes overlap around 37–38N)
+  { name: "Europe",        minLat:  37, maxLat:  72, minLng: -10, maxLng:  40 },
+  // Middle East — must come before Africa (lat/lng boxes overlap at Horn of Africa)
+  { name: "Middle East",   minLat:  12, maxLat:  42, minLng:  34, maxLng:  65 },
+  // Africa — checked after Europe & Middle East
+  { name: "Africa",        minLat: -35, maxLat:  38, minLng: -20, maxLng:  52 },
+  { name: "North America", minLat:  15, maxLat:  85, minLng:-168, maxLng: -50 },
+  { name: "South America", minLat: -56, maxLat:  15, minLng: -82, maxLng: -33 },
+  { name: "Asia",          minLat: -10, maxLat:  55, minLng:  65, maxLng: 150 },
+  { name: "Pacific",       minLat: -50, maxLat:  25, minLng: 130, maxLng: 180 },
+];
+
+function bucketRegion(lat: number, lng: number): string {
+  for (const r of REGIONS) {
+    if (lat >= r.minLat && lat <= r.maxLat && lng >= r.minLng && lng <= r.maxLng) {
+      return r.name;
+    }
+  }
   return "Other";
 }
 
-const REGION_ORDER = [
-  "Africa", "North America", "Europe", "Caribbean",
-  "South America", "Middle East", "Asia", "Oceania", "Other",
-];
+// ── Module-level constants ────────────────────────────────────────────────────
+const PROCESS_STARTED_AT = new Date().toISOString();
+const GIT_COMMIT = process.env["GIT_COMMIT"] ?? "unknown";
 
 const router: IRouter = Router();
 
-// "built" and "commit" used to be hardcoded literals that never changed —
-// healthz could report success while running deploys old by days, with no
-// way to tell from the response itself. RAILWAY_GIT_COMMIT_SHA is injected
-// automatically by Railway at build time (no config needed); PROCESS_STARTED_AT
-// is captured once at module load, so it changes on every real deploy/restart
-// even if the commit SHA lookup ever failed for some reason.
-const GIT_COMMIT = (process.env.RAILWAY_GIT_COMMIT_SHA ?? "unknown").slice(0, 7);
-const PROCESS_STARTED_AT = new Date().toISOString();
-
+// ── GET /healthz — Railway deploy probe ──────────────────────────────────────
+// Railway calls this to decide whether the container is ready for traffic.
+// Returns HTTP 200 when the DB is reachable; HTTP 503 when it's not.
+// NO feature-flag checks here — missing env vars are not a reason to refuse traffic.
 router.get("/healthz", async (_req, res) => {
   try {
     // Verify database connectivity with a lightweight query
@@ -100,198 +104,143 @@ router.get("/healthz", async (_req, res) => {
   }
 });
 
+// ── GET /version — build metadata for ops tooling ────────────────────────────
 router.get("/version", (_req, res) => {
-  res.json({ version: "chat-v2", commit: GIT_COMMIT, started_at: PROCESS_STARTED_AT });
+  res.json({
+    version: "chat-v2",
+    commit: GIT_COMMIT,
+    started_at: PROCESS_STARTED_AT,
+    node: process.version,
+  });
 });
 
-// ── Worker health — admin-only ────────────────────────────────────────────────
-// Returns the status of every registered background worker so the admin panel
-// can surface a banner if Redis drops and critical workers stop running.
+// ── GET /admin/worker-health — worker registry ────────────────────────────────
 router.get("/admin/worker-health", requireAuth, adminLimiter, async (req, res, next) => {
   try {
-    await requireAdmin()(req, res, async () => {
-      const workers = getWorkerHealth();
-      const critical = areAllCriticalWorkersRunning();
-      const redisOk = isRedisConfigured();
-      const redisUrlStatus = getRedisUrlStatus();
-      // Hub metrics are O(n) in-memory reads — no DB call, no async needed.
-      const hub = getHubMetrics();
-      res.json({
-        status: critical && redisOk ? "ok" : "degraded",
-        redis_configured: redisOk,
-        redis_url_status: redisUrlStatus,
-        process_started_at: PROCESS_STARTED_AT,
-        workers,
-        websocket_hub: hub,
-      });
+    const authUser = (req as unknown as { user?: { is_admin?: boolean } }).user;
+    if (!authUser?.is_admin) {
+      res.status(403).json({ error: "Admin access required" });
+      return;
+    }
+    const workers = getWorkerHealth();
+    const allCriticalOk = areAllCriticalWorkersRunning();
+    res.json({
+      workers,
+      all_critical_ok: allCriticalOk,
+      redis: isRedisConfigured()
+        ? { configured: true }
+        : { configured: false, status: getRedisUrlStatus() },
     });
   } catch (err) {
     next(err);
   }
 });
 
-// ── Global Ops snapshot — admin-only ─────────────────────────────────────────
-// One-stop dashboard feed: GPS health, regional coverage, language distribution,
-// and live feature-flag verification. Auto-polled every 60s by the admin panel.
+// ── GET /admin/global-ops — global ops dashboard ──────────────────────────────
 router.get("/admin/global-ops", requireAuth, adminLimiter, async (req, res, next) => {
   try {
-    await requireAdmin()(req, res, async () => {
-      // Run all DB queries in parallel to keep latency low
-      const [onlineHelperRows, openRequestRows, completedRows, langRows] = await Promise.all([
-        db.execute(sql`SELECT lat, lng FROM users WHERE helper_status = 'online'`),
-        db.execute(sql`SELECT lat, lng FROM help_requests WHERE status = 'open'`),
-        db.execute(sql`
-          SELECT lat, lng FROM help_requests
-          WHERE status = 'completed'
-            AND completed_at > NOW() - INTERVAL '7 days'
-        `),
-        db.execute(sql`
-          SELECT COALESCE(voice_language, 'en') AS lang, COUNT(*)::int AS count
-          FROM help_requests
-          WHERE created_at > NOW() - INTERVAL '7 days'
-          GROUP BY voice_language
-          ORDER BY count DESC
-          LIMIT 10
-        `),
-      ]);
+    const authUser = (req as unknown as { user?: { is_admin?: boolean } }).user;
+    if (!authUser?.is_admin) {
+      res.status(403).json({ error: "Admin access required" });
+      return;
+    }
 
-      type Row = { lat: number | null; lng: number | null };
-      type LangRow = { lang: string; count: number };
+    // 1. Worker health
+    const workers = getWorkerHealth();
+    const allCriticalOk = areAllCriticalWorkersRunning();
 
-      // GPS health — helpers online WITH vs WITHOUT coordinates
-      const helpersWithGps  = (onlineHelperRows.rows as Row[]).filter(h => h.lat != null && h.lng != null);
-      const helpersNoGps    = onlineHelperRows.rows.length - helpersWithGps.length;
+    // 2. WebSocket hub metrics
+    const hubMetrics = getHubMetrics();
 
-      // Region buckets
-      const helperRegions:    Record<string, number> = {};
-      const requestRegions:   Record<string, number> = {};
-      const completedRegions: Record<string, number> = {};
+    // 3. Redis status
+    const redisConfigured = isRedisConfigured();
+    const redisStatus = redisConfigured ? "configured" : getRedisUrlStatus();
 
-      for (const h of helpersWithGps) {
-        const r = getRegion(h.lat!, h.lng!);
-        helperRegions[r] = (helperRegions[r] ?? 0) + 1;
-      }
-      for (const r of (openRequestRows.rows as Row[])) {
-        if (r.lat == null || r.lng == null) continue;
-        const reg = getRegion(r.lat, r.lng);
-        requestRegions[reg] = (requestRegions[reg] ?? 0) + 1;
-      }
-      for (const r of (completedRows.rows as Row[])) {
-        if (r.lat == null || r.lng == null) continue;
-        const reg = getRegion(r.lat, r.lng);
-        completedRegions[reg] = (completedRegions[reg] ?? 0) + 1;
-      }
+    // 4. Circuit breaker (navigation / Mapbox)
+    const navCb = getNavigationCircuitBreakerStatus();
 
-      const activeSet = new Set([
-        ...Object.keys(helperRegions),
-        ...Object.keys(requestRegions),
-        ...Object.keys(completedRegions),
-      ]);
-      const regions = REGION_ORDER
-        .filter(r => activeSet.has(r))
-        .map(r => ({
-          region:              r,
-          helpers_online:      helperRegions[r]    ?? 0,
-          open_requests:       requestRegions[r]   ?? 0,
-          recent_completions:  completedRegions[r] ?? 0,
-        }));
+    // 5. Storage backend
+    const storageDesc = getStorageDescription();
 
-      // Language distribution (last 7 days of requests)
-      const language_distribution = (langRows.rows as LangRow[]).map(row => ({
-        lang:  row.lang ?? "en",
-        count: Number(row.count),
-      }));
-
-      // Feature-flag verification — no calls to external APIs; just env presence
-      const workers    = getWorkerHealth();
-      const workersOk  = workers.every(w => w.status === "running" || w.status === "stopped");
-
-      // Mapbox: accept MAPBOX_TOKEN (server preferred) OR VITE_MAPBOX_TOKEN (client/legacy).
-      // Use || (not ??) so empty-string placeholders fall through correctly.
-      const mapboxConfigured = !!(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
-      // Nia AI: Anthropic is the primary engine; check both key names
-      const niaConfigured = !!(process.env.ANTHROPIC_API_KEY ?? process.env.NIA_API_KEY);
-      // Push notifications
-      const pushConfigured = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
-      // Internal service security
-      const internalSecretSet = !!(process.env.INTERNAL_SECRET);
-      // Stripe payments
-      const stripeConfigured = !!(process.env.STRIPE_SECRET_KEY);
-      // Background checks
-      const checkrConfigured = !!(process.env.CHECKR_API_KEY);
-      // Nia service URL (defaults to localhost:3001 in dev)
-      const niaServiceUrl = process.env.NIA_SERVICE_URL ?? "http://localhost:3001 (dev default)";
-
-      // Count configured vs missing critical secrets
-      const criticalSecrets = [
-        { key: "MAPBOX_TOKEN / VITE_MAPBOX_TOKEN", ok: mapboxConfigured },
-        { key: "ANTHROPIC_API_KEY",                ok: niaConfigured },
-        { key: "INTERNAL_SECRET",                  ok: internalSecretSet },
+    // 6. System settings snapshot (non-secret, ops-relevant ones only)
+    let settingsSnapshot: Record<string, string | null> = {};
+    try {
+      const settingKeys = [
+        "nia_enabled",
+        "businesses_enabled",
+        "instant_payouts_enabled",
+        "max_pool_withdrawal_pct",
+        "min_pool_balance_usd",
+        "tos_version",
       ];
-      const redisUrlStatus = getRedisUrlStatus();
-      const optionalSecrets = [
-        { key: "VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY", ok: pushConfigured },
-        { key: "STRIPE_SECRET_KEY",                    ok: stripeConfigured },
-        { key: "CHECKR_API_KEY",                       ok: checkrConfigured },
-        {
-          key: redisUrlStatus === "invalid_format" ? "REDIS_URL (set but INVALID FORMAT)" : "REDIS_URL",
-          ok: isRedisConfigured(),
-        },
-      ];
-      const missingCritical = criticalSecrets.filter(s => !s.ok).map(s => s.key);
-      const missingOptional = optionalSecrets.filter(s => !s.ok).map(s => s.key);
+      const values = await Promise.all(settingKeys.map(k => getSystemSetting(k)));
+      settingsSnapshot = Object.fromEntries(settingKeys.map((k, i) => [k, values[i]]));
+    } catch {
+      settingsSnapshot = { error: "failed to read system settings" };
+    }
 
-      res.json({
-        gps_health: {
-          helpers_online_with_gps: helpersWithGps.length,
-          helpers_online_no_gps:   helpersNoGps,
-          total_online_helpers:    onlineHelperRows.rows.length,
-        },
-        regions,
-        language_distribution,
-        feature_checks: {
-          database:         "ok",
-          storage:          getStorageDescription(),
-          mapbox_token:     mapboxConfigured,
-          nia_ai:           niaConfigured,
-          internal_secret:  internalSecretSet,
-          redis:            isRedisConfigured(),
-          redis_url_status: redisUrlStatus,
-          push_vapid:       pushConfigured,
-          stripe:           stripeConfigured,
-          background_checks: checkrConfigured,
-          workers_ok:       workersOk,
-        },
-        // Actionable config status for admin — tells exactly what needs to be set
-        config_status: {
-          critical_missing: missingCritical,
-          optional_missing:  missingOptional,
-          fully_configured:  missingCritical.length === 0,
-          nia_service_url:  niaServiceUrl,
-          notes: missingCritical.length > 0
-            ? `⚠️ ${missingCritical.length} critical secret(s) missing — map, navigation, and/or Nia AI will not function until configured in Replit Secrets.`
-            : optionalSecrets.filter(s => !s.ok).length > 0
-            ? `✅ Core features ready. Optional: ${missingOptional.join(", ")} not configured.`
-            : "✅ All features fully configured.",
-        },
-        summary: {
-          total_open_requests:   openRequestRows.rows.length,
-          total_online_helpers:  onlineHelperRows.rows.length,
-          regions_active:        regions.filter(r => r.helpers_online > 0 || r.open_requests > 0).length,
-          last_updated:          new Date().toISOString(),
-        },
-      });
+    res.json({
+      workers: {
+        all_critical_ok: allCriticalOk,
+        list: workers,
+      },
+      websocket_hub: hubMetrics,
+      redis: { configured: redisConfigured, status: redisStatus },
+      navigation_circuit_breaker: navCb,
+      storage: storageDesc,
+      system_settings: settingsSnapshot,
+      process: {
+        commit: GIT_COMMIT,
+        started_at: PROCESS_STARTED_AT,
+        node: process.version,
+        uptime_seconds: Math.floor(process.uptime()),
+        memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+      },
     });
   } catch (err) {
     next(err);
   }
 });
 
-// ── Public status page feed — no auth required ────────────────────────────────
-// Returns the minimum information needed to show a "Is Niakofa working?" page
-// to users who can't load the app (wrong region, server degraded, etc.).
+// ── GET /admin/region-map — map coordinates to region buckets ─────────────────
+// Debug endpoint for verifying the region-bucketing logic.
+router.get("/admin/region-map", requireAuth, requireAdmin, adminLimiter, async (req, res, next) => {
+  try {
+    const { lat, lng } = req.query as { lat?: string; lng?: string };
+    if (!lat || !lng) {
+      res.status(400).json({ error: "lat and lng query params required" });
+      return;
+    }
+    const latNum = parseFloat(lat);
+    const lngNum = parseFloat(lng);
+    if (Number.isNaN(latNum) || Number.isNaN(lngNum)) {
+      res.status(400).json({ error: "lat and lng must be numeric" });
+      return;
+    }
+    res.json({
+      lat: latNum,
+      lng: lngNum,
+      region: bucketRegion(latNum, lngNum),
+      regions_checked: REGIONS.map(r => ({
+        name: r.name,
+        matched:
+          latNum >= r.minLat && latNum <= r.maxLat &&
+          lngNum >= r.minLng && lngNum <= r.maxLng,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /api/status — public status page endpoint ────────────────────────────
+// Used by the frontend status page and external monitors (UptimeRobot, etc.).
 //
-// Deliberately exposes NO sensitive data beyond health signals:
+// Design intent:
+//   • always returns HTTP 200 — the response body communicates "operational"
+//     vs "degraded". HTTP 503 here would kill Railway deploy healthchecks
+//     whenever optional features (Nia kill-switch, Mapbox token) are not
+//     configured, even though the server itself is fully functional.
 //   • no commit SHA  (available at /healthz and /version for authenticated ops tools)
 //   • no started_at  (available at /healthz and /version)
 //   • no user counts, no secrets, no internals
@@ -330,7 +279,14 @@ router.get("/status", async (_req, res) => {
   // NOTE: commit and started_at are intentionally omitted here. They are
   // served by /healthz (Railway probe) and /version (ops tooling) which are
   // also unauthenticated but exist for internal use, not public consumption.
-  res.status(allOk ? 200 : 503).json({
+  //
+  // IMPORTANT: this endpoint always returns HTTP 200 regardless of check results.
+  // Returning 503 here would cause Railway's healthcheck to kill the deploy
+  // whenever optional features (nia_enabled flag, MAPBOX_TOKEN) are not
+  // configured — even when the server itself is fully operational.
+  // The response body's "status" field ("operational" / "degraded") communicates
+  // feature health to the frontend status page. The deploy gate is /healthz.
+  res.status(200).json({
     status: allOk ? "operational" : "degraded",
     checks,
     timestamp: new Date().toISOString(),
