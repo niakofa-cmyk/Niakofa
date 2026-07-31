@@ -955,11 +955,74 @@ export async function updateAchievementProgress(
 
 // ── World Persistence ───────────────────────────────────────────────────────
 
+/**
+ * Wires the (previously dead) knowledge-hash fingerprint into the world lifecycle.
+ *
+ * - Computes a hash over id+updated_at for every family knowledge source.
+ * - Reuses the latest `family_knowledge_versions` row if the hash is unchanged.
+ * - Only inserts a new version row when the family's actual knowledge changed
+ *   (not just counts), so trivial no-op saves don't spam the version table.
+ */
+export async function syncKnowledgeVersion(familyId: string): Promise<{
+  id: string
+  versionNumber: number
+  hash: string
+  changed: boolean
+}> {
+  const hash = await computeKnowledgeHash(familyId)
+
+  const { data: latest } = await supabase
+    .from('family_knowledge_versions')
+    .select('id, version_number, knowledge_hash')
+    .eq('family_id', familyId)
+    .order('version_number', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (latest && latest.knowledge_hash === hash) {
+    return { id: latest.id, versionNumber: latest.version_number, hash, changed: false }
+  }
+
+  const nextVersion = (latest?.version_number || 0) + 1
+
+  const [members, memories, events, places, interviews, artifacts] = await Promise.all([
+    supabase.from('family_members').select('id', { count: 'exact', head: true }).eq('family_id', familyId),
+    supabase.from('family_memories').select('id', { count: 'exact', head: true }).eq('family_id', familyId),
+    supabase.from('family_events').select('id', { count: 'exact', head: true }).eq('family_id', familyId),
+    supabase.from('family_places').select('id', { count: 'exact', head: true }).eq('family_id', familyId),
+    supabase.from('family_interviews').select('id', { count: 'exact', head: true }).eq('family_id', familyId),
+    supabase.from('family_artifacts').select('id', { count: 'exact', head: true }).eq('family_id', familyId),
+  ])
+
+  const { data: inserted } = await supabase
+    .from('family_knowledge_versions')
+    .insert({
+      family_id: familyId,
+      version_number: nextVersion,
+      knowledge_hash: hash,
+      member_count: members.count || 0,
+      memory_count: memories.count || 0,
+      interview_count: interviews.count || 0,
+      place_count: places.count || 0,
+      event_count: events.count || 0,
+      artifact_count: artifacts.count || 0,
+      change_description: latest
+        ? `Knowledge version ${nextVersion} (changed since v${latest.version_number})`
+        : `Knowledge version ${nextVersion} (initial)`,
+    })
+    .select('id')
+    .maybeSingle()
+
+  return { id: inserted?.id ?? '', versionNumber: nextVersion, hash, changed: true }
+}
+
 export async function createOrUpdateWorld(
   familyId: string,
   ancestor: FamilyMember,
   chapters: GeneratedChapter[],
 ): Promise<LegacyWorld | null> {
+  const knowledgeVersion = await syncKnowledgeVersion(familyId)
+
   const { data: existingWorld } = await supabase
     .from('legacy_worlds')
     .select('*')
@@ -967,11 +1030,14 @@ export async function createOrUpdateWorld(
     .eq('ancestor_id', ancestor.id)
     .maybeSingle()
 
+  const isStale = !existingWorld || existingWorld.knowledge_version_id !== knowledgeVersion.id
+
   if (existingWorld) {
     const { data: updated } = await supabase
       .from('legacy_worlds')
       .update({
         status: 'ready',
+        knowledge_version_id: knowledgeVersion.id,
         chapter_count: chapters.length,
         ancestor_name: ancestor.display_name,
         ancestor_birth_year: ancestor.birth_year,
@@ -983,7 +1049,11 @@ export async function createOrUpdateWorld(
       .maybeSingle()
 
     if (updated) {
-      await persistChapters(updated.id, familyId, chapters)
+      if (isStale) {
+        await regenerateChapters(updated.id, familyId, chapters, knowledgeVersion)
+      } else {
+        await persistChapters(updated.id, familyId, chapters)
+      }
       return updated
     }
     return existingWorld
@@ -994,6 +1064,7 @@ export async function createOrUpdateWorld(
     .insert({
       family_id: familyId,
       status: 'ready',
+      knowledge_version_id: knowledgeVersion.id,
       ancestor_id: ancestor.id,
       ancestor_name: ancestor.display_name,
       ancestor_birth_year: ancestor.birth_year,
@@ -1005,10 +1076,61 @@ export async function createOrUpdateWorld(
 
   if (world) {
     await persistChapters(world.id, familyId, chapters)
+    await supabase.from('legacy_world_versions').insert({
+      world_id: world.id,
+      knowledge_version_id: knowledgeVersion.id || null,
+      version_label: `v${knowledgeVersion.versionNumber}`,
+      changes: { reason: 'initial_world_creation', chapter_count: chapters.length },
+    })
     return world
   }
 
   return null
+}
+
+/**
+ * Regenerates a stale world's chapters when the family knowledge fingerprint
+ * has changed. Chapters the player has already COMPLETED are never deleted or
+ * rewritten — verified play history stays immutable (mirrors the "verified
+ * family history is immutable" rule for the narrative content itself). Only
+ * locked/unlocked (not-yet-played) chapters are regenerated from fresh data.
+ */
+async function regenerateChapters(
+  worldId: string,
+  familyId: string,
+  chapters: GeneratedChapter[],
+  knowledgeVersion: { id: string; versionNumber: number },
+): Promise<void> {
+  const { data: existingChapters } = await supabase
+    .from('legacy_chapters')
+    .select('id, chapter_number, status')
+    .eq('world_id', worldId)
+
+  const completedNumbers = new Set(
+    (existingChapters || []).filter((c: { status: string }) => c.status === 'completed').map((c: { chapter_number: number }) => c.chapter_number),
+  )
+
+  const chapterIdsToReplace = (existingChapters || [])
+    .filter((c: { chapter_number: number }) => !completedNumbers.has(c.chapter_number))
+    .map((c: { id: string }) => c.id)
+
+  if (chapterIdsToReplace.length > 0) {
+    await supabase.from('legacy_chapters').delete().in('id', chapterIdsToReplace)
+  }
+
+  const chaptersToInsert = chapters.filter(c => !completedNumbers.has(c.chapter_number))
+  await insertChapters(worldId, familyId, chaptersToInsert)
+
+  await supabase.from('legacy_world_versions').insert({
+    world_id: worldId,
+    knowledge_version_id: knowledgeVersion.id || null,
+    version_label: `v${knowledgeVersion.versionNumber}`,
+    changes: {
+      reason: 'knowledge_updated',
+      regenerated_chapters: chaptersToInsert.map(c => c.chapter_number),
+      preserved_completed_chapters: Array.from(completedNumbers),
+    },
+  })
 }
 
 async function persistChapters(
@@ -1023,6 +1145,14 @@ async function persistChapters(
 
   if (existingChapters && existingChapters.length > 0) return
 
+  await insertChapters(worldId, familyId, chapters)
+}
+
+async function insertChapters(
+  worldId: string,
+  familyId: string,
+  chapters: GeneratedChapter[],
+): Promise<void> {
   for (const chapter of chapters) {
     const { data: chapterRow } = await supabase
       .from('legacy_chapters')
@@ -1203,40 +1333,4 @@ export async function computeKnowledgeHash(familyId: string): Promise<string> {
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-export async function recordKnowledgeVersion(
-  familyId: string,
-  hash: string,
-  changeDescription?: string,
-): Promise<void> {
-  const { data: latest } = await supabase
-    .from('family_knowledge_versions')
-    .select('version_number')
-    .eq('family_id', familyId)
-    .order('version_number', { ascending: false })
-    .limit(1)
-    .maybeSingle()
 
-  const nextVersion = (latest?.version_number || 0) + 1
-
-  const [members, memories, events, places, interviews, artifacts] = await Promise.all([
-    supabase.from('family_members').select('id', { count: 'exact', head: true }).eq('family_id', familyId),
-    supabase.from('family_memories').select('id', { count: 'exact', head: true }).eq('family_id', familyId),
-    supabase.from('family_events').select('id', { count: 'exact', head: true }).eq('family_id', familyId),
-    supabase.from('family_places').select('id', { count: 'exact', head: true }).eq('family_id', familyId),
-    supabase.from('family_interviews').select('id', { count: 'exact', head: true }).eq('family_id', familyId),
-    supabase.from('family_artifacts').select('id', { count: 'exact', head: true }).eq('family_id', familyId),
-  ])
-
-  await supabase.from('family_knowledge_versions').insert({
-    family_id: familyId,
-    version_number: nextVersion,
-    knowledge_hash: hash,
-    member_count: members.count || 0,
-    memory_count: memories.count || 0,
-    interview_count: interviews.count || 0,
-    place_count: places.count || 0,
-    event_count: events.count || 0,
-    artifact_count: artifacts.count || 0,
-    change_description: changeDescription || `Knowledge version ${nextVersion}`,
-  })
-}
