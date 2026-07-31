@@ -64,7 +64,8 @@ const HeritageCollectionsPage = lazy(() => import("@/pages/heritage-collections"
 const ResearchCenterPage    = lazy(() => import("@/pages/research-center"));
 const PreserveCulturePage   = lazy(() => import("@/pages/preserve-culture"));
 const LegacyTimelinePage    = lazy(() => import("@/pages/legacy-timeline"));
-const LegacyModePage        = lazy(() => import("@/pages/legacy-mode"));
+const LegacyHomePage        = lazy(() => import("@/pages/legacy-home"));
+const LegacyAchievementsPage = lazy(() => import("@/pages/legacy-achievements"));
 
 // Minimal spinner shown while a lazy chunk is loading.
 // Kept intentionally simple — just a centred, low-opacity dot so the
@@ -322,7 +323,8 @@ function AppShell() {
             <Route path="/diaspora/research" component={ResearchCenterPage} />
             <Route path="/diaspora/preserve" component={PreserveCulturePage} />
             <Route path="/diaspora/timeline" component={LegacyTimelinePage} />
-            <Route path="/legacy" component={LegacyModePage} />
+            <Route path="/legacy/achievements" component={LegacyAchievementsPage} />
+            <Route path="/legacy" component={LegacyHomePage} />
             <Route path="/diaspora" component={DiasporaDashboardPage} />
             <Route component={NotFound} />
           </Switch>

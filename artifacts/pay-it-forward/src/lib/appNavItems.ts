@@ -32,7 +32,10 @@ export function getAppNavItems(opts: { openNotifications: () => void }): AppNavI
     { key: "civic", label: "Civic Engagement", icon: Landmark, href: "/civic-needs",
       isActive: (l) => l.startsWith("/civic-needs") || l.startsWith("/civic-portal") },
     { key: "diaspora", label: "Diaspora", icon: Globe2, href: "/diaspora",
-      isActive: (l) => l.startsWith("/diaspora") || l.startsWith("/family") },
+      // Active for all /diaspora routes EXCEPT /diaspora/timeline (Legacy owns that)
+      isActive: (l) =>
+        (l.startsWith("/diaspora") && !l.startsWith("/diaspora/timeline")) ||
+        l.startsWith("/family") },
     { key: "legacy", label: "Legacy", icon: History, href: "/legacy",
       isActive: (l) => l.startsWith("/legacy") || l.startsWith("/diaspora/timeline") },
     { key: "circles", label: "Circles", icon: Radio, href: "/audio-circles",

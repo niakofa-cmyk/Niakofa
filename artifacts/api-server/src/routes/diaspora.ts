@@ -26,10 +26,11 @@ import {
   db,
   familyMembersTable,
   familyMemoriesTable,
+  familyMemoryTagsTable,
   familyInterviewsTable,
   familyTreeRelationsTable,
 } from "@workspace/db";
-import { eq, and, desc, sql, inArray, or } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, or, like } from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../lib/logger";
 
@@ -472,21 +473,111 @@ router.get("/family/:id/timeline", requireAuth, generalApiLimiter, async (req, r
     ))
     .orderBy(familyMemoriesTable.memory_date);
 
+    // Fetch explicit event_type tags for these memories
+    const memoryIds = memories.map(m => m.id);
+    const tagMap: Record<number, string> = {};
+    if (memoryIds.length > 0) {
+      const tags = await db.select({
+        memory_id: familyMemoryTagsTable.memory_id,
+        tag:       familyMemoryTagsTable.tag,
+      })
+      .from(familyMemoryTagsTable)
+      .where(and(
+        inArray(familyMemoryTagsTable.memory_id, memoryIds),
+        like(familyMemoryTagsTable.tag, "event_type:%"),
+      ));
+      for (const t of tags) {
+        tagMap[t.memory_id] = t.tag.replace("event_type:", "");
+      }
+    }
+
     const events = memories.map(m => ({
-      id: m.id,
-      year: m.memory_date ? new Date(m.memory_date).getFullYear() : null,
-      date: m.memory_date,
-      title: m.title ?? "Family memory",
+      id:          m.id,
+      year:        m.memory_date ? new Date(m.memory_date).getFullYear() : null,
+      date:        m.memory_date,
+      title:       m.title ?? "Family memory",
       description: m.description,
-      location: m.location_label,
-      type: m.source,
-      memory_id: m.id,
+      location:    m.location_label,
+      type:        m.source,
+      event_type:  tagMap[m.id] ?? null,
+      memory_id:   m.id,
+      family_id:   familyId,
     }));
 
     return res.json({ events });
   } catch (err) {
     logger.error({ err }, "family timeline error");
     return res.status(500).json({ error: "Failed to load timeline" });
+  }
+});
+
+// ─── Add Family Timeline Event ─────────────────────────────────────────────
+router.post("/family/:id/timeline", requireAuth, generalApiLimiter, async (req, res) => {
+  try {
+    const familyId = Number(req.params.id);
+    const userId   = req.authenticatedUserId!;
+    const { title, description, year, location, event_type } = req.body;
+
+    if (!title || !year) {
+      return res.status(400).json({ error: "title and year are required" });
+    }
+    const yearNum = Number(year);
+    if (isNaN(yearNum) || yearNum < 1600 || yearNum > new Date().getFullYear()) {
+      return res.status(400).json({ error: "year must be between 1600 and current year" });
+    }
+
+    // Verify the user is an active member of this family
+    const membership = await db
+      .select({ role: familyMembersTable.role })
+      .from(familyMembersTable)
+      .where(and(
+        eq(familyMembersTable.family_id, familyId),
+        eq(familyMembersTable.user_id, userId),
+        eq(familyMembersTable.status, "active"),
+      ))
+      .limit(1);
+
+    if (!membership.length) return res.status(403).json({ error: "Not a member of this family" });
+
+    const memoryDate = new Date(`${yearNum}-01-01T00:00:00Z`);
+
+    const [memory] = await db.insert(familyMemoriesTable).values({
+      family_id:             familyId,
+      author_id:             userId,
+      title:                 String(title).trim(),
+      description:           description ? String(description).trim() : null,
+      memory_date:           memoryDate,
+      memory_date_precision: "year",
+      location_label:        location ? String(location).trim() : null,
+      source:                "import",
+      visibility:             "family",
+    }).returning();
+
+    // Store the event_type as a tag for future filtering
+    if (event_type && typeof event_type === "string" && event_type !== "upload") {
+      await db.insert(familyMemoryTagsTable).values({
+        memory_id: memory.id,
+        tag:       `event_type:${event_type}`,
+      });
+    }
+
+    return res.status(201).json({
+      event: {
+        id:          memory.id,
+        year:        yearNum,
+        date:        memoryDate.toISOString(),
+        title:       memory.title,
+        description: memory.description,
+        location:    memory.location_label,
+        type:        memory.source,
+        event_type:  event_type ?? null,
+        memory_id:   memory.id,
+        family_id:   familyId,
+      },
+    });
+  } catch (err) {
+    logger.error({ err }, "add timeline event error");
+    return res.status(500).json({ error: "Failed to add timeline event" });
   }
 });
 
