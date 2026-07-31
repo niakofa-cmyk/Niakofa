@@ -22,7 +22,6 @@
 import { Router } from "express";
 import {
   db,
-  familiesTable,
   familyMembersTable,
   familyMemberConsentTable,
 } from "@workspace/db";

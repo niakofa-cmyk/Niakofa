@@ -127,6 +127,8 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
       role:      familyMembersTable.role,
       relation:  familyMembersTable.relation_note,
       updated:   familyMembersTable.created_at,
+      is_living: familyMembersTable.is_living,
+      user_id:   familyMembersTable.user_id,
     })
     .from(familyMembersTable)
     .where(
@@ -319,7 +321,7 @@ async function generateAiQuests(r: FamilyReservoir): Promise<AiQuest[]> {
   const ancestorList = r.ancestorProfiles.length
     ? r.ancestorProfiles
         .slice(0, 8)
-        .map(a => `${a.name} (${a.role}${a.relation ? `, ${a.relation}` : "})`)
+        .map(a => `${a.name} (${a.role}${a.relation ? `, ${a.relation}` : ""})`)
         .join("; ")
     : "No ancestors added yet";
 
@@ -559,6 +561,8 @@ async function selectAncestors(familyId: number): Promise<AncestorCandidate[]> {
       name: familyMembersTable.display_name,
       role: familyMembersTable.role,
       relation: familyMembersTable.relation_note,
+      is_living: familyMembersTable.is_living,
+      user_id: familyMembersTable.user_id,
     })
     .from(familyMembersTable)
     .where(

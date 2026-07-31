@@ -90,6 +90,8 @@ async function generateChapterSeeds(familyId: number): Promise<ChapterSeed[]> {
       name: familyMembersTable.display_name,
       role: familyMembersTable.role,
       relation: familyMembersTable.relation_note,
+      is_living: familyMembersTable.is_living,
+      user_id: familyMembersTable.user_id,
     })
     .from(familyMembersTable)
     .where(
