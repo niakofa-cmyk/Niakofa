@@ -651,6 +651,7 @@ export default function LegacyHomePage() {
                       <StatBar label="Health"     value={stats.health}     color="bg-rose-500" />
                       <StatBar label="Knowledge"  value={stats.knowledge}  color="bg-blue-500" />
                       <StatBar label="Reputation" value={stats.reputation} color="bg-amber-500" />
+                      <StatBar label="Faith"      value={stats.faith ?? Math.min(100, memories.filter(m => m.source === "upload").length * 6 + 15)}      color="bg-purple-500" />
                     </div>
                   </div>
                 </div>
@@ -708,6 +709,123 @@ export default function LegacyHomePage() {
                   );
                 })}
               </div>
+            </div>
+          </div>
+
+          {/* ── Story Chapters ── */}
+          <div className="px-4 mb-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Story Chapters</h2>
+              <button onClick={() => navigate("/diaspora/timeline")} className="text-xs text-amber-600 flex items-center gap-1">
+                Full Timeline <ChevronRight className="w-3 h-3" />
+              </button>
+            </div>
+            <div className="overflow-x-auto pb-2">
+              <div className="flex gap-3 min-w-max px-1">
+                {[
+                  { id: 1, label: "Origins",       decade: "1870s", unlocked: true,  events: 2 },
+                  { id: 2, label: "New World",     decade: "1900s", unlocked: true,  events: 1 },
+                  { id: 3, label: "Great Migration", decade: "1920s", unlocked: true,  events: 1 },
+                  { id: 4, label: "Faith & Family", decade: "1950s", unlocked: true,  events: 1 },
+                  { id: 5, label: "Modern Era",    decade: "2020s", unlocked: false, events: 0 },
+                ].map((ch, i) => (
+                  <button
+                    key={ch.id}
+                    onClick={() => ch.unlocked && navigate("/diaspora/timeline")}
+                    className={`flex flex-col gap-2 p-3 rounded-xl border transition-all active:opacity-70 ${
+                      ch.unlocked
+                        ? "bg-[#2A1A0F] border-amber-900/30"
+                        : "bg-[#1A1008] border-amber-950/40 opacity-50"
+                    }`}
+                    style={{ minWidth: 130 }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-amber-500 uppercase tracking-wide">{ch.decade}</span>
+                      {ch.unlocked
+                        ? <BookOpen className="w-3.5 h-3.5 text-amber-500" />
+                        : <Lock className="w-3.5 h-3.5 text-amber-900" />}
+                    </div>
+                    <p className={`text-xs font-bold ${ch.unlocked ? "text-amber-200" : "text-amber-900"}`}>
+                      {ch.label}
+                    </p>
+                    <p className="text-xs text-amber-700">
+                      {ch.unlocked ? `${ch.events} events` : "Locked"}
+                    </p>
+                    {ch.unlocked && (
+                      <div className="h-1 rounded-full bg-amber-900/40 overflow-hidden">
+                        <div className="h-full bg-amber-500 rounded-full" style={{ width: `${Math.min(100, ch.events * 25)}%` }} />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Today's Journey (Dynamic Start) ── */}
+          {ancestor && (
+            <div className="px-4 mb-5">
+              <div className="bg-gradient-to-br from-amber-900/30 to-[#2A1A0F] border border-amber-700/30 rounded-2xl p-4 shadow-lg">
+                <div className="flex items-center gap-2 mb-3">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <h2 className="text-xs font-black text-amber-300 uppercase tracking-widest">Today's Journey</h2>
+                </div>
+                <p className="text-sm font-bold text-amber-100 mb-1">You awaken as {memberFirstName(ancestor)}</p>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div className="bg-[#3A2A1A] rounded-lg px-3 py-2">
+                    <p className="text-xs text-amber-700">Year</p>
+                    <p className="text-sm font-bold text-amber-300">{ancestor.birth_year ?? "Unknown"}</p>
+                  </div>
+                  <div className="bg-[#3A2A1A] rounded-lg px-3 py-2">
+                    <p className="text-xs text-amber-700">Location</p>
+                    <p className="text-sm font-bold text-amber-300">{ancestor.location ?? "Unknown"}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-amber-600 mb-3">Today's Goal: Preserve a family memory</p>
+                <button
+                  onClick={() => navigate("/diaspora/tree")}
+                  className="w-full bg-amber-500/15 border border-amber-600/30 text-amber-300 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70 flex items-center justify-center gap-2"
+                >
+                  <Play className="w-3.5 h-3.5" /> Begin Today's Journey
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── AI Dialogue Panel ── */}
+          <div className="px-4 mb-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Family Dialogue</h2>
+                <div className="flex items-center gap-1 bg-purple-900/30 border border-purple-700/30 rounded-full px-2 py-0.5">
+                  <Sparkles className="w-3 h-3 text-purple-400" />
+                  <span className="text-xs text-purple-400 font-medium">Nia AI</span>
+                </div>
+              </div>
+            </div>
+            <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4">
+              <div className="flex items-start gap-3 mb-3">
+                <div className="w-10 h-10 rounded-full bg-amber-900/40 border border-amber-700/30 flex items-center justify-center flex-shrink-0">
+                  <Users className="w-5 h-5 text-amber-500" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs font-bold text-amber-200">Grandmother</p>
+                  <p className="text-xs text-amber-600 mt-1 leading-relaxed italic">
+                    "Your father left this village when he was young. Would you like to hear why?"
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button className="flex-1 bg-amber-500/15 border border-amber-600/30 text-amber-300 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70">
+                  Yes, tell me
+                </button>
+                <button className="flex-1 bg-[#3A2A1A] border border-amber-900/30 text-amber-700 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70">
+                  Later
+                </button>
+              </div>
+              <p className="text-xs text-amber-700 mt-2 text-center">
+                Dialogue generated by Nia from your family's stories
+              </p>
             </div>
           </div>
 
