@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, boolean, pgEnum, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 
 // ─── Diaspora Platform: Family Spaces ───────────────────────────────────────
@@ -55,6 +55,10 @@ export const familyMembersTable = pgTable("family_members", {
   status:        familyMemberStatusEnum("status").notNull().default("invited"),
   invited_by:    integer("invited_by").references(() => usersTable.id, { onDelete: "set null" }),
   joined_at:     timestamp("joined_at", { withTimezone: true }),
+  // Distinguishes living members (who need self-granted storytelling consent)
+  // from deceased ancestors (eligible by default unless a curator declines).
+  // Default true is privacy-safe: existing rows require an explicit grant.
+  is_living:     boolean("is_living").notNull().default(true),
   created_at:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   // A registered user can only have one membership row per family. Invited
