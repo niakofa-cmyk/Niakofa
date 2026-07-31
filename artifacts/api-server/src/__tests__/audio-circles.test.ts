@@ -50,6 +50,9 @@ jest.unstable_mockModule("@workspace/db", () => {
     cityNeighborhoodsTable: { id: "id", name: "name", emoji: "emoji" },
     usersTable: { id: "id", name: "name", avatar_url: "avatar_url", is_admin: "is_admin", approval_status: "approval_status" },
     audioCircleFollowsTable: { id: "id", user_id: "user_id", circle_id: "circle_id" },
+    audioCircleMessagesTable: {
+      id: "id", session_id: "session_id", sender_id: "sender_id", body: "body", sent_at: "sent_at",
+    },
     circleBlocksTable: { id: "id", host_id: "host_id", blocked_user_id: "blocked_user_id", session_id: "session_id" },
     circleReportsTable: { id: "id", session_id: "session_id", reporter_id: "reporter_id", reported_id: "reported_id", reason: "reason" },
   };
@@ -715,9 +718,12 @@ describe("Audio Circles — ephemeral chat", () => {
 
   it("accepts exactly 500 chars and broadcasts circle_chat_message (200)", async () => {
     (db.limit as jest.Mock)
-      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }]))       // session
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live", chat_enabled: true }]))       // session
       .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "listener" }]))     // participant
       .mockImplementationOnce(() => Promise.resolve([{ name: "Alice", avatar_url: null }])); // user profile
+    (db.returning as jest.Mock).mockImplementationOnce(() =>
+      Promise.resolve([{ id: 99, sent_at: new Date("2026-01-01T00:00:00Z") }])
+    ); // insert(...).returning(...)
     (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
       Promise.resolve([{ user_id: 42, role: "listener" }]).then(resolve, reject)
     ); // getActiveParticipants
@@ -726,14 +732,17 @@ describe("Audio Circles — ephemeral chat", () => {
       .set("Authorization", bearerToken(42))
       .send({ body: "x".repeat(500) });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true });
+    expect(res.body).toEqual({ ok: true, id: "db-99" });
   });
 
   it("accepts a normal message from a speaker and broadcasts (200)", async () => {
     (db.limit as jest.Mock)
-      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live" }]))
+      .mockImplementationOnce(() => Promise.resolve([{ id: 1, status: "live", chat_enabled: true }]))
       .mockImplementationOnce(() => Promise.resolve([{ id: 5, role: "speaker" }]))
       .mockImplementationOnce(() => Promise.resolve([{ name: "Bob", avatar_url: "https://x/b.jpg" }]));
+    (db.returning as jest.Mock).mockImplementationOnce(() =>
+      Promise.resolve([{ id: 100, sent_at: new Date("2026-01-01T00:00:00Z") }])
+    ); // insert(...).returning(...)
     (db.then as jest.Mock).mockImplementationOnce((resolve: any, reject: any) =>
       Promise.resolve([
         { user_id: 42, role: "speaker" },
@@ -745,7 +754,7 @@ describe("Audio Circles — ephemeral chat", () => {
       .set("Authorization", bearerToken(42))
       .send({ body: "Nice to meet everyone!" });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true });
+    expect(res.body).toEqual({ ok: true, id: "db-100" });
   });
 
   it("404s when the session is not live", async () => {

@@ -8,10 +8,16 @@
  *   4. Error responses follow the standardized { error, code, requestId } shape
  *   5. Nia disabled state returns NIA_DISABLED code
  */
-import { describe, it, expect, jest, beforeEach } from "@jest/globals";
+import { describe, it, expect, jest, beforeEach, beforeAll } from "@jest/globals";
 
-// Mock the DB module before importing anything that depends on it
-jest.mock("@workspace/db", () => ({
+// Mock the DB module before importing anything that depends on it.
+// NOTE: this suite runs under Jest's native ESM support
+// (--experimental-vm-modules). Under native ESM, `jest.mock()` does NOT
+// intercept dynamic `await import()` calls — only `jest.unstable_mockModule()`
+// does (see lifecycle.test.ts for the fuller rationale). Everything that
+// touches "@workspace/db" must be imported dynamically, after the mock is
+// registered.
+jest.unstable_mockModule("@workspace/db", () => ({
   db: {
     select: jest.fn(() => ({
       from: jest.fn(() => ({
@@ -22,22 +28,27 @@ jest.mock("@workspace/db", () => ({
     })),
   },
   systemSettingsTable: { key: "key", value: "value" },
+  usersTable: { id: "id", name: "name", avatar_url: "avatar_url", is_admin: "is_admin", approval_status: "approval_status" },
 }));
 
-jest.mock("drizzle-orm", () => ({
+jest.unstable_mockModule("drizzle-orm", () => ({
   eq: jest.fn(),
 }));
 
-jest.mock("../lib/ws-hub", () => ({
+jest.unstable_mockModule("../lib/ws-hub.js", () => ({
   sendNiaEventToUser: jest.fn(),
   broadcastNiaEvent: jest.fn(),
 }));
 
-jest.mock("../lib/logger", () => ({
+jest.unstable_mockModule("../lib/logger.js", () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-import { isNiaEnabled } from "../routes/nia-proxy";
+let isNiaEnabled: () => Promise<boolean>;
+
+beforeAll(async () => {
+  ({ isNiaEnabled } = await import("../routes/nia-proxy.js"));
+});
 
 describe("App/AI Boundary: Nia Proxy", () => {
   beforeEach(() => {
@@ -46,6 +57,14 @@ describe("App/AI Boundary: Nia Proxy", () => {
 
   describe("isNiaEnabled (DB-backed kill switch)", () => {
     it("returns false when DB value is 'false'", async () => {
+      const { db } = await import("@workspace/db");
+      (db.select as jest.Mock).mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            limit: () => Promise.resolve([{ value: "false" }]),
+          }),
+        }),
+      });
       const result = await isNiaEnabled();
       expect(result).toBe(false);
     });
