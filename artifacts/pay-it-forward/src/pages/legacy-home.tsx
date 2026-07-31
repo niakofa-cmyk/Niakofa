@@ -22,7 +22,7 @@ import {
   BookHeart, Scroll, Trophy, Map, Users, Mic,
   Star, Play, CheckCircle2, Clock, Loader2,
   ChevronRight, Plus, Globe2, Heart,
-  Camera, FileText, TreePine, Crown, Flame,
+  Camera, FileText, Crown, Flame,
   Sparkles, Shield, Zap, Target,
   Volume2, BookOpen, Lock,
   RefreshCw, ChevronLeft,

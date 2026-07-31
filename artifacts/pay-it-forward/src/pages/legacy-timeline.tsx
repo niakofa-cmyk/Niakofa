@@ -15,12 +15,11 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { DiasporaSubNav } from "@/components/DiasporaSubNav";
 import {
   ArrowLeft, History, Calendar, MapPin, Loader2, ChevronRight,
   BookHeart, Mic, FileText, Shield, GraduationCap, Users, Camera,
   Building2, ArrowRight, Plus, X, Search, Sparkles, Star,
-  User, TreePine, Scroll,
+  User, Scroll,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -343,8 +342,6 @@ export default function LegacyTimelinePage() {
           </button>
         </div>
       </div>
-
-      <DiasporaSubNav />
 
       {/* ── Nia AI panel ───────────────────────────────────────────────── */}
       <div className="bg-gradient-to-r from-primary/5 to-transparent border-b border-border">

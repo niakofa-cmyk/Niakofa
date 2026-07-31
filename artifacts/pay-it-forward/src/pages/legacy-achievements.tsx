@@ -11,7 +11,7 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowLeft, Trophy, BookOpen, Mic, Users, Camera, MapPin,
-  Compass, Shield, Star, CheckCircle2, Lock, ChevronRight,
+  Compass, CheckCircle2, Lock, ChevronRight,
   Sparkles, TreePine, Archive, GraduationCap, Heart, Loader2,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
