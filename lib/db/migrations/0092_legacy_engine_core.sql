@@ -55,61 +55,31 @@ CREATE TABLE IF NOT EXISTS family_members (
   photo_url text,
   bio text,
   storytelling_consent boolean DEFAULT false,
+  is_living boolean DEFAULT true,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
-
-ALTER TABLE family_members ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_family_members" ON family_members;
-CREATE POLICY "anon_select_family_members" ON family_members FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_family_members" ON family_members;
-CREATE POLICY "anon_insert_family_members" ON family_members FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_family_members" ON family_members;
-CREATE POLICY "anon_update_family_members" ON family_members FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_family_members" ON family_members;
-CREATE POLICY "anon_delete_family_members" ON family_members FOR DELETE
-  TO anon, authenticated USING (true);
 
 -- ── Family Memories ──────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS family_memories (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id uuid DEFAULT gen_random_uuid(),
-  member_id uuid REFERENCES family_members(id) ON DELETE SET NULL,
-  title text,
-  description text NOT NULL,
+  title text NOT NULL,
+  description text,
   memory_type text DEFAULT 'story',
+  media_url text,
+  media_type text,
   tags text[] DEFAULT '{}',
+  linked_members uuid[] DEFAULT '{}',
+  location text,
+  memory_year text,
+  is_private boolean DEFAULT false,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
 
-ALTER TABLE family_memories ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_family_memories" ON family_memories;
-CREATE POLICY "anon_select_family_memories" ON family_memories FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_family_memories" ON family_memories;
-CREATE POLICY "anon_insert_family_memories" ON family_memories FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_family_memories" ON family_memories;
-CREATE POLICY "anon_update_family_memories" ON family_memories FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_family_memories" ON family_memories;
-CREATE POLICY "anon_delete_family_memories" ON family_memories FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Family Places ────────────────────────────────────────────────────────────
+-- ── Family Places ─────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS family_places (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -117,531 +87,223 @@ CREATE TABLE IF NOT EXISTS family_places (
   label text NOT NULL,
   country text,
   region text,
-  latitude float8,
-  longitude float8,
+  lat double precision,
+  lng double precision,
   historical_context text,
+  linked_members uuid[] DEFAULT '{}',
   created_at timestamptz DEFAULT now()
 );
 
-ALTER TABLE family_places ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_family_places" ON family_places;
-CREATE POLICY "anon_select_family_places" ON family_places FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_family_places" ON family_places;
-CREATE POLICY "anon_insert_family_places" ON family_places FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_family_places" ON family_places;
-CREATE POLICY "anon_update_family_places" ON family_places FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_family_places" ON family_places;
-CREATE POLICY "anon_delete_family_places" ON family_places FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Family Events ────────────────────────────────────────────────────────────
+-- ── Family Events ─────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS family_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id uuid DEFAULT gen_random_uuid(),
-  member_id uuid REFERENCES family_members(id) ON DELETE SET NULL,
   title text NOT NULL,
   description text,
-  event_date date,
   event_year text,
-  place_id uuid REFERENCES family_places(id) ON DELETE SET NULL,
-  event_type text DEFAULT 'life',
+  event_type text DEFAULT 'life_event',
+  linked_members uuid[] DEFAULT '{}',
+  linked_places uuid[] DEFAULT '{}',
   created_at timestamptz DEFAULT now()
 );
 
-ALTER TABLE family_events ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_family_events" ON family_events;
-CREATE POLICY "anon_select_family_events" ON family_events FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_family_events" ON family_events;
-CREATE POLICY "anon_insert_family_events" ON family_events FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_family_events" ON family_events;
-CREATE POLICY "anon_update_family_events" ON family_events FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_family_events" ON family_events;
-CREATE POLICY "anon_delete_family_events" ON family_events FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Family Interviews ───────────────────────────────────────────────────────
+-- ── Family Interviews ──────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS family_interviews (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id uuid DEFAULT gen_random_uuid(),
-  member_id uuid REFERENCES family_members(id) ON DELETE SET NULL,
-  interviewer text,
+  subject_name text NOT NULL,
+  interviewer_name text,
   transcript text,
   audio_url text,
+  video_url text,
   duration_seconds int,
+  interview_year text,
+  themes text[] DEFAULT '{}',
   created_at timestamptz DEFAULT now()
 );
 
-ALTER TABLE family_interviews ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_family_interviews" ON family_interviews;
-CREATE POLICY "anon_select_family_interviews" ON family_interviews FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_family_interviews" ON family_interviews;
-CREATE POLICY "anon_insert_family_interviews" ON family_interviews FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_family_interviews" ON family_interviews;
-CREATE POLICY "anon_update_family_interviews" ON family_interviews FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_family_interviews" ON family_interviews;
-CREATE POLICY "anon_delete_family_interviews" ON family_interviews FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Family Artifacts (heirlooms) ─────────────────────────────────────────────
+-- ── Family Artifacts ──────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS family_artifacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id uuid DEFAULT gen_random_uuid(),
-  member_id uuid REFERENCES family_members(id) ON DELETE SET NULL,
   name text NOT NULL,
   description text,
-  artifact_type text DEFAULT 'heirloom',
+  artifact_type text DEFAULT 'object',
+  media_url text,
   date_origin text,
   location text,
-  photo_url text,
   story text,
-  unlocked_by text,
+  linked_members uuid[] DEFAULT '{}',
   created_at timestamptz DEFAULT now()
 );
 
-ALTER TABLE family_artifacts ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_family_artifacts" ON family_artifacts;
-CREATE POLICY "anon_select_family_artifacts" ON family_artifacts FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_family_artifacts" ON family_artifacts;
-CREATE POLICY "anon_insert_family_artifacts" ON family_artifacts FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_family_artifacts" ON family_artifacts;
-CREATE POLICY "anon_update_family_artifacts" ON family_artifacts FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_family_artifacts" ON family_artifacts;
-CREATE POLICY "anon_delete_family_artifacts" ON family_artifacts FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Legacy Worlds ────────────────────────────────────────────────────────────
+-- ── Legacy Worlds ─────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS legacy_worlds (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id uuid NOT NULL,
+  family_id uuid DEFAULT gen_random_uuid(),
+  user_id text,
+  title text NOT NULL,
+  description text,
   status legacy_world_status DEFAULT 'generating',
-  knowledge_version_id uuid,
-  world_data jsonb DEFAULT '{}',
-  ancestor_id uuid REFERENCES family_members(id) ON DELETE SET NULL,
-  ancestor_name text,
-  ancestor_birth_year text,
-  ancestor_birth_place text,
-  chapter_count int DEFAULT 0,
+  cover_image_url text,
+  theme jsonb DEFAULT '{}',
+  completeness_score int DEFAULT 0,
+  last_played_at timestamptz,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
 
-ALTER TABLE legacy_worlds ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_legacy_worlds" ON legacy_worlds;
-CREATE POLICY "anon_select_legacy_worlds" ON legacy_worlds FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_legacy_worlds" ON legacy_worlds;
-CREATE POLICY "anon_insert_legacy_worlds" ON legacy_worlds FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_legacy_worlds" ON legacy_worlds;
-CREATE POLICY "anon_update_legacy_worlds" ON legacy_worlds FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_legacy_worlds" ON legacy_worlds;
-CREATE POLICY "anon_delete_legacy_worlds" ON legacy_worlds FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Legacy Chapters ──────────────────────────────────────────────────────────
+-- ── Legacy Chapters ───────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS legacy_chapters (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   world_id uuid NOT NULL REFERENCES legacy_worlds(id) ON DELETE CASCADE,
-  family_id uuid NOT NULL,
-  chapter_number int NOT NULL,
   title text NOT NULL,
+  subtitle text,
   description text,
+  chapter_number int NOT NULL DEFAULT 1,
   status legacy_chapter_status DEFAULT 'locked',
-  unlock_threshold int DEFAULT 40,
-  scene_count int DEFAULT 0,
-  era_label text,
-  location_label text,
-  year_label text,
-  historical_context text,
+  era_start text,
+  era_end text,
+  ancestor_focus uuid REFERENCES family_members(id) ON DELETE SET NULL,
+  cover_image_url text,
+  unlock_condition jsonb DEFAULT '{}',
+  completion_reward jsonb DEFAULT '{}',
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
 
-ALTER TABLE legacy_chapters ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_legacy_chapters" ON legacy_chapters;
-CREATE POLICY "anon_select_legacy_chapters" ON legacy_chapters FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_legacy_chapters" ON legacy_chapters;
-CREATE POLICY "anon_insert_legacy_chapters" ON legacy_chapters FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_legacy_chapters" ON legacy_chapters;
-CREATE POLICY "anon_update_legacy_chapters" ON legacy_chapters FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_legacy_chapters" ON legacy_chapters;
-CREATE POLICY "anon_delete_legacy_chapters" ON legacy_chapters FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Legacy Scenes ────────────────────────────────────────────────────────────
+-- ── Legacy Scenes ─────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS legacy_scenes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   chapter_id uuid NOT NULL REFERENCES legacy_chapters(id) ON DELETE CASCADE,
-  scene_number int NOT NULL,
-  title text NOT NULL,
-  type legacy_scene_type DEFAULT 'narration',
-  content text NOT NULL,
-  place_id uuid REFERENCES family_places(id) ON DELETE SET NULL,
-  event_id uuid REFERENCES family_events(id) ON DELETE SET NULL,
-  memory_id uuid REFERENCES family_memories(id) ON DELETE SET NULL,
+  scene_number int NOT NULL DEFAULT 1,
+  scene_type legacy_scene_type DEFAULT 'narration',
+  title text,
+  narration text,
+  background_description text,
   historical_layer historical_layer DEFAULT 'narrative_interpretation',
-  time_of_day text,
-  atmosphere text,
+  evidence_link uuid REFERENCES family_memories(id) ON DELETE SET NULL,
   created_at timestamptz DEFAULT now()
 );
-
-ALTER TABLE legacy_scenes ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_legacy_scenes" ON legacy_scenes;
-CREATE POLICY "anon_select_legacy_scenes" ON legacy_scenes FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_legacy_scenes" ON legacy_scenes;
-CREATE POLICY "anon_insert_legacy_scenes" ON legacy_scenes FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_legacy_scenes" ON legacy_scenes;
-CREATE POLICY "anon_update_legacy_scenes" ON legacy_scenes FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_legacy_scenes" ON legacy_scenes;
-CREATE POLICY "anon_delete_legacy_scenes" ON legacy_scenes FOR DELETE
-  TO anon, authenticated USING (true);
 
 -- ── Legacy Dialogues ─────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS legacy_dialogues (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   scene_id uuid NOT NULL REFERENCES legacy_scenes(id) ON DELETE CASCADE,
-  speaker text NOT NULL,
-  speaker_relation text,
-  line text NOT NULL,
-  tone text DEFAULT 'neutral',
+  speaker_name text NOT NULL,
+  speaker_role text,
+  dialogue_text text NOT NULL,
+  emotion text,
+  dialogue_order int DEFAULT 0,
+  is_ai_generated boolean DEFAULT false,
   created_at timestamptz DEFAULT now()
 );
 
-ALTER TABLE legacy_dialogues ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_legacy_dialogues" ON legacy_dialogues;
-CREATE POLICY "anon_select_legacy_dialogues" ON legacy_dialogues FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_legacy_dialogues" ON legacy_dialogues;
-CREATE POLICY "anon_insert_legacy_dialogues" ON legacy_dialogues FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_legacy_dialogues" ON legacy_dialogues;
-CREATE POLICY "anon_update_legacy_dialogues" ON legacy_dialogues FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_legacy_dialogues" ON legacy_dialogues;
-CREATE POLICY "anon_delete_legacy_dialogues" ON legacy_dialogues FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Legacy Choices ───────────────────────────────────────────────────────────
+-- ── Legacy Choices ────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS legacy_choices (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   scene_id uuid NOT NULL REFERENCES legacy_scenes(id) ON DELETE CASCADE,
-  choice_number int NOT NULL,
-  text text NOT NULL,
-  consequence text NOT NULL,
-  action text DEFAULT 'next',
-  stat_effects jsonb DEFAULT '{}',
+  choice_text text NOT NULL,
+  consequence_text text,
+  leads_to_scene_id uuid REFERENCES legacy_scenes(id) ON DELETE SET NULL,
+  xp_reward int DEFAULT 0,
   created_at timestamptz DEFAULT now()
 );
 
-ALTER TABLE legacy_choices ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_legacy_choices" ON legacy_choices;
-CREATE POLICY "anon_select_legacy_choices" ON legacy_choices FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_legacy_choices" ON legacy_choices;
-CREATE POLICY "anon_insert_legacy_choices" ON legacy_choices FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_legacy_choices" ON legacy_choices;
-CREATE POLICY "anon_update_legacy_choices" ON legacy_choices FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_legacy_choices" ON legacy_choices;
-CREATE POLICY "anon_delete_legacy_choices" ON legacy_choices FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Legacy Sessions ──────────────────────────────────────────────────────────
+-- ── Legacy Sessions ───────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS legacy_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   world_id uuid NOT NULL REFERENCES legacy_worlds(id) ON DELETE CASCADE,
-  chapter_id uuid REFERENCES legacy_chapters(id) ON DELETE SET NULL,
-  scene_index int DEFAULT 0,
+  user_id text NOT NULL,
+  current_chapter_id uuid REFERENCES legacy_chapters(id) ON DELETE SET NULL,
+  current_scene_id uuid REFERENCES legacy_scenes(id) ON DELETE SET NULL,
   status legacy_session_status DEFAULT 'active',
-  stats jsonb DEFAULT '{"knowledge":0,"relationships":0,"cultural_wisdom":0,"courage":0,"reputation":0,"legacy":0}',
+  xp_earned int DEFAULT 0,
   choices_made jsonb DEFAULT '[]',
-  memories_created int DEFAULT 0,
   started_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now(),
+  last_active_at timestamptz DEFAULT now(),
   completed_at timestamptz
 );
 
-ALTER TABLE legacy_sessions ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_legacy_sessions" ON legacy_sessions;
-CREATE POLICY "anon_select_legacy_sessions" ON legacy_sessions FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_legacy_sessions" ON legacy_sessions;
-CREATE POLICY "anon_insert_legacy_sessions" ON legacy_sessions FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_legacy_sessions" ON legacy_sessions;
-CREATE POLICY "anon_update_legacy_sessions" ON legacy_sessions FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_legacy_sessions" ON legacy_sessions;
-CREATE POLICY "anon_delete_legacy_sessions" ON legacy_sessions FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Legacy Quests ────────────────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS legacy_quests (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  world_id uuid REFERENCES legacy_worlds(id) ON DELETE CASCADE,
-  family_id uuid,
-  member_id uuid REFERENCES family_members(id) ON DELETE SET NULL,
-  title text NOT NULL,
-  description text NOT NULL,
-  quest_type legacy_quest_type DEFAULT 'mystery',
-  status legacy_quest_status DEFAULT 'available',
-  prompt text,
-  reward text,
-  knowledge_gap text,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
-);
-
-ALTER TABLE legacy_quests ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_legacy_quests" ON legacy_quests;
-CREATE POLICY "anon_select_legacy_quests" ON legacy_quests FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_legacy_quests" ON legacy_quests;
-CREATE POLICY "anon_insert_legacy_quests" ON legacy_quests FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_legacy_quests" ON legacy_quests;
-CREATE POLICY "anon_update_legacy_quests" ON legacy_quests FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_legacy_quests" ON legacy_quests;
-CREATE POLICY "anon_delete_legacy_quests" ON legacy_quests FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Legacy Quest Progress ────────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS legacy_quest_progress (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  quest_id uuid NOT NULL REFERENCES legacy_quests(id) ON DELETE CASCADE,
-  session_id uuid REFERENCES legacy_sessions(id) ON DELETE CASCADE,
-  status legacy_quest_status DEFAULT 'available',
-  progress_data jsonb DEFAULT '{}',
-  completed_at timestamptz,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
-);
-
-ALTER TABLE legacy_quest_progress ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_legacy_quest_progress" ON legacy_quest_progress;
-CREATE POLICY "anon_select_legacy_quest_progress" ON legacy_quest_progress FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_legacy_quest_progress" ON legacy_quest_progress;
-CREATE POLICY "anon_insert_legacy_quest_progress" ON legacy_quest_progress FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_legacy_quest_progress" ON legacy_quest_progress;
-CREATE POLICY "anon_update_legacy_quest_progress" ON legacy_quest_progress FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_legacy_quest_progress" ON legacy_quest_progress;
-CREATE POLICY "anon_delete_legacy_quest_progress" ON legacy_quest_progress FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Legacy Achievements ──────────────────────────────────────────────────────
+-- ── Legacy Achievements ───────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS legacy_achievements (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  title text NOT NULL,
-  description text NOT NULL,
+  title text NOT NULL UNIQUE,
+  description text,
   category legacy_achievement_category DEFAULT 'gameplay',
-  icon_name text DEFAULT 'Trophy',
+  icon_name text,
+  xp_reward int DEFAULT 50,
   max_progress int DEFAULT 1,
   created_at timestamptz DEFAULT now()
 );
 
-ALTER TABLE legacy_achievements ENABLE ROW LEVEL SECURITY;
+-- ── Legacy User Achievements ──────────────────────────────────────────────────
 
-DROP POLICY IF EXISTS "anon_select_legacy_achievements" ON legacy_achievements;
-CREATE POLICY "anon_select_legacy_achievements" ON legacy_achievements FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_legacy_achievements" ON legacy_achievements;
-CREATE POLICY "anon_insert_legacy_achievements" ON legacy_achievements FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_legacy_achievements" ON legacy_achievements;
-CREATE POLICY "anon_update_legacy_achievements" ON legacy_achievements FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_legacy_achievements" ON legacy_achievements;
-CREATE POLICY "anon_delete_legacy_achievements" ON legacy_achievements FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Legacy Achievement Progress ─────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS legacy_achievement_progress (
+CREATE TABLE IF NOT EXISTS legacy_user_achievements (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id text NOT NULL,
   achievement_id uuid NOT NULL REFERENCES legacy_achievements(id) ON DELETE CASCADE,
-  world_id uuid REFERENCES legacy_worlds(id) ON DELETE CASCADE,
-  current_progress int DEFAULT 0,
-  unlocked boolean DEFAULT false,
+  progress int DEFAULT 0,
   unlocked_at timestamptz,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE(user_id, achievement_id)
+);
+
+-- ── Legacy Quests ─────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS legacy_quests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  world_id uuid NOT NULL REFERENCES legacy_worlds(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  description text,
+  quest_type legacy_quest_type DEFAULT 'mystery',
+  status legacy_quest_status DEFAULT 'available',
+  xp_reward int DEFAULT 100,
+  steps jsonb DEFAULT '[]',
+  completion_condition jsonb DEFAULT '{}',
+  expires_at timestamptz,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
 
-ALTER TABLE legacy_achievement_progress ENABLE ROW LEVEL SECURITY;
+-- ── Legacy Quest Progress ─────────────────────────────────────────────────────
 
-DROP POLICY IF EXISTS "anon_select_legacy_achievement_progress" ON legacy_achievement_progress;
-CREATE POLICY "anon_select_legacy_achievement_progress" ON legacy_achievement_progress FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_legacy_achievement_progress" ON legacy_achievement_progress;
-CREATE POLICY "anon_insert_legacy_achievement_progress" ON legacy_achievement_progress FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_legacy_achievement_progress" ON legacy_achievement_progress;
-CREATE POLICY "anon_update_legacy_achievement_progress" ON legacy_achievement_progress FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_legacy_achievement_progress" ON legacy_achievement_progress;
-CREATE POLICY "anon_delete_legacy_achievement_progress" ON legacy_achievement_progress FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Legacy World Artifacts (collectibles) ───────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS legacy_world_artifacts (
+CREATE TABLE IF NOT EXISTS legacy_quest_progress (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  world_id uuid NOT NULL REFERENCES legacy_worlds(id) ON DELETE CASCADE,
-  artifact_id uuid REFERENCES family_artifacts(id) ON DELETE SET NULL,
-  name text NOT NULL,
-  description text,
-  artifact_type text DEFAULT 'heirloom',
-  source text,
-  date_origin text,
-  location text,
-  story text,
-  unlocked_by text,
-  is_unlocked boolean DEFAULT false,
-  created_at timestamptz DEFAULT now()
+  quest_id uuid NOT NULL REFERENCES legacy_quests(id) ON DELETE CASCADE,
+  user_id text NOT NULL,
+  current_step int DEFAULT 0,
+  completed_steps jsonb DEFAULT '[]',
+  status legacy_quest_status DEFAULT 'in_progress',
+  started_at timestamptz DEFAULT now(),
+  completed_at timestamptz,
+  UNIQUE(quest_id, user_id)
 );
 
-ALTER TABLE legacy_world_artifacts ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_legacy_world_artifacts" ON legacy_world_artifacts;
-CREATE POLICY "anon_select_legacy_world_artifacts" ON legacy_world_artifacts FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_legacy_world_artifacts" ON legacy_world_artifacts;
-CREATE POLICY "anon_insert_legacy_world_artifacts" ON legacy_world_artifacts FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_legacy_world_artifacts" ON legacy_world_artifacts;
-CREATE POLICY "anon_update_legacy_world_artifacts" ON legacy_world_artifacts FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_legacy_world_artifacts" ON legacy_world_artifacts;
-CREATE POLICY "anon_delete_legacy_world_artifacts" ON legacy_world_artifacts FOR DELETE
-  TO anon, authenticated USING (true);
-
--- ── Family Knowledge Versions ────────────────────────────────────────────────
+-- ── Family Knowledge Versions ─────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS family_knowledge_versions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  family_id uuid NOT NULL,
-  version_number int NOT NULL,
-  knowledge_hash text NOT NULL,
+  family_id uuid DEFAULT gen_random_uuid(),
+  version_hash text NOT NULL,
   member_count int DEFAULT 0,
   memory_count int DEFAULT 0,
-  interview_count int DEFAULT 0,
   place_count int DEFAULT 0,
   event_count int DEFAULT 0,
+  interview_count int DEFAULT 0,
   artifact_count int DEFAULT 0,
-  change_description text,
   created_at timestamptz DEFAULT now()
 );
-
-ALTER TABLE family_knowledge_versions ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_family_knowledge_versions" ON family_knowledge_versions;
-CREATE POLICY "anon_select_family_knowledge_versions" ON family_knowledge_versions FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_family_knowledge_versions" ON family_knowledge_versions;
-CREATE POLICY "anon_insert_family_knowledge_versions" ON family_knowledge_versions FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_family_knowledge_versions" ON family_knowledge_versions;
-CREATE POLICY "anon_update_family_knowledge_versions" ON family_knowledge_versions FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_family_knowledge_versions" ON family_knowledge_versions;
-CREATE POLICY "anon_delete_family_knowledge_versions" ON family_knowledge_versions FOR DELETE
-  TO anon, authenticated USING (true);
 
 -- ── Legacy World Versions ────────────────────────────────────────────────────
 
@@ -653,24 +315,6 @@ CREATE TABLE IF NOT EXISTS legacy_world_versions (
   changes jsonb DEFAULT '{}',
   created_at timestamptz DEFAULT now()
 );
-
-ALTER TABLE legacy_world_versions ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "anon_select_legacy_world_versions" ON legacy_world_versions;
-CREATE POLICY "anon_select_legacy_world_versions" ON legacy_world_versions FOR SELECT
-  TO anon, authenticated USING (true);
-
-DROP POLICY IF EXISTS "anon_insert_legacy_world_versions" ON legacy_world_versions;
-CREATE POLICY "anon_insert_legacy_world_versions" ON legacy_world_versions FOR INSERT
-  TO anon, authenticated WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_update_legacy_world_versions" ON legacy_world_versions;
-CREATE POLICY "anon_update_legacy_world_versions" ON legacy_world_versions FOR UPDATE
-  TO anon, authenticated USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "anon_delete_legacy_world_versions" ON legacy_world_versions;
-CREATE POLICY "anon_delete_legacy_world_versions" ON legacy_world_versions FOR DELETE
-  TO anon, authenticated USING (true);
 
 -- ── Indexes ──────────────────────────────────────────────────────────────────
 
