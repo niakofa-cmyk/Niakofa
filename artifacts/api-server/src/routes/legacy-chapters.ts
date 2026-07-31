@@ -38,6 +38,7 @@ import { generalApiLimiter } from "../middlewares/rate-limit";
 import { eq, and, inArray, asc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { calculateCompleteness, CHAPTER_UNLOCK_THRESHOLD } from "./legacy-completeness";
+import { getConsentedMemberIds, filterConsentedMembers } from "../lib/legacy-consent";
 
 const router = Router();
 
@@ -98,6 +99,10 @@ async function generateChapterSeeds(familyId: number): Promise<ChapterSeed[]> {
       ),
     );
 
+  // ── Consent gate: only include members who have consented to storytelling ──
+  const consentedIds = await getConsentedMemberIds(familyId);
+  const consentedMembers = filterConsentedMembers(members, consentedIds);
+
   const events = await db
     .select({
       id: familyEventsTable.id,
@@ -150,8 +155,8 @@ async function generateChapterSeeds(familyId: number): Promise<ChapterSeed[]> {
 
   if (earliestEvent || earliestPlace || earliestMemory) {
     const ancestor = earliestEvent?.memberId
-      ? members.find(m => m.id === earliestEvent.memberId)
-      : members[0];
+      ? consentedMembers.find(m => m.id === earliestEvent.memberId)
+      : consentedMembers[0];
 
     seeds.push({
       chapterNumber: 1,
@@ -184,7 +189,7 @@ async function generateChapterSeeds(familyId: number): Promise<ChapterSeed[]> {
       synopsis: migrationEvents[0].description
         ? String(migrationEvents[0].description).slice(0, 200)
         : "A pivotal migration that shaped your family's future.",
-      ancestorMemberId: migrationEvents[0].memberId ?? members[0]?.id ?? null,
+      ancestorMemberId: migrationEvents[0].memberId ?? consentedMembers[0]?.id ?? null,
       chapterData: {
         historicalLayer: "verified",
         eventIds: migrationEvents.slice(0, 5).map(e => e.id),
@@ -207,7 +212,7 @@ async function generateChapterSeeds(familyId: number): Promise<ChapterSeed[]> {
       synopsis: stories[0]?.title
         ? `Stories from ${stories[0].title}`
         : "Life in a new place, told through family memories.",
-      ancestorMemberId: stories[0]?.aboutMemberId ?? members[0]?.id ?? null,
+      ancestorMemberId: stories[0]?.aboutMemberId ?? consentedMembers[0]?.id ?? null,
       chapterData: {
         historicalLayer: "verified",
         eventIds: laterEvents.slice(0, 5).map(e => e.id),

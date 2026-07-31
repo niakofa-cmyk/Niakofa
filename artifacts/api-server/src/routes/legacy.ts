@@ -35,6 +35,7 @@ import { generalApiLimiter } from "../middlewares/rate-limit";
 import { cacheGet, cacheSet, cacheDel } from "../lib/cache";
 import { eq, and, desc, sql, inArray, asc } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { getConsentedMemberIds, filterConsentedMembers } from "../lib/legacy-consent";
 
 const router = Router();
 
@@ -136,6 +137,10 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
     )
     .limit(20);
 
+  // ── Consent gate: only include members who have consented to storytelling ──
+  const consentedIds = await getConsentedMemberIds(familyId);
+  const consentedMembers = filterConsentedMembers(members, consentedIds);
+
   // Latest 15 memories — include id and updated_at for strong fingerprint
   const memories = await db
     .select({
@@ -183,7 +188,7 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
     .from(familyMemoryAssetsTable)
     .where(eq(familyMemoryAssetsTable.memory_id, sql`ANY (SELECT id FROM family_memories WHERE family_id = ${familyId})`));
 
-  const memberCount    = members.length;
+  const memberCount    = consentedMembers.length;
   const memoryCount    = memories.length;
   const interviewCount = Number(ic ?? 0);
 
@@ -193,7 +198,7 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
   // e.g. editing Grandma's story from "We moved" to "We moved to Detroit in 1957"
   // changes the memory's updated_at, which changes the fingerprint.
   const canonicalData = JSON.stringify({
-    m: members.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`),
+    m: consentedMembers.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`),
     mem: memories.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`),
     i: interviewCount,
     s: storyCount,
@@ -210,7 +215,7 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
     memberCount,
     memoryCount,
     interviewCount,
-    ancestorProfiles: members.map(m => ({
+    ancestorProfiles: consentedMembers.map(m => ({
       name:     m.name ?? "Unknown",
       role:     m.role,
       relation: m.relation ?? null,
@@ -314,7 +319,7 @@ async function generateAiQuests(r: FamilyReservoir): Promise<AiQuest[]> {
   const ancestorList = r.ancestorProfiles.length
     ? r.ancestorProfiles
         .slice(0, 8)
-        .map(a => `${a.name} (${a.role}${a.relation ? `, ${a.relation}` : ""})`)
+        .map(a => `${a.name} (${a.role}${a.relation ? `, ${a.relation}` : "})`)
         .join("; ")
     : "No ancestors added yet";
 
@@ -563,9 +568,13 @@ async function selectAncestors(familyId: number): Promise<AncestorCandidate[]> {
       ),
     );
 
+  // ── Consent gate: only include members who have consented to storytelling ──
+  const consentedIds = await getConsentedMemberIds(familyId);
+  const consentedMembers = filterConsentedMembers(members, consentedIds);
+
   const candidates: AncestorCandidate[] = [];
 
-  for (const member of members) {
+  for (const member of consentedMembers) {
     // Count stories about this member
     const [{ sc }] = await db
       .select({ sc: sql<number>`count(*)::int` })
