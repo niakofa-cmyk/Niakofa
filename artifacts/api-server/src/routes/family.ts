@@ -524,6 +524,7 @@ router.patch("/family/:id/members/:memberId", generalApiLimiter, requireAuth, as
     updates.status = parsed.data.status;
     if (parsed.data.status === "active") updates.joined_at = new Date();
   }
+  if (Object.keys(updates).length > 0) updates.updated_at = new Date();
 
   const [updated] = await db
     .update(familyMembersTable)

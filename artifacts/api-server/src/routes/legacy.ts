@@ -126,7 +126,7 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
       name:      familyMembersTable.display_name,
       role:      familyMembersTable.role,
       relation:  familyMembersTable.relation_note,
-      updated:   familyMembersTable.created_at,
+      updated:   familyMembersTable.updated_at,
       is_living: familyMembersTable.is_living,
       user_id:   familyMembersTable.user_id,
     })
@@ -208,7 +208,7 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
   // just for hashing is fine even for large families.
   const [allMemberStamps, allMemoryStamps] = await Promise.all([
     db
-      .select({ id: familyMembersTable.id, updated: familyMembersTable.created_at })
+      .select({ id: familyMembersTable.id, updated: familyMembersTable.updated_at })
       .from(familyMembersTable)
       .where(and(eq(familyMembersTable.family_id, familyId), inArray(familyMembersTable.status, ["active"]))),
     db

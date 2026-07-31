@@ -60,6 +60,10 @@ export const familyMembersTable = pgTable("family_members", {
   // Default true is privacy-safe: existing rows require an explicit grant.
   is_living:     boolean("is_living").notNull().default(true),
   created_at:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Added in migration 0095. Bumped explicitly by application code (no DB
+  // trigger, matching this codebase's convention elsewhere) whenever a
+  // member is edited, so the Legacy Mode fingerprint can detect the change.
+  updated_at:    timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   // A registered user can only have one membership row per family. Invited
   // (unclaimed) members have user_id NULL, so this constraint doesn't limit
