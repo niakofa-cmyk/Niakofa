@@ -199,9 +199,28 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
   // fingerprint changes when ANY underlying data changes (not just counts).
   // e.g. editing Grandma's story from "We moved" to "We moved to Detroit in 1957"
   // changes the memory's updated_at, which changes the fingerprint.
+  //
+  // IMPORTANT: this hash must cover the family's FULL id+updated_at set, not
+  // just the top-20-members / latest-15-memories sample used for AI context
+  // below. Otherwise editing member #21 or memory #16 in a large family is
+  // invisible to the fingerprint and the world silently never regenerates.
+  // These are cheap (two narrow columns, no row cap) so fetching all of them
+  // just for hashing is fine even for large families.
+  const [allMemberStamps, allMemoryStamps] = await Promise.all([
+    db
+      .select({ id: familyMembersTable.id, updated: familyMembersTable.created_at })
+      .from(familyMembersTable)
+      .where(and(eq(familyMembersTable.family_id, familyId), inArray(familyMembersTable.status, ["active"]))),
+    db
+      .select({ id: familyMemoriesTable.id, updated: familyMemoriesTable.updated_at })
+      .from(familyMemoriesTable)
+      .where(eq(familyMemoriesTable.family_id, familyId)),
+  ]);
+
   const canonicalData = JSON.stringify({
-    m: consentedMembers.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`),
-    mem: memories.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`),
+    // Full family-wide stamps drive fingerprint change-detection.
+    mAll: allMemberStamps.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`).sort(),
+    memAll: allMemoryStamps.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`).sort(),
     i: interviewCount,
     s: storyCount,
     e: eventCount,
