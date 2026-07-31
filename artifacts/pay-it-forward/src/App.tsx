@@ -324,6 +324,7 @@ function AppShell() {
             <Route path="/diaspora/preserve" component={PreserveCulturePage} />
             <Route path="/diaspora/timeline" component={LegacyTimelinePage} />
             <Route path="/legacy/achievements" component={LegacyAchievementsPage} />
+            <Route path="/legacy/play" component={LegacyHomePage} />
             <Route path="/legacy" component={LegacyHomePage} />
             <Route path="/diaspora" component={DiasporaDashboardPage} />
             <Route component={NotFound} />

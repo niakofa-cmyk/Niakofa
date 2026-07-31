@@ -28,6 +28,68 @@ import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "sonner";
 
+// ─── API response types ─────────────────────────────────────────────────────
+
+interface CompletenessResponse {
+  familyId: number;
+  readinessScore: number;
+  chapterUnlockReady: boolean;
+  threshold: number;
+  dimensions: { key: string; label: string; score: number; max: number; count: number; hint: string }[];
+  missingData: string[];
+  suggestions: string[];
+}
+
+interface AncestorCandidate {
+  memberId: number;
+  name: string;
+  role: string;
+  relation: string | null;
+  birthYear: string | null;
+  deathYear: string | null;
+  storyCount: number;
+  eventCount: number;
+  placeCount: number;
+  memoryCount: number;
+  interviewCount: number;
+  photoCount: number;
+  completenessScore: number;
+  selectionReason: string;
+}
+
+interface LegacyChapter {
+  id: number;
+  world_id: number;
+  family_id: number;
+  ancestor_member_id: number | null;
+  chapter_number: number;
+  title: string;
+  synopsis: string | null;
+  status: "locked" | "unlocked" | "in_progress" | "completed" | "skipped";
+  chapter_data: Record<string, unknown>;
+  unlocked_at: string | null;
+  completed_at: string | null;
+}
+
+interface SceneData {
+  sceneNumber: number;
+  title: string;
+  type: string;
+  content: string;
+  placeId?: number | null;
+  eventId?: number | null;
+  memoryId?: number | null;
+  historicalLayer: string;
+}
+
+interface ScenesResponse {
+  chapterId: number;
+  chapterTitle: string;
+  chapterStatus: string;
+  scenes: SceneData[];
+  vaultContext: { places: unknown[]; events: unknown[]; memories: unknown[] };
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface FamilyData {
@@ -106,14 +168,6 @@ const FALLBACK_QUESTS: AiQuest[] = [
   { id: "t5", isAiGenerated: false, title: "Invite a Family Member",    xp: 80,  category: "connect",  actionPath: "/diaspora/family", description: "Grow your family network — every cousin enriches everyone's game." },
 ];
 
-const WORLD_STAGES = [
-  { id: 1, label: "Ancestral Village",   chapter: "Origins",       locked: false },
-  { id: 2, label: "Mission School",      chapter: "Chapter 2",     locked: false },
-  { id: 3, label: "Colonial Town",       chapter: "Chapter 3",     locked: false },
-  { id: 4, label: "New Opportunities",   chapter: "Chapter 4",     locked: true  },
-  { id: 5, label: "The Journey Continues", chapter: "Coming Soon", locked: true  },
-];
-
 const ORAL_PROMPTS = [
   "Tell me about Grandma's first home.",
   "What was your family's biggest challenge?",
@@ -124,18 +178,6 @@ const ORAL_PROMPTS = [
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function pickAncestor(members: FamilyMember[]): FamilyMember | null {
-  return members.length ? members[0] : null;
-}
-
-/** Deterministic stats derived from real counts — no Math.random() */
-function deriveStats(memories: FamilyMemory[], members: FamilyMember[], interviewCount: number) {
-  const knowledge  = Math.min(100, memories.length  * 8 + 10);
-  const reputation = Math.min(100, members.length   * 12 + 5);
-  const health     = Math.min(100, interviewCount   * 20 + members.length * 5 + 20);
-  return { knowledge, reputation, health };
-}
 
 function deriveProgress(state: LegacyState): number {
   const familyScore    = Math.min(25, state.families.length * 25);
@@ -214,7 +256,7 @@ export default function LegacyModePage() {
   // Game UI state
   const [activeMode,    setActiveMode]    = useState<GameMode>("legacy");
   const [inventoryTab,  setInventoryTab]  = useState<InventoryTab>("memories");
-  const [currentStage,  setCurrentStage]  = useState(2);
+  const [currentStage,  setCurrentStage]  = useState(0);
   const [recording,     setRecording]     = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [promptIdx,     setPromptIdx]     = useState(0);
@@ -226,6 +268,19 @@ export default function LegacyModePage() {
   const [activeQuestIdx,  setActiveQuestIdx]  = useState(0);
   const [isAiEnabled,     setIsAiEnabled]     = useState(false);
   const questsLoadedRef = useRef(false);
+
+  // Legacy Engine state — real API data
+  const [completeness,   setCompleteness]   = useState<CompletenessResponse | null>(null);
+  const [ancestors,      setAncestors]      = useState<AncestorCandidate[]>([]);
+  const [chapters,       setChapters]       = useState<LegacyChapter[]>([]);
+  const [selectedAncestorId, setSelectedAncestorId] = useState<number | null>(null);
+  const [scenes,         setScenes]         = useState<ScenesResponse | null>(null);
+  const [activeSceneIdx,  setActiveSceneIdx]  = useState(0);
+  const [scenesLoading,   setScenesLoading]   = useState(false);
+
+  // Real audio recording state
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef    = useRef<Blob[]>([]);
 
   // ── Load family data ──────────────────────────────────────────────────────
 
@@ -268,6 +323,90 @@ export default function LegacyModePage() {
   }, [currentUser]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // ── Load completeness + ancestors after family data is ready ───────────────
+  const loadLegacyEngine = useCallback(async (familyId: number) => {
+    try {
+      const [compRes, ancRes] = await Promise.all([
+        fetch(`/api/legacy/completeness/${familyId}`, { headers: authHeaders() }),
+        fetch(`/api/legacy/ancestors/${familyId}`,    { headers: authHeaders() }),
+      ]);
+      if (compRes.ok) setCompleteness(await compRes.json());
+      if (ancRes.ok) {
+        const ancData = await ancRes.json() as { ancestors: AncestorCandidate[] };
+        setAncestors(ancData.ancestors ?? []);
+        if (ancData.ancestors?.length > 0 && selectedAncestorId === null) {
+          setSelectedAncestorId(ancData.ancestors[0].memberId);
+        }
+      }
+    } catch {
+      // Non-critical — game still works with fallback data
+    }
+  }, [selectedAncestorId]);
+
+  useEffect(() => {
+    const { loading, families } = legacyState;
+    if (!loading && families.length > 0) {
+      loadLegacyEngine(families[0].id);
+    }
+  }, [legacyState.loading, legacyState.families, loadLegacyEngine]);
+
+  // ── Initialize chapters when readiness is sufficient ───────────────────────
+  const initChapters = useCallback(async (familyId: number) => {
+    try {
+      const res = await fetch(`/api/legacy/chapters/${familyId}/init`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        const data = await res.json() as { chapters: LegacyChapter[] };
+        setChapters(data.chapters ?? []);
+      }
+    } catch {
+      // Non-critical
+    }
+  }, []);
+
+  useEffect(() => {
+    if (completeness?.chapterUnlockReady && legacyState.families.length > 0 && chapters.length === 0) {
+      initChapters(legacyState.families[0].id);
+    }
+  }, [completeness, legacyState.families, chapters.length, initChapters]);
+
+  // ── Load scenes when a chapter is selected ────────────────────────────────
+  const loadScenes = useCallback(async (chapterId: number) => {
+    setScenesLoading(true);
+    setActiveSceneIdx(0);
+    try {
+      const res = await fetch(`/api/legacy/chapters/${chapterId}/scenes`, { headers: authHeaders() });
+      if (res.ok) {
+        setScenes(await res.json());
+      }
+    } catch {
+      // Non-critical
+    } finally {
+      setScenesLoading(false);
+    }
+  }, []);
+
+  // ── Transition chapter status ─────────────────────────────────────────────
+  const transitionChapter = useCallback(async (chapterId: number, status: string) => {
+    try {
+      const res = await fetch(`/api/legacy/chapters/${chapterId}/status`, {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { chapter: LegacyChapter };
+        setChapters(prev => prev.map(c => c.id === data.chapter.id ? data.chapter : c));
+        return data.chapter;
+      }
+    } catch {
+      // Non-critical
+    }
+    return null;
+  }, []);
 
   // ── Load AI quests after family data is ready ─────────────────────────────
 
@@ -328,6 +467,67 @@ export default function LegacyModePage() {
     return () => clearInterval(t);
   }, [recording]);
 
+  // ── Real audio recording using MediaRecorder ───────────────────────────────
+
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+
+        // Upload to family vault
+        if (families.length > 0) {
+          try {
+            const formData = new FormData();
+            formData.append("audio", audioBlob, `oral-history-${Date.now()}.webm`);
+            formData.append("familyId", String(families[0].id));
+            formData.append("prompt", ORAL_PROMPTS[promptIdx]);
+
+            const res = await fetch("/api/family/upload-audio", {
+              method: "POST",
+              headers: authHeaders(),
+              body: formData,
+            });
+
+            if (res.ok) {
+              toast.success("Story saved to your vault!");
+              loadData();
+            } else {
+              toast.error("Failed to save recording — please try again.");
+            }
+          } catch {
+            toast.error("Network error — recording not saved.");
+          }
+        }
+      };
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+      setRecordSeconds(0);
+    } catch {
+      toast.error("Microphone access denied or unavailable.");
+    }
+  }, [families, promptIdx, loadData]);
+
+  const stopRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+    }
+    mediaRecorderRef.current = null;
+    setRecording(false);
+    setRecordSeconds(0);
+  }, []);
+
   // ── Auth guard ────────────────────────────────────────────────────────────
 
   if (!currentUser) {
@@ -340,11 +540,37 @@ export default function LegacyModePage() {
 
   const { loading, families, members, memories, interviewCount } = legacyState;
   const ready    = isReady(legacyState);
-  const progress = deriveProgress(legacyState);
-  const ancestor = pickAncestor(members);
-  const stats    = deriveStats(memories, members, interviewCount);
+  const progress = completeness?.readinessScore ?? deriveProgress(legacyState);
+  const ancestor = ancestors.length > 0
+    ? ancestors[0]
+    : null;
   const mm       = Math.floor(recordSeconds / 60);
   const ss       = recordSeconds % 60;
+
+  // Build dynamic world stages from chapters (replaces static WORLD_STAGES)
+  const worldStages = chapters.length > 0
+    ? chapters.map((ch, i) => ({
+        id: ch.id,
+        label: (ch.chapter_data as Record<string, unknown>)?.location as string ?? ch.title,
+        chapter: ch.title,
+        locked: ch.status === "locked",
+        completed: ch.status === "completed",
+        inProgress: ch.status === "in_progress",
+        era: (ch.chapter_data as Record<string, unknown>)?.era as string ?? "",
+      }))
+    : [];
+
+  // Stats from real ancestor data instead of count-derived math
+  const stats = ancestor
+    ? {
+        knowledge:    Math.min(100, ancestor.storyCount * 15 + ancestor.memoryCount * 3 + 10),
+        reputation:   Math.min(100, (ancestor.relation ? 20 : 0) + ancestor.eventCount * 10 + 10),
+        health:       Math.min(100, ancestor.interviewCount * 20 + ancestor.photoCount * 5 + 30),
+        culturalWisdom: Math.min(100, ancestor.storyCount * 10 + ancestor.eventCount * 5 + 15),
+        courage:      Math.min(100, ancestor.eventCount * 8 + ancestor.interviewCount * 10 + 20),
+        legacy:       ancestor.completenessScore,
+      }
+    : { knowledge: 10, reputation: 5, health: 20, culturalWisdom: 10, courage: 15, legacy: 0 };
 
   // Determine which quests to display: AI quests if loaded, otherwise fallback templates
   const displayQuests: AiQuest[] = aiQuests.length > 0
@@ -472,9 +698,9 @@ export default function LegacyModePage() {
             <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-xl">
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <p className="text-xs text-amber-700 uppercase tracking-widest">Your Family World</p>
+                  <p className="text-xs text-amber-700 uppercase tracking-widest">Journey Readiness</p>
                   <p className="text-3xl font-black text-amber-400">{progress}%</p>
-                  <p className="text-xs text-amber-600">Legacy Complete</p>
+                  <p className="text-xs text-amber-600">{completeness?.chapterUnlockReady ? "Chapters Unlocked" : "Add more to unlock"}</p>
                 </div>
                 <div className="w-20 h-20 relative">
                   <svg viewBox="0 0 80 80" className="w-full h-full -rotate-90">
@@ -510,10 +736,10 @@ export default function LegacyModePage() {
               </div>
               <div className="flex gap-2 mt-4">
                 <button
-                  onClick={() => navigate("/diaspora/tree")}
+                  onClick={() => navigate("/legacy/play")}
                   className="flex-1 bg-amber-500 text-amber-950 font-black text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-80 flex items-center justify-center gap-1.5"
                 >
-                  <Play className="w-3.5 h-3.5" /> Continue Journey
+                  <Play className="w-3.5 h-3.5" /> Begin Journey
                 </button>
                 <button
                   onClick={() => navigate("/diaspora/family")}
@@ -565,20 +791,28 @@ export default function LegacyModePage() {
               <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg">
                 <div className="flex items-start gap-4">
                   <div className="w-16 h-16 rounded-xl bg-amber-900/40 border border-amber-700/30 flex items-center justify-center flex-shrink-0 text-xl font-black text-amber-400">
-                    {memberInitials(ancestor)}
+                    {ancestor.name.split(" ").map(p => p[0] ?? "").join("").slice(0, 2).toUpperCase() || "?"}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-base font-black text-amber-100">{ancestor.display_name}</p>
+                    <p className="text-base font-black text-amber-100">{ancestor.name}</p>
                     <div className="flex items-center gap-3 mt-1">
                       <p className="text-xs text-amber-500 bg-amber-900/30 px-2 py-0.5 rounded-full capitalize">{ancestor.role}</p>
-                      {ancestor.relation_note && (
-                        <p className="text-xs text-amber-600">{ancestor.relation_note}</p>
+                      {ancestor.relation && (
+                        <p className="text-xs text-amber-600">{ancestor.relation}</p>
+                      )}
+                      {ancestor.birthYear && (
+                        <p className="text-xs text-amber-700 mt-0.5">Born: {ancestor.birthYear}{ancestor.deathYear ? ` — Died: ${ancestor.deathYear}` : ""}</p>
+                      )}
+                      {ancestor.selectionReason && (
+                        <p className="text-xs text-amber-600/70 mt-1 italic">{ancestor.selectionReason}</p>
                       )}
                     </div>
                     <div className="mt-2 space-y-1.5">
-                      <StatBar label="Health"     value={stats.health}     color="bg-rose-500" />
-                      <StatBar label="Knowledge"  value={stats.knowledge}  color="bg-blue-500" />
-                      <StatBar label="Reputation" value={stats.reputation} color="bg-amber-500" />
+                      <StatBar label="Knowledge"     value={stats.knowledge}     color="bg-blue-500" />
+                      <StatBar label="Relationships"  value={stats.reputation}    color="bg-teal-500" />
+                      <StatBar label="Cultural Wisdom" value={stats.culturalWisdom} color="bg-amber-500" />
+                      <StatBar label="Courage"        value={stats.courage}       color="bg-rose-500" />
+                      <StatBar label="Legacy"         value={stats.legacy}        color="bg-emerald-500" />
                     </div>
                   </div>
                 </div>
@@ -601,13 +835,13 @@ export default function LegacyModePage() {
             </div>
             <div className="overflow-x-auto pb-2">
               <div className="flex gap-3 min-w-max px-1">
-                {WORLD_STAGES.map((stage, i) => {
-                  const active = currentStage === stage.id;
-                  const done   = currentStage > stage.id;
+                {(worldStages.length > 0 ? worldStages : []).map((stage, i) => {
+                  const active = currentStage === i;
+                  const done   = stage.completed;
                   return (
                     <div key={stage.id} className="flex items-center gap-2">
                       <button
-                        onClick={() => !stage.locked && setCurrentStage(stage.id)}
+                        onClick={() => !stage.locked && setCurrentStage(i)}
                         className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${
                           stage.locked
                             ? "bg-[#1A1008] border-amber-950/40 opacity-50 cursor-not-allowed"
@@ -625,16 +859,23 @@ export default function LegacyModePage() {
                             ? <CheckCircle2 className="w-5 h-5 text-amber-500" />
                             : <Map className={`w-5 h-5 ${active ? "text-amber-400" : "text-amber-700"}`} />}
                         <p className={`text-xs font-bold text-center leading-tight ${active ? "text-amber-200" : stage.locked ? "text-amber-900" : "text-amber-600"}`}>
-                          {stage.label}
+                          {stage.era ? `${stage.era} — ` : ""}{stage.label}
                         </p>
                         <p className={`text-xs ${active ? "text-amber-500" : "text-amber-900"}`}>{stage.chapter}</p>
                       </button>
-                      {i < WORLD_STAGES.length - 1 && (
+                      {i < worldStages.length - 1 && (
                         <div className={`w-6 h-0.5 flex-shrink-0 ${done ? "bg-amber-500" : "bg-amber-900/40"}`} />
                       )}
                     </div>
                   );
                 })}
+                {worldStages.length === 0 && (
+                  <p className="text-xs text-amber-700 px-4 py-3">
+                    {completeness?.chapterUnlockReady
+                      ? "Initializing chapters from your family data..."
+                      : `Journey readiness: ${completeness?.readinessScore ?? 0}% — add more family data to unlock the world map.`}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -929,9 +1170,11 @@ export default function LegacyModePage() {
                 <button
                   onClick={() => {
                     if (recording) {
-                      setRecording(false);
-                      setRecordSeconds(0);
-                      toast.success("Story saved to your vault!");
+                      stopRecording();
+                    } else {
+                      startRecording();
+                    }
+                  }}
                       // Invalidate reservoir so next quest load gets updated counts
                       if (families[0]) {
                         fetch(`/api/legacy/reservoir/${families[0].id}/invalidate`, {
@@ -989,10 +1232,23 @@ export default function LegacyModePage() {
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="text-center">
                     <p className="text-4xl font-black text-amber-400">{progress}%</p>
-                    <p className="text-xs text-amber-600 uppercase tracking-widest">Legacy Complete</p>
+                    <p className="text-xs text-amber-600 uppercase tracking-widest">Journey Readiness</p>
                   </div>
                 </div>
               </div>
+              {completeness && completeness.suggestions.length > 0 && (
+                <div className="mt-3 bg-amber-900/20 border border-amber-800/30 rounded-xl p-3">
+                  <p className="text-xs font-bold text-amber-400 uppercase tracking-wide mb-2">Next Steps</p>
+                  <ul className="space-y-1">
+                    {completeness.suggestions.slice(0, 3).map((s, i) => (
+                      <li key={i} className="text-xs text-amber-600/80 flex items-start gap-1.5">
+                        <ChevronRight className="w-3 h-3 text-amber-700 flex-shrink-0 mt-0.5" />
+                        {s}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div className="grid grid-cols-4 gap-2">
                 {[
                   { label: "Stories",   value: memories.length,       icon: BookHeart },
