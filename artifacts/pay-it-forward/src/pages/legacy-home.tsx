@@ -197,7 +197,15 @@ function isReady(state: LegacyState): boolean {
   return state.families.length >= 1 && state.members.length >= 1;
 }
 
-function memberInitials(m: FamilyMember): string {
+interface MinimalMember {
+  display_name: string;
+  role?: string;
+  relation_note?: string | null;
+  birth_year?: number | null;
+  location?: string | null;
+}
+
+function memberInitials(m: MinimalMember): string {
   return (m.display_name ?? "?")
     .split(" ")
     .map(p => p[0] ?? "")
@@ -206,7 +214,7 @@ function memberInitials(m: FamilyMember): string {
     .toUpperCase() || "?";
 }
 
-function memberFirstName(m: FamilyMember): string {
+function memberFirstName(m: MinimalMember): string {
   return (m.display_name ?? "Unknown").split(" ")[0] ?? "Unknown";
 }
 
@@ -573,8 +581,8 @@ export default function LegacyHomePage() {
         relation_note: ancestorCandidate.relation,
         birth_year: ancestorCandidate.birthYear ? parseInt(ancestorCandidate.birthYear) : null,
         location: null as string | null,
-      }
-    : members[0] ?? null;
+      } as MinimalMember
+    : (members[0] as MinimalMember | undefined) ?? null;
   const mm       = Math.floor(recordSeconds / 60);
   const ss       = recordSeconds % 60;
 
