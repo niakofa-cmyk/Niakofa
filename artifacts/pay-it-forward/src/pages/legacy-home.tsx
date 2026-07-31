@@ -48,6 +48,7 @@ interface FamilyMember {
   role: string;
   relation_note: string | null;
   birth_year?: number | null;
+  location?: string | null;
 }
 
 interface FamilyMemory {
@@ -134,7 +135,8 @@ function deriveStats(memories: FamilyMemory[], members: FamilyMember[], intervie
   const knowledge  = Math.min(100, memories.length  * 8 + 10);
   const reputation = Math.min(100, members.length   * 12 + 5);
   const health     = Math.min(100, interviewCount   * 20 + members.length * 5 + 20);
-  return { knowledge, reputation, health };
+  const faith      = Math.min(100, memories.filter(m => m.source === "upload").length * 6 + 15);
+  return { knowledge, reputation, health, faith };
 }
 
 function deriveProgress(state: LegacyState): number {
@@ -651,7 +653,7 @@ export default function LegacyHomePage() {
                       <StatBar label="Health"     value={stats.health}     color="bg-rose-500" />
                       <StatBar label="Knowledge"  value={stats.knowledge}  color="bg-blue-500" />
                       <StatBar label="Reputation" value={stats.reputation} color="bg-amber-500" />
-                      <StatBar label="Faith"      value={stats.faith ?? Math.min(100, memories.filter(m => m.source === "upload").length * 6 + 15)}      color="bg-purple-500" />
+                      <StatBar label="Faith"      value={stats.faith}      color="bg-purple-500" />
                     </div>
                   </div>
                 </div>
