@@ -12,7 +12,7 @@ import {
   getGetRequestStatsQueryKey, getGetRequestsQueryKey, getGetRequestQueryKey, getGetRouteQueryKey,
   getGetUserSettingsQueryKey, getGetCivicNeedsNearbyQueryKey, getGetCivicResourcesNearbyQueryKey,
 } from "@workspace/api-client-react";
-import type { HelpRequest, HelperLocation, CivicNeedNearby, CivicResourceNearby } from "@workspace/api-client-react";
+import type { HelpRequest, HelperLocation, CivicResourceNearby } from "@workspace/api-client-react";
 import { useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { useStableCenter } from "@/hooks/useStableCenter";
 import { useResilientData } from "@/hooks/useResilientData";
@@ -45,7 +45,6 @@ import { useHeadingWithHold } from "@/hooks/useHeadingWithHold";
 import { useMapOrientation } from "@/hooks/useMapOrientation";
 import { useTweenedPosition } from "@/hooks/useTweenedPosition";
 import { usePulse } from "@/hooks/usePulse";
-import { OrientationToggle } from "@/components/OrientationToggle";
 import { LastUpdated } from "@/components/LastUpdated";
 import { RequestListView } from "@/components/RequestListView";
 import { MapControlsPanel } from "@/components/MapControlsPanel";
@@ -390,7 +389,7 @@ export default function MapScreen() {
   const { isSuccess: helpersLoaded, refetch: refetchHelpers } = helpersQuery;
   const helpers = useResilientData(helpersQuery, []);
 
-  const { data: stats } = useGetRequestStats({
+  const { data: _stats } = useGetRequestStats({
     query: { queryKey: getGetRequestStatsQueryKey(), staleTime: 30000, placeholderData: keepPreviousData }
   });
 

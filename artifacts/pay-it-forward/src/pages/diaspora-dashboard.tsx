@@ -124,9 +124,10 @@ export default function DiasporaDashboardPage() {
     );
   }
 
-  const displayName = currentUser.display_name ?? currentUser.username ?? "Welcome";
-  const locale = (currentUser as Record<string, unknown>).city as string | undefined
-    || (currentUser as Record<string, unknown>).locale as string | undefined
+  const userRecord = currentUser as unknown as Record<string, unknown> | null;
+  const displayName = (userRecord?.display_name as string | undefined) ?? (userRecord?.username as string | undefined) ?? "Welcome";
+  const locale = (userRecord?.city as string | undefined)
+    || (userRecord?.locale as string | undefined)
     || "Fort Worth, TX";
 
   // Determine which nav item is active based on current path

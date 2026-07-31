@@ -6,8 +6,8 @@ import {
   User as UserIcon, Shield, MapPin, Settings, Wallet, Heart, Star,
   DollarSign, Gift, Clock, ChevronRight, AlertCircle, CheckCircle2,
   ExternalLink, BookOpen, Bell, Lock, Trash2, X, Phone, FileText,
-  Eye, Users, Info, ChevronLeft, Flag, Plus,
-  Camera, Sliders, CreditCard, Activity, Loader2, Building2, Award, Wrench,
+  Eye, Users, Info, Flag, Plus,
+  Camera, Sliders, CreditCard, Activity, Loader2, Building2, Award,
   LayoutDashboard,
 } from "lucide-react";
 import { ReportModal } from "@/components/ReportModal";
@@ -24,8 +24,7 @@ import {
 } from "@workspace/api-client-react";
 import type { Transaction } from "@workspace/api-client-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { TrustTierBadge, getTrustTier } from "@/components/TrustTierBadge";
-import { IdentityVerificationCard } from "@/components/IdentityVerificationCard";
+import { TrustTierBadge } from "@/components/TrustTierBadge";
 import { useQueryClient } from "@tanstack/react-query";
 
 type ProfileTab = "overview" | "history" | "settings";
@@ -1044,7 +1043,7 @@ export default function ProfileScreen() {
   const [openDialog, setOpenDialog] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [isVerifyingIdentity, setIsVerifyingIdentity] = useState(false);
-  const queryClient = useQueryClient();
+  const _queryClient = useQueryClient();
 
   const userId = currentUser?.id;
 

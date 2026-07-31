@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
-import { toast } from "sonner";
 
 interface Guide {
   id: string;

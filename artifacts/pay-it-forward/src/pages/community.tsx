@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useIsAnimationSuppressed } from "@/hooks/useAnimationPreference";
 import { useNiaStory } from "@/hooks/useNiaStory";

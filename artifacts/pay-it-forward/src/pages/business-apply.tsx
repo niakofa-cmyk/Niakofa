@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { getToken } from "@/lib/auth";
 import { useAppContext } from "@/lib/AppContext";
-import { useGetBusinessRequests, useGetBusinessPendingRequests, useSetBusinessMemberCap, useApproveBusinessRequest } from "@workspace/api-client-react";
+import { useGetBusinessRequests, useGetBusinessPendingRequests, useApproveBusinessRequest } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -271,7 +271,7 @@ function MemberList({ businessId, isOwner }: { businessId: number; isOwner: bool
 }
 
 // ── Business Requests Dashboard ────────────────────────────────────────────────
-function BusinessRequestsDashboard({ businessId, isOwner }: { businessId: number; isOwner: boolean }) {
+function BusinessRequestsDashboard({ businessId, isOwner: _isOwner }: { businessId: number; isOwner: boolean }) {
   const { data: requests, isLoading } = useGetBusinessRequests(businessId);
   const total = (requests ?? []).reduce((sum, r) => sum + (r.pay_it_forward_amount ?? 0), 0);
 

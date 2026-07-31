@@ -12,7 +12,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
-  ClipboardList, ChevronLeft, Plus, MapPin, Clock, CheckCircle2,
+  ClipboardList, ChevronLeft, Plus, Clock, CheckCircle2,
   AlertCircle, DollarSign, Send, RefreshCw, Receipt, X, Landmark,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";

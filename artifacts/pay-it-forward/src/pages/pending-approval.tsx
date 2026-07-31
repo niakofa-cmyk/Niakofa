@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Clock, ShieldCheck, XCircle, LogOut, Mail, MessageCircle, RefreshCw, AlertCircle, ChevronRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useAppContext } from "@/lib/AppContext";
 import { clearToken } from "@/lib/auth";
 import { useTranslation } from "react-i18next";

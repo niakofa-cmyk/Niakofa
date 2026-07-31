@@ -7,7 +7,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import { useAppContext } from "@/lib/AppContext";
 import { useGetRequest, useGetRoute, useGetOnlineHelpers, getGetRequestQueryKey, getGetRouteQueryKey, getGetOnlineHelpersQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Navigation2, Clock, CheckCircle2, Phone, MessageCircle, AlertTriangle, Share2, MapPin } from "lucide-react";
+import { ChevronLeft, Navigation2, CheckCircle2, MessageCircle, Share2, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWebSocket } from "@/lib/useWebSocket";

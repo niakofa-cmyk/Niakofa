@@ -692,7 +692,7 @@ export default function BirdTestPage() {
     let offTimer: ReturnType<typeof setTimeout>;
     const id = setInterval(() => {
       const key = keys[i % keys.length];
-      setReactionActive(prev => {
+      setReactionActive(() => {
         const next: Record<string, boolean> = {};
         keys.forEach(k => { next[k] = false; });
         next[key] = true;
@@ -1562,7 +1562,7 @@ function DirectionalTurnDemo() {
     { deg: 337.5, label: "NNW 337°", navigating: true,  speed: 8 },
   ];
   // Gaze direction row: verify head responds to all 8 gaze compass points
-  const GAZE_STATES = [
+  const _GAZE_STATES = [
     { label: "Forward", heading: 0, speed: 0, approaching: false, gaze: "idle" },
     { label: "Up",      heading: 0, speed: 0, approaching: false, gaze: "up" },
     { label: "Down",    heading: 0, speed: 0, approaching: true,  gaze: "approach" },

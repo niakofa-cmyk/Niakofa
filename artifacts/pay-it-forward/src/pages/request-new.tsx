@@ -60,7 +60,7 @@ const CATEGORIES = [
   { value: "other",             label: "📋 Other",              group: "Community" },
 ] as const;
 
-type CategoryValue = typeof CATEGORIES[number]["value"];
+type _CategoryValue = typeof CATEGORIES[number]["value"];
 
 const formSchema = z.object({
   title: z.string().min(3, "Title is too short").max(80, "Title is too long"),
@@ -190,7 +190,7 @@ export default function NewRequestScreen() {
   const urgency = form.watch("urgency");
   const selectedCategory = form.watch("category");
   const isSensitive = isSensitiveCategory(selectedCategory);
-  const [sensitiveAcknowledged, setSensitiveAcknowledged] = useState(false);
+  const [_sensitiveAcknowledged, setSensitiveAcknowledged] = useState(false);
 
   // ── Liability/ToS waiver state ─────────────────────────────────────────────
   // WaiverModal is shown for WAIVER_CATEGORIES (superset of SENSITIVE_CATEGORIES).

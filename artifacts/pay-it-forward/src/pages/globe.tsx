@@ -9,19 +9,17 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import Map, { Marker, Source, Layer, type MapRef } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
-import type mapboxgl from "mapbox-gl";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Globe2, Mic, MicOff, BookOpen, X, ChevronLeft, ChevronDown,
-  ChevronUp, Check, Globe, MapPin, Clock, Languages, Play, Square,
-  Send, ArrowLeft, Lock, Eye, Calendar, Flag, ClipboardList, RefreshCw,
+  ChevronUp, Check, Globe, MapPin, Languages, Play, Square,
+  Send, ArrowLeft, Lock, Flag, ClipboardList, RefreshCw,
   Trash2, AlertTriangle,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 import { toast } from "@/hooks/use-toast";
-import { useTranslation } from "react-i18next";
 import { StripePaymentModal, isStripeConfigured } from "@/components/StripePaymentModal";
 import { LastUpdated } from "@/components/LastUpdated";
 
@@ -489,7 +487,7 @@ const DAILY_PROMPTS = [
 
 function RecordStoryPanel({
   selectedHub,
-  onClose,
+  onClose: _onClose,
   onSaved,
 }: {
   selectedHub: Hub | null;

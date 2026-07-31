@@ -16,7 +16,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import {
   ArrowLeft, Plus, Search, Image, Mic, FileText, Video,
-  Users, BookHeart, Loader2, Calendar, MapPin,
+  BookHeart, Loader2, Calendar, MapPin,
   ChevronRight, Trash2, UserPlus, Upload, AlertCircle, RefreshCw,
   X, Square, TreePine, Languages, ChevronLeft, CheckCircle2,
 } from "lucide-react";

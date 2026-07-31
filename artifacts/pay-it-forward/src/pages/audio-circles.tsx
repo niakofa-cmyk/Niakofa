@@ -328,12 +328,12 @@ export default function AudioCirclesScreen() {
   const [followedCircles, setFollowedCircles] = useState<CircleSummary[]>([]);
   const [followedLoading, setFollowedLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<"discover" | "following">("discover");
-  const [recommended, setRecommended] = useState<RecommendedCircle[]>([]);
-  const [trending, setTrending] = useState<TrendingCircle[]>([]);
-  const [nearby, setNearby] = useState<NearbyCircle[]>([]);
-  const [discoveryLoading, setDiscoveryLoading] = useState(false);
-  const [communityStats, setCommunityStats] = useState<CommunityStats | null>(null);
-  const [showStatsModal, setShowStatsModal] = useState(false);
+  const [recommended, _setRecommended] = useState<RecommendedCircle[]>([]);
+  const [trending, _setTrending] = useState<TrendingCircle[]>([]);
+  const [nearby, _setNearby] = useState<NearbyCircle[]>([]);
+  const [_discoveryLoading, _setDiscoveryLoading] = useState(false);
+  const [communityStats, _setCommunityStats] = useState<CommunityStats | null>(null);
+  const [_showStatsModal, setShowStatsModal] = useState(false);
 
   // Ref for the highlighted neighborhood card (from Community tab navigation)
   const highlightRef = useRef<HTMLDivElement | null>(null);

@@ -1,4 +1,4 @@
-import { useState , useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { Heart, MapPin, Bell, Shield, ChevronRight, Check, Loader2, Building2 } from "lucide-react";

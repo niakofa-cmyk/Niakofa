@@ -542,8 +542,8 @@ export default function AudioCircleRoomScreen() {
   const [showReportModal, setShowReportModal] = useState<number | null>(null);
   const [reportReason, setReportReason] = useState("");
   const [preJoinChecked, setPreJoinChecked] = useState(false);
-  const [preJoinMicReady, setPreJoinMicReady] = useState(false);
-  const [preJoinCameraReady, setPreJoinCameraReady] = useState(false);
+  const [_preJoinMicReady, setPreJoinMicReady] = useState(false);
+  const [_preJoinCameraReady, setPreJoinCameraReady] = useState(false);
 
   // ── New modal states ───────────────────────────────────────────────────────
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -588,7 +588,7 @@ export default function AudioCircleRoomScreen() {
   const [showTransferModal, setShowTransferModal] = useState(false);
 
   // ── Desktop mod right-sidebar tab ─────────────────────────────────────────
-  const [desktopModTab, setDesktopModTab] = useState<"controls" | "chat">("controls");
+  const [_desktopModTab, setDesktopModTab] = useState<"controls" | "chat">("controls");
 
   // ── Creator Tools: Polls, Q&A, Screen share, Shared notes, Auto-remove ──
   const [showPollModal, setShowPollModal] = useState(false);
@@ -602,9 +602,9 @@ export default function AudioCircleRoomScreen() {
   const [screenSharing, setScreenSharing] = useState(false);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [sharedNotes, setSharedNotes] = useState<string>("");
-  const [notesSaving, setNotesSaving] = useState(false);
+  const [_notesSaving, setNotesSaving] = useState(false);
   const [autoRemoveEnabled, setAutoRemoveEnabled] = useState(false);
-  const [autoRemoveIdleMs, setAutoRemoveIdleMs] = useState(600000); // 10 min default
+  const [autoRemoveIdleMs, _setAutoRemoveIdleMs] = useState(600000); // 10 min default
 
   // ── In-app invite user search ──────────────────────────────────────────────
   const [inviteSearch, setInviteSearch] = useState("");
@@ -821,7 +821,7 @@ export default function AudioCircleRoomScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.id, myUserId]);
 
-  function subscribeRaw(type: string, handler: (e: WsEvent) => void): () => void {
+  function subscribeRaw(_type: string, handler: (e: WsEvent) => void): () => void {
     signalHandlerRef.current = handler;
     return () => { signalHandlerRef.current = null; };
   }
@@ -1877,7 +1877,7 @@ export default function AudioCircleRoomScreen() {
     toast({ title: "Poll started!", description: "Participants can now vote." });
   };
 
-  const votePoll = async (optionIndex: number) => {
+  const _votePoll = async (optionIndex: number) => {
     if (!activePoll || myPollVote !== null) return;
     setMyPollVote(optionIndex);
     setActivePoll(prev => prev ? {
@@ -1929,7 +1929,7 @@ export default function AudioCircleRoomScreen() {
     }
   };
 
-  const saveSharedNotes = async () => {
+  const _saveSharedNotes = async () => {
     setNotesSaving(true);
     try {
       await post("/chat", { body: `📋 Shared Notes: ${sharedNotes}` });
@@ -4152,10 +4152,10 @@ function RoomControlButton({ icon: Icon, label, onClick, disabled, tone }: {
 }
 
 function ManagementPanelBody({
-  audience, isHost, session, onPromote, onAssignCohost, onDismissHand,
+  audience, isHost, session, onPromote, onAssignCohost: _onAssignCohost, onDismissHand,
   onMuteAll, onLowerAll, onShare, onOpenInvite, onOpenSettings, onToggleRecording,
   recordingOn, recordingDisabled,
-  onEndCircle, speakerCount, onlineParticipants, myUserId,
+  onEndCircle, speakerCount: _speakerCount, onlineParticipants, myUserId,
   onMuteUser, onDemoteUser, onKickUser, onBlockUser, onReportUser, onAssignCohostUser,
   onOpenTransfer,
   onOpenPoll, onOpenQA, onToggleScreenShare, onOpenNotes, onToggleAutoRemove,

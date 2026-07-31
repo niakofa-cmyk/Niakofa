@@ -2,14 +2,14 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
   Shield, AlertCircle, CheckCircle2, Clock, X, ChevronLeft, ChevronRight,
-  Eye, Flag, User as UserIcon, RefreshCw, ExternalLink,
+  Eye, Flag, User as UserIcon, RefreshCw,
   Users, Search, Ban, AlertTriangle, Star, Bot, Power, Timer,
   BarChart2, TrendingUp, Activity, Zap, MessageSquare, Package,
   ChevronDown, ChevronUp, CheckSquare, Square, HandHeart, DollarSign,
   LineChart, FileText, Gavel, Sparkles, RotateCcw, Landmark, Building2,
   SlidersHorizontal, Save, Loader2, Server, LifeBuoy, Cpu, CheckCircle, WifiOff,
-  Siren, MapPin, Globe, Fingerprint, Banknote, BadgeCheck, Inbox,
-  ShieldAlert, ThumbsUp, ThumbsDown, Megaphone, Map, Link, Navigation2, ShieldCheck,
+  Siren, MapPin, Globe, Fingerprint, Banknote,
+  ShieldAlert, Megaphone, Map, Link, Navigation2, ShieldCheck,
   Download, BookOpen, Wallet, Plus
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -960,7 +960,7 @@ function AuditLogTable() {
 }
 
 // ── Bulk Helper Approvals ─────────────────────────────────────────────────────
-function BulkHelperApprovals() {
+function _BulkHelperApprovals() {
   const [pending, setPending] = useState<PendingHelper[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -5702,7 +5702,7 @@ function DispatchSuggestSection() {
     } catch { setError("Network error"); } finally { setLoading(false); }
   };
 
-  const trafficColors: Record<string, string> = {
+  const _trafficColors: Record<string, string> = {
     low:      "text-green-400",
     moderate: "text-yellow-400",
     heavy:    "text-orange-400",
@@ -5798,8 +5798,8 @@ function SystemTab() {
   const [hardshipLoading, setHardshipLoading] = useState(true);
   const [resolvingId, setResolvingId] = useState<number | null>(null);
 
-  const [healthError, setHealthError] = useState<string | null>(null);
-  const [hardshipError, setHardshipError] = useState<string | null>(null);
+  const [_healthError, setHealthError] = useState<string | null>(null);
+  const [_hardshipError, _setHardshipError] = useState<string | null>(null);
 
   const loadHealth = async () => {
     setHealthLoading(true);

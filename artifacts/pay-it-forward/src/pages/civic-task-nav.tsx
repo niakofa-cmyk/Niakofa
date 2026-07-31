@@ -67,7 +67,7 @@ type PageState = "loading" | "gps" | "routing" | "navigating" | "arrived" | "err
 export default function CivicTaskNav() {
   const { needId } = useParams<{ needId: string }>();
   const [, setLocation] = useLocation();
-  const queryClient = useQueryClient();
+  const _queryClient = useQueryClient();
 
   // ── Solar / bird environment ────────────────────────────────────────────────
   const { myLocation, currentUser } = useAppContext();

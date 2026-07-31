@@ -12,9 +12,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import {
-  ArrowLeft, TreePine, Users, Calendar, Plus, Search,
+  ArrowLeft, TreePine, Calendar, Plus, Search,
   Loader2, ChevronRight, User, Link2, AlertCircle,
-  GitBranch, X, CheckCircle2, BookHeart,
+  GitBranch, X, BookHeart,
   Heart, UserPlus, Trash2, Network,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
@@ -44,7 +44,7 @@ interface FamilySpace {
   my_role: string;
 }
 
-function TreePersonNode({
+function _TreePersonNode({
   person,
   isSelected,
   onClick,
@@ -847,7 +847,7 @@ function DraggableTreeCanvas({
 // ─── Add Relation Modal ────────────────────────────────────────────────────────
 
 function AddRelationModal({
-  familyId,
+  familyId: _familyId,
   nodes,
   preselectedFrom,
   onClose,
