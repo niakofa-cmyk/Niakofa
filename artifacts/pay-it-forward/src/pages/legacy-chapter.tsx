@@ -64,7 +64,7 @@ const SCENE_CHOICES: Record<string, Choice[]> = {
 };
 
 export default function LegacyChapterPlay() {
-  const [params] = useParams<{ chapterId: string }>();
+  const params = useParams<{ chapterId: string }>();
   const [, navigate] = useLocation();
   const { currentUser } = useAppContext();
 

@@ -1,5 +1,5 @@
 import {
-  pgTable, serial, integer, text, timestamp, boolean, pgEnum, index,
+  pgTable, serial, integer, timestamp, boolean, pgEnum, index,
 } from "drizzle-orm/pg-core";
 import { familiesTable, familyMembersTable } from "./families";
 

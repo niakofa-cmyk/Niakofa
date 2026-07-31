@@ -516,7 +516,7 @@ export default function LegacyModePage() {
     } catch {
       toast.error("Microphone access denied or unavailable.");
     }
-  }, [families, promptIdx, loadData]);
+  }, [promptIdx, loadData]);
 
   const stopRecording = useCallback(() => {
     const recorder = mediaRecorderRef.current;
@@ -538,7 +538,8 @@ export default function LegacyModePage() {
     );
   }
 
-  const { loading, families, members, memories, interviewCount } = legacyState;
+  const { loading, members, memories, interviewCount } = legacyState;
+  const families = legacyState.families;
   const ready    = isReady(legacyState);
   const progress = completeness?.readinessScore ?? deriveProgress(legacyState);
   const ancestor = ancestors.length > 0
@@ -1171,10 +1172,6 @@ export default function LegacyModePage() {
                   onClick={() => {
                     if (recording) {
                       stopRecording();
-                    } else {
-                      startRecording();
-                    }
-                  }}
                       // Invalidate reservoir so next quest load gets updated counts
                       if (families[0]) {
                         fetch(`/api/legacy/reservoir/${families[0].id}/invalidate`, {
@@ -1182,8 +1179,7 @@ export default function LegacyModePage() {
                         }).catch(() => { /* fire-and-forget */ });
                       }
                     } else {
-                      setRecording(true);
-                      setRecordSeconds(0);
+                      startRecording();
                     }
                   }}
                   className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-xs uppercase tracking-wide transition-all ${

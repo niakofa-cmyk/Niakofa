@@ -46,22 +46,29 @@ interface CompletenessResponse {
 
 export default function LegacyStartPage() {
   const [, navigate] = useLocation();
-  const { legacyState } = useAppContext();
+  const { currentUser } = useAppContext();
   const [ancestors, setAncestors] = useState<AncestorCandidate[]>([]);
   const [completeness, setCompleteness] = useState<CompletenessResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [initializing, setInitializing] = useState(false);
-
-  const familyId = legacyState.families[0]?.id;
+  const [familyId, setFamilyId] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
-    if (!familyId) { setLoading(false); return; }
+    if (!currentUser) { setLoading(false); return; }
     setLoading(true);
     try {
+      // First get the user's families
+      const famRes = await fetch("/api/family", { headers: authHeaders() });
+      if (!famRes.ok) { setLoading(false); return; }
+      const famData = await famRes.json() as { families?: { id: number }[] };
+      if (!famData.families?.length) { setLoading(false); return; }
+      const fid = famData.families[0].id;
+      setFamilyId(fid);
+
       const [ancRes, compRes] = await Promise.all([
-        fetch(`/api/legacy/ancestors/${familyId}`, { headers: authHeaders() }),
-        fetch(`/api/legacy/completeness/${familyId}`, { headers: authHeaders() }),
+        fetch(`/api/legacy/ancestors/${fid}`, { headers: authHeaders() }),
+        fetch(`/api/legacy/completeness/${fid}`, { headers: authHeaders() }),
       ]);
 
       if (ancRes.ok) {
@@ -92,7 +99,7 @@ export default function LegacyStartPage() {
       });
 
       if (!res.ok) {
-        const err = await res.json().catch({}) as { error?: string; suggestions?: string[] };
+        const err = await res.json().catch(() => ({})) as { error?: string; suggestions?: string[] };
         toast.error(err.error ?? "Not enough vault data to begin");
         if (err.suggestions?.length) {
           toast.info(err.suggestions[0], { duration: 6000 });

@@ -117,27 +117,27 @@ const WORLD_STAGES_FALLBACK = [
 ];
 
 function generateWorldStages(memories: FamilyMemory[], members: FamilyMember[]): typeof WORLD_STAGES_FALLBACK {
-  const locationMap = new Map<string, { date: string | null; label: string }>();
+  const locationMap: Record<string, { date: string | null; label: string }> = {};
   for (const m of memories) {
     if (m.location_label) {
-      const existing = locationMap.get(m.location_label);
+      const existing = locationMap[m.location_label];
       if (!existing || (m.memory_date && (!existing.date || m.memory_date < existing.date))) {
-        locationMap.set(m.location_label, { date: m.memory_date, label: m.location_label });
+        locationMap[m.location_label] = { date: m.memory_date, label: m.location_label };
       }
     }
   }
   for (const m of members) {
-    if (m.location && !locationMap.has(m.location)) {
-      locationMap.set(m.location, { date: null, label: m.location });
+    if (m.location && !locationMap[m.location]) {
+      locationMap[m.location] = { date: null, label: m.location };
     }
   }
-  const locations = Array.from(locationMap.values()).sort((a, b) => {
+  const locations = Object.values(locationMap).sort((a, b) => {
     if (!a.date) return 1;
     if (!b.date) return -1;
     return a.date.localeCompare(b.date);
   });
   if (locations.length < 2) return WORLD_STAGES_FALLBACK;
-  return locations.slice(0, 6).map((loc, i) => {
+  return locations.slice(0, 6).map((loc: { date: string | null; label: string }, i: number) => {
     const year = loc.date ? new Date(loc.date).getFullYear().toString() : "";
     return { id: i + 1, label: year ? `${loc.label} — ${year}` : loc.label, chapter: `Chapter ${i + 1}`, locked: i > 2 };
   });
