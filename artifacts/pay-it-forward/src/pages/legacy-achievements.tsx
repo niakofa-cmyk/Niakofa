@@ -317,7 +317,7 @@ export default function LegacyAchievementsPage() {
                         </div>
                         <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                           <div
-                            className={`h-full rounded-full ${unlocked ? ach.dot : ach.dot}`}
+                            className={`h-full rounded-full ${ach.dot}`}
                             style={{ width: `${pct}%`, opacity: unlocked ? 1 : 0.6, transition: "width 1s ease" }}
                           />
                         </div>

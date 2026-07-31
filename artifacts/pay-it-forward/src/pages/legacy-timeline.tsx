@@ -212,7 +212,7 @@ export default function LegacyTimelinePage() {
       const res = await fetch(`/api/family/${familyId}/timeline`, { headers: authHeaders() });
       if (!res.ok) throw new Error();
       const data = await res.json();
-      const real: TimelineEvent[] = (data.events ?? []).map((e: any) => ({
+      const real: TimelineEvent[] = ((data.events ?? []) as TimelineEvent[]).map(e => ({
         ...e,
         event_type: e.event_type ?? null,
         family_id: familyId,
