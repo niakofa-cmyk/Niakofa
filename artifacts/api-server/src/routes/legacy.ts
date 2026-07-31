@@ -33,7 +33,7 @@ import {
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { cacheGet, cacheSet, cacheDel } from "../lib/cache";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, asc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -733,5 +733,4 @@ router.post(
 );
 
 export { selectAncestors };
-export type { AncestorCandidate };
 export default router;

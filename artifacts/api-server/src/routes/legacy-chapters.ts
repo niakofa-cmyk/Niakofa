@@ -24,7 +24,6 @@
 import { Router } from "express";
 import {
   db,
-  familiesTable,
   familyMembersTable,
   familyMemoriesTable,
   familyEventsTable,
@@ -36,7 +35,7 @@ import {
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
-import { eq, and, sql, inArray, asc } from "drizzle-orm";
+import { eq, and, inArray, asc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { calculateCompleteness, CHAPTER_UNLOCK_THRESHOLD } from "./legacy-completeness";
 
@@ -339,7 +338,7 @@ router.post(
             chapter_number: seed.chapterNumber,
             title: seed.title,
             synopsis: seed.synopsis,
-            status: i === 0 ? "unlocked" : "locked",
+            status: i === 0 ? ("unlocked" as const) : ("locked" as const),
             chapter_data: seed.chapterData,
             unlocked_at: i === 0 ? new Date() : null,
           })),
@@ -482,8 +481,6 @@ router.get(
       const eventIds = (data.eventIds as number[]) ?? [];
       const placeIds = (data.placeIds as number[]) ?? [];
       const memoryIds = (data.memoryIds as number[]) ?? [];
-      const storyIds = (data.storyIds as number[]) ?? [];
-
       // Fetch referenced vault data for scene context
       const [places, events, memories] = await Promise.all([
         placeIds.length > 0

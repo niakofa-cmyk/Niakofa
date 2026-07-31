@@ -23,7 +23,6 @@
 import { Router } from "express";
 import {
   db,
-  familiesTable,
   familyMembersTable,
   familyMemoriesTable,
   familyInterviewsTable,
@@ -92,7 +91,7 @@ export interface CompletenessResponse {
   suggestions: string[];
 }
 
-async function calculateCompleteness(familyId: number): Promise<CompletenessResponse> {
+export async function calculateCompleteness(familyId: number): Promise<CompletenessResponse> {
   // People: active members
   const [{ memberCount }] = await db
     .select({ memberCount: sql<number>`count(*)::int` })
@@ -248,5 +247,3 @@ router.get(
 );
 
 export default router;
-export { calculateCompleteness, CHAPTER_UNLOCK_THRESHOLD };
-export type { CompletenessResponse, CompletenessDimension };
