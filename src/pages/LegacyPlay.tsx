@@ -4,7 +4,7 @@ import {
   ArrowLeft, Loader2, MapPin, Calendar, BookOpen,
   CheckCircle2, ChevronRight, Sparkles, AlertCircle,
   Shield, Clock, Heart, Brain, Users,
-  Globe2, Flame, Crown,
+  Globe2, Flame, Crown, BookHeart,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { loadChapterScenes, updateSessionProgress, completeChapter, unlockNextChapter } from '@/lib/legacyEngine'
@@ -151,6 +151,41 @@ export default function LegacyPlay() {
       await completeChapter(session.chapter_id)
       if (chapter?.world_id && chapter?.chapter_number) {
         await unlockNextChapter(chapter.world_id, chapter.chapter_number)
+      }
+
+      if (session.world_id) {
+        const { data: worldData } = await supabase
+          .from('legacy_worlds')
+          .select('family_id')
+          .eq('id', session.world_id)
+          .maybeSingle()
+        if (worldData?.family_id) {
+          const { count } = await supabase
+            .from('legacy_chapters')
+            .select('*', { count: 'exact', head: true })
+            .eq('family_id', worldData.family_id)
+            .eq('status', 'completed')
+          const { data: members } = await supabase
+            .from('family_members').select('*').eq('family_id', worldData.family_id)
+          const { data: memories } = await supabase
+            .from('family_memories').select('*').eq('family_id', worldData.family_id)
+          const { data: places } = await supabase
+            .from('family_places').select('*').eq('family_id', worldData.family_id)
+          const { data: interviews } = await supabase
+            .from('family_interviews').select('*').eq('family_id', worldData.family_id)
+          const { data: artifacts } = await supabase
+            .from('family_artifacts').select('*').eq('family_id', worldData.family_id)
+          const { updateAchievementProgress } = await import('@/lib/legacyEngine')
+          await updateAchievementProgress(
+            worldData.family_id,
+            (members || []) as any[],
+            (memories || []) as any[],
+            (places || []) as any[],
+            (interviews || []) as any[],
+            (artifacts || []) as any[],
+            count || 0,
+          )
+        }
       }
     }
   }
@@ -407,6 +442,28 @@ export default function LegacyPlay() {
                   </div>
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Preserve action for quest-type scenes */}
+          {!showConsequence && currentScene.type === 'quest' && sceneChoices.length === 0 && (
+            <div className="rounded-lg border border-accent-500/30 bg-accent-500/10 p-4">
+              <div className="flex items-start gap-2">
+                <BookHeart className="mt-1 h-5 w-5 text-accent-400" />
+                <div>
+                  <p className="text-sm font-semibold text-accent-300">Preserve this moment</p>
+                  <p className="mt-1 text-xs text-legacy-300">
+                    This scene has unanswered questions. Recording a family story or uploading a photo
+                    will expand the game world.
+                  </p>
+                  <button
+                    onClick={() => navigate('/legacy')}
+                    className="mt-2 flex items-center gap-1 text-xs text-accent-400 transition hover:text-accent-300"
+                  >
+                    <ChevronRight className="h-3 w-3" /> Go to Family Vault
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

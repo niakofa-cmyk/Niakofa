@@ -6,7 +6,8 @@ import {
   BookHeart, Crown, Map, Target,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import type { LegacyAchievement, LegacyAchievementProgress } from '@/lib/types'
+import { seedAchievementsIfEmpty, updateAchievementProgress } from '@/lib/legacyEngine'
+import type { LegacyAchievement, LegacyAchievementProgress, FamilyMember, FamilyMemory, FamilyPlace, FamilyInterview, FamilyArtifact } from '@/lib/types'
 
 const ICON_MAP: Record<string, typeof Trophy> = {
   Trophy, Mic, Camera, Globe2, Users, Flame, BookHeart, Crown, Map, Target,
@@ -22,12 +23,40 @@ export default function LegacyAchievements() {
     (async () => {
       setLoading(true)
       try {
-        const [achRes, progRes] = await Promise.all([
+        await seedAchievementsIfEmpty()
+
+        const [achRes, progRes, memRes, memDataRes, plcRes, ivRes, artRes] = await Promise.all([
+          supabase.from('legacy_achievements').select('*').order('created_at'),
+          supabase.from('legacy_achievement_progress').select('*'),
+          supabase.from('family_members').select('*'),
+          supabase.from('family_memories').select('*'),
+          supabase.from('family_places').select('*'),
+          supabase.from('family_interviews').select('*'),
+          supabase.from('family_artifacts').select('*'),
+        ])
+
+        const members = (memRes.data || []) as FamilyMember[]
+        const memories = (memDataRes.data || []) as FamilyMemory[]
+        const places = (plcRes.data || []) as FamilyPlace[]
+        const interviews = (ivRes.data || []) as FamilyInterview[]
+        const artifacts = (artRes.data || []) as FamilyArtifact[]
+
+        if (members.length > 0) {
+          const familyId = members[0].family_id
+          const { count } = await supabase
+            .from('legacy_chapters')
+            .select('*', { count: 'exact', head: true })
+            .eq('family_id', familyId)
+            .eq('status', 'completed')
+          await updateAchievementProgress(familyId, members, memories, places, interviews, artifacts, count || 0)
+        }
+
+        const [achRes2, progRes2] = await Promise.all([
           supabase.from('legacy_achievements').select('*').order('created_at'),
           supabase.from('legacy_achievement_progress').select('*'),
         ])
-        setAchievements((achRes.data || []) as LegacyAchievement[])
-        setProgress((progRes.data || []) as LegacyAchievementProgress[])
+        setAchievements((achRes2.data || []) as LegacyAchievement[])
+        setProgress((progRes2.data || []) as LegacyAchievementProgress[])
       } catch (err) {
         console.error('Failed to load achievements:', err)
       } finally {

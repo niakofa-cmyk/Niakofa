@@ -9,8 +9,8 @@ import {
   BookOpen,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { calculateCompleteness, selectAncestorCandidates, generateChapters, createOrUpdateWorld, generateQuestsFromGaps, computeKnowledgeHash, recordKnowledgeVersion } from '@/lib/legacyEngine'
-import type { FamilyMember, FamilyMemory, FamilyPlace, FamilyEvent, FamilyInterview, FamilyArtifact, LegacyWorld, AncestorCandidate, GameMode } from '@/lib/types'
+import { calculateCompleteness, selectAncestorCandidates, generateChapters, createOrUpdateWorld, generateQuestsFromGaps, persistQuests, loadQuests, seedAchievementsIfEmpty, updateAchievementProgress } from '@/lib/legacyEngine'
+import type { FamilyMember, FamilyMemory, FamilyPlace, FamilyEvent, FamilyInterview, FamilyArtifact, LegacyWorld, AncestorCandidate, GameMode, LegacyQuest } from '@/lib/types'
 
 const CHAPTER_UNLOCK_THRESHOLD = 40
 
@@ -35,7 +35,8 @@ export default function LegacyHub() {
   const [generating, setGenerating] = useState(false)
   const [selectedMode, setSelectedMode] = useState<GameMode>('legacy')
   const [completeness, setCompleteness] = useState<{ total: number; chapterUnlockReady: boolean; dimensions: { key: string; label: string; score: number; max: number; count: number; hint: string }[] } | null>(null)
-  const [quests, setQuests] = useState<{ id: string; title: string; description: string; quest_type: string; reward: string | null }[]>([])
+  const [quests, setQuests] = useState<LegacyQuest[]>([])
+  const [completedChapters, setCompletedChapters] = useState(0)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -69,10 +70,14 @@ export default function LegacyHub() {
       const candidates = selectAncestorCandidates(m, mem, ev, p, iv, art)
       setAncestors(candidates)
 
+      await seedAchievementsIfEmpty()
+
       if (candidates.length > 0) {
         const topAncestor = candidates[0].member
         const generatedQuests = generateQuestsFromGaps(topAncestor, m, mem, ev, p)
-        setQuests(generatedQuests)
+        await persistQuests(generatedQuests, topAncestor.family_id)
+        const persistedQuests = await loadQuests(topAncestor.family_id)
+        setQuests(persistedQuests.length > 0 ? persistedQuests : generatedQuests)
       }
 
       if (m.length > 0) {
@@ -84,6 +89,15 @@ export default function LegacyHub() {
           .order('updated_at', { ascending: false })
           .maybeSingle()
         if (existingWorld) setWorld(existingWorld as LegacyWorld)
+
+        const { count } = await supabase
+          .from('legacy_chapters')
+          .select('*', { count: 'exact', head: true })
+          .eq('family_id', familyId)
+          .eq('status', 'completed')
+        setCompletedChapters(count || 0)
+
+        await updateAchievementProgress(familyId, m, mem, p, iv, art, count || 0)
       }
     } catch (err) {
       console.error('Failed to load family data:', err)
@@ -284,7 +298,7 @@ export default function LegacyHub() {
           <QuestsModeContent quests={quests} navigate={navigate} />
         )}
         {selectedMode === 'reunion' && (
-          <ReunionModeContent members={members} />
+          <ReunionModeContent members={members} memories={memories} interviews={interviews} artifacts={artifacts} completedChapters={completedChapters} />
         )}
       </main>
     </div>
@@ -297,7 +311,7 @@ function LegacyModeContent({ world, ancestors, completeness, quests, navigate }:
   world: LegacyWorld | null
   ancestors: AncestorCandidate[]
   completeness: { total: number; chapterUnlockReady: boolean; dimensions: { key: string; label: string; score: number; max: number; count: number; hint: string }[] } | null
-  quests: { id: string; title: string; description: string; quest_type: string; reward: string | null }[]
+  quests: LegacyQuest[]
   navigate: (path: string) => void
 }) {
   return (
@@ -407,6 +421,9 @@ function LegacyModeContent({ world, ancestors, completeness, quests, navigate }:
                         {quest.reward}
                       </p>
                     )}
+                    <span className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs capitalize ${quest.status === 'completed' ? 'bg-accent-500/20 text-accent-300' : 'bg-legacy-700/30 text-legacy-400'}`}>
+                      {quest.status}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -469,7 +486,7 @@ function ExplorationModeContent({ places, events, navigate }: {
 // ── Quests Mode ──────────────────────────────────────────────────────────────
 
 function QuestsModeContent({ quests, navigate }: {
-  quests: { id: string; title: string; description: string; quest_type: string; reward: string | null }[]
+  quests: LegacyQuest[]
   navigate: (path: string) => void
 }) {
   return (
@@ -512,7 +529,26 @@ function QuestsModeContent({ quests, navigate }: {
 
 // ── Reunion Mode ─────────────────────────────────────────────────────────────
 
-function ReunionModeContent({ members }: { members: FamilyMember[] }) {
+function ReunionModeContent({ members, memories, interviews, artifacts, completedChapters }: {
+  members: FamilyMember[]
+  memories: FamilyMemory[]
+  interviews: FamilyInterview[]
+  artifacts: FamilyArtifact[]
+  completedChapters: number
+}) {
+  const memberScores = members.map(m => {
+    const memberMemories = memories.filter(mem => mem.member_id === m.id).length
+    const memberInterviews = interviews.filter(iv => iv.member_id === m.id).length
+    const memberArtifacts = artifacts.filter(a => a.member_id === m.id).length
+    const score = memberMemories * 10 + memberInterviews * 25 + memberArtifacts * 15
+    return { member: m, score }
+  }).sort((a, b) => b.score - a.score)
+
+  const totalContributions = memories.length + interviews.length + artifacts.length
+  const challengeGoal = 10
+  const challengeProgress = Math.min(totalContributions, challengeGoal)
+  const challengePercent = (challengeProgress / challengeGoal) * 100
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="legacy-card p-6">
@@ -524,30 +560,36 @@ function ReunionModeContent({ members }: { members: FamilyMember[] }) {
       <div className="legacy-card p-6">
         <h4 className="mb-4 font-serif text-base text-legacy-100">Family Leaderboard</h4>
         <div className="space-y-3">
-          {members.slice(0, 5).map((member, idx) => (
-            <div key={member.id} className="flex items-center gap-3">
+          {memberScores.slice(0, 5).map((entry, idx) => (
+            <div key={entry.member.id} className="flex items-center gap-3">
               <span className="w-6 text-center font-serif text-lg text-legacy-400">{idx + 1}</span>
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-legacy-600 to-legacy-800 text-sm font-bold text-legacy-100">
-                {member.display_name.charAt(0)}
+                {entry.member.display_name.charAt(0)}
               </div>
               <div className="flex-1">
-                <p className="text-sm text-legacy-100">{member.display_name}</p>
-                <p className="text-xs text-legacy-500">{member.role || 'Family member'}</p>
+                <p className="text-sm text-legacy-100">{entry.member.display_name}</p>
+                <p className="text-xs text-legacy-500">{entry.member.role || 'Family member'}</p>
               </div>
-              <span className="text-sm text-legacy-400">{Math.floor(Math.random() * 500 + 100)} pts</span>
+              <span className="text-sm text-legacy-400">{entry.score} pts</span>
             </div>
           ))}
         </div>
       </div>
       <div className="legacy-card p-6">
         <h4 className="mb-3 font-serif text-base text-legacy-100">Active Challenge</h4>
-        <p className="text-sm text-legacy-300">The Family Migration Challenge</p>
-        <p className="mt-1 text-xs text-legacy-500">5 relatives need to contribute: 1 interview, 3 photos, 1 location, 1 historical document</p>
+        <p className="text-sm text-legacy-300">The Family Preservation Challenge</p>
+        <p className="mt-1 text-xs text-legacy-500">Contribute {challengeGoal} total memories, interviews, or artifacts to unlock the next chapter.</p>
         <div className="mt-4 h-2 overflow-hidden rounded-full bg-ink-700">
-          <div className="stat-bar h-full rounded-full bg-gradient-to-r from-accent-500 to-accent-400" style={{ width: '40%' }} />
+          <div className="stat-bar h-full rounded-full bg-gradient-to-r from-accent-500 to-accent-400" style={{ width: `${challengePercent}%` }} />
         </div>
-        <p className="mt-2 text-xs text-legacy-500">2 of 5 contributions received</p>
+        <p className="mt-2 text-xs text-legacy-500">{challengeProgress} of {challengeGoal} contributions received</p>
       </div>
+      {completedChapters > 0 && (
+        <div className="legacy-card p-6">
+          <h4 className="mb-2 font-serif text-base text-legacy-100">Family Progress</h4>
+          <p className="text-sm text-legacy-300">{completedChapters} chapter{completedChapters === 1 ? '' : 's'} completed together</p>
+        </div>
+      )}
     </div>
   )
 }

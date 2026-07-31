@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, Play, Crown, MapPin, BookOpen, Mic,
+  ArrowLeft, Play, Crown, MapPin, BookOpen, Mic, Calendar,
   Camera, Users, Star, Loader2, Sparkles, ChevronRight,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { selectAncestorCandidates, generateChapters, createOrUpdateWorld, createSession, calculateCompleteness } from '@/lib/legacyEngine'
+import { selectAncestorCandidates, generateChapters, createOrUpdateWorld, createSession, calculateCompleteness, generateQuestsFromGaps, persistQuests } from '@/lib/legacyEngine'
 import type { FamilyMember, FamilyMemory, FamilyPlace, FamilyEvent, FamilyInterview, FamilyArtifact, AncestorCandidate } from '@/lib/types'
 
 interface LoadedFamilyData {
@@ -70,6 +70,9 @@ export default function LegacyStart() {
       const chapters = generateChapters(candidate.member, familyData.memories, familyData.events, familyData.places, familyData.artifacts)
       const world = await createOrUpdateWorld(candidate.member.family_id, candidate.member, chapters)
       if (world) {
+        const quests = generateQuestsFromGaps(candidate.member, familyData.members, familyData.memories, familyData.events, familyData.places)
+        await persistQuests(quests, candidate.member.family_id)
+
         const firstChapter = chapters[0]
         const { data: chapterRow } = await supabase
           .from('legacy_chapters')
@@ -205,27 +208,70 @@ export default function LegacyStart() {
           })}
         </div>
 
-        {selectedId && (
-          <div className="mt-8 animate-slide-up">
-            <button
-              onClick={handleBegin}
-              disabled={initializing}
-              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-legacy-600 to-legacy-500 px-6 py-4 font-semibold text-white transition hover:from-legacy-500 hover:to-legacy-400 disabled:opacity-50"
-            >
-              {initializing ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  <span>Initializing Your Journey...</span>
-                </>
-              ) : (
-                <>
-                  <Crown className="h-5 w-5" />
-                  <span>Begin Journey</span>
-                </>
+        {selectedId && (() => {
+          const candidate = ancestors.find(a => a.member.id === selectedId)
+          if (!candidate) return null
+          const previewChapters = generateChapters(candidate.member, familyData.memories, familyData.events, familyData.places, familyData.artifacts)
+          const firstChapter = previewChapters[0]
+          return (
+            <div className="mt-8 animate-slide-up space-y-4">
+              {/* Chapter preview */}
+              {firstChapter && (
+                <div className="legacy-card p-6">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="rounded-full bg-legacy-500/20 px-3 py-1 text-xs uppercase tracking-widest text-legacy-300">
+                      Chapter {firstChapter.chapter_number}
+                    </span>
+                    {firstChapter.year_label && (
+                      <span className="flex items-center gap-1 rounded-full bg-ink-800/50 px-3 py-1 text-xs text-legacy-400">
+                        <Calendar className="h-3 w-3" /> {firstChapter.year_label}
+                      </span>
+                    )}
+                    {firstChapter.location_label && (
+                      <span className="flex items-center gap-1 rounded-full bg-ink-800/50 px-3 py-1 text-xs text-legacy-400">
+                        <MapPin className="h-3 w-3" /> {firstChapter.location_label}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="font-serif text-2xl text-legacy-100">{firstChapter.title}</h3>
+                  {firstChapter.description && (
+                    <p className="mt-2 text-legacy-300" style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: '1.15rem' }}>
+                      {firstChapter.description}
+                    </p>
+                  )}
+                  {firstChapter.historical_context && (
+                    <div className="mt-4 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
+                      <p className="text-xs uppercase tracking-widest text-blue-400">Historical Context</p>
+                      <p className="mt-1 text-sm text-legacy-200">{firstChapter.historical_context}</p>
+                    </div>
+                  )}
+                  <div className="mt-4 flex items-center gap-4 text-xs text-legacy-500">
+                    <span className="flex items-center gap-1"><BookOpen className="h-3.5 w-3.5" /> {firstChapter.scene_count} scenes</span>
+                    <span className="flex items-center gap-1"><Sparkles className="h-3.5 w-3.5" /> {previewChapters.length} chapters total</span>
+                  </div>
+                </div>
               )}
-            </button>
-          </div>
-        )}
+
+              <button
+                onClick={handleBegin}
+                disabled={initializing}
+                className="group flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-legacy-600 to-legacy-500 px-6 py-4 font-semibold text-white transition hover:from-legacy-500 hover:to-legacy-400 disabled:opacity-50"
+              >
+                {initializing ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <span>Initializing Your Journey...</span>
+                  </>
+                ) : (
+                  <>
+                    <Crown className="h-5 w-5" />
+                    <span>Begin Journey</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )
+        })()}
       </main>
     </div>
   )

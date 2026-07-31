@@ -589,12 +589,14 @@ export function generateQuestsFromGaps(
   places: FamilyPlace[],
 ): LegacyQuest[] {
   const quests: LegacyQuest[] = []
+  const now = new Date().toISOString()
 
-  if (events.filter(e => e.member_id === ancestor.id).length < 3) {
+  const ancestorEvents = events.filter(e => e.member_id === ancestor.id)
+  if (ancestorEvents.length < 3) {
     quests.push({
       id: crypto.randomUUID(),
       world_id: null,
-      family_id: null,
+      family_id: ancestor.family_id,
       member_id: ancestor.id,
       title: `What happened in ${ancestor.display_name}'s life?`,
       description: `We know ${ancestor.display_name} was born in ${ancestor.birth_year || 'an unknown year'}, but the life events are missing. Ask a relative to share what they remember.`,
@@ -603,8 +605,8 @@ export function generateQuestsFromGaps(
       prompt: 'Ask a relative about important moments in this ancestor\'s life.',
       reward: 'New chapters will unlock as more life events are discovered.',
       knowledge_gap: 'life_events',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: now,
+      updated_at: now,
     })
   }
 
@@ -612,7 +614,7 @@ export function generateQuestsFromGaps(
     quests.push({
       id: crypto.randomUUID(),
       world_id: null,
-      family_id: null,
+      family_id: ancestor.family_id,
       member_id: ancestor.id,
       title: `Find a photograph of ${ancestor.display_name}`,
       description: `We have no photograph of ${ancestor.display_name}. Finding one would bring their story to life.`,
@@ -621,29 +623,30 @@ export function generateQuestsFromGaps(
       prompt: 'Search family albums, ask relatives, or visit old family homes.',
       reward: 'The ancestor\'s character card will display their photo.',
       knowledge_gap: 'photograph',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: now,
+      updated_at: now,
     })
   }
 
   const memberPlaces = places.filter(p =>
-    ancestor.birth_place?.toLowerCase().includes(p.label.toLowerCase()),
+    ancestor.birth_place?.toLowerCase().includes(p.label.toLowerCase()) ||
+    ancestorEvents.some(e => e.place_id === p.id),
   )
   if (memberPlaces.length < 2) {
     quests.push({
       id: crypto.randomUUID(),
       world_id: null,
-      family_id: null,
+      family_id: ancestor.family_id,
       member_id: ancestor.id,
       title: `Where did ${ancestor.display_name} travel?`,
-      description: `We only know of one location for ${ancestor.display_name}. Discovering migration routes would expand the family world map.`,
+      description: `We only know of ${memberPlaces.length} location${memberPlaces.length === 1 ? '' : 's'} for ${ancestor.display_name}. Discovering migration routes would expand the family world map.`,
       quest_type: 'exploration',
       status: 'available',
       prompt: 'Ask about moves, trips, or relocations in the family.',
       reward: 'New locations will appear on the family world map.',
       knowledge_gap: 'locations',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: now,
+      updated_at: now,
     })
   }
 
@@ -652,7 +655,7 @@ export function generateQuestsFromGaps(
     quests.push({
       id: crypto.randomUUID(),
       world_id: null,
-      family_id: null,
+      family_id: ancestor.family_id,
       member_id: ancestor.id,
       title: `Record stories about ${ancestor.display_name}`,
       description: `Only ${memberMemories.length} stor${memberMemories.length === 1 ? 'y is' : 'ies are'} recorded about ${ancestor.display_name}. Recording more will enrich the game world.`,
@@ -661,12 +664,293 @@ export function generateQuestsFromGaps(
       prompt: 'Interview a family member who remembers this ancestor.',
       reward: 'New scenes and dialogue will be generated from the stories.',
       knowledge_gap: 'stories',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: now,
+      updated_at: now,
     })
   }
 
+  if (!ancestor.bio) {
+    quests.push({
+      id: crypto.randomUUID(),
+      world_id: null,
+      family_id: ancestor.family_id,
+      member_id: ancestor.id,
+      title: `Discover the biography of ${ancestor.display_name}`,
+      description: `We have no written biography for ${ancestor.display_name}. Recording even a few sentences would give their character depth.`,
+      quest_type: 'preservation',
+      status: 'available',
+      prompt: 'Ask a relative: "What was this person like?"',
+      reward: 'The ancestor\'s character card will show their biography.',
+      knowledge_gap: 'biography',
+      created_at: now,
+      updated_at: now,
+    })
+  }
+
+  if (!ancestor.death_year && ancestor.birth_year) {
+    const birthYearNum = parseInt(ancestor.birth_year)
+    if (!isNaN(birthYearNum) && birthYearNum < 2000) {
+      quests.push({
+        id: crypto.randomUUID(),
+        world_id: null,
+        family_id: ancestor.family_id,
+        member_id: ancestor.id,
+        title: `When did ${ancestor.display_name} pass away?`,
+        description: `We know ${ancestor.display_name} was born in ${ancestor.birth_year}, but we don't know when they passed. This would complete their life timeline.`,
+        quest_type: 'mystery',
+        status: 'available',
+        prompt: 'Ask a relative about the date or year of passing.',
+        reward: 'The life timeline will be complete.',
+        knowledge_gap: 'death_year',
+        created_at: now,
+        updated_at: now,
+      })
+    }
+  }
+
   return quests
+}
+
+// ── Dynamic Stage Generation from Family Data ─────────────────────────────────
+
+export interface FamilyStage {
+  id: string
+  label: string
+  year: string
+  country: string | null
+  region: string | null
+  historical_context: string | null
+  place_id: string
+  events: FamilyEvent[]
+  is_ancestral_origin: boolean
+  stage_number: number
+}
+
+export function generateFamilyStages(
+  places: FamilyPlace[],
+  events: FamilyEvent[],
+  ancestor: FamilyMember | null,
+): FamilyStage[] {
+  const stages: FamilyStage[] = []
+
+  const ancestorEvents = ancestor
+    ? events.filter(e => e.member_id === ancestor.id)
+    : events
+
+  const placeMap = new Map<string, FamilyPlace>()
+  for (const place of places) placeMap.set(place.id, place)
+
+  const placeEventsMap = new Map<string, FamilyEvent[]>()
+  for (const event of ancestorEvents) {
+    if (event.place_id) {
+      const existing = placeEventsMap.get(event.place_id) || []
+      existing.push(event)
+      placeEventsMap.set(event.place_id, existing)
+    }
+  }
+
+  const birthPlace = ancestor?.birth_place
+    ? places.find(p => ancestor.birth_place!.toLowerCase().includes(p.label.toLowerCase()))
+    : places[0]
+
+  if (birthPlace) {
+    stages.push({
+      id: birthPlace.id,
+      label: birthPlace.label,
+      year: ancestor?.birth_year || 'Unknown',
+      country: birthPlace.country,
+      region: birthPlace.region,
+      historical_context: birthPlace.historical_context,
+      place_id: birthPlace.id,
+      events: placeEventsMap.get(birthPlace.id) || [],
+      is_ancestral_origin: true,
+      stage_number: 1,
+    })
+  }
+
+  const migrationEvents = ancestorEvents
+    .filter(e => e.event_type === 'migration' || e.event_type === 'relocation')
+    .sort((a, b) => (a.event_year || '').localeCompare(b.event_year || ''))
+
+  for (const migration of migrationEvents) {
+    if (!migration.place_id) continue
+    const destPlace = placeMap.get(migration.place_id)
+    if (!destPlace) continue
+    if (stages.some(s => s.place_id === destPlace.id)) continue
+
+    stages.push({
+      id: destPlace.id,
+      label: destPlace.label,
+      year: migration.event_year || 'Unknown',
+      country: destPlace.country,
+      region: destPlace.region,
+      historical_context: destPlace.historical_context,
+      place_id: destPlace.id,
+      events: placeEventsMap.get(destPlace.id) || [],
+      is_ancestral_origin: false,
+      stage_number: stages.length + 1,
+    })
+  }
+
+  for (const place of places) {
+    if (stages.some(s => s.place_id === place.id)) continue
+    const placeEvents = placeEventsMap.get(place.id) || []
+    if (placeEvents.length === 0 && !ancestor?.birth_place?.includes(place.label)) continue
+
+    stages.push({
+      id: place.id,
+      label: place.label,
+      year: placeEvents[0]?.event_year || 'Unknown',
+      country: place.country,
+      region: place.region,
+      historical_context: place.historical_context,
+      place_id: place.id,
+      events: placeEvents,
+      is_ancestral_origin: false,
+      stage_number: stages.length + 1,
+    })
+  }
+
+  return stages
+}
+
+// ── Quest Persistence ─────────────────────────────────────────────────────────
+
+export async function persistQuests(quests: LegacyQuest[], familyId: string): Promise<void> {
+  if (quests.length === 0) return
+
+  const { data: existing } = await supabase
+    .from('legacy_quests')
+    .select('title')
+    .eq('family_id', familyId)
+
+  const existingTitles = new Set((existing || []).map((q: { title: string }) => q.title))
+
+  const newQuests = quests.filter(q => !existingTitles.has(q.title))
+  if (newQuests.length === 0) return
+
+  await supabase.from('legacy_quests').insert(
+    newQuests.map(q => ({
+      id: q.id,
+      world_id: q.world_id,
+      family_id: familyId,
+      member_id: q.member_id,
+      title: q.title,
+      description: q.description,
+      quest_type: q.quest_type,
+      status: q.status,
+      prompt: q.prompt,
+      reward: q.reward,
+      knowledge_gap: q.knowledge_gap,
+    })),
+  )
+}
+
+export async function loadQuests(familyId: string): Promise<LegacyQuest[]> {
+  const { data, error } = await supabase
+    .from('legacy_quests')
+    .select('*')
+    .eq('family_id', familyId)
+    .order('created_at')
+
+  if (error || !data) return []
+  return data as LegacyQuest[]
+}
+
+// ── Achievement Seeding ──────────────────────────────────────────────────────
+
+export const REAL_ACHIEVEMENTS = [
+  { title: 'Ancestor Walker', description: 'Visit three locations connected to an ancestor.', category: 'gameplay', icon_name: 'Map', max_progress: 3 },
+  { title: 'Voice of the Elders', description: 'Record five oral histories.', category: 'preservation', icon_name: 'Mic', max_progress: 5 },
+  { title: 'Memory Detective', description: 'Identify the people in ten unknown photographs.', category: 'preservation', icon_name: 'Camera', max_progress: 10 },
+  { title: 'Migration Trail', description: 'Recreate an ancestor\'s migration route.', category: 'gameplay', icon_name: 'Globe2', max_progress: 1 },
+  { title: 'Family Bridge', description: 'Reconnect two previously disconnected relatives.', category: 'reconnection', icon_name: 'Users', max_progress: 1 },
+  { title: 'Keeper of the Flame', description: 'Preserve a family tradition and teach it to another generation.', category: 'preservation', icon_name: 'BookHeart', max_progress: 1 },
+  { title: 'First Steps', description: 'Complete your first legacy chapter.', category: 'gameplay', icon_name: 'Crown', max_progress: 1 },
+  { title: 'Story Keeper', description: 'Preserve 25 family memories.', category: 'vault_prompt', icon_name: 'BookOpen', max_progress: 25 },
+  { title: 'Roots Explorer', description: 'Add 10 family places to the vault.', category: 'vault_prompt', icon_name: 'MapPin', max_progress: 10 },
+  { title: 'Family Connector', description: 'Add 5 family members to the vault.', category: 'vault_prompt', icon_name: 'Users', max_progress: 5 },
+] as const
+
+export async function seedAchievementsIfEmpty(): Promise<void> {
+  const { count } = await supabase
+    .from('legacy_achievements')
+    .select('*', { count: 'exact', head: true })
+
+  if (count && count > 0) return
+
+  await supabase.from('legacy_achievements').insert(
+    REAL_ACHIEVEMENTS.map(a => ({
+      title: a.title,
+      description: a.description,
+      category: a.category,
+      icon_name: a.icon_name,
+      max_progress: a.max_progress,
+    })),
+  )
+}
+
+// ── Achievement Progress from Family Data ─────────────────────────────────────
+
+export async function updateAchievementProgress(
+  familyId: string,
+  members: FamilyMember[],
+  memories: FamilyMemory[],
+  places: FamilyPlace[],
+  interviews: { id: string }[],
+  artifacts: FamilyArtifact[],
+  completedChapters: number,
+): Promise<void> {
+  const { data: achievements } = await supabase
+    .from('legacy_achievements')
+    .select('id, title, max_progress')
+
+  if (!achievements || achievements.length === 0) return
+
+  const progressMap: Record<string, number> = {
+    'Story Keeper': Math.min(memories.length, 25),
+    'Roots Explorer': Math.min(places.length, 10),
+    'Family Connector': Math.min(members.length, 5),
+    'Voice of the Elders': Math.min(interviews.length, 5),
+    'First Steps': Math.min(completedChapters, 1),
+    'Ancestor Walker': Math.min(places.filter(p => p.historical_context).length, 3),
+    'Migration Trail': completedChapters > 0 ? 1 : 0,
+    'Memory Detective': Math.min(artifacts.filter(a => a.photo_url).length, 10),
+    'Keeper of the Flame': memories.filter(m => m.tags?.some(t => t.includes('tradition') || t.includes('culture'))).length > 0 ? 1 : 0,
+    'Family Bridge': members.filter(m => m.storytelling_consent).length >= 2 ? 1 : 0,
+  }
+
+  for (const achievement of achievements) {
+    const currentProgress = progressMap[achievement.title] || 0
+    const isUnlocked = currentProgress >= achievement.max_progress
+
+    const { data: existing } = await supabase
+      .from('legacy_achievement_progress')
+      .select('id')
+      .eq('achievement_id', achievement.id)
+      .maybeSingle()
+
+    if (existing) {
+      await supabase
+        .from('legacy_achievement_progress')
+        .update({
+          current_progress: currentProgress,
+          unlocked: isUnlocked,
+          unlocked_at: isUnlocked ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id)
+    } else {
+      await supabase
+        .from('legacy_achievement_progress')
+        .insert({
+          achievement_id: achievement.id,
+          current_progress: currentProgress,
+          unlocked: isUnlocked,
+          unlocked_at: isUnlocked ? new Date().toISOString() : null,
+        })
+    }
+  }
 }
 
 // ── World Persistence ───────────────────────────────────────────────────────
@@ -827,7 +1111,7 @@ export async function loadChapterScenes(chapterId: string): Promise<{
 
   if (scenesError || !scenes) return { scenes: [], dialogues: [], choices: [] }
 
-  const sceneIds = scenes.map(s => s.id)
+  const sceneIds = scenes.map((s: { id: string }) => s.id)
   if (sceneIds.length === 0) return { scenes: scenes as LegacyScene[], dialogues: [], choices: [] }
 
   const [dialoguesResult, choicesResult] = await Promise.all([

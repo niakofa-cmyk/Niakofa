@@ -3,10 +3,19 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft, Loader2, MapPin, Calendar, BookOpen, Mic,
   Camera, Users, Star, Crown, Heart, Brain, Globe2,
-  Flame, BookHeart, FileText,
+  Flame, BookHeart, FileText, Play,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import type { FamilyMember, FamilyMemory, FamilyEvent, FamilyPlace, FamilyArtifact } from '@/lib/types'
+import type { FamilyMember, FamilyMemory, FamilyEvent, FamilyPlace, FamilyArtifact, GameStats } from '@/lib/types'
+
+const STAT_DESCRIPTIONS: Record<keyof GameStats, { label: string; icon: typeof Brain; description: string }> = {
+  knowledge: { label: 'Knowledge', icon: Brain, description: 'Unlocks historical clues and context in scenes' },
+  relationships: { label: 'Relationships', icon: Users, description: 'Changes how family and community characters respond' },
+  cultural_wisdom: { label: 'Cultural Wisdom', icon: Globe2, description: 'Unlocks traditions, languages, recipes, and music' },
+  courage: { label: 'Courage', icon: Flame, description: 'Allows facing difficult historical challenges' },
+  reputation: { label: 'Reputation', icon: Crown, description: 'Affects how NPCs treat you in the story' },
+  legacy: { label: 'Legacy', icon: Heart, description: 'The lasting impact you leave for future generations' },
+}
 
 export default function LegacyCharacter() {
   const { memberId } = useParams<{ memberId: string }>()
@@ -59,7 +68,7 @@ export default function LegacyCharacter() {
 
   if (!member) return null
 
-  const stats = {
+  const stats: GameStats = {
     knowledge: Math.min(memories.length * 8 + 10, 100),
     relationships: Math.min(events.length * 5 + 10, 100),
     cultural_wisdom: Math.min(places.length * 6 + 5, 100),
@@ -68,14 +77,10 @@ export default function LegacyCharacter() {
     legacy: Math.min(memories.length * 5 + artifacts.length * 10, 100),
   }
 
-  const statIcons: Record<string, typeof Brain> = {
-    knowledge: Brain,
-    relationships: Users,
-    cultural_wisdom: Globe2,
-    courage: Flame,
-    reputation: Crown,
-    legacy: Heart,
-  }
+  const memberPlaces = places.filter(p =>
+    events.some(e => e.place_id === p.id && e.member_id === memberId) ||
+    member.birth_place?.toLowerCase().includes(p.label.toLowerCase())
+  )
 
   return (
     <div className="min-h-screen legacy-gradient">
@@ -96,9 +101,13 @@ export default function LegacyCharacter() {
         <div className="legacy-card overflow-hidden p-8 animate-fade-in">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
             <div className="flex-shrink-0">
-              <div className="flex h-32 w-32 items-center justify-center rounded-full bg-gradient-to-br from-legacy-500 to-legacy-800 text-5xl font-bold text-white">
-                {member.display_name.charAt(0)}
-              </div>
+              {member.photo_url ? (
+                <img src={member.photo_url} alt={member.display_name} className="h-32 w-32 rounded-full object-cover" />
+              ) : (
+                <div className="flex h-32 w-32 items-center justify-center rounded-full bg-gradient-to-br from-legacy-500 to-legacy-800 text-5xl font-bold text-white">
+                  {member.display_name.charAt(0)}
+                </div>
+              )}
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
@@ -110,6 +119,7 @@ export default function LegacyCharacter() {
                 )}
               </div>
               {member.role && <p className="mt-1 text-legacy-400">{member.role}</p>}
+              {member.relation_note && <p className="mt-0.5 text-sm text-legacy-500">{member.relation_note}</p>}
               <div className="mt-3 flex flex-wrap gap-3 text-sm text-legacy-300">
                 {member.birth_year && (
                   <span className="flex items-center gap-1.5">
@@ -140,19 +150,41 @@ export default function LegacyCharacter() {
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="mt-6 grid grid-cols-3 gap-3 sm:grid-cols-6">
-            {Object.entries(stats).map(([key, value]) => {
-              const Icon = statIcons[key]
-              return (
-                <div key={key} className="rounded-lg bg-ink-800/40 p-3 text-center">
-                  <Icon className="mx-auto mb-1 h-5 w-5 text-legacy-400" />
-                  <p className="text-xs text-legacy-500 capitalize">{key.replace('_', ' ')}</p>
-                  <p className="text-lg font-bold text-legacy-100">{value}</p>
-                </div>
-              )
-            })}
+          {/* Stats with descriptions */}
+          <div className="mt-6">
+            <h2 className="mb-3 font-serif text-lg text-legacy-100">Character Stats</h2>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {(Object.entries(STAT_DESCRIPTIONS) as [keyof GameStats, typeof STAT_DESCRIPTIONS[keyof GameStats]][]).map(([key, config]) => {
+                const value = stats[key]
+                const Icon = config.icon
+                return (
+                  <div key={key} className="rounded-lg bg-ink-800/40 p-4">
+                    <div className="flex items-center gap-2">
+                      <Icon className={`h-5 w-5 ${value > 0 ? 'text-legacy-400' : 'text-ink-600'}`} />
+                      <span className="text-sm font-semibold text-legacy-100">{config.label}</span>
+                      <span className="ml-auto text-lg font-bold text-legacy-100">{value}</span>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-ink-700">
+                      <div
+                        className="stat-bar h-full rounded-full bg-gradient-to-r from-legacy-500 to-legacy-400"
+                        style={{ width: `${Math.min(value, 100)}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-legacy-500">{config.description}</p>
+                  </div>
+                )
+              })}
+            </div>
           </div>
+
+          {/* Play button */}
+          <button
+            onClick={() => navigate('/legacy/start')}
+            className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-legacy-600 to-legacy-500 px-6 py-4 font-semibold text-white transition hover:from-legacy-500 hover:to-legacy-400"
+          >
+            <Play className="h-5 w-5" />
+            Play as {member.display_name}
+          </button>
         </div>
 
         {/* Life Timeline */}
@@ -160,23 +192,33 @@ export default function LegacyCharacter() {
           <div className="mt-8 legacy-card p-6">
             <h2 className="mb-4 font-serif text-xl text-legacy-100">Life Timeline</h2>
             <div className="space-y-3">
-              {events.map(event => (
-                <div key={event.id} className="flex items-start gap-3 rounded-lg bg-ink-800/30 p-3">
-                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-legacy-700/30">
-                    <Calendar className="h-4 w-4 text-legacy-400" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-legacy-100">{event.title}</h3>
-                      {event.event_year && <span className="text-xs text-legacy-500">{event.event_year}</span>}
+              {events.map(event => {
+                const eventPlace = places.find(p => p.id === event.place_id)
+                return (
+                  <div key={event.id} className="flex items-start gap-3 rounded-lg bg-ink-800/30 p-3">
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-legacy-700/30">
+                      <Calendar className="h-4 w-4 text-legacy-400" />
                     </div>
-                    {event.description && <p className="mt-1 text-xs text-legacy-300">{event.description}</p>}
-                    <span className="mt-1 inline-block rounded-full bg-ink-700/50 px-2 py-0.5 text-xs capitalize text-legacy-500">
-                      {event.event_type}
-                    </span>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-legacy-100">{event.title}</h3>
+                        {event.event_year && <span className="text-xs text-legacy-500">{event.event_year}</span>}
+                      </div>
+                      {event.description && <p className="mt-1 text-xs text-legacy-300">{event.description}</p>}
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className="inline-block rounded-full bg-ink-700/50 px-2 py-0.5 text-xs capitalize text-legacy-500">
+                          {event.event_type}
+                        </span>
+                        {eventPlace && (
+                          <span className="flex items-center gap-1 text-xs text-legacy-500">
+                            <MapPin className="h-3 w-3" /> {eventPlace.label}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
@@ -218,11 +260,18 @@ export default function LegacyCharacter() {
             <div className="grid gap-4 sm:grid-cols-2">
               {artifacts.map(artifact => (
                 <div key={artifact.id} className="rounded-lg bg-ink-800/30 p-4">
+                  {artifact.photo_url && (
+                    <img src={artifact.photo_url} alt={artifact.name} className="mb-2 h-32 w-full rounded-lg object-cover" />
+                  )}
                   <h3 className="font-serif text-base text-legacy-100">{artifact.name}</h3>
                   {artifact.date_origin && <p className="text-xs text-legacy-500">{artifact.date_origin}</p>}
+                  {artifact.location && <p className="text-xs text-legacy-500"><MapPin className="mr-1 inline h-3 w-3" />{artifact.location}</p>}
                   {artifact.description && <p className="mt-1 text-sm text-legacy-300">{artifact.description}</p>}
                   {artifact.story && (
                     <p className="mt-2 text-xs text-legacy-400 italic">{artifact.story}</p>
+                  )}
+                  {artifact.unlocked_by && (
+                    <p className="mt-2 text-xs text-accent-400">Unlocked by: {artifact.unlocked_by}</p>
                   )}
                 </div>
               ))}
@@ -230,15 +279,15 @@ export default function LegacyCharacter() {
           </div>
         )}
 
-        {/* Places */}
-        {places.length > 0 && (
+        {/* Connected Places */}
+        {memberPlaces.length > 0 && (
           <div className="mt-8 legacy-card p-6">
             <h2 className="mb-4 font-serif text-xl text-legacy-100">
               <MapPin className="mr-2 inline h-5 w-5 text-legacy-400" />
               Connected Places
             </h2>
             <div className="grid gap-3 sm:grid-cols-2">
-              {places.map(place => (
+              {memberPlaces.map(place => (
                 <div key={place.id} className="rounded-lg bg-ink-800/30 p-3">
                   <h3 className="text-sm font-semibold text-legacy-100">{place.label}</h3>
                   {place.country && <p className="text-xs text-legacy-500">{place.country}</p>}
