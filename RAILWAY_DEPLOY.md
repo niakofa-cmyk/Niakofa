@@ -4,12 +4,17 @@ Last updated: July 2026
 
 ## Overview
 
-The Niakofa app (frontend + API server) and Nia AI are deployed as a single Railway service.  
-Express serves the pre-built React/Vite frontend when `SERVE_FRONTEND=true`.
+The Niakofa app (frontend + API server + Nia AI service) is deployed as a **single Railway service**.
+
+- **Express API server** serves API routes at `/api/*` and WebSocket at `/ws`
+- **Nia AI service** runs on port 3001, proxied via `/api/nia/*` (INTERNAL_SECRET auth)
+- **Express** serves the pre-built React/Vite frontend when `SERVE_FRONTEND=true`
 
 ---
 
-## Build & Start (railpack.json)
+## Build & Start
+
+### Build (railpack.json)
 
 ```json
 {
@@ -20,18 +25,35 @@ Express serves the pre-built React/Vite frontend when `SERVE_FRONTEND=true`.
         "pnpm run typecheck:libs",
         "pnpm --filter @workspace/api-spec run codegen",
         "pnpm --filter @workspace/api-server run build",
-        "NODE_ENV=production BASE_PATH=/ pnpm --filter @workspace/pay-it-forward run build"
+        "NODE_ENV=production BASE_PATH=/ pnpm --filter @workspace/pay-it-forward run build",
+        "pnpm --filter nia-service run build"
       ]
     }
-  },
-  "deploy": {
-    "startCommand": "pnpm --filter @workspace/db run migrate && node --enable-source-maps artifacts/api-server/dist/index.mjs"
   }
 }
 ```
 
-> **Critical**: The `migrate &&` prefix runs database migrations before the server starts.  
-> If migrations fail, the deploy stops (non-zero exit) — preventing the server from booting  
+Build order matters:
+1. **typecheck:libs** — catches type errors before wasting build time on bundling
+2. **api-spec codegen** — generates the OpenAPI client used by api-server and frontend
+3. **api-server build** — esbuild bundles the Express server to `dist/index.mjs`
+4. **frontend build** — Vite builds the React SPA to `dist/public/`
+5. **nia-service build** — tsc compiles the Nia AI service to `dist/index.js`
+
+### Start (scripts/start.sh)
+
+```bash
+bash scripts/start.sh
+```
+
+The start script:
+1. Runs database migrations (`pnpm --filter @workspace/db run migrate`)
+2. Starts nia-service on port 3001 (supervised — up to 5 restarts in 60s before giving up)
+3. Starts the api-server in the foreground (primary process)
+4. Forwards SIGTERM/SIGINT to both child processes for clean shutdown
+
+> **Critical**: The `migrate &&` prefix runs database migrations before the server starts.
+> If migrations fail, the deploy stops (non-zero exit) — preventing the server from booting
 > against a stale schema. Never remove this prefix.
 
 ---
@@ -73,44 +95,27 @@ Set all of these in Railway → Service → Variables:
 | `STRIPE_SECRET_KEY` | Stripe payments |
 | `STRIPE_PUBLISHABLE_KEY` | Stripe frontend |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook verification |
+| `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key baked into frontend at build time |
 | `CHECKR_API_KEY` | Background check integration |
 | `CHECKR_WEBHOOK_SECRET` | Checkr webhook HMAC |
 | `REDIS_URL` | BullMQ job queues (workers degrade to simple setInterval without Redis) |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | Email (pledge reminders, receipts) |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | Web push notifications |
+| `NIA_SERVICE_URL` | Override nia-service URL (defaults to `http://localhost:3001`) |
 
 ---
 
 ## Database
 
 Railway's Postgres plugin auto-sets `DATABASE_URL`. The migration script:
-- Creates `postgis` extension automatically
+- Creates `postgis` extension automatically (if available)
 - Is idempotent — safe to run on every deploy
 - Has recovery checks for migrations that may have been baseline-marked but never executed
 - Advisory lock prevents concurrent migration races on parallel startups
 - Fresh DB: runs all migrations from 0000
 - Existing DB: runs only new files (baseline-marks 0000–0017, applies 0018+)
 
----
-
-## Test Accounts (seed data)
-
-After fresh DB provisioning, seed the test accounts:
-
-```bash
-# Run in Railway shell or via psql
-# These are created automatically on first boot if the seed script runs.
-# If not, register manually or apply seed SQL.
-```
-
-| Role | Email | Password |
-|---|---|---|
-| **Admin** | `admin@niakofa.app` | `NiakofaAdmin2026!` |
-| **Helper** (approved) | `helper@niakofa.app` | `NiakofaHelper2026!` |
-| **User** (standard) | `user@niakofa.app` | `NiakofaUser2026!` |
-
-> ⚠️ Change all passwords before production use.  
-> Set `is_admin = true` on the admin user row after first registration.
+Migration files live in `lib/db/migrations/` and are numbered sequentially (0000–0092).
 
 ---
 
@@ -119,10 +124,11 @@ After fresh DB provisioning, seed the test accounts:
 | Endpoint | Auth | Description |
 |---|---|---|
 | `GET /api/status` | None | Public status page — DB ping, Nia AI state, map key |
+| `GET /api/healthz` | None | Lightweight DB connectivity check (used by Railway probe) |
 | `GET /api/admin/worker-health` | Admin token | BullMQ/cron worker statuses |
 | `GET /api/admin/global-ops` | Admin token | GPS health, region buckets, config status |
 
-Set Railway's health check to `GET /api/status` (accepts 200 or 503).
+Railway health check is set to `GET /api/status` (accepts 200 or 503).
 
 ---
 
@@ -135,49 +141,68 @@ Nia AI is powered by Anthropic Claude (main chat: `claude-sonnet-5`, lightweight
 - When disabled, `/api/nia/chat` and `/api/nia/voice/speak` return 503
 - Voice TTS uses ElevenLabs community voices (if configured) or falls back to OpenAI nova
 
+### Nia Service Supervision
+
+The nia-service runs on port 3001 inside the same container. If it crashes:
+- The supervisor restarts it up to 5 times within a 60-second window
+- After 5 crashes, it stops trying and logs the failure (api-server continues running)
+- Clean exits (exit code 0 or SIGTERM) do not trigger restart
+- SIGTERM/SIGINT to the container cleanly shuts down both processes
+
 ---
 
 ## Common Issues
 
 ### "Interactive prompts require a TTY terminal"
-**Cause**: Old deploy used `drizzle-kit push` which requires a TTY.  
-**Fix**: Migrations now use `pnpm --filter @workspace/db run migrate` (raw SQL, no TTY needed). ✅ Already fixed.
+**Cause**: Old deploy used `drizzle-kit push` which requires a TTY.
+**Fix**: Migrations now use `pnpm --filter @workspace/db run migrate` (raw SQL, no TTY needed). Already fixed.
 
 ### Migrations ran but columns are missing
-**Cause**: Old deploys baseline-marked 0018–0021 without executing them.  
-**Fix**: The RECOVERY_CHECKS block in `run-migrations.mjs` detects missing objects and re-queues the files. ✅ Already fixed.
+**Cause**: Old deploys baseline-marked 0018–0021 without executing them.
+**Fix**: The RECOVERY_CHECKS block in `run-migrations.mjs` detects missing objects and re-queues the files. Already fixed.
 
 ### Frontend shows blank page or 404
-**Cause**: `SERVE_FRONTEND` not set to `true`.  
+**Cause**: `SERVE_FRONTEND` not set to `true`.
 **Fix**: Set `SERVE_FRONTEND=true` in Railway variables.
 
 ### Nia returns 503 on all chat requests
-**Cause**: Either `ANTHROPIC_API_KEY` is missing, or Nia was admin-disabled.  
+**Cause**: Either `ANTHROPIC_API_KEY` is missing, or Nia was admin-disabled.
 **Fix**: Check Railway variables for `ANTHROPIC_API_KEY`. Check admin panel → System → Nia kill-switch.
 
 ### CORS errors in browser console
-**Cause**: `ALLOWED_ORIGIN` doesn't include the Railway public URL.  
+**Cause**: `ALLOWED_ORIGIN` doesn't include the Railway public URL.
 **Fix**: Set `ALLOWED_ORIGIN=https://your-app.up.railway.app` (comma-separated for multiple domains).
+
+### Nia-service crashes repeatedly
+**Cause**: Most often `INTERNAL_SECRET` mismatch between api-server and nia-service, or missing `ANTHROPIC_API_KEY`.
+**Fix**: Check that `INTERNAL_SECRET` and `ANTHROPIC_API_KEY` are set in Railway variables. The supervisor will stop after 5 crashes — check logs for the root cause.
 
 ---
 
 ## Architecture
 
 ```
-Railway service
-├── Build: pnpm install → TS check → codegen → api-server build → vite build
-├── Start: migrate DB → start Express server (port $PORT)
+Railway service (single container)
+├── Build: pnpm install → TS check → codegen → api-server build → vite build → nia-service build
+├── Start: migrate DB → start nia-service (supervised) → start api-server (foreground)
 └── Express serves:
-    ├── /api/*  → API routes (requests, users, Nia proxy, admin)
+    ├── /api/*  → API routes (requests, users, Nia proxy, admin, legacy engine, family, diaspora)
     ├── /ws     → WebSocket (real-time updates)
     └── /*      → React SPA (artifacts/pay-it-forward/dist/public)
 
+Nia service (port 3001, same container)
+├── /chat          → Claude SSE streaming (proxied via /api/nia/chat)
+├── /voice/*       → Whisper STT + OpenAI TTS
+├── /memory/*      → Conversation memory
+├── /knowledge-refresh → Admin-triggered learning cycle
+└── /analyze-image → Vision analysis (proxied via /api/nia/analyze-image)
+
 External services:
-├── Nia service (nia-service/) — proxied via /api/nia/* (INTERNAL_SECRET auth)
-├── Anthropic API — Claude models
+├── Anthropic API — Claude models (Nia AI)
 ├── OpenAI API — Whisper STT + TTS nova fallback
 ├── ElevenLabs — Community voice TTS
 ├── Mapbox — Maps + navigation
 ├── Stripe — Payments
-└── Checkr — Background checks
+├── Checkr — Background checks
+└── Supabase — Edge functions (legacy-engine)
 ```
