@@ -22,12 +22,14 @@ import { authHeaders } from "@/lib/auth";
 interface Scene {
   sceneNumber: number;
   title: string;
-  type: "narration" | "dialogue" | "reflection";
+  type: "narration" | "dialogue" | "reflection" | "context";
   content: string;
   placeId: number | null;
   eventId: number | null;
   memoryId: number | null;
-  historicalLayer: "verified" | "narrative_interpretation";
+  /** Only present on "context" scenes — short real-world historical topic tags. */
+  topics?: string[];
+  historicalLayer: "verified" | "narrative_interpretation" | "historical_context";
 }
 
 interface SceneResponse {
@@ -60,6 +62,9 @@ const SCENE_CHOICES: Record<string, Choice[]> = {
   reflection: [
     { text: "Record a memory", consequence: "Add your own memory to the vault.", action: "preserve" },
     { text: "Continue the journey", consequence: "The chapter moves forward.", action: "next" },
+  ],
+  context: [
+    { text: "Continue", consequence: "You carry this history with you.", action: "next" },
   ],
 };
 
@@ -280,9 +285,15 @@ export default function LegacyChapterPlay() {
           <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ${
             scene.historicalLayer === "verified"
               ? "bg-emerald-400/10 text-emerald-400 border border-emerald-400/20"
-              : "bg-amber-400/10 text-amber-400 border border-amber-400/20"
+              : scene.historicalLayer === "historical_context"
+                ? "bg-sky-400/10 text-sky-400 border border-sky-400/20"
+                : "bg-amber-400/10 text-amber-400 border border-amber-400/20"
           }`}>
-            {scene.historicalLayer === "verified" ? "Verified History" : "Narrative Interpretation"}
+            {scene.historicalLayer === "verified"
+              ? "Verified History"
+              : scene.historicalLayer === "historical_context"
+                ? "Historical Context"
+                : "Narrative Interpretation"}
           </span>
           <span className="text-xs text-stone-500 uppercase tracking-wider">
             {scene.type}
@@ -316,6 +327,20 @@ export default function LegacyChapterPlay() {
             {scene.content}
           </p>
         </div>
+
+        {/* Historical context topic tags — only present on "context" scenes */}
+        {scene.topics && scene.topics.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-6">
+            {scene.topics.map((topic, i) => (
+              <span
+                key={i}
+                className="text-xs text-sky-400 bg-sky-400/10 border border-sky-400/20 rounded-full px-3 py-1"
+              >
+                {topic}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Memory reference */}
         {memory && (

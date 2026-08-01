@@ -39,6 +39,7 @@ import { eq, and, inArray, asc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { calculateCompleteness, CHAPTER_UNLOCK_THRESHOLD } from "./legacy-completeness";
 import { getConsentedMemberIds, filterConsentedMembers } from "../lib/legacy-consent";
+import { getHistoricalContext } from "../lib/historical-context";
 
 const router = Router();
 
@@ -501,10 +502,21 @@ router.get(
           : Promise.resolve([]),
       ]);
 
+      // Look up real-world historical context for this chapter's place/era —
+      // grounds "1958, Nashville" in general historical background without
+      // ever claiming anything about this specific family (see
+      // lib/historical-context.ts for the trust-model rationale).
+      const historicalContext = await getHistoricalContext({
+        location: (data.location as string | undefined) ?? places[0]?.label ?? "Unknown",
+        era:      (data.era as string | undefined) ?? "Unknown",
+        country:  places[0]?.country ?? null,
+      });
+
       // Build scenes — each scene is a moment in the chapter
       // Scene 1: Setting — the place and era
-      // Scene 2: The event — what happened
-      // Scene 3: The memory — how the family remembers it
+      // Scene 2 (optional): Historical Context — the real world around them
+      // Scene 3: The event — what happened
+      // Scene 4: The memory — how the family remembers it
       const scenes = [
         {
           sceneNumber: 1,
@@ -516,8 +528,21 @@ router.get(
           placeId: places[0]?.id ?? null,
           historicalLayer: "verified",
         },
+        ...(historicalContext
+          ? [{
+              sceneNumber: 2,
+              title: "The World Around Them",
+              type: "context",
+              content: historicalContext.summary,
+              topics: historicalContext.topics,
+              placeId: places[0]?.id ?? null,
+              eventId: null,
+              memoryId: null,
+              historicalLayer: "historical_context",
+            }]
+          : []),
         {
-          sceneNumber: 2,
+          sceneNumber: historicalContext ? 3 : 2,
           title: "The Event",
           type: "dialogue",
           content: events[0]?.description ?? events[0]?.title ?? "A moment in your family's history.",
@@ -525,7 +550,7 @@ router.get(
           historicalLayer: events[0] ? "verified" : "narrative_interpretation",
         },
         {
-          sceneNumber: 3,
+          sceneNumber: historicalContext ? 4 : 3,
           title: "The Memory",
           type: "reflection",
           content: memories[0]?.description ?? memories[0]?.title ?? "How the family remembers this time.",
