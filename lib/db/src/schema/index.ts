@@ -54,3 +54,4 @@ export * from "./geography";
 export * from "./audio-circles";
 export * from "./legacy-engine";
 export * from "./legacy-place-discoveries";
+export * from "./legacy-phase5";
