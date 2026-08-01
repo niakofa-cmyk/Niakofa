@@ -24,16 +24,13 @@ import {
   familyStoriesTable,
   familyPlacesTable,
   familyEventsTable,
-  legacyChaptersTable,
-  legacySessionsTable,
   legacyGameMasterNarrationsTable,
 } from "@workspace/db";
-import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
-import { getConsentedMemberIds, filterConsentedMembers } from "../lib/legacy-consent";
-import { getHistoricalContext } from "../lib/historical-context";
+import { getConsentedMemberIds } from "../lib/legacy-consent";
 import { createHash } from "crypto";
 
 const router = Router();
