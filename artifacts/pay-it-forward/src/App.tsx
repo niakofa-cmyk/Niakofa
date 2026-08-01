@@ -63,6 +63,8 @@ const LegacyStartPage       = lazy(() => import("@/pages/legacy-start"));
 const LegacyChapterPage      = lazy(() => import("@/pages/legacy-chapter"));
 const LegacyMapPage          = lazy(() => import("@/pages/legacy-map"));
 const LegacyChallengesPage   = lazy(() => import("@/pages/legacy-challenges"));
+const LegacySeasonalEventsPage = lazy(() => import("@/pages/legacy-seasonal-events"));
+const LegacyWorldEvolutionPage = lazy(() => import("@/pages/legacy-world-evolution"));
 
 function PageFallback() {
   return (
@@ -259,6 +261,8 @@ function AppShell() {
             <Route path="/legacy/start" component={LegacyStartPage} />
             <Route path="/legacy/chapter/:chapterId" component={LegacyChapterPage} />
             <Route path="/legacy/challenges" component={LegacyChallengesPage} />
+            <Route path="/legacy/seasonal-events" component={LegacySeasonalEventsPage} />
+            <Route path="/legacy/world-evolution" component={LegacyWorldEvolutionPage} />
             <Route path="/legacy/map/:familyId" component={LegacyMapPage} />
             <Route path="/legacy/map" component={LegacyMapPage} />
             <Route path="/legacy/play" component={LegacyHomePage} />
@@ -348,3 +352,4 @@ function App() {
 }
 
 export default App;
+
