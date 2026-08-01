@@ -920,7 +920,7 @@ export default function LegacyHomePage() {
             <div className="px-4 mb-5">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">World Map</h2>
-                <button onClick={() => navigate("/diaspora/timeline")} className="text-xs text-amber-600 flex items-center gap-1">
+                <button onClick={() => navigate("/legacy/map")} className="text-xs text-amber-600 flex items-center gap-1">
                   Full Map <ChevronRight className="w-3 h-3" />
                 </button>
               </div>

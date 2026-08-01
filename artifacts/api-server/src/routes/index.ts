@@ -43,6 +43,7 @@ import legacyCompletenessRouter from "./legacy-completeness";
 import legacyChaptersRouter from "./legacy-chapters";
 import legacyAchievementsRouter from "./legacy-achievements";
 import legacyReunionRouter from "./legacy-reunion";
+import legacyMapRouter from "./legacy-map";
 
 const router: IRouter = Router();
 
@@ -90,5 +91,6 @@ router.use(legacyCompletenessRouter);
 router.use(legacyChaptersRouter);
 router.use(legacyAchievementsRouter);
 router.use(legacyReunionRouter);
+router.use(legacyMapRouter);
 
 export default router;
