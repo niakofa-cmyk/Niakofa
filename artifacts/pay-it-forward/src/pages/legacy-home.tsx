@@ -125,6 +125,18 @@ interface LegacyChapter {
   completed_at: string | null;
 }
 
+interface ReunionResponse {
+  challenge: {
+    title: string;
+    description: string;
+    goal: number;
+    progress: number;
+    reward: string;
+    completed: boolean;
+  };
+  leaderboard: Array<{ memberId: number; name: string; publishedInterviews: number }>;
+}
+
 interface SceneData {
   sceneNumber: number;
   title: string;
@@ -354,6 +366,8 @@ export default function LegacyHomePage() {
   const [completeness, setCompleteness] = useState<CompletenessResponse | null>(null);
   const [ancestorCandidate, setAncestorCandidate] = useState<AncestorCandidate | null>(null);
   const [chapters, setChapters] = useState<LegacyChapter[]>([]);
+  const [reunion, setReunion] = useState<ReunionResponse | null>(null);
+  const [reunionLoading, setReunionLoading] = useState(false);
   const [scenes, setScenes] = useState<SceneData[]>([]);
   const [scenesLoading, setScenesLoading] = useState(false);
   const [activeChapterId, setActiveChapterId] = useState<number | null>(null);
@@ -456,6 +470,29 @@ export default function LegacyHomePage() {
   useEffect(() => {
     if (activeChapterId) loadScenes(activeChapterId);
   }, [activeChapterId, loadScenes]);
+
+  // ── Load real Reunion Challenge data (replaces fabricated leaderboard XP) ──
+
+  const loadReunion = useCallback(async (familyId: number) => {
+    setReunionLoading(true);
+    try {
+      const res = await fetch(`/api/legacy/reunion/${familyId}`, { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json() as ReunionResponse;
+        setReunion(data);
+      }
+    } catch {
+      // Silent fail — panel falls back to an empty-state message
+    } finally {
+      setReunionLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeMode === "reunion" && legacyState.families.length > 0) {
+      loadReunion(legacyState.families[0].id);
+    }
+  }, [activeMode, legacyState.families, loadReunion]);
 
   // ── Real audio recording with MediaRecorder API ─────────────────────────────
   const handleStartRecording = useCallback(async () => {
@@ -1481,35 +1518,51 @@ export default function LegacyHomePage() {
                     <Users className="w-4 h-4 text-amber-400" />
                   </div>
                   <div>
-                    <p className="text-sm font-black text-amber-100">Family Reunion Event</p>
-                    <p className="text-xs text-amber-700">Ongoing — Work together</p>
+                    <p className="text-sm font-black text-amber-100">{reunion?.challenge.title ?? "Family Reunion Event"}</p>
+                    <p className="text-xs text-amber-700">
+                      {reunion?.challenge.completed ? "Completed" : "Ongoing — Work together"}
+                    </p>
                   </div>
                 </div>
                 <div className="bg-[#3A2A1A] rounded-xl p-3 mb-3">
-                  <p className="text-xs font-bold text-amber-200 mb-1">Everyone must record one elder's story.</p>
+                  <p className="text-xs font-bold text-amber-200 mb-1">
+                    {reunion?.challenge.description ?? "Everyone must record one elder's story."}
+                  </p>
                   <div className="flex items-center gap-2 mt-2">
                     <div className="flex-1 h-1.5 rounded-full bg-amber-950 overflow-hidden">
-                      <div className="h-full bg-amber-500 rounded-full transition-all duration-700" style={{ width: `${Math.min(100, (interviewCount / 5) * 100)}%` }} />
+                      <div
+                        className="h-full bg-amber-500 rounded-full transition-all duration-700"
+                        style={{ width: `${Math.min(100, ((reunion?.challenge.progress ?? 0) / (reunion?.challenge.goal ?? 5)) * 100)}%` }}
+                      />
                     </div>
-                    <p className="text-xs text-amber-600 font-bold flex-shrink-0">{interviewCount} / 5</p>
+                    <p className="text-xs text-amber-600 font-bold flex-shrink-0">
+                      {reunion?.challenge.progress ?? 0} / {reunion?.challenge.goal ?? 5}
+                    </p>
                   </div>
                   <p className="text-xs text-amber-700 mt-1.5">
-                    Reward: Unlock <span className="text-amber-500 font-bold">The Family Migration Story</span>
+                    Reward: Unlock <span className="text-amber-500 font-bold">{reunion?.challenge.reward ?? "The Family Migration Story"}</span>
                   </p>
                 </div>
                 <div className="space-y-1.5">
-                  {members.slice(0, 4).map((m, i) => (
-                    <div key={m.id} className="flex items-center gap-2 py-1">
-                      <p className="text-xs text-amber-800 w-4 font-bold">{i + 1}</p>
-                      <div className="w-6 h-6 rounded-full bg-amber-900/40 flex items-center justify-center text-xs font-bold text-amber-600">
-                        {(m.display_name ?? "?")[0]}
+                  {reunionLoading ? (
+                    <p className="text-xs text-amber-700 text-center py-2">Loading real contributions...</p>
+                  ) : reunion && reunion.leaderboard.length > 0 ? (
+                    reunion.leaderboard.map((entry, i) => (
+                      <div key={entry.memberId} className="flex items-center gap-2 py-1">
+                        <p className="text-xs text-amber-800 w-4 font-bold">{i + 1}</p>
+                        <div className="w-6 h-6 rounded-full bg-amber-900/40 flex items-center justify-center text-xs font-bold text-amber-600">
+                          {(entry.name ?? "?")[0]}
+                        </div>
+                        <p className="flex-1 text-xs text-amber-300">{entry.name}</p>
+                        <p className="text-xs text-amber-600 font-bold">
+                          {entry.publishedInterviews} {entry.publishedInterviews === 1 ? "story" : "stories"}
+                        </p>
                       </div>
-                      <p className="flex-1 text-xs text-amber-300">{memberFirstName(m)}</p>
-                      <p className="text-xs text-amber-600 font-bold">{(5 - i) * 400 + 200} XP</p>
-                    </div>
-                  ))}
-                  {members.length === 0 && (
+                    ))
+                  ) : members.length === 0 ? (
                     <p className="text-xs text-amber-700 text-center py-2">Invite family members to start the challenge</p>
+                  ) : (
+                    <p className="text-xs text-amber-700 text-center py-2">No stories recorded yet — be the first!</p>
                   )}
                 </div>
                 <button
