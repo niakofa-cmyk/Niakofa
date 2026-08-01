@@ -53,6 +53,13 @@ export interface AncestorProfile {
   relation: string | null;
 }
 
+/** A resolved parent/spouse edge between two consented members, by name. */
+export interface RelationshipEdge {
+  fromName: string;
+  toName:   string;
+  type:     "parent" | "spouse";
+}
+
 export interface MemorySummary {
   title:      string | null;
   description: string | null;
@@ -68,6 +75,7 @@ export interface FamilyReservoir {
   memoryCount:     number;
   interviewCount:  number;
   ancestorProfiles: AncestorProfile[];
+  relationshipEdges: RelationshipEdge[];
   memorySummaries:  MemorySummary[];
   /** Content-based hash of actual vault data — changes when ANY data changes, not just counts. */
   fingerprint: string;
@@ -142,6 +150,33 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
   // ── Consent gate: only include members who have consented to storytelling ──
   const consentedIds = await getConsentedMemberIds(familyId);
   const consentedMembers = filterConsentedMembers(members, consentedIds);
+
+  // ── Relationship graph: resolve parent/spouse edges to names ───────────────
+  // Previously familyTreeRelationsTable was only ever used for a count in the
+  // fingerprint — the actual edges (who is whose parent/spouse) never reached
+  // the AI prompt, so quests/dialogue couldn't reference real relationships
+  // ("Kofi is Ama's father") even though that data exists in the Family Tree.
+  // Restricted to consented member IDs on both ends so an edge involving a
+  // member who hasn't consented to storytelling is never surfaced to the AI.
+  const consentedMemberIdSet = new Set(consentedMembers.map(m => m.id));
+  const nameById = new Map(consentedMembers.map(m => [m.id, m.name ?? "Unknown"]));
+
+  const relationEdgesRaw = consentedMemberIdSet.size
+    ? await db
+        .select({
+          from: familyTreeRelationsTable.from_member_id,
+          to:   familyTreeRelationsTable.to_member_id,
+          type: familyTreeRelationsTable.relation_type,
+        })
+        .from(familyTreeRelationsTable)
+        .where(eq(familyTreeRelationsTable.family_id, familyId))
+    : [];
+
+  const relationshipEdges: RelationshipEdge[] = relationEdgesRaw
+    .filter(e => consentedMemberIdSet.has(e.from) && consentedMemberIdSet.has(e.to))
+    .filter((e): e is typeof e & { type: "parent" | "spouse" } => e.type === "parent" || e.type === "spouse")
+    .map(e => ({ fromName: nameById.get(e.from) ?? "Unknown", toName: nameById.get(e.to) ?? "Unknown", type: e.type }))
+    .slice(0, 40);
 
   // Latest 15 memories — include id and updated_at for strong fingerprint
   const memories = await db
@@ -226,6 +261,7 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
     e: eventCount,
     p: placeCount,
     r: relationCount,
+    rEdges: relationshipEdges.map(e => `${e.fromName}>${e.type}>${e.toName}`).sort(),
     a: assetCount,
   });
   const fingerprint = Buffer.from(canonicalData).toString("base64url").slice(0, 64);
@@ -241,6 +277,7 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
       role:     m.role,
       relation: m.relation ?? null,
     })),
+    relationshipEdges,
     memorySummaries: memories.map(m => ({
       title:       m.title,
       description: m.description ? m.description.slice(0, 180) : null,
@@ -344,6 +381,13 @@ async function generateAiQuests(r: FamilyReservoir): Promise<AiQuest[]> {
         .join("; ")
     : "No ancestors added yet";
 
+  const relationshipList = r.relationshipEdges.length
+    ? r.relationshipEdges
+        .slice(0, 15)
+        .map(e => e.type === "parent" ? `${e.fromName} is the parent of ${e.toName}` : `${e.fromName} and ${e.toName} are spouses`)
+        .join("; ")
+    : "No relationships recorded yet";
+
   const memorySummary = r.memorySummaries.length
     ? r.memorySummaries
         .slice(0, 6)
@@ -357,12 +401,14 @@ async function generateAiQuests(r: FamilyReservoir): Promise<AiQuest[]> {
 
 FAMILY: ${r.familyName}
 ANCESTORS: ${ancestorList}
+RELATIONSHIPS: ${relationshipList}
 RECENT MEMORIES:
 ${memorySummary}
 STATS: ${r.memberCount} family members, ${r.memoryCount} memories, ${r.interviewCount} oral recordings
 
 Generate exactly 5 personalized quests for this player. Each quest MUST:
 - Reference SPECIFIC data above (use real ancestor names, actual memory titles, real locations)
+- Where RELATIONSHIPS data is available, use it — e.g. prompt the player to ask a parent about their spouse, or connect two relatives who are family but don't yet have a story linking them
 - Have a personal, evocative title that feels unique to THIS family
 - XP: 50–150 based on effort required
 - Category: exactly one of: record, document, connect, explore, discover
