@@ -48,6 +48,8 @@ interface Choice {
   text: string;
   consequence: string;
   action: "next" | "reflect" | "preserve";
+  /** True only for the choice that should create a real Mystery Quest vault entry. */
+  createsMysteryQuest?: boolean;
 }
 
 const SCENE_CHOICES: Record<string, Choice[]> = {
@@ -56,7 +58,12 @@ const SCENE_CHOICES: Record<string, Choice[]> = {
   ],
   dialogue: [
     { text: "Listen and remember", consequence: "You absorb this moment into your family's memory.", action: "next" },
-    { text: "Ask a question", consequence: "A new mystery quest is created — ask a relative to fill this gap.", action: "preserve" },
+    {
+      text: "Ask a question",
+      consequence: "A Mystery Quest has been added to your Family Vault — ask a relative to help fill this gap.",
+      action: "preserve",
+      createsMysteryQuest: true,
+    },
     { text: "Reflect quietly", consequence: "You gain cultural wisdom from this moment.", action: "reflect" },
   ],
   reflection: [
@@ -82,6 +89,9 @@ export default function LegacyChapterPlay() {
   const [showConsequence, setShowConsequence] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
   const [chapterCompleted, setChapterCompleted] = useState(false);
+  const [mysteryQuestState, setMysteryQuestState] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
 
   const chapterId = parseInt(params.chapterId, 10);
 
@@ -122,16 +132,18 @@ export default function LegacyChapterPlay() {
     if (!sceneData || selectedChoice !== null) return;
     const scene = sceneData.scenes[currentSceneIdx];
     if (!scene) return;
+    const choice = (SCENE_CHOICES[scene.type] ?? SCENE_CHOICES.narration)[choiceIdx];
 
     setSelectedChoice(choiceIdx);
     setShowConsequence(true);
+    setMysteryQuestState("idle");
 
     // Mark scene as completed
     const newCompleted = new Set(completedScenes);
     newCompleted.add(scene.sceneNumber);
     setCompletedScenes(newCompleted);
 
-    // Save progress to server
+    // Save progress + which choice was made to server (durable decision memory)
     try {
       await fetch(`/api/legacy/sessions/progress`, {
         method: "POST",
@@ -140,10 +152,28 @@ export default function LegacyChapterPlay() {
           chapterId,
           sceneNumber: scene.sceneNumber,
           completed: true,
+          choiceAction: choice?.action,
+          choiceText: choice?.text,
         }),
       });
     } catch {
       // Non-fatal — progress is tracked client-side too
+    }
+
+    // "Ask a question" is the one choice with a real, persisted consequence:
+    // it writes an actual Mystery Quest into the Family Vault.
+    if (choice?.createsMysteryQuest) {
+      setMysteryQuestState("saving");
+      try {
+        const res = await fetch(`/api/legacy/chapters/${chapterId}/mystery-quest`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ sceneNumber: scene.sceneNumber }),
+        });
+        setMysteryQuestState(res.ok ? "saved" : "error");
+      } catch {
+        setMysteryQuestState("error");
+      }
     }
   };
 
@@ -380,9 +410,29 @@ export default function LegacyChapterPlay() {
               <Sparkles className="w-4 h-4 text-amber-400" />
               <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">Consequence</span>
             </div>
-            <p className="text-sm text-stone-300 mb-4">
+            <p className="text-sm text-stone-300 mb-2">
               {choices[selectedChoice].consequence}
             </p>
+            {choices[selectedChoice].createsMysteryQuest && (
+              <p className="text-xs mb-2">
+                {mysteryQuestState === "saving" && (
+                  <span className="text-stone-500 inline-flex items-center gap-1.5">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Adding to Family Vault...
+                  </span>
+                )}
+                {mysteryQuestState === "saved" && (
+                  <span className="text-emerald-400 inline-flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3 h-3" /> Saved to Family Vault
+                  </span>
+                )}
+                {mysteryQuestState === "error" && (
+                  <span className="text-red-400">
+                    Couldn't save this to the vault right now — you can try again next time.
+                  </span>
+                )}
+              </p>
+            )}
+            <div className="mb-2" />
             <button
               onClick={handleNext}
               disabled={transitioning}

@@ -573,6 +573,118 @@ router.get(
   },
 );
 
+// POST /api/legacy/chapters/:chapterId/mystery-quest — "Ask a question" made real
+//
+// Previously the "Ask a question" dialogue choice in legacy-chapter.tsx only
+// showed flavor text ("A new mystery quest is created...") — nothing was
+// persisted. This is exactly the "responses need consequences" and "the game
+// should ask the family for missing information" gaps called out in the
+// Legacy Mode design docs (Mystery Quest pattern). This endpoint writes a
+// real family_stories row (category "mystery_quest") tied to the chapter's
+// ancestor and scene, so the open question becomes a durable, filterable
+// vault item other relatives can answer — and because family_stories already
+// feeds the world-regeneration fingerprint (see legacy.ts's FamilyReservoir),
+// answering it will actually cause the family's world to regenerate.
+//
+// The question body is derived server-side from the same scene data the
+// GET /scenes route builds (never trusts arbitrary client-supplied prose
+// into the vault) — the client only supplies which scene it was on.
+router.post(
+  "/legacy/chapters/:chapterId/mystery-quest",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const chapterId = parseInt(String(req.params.chapterId), 10);
+    if (isNaN(chapterId)) return res.status(400).json({ error: "Invalid chapter ID" });
+
+    const { sceneNumber } = req.body as { sceneNumber?: number };
+    if (!sceneNumber || sceneNumber < 1 || sceneNumber > 10) {
+      return res.status(400).json({ error: "Valid sceneNumber is required" });
+    }
+
+    try {
+      const [chapter] = await db
+        .select()
+        .from(legacyChaptersTable)
+        .where(eq(legacyChaptersTable.id, chapterId))
+        .limit(1);
+
+      if (!chapter) return res.status(404).json({ error: "Chapter not found" });
+
+      const userId = req.authenticatedUserId!;
+      if (!(await isMember(userId, chapter.family_id))) {
+        return res.status(403).json({ error: "Not a member of this family" });
+      }
+
+      // Idempotent: re-clicking "Ask a question" on the same scene returns
+      // the existing mystery quest rather than spamming duplicates.
+      const dedupeTag = `chapter:${chapterId}:scene:${sceneNumber}`;
+      const existingRows = await db
+        .select()
+        .from(familyStoriesTable)
+        .where(
+          and(
+            eq(familyStoriesTable.family_id, chapter.family_id),
+            eq(familyStoriesTable.category, "mystery_quest"),
+          ),
+        );
+      const existing = existingRows.find(
+        (r) => Array.isArray(r.tags) && (r.tags as string[]).includes(dedupeTag),
+      );
+      if (existing) {
+        return res.json({ mysteryQuest: existing, created: false });
+      }
+
+      // Rebuild this scene's real content (same source data as GET /scenes)
+      // so the question is grounded in the family's actual chapter, not
+      // free-form client text.
+      const data = chapter.chapter_data as Record<string, unknown>;
+      const eventIds = (data.eventIds as number[]) ?? [];
+      const memoryIds = (data.memoryIds as number[]) ?? [];
+      const [events, memories] = await Promise.all([
+        eventIds.length > 0
+          ? db.select().from(familyEventsTable).where(inArray(familyEventsTable.id, eventIds))
+          : Promise.resolve([]),
+        memoryIds.length > 0
+          ? db.select().from(familyMemoriesTable).where(inArray(familyMemoriesTable.id, memoryIds))
+          : Promise.resolve([]),
+      ]);
+
+      const focus =
+        events[0]?.title ?? memories[0]?.title ?? chapter.title ?? "this moment";
+      const era = (data.era as string | undefined) ?? "an undated time";
+      const location = (data.location as string | undefined) ?? "an unknown place";
+
+      const body =
+        `During "${chapter.title}" (${era}, ${location}), the family's record of ` +
+        `${focus} isn't fully documented yet. What really happened here? ` +
+        `A relative's memory, a photo, or a recorded interview could fill this in.`;
+
+      const [inserted] = await db
+        .insert(familyStoriesTable)
+        .values({
+          family_id: chapter.family_id,
+          about_member_id: chapter.ancestor_member_id,
+          title: `Mystery Quest: ${chapter.title}`,
+          body,
+          category: "mystery_quest",
+          tags: ["mystery_quest", "open_question", dedupeTag],
+        })
+        .returning();
+
+      logger.info(
+        { chapterId, sceneNumber, familyId: chapter.family_id, storyId: inserted.id },
+        "legacy-chapters: mystery quest created",
+      );
+
+      return res.status(201).json({ mysteryQuest: inserted, created: true });
+    } catch (err) {
+      logger.error({ err, chapterId }, "legacy-chapters: mystery quest creation failed");
+      return res.status(500).json({ error: "Failed to create mystery quest" });
+    }
+  },
+);
+
 export default router;
 export { VALID_TRANSITIONS, generateChapterSeeds };
 
@@ -674,8 +786,9 @@ router.post(
   generalApiLimiter,
   requireAuth,
   async (req, res) => {
-    const { chapterId, sceneNumber, completed } = req.body as {
+    const { chapterId, sceneNumber, completed, choiceAction, choiceText } = req.body as {
       chapterId: number; sceneNumber: number; completed: boolean;
+      choiceAction?: string; choiceText?: string;
     };
 
     if (!chapterId || sceneNumber === undefined) {
@@ -710,6 +823,17 @@ router.post(
         )
         .limit(1);
 
+      // Decisions are keyed by "chapterId:sceneNumber" so a session spanning
+      // multiple chapters keeps each scene's choice distinct. This is the
+      // durable half of "decision-based narrative" — replaying a chapter
+      // (or a future dynamic journal) can see what was actually chosen,
+      // instead of the choice only ever existing in transient React state.
+      const decisionKey = `${chapterId}:${sceneNumber}`;
+      const newDecision =
+        choiceAction && choiceText
+          ? { action: choiceAction, text: choiceText, decidedAt: new Date().toISOString() }
+          : null;
+
       if (!session) {
         const [newSession] = await db
           .insert(legacySessionsTable)
@@ -719,21 +843,29 @@ router.post(
             user_id: userId,
             current_chapter_id: chapterId,
             status: "active",
-            session_state: { completedScenes: [sceneNumber] },
+            session_state: {
+              completedScenes: [sceneNumber],
+              decisions: newDecision ? { [decisionKey]: newDecision } : {},
+            },
           })
           .returning();
         session = newSession;
       } else {
-        // Update session state with completed scene
-        const currentState = session.session_state as { completedScenes?: number[] };
+        // Update session state with completed scene + this scene's decision
+        const currentState = session.session_state as {
+          completedScenes?: number[];
+          decisions?: Record<string, { action: string; text: string; decidedAt: string }>;
+        };
         const completedScenes = new Set(currentState.completedScenes ?? []);
         if (completed) completedScenes.add(sceneNumber);
+        const decisions = { ...(currentState.decisions ?? {}) };
+        if (newDecision) decisions[decisionKey] = newDecision;
 
         const [updated] = await db
           .update(legacySessionsTable)
           .set({
             current_chapter_id: chapterId,
-            session_state: { completedScenes: Array.from(completedScenes) },
+            session_state: { completedScenes: Array.from(completedScenes), decisions },
             updated_at: new Date(),
           })
           .where(eq(legacySessionsTable.id, session.id))
