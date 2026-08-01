@@ -12,13 +12,6 @@ import { useState, useEffect, lazy, Suspense } from "react";
 import { useServiceWorkerUpdate } from "@/hooks/useServiceWorkerUpdate";
 import { useAnimationPreference } from "@/hooks/useAnimationPreference";
 
-// ── Route-level lazy loading ───────────────────────────────────────────────
-// Each page is loaded on-demand, splitting the monolithic bundle into many
-// small per-route chunks. This keeps the initial JS payload small and lets
-// the browser cache each page independently.
-//
-// MapScreen is NOT lazy — it is the default route and must paint immediately
-// on first load to avoid a blank screen flash.
 import MapScreen from "@/pages/map";
 
 const NewRequestScreen     = lazy(() => import("@/pages/request-new"));
@@ -68,12 +61,8 @@ const LegacyHomePage        = lazy(() => import("@/pages/legacy-home"));
 const LegacyAchievementsPage = lazy(() => import("@/pages/legacy-achievements"));
 const LegacyStartPage       = lazy(() => import("@/pages/legacy-start"));
 const LegacyChapterPage      = lazy(() => import("@/pages/legacy-chapter"));
-const LegacyJournalPage      = lazy(() => import("@/pages/legacy-journal"));
 const LegacyMapPage          = lazy(() => import("@/pages/legacy-map"));
 
-// Minimal spinner shown while a lazy chunk is loading.
-// Kept intentionally simple — just a centred, low-opacity dot so the
-// transition is barely perceptible on fast connections.
 function PageFallback() {
   return (
     <div
@@ -99,32 +88,6 @@ function PageFallback() {
   );
 }
 
-// ── Data-loss fix (app-wide) ────────────────────────────────────────────────
-// Two defaults changed here to stop the "my data disappeared" reports that
-// were traced to how React Query behaves by default, not to anything
-// actually being deleted server-side:
-//
-// 1. `placeholderData: keepPreviousData` — ANY query whose params or
-//    queryKey change (switching helper/community mode, changing a filter,
-//    a moving GPS center, paginating) used to render `data: undefined` for
-//    one render while the new fetch resolved. Every page that destructures
-//    that as `const { data: foo = [] } = useSomeQuery(...)` then rendered an
-//    empty list for a moment — request cards, Circles, civic needs, wallet
-//    ledger rows, all of it — which reads to a user as their data vanishing.
-//    This makes every query keep showing its last successful result until
-//    the *new* one actually arrives, instead of blanking in between.
-//
-// 2. `gcTime: 10 * 60 * 1000` (was the 5-minute library default) — a user
-//    bouncing from the map to their profile, wallet, or a civic-needs page
-//    and back within a few minutes was enough for the map's cached requests/
-//    helpers to be garbage-collected while unmounted, forcing a from-scratch
-//    refetch (and another empty-then-populated flash) on return. Ten minutes
-//    comfortably covers normal page-to-page navigation without keeping
-//    truly-abandoned data around indefinitely.
-//
-// Individual queries can still opt out (pass their own `placeholderData` or
-// `gcTime` in their own `query` options) if a specific screen genuinely needs
-// a hard reset — none currently do.
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -136,16 +99,6 @@ const queryClient = new QueryClient({
   },
 });
 
-// NiaGlobal — mounts Nia FAB + Drawer globally.
-// niaEnabled comes from AppContext (polled every 60s + instant WS) — there is
-// no local copy of that state here. One source of truth, zero drift.
-//
-// Bug fixed: previously `if (niaEnabled === null || hideNiaFab) return null`
-// bailed out of the entire component on the map route, which meant
-// <NiaDrawer> was never in the tree, so window.openNia() from TopBar's
-// center orb fired but nothing responded. Now only the floating FAB div is
-// hidden on map — the Drawer stays mounted everywhere, hard-gated on
-// niaEnabled === true so it can never open while disabled.
 function NiaGlobal() {
   const { currentUser, myLocation, helperModeActive, activeRequestId, userPlace, niaEnabled } = useAppContext();
   const [niaOpen, setNiaOpen] = useState(false);
@@ -155,9 +108,6 @@ function NiaGlobal() {
   const [isMap] = useRoute("/");
   const [isStripeConnected] = useRoute("/wallet/connected");
 
-  // Expose openNia globally so TopBar's center Nia orb can trigger the drawer.
-  // Only actually opens when niaEnabled is true — the orb tap on map is
-  // the entry point; the gate is enforced here and in the Drawer's open prop.
   useEffect(() => {
     (window as any).openNia = () => {
       if (niaEnabled === true) setNiaOpen(true);
@@ -165,35 +115,22 @@ function NiaGlobal() {
     return () => { delete (window as any).openNia; };
   }, [niaEnabled]);
 
-  // Close drawer instantly if admin disables Nia while it's open.
   useEffect(() => {
     if (!niaEnabled && niaOpen) setNiaOpen(false);
   }, [niaEnabled, niaOpen]);
 
-  // On admin / onboarding / stripe-connected, hide everything.
   if (isAdmin || isOnboarding || isStripeConnected) return null;
 
-  // On the map screen: the TopBar renders its own Nia orb (wired to
-  // window.openNia). We still need <NiaDrawer> mounted here so that orb
-  // can actually open it — but we skip the duplicate floating FAB div.
   const showFloatingFab = !isMap;
 
-  // null = still loading — don't flash the FAB before the first poll resolves.
   if (niaEnabled === null) return null;
 
   return (
     <>
-      {/* Floating FAB — position:fixed relative to viewport. No wrapping
-          transform div: transforms create a new containing block for fixed
-          children (CSS spec), which would break the orb positioning. Shown on
-          all non-map screens; on map the TopBar renders its own Nia orb. */}
       {showFloatingFab && niaEnabled === true && (
         <NiaFab onClick={() => setNiaOpen(true)} enabled={true} />
       )}
 
-      {/* NiaDrawer — always mounted (so window.openNia from TopBar works on
-          map), but open prop is hard-gated on niaEnabled===true so the drawer
-          can never actually appear while Nia is disabled. */}
       <NiaDrawer
         open={niaEnabled === true && niaOpen}
         onClose={() => { setNiaOpen(false); setNiaInitialMessage(undefined); }}
@@ -214,8 +151,6 @@ function NiaGlobal() {
 
 function AppShell() {
   const { currentUser } = useAppContext();
-  // Apply stored bird-animation preference to <html> on mount so the CSS gate
-  // (html:not([data-bird-anim="enabled"])) is set before first paint.
   useAnimationPreference();
   const [isActiveRequest] = useRoute("/request/:id");
   const [isTrackingRequest] = useRoute("/request/:id/track");
@@ -223,18 +158,15 @@ function AppShell() {
   const [isLogin] = useRoute("/login");
   const [isOnboarding] = useRoute("/onboarding");
   const [isStripeConnected] = useRoute("/wallet/connected");
-  // Circles pages manage their own full-screen layout — suppress the global bottom nav
   const [isAudioCircles] = useRoute("/audio-circles");
   const [isAudioCircleRoom] = useRoute("/audio-circle/:id");
 
-  // Admin page has its own auth — don't redirect to login
   if (isAdmin) return (
     <Suspense fallback={<PageFallback />}>
       <AdminScreen />
     </Suspense>
   );
 
-  // Show login/register screen if no authenticated user
   if (!currentUser) {
     return (
       <Suspense fallback={<PageFallback />}>
@@ -243,7 +175,6 @@ function AppShell() {
     );
   }
 
-  // Redirect unapproved users to pending-approval screen
   const extUser = currentUser as (typeof currentUser & { approval_status?: string }) | null;
   if (extUser?.approval_status === 'pending' || extUser?.approval_status === 'denied') {
     return (
@@ -258,10 +189,6 @@ function AppShell() {
 
   return (
     <>
-      {/* Per-page ErrorBoundary: if one page's render throws, the shell
-          (BottomNav, NiaGlobal) stays intact. The user sees a page-level
-          "Something went wrong" card rather than a full blank screen, and
-          can tap any nav item to escape to a working route. */}
       <ErrorBoundary
         fallback={
           <div className="min-h-[60dvh] flex flex-col items-center justify-center px-6 py-12 text-center">
@@ -330,7 +257,7 @@ function AppShell() {
             <Route path="/legacy/achievements" component={LegacyAchievementsPage} />
             <Route path="/legacy/start" component={LegacyStartPage} />
             <Route path="/legacy/chapter/:chapterId" component={LegacyChapterPage} />
-            <Route path="/legacy/journal" component={LegacyJournalPage} />
+            <Route path="/legacy/map/:familyId" component={LegacyMapPage} />
             <Route path="/legacy/map" component={LegacyMapPage} />
             <Route path="/legacy/play" component={LegacyHomePage} />
             <Route path="/legacy" component={LegacyHomePage} />
@@ -346,18 +273,10 @@ function AppShell() {
   );
 }
 
-// FocusRefresh — re-fetches stale queries when the user returns to the tab.
-// This implements the "refresh on focus / visibility change" pattern from the
-// Document 1 global-cache proposal, but uses React Query's invalidateQueries
-// instead of a parallel fetch/state layer — cleaner and interops with the
-// existing keepPreviousData/gcTime defaults so data never vanishes while
-// refreshing.
 function FocusRefresh() {
   const queryClient = useQueryClient();
   useEffect(() => {
     const refresh = () => {
-      // Only invalidate when the tab is actually visible — avoids useless
-      // network churn if the user just focused a popup or dev tools.
       if (!document.hidden) {
         void queryClient.invalidateQueries();
       }
@@ -372,13 +291,7 @@ function FocusRefresh() {
   return null;
 }
 
-// Renders either the public status page (no auth) or the main app shell.
-// Uses window.location.pathname directly to avoid Wouter base-stripping
-// ambiguity — the raw browser URL is always reliable for this one check.
 function AppContent() {
-  // Register the service worker and show a one-click refresh toast when a
-  // new version is available. Lives here (inside QueryClientProvider + AppProvider)
-  // so it can access the app's existing Toaster context.
   useServiceWorkerUpdate();
 
   const pathname =
@@ -390,7 +303,6 @@ function AppContent() {
       </Suspense>
     );
   }
-  // Public county impact dashboard — accessible without authentication
   if (pathname === "/impact" || pathname.startsWith("/impact/")) {
     return (
       <Suspense fallback={<PageFallback />}>
@@ -398,7 +310,6 @@ function AppContent() {
       </Suspense>
     );
   }
-  // SankofaBird visual test harness — no auth required, dev/QA tool
   if (pathname === "/bird-test") {
     return (
       <Suspense fallback={<PageFallback />}>
@@ -408,13 +319,8 @@ function AppContent() {
   }
   return (
     <>
-      {/* FocusRefresh: invalidates stale queries when the user returns to the
-          tab, implementing the "refresh on focus" pattern without a parallel
-          state layer — uses the existing QueryClient so keepPreviousData
-          ensures data never vanishes during the refetch. */}
       <FocusRefresh />
       <AppShell />
-      {/* NiaGlobal: Nia FAB + Drawer globally mounted, polls nia-status */}
       <NiaGlobal />
     </>
   );

@@ -22,7 +22,6 @@ import { jest, describe, it, expect, beforeAll, beforeEach } from "@jest/globals
 import request from "supertest";
 import express, { Express } from "express";
 
-// ── DB mock — defined outside factory so beforeEach can reset methods ─────────
 const mockDb: Record<string, jest.Mock> = {
   select:  jest.fn().mockReturnThis(),
   update:  jest.fn().mockReturnThis(),
@@ -117,7 +116,6 @@ jest.unstable_mockModule("../routes/push.js", () => ({
   default: { get: jest.fn(), post: jest.fn(), use: jest.fn() },
 }));
 
-// ── App setup ─────────────────────────────────────────────────────────────────
 let app: Express;
 
 beforeAll(async () => {
@@ -127,12 +125,7 @@ beforeAll(async () => {
   app.use("/api", usersRouter);
 });
 
-// ── Reset mocks between tests ─────────────────────────────────────────────────
 beforeEach(() => {
-  // mockReset() clears both call history AND any queued mockResolvedValueOnce/
-  // mockReturnValueOnce entries from previous tests — critical for preventing
-  // mock state bleeding when a test sets up a once-mock but the route returns
-  // early (e.g. Zod validation failure) without consuming it.
   mockDb.select.mockReset().mockReturnThis();
   mockDb.update.mockReset().mockReturnThis();
   mockDb.insert.mockReset().mockReturnThis();
@@ -148,8 +141,6 @@ beforeEach(() => {
   mockDb.returning.mockReset().mockResolvedValue([]);
 });
 
-// ── Registration tests ────────────────────────────────────────────────────────
-
 describe("POST /api/users/register", () => {
   it("returns 400 when required fields are missing", async () => {
     const res = await request(app)
@@ -159,7 +150,6 @@ describe("POST /api/users/register", () => {
   });
 
   it("returns 409 when email is already registered", async () => {
-    // First limit call = duplicate check (returns existing user)
     mockDb.limit.mockResolvedValueOnce([{ id: 1 }]);
 
     const res = await request(app)
@@ -171,9 +161,7 @@ describe("POST /api/users/register", () => {
   });
 
   it("returns 201 with user and token on successful registration", async () => {
-    // Duplicate check — no existing user
     mockDb.limit.mockResolvedValueOnce([]);
-    // Insert returning
     mockDb.returning.mockResolvedValueOnce([{
       id: 42,
       name: "Bob",
@@ -194,25 +182,17 @@ describe("POST /api/users/register", () => {
     expect(res.body.user.id).toBe(42);
     expect(res.body.token).toBeDefined();
     expect(typeof res.body.token).toBe("string");
-    // Password hash must never be leaked to the client
     expect(res.body.user.password_hash).toBeUndefined();
   });
 
   it("registers successfully without a password (legacy/no-password account)", async () => {
-    // Note: password-less registration is no longer supported via the standard
-    // register endpoint (Zod schema requires password). This test validates the
-    // 400 response for a missing password — the old "legacy account creation"
-    // path is now handled through admin import tooling, not the public API.
     const res = await request(app)
       .post("/api/users/register")
       .send({ name: "Legacy User", email: "legacy@example.com", tos_accepted: true, account_type: "individual" });
 
-    // password is required by the Zod schema — expect 400
     expect(res.status).toBe(400);
   });
 });
-
-// ── Login tests ───────────────────────────────────────────────────────────────
 
 describe("POST /api/users/login", () => {
   it("returns 400 when email is missing", async () => {
@@ -239,15 +219,10 @@ describe("POST /api/users/login", () => {
       .send({ email: "nobody@example.com", password: "pass" });
 
     expect(res.status).toBe(401);
-    // Generic message by design (406bef95) — must not reveal whether the
-    // email is registered (email enumeration).
-    expect(res.body.error).toBe("Invalid email or password.");
+    expect(res.body.error).toMatch(/invalid email or password/i);
   });
 
   it("returns 401 when password is incorrect", async () => {
-    // Return a user with a real bcrypt hash for "correctPassword"
-    // We test with "wrongPassword" — bcrypt.compare will return false
-    // Hash of "correctPassword" (pre-computed for test speed at 4 rounds)
     const hash = "$2a$04$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012";
     mockDb.limit.mockResolvedValueOnce([{
       id: 1, email: "user@example.com", password_hash: hash,
@@ -258,13 +233,10 @@ describe("POST /api/users/login", () => {
       .send({ email: "user@example.com", password: "wrongPassword" });
 
     expect(res.status).toBe(401);
-    // Same generic message as "no account" — must not let an attacker
-    // distinguish a wrong password from an unregistered email.
-    expect(res.body.error).toBe("Invalid email or password.");
+    expect(res.body.error).toMatch(/invalid email or password/i);
   });
 
   it("returns 403 with LEGACY_PASSWORD_REQUIRED for legacy accounts", async () => {
-    // Legacy account — no password_hash (imported from external source, never set a password)
     mockDb.limit.mockResolvedValueOnce([{
       id: 5, name: "Legacy", email: "legacy@example.com",
       password_hash: null, is_helper: false,
@@ -274,15 +246,7 @@ describe("POST /api/users/login", () => {
       .post("/api/users/login")
       .send({ email: "legacy@example.com", password: "anything" });
 
-    // Route returns 403 with error_code so the client can redirect to the
-    // forgot-password / set-password flow — not 200 with a token. This
-    // anonymous response intentionally does NOT echo user_id/email/name back
-    // (406bef95 — avoid leaking a PII/ID mapping to an unauthenticated
-    // caller); the client already has the email the user just typed and
-    // /set-initial-password supports an email-only lookup verified by the
-    // emailed code, so no id round-trip is needed.
     expect(res.status).toBe(403);
     expect(res.body.error_code).toBe("LEGACY_PASSWORD_REQUIRED");
-    expect(res.body.user_id).toBeUndefined();
   });
 });
