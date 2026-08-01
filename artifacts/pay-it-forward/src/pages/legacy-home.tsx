@@ -29,7 +29,7 @@ import {
   Camera, FileText, Crown, Flame,
   Sparkles, Shield, Zap, Target,
   Volume2, BookOpen, Lock,
-  RefreshCw, ChevronLeft,
+  RefreshCw, ChevronLeft, Calendar, TrendingUp,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -1467,21 +1467,17 @@ export default function LegacyHomePage() {
           {activeMode === "reunion" && (
             <div className="px-4 mb-5">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Family Reunion</h2>
-                <button
-                  onClick={() => navigate("/legacy/challenges")}
-                  className="text-xs text-amber-600 flex items-center gap-1"
-                >
-                  View Challenges <ChevronRight className="w-3 h-3" />
-                </button>
+                <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Living Family Universe</h2>
               </div>
-              <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg">
+
+              {/* Collaborative Challenges */}
+              <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg mb-3">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center">
                     <Trophy className="w-5 h-5 text-rose-400" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm font-bold text-amber-100">Collaborative Family Challenges</p>
+                    <p className="text-sm font-bold text-amber-100">Collaborative Challenges</p>
                     <p className="text-xs text-amber-600 mt-0.5">Work together on preservation missions and unlock new chapters.</p>
                   </div>
                 </div>
@@ -1491,9 +1487,44 @@ export default function LegacyHomePage() {
                 >
                   <Trophy className="w-4 h-4" /> Open Family Challenges
                 </button>
-                <p className="text-xs text-amber-700 mt-3 text-center">
-                  Create challenges, contribute interviews, photos, and stories together, and unlock new family chapters as a team.
-                </p>
+              </div>
+
+              {/* Seasonal Events */}
+              <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg mb-3">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                    <Calendar className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-amber-100">Seasonal Events</p>
+                    <p className="text-xs text-amber-600 mt-0.5">Shared family missions tied to anniversaries, reunions, and cultural holidays.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => navigate("/legacy/seasonal-events")}
+                  className="w-full bg-amber-500/15 border border-amber-600/30 text-amber-300 font-bold text-xs uppercase tracking-wide py-3 rounded-xl active:opacity-70 flex items-center justify-center gap-2"
+                >
+                  <Calendar className="w-4 h-4" /> View Seasonal Events
+                </button>
+              </div>
+
+              {/* World Evolution */}
+              <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-teal-500/10 flex items-center justify-center">
+                    <TrendingUp className="w-5 h-5 text-teal-400" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-amber-100">World Evolution</p>
+                    <p className="text-xs text-amber-600 mt-0.5">See how your family world has grown and evolved over time.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => navigate("/legacy/world-evolution")}
+                  className="w-full bg-teal-500/15 border border-teal-600/30 text-teal-300 font-bold text-xs uppercase tracking-wide py-3 rounded-xl active:opacity-70 flex items-center justify-center gap-2"
+                >
+                  <TrendingUp className="w-4 h-4" /> View World Evolution
+                </button>
               </div>
             </div>
           )}
