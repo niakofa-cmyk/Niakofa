@@ -125,33 +125,6 @@ interface LegacyChapter {
   completed_at: string | null;
 }
 
-interface ReunionResponse {
-  challenge: {
-    title: string;
-    description: string;
-    goal: number;
-    progress: number;
-    reward: string;
-    completed: boolean;
-  };
-  leaderboard: Array<{ memberId: number; name: string; publishedInterviews: number }>;
-}
-
-interface FamilyQuest {
-  key: string;
-  title: string;
-  description: string;
-  goal: number;
-  progress: number;
-  reward: string;
-  completed: boolean;
-  leaderboard: Array<{ memberId: number; name: string; count: number }> | null;
-}
-
-interface FamilyQuestsResponse {
-  quests: FamilyQuest[];
-}
-
 interface SceneData {
   sceneNumber: number;
   title: string;
@@ -381,10 +354,6 @@ export default function LegacyHomePage() {
   const [completeness, setCompleteness] = useState<CompletenessResponse | null>(null);
   const [ancestorCandidate, setAncestorCandidate] = useState<AncestorCandidate | null>(null);
   const [chapters, setChapters] = useState<LegacyChapter[]>([]);
-  const [reunion, setReunion] = useState<ReunionResponse | null>(null);
-  const [reunionLoading, setReunionLoading] = useState(false);
-  const [familyQuests, setFamilyQuests] = useState<FamilyQuest[]>([]);
-  const [familyQuestsLoading, setFamilyQuestsLoading] = useState(false);
   const [scenes, setScenes] = useState<SceneData[]>([]);
   const [scenesLoading, setScenesLoading] = useState(false);
   const [activeChapterId, setActiveChapterId] = useState<number | null>(null);
@@ -487,53 +456,6 @@ export default function LegacyHomePage() {
   useEffect(() => {
     if (activeChapterId) loadScenes(activeChapterId);
   }, [activeChapterId, loadScenes]);
-
-  // ── Load real Reunion Challenge data (replaces fabricated leaderboard XP) ──
-
-  const loadReunion = useCallback(async (familyId: number) => {
-    setReunionLoading(true);
-    try {
-      const res = await fetch(`/api/legacy/reunion/${familyId}`, { headers: authHeaders() });
-      if (res.ok) {
-        const data = await res.json() as ReunionResponse;
-        setReunion(data);
-      }
-    } catch {
-      // Silent fail — panel falls back to an empty-state message
-    } finally {
-      setReunionLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (activeMode === "reunion" && legacyState.families.length > 0) {
-      loadReunion(legacyState.families[0].id);
-    }
-  }, [activeMode, legacyState.families, loadReunion]);
-
-  // ── Load real Family Quests data (cooperative missions, replaces the ─────
-  //    single-player quest card previously reused for this mode) ───────────
-
-  const loadFamilyQuests = useCallback(async (familyId: number) => {
-    setFamilyQuestsLoading(true);
-    try {
-      const res = await fetch(`/api/legacy/family-quests/${familyId}`, { headers: authHeaders() });
-      if (res.ok) {
-        const data = await res.json() as FamilyQuestsResponse;
-        setFamilyQuests(data.quests ?? []);
-      }
-    } catch {
-      // Silent fail — panel falls back to an empty-state message
-    } finally {
-      setFamilyQuestsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (activeMode === "quests" && legacyState.families.length > 0) {
-      loadFamilyQuests(legacyState.families[0].id);
-    }
-  }, [activeMode, legacyState.families, loadFamilyQuests]);
 
   // ── Real audio recording with MediaRecorder API ─────────────────────────────
   const handleStartRecording = useCallback(async () => {
@@ -803,12 +725,6 @@ export default function LegacyHomePage() {
           <Trophy className="w-3 h-3" /> Awards
         </button>
         <button
-          onClick={() => navigate("/legacy/journal")}
-          className="text-xs text-amber-600 bg-amber-900/30 border border-amber-800/40 rounded-lg px-2.5 py-1.5 flex items-center gap-1"
-        >
-          <BookOpen className="w-3 h-3" /> Journal
-        </button>
-        <button
           onClick={() => navigate("/diaspora/timeline")}
           className="text-xs text-amber-600 bg-amber-900/30 border border-amber-800/40 rounded-lg px-2.5 py-1.5 flex items-center gap-1"
         >
@@ -961,7 +877,7 @@ export default function LegacyHomePage() {
             <div className="px-4 mb-5">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">World Map</h2>
-                <button onClick={() => navigate("/legacy/map")} className="text-xs text-amber-600 flex items-center gap-1">
+                <button onClick={() => navigate("/diaspora/timeline")} className="text-xs text-amber-600 flex items-center gap-1">
                   Full Map <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
@@ -1214,7 +1130,7 @@ export default function LegacyHomePage() {
           )}
 
           {/* ── AI Quest Panel (Quests mode or Legacy mode) ── */}
-          {activeMode === "legacy" && (
+          {(activeMode === "legacy" || activeMode === "quests") && (
             <div className="px-4 mb-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -1393,7 +1309,7 @@ export default function LegacyHomePage() {
                     <div className="space-y-2">
                       {[
                         { label: "Ancestral Necklace",  desc: "Passed down through generations",  earned: members.length >= 3   },
-                        { label: "Mission School Book",  desc: "Knowledge from the old ways",       earned: false                 },
+                        { label: "Mission School Book",  desc: "Knowledge from the old way",       earned: false                 },
                         { label: "Traditional Drum",     desc: "The heartbeat of the village",      earned: interviewCount >= 1   },
                         { label: "Diary Page",           desc: "A window into another time",        earned: memories.length >= 2  },
                       ].map(({ label, desc, earned }, i) => (
@@ -1559,140 +1475,21 @@ export default function LegacyHomePage() {
                     <Users className="w-4 h-4 text-amber-400" />
                   </div>
                   <div>
-                    <p className="text-sm font-black text-amber-100">{reunion?.challenge.title ?? "Family Reunion Event"}</p>
-                    <p className="text-xs text-amber-700">
-                      {reunion?.challenge.completed ? "Completed" : "Ongoing — Work together"}
-                    </p>
+                    <p className="text-sm font-black text-amber-100">Family Reunion Event</p>
+                    <p className="text-xs text-amber-700">Work together to preserve your legacy</p>
                   </div>
                 </div>
-                <div className="bg-[#3A2A1A] rounded-xl p-3 mb-3">
-                  <p className="text-xs font-bold text-amber-200 mb-1">
-                    {reunion?.challenge.description ?? "Everyone must record one elder's story."}
-                  </p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <div className="flex-1 h-1.5 rounded-full bg-amber-950 overflow-hidden">
-                      <div
-                        className="h-full bg-amber-500 rounded-full transition-all duration-700"
-                        style={{ width: `${Math.min(100, ((reunion?.challenge.progress ?? 0) / (reunion?.challenge.goal ?? 5)) * 100)}%` }}
-                      />
-                    </div>
-                    <p className="text-xs text-amber-600 font-bold flex-shrink-0">
-                      {reunion?.challenge.progress ?? 0} / {reunion?.challenge.goal ?? 5}
-                    </p>
-                  </div>
-                  <p className="text-xs text-amber-700 mt-1.5">
-                    Reward: Unlock <span className="text-amber-500 font-bold">{reunion?.challenge.reward ?? "The Family Migration Story"}</span>
-                  </p>
-                </div>
-                <div className="space-y-1.5">
-                  {reunionLoading ? (
-                    <p className="text-xs text-amber-700 text-center py-2">Loading real contributions...</p>
-                  ) : reunion && reunion.leaderboard.length > 0 ? (
-                    reunion.leaderboard.map((entry, i) => (
-                      <div key={entry.memberId} className="flex items-center gap-2 py-1">
-                        <p className="text-xs text-amber-800 w-4 font-bold">{i + 1}</p>
-                        <div className="w-6 h-6 rounded-full bg-amber-900/40 flex items-center justify-center text-xs font-bold text-amber-600">
-                          {(entry.name ?? "?")[0]}
-                        </div>
-                        <p className="flex-1 text-xs text-amber-300">{entry.name}</p>
-                        <p className="text-xs text-amber-600 font-bold">
-                          {entry.publishedInterviews} {entry.publishedInterviews === 1 ? "story" : "stories"}
-                        </p>
-                      </div>
-                    ))
-                  ) : members.length === 0 ? (
-                    <p className="text-xs text-amber-700 text-center py-2">Invite family members to start the challenge</p>
-                  ) : (
-                    <p className="text-xs text-amber-700 text-center py-2">No stories recorded yet — be the first!</p>
-                  )}
-                </div>
+                <p className="text-xs text-amber-600 mb-3">
+                  Create collaborative challenges for your family — record elder stories together, digitize old photos,
+                  visit family landmarks, and reconnect with living relatives. Each contribution unlocks rewards for the whole family.
+                </p>
                 <button
-                  onClick={() => navigate("/diaspora/family")}
-                  className="mt-3 w-full bg-amber-500/10 border border-amber-600/30 text-amber-400 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70"
+                  onClick={() => navigate("/legacy/challenges")}
+                  className="w-full bg-amber-500/10 border border-amber-600/30 text-amber-400 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70"
                 >
-                  Invite Family Members
+                  View Family Challenges
                 </button>
               </div>
-            </div>
-          )}
-
-          {/* ── Family Quests (Quests mode only) — cooperative missions, ──────
-              each tied to a real vault table, not the single-player AI quest
-              card Legacy Mode shows. ── */}
-          {activeMode === "quests" && (
-            <div className="px-4 mb-5">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Family Quests</h2>
-              </div>
-
-              {familyQuestsLoading ? (
-                <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg text-center py-6">
-                  <p className="text-xs text-amber-700">Loading real quest progress...</p>
-                </div>
-              ) : familyQuests.length === 0 ? (
-                <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg text-center py-6">
-                  <p className="text-xs text-amber-700">Couldn't load quests right now.</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {familyQuests.map((quest) => (
-                    <div key={quest.key} className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg">
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center">
-                          <Target className="w-4 h-4 text-purple-400" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-black text-amber-100">{quest.title}</p>
-                          <p className="text-xs text-amber-700">
-                            {quest.completed ? "Completed" : "Ongoing — Work together"}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="bg-[#3A2A1A] rounded-xl p-3 mb-3">
-                        <p className="text-xs font-bold text-amber-200 mb-1">{quest.description}</p>
-                        <div className="flex items-center gap-2 mt-2">
-                          <div className="flex-1 h-1.5 rounded-full bg-amber-950 overflow-hidden">
-                            <div
-                              className="h-full bg-purple-500 rounded-full transition-all duration-700"
-                              style={{ width: `${Math.min(100, (quest.progress / quest.goal) * 100)}%` }}
-                            />
-                          </div>
-                          <p className="text-xs text-amber-600 font-bold flex-shrink-0">
-                            {quest.progress} / {quest.goal}
-                          </p>
-                        </div>
-                        <p className="text-xs text-amber-700 mt-1.5">
-                          Reward: Unlock <span className="text-amber-500 font-bold">{quest.reward}</span>
-                        </p>
-                      </div>
-                      <div className="space-y-1.5">
-                        {quest.leaderboard === null ? (
-                          <p className="text-xs text-amber-700 text-center py-2">
-                            Family-wide progress — individual contributions aren't tracked for this quest yet
-                          </p>
-                        ) : quest.leaderboard.length > 0 ? (
-                          quest.leaderboard.map((entry, i) => (
-                            <div key={entry.memberId} className="flex items-center gap-2 py-1">
-                              <p className="text-xs text-amber-800 w-4 font-bold">{i + 1}</p>
-                              <div className="w-6 h-6 rounded-full bg-amber-900/40 flex items-center justify-center text-xs font-bold text-amber-600">
-                                {(entry.name ?? "?")[0]}
-                              </div>
-                              <p className="flex-1 text-xs text-amber-300">{entry.name}</p>
-                              <p className="text-xs text-amber-600 font-bold">
-                                {entry.count} {entry.count === 1 ? "contribution" : "contributions"}
-                              </p>
-                            </div>
-                          ))
-                        ) : members.length === 0 ? (
-                          <p className="text-xs text-amber-700 text-center py-2">Invite family members to start this quest</p>
-                        ) : (
-                          <p className="text-xs text-amber-700 text-center py-2">No contributions yet — be the first!</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           )}
 
