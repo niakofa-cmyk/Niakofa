@@ -50,6 +50,8 @@ interface Choice {
   action: "next" | "reflect" | "preserve";
   /** True only for the choice that should create a real Mystery Quest vault entry. */
   createsMysteryQuest?: boolean;
+  /** True only for the choice that should prompt the player to write and save a real memory. */
+  requiresMemoryText?: boolean;
 }
 
 const SCENE_CHOICES: Record<string, Choice[]> = {
@@ -67,7 +69,12 @@ const SCENE_CHOICES: Record<string, Choice[]> = {
     { text: "Reflect quietly", consequence: "You gain cultural wisdom from this moment.", action: "reflect" },
   ],
   reflection: [
-    { text: "Record a memory", consequence: "Add your own memory to the vault.", action: "preserve" },
+    {
+      text: "Record a memory",
+      consequence: "Your memory has been added to the Family Vault.",
+      action: "preserve",
+      requiresMemoryText: true,
+    },
     { text: "Continue the journey", consequence: "The chapter moves forward.", action: "next" },
   ],
   context: [
@@ -92,6 +99,17 @@ export default function LegacyChapterPlay() {
   const [mysteryQuestState, setMysteryQuestState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
+
+  // "Record a memory" flow: unlike every other choice, this one needs real
+  // player-authored text before it can be saved, so it interrupts the normal
+  // choice → consequence flow with a small writing step.
+  const [awaitingMemoryText, setAwaitingMemoryText] = useState(false);
+  const [pendingMemoryChoiceIdx, setPendingMemoryChoiceIdx] = useState<number | null>(null);
+  const [memoryDraft, setMemoryDraft] = useState("");
+  const [recordMemoryState, setRecordMemoryState] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+  const [memoryError, setMemoryError] = useState<string | null>(null);
 
   const chapterId = parseInt(params.chapterId, 10);
 
@@ -128,8 +146,8 @@ export default function LegacyChapterPlay() {
     if (!isNaN(chapterId)) loadScenes();
   }, [chapterId, loadScenes]);
 
-  const handleChoice = async (choiceIdx: number) => {
-    if (!sceneData || selectedChoice !== null) return;
+  const finalizeChoice = async (choiceIdx: number) => {
+    if (!sceneData) return;
     const scene = sceneData.scenes[currentSceneIdx];
     if (!scene) return;
     const choice = (SCENE_CHOICES[scene.type] ?? SCENE_CHOICES.narration)[choiceIdx];
@@ -175,6 +193,70 @@ export default function LegacyChapterPlay() {
         setMysteryQuestState("error");
       }
     }
+  };
+
+  const handleChoice = (choiceIdx: number) => {
+    if (!sceneData || selectedChoice !== null || awaitingMemoryText) return;
+    const scene = sceneData.scenes[currentSceneIdx];
+    if (!scene) return;
+    const choice = (SCENE_CHOICES[scene.type] ?? SCENE_CHOICES.narration)[choiceIdx];
+
+    // "Record a memory" needs real player-authored text before anything is
+    // saved — open the writing step instead of finalizing immediately.
+    if (choice?.requiresMemoryText) {
+      setPendingMemoryChoiceIdx(choiceIdx);
+      setAwaitingMemoryText(true);
+      setMemoryDraft("");
+      setMemoryError(null);
+      setRecordMemoryState("idle");
+      return;
+    }
+
+    void finalizeChoice(choiceIdx);
+  };
+
+  const handleSaveMemory = async () => {
+    if (!sceneData || pendingMemoryChoiceIdx === null) return;
+    const scene = sceneData.scenes[currentSceneIdx];
+    if (!scene) return;
+
+    const trimmed = memoryDraft.trim();
+    if (trimmed.length < 3) {
+      setMemoryError("Write a little more before saving.");
+      return;
+    }
+
+    setRecordMemoryState("saving");
+    setMemoryError(null);
+    try {
+      const res = await fetch(`/api/legacy/chapters/${chapterId}/record-memory`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ sceneNumber: scene.sceneNumber, body: trimmed }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Failed to save memory" }));
+        setRecordMemoryState("error");
+        setMemoryError(data.error || "Failed to save memory");
+        return;
+      }
+      setRecordMemoryState("saved");
+      setAwaitingMemoryText(false);
+      const choiceIdx = pendingMemoryChoiceIdx;
+      setPendingMemoryChoiceIdx(null);
+      await finalizeChoice(choiceIdx);
+    } catch {
+      setRecordMemoryState("error");
+      setMemoryError("Couldn't reach the server — check your connection and try again.");
+    }
+  };
+
+  const handleCancelMemory = () => {
+    setAwaitingMemoryText(false);
+    setPendingMemoryChoiceIdx(null);
+    setMemoryDraft("");
+    setMemoryError(null);
+    setRecordMemoryState("idle");
   };
 
   const handleNext = async () => {
@@ -385,8 +467,53 @@ export default function LegacyChapterPlay() {
           </div>
         )}
 
+        {/* Memory-writing step ("Record a memory" choice) */}
+        {!showConsequence && awaitingMemoryText && (
+          <div className="bg-stone-800/40 border border-amber-400/20 rounded-xl p-4 animate-in fade-in duration-200">
+            <div className="flex items-center gap-2 mb-3">
+              <BookOpen className="w-4 h-4 text-amber-400" />
+              <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+                Add to the Family Vault
+              </span>
+            </div>
+            <textarea
+              autoFocus
+              value={memoryDraft}
+              onChange={(e) => setMemoryDraft(e.target.value)}
+              placeholder="Write your own memory of this moment..."
+              rows={4}
+              maxLength={4000}
+              disabled={recordMemoryState === "saving"}
+              className="w-full bg-stone-900/60 border border-stone-700/50 rounded-lg px-3 py-2.5 text-sm text-stone-200 placeholder:text-stone-500 focus:outline-none focus:border-amber-400/40 resize-none disabled:opacity-60"
+            />
+            {memoryError && (
+              <p className="text-xs text-red-400 mt-2">{memoryError}</p>
+            )}
+            <div className="flex items-center gap-2 mt-3">
+              <button
+                onClick={handleSaveMemory}
+                disabled={recordMemoryState === "saving" || memoryDraft.trim().length < 3}
+                className="bg-amber-500 text-stone-900 font-bold rounded-lg px-4 py-2 text-xs flex items-center gap-1.5 hover:bg-amber-400 transition-colors disabled:opacity-50"
+              >
+                {recordMemoryState === "saving" ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</>
+                ) : (
+                  "Save Memory"
+                )}
+              </button>
+              <button
+                onClick={handleCancelMemory}
+                disabled={recordMemoryState === "saving"}
+                className="text-stone-400 font-medium rounded-lg px-4 py-2 text-xs border border-stone-700/50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Choices */}
-        {!showConsequence && (
+        {!showConsequence && !awaitingMemoryText && (
           <div className="space-y-3">
             {choices.map((choice, idx) => (
               <button
@@ -430,6 +557,13 @@ export default function LegacyChapterPlay() {
                     Couldn't save this to the vault right now — you can try again next time.
                   </span>
                 )}
+              </p>
+            )}
+            {choices[selectedChoice].requiresMemoryText && recordMemoryState === "saved" && (
+              <p className="text-xs mb-2">
+                <span className="text-emerald-400 inline-flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3 h-3" /> Your memory was saved to the Family Vault
+                </span>
               </p>
             )}
             <div className="mb-2" />

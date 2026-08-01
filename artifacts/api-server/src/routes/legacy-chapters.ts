@@ -26,6 +26,8 @@ import {
   db,
   familyMembersTable,
   familyMemoriesTable,
+  familyMemoryTagsTable,
+  familyMemoryPeopleTable,
   familyEventsTable,
   familyStoriesTable,
   familyPlacesTable,
@@ -700,6 +702,114 @@ router.post(
     } catch (err) {
       logger.error({ err, chapterId }, "legacy-chapters: mystery quest creation failed");
       return res.status(500).json({ error: "Failed to create mystery quest" });
+    }
+  },
+);
+
+// POST /api/legacy/chapters/:chapterId/record-memory — "Record a memory" made real
+//
+// Companion to the mystery-quest endpoint above, but the inverse shape: where
+// "Ask a question" writes a server-authored prompt (the player supplies no
+// text), "Record a memory" is the reflection-scene choice where the player
+// contributes their OWN new memory. Unlike mystery-quest, this is genuinely
+// user-authored content, so it is not idempotent/deduped by scene — a player
+// can record more than one memory against the same reflection beat, same as
+// they could write more than one memory anywhere else in the Family Vault.
+//
+// The new row lands in the same familyMemoriesTable every other memory-
+// capture path in the app writes to (see routes/diaspora.ts's
+// POST /family/:id/timeline), tagged so it's traceable back to the chapter/
+// scene it was recorded from, and linked to the chapter's ancestor via
+// family_memory_people when that ancestor is a real member (not every
+// chapter's ancestor_member_id resolves to a family_members row — some
+// chapters are seeded from historical/placeholder ancestors).
+//
+// Because family_memories already feeds the world-regeneration fingerprint
+// (see legacy.ts's FamilyReservoir), recording a memory here will cause the
+// family's world to regenerate next session, same as any other vault edit.
+router.post(
+  "/legacy/chapters/:chapterId/record-memory",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const chapterId = parseInt(String(req.params.chapterId), 10);
+    if (isNaN(chapterId)) return res.status(400).json({ error: "Invalid chapter ID" });
+
+    const { sceneNumber, title, body } = req.body as {
+      sceneNumber?: number;
+      title?: string;
+      body?: string;
+    };
+    if (!sceneNumber || sceneNumber < 1 || sceneNumber > 10) {
+      return res.status(400).json({ error: "Valid sceneNumber is required" });
+    }
+    const trimmedBody = typeof body === "string" ? body.trim() : "";
+    if (trimmedBody.length < 3) {
+      return res.status(400).json({ error: "Memory text is required" });
+    }
+    if (trimmedBody.length > 4000) {
+      return res.status(400).json({ error: "Memory text is too long (max 4000 characters)" });
+    }
+    const trimmedTitle = typeof title === "string" ? title.trim().slice(0, 200) : "";
+
+    try {
+      const [chapter] = await db
+        .select()
+        .from(legacyChaptersTable)
+        .where(eq(legacyChaptersTable.id, chapterId))
+        .limit(1);
+
+      if (!chapter) return res.status(404).json({ error: "Chapter not found" });
+
+      const userId = req.authenticatedUserId!;
+      if (!(await isMember(userId, chapter.family_id))) {
+        return res.status(403).json({ error: "Not a member of this family" });
+      }
+
+      const [inserted] = await db
+        .insert(familyMemoriesTable)
+        .values({
+          family_id:   chapter.family_id,
+          author_id:   userId,
+          title:       trimmedTitle || `Memory from "${chapter.title}"`,
+          description: trimmedBody,
+          source:      "upload",
+          visibility:  "family",
+        })
+        .returning();
+
+      const dedupeTag = `chapter:${chapterId}:scene:${sceneNumber}`;
+      await db.insert(familyMemoryTagsTable).values([
+        { memory_id: inserted.id, tag: "legacy_recorded_memory" },
+        { memory_id: inserted.id, tag: dedupeTag },
+      ]);
+
+      // Link to the chapter's ancestor if they resolve to a real member row
+      // (best-effort — not every chapter ancestor is a real family_members
+      // record, and this link is a nice-to-have, not a correctness gate).
+      if (chapter.ancestor_member_id) {
+        const [ancestorMember] = await db
+          .select({ id: familyMembersTable.id })
+          .from(familyMembersTable)
+          .where(eq(familyMembersTable.id, chapter.ancestor_member_id))
+          .limit(1);
+        if (ancestorMember) {
+          await db.insert(familyMemoryPeopleTable).values({
+            memory_id: inserted.id,
+            member_id: ancestorMember.id,
+          });
+        }
+      }
+
+      logger.info(
+        { chapterId, sceneNumber, familyId: chapter.family_id, memoryId: inserted.id },
+        "legacy-chapters: memory recorded from reflection scene",
+      );
+
+      return res.status(201).json({ memory: inserted, created: true });
+    } catch (err) {
+      logger.error({ err, chapterId }, "legacy-chapters: record-memory failed");
+      return res.status(500).json({ error: "Failed to record memory" });
     }
   },
 );
