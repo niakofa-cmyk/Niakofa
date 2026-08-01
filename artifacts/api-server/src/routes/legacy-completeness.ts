@@ -31,6 +31,7 @@ import {
   familyEventsTable,
   familyStoriesTable,
   familyMemberConsentTable,
+  legacyPlaceDiscoveriesTable,
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
@@ -42,12 +43,13 @@ const router = Router();
 // ── Readiness score weights ──────────────────────────────────────────────────
 // Each dimension contributes up to its max points. Total = 100.
 const WEIGHTS = {
-  people:    20,  // members + tree relations
-  relations: 15,  // parent/spouse edges
-  events:    20,  // dated life events
-  stories:   20,  // memories + stories
-  places:    15,  // geographic locations
-  consent:   10,  // storytelling consent flags
+  people:     18,  // members + tree relations
+  relations:  12,  // parent/spouse edges
+  events:     18,  // dated life events
+  stories:    18,  // memories + stories
+  places:     14,  // geographic locations
+  consent:    10,  // storytelling consent flags
+  discovery:  10,  // GPS check-ins at family landmarks
 } as const;
 
 // ── Phase 1 chapter unlock threshold ─────────────────────────────────────────
@@ -147,8 +149,14 @@ export async function calculateCompleteness(familyId: number): Promise<Completen
         eq(familyMemberConsentTable.family_id, familyId),
         eq(familyMemberConsentTable.scope, "storytelling"),
         eq(familyMemberConsentTable.granted, true),
-      ),
-    );
+    ),
+  );
+
+  // Discoveries: GPS check-ins at family landmarks
+  const [{ discoveryCount }] = await db
+    .select({ discoveryCount: sql<number>`count(*)::int` })
+    .from(legacyPlaceDiscoveriesTable)
+    .where(eq(legacyPlaceDiscoveriesTable.family_id, familyId));
 
   // ── Score each dimension ──────────────────────────────────────────────────
   const peopleScore = Math.min(WEIGHTS.people, Math.round((memberCount / 5) * WEIGHTS.people));
@@ -159,6 +167,7 @@ export async function calculateCompleteness(familyId: number): Promise<Completen
   const storiesScore = Math.min(WEIGHTS.stories, Math.round(((memoryCount + storyCount) / 5) * WEIGHTS.stories));
   const placesScore = Math.min(WEIGHTS.places, Math.round((placeCount / 2) * WEIGHTS.places));
   const consentScore = Math.min(WEIGHTS.consent, Math.round((consentCount / 2) * WEIGHTS.consent));
+  const discoveryScore = Math.min(WEIGHTS.discovery, Math.round((discoveryCount / 3) * WEIGHTS.discovery));
 
   const dimensions: CompletenessDimension[] = [
     { key: "people", label: "People", score: peopleScore, max: WEIGHTS.people, count: memberCount,
@@ -173,6 +182,8 @@ export async function calculateCompleteness(familyId: number): Promise<Completen
       hint: placeCount < 2 ? "Add locations your family lived in or migrated through." : "Geographic context available." },
     { key: "consent", label: "Consent", score: consentScore, max: WEIGHTS.consent, count: consentCount,
       hint: consentCount < 2 ? "Ask relatives for storytelling consent." : "Consent granted for AI use." },
+    { key: "discovery", label: "Discoveries", score: discoveryScore, max: WEIGHTS.discovery, count: discoveryCount,
+      hint: discoveryCount === 0 ? "Visit family landmarks and check in via GPS to unlock discoveries." : `${discoveryCount} landmark${discoveryCount === 1 ? "" : "s"} discovered.` },
   ];
 
   const readinessScore = dimensions.reduce((sum, d) => sum + d.score, 0);
@@ -208,6 +219,10 @@ export async function calculateCompleteness(familyId: number): Promise<Completen
   if (consentCount < 2) {
     missingData.push("family_member_consent");
     suggestions.push("Ask relatives for storytelling consent so the AI can use their stories.");
+  }
+  if (discoveryCount === 0 && placeCount > 0) {
+    missingData.push("legacy_discoveries");
+    suggestions.push("Visit a family landmark and check in via GPS to start discovering your world map.");
   }
 
   return {

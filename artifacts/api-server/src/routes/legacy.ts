@@ -29,7 +29,10 @@ import {
   familyPlacesTable,
   familyTreeRelationsTable,
   familyMemoryAssetsTable,
+  familyMemoryPeopleTable,
+  legacyAchievementsTable,
 } from "@workspace/db";
+import { syncAchievements } from "./legacy-achievements";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { cacheGet, cacheSet, cacheDel } from "../lib/cache";
@@ -53,13 +56,6 @@ export interface AncestorProfile {
   relation: string | null;
 }
 
-/** A resolved parent/spouse edge between two consented members, by name. */
-export interface RelationshipEdge {
-  fromName: string;
-  toName:   string;
-  type:     "parent" | "spouse";
-}
-
 export interface MemorySummary {
   title:      string | null;
   description: string | null;
@@ -75,7 +71,6 @@ export interface FamilyReservoir {
   memoryCount:     number;
   interviewCount:  number;
   ancestorProfiles: AncestorProfile[];
-  relationshipEdges: RelationshipEdge[];
   memorySummaries:  MemorySummary[];
   /** Content-based hash of actual vault data — changes when ANY data changes, not just counts. */
   fingerprint: string;
@@ -134,7 +129,7 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
       name:      familyMembersTable.display_name,
       role:      familyMembersTable.role,
       relation:  familyMembersTable.relation_note,
-      updated:   familyMembersTable.updated_at,
+      updated:   familyMembersTable.created_at,
       is_living: familyMembersTable.is_living,
       user_id:   familyMembersTable.user_id,
     })
@@ -150,33 +145,6 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
   // ── Consent gate: only include members who have consented to storytelling ──
   const consentedIds = await getConsentedMemberIds(familyId);
   const consentedMembers = filterConsentedMembers(members, consentedIds);
-
-  // ── Relationship graph: resolve parent/spouse edges to names ───────────────
-  // Previously familyTreeRelationsTable was only ever used for a count in the
-  // fingerprint — the actual edges (who is whose parent/spouse) never reached
-  // the AI prompt, so quests/dialogue couldn't reference real relationships
-  // ("Kofi is Ama's father") even though that data exists in the Family Tree.
-  // Restricted to consented member IDs on both ends so an edge involving a
-  // member who hasn't consented to storytelling is never surfaced to the AI.
-  const consentedMemberIdSet = new Set(consentedMembers.map(m => m.id));
-  const nameById = new Map(consentedMembers.map(m => [m.id, m.name ?? "Unknown"]));
-
-  const relationEdgesRaw = consentedMemberIdSet.size
-    ? await db
-        .select({
-          from: familyTreeRelationsTable.from_member_id,
-          to:   familyTreeRelationsTable.to_member_id,
-          type: familyTreeRelationsTable.relation_type,
-        })
-        .from(familyTreeRelationsTable)
-        .where(eq(familyTreeRelationsTable.family_id, familyId))
-    : [];
-
-  const relationshipEdges: RelationshipEdge[] = relationEdgesRaw
-    .filter(e => consentedMemberIdSet.has(e.from) && consentedMemberIdSet.has(e.to))
-    .filter((e): e is typeof e & { type: "parent" | "spouse" } => e.type === "parent" || e.type === "spouse")
-    .map(e => ({ fromName: nameById.get(e.from) ?? "Unknown", toName: nameById.get(e.to) ?? "Unknown", type: e.type }))
-    .slice(0, 40);
 
   // Latest 15 memories — include id and updated_at for strong fingerprint
   const memories = await db
@@ -234,34 +202,14 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
   // fingerprint changes when ANY underlying data changes (not just counts).
   // e.g. editing Grandma's story from "We moved" to "We moved to Detroit in 1957"
   // changes the memory's updated_at, which changes the fingerprint.
-  //
-  // IMPORTANT: this hash must cover the family's FULL id+updated_at set, not
-  // just the top-20-members / latest-15-memories sample used for AI context
-  // below. Otherwise editing member #21 or memory #16 in a large family is
-  // invisible to the fingerprint and the world silently never regenerates.
-  // These are cheap (two narrow columns, no row cap) so fetching all of them
-  // just for hashing is fine even for large families.
-  const [allMemberStamps, allMemoryStamps] = await Promise.all([
-    db
-      .select({ id: familyMembersTable.id, updated: familyMembersTable.updated_at })
-      .from(familyMembersTable)
-      .where(and(eq(familyMembersTable.family_id, familyId), inArray(familyMembersTable.status, ["active"]))),
-    db
-      .select({ id: familyMemoriesTable.id, updated: familyMemoriesTable.updated_at })
-      .from(familyMemoriesTable)
-      .where(eq(familyMemoriesTable.family_id, familyId)),
-  ]);
-
   const canonicalData = JSON.stringify({
-    // Full family-wide stamps drive fingerprint change-detection.
-    mAll: allMemberStamps.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`).sort(),
-    memAll: allMemoryStamps.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`).sort(),
+    m: consentedMembers.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`),
+    mem: memories.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`),
     i: interviewCount,
     s: storyCount,
     e: eventCount,
     p: placeCount,
     r: relationCount,
-    rEdges: relationshipEdges.map(e => `${e.fromName}>${e.type}>${e.toName}`).sort(),
     a: assetCount,
   });
   const fingerprint = Buffer.from(canonicalData).toString("base64url").slice(0, 64);
@@ -277,7 +225,6 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
       role:     m.role,
       relation: m.relation ?? null,
     })),
-    relationshipEdges,
     memorySummaries: memories.map(m => ({
       title:       m.title,
       description: m.description ? m.description.slice(0, 180) : null,
@@ -381,13 +328,6 @@ async function generateAiQuests(r: FamilyReservoir): Promise<AiQuest[]> {
         .join("; ")
     : "No ancestors added yet";
 
-  const relationshipList = r.relationshipEdges.length
-    ? r.relationshipEdges
-        .slice(0, 15)
-        .map(e => e.type === "parent" ? `${e.fromName} is the parent of ${e.toName}` : `${e.fromName} and ${e.toName} are spouses`)
-        .join("; ")
-    : "No relationships recorded yet";
-
   const memorySummary = r.memorySummaries.length
     ? r.memorySummaries
         .slice(0, 6)
@@ -401,14 +341,12 @@ async function generateAiQuests(r: FamilyReservoir): Promise<AiQuest[]> {
 
 FAMILY: ${r.familyName}
 ANCESTORS: ${ancestorList}
-RELATIONSHIPS: ${relationshipList}
 RECENT MEMORIES:
 ${memorySummary}
 STATS: ${r.memberCount} family members, ${r.memoryCount} memories, ${r.interviewCount} oral recordings
 
 Generate exactly 5 personalized quests for this player. Each quest MUST:
 - Reference SPECIFIC data above (use real ancestor names, actual memory titles, real locations)
-- Where RELATIONSHIPS data is available, use it — e.g. prompt the player to ask a parent about their spouse, or connect two relatives who are family but don't yet have a story linking them
 - Have a personal, evocative title that feels unique to THIS family
 - XP: 50–150 based on effort required
 - Category: exactly one of: record, document, connect, explore, discover
@@ -656,11 +594,11 @@ async function selectAncestors(familyId: number): Promise<AncestorCandidate[]> {
       .from(familyEventsTable)
       .where(eq(familyEventsTable.member_id, member.id));
 
-    // Count memories mentioning this member
+    // Count memories mentioning this member (via family_memory_people junction)
     const [{ mc }] = await db
       .select({ mc: sql<number>`count(*)::int` })
-      .from(familyMemoriesTable)
-      .where(eq(familyMemoriesTable.family_id, familyId));
+      .from(familyMemoryPeopleTable)
+      .where(eq(familyMemoryPeopleTable.member_id, member.id));
 
     // Count interviews with this member
     const [{ ic }] = await db
@@ -668,11 +606,12 @@ async function selectAncestors(familyId: number): Promise<AncestorCandidate[]> {
       .from(familyInterviewsTable)
       .where(eq(familyInterviewsTable.subject_member_id, member.id));
 
-    // Count photos (assets) for memories about this member
+    // Count photos for memories about this member
     const [{ pc }] = await db
       .select({ pc: sql<number>`count(*)::int` })
       .from(familyMemoryAssetsTable)
-      .where(eq(familyMemoryAssetsTable.asset_type, "photo"));
+      .innerJoin(familyMemoryPeopleTable, eq(familyMemoryAssetsTable.memory_id, familyMemoryPeopleTable.memory_id))
+      .where(and(eq(familyMemoryPeopleTable.member_id, member.id), eq(familyMemoryAssetsTable.asset_type, "photo")));
 
     // Get earliest event as birth year proxy
     const events = await db
@@ -681,6 +620,12 @@ async function selectAncestors(familyId: number): Promise<AncestorCandidate[]> {
       .where(eq(familyEventsTable.member_id, member.id))
       .orderBy(asc(familyEventsTable.event_date))
       .limit(1);
+
+    // Count places associated with this member's events
+    const [{ placeCountForMember }] = await db
+      .select({ placeCountForMember: sql<number>`count(DISTINCT ${familyEventsTable.place_id})::int` })
+      .from(familyEventsTable)
+      .where(and(eq(familyEventsTable.member_id, member.id), sql`${familyEventsTable.place_id} IS NOT NULL`));
 
     const birthEvent = events.find(e => e.category === "birth");
     const deathEvent = events.find(e => e.category === "death");
@@ -714,7 +659,7 @@ async function selectAncestors(familyId: number): Promise<AncestorCandidate[]> {
       deathYear,
       storyCount: sc,
       eventCount: ec,
-      placeCount: 0,
+      placeCount: placeCountForMember,
       memoryCount: mc,
       interviewCount: ic,
       photoCount: pc,
@@ -791,9 +736,17 @@ router.post(
     if (!member) return res.status(403).json({ error: "Not a member of this family" });
 
     try {
-      // Invalidate quest cache so next load regenerates with updated state
-      const questKey = `legacy:quests:${familyId}`;
-      await cacheDel(questKey);
+      // Rebuild reservoir to get current fingerprint for correct cache key
+      const reservoir = await buildReservoir(familyId);
+      await cacheSet(reservoirKey(familyId), reservoir, RESERVOIR_TTL);
+
+      // Invalidate quest cache with the CORRECT key format (includes fingerprint)
+      await cacheDel(questKey(familyId, reservoir.fingerprint));
+
+      // Sync achievements so quest completion counts toward gameplay achievements
+      await syncAchievements(familyId).catch((err) =>
+        logger.error({ err, familyId }, "legacy: achievement sync after quest completion failed"),
+      );
 
       logger.info({ familyId, userId, questId }, "legacy: quest completed");
 
