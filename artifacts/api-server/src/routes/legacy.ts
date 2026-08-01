@@ -30,7 +30,6 @@ import {
   familyTreeRelationsTable,
   familyMemoryAssetsTable,
   familyMemoryPeopleTable,
-  legacyAchievementsTable,
 } from "@workspace/db";
 import { syncAchievements } from "./legacy-achievements";
 import { requireAuth } from "../middlewares/auth";
