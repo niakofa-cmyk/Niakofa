@@ -85,8 +85,8 @@ const ACHIEVEMENTS: AchievementDef[] = [
   {
     id: "bridge_builder",
     title: "The Bridge Builder",
-    desc: "Reconnect 5 living relatives to your family on Niakofa.",
-    hint: "Invite relatives to join your family space.",
+    desc: "Reconnect with 5 family spaces.",
+    hint: "Create or join family spaces to connect with relatives.",
     icon: Users,
     color: "text-teal-400",
     bg: "bg-teal-400/10",
@@ -127,16 +127,16 @@ const ACHIEVEMENTS: AchievementDef[] = [
   {
     id: "roots_traveler",
     title: "Roots Traveler",
-    desc: "Tag 10 family locations and landmarks.",
-    hint: "Add birthplaces, homes, and landmarks to family memories.",
+    desc: "Discover DNA connections to 10 relatives.",
+    hint: "Import your DNA data to find cousins and relatives.",
     icon: MapPin,
     color: "text-green-400",
     bg: "bg-green-400/10",
     border: "border-green-400/25",
     dot: "bg-green-400",
     goal: 10,
-    href: "/diaspora/family",
-    category: "vault_prompt",
+    href: "/diaspora/dna",
+    category: "reconnection",
   },
   {
     id: "memory_restorer",
@@ -155,15 +155,15 @@ const ACHIEVEMENTS: AchievementDef[] = [
   {
     id: "ancestor_walker",
     title: "Ancestor Walker",
-    desc: "Complete 5 chapters of your ancestor's story in Legacy Mode.",
-    hint: "Play through chapters of an ancestor's life in Legacy Mode.",
+    desc: "Explore 5 heritage collections from your family's origins.",
+    hint: "Explore heritage collections related to your family's culture.",
     icon: GraduationCap,
     color: "text-emerald-400",
     bg: "bg-emerald-400/10",
     border: "border-emerald-400/25",
     dot: "bg-emerald-400",
     goal: 5,
-    href: "/legacy",
+    href: "/diaspora/heritage",
     category: "gameplay",
   },
 ];
@@ -193,30 +193,21 @@ const INVENTORY_ITEMS = [
 export default function LegacyAchievementsPage() {
   const { currentUser } = useAppContext();
   const [, navigate] = useLocation();
-  const [backendData, setBackendData] = useState<Record<string, BackendAchievement>>({});
+  const [backendAch, setBackendAch] = useState<BackendAchievement[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"achievements" | "skills" | "inventory">("achievements");
 
   useEffect(() => {
     if (!currentUser) return;
-    (async () => {
-      try {
-        const familyRes = await fetch("/api/family/mine", { headers: authHeaders() });
-        const familyData = familyRes.ok ? await familyRes.json() : { families: [] };
-        const families = (familyData.families ?? []).filter((f: { status: string }) => f.status === "active");
-        const primaryFamilyId = families[0]?.id;
-        if (!primaryFamilyId) return;
-
-        const res = await fetch(`/api/legacy/achievements/${primaryFamilyId}`, { headers: authHeaders() });
-        if (!res.ok) return;
-        const data = await res.json() as { achievements: BackendAchievement[] };
-        setBackendData(Object.fromEntries(data.achievements.map(a => [a.achievement_key, a])));
-      } catch {
-        // Leave backendData empty — cards render as 0 progress rather than erroring.
-      } finally {
-        setLoading(false);
-      }
-    })();
+    Promise.all([
+      fetch("/api/families", { headers: authHeaders() })
+        .then(r => r.ok ? r.json() : Promise.reject())
+        .then(d => d?.families?.[0]?.id)
+        .then(famId => famId ? fetch(`/api/legacy/achievements/${famId}`, { headers: authHeaders() }) : Promise.reject())
+        .then(r => r?.ok ? r.json() : Promise.reject())
+        .then(d => setBackendAch(d?.achievements ?? []))
+        .catch(() => {}),
+    ]).finally(() => setLoading(false));
   }, [currentUser]);
 
   if (!currentUser) {
@@ -227,7 +218,13 @@ export default function LegacyAchievementsPage() {
     );
   }
 
-  const unlockedCount = Object.values(backendData).filter(a => a.unlocked).length;
+  // Build a lookup from backend data
+  const backendMap = new Map(backendAch.map(a => [a.achievement_key, a]));
+
+  const unlockedCount = ACHIEVEMENTS.filter(a => {
+    const backend = backendMap.get(a.id);
+    return backend ? backend.unlocked : false;
+  }).length;
 
   const overallPct = Math.round((unlockedCount / ACHIEVEMENTS.length) * 100);
 
@@ -313,9 +310,10 @@ export default function LegacyAchievementsPage() {
           <div className="space-y-3">
             {ACHIEVEMENTS.map(ach => {
               const Icon = ach.icon;
-              const current = backendData[ach.id]?.progress ?? 0;
+              const backend = backendMap.get(ach.id);
+              const current = backend?.progress ?? 0;
               const pct = Math.min(100, Math.round((current / ach.goal) * 100));
-              const unlocked = backendData[ach.id]?.unlocked ?? false;
+              const unlocked = backend?.unlocked ?? false;
               return (
                 <button
                   key={ach.id}
@@ -377,7 +375,10 @@ export default function LegacyAchievementsPage() {
             <div className="space-y-2">
               {SKILL_TREE.map((skill, i) => {
                 const Icon = skill.icon;
-                const unlocked = skill.unlocked || (i < Math.floor(unlockedCount * 0.8));
+                const unlocked = skill.unlocked || (backendAch.length > 0 ? i < Math.floor(ACHIEVEMENTS.filter(a => {
+                  const backend = backendMap.get(a.id);
+                  return backend ? backend.unlocked : false;
+                }).length * 0.8) : false);
                 return (
                   <div key={skill.label} className="flex items-center gap-3">
                     {/* Connector line */}
@@ -421,14 +422,8 @@ export default function LegacyAchievementsPage() {
             </p>
             <div className="grid grid-cols-2 gap-3">
               {INVENTORY_ITEMS.map(item => {
-                const earned =
-                  item.id === "old_letter"    ? (backendData.voice_of_elders?.progress ?? 0) >= 1 :
-                  item.id === "family_bible"  ? (backendData.family_detective?.progress ?? 0) >= 5 :
-                  item.id === "photograph"    ? (backendData.memory_restorer?.progress ?? 0) >= 3 :
-                  item.id === "recipe_book"   ? (backendData.voice_of_elders?.progress ?? 0) >= 1 :
-                  item.id === "birth_cert"    ? (backendData.family_detective?.progress ?? 0) >= 3 :
-                  item.id === "migration_map" ? (backendData.roots_traveler?.progress ?? 0) >= 1 :
-                  false;
+                const backend = backendMap.get(item.id);
+                const earned = backend?.unlocked ?? false;
                 return (
                   <div
                     key={item.id}
