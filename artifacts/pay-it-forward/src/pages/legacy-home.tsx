@@ -1309,7 +1309,7 @@ export default function LegacyHomePage() {
                     <div className="space-y-2">
                       {[
                         { label: "Ancestral Necklace",  desc: "Passed down through generations",  earned: members.length >= 3   },
-                        { label: "Mission School Book",  desc: "Knowledge from the old way",       earned: false                 },
+                        { label: "Mission School Book",  desc: "Knowledge from the old ways",       earned: false                 },
                         { label: "Traditional Drum",     desc: "The heartbeat of the village",      earned: interviewCount >= 1   },
                         { label: "Diary Page",           desc: "A window into another time",        earned: memories.length >= 2  },
                       ].map(({ label, desc, earned }, i) => (
@@ -1467,29 +1467,118 @@ export default function LegacyHomePage() {
           {activeMode === "reunion" && (
             <div className="px-4 mb-5">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Family Reunion Challenge</h2>
-              </div>
-              <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center">
-                    <Users className="w-4 h-4 text-amber-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-black text-amber-100">Family Reunion Event</p>
-                    <p className="text-xs text-amber-700">Work together to preserve your legacy</p>
-                  </div>
-                </div>
-                <p className="text-xs text-amber-600 mb-3">
-                  Create collaborative challenges for your family — record elder stories together, digitize old photos,
-                  visit family landmarks, and reconnect with living relatives. Each contribution unlocks rewards for the whole family.
-                </p>
+                <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Family Reunion</h2>
                 <button
                   onClick={() => navigate("/legacy/challenges")}
-                  className="w-full bg-amber-500/10 border border-amber-600/30 text-amber-400 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70"
+                  className="text-xs text-amber-600 flex items-center gap-1"
                 >
-                  View Family Challenges
+                  View Challenges <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
+              <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center">
+                    <Trophy className="w-5 h-5 text-rose-400" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-amber-100">Collaborative Family Challenges</p>
+                    <p className="text-xs text-amber-600 mt-0.5">Work together on preservation missions and unlock new chapters.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => navigate("/legacy/challenges")}
+                  className="w-full bg-rose-500/15 border border-rose-600/30 text-rose-300 font-bold text-xs uppercase tracking-wide py-3 rounded-xl active:opacity-70 flex items-center justify-center gap-2"
+                >
+                  <Trophy className="w-4 h-4" /> Open Family Challenges
+                </button>
+                <p className="text-xs text-amber-700 mt-3 text-center">
+                  Create challenges, contribute interviews, photos, and stories together, and unlock new family chapters as a team.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Exploration Mode: Real World Map & Landmarks ── */}
+          {activeMode === "exploration" && (
+            <div className="px-4 mb-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Family World Map</h2>
+                {families[0] && (
+                  <button
+                    onClick={() => navigate(`/legacy/map/${families[0].id}`)}
+                    className="text-xs text-amber-600 flex items-center gap-1"
+                  >
+                    Open Map <ChevronRight className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+              <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-teal-500/10 flex items-center justify-center">
+                    <Map className="w-5 h-5 text-teal-400" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-amber-100">Explore Your Family's World</p>
+                    <p className="text-xs text-amber-600 mt-0.5">Visit real family landmarks and check in via GPS to discover your heritage.</p>
+                  </div>
+                </div>
+                {families[0] ? (
+                  <>
+                    <button
+                      onClick={() => navigate(`/legacy/map/${families[0].id}`)}
+                      className="w-full bg-teal-500/15 border border-teal-600/30 text-teal-300 font-bold text-xs uppercase tracking-wide py-3 rounded-xl active:opacity-70 flex items-center justify-center gap-2 mb-3"
+                    >
+                      <Map className="w-4 h-4" /> Open Family World Map
+                    </button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-[#3A2A1A] rounded-xl p-3 text-center">
+                        <p className="text-lg font-black text-teal-400">{completeness?.dimensions.find(d => d.key === "places")?.count ?? 0}</p>
+                        <p className="text-xs text-amber-700">Family Places</p>
+                      </div>
+                      <div className="bg-[#3A2A1A] rounded-xl p-3 text-center">
+                        <p className="text-lg font-black text-emerald-400">{completeness?.dimensions.find(d => d.key === "discovery")?.count ?? 0}</p>
+                        <p className="text-xs text-amber-700">Discovered</p>
+                      </div>
+                    </div>
+                    {(completeness?.dimensions.find(d => d.key === "discovery")?.count ?? 0) === 0 &&
+                     (completeness?.dimensions.find(d => d.key === "places")?.count ?? 0) > 0 && (
+                      <p className="text-xs text-amber-600 mt-3 text-center italic">
+                        Visit a family landmark and check in to start discovering your world.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xs text-amber-700 text-center py-4">Join or create a family to explore your world map.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Exploration Mode: Collaborative Challenges Link ── */}
+          {activeMode === "exploration" && (
+            <div className="px-4 mb-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Family Challenges</h2>
+                <button
+                  onClick={() => navigate("/legacy/challenges")}
+                  className="text-xs text-amber-600 flex items-center gap-1"
+                >
+                  View All <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+              <button
+                onClick={() => navigate("/legacy/challenges")}
+                className="w-full bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 flex items-center gap-4 active:opacity-80"
+              >
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                  <Trophy className="w-5 h-5 text-amber-400" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-bold text-amber-100">Collaborative Quests</p>
+                  <p className="text-xs text-amber-700 mt-0.5">Work together with family on preservation missions</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-amber-700 flex-shrink-0" />
+              </button>
             </div>
           )}
 
