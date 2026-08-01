@@ -77,7 +77,8 @@ router.get(
           .from(familyKnowledgeVersionsTable)
           .where(eq(familyKnowledgeVersionsTable.family_id, familyId))
           .orderBy(desc(familyKnowledgeVersionsTable.version))
-          .limit(5),n      ]);
+          .limit(5),
+      ]);
 
       const latestVersion = knowledgeVersions[0] ?? null;
       const totalChanges = logEntries.length;
