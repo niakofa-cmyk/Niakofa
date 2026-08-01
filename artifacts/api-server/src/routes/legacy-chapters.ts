@@ -456,6 +456,98 @@ router.patch(
   },
 );
 
+// Builds the scene list for a chapter from its chapter_data + real vault
+// data. Extracted so both GET /scenes and GET /journal produce identical
+// scene titles/content — the journal must describe exactly what the player
+// actually saw, not a re-derived approximation.
+interface ChapterScene {
+  sceneNumber: number;
+  title: string;
+  type: string;
+  content: string;
+  placeId: number | null;
+  eventId?: number | null;
+  memoryId?: number | null;
+  topics?: string[];
+  historicalLayer: "verified" | "narrative_interpretation" | "historical_context";
+}
+
+async function buildChapterScenes(
+  chapter: typeof legacyChaptersTable.$inferSelect,
+): Promise<{
+  scenes: ChapterScene[];
+  vaultContext: { places: unknown[]; events: unknown[]; memories: unknown[] };
+}> {
+  const data = chapter.chapter_data as Record<string, unknown>;
+  const eventIds = (data.eventIds as number[]) ?? [];
+  const placeIds = (data.placeIds as number[]) ?? [];
+  const memoryIds = (data.memoryIds as number[]) ?? [];
+
+  const [places, events, memories] = await Promise.all([
+    placeIds.length > 0
+      ? db.select().from(familyPlacesTable).where(inArray(familyPlacesTable.id, placeIds))
+      : Promise.resolve([]),
+    eventIds.length > 0
+      ? db.select().from(familyEventsTable).where(inArray(familyEventsTable.id, eventIds))
+      : Promise.resolve([]),
+    memoryIds.length > 0
+      ? db.select().from(familyMemoriesTable).where(inArray(familyMemoriesTable.id, memoryIds))
+      : Promise.resolve([]),
+  ]);
+
+  const historicalContext = await getHistoricalContext({
+    location: (data.location as string | undefined) ?? places[0]?.label ?? "Unknown",
+    era:      (data.era as string | undefined) ?? "Unknown",
+    country:  places[0]?.country ?? null,
+  });
+
+  const scenes: ChapterScene[] = [
+    {
+      sceneNumber: 1,
+      title: "Setting",
+      type: "narration",
+      content: places[0]
+        ? `${data.era ?? "Unknown"} — ${places[0].label}${places[0].country ? `, ${places[0].country}` : ""}`
+        : `${data.era ?? "Unknown"} — ${data.location ?? "Unknown"}`,
+      placeId: places[0]?.id ?? null,
+      historicalLayer: "verified",
+    },
+    ...(historicalContext
+      ? [{
+          sceneNumber: 2,
+          title: "The World Around Them",
+          type: "context",
+          content: historicalContext.summary,
+          topics: historicalContext.topics,
+          placeId: places[0]?.id ?? null,
+          eventId: null,
+          memoryId: null,
+          historicalLayer: "historical_context" as const,
+        }]
+      : []),
+    {
+      sceneNumber: historicalContext ? 3 : 2,
+      title: "The Event",
+      type: "dialogue",
+      content: events[0]?.description ?? events[0]?.title ?? "A moment in your family's history.",
+      eventId: events[0]?.id ?? null,
+      placeId: null,
+      historicalLayer: events[0] ? "verified" : "narrative_interpretation",
+    },
+    {
+      sceneNumber: historicalContext ? 4 : 3,
+      title: "The Memory",
+      type: "reflection",
+      content: memories[0]?.description ?? memories[0]?.title ?? "How the family remembers this time.",
+      memoryId: memories[0]?.id ?? null,
+      placeId: null,
+      historicalLayer: memories[0] ? "verified" : "narrative_interpretation",
+    },
+  ];
+
+  return { scenes, vaultContext: { places, events, memories } };
+}
+
 // GET /api/legacy/chapters/:chapterId/scenes — get scenes for a chapter
 // Scenes are derived from the chapter_data which references real vault data
 router.get(
@@ -484,87 +576,14 @@ router.get(
         return res.status(403).json({ error: "Chapter is locked" });
       }
 
-      // Build scenes from chapter_data — these reference real vault IDs
-      const data = chapter.chapter_data as Record<string, unknown>;
-      const eventIds = (data.eventIds as number[]) ?? [];
-      const placeIds = (data.placeIds as number[]) ?? [];
-      const memoryIds = (data.memoryIds as number[]) ?? [];
-      // Fetch referenced vault data for scene context
-      const [places, events, memories] = await Promise.all([
-        placeIds.length > 0
-          ? db.select().from(familyPlacesTable).where(inArray(familyPlacesTable.id, placeIds))
-          : Promise.resolve([]),
-        eventIds.length > 0
-          ? db.select().from(familyEventsTable).where(inArray(familyEventsTable.id, eventIds))
-          : Promise.resolve([]),
-        memoryIds.length > 0
-          ? db.select().from(familyMemoriesTable).where(inArray(familyMemoriesTable.id, memoryIds))
-          : Promise.resolve([]),
-      ]);
-
-      // Look up real-world historical context for this chapter's place/era —
-      // grounds "1958, Nashville" in general historical background without
-      // ever claiming anything about this specific family (see
-      // lib/historical-context.ts for the trust-model rationale).
-      const historicalContext = await getHistoricalContext({
-        location: (data.location as string | undefined) ?? places[0]?.label ?? "Unknown",
-        era:      (data.era as string | undefined) ?? "Unknown",
-        country:  places[0]?.country ?? null,
-      });
-
-      // Build scenes — each scene is a moment in the chapter
-      // Scene 1: Setting — the place and era
-      // Scene 2 (optional): Historical Context — the real world around them
-      // Scene 3: The event — what happened
-      // Scene 4: The memory — how the family remembers it
-      const scenes = [
-        {
-          sceneNumber: 1,
-          title: "Setting",
-          type: "narration",
-          content: places[0]
-            ? `${data.era ?? "Unknown"} — ${places[0].label}${places[0].country ? `, ${places[0].country}` : ""}`
-            : `${data.era ?? "Unknown"} — ${data.location ?? "Unknown"}`,
-          placeId: places[0]?.id ?? null,
-          historicalLayer: "verified",
-        },
-        ...(historicalContext
-          ? [{
-              sceneNumber: 2,
-              title: "The World Around Them",
-              type: "context",
-              content: historicalContext.summary,
-              topics: historicalContext.topics,
-              placeId: places[0]?.id ?? null,
-              eventId: null,
-              memoryId: null,
-              historicalLayer: "historical_context",
-            }]
-          : []),
-        {
-          sceneNumber: historicalContext ? 3 : 2,
-          title: "The Event",
-          type: "dialogue",
-          content: events[0]?.description ?? events[0]?.title ?? "A moment in your family's history.",
-          eventId: events[0]?.id ?? null,
-          historicalLayer: events[0] ? "verified" : "narrative_interpretation",
-        },
-        {
-          sceneNumber: historicalContext ? 4 : 3,
-          title: "The Memory",
-          type: "reflection",
-          content: memories[0]?.description ?? memories[0]?.title ?? "How the family remembers this time.",
-          memoryId: memories[0]?.id ?? null,
-          historicalLayer: memories[0] ? "verified" : "narrative_interpretation",
-        },
-      ];
+      const { scenes, vaultContext } = await buildChapterScenes(chapter);
 
       return res.json({
         chapterId,
         chapterTitle: chapter.title,
         chapterStatus: chapter.status,
         scenes,
-        vaultContext: { places, events, memories },
+        vaultContext,
       });
     } catch (err) {
       logger.error({ err, chapterId }, "legacy-chapters: scenes failed");
@@ -687,6 +706,127 @@ router.post(
 
 export default router;
 export { VALID_TRANSITIONS, generateChapterSeeds };
+
+// GET /api/legacy/journal/:familyId — the Dynamic Journal
+//
+// Compiles a player's own play history into a readable log: for every scene
+// where they made a choice (persisted via POST /sessions/progress →
+// session_state.decisions), show what the scene actually said and what they
+// chose. This is deliberately NOT AI-narrated — every line is either real
+// scene content (built the same way GET /scenes builds it) or the player's
+// own recorded choice. Journal is personal (this user's sessions in this
+// family), not shared across the family, since session_state is per-user.
+router.get(
+  "/legacy/journal/:familyId",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const familyId = parseInt(String(req.params.familyId), 10);
+    if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, familyId))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
+
+    try {
+      const sessions = await db
+        .select()
+        .from(legacySessionsTable)
+        .where(
+          and(
+            eq(legacySessionsTable.family_id, familyId),
+            eq(legacySessionsTable.user_id, userId),
+          ),
+        )
+        .orderBy(asc(legacySessionsTable.updated_at));
+
+      // Merge decisions across all of this user's sessions for this family,
+      // keeping the most recent decision if a scene was somehow replayed
+      // across separate sessions.
+      type Decision = { action: string; text: string; decidedAt: string };
+      const merged = new Map<string, Decision>(); // "chapterId:sceneNumber" -> decision
+      for (const session of sessions) {
+        const state = session.session_state as { decisions?: Record<string, Decision> };
+        for (const [key, decision] of Object.entries(state.decisions ?? {})) {
+          const prior = merged.get(key);
+          if (!prior || new Date(decision.decidedAt) >= new Date(prior.decidedAt)) {
+            merged.set(key, decision);
+          }
+        }
+      }
+
+      if (merged.size === 0) {
+        return res.json({ entries: [] });
+      }
+
+      // Group decision keys by chapterId so each chapter's scenes are only
+      // rebuilt once regardless of how many scenes in it have decisions.
+      const chapterIdToSceneDecisions = new Map<number, Map<number, Decision>>();
+      for (const [key, decision] of merged) {
+        const [chapterIdStr, sceneNumberStr] = key.split(":");
+        const cId = parseInt(chapterIdStr, 10);
+        const sNum = parseInt(sceneNumberStr, 10);
+        if (isNaN(cId) || isNaN(sNum)) continue;
+        if (!chapterIdToSceneDecisions.has(cId)) chapterIdToSceneDecisions.set(cId, new Map());
+        chapterIdToSceneDecisions.get(cId)!.set(sNum, decision);
+      }
+
+      const chapterIds = Array.from(chapterIdToSceneDecisions.keys());
+      const chapters = await db
+        .select()
+        .from(legacyChaptersTable)
+        .where(inArray(legacyChaptersTable.id, chapterIds));
+
+      const entries: Array<{
+        chapterId: number;
+        chapterNumber: number;
+        chapterTitle: string;
+        sceneNumber: number;
+        sceneTitle: string;
+        sceneExcerpt: string;
+        historicalLayer: string;
+        choiceText: string;
+        decidedAt: string;
+      }> = [];
+
+      for (const chapter of chapters) {
+        const sceneDecisions = chapterIdToSceneDecisions.get(chapter.id);
+        if (!sceneDecisions || sceneDecisions.size === 0) continue;
+
+        const { scenes } = await buildChapterScenes(chapter);
+        const sceneByNumber = new Map(scenes.map((s) => [s.sceneNumber, s]));
+
+        for (const [sceneNumber, decision] of sceneDecisions) {
+          const scene = sceneByNumber.get(sceneNumber);
+          entries.push({
+            chapterId: chapter.id,
+            chapterNumber: chapter.chapter_number,
+            chapterTitle: chapter.title,
+            sceneNumber,
+            sceneTitle: scene?.title ?? `Scene ${sceneNumber}`,
+            sceneExcerpt: (scene?.content ?? "").slice(0, 240),
+            historicalLayer: scene?.historicalLayer ?? "narrative_interpretation",
+            choiceText: decision.text,
+            decidedAt: decision.decidedAt,
+          });
+        }
+      }
+
+      // Chronological read order: by chapter number, then scene number.
+      entries.sort((a, b) =>
+        a.chapterNumber !== b.chapterNumber
+          ? a.chapterNumber - b.chapterNumber
+          : a.sceneNumber - b.sceneNumber,
+      );
+
+      return res.json({ entries });
+    } catch (err) {
+      logger.error({ err, familyId }, "legacy-chapters: journal failed");
+      return res.status(500).json({ error: "Failed to build journal" });
+    }
+  },
+);
 
 // ── Session & Progress API ────────────────────────────────────────────────────
 // Tracks per-user session state so gameplay can be saved and resumed.

@@ -725,6 +725,12 @@ export default function LegacyHomePage() {
           <Trophy className="w-3 h-3" /> Awards
         </button>
         <button
+          onClick={() => navigate("/legacy/journal")}
+          className="text-xs text-amber-600 bg-amber-900/30 border border-amber-800/40 rounded-lg px-2.5 py-1.5 flex items-center gap-1"
+        >
+          <BookOpen className="w-3 h-3" /> Journal
+        </button>
+        <button
           onClick={() => navigate("/diaspora/timeline")}
           className="text-xs text-amber-600 bg-amber-900/30 border border-amber-800/40 rounded-lg px-2.5 py-1.5 flex items-center gap-1"
         >
