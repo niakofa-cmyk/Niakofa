@@ -239,7 +239,9 @@ describe("POST /api/users/login", () => {
       .send({ email: "nobody@example.com", password: "pass" });
 
     expect(res.status).toBe(401);
-    expect(res.body.error).toMatch(/no account found/i);
+    // Generic message by design (406bef95) — must not reveal whether the
+    // email is registered (email enumeration).
+    expect(res.body.error).toBe("Invalid email or password.");
   });
 
   it("returns 401 when password is incorrect", async () => {
@@ -256,7 +258,9 @@ describe("POST /api/users/login", () => {
       .send({ email: "user@example.com", password: "wrongPassword" });
 
     expect(res.status).toBe(401);
-    expect(res.body.error).toMatch(/incorrect password/i);
+    // Same generic message as "no account" — must not let an attacker
+    // distinguish a wrong password from an unregistered email.
+    expect(res.body.error).toBe("Invalid email or password.");
   });
 
   it("returns 403 with LEGACY_PASSWORD_REQUIRED for legacy accounts", async () => {
@@ -271,9 +275,14 @@ describe("POST /api/users/login", () => {
       .send({ email: "legacy@example.com", password: "anything" });
 
     // Route returns 403 with error_code so the client can redirect to the
-    // forgot-password / set-password flow — not 200 with a token.
+    // forgot-password / set-password flow — not 200 with a token. This
+    // anonymous response intentionally does NOT echo user_id/email/name back
+    // (406bef95 — avoid leaking a PII/ID mapping to an unauthenticated
+    // caller); the client already has the email the user just typed and
+    // /set-initial-password supports an email-only lookup verified by the
+    // emailed code, so no id round-trip is needed.
     expect(res.status).toBe(403);
     expect(res.body.error_code).toBe("LEGACY_PASSWORD_REQUIRED");
-    expect(res.body.user_id).toBe(5);
+    expect(res.body.user_id).toBeUndefined();
   });
 });

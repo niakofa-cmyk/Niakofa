@@ -415,7 +415,7 @@ export default function LoginScreen() {
   };
 
   // Legacy account set-password flow
-  const [pendingLegacyUser, setPendingLegacyUser] = useState<{ id: number; email: string; name: string } | null>(null);
+  const [pendingLegacyUser, setPendingLegacyUser] = useState<{ email: string } | null>(null);
   const [resetCode, setResetCode] = useState("");
   const [codeSentMessage, setCodeSentMessage] = useState("");
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
@@ -568,14 +568,21 @@ export default function LoginScreen() {
           return;
         }
 
-        if (!res.ok && res.status === 403 && data.error_code === "LEGACY_PASSWORD_REQUIRED" && data.user_id && data.user_email && data.user_name) {
-          setPendingLegacyUser({ id: data.user_id, email: data.user_email, name: data.user_name });
+        if (!res.ok && res.status === 403 && data.error_code === "LEGACY_PASSWORD_REQUIRED") {
+          // The backend intentionally no longer echoes user_id/user_email/user_name
+          // back from this anonymous endpoint (security hardening — see users.ts).
+          // We don't need it: the user just typed their own email into this form,
+          // and /set-initial-password already supports an email-only lookup,
+          // with identity verified by the emailed 6-digit code, not by an ID
+          // round-tripped through the client.
+          const typedEmail = email.trim();
+          setPendingLegacyUser({ email: typedEmail });
           // Fire the emailed verification code immediately — no extra tap needed
           fetch("/api/users/forgot-password", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: data.user_email }),
-          }).then(() => setCodeSentMessage(`We sent a 6-digit code to ${data.user_email}`))
+            body: JSON.stringify({ email: typedEmail }),
+          }).then(() => setCodeSentMessage(`We sent a 6-digit code to ${typedEmail}`))
             .catch(() => setCodeSentMessage("Enter the 6-digit code sent to your email"));
           return;
         }
@@ -668,7 +675,6 @@ export default function LoginScreen() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_id: pendingLegacyUser.id,
           email: pendingLegacyUser.email,
           code: resetCode.trim(),
           new_password: newPassword,
@@ -681,7 +687,7 @@ export default function LoginScreen() {
       localStorage.setItem("niakofa_user", JSON.stringify(data.user));
       setPasswordSaved(true);
       setTimeout(() => {
-        toast({ title: "Password set — welcome, " + pendingLegacyUser.name + "!" });
+        toast({ title: "Password set — welcome, " + data.user!.name + "!" });
         setLocation("/");
       }, 1400);
     } catch (err) {
