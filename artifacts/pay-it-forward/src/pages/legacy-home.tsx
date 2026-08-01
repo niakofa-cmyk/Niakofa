@@ -137,6 +137,21 @@ interface ReunionResponse {
   leaderboard: Array<{ memberId: number; name: string; publishedInterviews: number }>;
 }
 
+interface FamilyQuest {
+  key: string;
+  title: string;
+  description: string;
+  goal: number;
+  progress: number;
+  reward: string;
+  completed: boolean;
+  leaderboard: Array<{ memberId: number; name: string; count: number }> | null;
+}
+
+interface FamilyQuestsResponse {
+  quests: FamilyQuest[];
+}
+
 interface SceneData {
   sceneNumber: number;
   title: string;
@@ -368,6 +383,8 @@ export default function LegacyHomePage() {
   const [chapters, setChapters] = useState<LegacyChapter[]>([]);
   const [reunion, setReunion] = useState<ReunionResponse | null>(null);
   const [reunionLoading, setReunionLoading] = useState(false);
+  const [familyQuests, setFamilyQuests] = useState<FamilyQuest[]>([]);
+  const [familyQuestsLoading, setFamilyQuestsLoading] = useState(false);
   const [scenes, setScenes] = useState<SceneData[]>([]);
   const [scenesLoading, setScenesLoading] = useState(false);
   const [activeChapterId, setActiveChapterId] = useState<number | null>(null);
@@ -493,6 +510,30 @@ export default function LegacyHomePage() {
       loadReunion(legacyState.families[0].id);
     }
   }, [activeMode, legacyState.families, loadReunion]);
+
+  // ── Load real Family Quests data (cooperative missions, replaces the ─────
+  //    single-player quest card previously reused for this mode) ───────────
+
+  const loadFamilyQuests = useCallback(async (familyId: number) => {
+    setFamilyQuestsLoading(true);
+    try {
+      const res = await fetch(`/api/legacy/family-quests/${familyId}`, { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json() as FamilyQuestsResponse;
+        setFamilyQuests(data.quests ?? []);
+      }
+    } catch {
+      // Silent fail — panel falls back to an empty-state message
+    } finally {
+      setFamilyQuestsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeMode === "quests" && legacyState.families.length > 0) {
+      loadFamilyQuests(legacyState.families[0].id);
+    }
+  }, [activeMode, legacyState.families, loadFamilyQuests]);
 
   // ── Real audio recording with MediaRecorder API ─────────────────────────────
   const handleStartRecording = useCallback(async () => {
@@ -1173,7 +1214,7 @@ export default function LegacyHomePage() {
           )}
 
           {/* ── AI Quest Panel (Quests mode or Legacy mode) ── */}
-          {(activeMode === "legacy" || activeMode === "quests") && (
+          {activeMode === "legacy" && (
             <div className="px-4 mb-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -1572,6 +1613,86 @@ export default function LegacyHomePage() {
                   Invite Family Members
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* ── Family Quests (Quests mode only) — cooperative missions, ──────
+              each tied to a real vault table, not the single-player AI quest
+              card Legacy Mode shows. ── */}
+          {activeMode === "quests" && (
+            <div className="px-4 mb-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Family Quests</h2>
+              </div>
+
+              {familyQuestsLoading ? (
+                <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg text-center py-6">
+                  <p className="text-xs text-amber-700">Loading real quest progress...</p>
+                </div>
+              ) : familyQuests.length === 0 ? (
+                <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg text-center py-6">
+                  <p className="text-xs text-amber-700">Couldn't load quests right now.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {familyQuests.map((quest) => (
+                    <div key={quest.key} className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center">
+                          <Target className="w-4 h-4 text-purple-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-black text-amber-100">{quest.title}</p>
+                          <p className="text-xs text-amber-700">
+                            {quest.completed ? "Completed" : "Ongoing — Work together"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="bg-[#3A2A1A] rounded-xl p-3 mb-3">
+                        <p className="text-xs font-bold text-amber-200 mb-1">{quest.description}</p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <div className="flex-1 h-1.5 rounded-full bg-amber-950 overflow-hidden">
+                            <div
+                              className="h-full bg-purple-500 rounded-full transition-all duration-700"
+                              style={{ width: `${Math.min(100, (quest.progress / quest.goal) * 100)}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-amber-600 font-bold flex-shrink-0">
+                            {quest.progress} / {quest.goal}
+                          </p>
+                        </div>
+                        <p className="text-xs text-amber-700 mt-1.5">
+                          Reward: Unlock <span className="text-amber-500 font-bold">{quest.reward}</span>
+                        </p>
+                      </div>
+                      <div className="space-y-1.5">
+                        {quest.leaderboard === null ? (
+                          <p className="text-xs text-amber-700 text-center py-2">
+                            Family-wide progress — individual contributions aren't tracked for this quest yet
+                          </p>
+                        ) : quest.leaderboard.length > 0 ? (
+                          quest.leaderboard.map((entry, i) => (
+                            <div key={entry.memberId} className="flex items-center gap-2 py-1">
+                              <p className="text-xs text-amber-800 w-4 font-bold">{i + 1}</p>
+                              <div className="w-6 h-6 rounded-full bg-amber-900/40 flex items-center justify-center text-xs font-bold text-amber-600">
+                                {(entry.name ?? "?")[0]}
+                              </div>
+                              <p className="flex-1 text-xs text-amber-300">{entry.name}</p>
+                              <p className="text-xs text-amber-600 font-bold">
+                                {entry.count} {entry.count === 1 ? "contribution" : "contributions"}
+                              </p>
+                            </div>
+                          ))
+                        ) : members.length === 0 ? (
+                          <p className="text-xs text-amber-700 text-center py-2">Invite family members to start this quest</p>
+                        ) : (
+                          <p className="text-xs text-amber-700 text-center py-2">No contributions yet — be the first!</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

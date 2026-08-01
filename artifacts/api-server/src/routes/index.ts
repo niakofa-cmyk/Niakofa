@@ -44,6 +44,7 @@ import legacyChaptersRouter from "./legacy-chapters";
 import legacyAchievementsRouter from "./legacy-achievements";
 import legacyReunionRouter from "./legacy-reunion";
 import legacyMapRouter from "./legacy-map";
+import legacyFamilyQuestsRouter from "./legacy-family-quests";
 
 const router: IRouter = Router();
 
@@ -92,5 +93,6 @@ router.use(legacyChaptersRouter);
 router.use(legacyAchievementsRouter);
 router.use(legacyReunionRouter);
 router.use(legacyMapRouter);
+router.use(legacyFamilyQuestsRouter);
 
 export default router;
