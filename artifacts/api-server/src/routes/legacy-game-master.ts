@@ -21,6 +21,7 @@ import {
   db,
   familyMembersTable,
   familyMemoriesTable,
+  familyMemoryPeopleTable,
   familyStoriesTable,
   familyPlacesTable,
   familyEventsTable,
@@ -108,20 +109,57 @@ router.get(
 
       // Build context from real family data
       const consentedIds = await getConsentedMemberIds(familyId);
-      const consentedIdArray = Array.from(consentedIds);
 
-      const [memories, stories, places, events] = await Promise.all([
-        consentedIdArray.length > 0
-          ? db.select({ content: familyMemoriesTable.content, year: familyMemoriesTable.year }).from(familyMemoriesTable).where(and(eq(familyMemoriesTable.family_id, familyId), inArray(familyMemoriesTable.author_id, consentedIdArray))).limit(10)
-          : Promise.resolve([]),
-        db.select({ title: familyStoriesTable.title, content: familyStoriesTable.content }).from(familyStoriesTable).where(eq(familyStoriesTable.family_id, familyId)).limit(5),
+      // Fetch a wider window of memories/stories, then apply the consent gate
+      // in application code. A memory/story is allowed only if every tagged
+      // family member has consented (or none are tagged, e.g. a place/object
+      // photo with no people). This mirrors getConsentedMemberIds' documented
+      // rule: living members with a linked account must self-consent.
+      const [rawMemories, rawStories, places, events] = await Promise.all([
+        db.select({ id: familyMemoriesTable.id, story: familyMemoriesTable.story, memoryDate: familyMemoriesTable.memory_date })
+          .from(familyMemoriesTable)
+          .where(eq(familyMemoriesTable.family_id, familyId))
+          .orderBy(desc(familyMemoriesTable.memory_date))
+          .limit(30),
+        db.select({ id: familyStoriesTable.id, title: familyStoriesTable.title, body: familyStoriesTable.body, tellerMemberId: familyStoriesTable.teller_member_id, aboutMemberId: familyStoriesTable.about_member_id })
+          .from(familyStoriesTable)
+          .where(eq(familyStoriesTable.family_id, familyId))
+          .orderBy(desc(familyStoriesTable.created_at))
+          .limit(15),
         db.select({ label: familyPlacesTable.label, placeType: familyPlacesTable.place_type, country: familyPlacesTable.country }).from(familyPlacesTable).where(eq(familyPlacesTable.family_id, familyId)).limit(5),
         db.select({ title: familyEventsTable.title, eventDate: familyEventsTable.event_date, description: familyEventsTable.description }).from(familyEventsTable).where(eq(familyEventsTable.family_id, familyId)).limit(5),
       ]);
 
+      const memoryPeople = rawMemories.length > 0
+        ? await db.select({ memoryId: familyMemoryPeopleTable.memory_id, memberId: familyMemoryPeopleTable.member_id })
+            .from(familyMemoryPeopleTable)
+            .where(inArray(familyMemoryPeopleTable.memory_id, rawMemories.map((m) => m.id)))
+        : [];
+      const taggedByMemory = new Map<number, number[]>();
+      for (const row of memoryPeople) {
+        if (row.memberId === null) continue;
+        const list = taggedByMemory.get(row.memoryId) ?? [];
+        list.push(row.memberId);
+        taggedByMemory.set(row.memoryId, list);
+      }
+
+      const memories = rawMemories
+        .filter((m) => {
+          const tagged = taggedByMemory.get(m.id);
+          return !tagged || tagged.every((id) => consentedIds.has(id));
+        })
+        .slice(0, 10);
+
+      const stories = rawStories
+        .filter((s) =>
+          (s.tellerMemberId === null || consentedIds.has(s.tellerMemberId)) &&
+          (s.aboutMemberId === null || consentedIds.has(s.aboutMemberId)),
+        )
+        .slice(0, 5);
+
       const contextSummary = {
-        memories: memories.map((m) => ({ content: m.content?.slice(0, 200), year: m.year })),
-        stories: stories.map((s) => ({ title: s.title, content: s.content?.slice(0, 200) })),
+        memories: memories.map((m) => ({ content: m.story?.slice(0, 200), year: m.memoryDate ? new Date(m.memoryDate).getFullYear() : null })),
+        stories: stories.map((s) => ({ title: s.title, content: s.body?.slice(0, 200) })),
         places: places.map((p) => ({ label: p.label, type: p.placeType, country: p.country })),
         events: events.map((e) => ({ title: e.title, date: e.eventDate, description: e.description?.slice(0, 200) })),
       };
