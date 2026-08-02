@@ -186,7 +186,7 @@ router.post(
           reward_title: rewardTitle,
           reward_description: rewardDescription,
           status: "active",
-          trigger_date: triggerDate ? new Date(triggerDate) : null,
+          trigger_date: triggerDate ? new Date(triggerDate).toISOString().slice(0, 10) : null,
           target_member_id: targetMemberId ?? null,
         })
         .returning();
