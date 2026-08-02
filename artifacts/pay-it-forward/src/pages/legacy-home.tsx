@@ -30,7 +30,7 @@ import {
   Sparkles, Shield, Zap, Target,
   Volume2, BookOpen, Lock,
   RefreshCw, ChevronLeft, Calendar, TrendingUp,
-  Search,
+  Search, X,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -408,6 +408,7 @@ export default function LegacyHomePage() {
     newChapters: Array<{ id: number; title: string; chapterNumber: number }>;
     upcomingEvents: Array<{ id: number; title: string; eventDate: string; category: string }>;
   } | null>(null);
+  const [worldEvolvedDismissed, setWorldEvolvedDismissed] = useState(false);
   const [emotionalCalendar, setEmotionalCalendar] = useState<Array<{
     id: number; type: string; title: string; description: string | null;
     date: string | null; memberName: string | null; isToday: boolean; isUpcoming: boolean;
@@ -1033,35 +1034,75 @@ export default function LegacyHomePage() {
           )}
 
           {/* ── Daily Welcome (Phase 5: Living Family Universe) ── */}
-          {activeMode === "legacy" && dailyWelcome && dailyWelcome.hasChanges && (
+          {activeMode === "legacy" && dailyWelcome && dailyWelcome.hasChanges && !worldEvolvedDismissed && (
             <div className="px-4 mb-5">
-              <div className="bg-gradient-to-r from-amber-500/10 to-amber-900/10 border border-amber-500/30 rounded-2xl p-4 shadow-lg">
-                <div className="flex items-center gap-2 mb-3">
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  <h2 className="text-xs font-black text-amber-400 uppercase tracking-widest">Your Family World Has Evolved</h2>
+              <div className="bg-gradient-to-br from-amber-500/15 via-amber-900/10 to-[#2A1A0F] border border-amber-500/40 rounded-2xl p-5 shadow-xl animate-in fade-in duration-500">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                      <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-black text-amber-300 uppercase tracking-widest">Your Family World Has Evolved</h2>
+                      {dailyWelcome.worldVersion > 0 && (
+                        <p className="text-[10px] text-amber-600">World Version {dailyWelcome.worldVersion}</p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setWorldEvolvedDismissed(true)}
+                    className="text-amber-700 active:opacity-50"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 mb-3">
                   {dailyWelcome.newMemoryCount > 0 && (
-                    <p className="text-sm text-amber-200">{dailyWelcome.newMemoryCount} new {dailyWelcome.newMemoryCount === 1 ? "memory" : "memories"} added</p>
+                    <div className="flex items-center gap-2">
+                      <Camera className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                      <p className="text-sm text-amber-200">{dailyWelcome.newMemoryCount} new {dailyWelcome.newMemoryCount === 1 ? "memory" : "memories"} added</p>
+                    </div>
                   )}
                   {dailyWelcome.newMemberCount > 0 && (
-                    <p className="text-sm text-amber-200">{dailyWelcome.newMemberCount} new {dailyWelcome.newMemberCount === 1 ? "family member" : "family members"} connected</p>
+                    <div className="flex items-center gap-2">
+                      <Users className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                      <p className="text-sm text-amber-200">{dailyWelcome.newMemberCount} new {dailyWelcome.newMemberCount === 1 ? "family member" : "family members"} connected</p>
+                    </div>
                   )}
-                  {dailyWelcome.newChapters.length > 0 && (
-                    <div className="pt-2 border-t border-amber-700/30">
-                      <p className="text-xs text-amber-500 uppercase tracking-wide mb-1">New Chapter Unlocked</p>
-                      {dailyWelcome.newChapters.map((ch) => (
-                        <button
-                          key={ch.id}
-                          onClick={() => navigate(`/legacy/chapter/${ch.id}`)}
-                          className="block w-full text-left text-sm text-amber-300 hover:text-amber-200 active:opacity-70 py-1"
-                        >
-                          {ch.title} →
-                        </button>
+                  {dailyWelcome.recentChanges.length > 0 && dailyWelcome.newMemoryCount === 0 && dailyWelcome.newMemberCount === 0 && (
+                    <div className="space-y-1">
+                      {dailyWelcome.recentChanges.slice(0, 3).map((change, i) => (
+                        <div key={i} className="flex items-start gap-2">
+                          <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 flex-shrink-0" />
+                          <p className="text-xs text-amber-400/80">{change.description}</p>
+                        </div>
                       ))}
                     </div>
                   )}
                 </div>
+                {dailyWelcome.newChapters.length > 0 && (
+                  <div className="pt-3 border-t border-amber-700/30 mb-3">
+                    <p className="text-xs text-amber-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+                      <BookOpen className="w-3 h-3" /> New Chapter Unlocked
+                    </p>
+                    {dailyWelcome.newChapters.map((ch) => (
+                      <button
+                        key={ch.id}
+                        onClick={() => navigate(`/legacy/chapter/${ch.id}`)}
+                        className="block w-full text-left bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-sm text-amber-300 active:opacity-70 mb-1.5 flex items-center justify-between"
+                      >
+                        <span>{ch.title}</span>
+                        <ChevronRight className="w-3.5 h-3.5 text-amber-500" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button
+                  onClick={() => { setWorldEvolvedDismissed(true); navigate("/legacy/start"); }}
+                  className="w-full bg-amber-500 text-amber-950 font-black text-xs uppercase tracking-wide py-3 rounded-xl active:opacity-80 flex items-center justify-center gap-1.5"
+                >
+                  <Play className="w-3.5 h-3.5" /> Continue Journey
+                </button>
               </div>
             </div>
           )}
@@ -1075,7 +1116,7 @@ export default function LegacyHomePage() {
                   <div key={entry.id} className="flex items-start gap-3">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
                       entry.isToday
-                        ? "bg-amber-500/20 border border-amber-400/40"
+                        ? "bg-amber-500/20 border border-amber-400/40 animate-pulse"
                         : entry.type === "birthday"
                         ? "bg-rose-500/10 border border-rose-500/20"
                         : entry.type === "anniversary"
@@ -1096,6 +1137,14 @@ export default function LegacyHomePage() {
                       </p>
                       {entry.description && (
                         <p className="text-xs text-amber-700 mt-0.5 line-clamp-2">{entry.description}</p>
+                      )}
+                      {entry.isToday && (
+                        <button
+                          onClick={() => navigate("/legacy/ai-director")}
+                          className="mt-1.5 text-[10px] font-bold text-amber-400 uppercase tracking-wide flex items-center gap-1 active:opacity-70"
+                        >
+                          <Heart className="w-3 h-3" /> Honor this day
+                        </button>
                       )}
                     </div>
                   </div>
@@ -1502,6 +1551,25 @@ export default function LegacyHomePage() {
             </div>
           )}
 
+          {/* ── AI Director Missions Link (Quests mode only) ── */}
+          {activeMode === "quests" && (
+            <div className="px-4 mb-5">
+              <button
+                onClick={() => navigate("/legacy/ai-director")}
+                className="w-full bg-gradient-to-r from-purple-900/20 to-amber-900/20 border border-purple-700/30 rounded-2xl p-4 flex items-center gap-3 active:opacity-80 text-left"
+              >
+                <div className="w-10 h-10 rounded-xl bg-purple-500/15 flex items-center justify-center flex-shrink-0">
+                  <Sparkles className="w-5 h-5 text-purple-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-amber-200">AI Game Director</p>
+                  <p className="text-xs text-amber-600 mt-0.5">Get today's missions based on what's missing in your vault</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-amber-700 flex-shrink-0" />
+              </button>
+            </div>
+          )}
+
           {/* ── AI Quest Panel (Quests mode or Legacy mode) ── */}
           {(activeMode === "legacy" || activeMode === "quests") && (
             <div className="px-4 mb-5">
@@ -1679,42 +1747,56 @@ export default function LegacyHomePage() {
                     </div>
                   )}
                   {inventoryTab === "items" && (
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { icon: FileText, label: "Old Letter",      earned: memories.some(m => m.source === "upload") },
-                        { icon: Camera,   label: "Family Photo",    earned: memories.some(m => m.source === "upload") },
-                        { icon: Mic,      label: "Voice Recording", earned: interviewCount > 0 },
-                        { icon: BookOpen, label: "Family Bible",    earned: false },
-                        { icon: Star,     label: "Gold Medal",      earned: members.length >= 5 },
-                        { icon: Globe2,   label: "Passport",        earned: false },
-                      ].map(({ icon: Icon, label, earned }, i) => (
-                        <div key={i} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border ${earned ? "border-amber-600/40 bg-amber-900/20" : "border-amber-950/40 bg-[#1A1008] opacity-50"}`}>
-                          <Icon className={`w-5 h-5 ${earned ? "text-amber-400" : "text-amber-900"}`} />
-                          <p className="text-xs text-amber-600 text-center leading-tight">{label}</p>
-                          {earned && <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
-                        </div>
-                      ))}
+                    <div className="space-y-2">
+                      {(() => {
+                        const items = [
+                          { icon: FileText, label: "Old Letter",      source: "Family Vault",     earned: memories.some(m => m.source === "upload"),     provenance: memories.find(m => m.source === "upload") ? `Uploaded ${new Date(memories.find(m => m.source === "upload")!.created_at).toLocaleDateString()}` : null },
+                          { icon: Camera,   label: "Family Photo",    source: "Family Vault",     earned: memories.some(m => m.source === "upload"),     provenance: memories.find(m => m.source === "upload") ? `From ${memories.find(m => m.source === "upload")!.title ?? "vault"}` : null },
+                          { icon: Mic,      label: "Voice Recording", source: "Oral History",    earned: interviewCount > 0,                             provenance: interviewCount > 0 ? `${interviewCount} interview${interviewCount === 1 ? "" : "s"} recorded` : null },
+                          { icon: BookOpen, label: "Family Bible",    source: "Preserve Cards",   earned: members.length >= 3,                           provenance: members.length >= 3 ? `${members.length} family members` : null },
+                          { icon: Star,     label: "Gold Medal",      source: "Achievements",     earned: members.length >= 5,                           provenance: members.length >= 5 ? `Unlocked at 5 members` : null },
+                          { icon: Globe2,   label: "Passport",        source: "World Map",        earned: completeness?.dimensions.find(d => d.key === "places")?.count ?? 0 >= 2, provenance: (completeness?.dimensions.find(d => d.key === "places")?.count ?? 0) >= 2 ? `${completeness?.dimensions.find(d => d.key === "places")?.count} places tagged` : null },
+                        ];
+                        return items.map(({ icon: Icon, label, source, earned, provenance }, i) => (
+                          <div key={i} className={`flex items-center gap-3 p-3 rounded-xl border ${earned ? "border-amber-600/40 bg-amber-900/20" : "border-amber-950/40 bg-[#1A1008] opacity-50"}`}>
+                            <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${earned ? "bg-amber-500/20" : "bg-[#2A1A0F]"}`}>
+                              <Icon className={`w-4 h-4 ${earned ? "text-amber-400" : "text-amber-900"}`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-xs font-semibold ${earned ? "text-amber-200" : "text-amber-800"}`}>{label}</p>
+                              <p className="text-[10px] text-amber-700">{source}{provenance ? ` · ${provenance}` : ""}</p>
+                            </div>
+                            {earned && <div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />}
+                          </div>
+                        ));
+                      })()}
                     </div>
                   )}
                   {inventoryTab === "artifacts" && (
                     <div className="space-y-2">
-                      {[
-                        { label: "Ancestral Necklace",  desc: "Passed down through generations",  earned: members.length >= 3   },
-                        { label: "Mission School Book",  desc: "Knowledge from the old ways",       earned: false                 },
-                        { label: "Traditional Drum",     desc: "The heartbeat of the village",      earned: interviewCount >= 1   },
-                        { label: "Diary Page",           desc: "A window into another time",        earned: memories.length >= 2  },
-                      ].map(({ label, desc, earned }, i) => (
-                        <div key={i} className={`flex items-center gap-3 p-3 rounded-xl border ${earned ? "border-amber-700/40 bg-amber-900/20" : "border-amber-950/40 bg-[#1A1008] opacity-50"}`}>
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${earned ? "bg-amber-500/20" : "bg-[#2A1A0F]"}`}>
-                            <Crown className={`w-4 h-4 ${earned ? "text-amber-400" : "text-amber-900"}`} />
+                      {(() => {
+                        const artifacts = [
+                          { label: "Ancestral Necklace",  desc: "Passed down through generations",  earned: members.length >= 3,   source: members.length >= 3 ? `${members.length} relatives in tree` : null },
+                          { label: "Mission School Book",  desc: "Knowledge from the old ways",       earned: (completeness?.dimensions.find(d => d.key === "events")?.count ?? 0) >= 2, source: (completeness?.dimensions.find(d => d.key === "events")?.count ?? 0) >= 2 ? `${completeness?.dimensions.find(d => d.key === "events")?.count} life events` : null },
+                          { label: "Traditional Drum",     desc: "The heartbeat of the village",      earned: interviewCount >= 1,   source: interviewCount >= 1 ? `From oral history` : null },
+                          { label: "Diary Page",           desc: "A window into another time",        earned: memories.length >= 2,  source: memories.length >= 2 ? `${memories.length} memories preserved` : null },
+                          { label: "Family Recipe",        desc: "A taste of home, preserved",        earned: memories.some(m => m.title?.toLowerCase().includes("recipe") || m.description?.toLowerCase().includes("recipe")), source: "From family memories" },
+                          { label: "Military Medal",       desc: "Service remembered",                earned: memories.some(m => m.title?.toLowerCase().includes("military") || m.description?.toLowerCase().includes("military") || m.title?.toLowerCase().includes("service")), source: "From family stories" },
+                        ];
+                        return artifacts.map(({ label, desc, earned, source }, i) => (
+                          <div key={i} className={`flex items-center gap-3 p-3 rounded-xl border ${earned ? "border-amber-700/40 bg-amber-900/20" : "border-amber-950/40 bg-[#1A1008] opacity-50"}`}>
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${earned ? "bg-amber-500/20" : "bg-[#2A1A0F]"}`}>
+                              <Crown className={`w-4 h-4 ${earned ? "text-amber-400" : "text-amber-900"}`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-xs font-semibold ${earned ? "text-amber-200" : "text-amber-800"}`}>{label}</p>
+                              <p className="text-xs text-amber-700">{desc}</p>
+                              {source && <p className="text-[10px] text-amber-600 mt-0.5">Source: {source}</p>}
+                            </div>
+                            {earned && <Star className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className={`text-xs font-semibold ${earned ? "text-amber-200" : "text-amber-800"}`}>{label}</p>
-                            <p className="text-xs text-amber-700">{desc}</p>
-                          </div>
-                          {earned && <Star className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
-                        </div>
-                      ))}
+                        ));
+                      })()}
                     </div>
                   )}
                 </div>
@@ -1917,6 +1999,25 @@ export default function LegacyHomePage() {
                   <TrendingUp className="w-4 h-4" /> View World Evolution
                 </button>
               </div>
+
+              {/* Living Characters */}
+              <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg mt-3">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-pink-500/10 flex items-center justify-center">
+                    <Users className="w-5 h-5 text-pink-400" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-amber-100">Living Characters</p>
+                    <p className="text-xs text-amber-600 mt-0.5">See how your ancestors evolve as the family preserves more.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => navigate("/legacy/characters")}
+                  className="w-full bg-pink-500/15 border border-pink-600/30 text-pink-300 font-bold text-xs uppercase tracking-wide py-3 rounded-xl active:opacity-70 flex items-center justify-center gap-2"
+                >
+                  <Users className="w-4 h-4" /> View Character Evolution
+                </button>
+              </div>
             </div>
           )}
 
@@ -1973,6 +2074,25 @@ export default function LegacyHomePage() {
                   <p className="text-xs text-amber-700 text-center py-4">Join or create a family to explore your world map.</p>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* ── Exploration Mode: Memory Mysteries Link ── */}
+          {activeMode === "exploration" && (
+            <div className="px-4 mb-5">
+              <button
+                onClick={() => navigate("/legacy/mysteries")}
+                className="w-full bg-[#2A1A0F] border border-amber-700/30 rounded-2xl p-4 flex items-center gap-4 active:opacity-80 text-left"
+              >
+                <div className="w-10 h-10 rounded-xl bg-teal-500/10 flex items-center justify-center flex-shrink-0">
+                  <Search className="w-5 h-5 text-teal-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-amber-100">Memory Mysteries</p>
+                  <p className="text-xs text-amber-700 mt-0.5">Investigate unknown faces, places, and dates in your vault</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-amber-700 flex-shrink-0" />
+              </button>
             </div>
           )}
 
