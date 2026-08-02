@@ -88,6 +88,7 @@ export default function DiasporaDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [niaMessage, setNiaMessage] = useState("");
   const [niaChatInput, setNiaChatInput] = useState("");
+  const [niaLoading, setNiaLoading] = useState(false);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -113,6 +114,27 @@ export default function DiasporaDashboardPage() {
       toast.error("Couldn't load Diaspora Dashboard");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function sendNiaMessage() {
+    const msg = niaChatInput.trim();
+    if (!msg || niaLoading) return;
+    setNiaLoading(true);
+    setNiaChatInput("");
+    try {
+      const res = await fetch("/api/nia/chat", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ message: msg }),
+      });
+      if (!res.ok) throw new Error("Nia is unavailable right now");
+      const data = await res.json() as { reply?: string; response?: string; message?: string };
+      setNiaMessage(data.reply ?? data.response ?? data.message ?? "Nia didn't respond — try again.");
+    } catch {
+      setNiaMessage("Nia is unavailable right now. Please try again in a moment.");
+    } finally {
+      setNiaLoading(false);
     }
   }
 
@@ -516,7 +538,12 @@ export default function DiasporaDashboardPage() {
               <div className="flex-1">
                 <p className="text-sm font-semibold text-foreground">Nia</p>
                 <p className="text-xs text-muted-foreground">Your AI assistant for family history</p>
-                {niaMessage ? (
+                {niaLoading ? (
+                  <div className="mt-2 bg-background/60 rounded-xl p-3 flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                    <span className="text-sm text-muted-foreground">Nia is thinking…</span>
+                  </div>
+                ) : niaMessage ? (
                   <div className="mt-2 bg-background/60 rounded-xl p-3">
                     <p className="text-sm text-foreground whitespace-pre-wrap">{niaMessage}</p>
                   </div>
@@ -548,19 +575,19 @@ export default function DiasporaDashboardPage() {
                 className="flex-1 bg-background/60 border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                 style={{ fontSize: "16px" }}
                 onKeyDown={e => {
-                  if (e.key === "Enter" && niaChatInput.trim()) {
-                    setNiaMessage("Nia is your AI assistant for family history. Ask her about research tips, oral history prompts, or genealogy guidance. Full AI integration is available via the Nia button in the menu.");
+                  if (e.key === "Enter" && niaChatInput.trim() && !niaLoading) {
+                    void sendNiaMessage();
                   }
                 }}
               />
               <button
                 onClick={() => {
-                  if (niaChatInput.trim()) {
-                    setNiaMessage("Nia is your AI assistant for family history. Ask her about research tips, oral history prompts, or genealogy guidance. Full AI integration is available via the Nia button in the menu.");
-                    setNiaChatInput("");
+                  if (niaChatInput.trim() && !niaLoading) {
+                    void sendNiaMessage();
                   }
                 }}
-                className="bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-medium active:opacity-80"
+                disabled={niaLoading}
+                className="bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-medium active:opacity-80 disabled:opacity-50"
               >
                 <MessageSquare className="w-4 h-4" />
               </button>

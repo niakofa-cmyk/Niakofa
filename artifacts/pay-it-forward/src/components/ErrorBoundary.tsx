@@ -61,7 +61,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 Technical details
               </summary>
               <pre className="mt-2 text-[10px] text-destructive whitespace-pre-wrap break-all leading-relaxed">
-                {this.state.error.message}
+                {this.state.error.message.replace(/\/api\/[^\s"']+/g, "[endpoint]").replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "[token]")}
               </pre>
             </details>
           )}
