@@ -187,7 +187,7 @@ router.post(
         .set({
           status: "solved",
           resolution,
-          resolved_by: resolvedBy ?? null,
+          resolved_by: resolvedBy ?? req.authenticatedUserId ?? null,
           resolved_at: new Date(),
         })
         .where(eq(legacyMemoryMysteriesTable.id, mysteryId))

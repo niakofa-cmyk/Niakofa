@@ -823,6 +823,7 @@ router.get(
           description: familyEventsTable.description,
           eventDate: familyEventsTable.event_date,
           category: familyEventsTable.category,
+          placeId: familyEventsTable.place_id,
         })
         .from(familyEventsTable)
         .where(eq(familyEventsTable.member_id, memberId))
@@ -876,8 +877,11 @@ router.get(
         .orderBy(desc(familyInterviewsTable.created_at))
         .limit(5);
 
-      // Get places from events
-      const placeIds = events.map((e) => e.id).slice(0, 5);
+      // Get places linked to this member's events (via event.place_id)
+      const placeIds = events
+        .map((e) => e.placeId)
+        .filter((pid): pid is number => pid !== null)
+        .slice(0, 5);
       const places = placeIds.length > 0
         ? await db
             .select({

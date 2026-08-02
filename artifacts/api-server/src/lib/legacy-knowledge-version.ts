@@ -69,7 +69,7 @@ function idToken(id: number, updatedAt: Date | string | null | undefined): strin
 async function buildSnapshot(familyId: number): Promise<KnowledgeSnapshot> {
   const [members, memories, interviews, stories, places, events] = await Promise.all([
     db
-      .select({ id: familyMembersTable.id, updated: familyMembersTable.created_at })
+      .select({ id: familyMembersTable.id, updated: familyMembersTable.updated_at })
       .from(familyMembersTable)
       .where(and(
         eq(familyMembersTable.family_id, familyId),
@@ -80,7 +80,7 @@ async function buildSnapshot(familyId: number): Promise<KnowledgeSnapshot> {
       .from(familyMemoriesTable)
       .where(eq(familyMemoriesTable.family_id, familyId)),
     db
-      .select({ id: familyInterviewsTable.id })
+      .select({ id: familyInterviewsTable.id, updated: familyInterviewsTable.updated_at })
       .from(familyInterviewsTable)
       .where(eq(familyInterviewsTable.family_id, familyId)),
     db
@@ -100,7 +100,7 @@ async function buildSnapshot(familyId: number): Promise<KnowledgeSnapshot> {
   return {
     member_ids: members.map((m) => idToken(m.id, m.updated)),
     memory_ids: memories.map((m) => idToken(m.id, m.updated)),
-    interview_ids: interviews.map((i) => idToken(i.id, null)),
+    interview_ids: interviews.map((i) => idToken(i.id, i.updated)),
     story_ids: stories.map((s) => idToken(s.id, s.updated)),
     place_ids: places.map((p) => idToken(p.id, p.updated)),
     event_ids: events.map((e) => idToken(e.id, e.updated)),

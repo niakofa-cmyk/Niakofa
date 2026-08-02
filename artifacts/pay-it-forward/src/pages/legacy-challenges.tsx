@@ -19,9 +19,9 @@ import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 
 interface Contribution {
-  id: string;
-  challenge_id: string;
-  member_id: string | null;
+  id: number;
+  challenge_id: number;
+  member_id: number | null;
   contribution_type: string;
   vault_item_ref: string | null;
   contribution_note: string | null;
@@ -29,8 +29,8 @@ interface Contribution {
 }
 
 interface Challenge {
-  id: string;
-  family_id: string;
+  id: number;
+  family_id: number;
   challenge_type: string;
   title: string;
   description: string;
@@ -132,7 +132,7 @@ export default function LegacyChallengesPage() {
     }
   }, [familyId]);
 
-  const contribute = useCallback(async (challengeId: string) => {
+  const contribute = useCallback(async (challengeId: number) => {
     setContributing(challengeId);
     try {
       const res = await fetch(`/api/legacy/challenges/${challengeId}/contribute`, {

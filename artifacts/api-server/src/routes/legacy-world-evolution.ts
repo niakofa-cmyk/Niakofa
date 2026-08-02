@@ -262,7 +262,7 @@ router.get(
 
       // Count changes by type
       const [{ totalChanges }] = await db
-        .select({ totalChanges: sql`count(*)::int` })
+        .select({ totalChanges: sql<number>`count(*)::int` })
         .from(legacyWorldEvolutionLogTable)
         .where(eq(legacyWorldEvolutionLogTable.family_id, familyId));
 

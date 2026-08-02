@@ -254,6 +254,14 @@ router.post(
 
     if (!memberId) return res.status(400).json({ error: "memberId is required" });
 
+    // Verify the memberId belongs to this family (prevent cross-family snapshot injection)
+    const [member] = await db
+      .select({ id: familyMembersTable.id })
+      .from(familyMembersTable)
+      .where(and(eq(familyMembersTable.id, memberId), eq(familyMembersTable.family_id, familyId)))
+      .limit(1);
+    if (!member) return res.status(403).json({ error: "Member does not belong to this family" });
+
     try {
       const [latestVersion] = await db
         .select()

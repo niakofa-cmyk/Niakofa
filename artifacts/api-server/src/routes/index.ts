@@ -50,6 +50,7 @@ import legacyWorldEvolutionRouter from "./legacy-world-evolution";
 import legacyAiDirectorRouter from "./legacy-ai-director";
 import legacyMemoryMysteriesRouter from "./legacy-memory-mysteries";
 import legacyCharacterEvolutionRouter from "./legacy-character-evolution";
+import legacyReunionRouter from "./legacy-reunion";
 
 const router: IRouter = Router();
 
@@ -104,5 +105,6 @@ router.use(legacyWorldEvolutionRouter);
 router.use(legacyAiDirectorRouter);
 router.use(legacyMemoryMysteriesRouter);
 router.use(legacyCharacterEvolutionRouter);
+router.use(legacyReunionRouter);
 
 export default router;

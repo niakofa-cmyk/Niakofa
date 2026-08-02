@@ -212,6 +212,7 @@ router.post(
     if (!contributionType || !["interview", "photo", "story", "location", "document", "checkin", "recipe", "tradition"].includes(contributionType)) {
       return res.status(400).json({ error: "Valid contributionType is required" });
     }
+    const parsedMemberId = memberId != null ? parseInt(String(memberId), 10) : null;
 
     try {
       const [event] = await db
@@ -247,7 +248,7 @@ router.post(
         .insert(legacySeasonalEventParticipationsTable)
         .values({
           event_id: eventId,
-          member_id: memberId ?? null,
+          member_id: parsedMemberId,
           user_id: userId,
           contribution_type: String(contributionType),
           contribution_note: note ?? null,

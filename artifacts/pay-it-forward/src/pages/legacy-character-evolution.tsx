@@ -17,7 +17,7 @@ import { useLocation } from "wouter";
 import {
   ArrowLeft, Loader2, Users, BookOpen, Mic, Camera,
   MapPin, Star, TrendingUp, AlertCircle, Heart,
-  Brain, Globe2, Crown, Zap,
+  Brain, Globe2, Crown, Zap, Sparkles,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";

@@ -223,14 +223,18 @@ router.post(
         return res.status(403).json({ error: "Not a member of this family" });
       }
 
-      // Prevent duplicate contributions from the same user to the same challenge
+      // Prevent duplicate contributions from the same user to the same challenge.
+      // When memberId is not provided, the contribution row stores member_id = null,
+      // so the duplicate check must also look for null member_id rows from this user.
       const [existing] = await db
         .select({ id: legacyChallengeContributionsTable.id })
         .from(legacyChallengeContributionsTable)
         .where(
           and(
             eq(legacyChallengeContributionsTable.challenge_id, challengeId),
-            eq(legacyChallengeContributionsTable.member_id, typeof memberId === "number" ? memberId : userId),
+            typeof memberId === "number"
+              ? eq(legacyChallengeContributionsTable.member_id, memberId)
+              : sql`${legacyChallengeContributionsTable.member_id} is null`,
           ),
         )
         .limit(1);

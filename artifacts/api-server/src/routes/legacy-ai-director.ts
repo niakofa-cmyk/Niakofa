@@ -171,7 +171,15 @@ async function analyzeVaultGaps(familyId: number): Promise<VaultGap[]> {
   }
 
   // Gap 5: Memories without people tagged
-  const memoryPeople = await db.select().from(familyMemoryPeopleTable);
+  // Scope to this family's memory IDs only — the table has no family_id column,
+  // so an unfiltered read scans every family's memory-people rows.
+  const familyMemoryIds = memories.map((m) => m.id);
+  const memoryPeople = familyMemoryIds.length > 0
+    ? await db
+        .select({ memory_id: familyMemoryPeopleTable.memory_id })
+        .from(familyMemoryPeopleTable)
+        .where(inArray(familyMemoryPeopleTable.memory_id, familyMemoryIds))
+    : [];
   const taggedMemoryIds = new Set(memoryPeople.map((mp) => mp.memory_id));
   const untagged = memories.filter((m) => !taggedMemoryIds.has(m.id));
   if (untagged.length > 0) {
@@ -476,7 +484,7 @@ router.post(
         .set({
           status: "completed",
           completed_at: new Date(),
-          completed_by: req.body?.completedBy ?? null,
+          completed_by: req.authenticatedUserId ?? null,
         })
         .where(eq(legacyAiDirectorMissionsTable.id, missionId))
         .returning();
