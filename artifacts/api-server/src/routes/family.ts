@@ -59,6 +59,7 @@ import { z } from "zod";
 import { broadcast } from "../lib/ws-hub";
 import { logger } from "../lib/logger";
 import { stripTags } from "../lib/sanitize";
+import { logWorldEvolution } from "../lib/legacy-world-evolution";
 
 const router = Router();
 
@@ -448,6 +449,7 @@ router.post("/family/:id/members", generalApiLimiter, requireAuth, async (req, r
     .returning();
 
   logger.info({ familyId, memberId: member.id, invitedBy: userId }, "family_member_invited");
+  logWorldEvolution(familyId, "member_added", `${display_name} was added to the family`).catch(() => {});
   return res.status(201).json({ member });
 });
 
@@ -694,6 +696,7 @@ router.post("/family/:id/memories", generalApiLimiter, requireAuth, async (req, 
   broadcast({ type: "family_memory_created", payload: { family_id: familyId, memory_id: memory.id, author_id: userId } });
 
   logger.info({ familyId, memoryId: memory.id, userId }, "family_memory_created");
+  logWorldEvolution(familyId, "memory_added", memory.title ?? undefined).catch(() => {});
   return res.status(201).json({ memory });
 });
 
@@ -1159,6 +1162,7 @@ router.post("/family/:id/interviews", generalApiLimiter, requireAuth, async (req
     .returning();
 
   broadcast({ type: "family_interview_status_changed", payload: { family_id: familyId, interview_id: interview.id, status: interview.status } });
+  logWorldEvolution(familyId, "interview_added", "A new oral history interview was started").catch(() => {});
 
   return res.status(201).json({ interview });
 });
@@ -1259,6 +1263,9 @@ router.post("/family/:id/members/import-gedcom", generalApiLimiter, requireAuth,
   }
 
   logger.info({ familyId, userId, imported: created.length, total: individuals.length }, "gedcom_import");
+  if (created.length > 0) {
+    logWorldEvolution(familyId, "member_added", `${created.length} ancestors imported from a GEDCOM file`, created.length).catch(() => {});
+  }
   return res.json({ imported: created.length, total: individuals.length, members: created });
 });
 

@@ -33,6 +33,7 @@ import {
 import { eq, and, desc, sql, inArray, or, like } from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../lib/logger";
+import { logWorldEvolution } from "../lib/legacy-world-evolution";
 
 const router = Router();
 
@@ -395,6 +396,7 @@ router.post("/family/:id/tree/relations", requireAuth, generalApiLimiter, async 
     }).returning();
 
     logger.info({ familyId, relationId: relation.id, userId }, "family_tree_relation_created");
+    logWorldEvolution(familyId, "relation_added", `A new ${relation_type} relationship was added to the family tree`).catch(() => {});
     return res.status(201).json({ relation });
   } catch (err) {
     // Handle unique constraint violation (duplicate edge)
@@ -560,6 +562,8 @@ router.post("/family/:id/timeline", requireAuth, generalApiLimiter, async (req, 
         tag:       `event_type:${event_type}`,
       });
     }
+
+    logWorldEvolution(familyId, "event_added", memory.title ?? undefined).catch(() => {});
 
     return res.status(201).json({
       event: {
