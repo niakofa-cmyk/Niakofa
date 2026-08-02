@@ -5,7 +5,7 @@
  * Enhanced with:
  *  - Rich visual timeline with decade groupings and colored event markers
  *  - Historical context per decade (African American history)
- *  - Demo "Davis Family" data when no real events exist
+ *  - Empty state with call-to-action when no real events exist
  *  - Add Event modal (POST /api/family/:id/timeline)
  *  - Event type inference from title keywords
  *  - Skeleton loading cards
@@ -37,16 +37,6 @@ interface TimelineEvent {
   memory_id: number;
   family_id: number;
 }
-
-// ── Demo data (Davis Family, matching the reference image) ─────────────────
-const DEMO_EVENTS: TimelineEvent[] = [
-  { id: -1, year: 1872, date: "1872-01-01", title: "Land Deed Recorded", description: "The Davis family recorded their first land deed — a cornerstone of their legacy in Tarrant County.", location: "Tarrant County, TX", type: "import", event_type: "land_deed", memory_id: -1, family_id: 0 },
-  { id: -2, year: 1900, date: "1900-01-01", title: "Robert Davis Born", description: "Birth of Robert Davis in Fort Worth, Texas — a founding member of the Davis family legacy.", location: "Fort Worth, TX", type: "upload", event_type: "birth", memory_id: -2, family_id: 0 },
-  { id: -3, year: 1920, date: "1920-01-01", title: "Great Migration Begins", description: "Family members joined the Great Migration northward, seeking opportunity and freedom during a pivotal era.", location: "Chicago, IL", type: "import", event_type: "migration", memory_id: -3, family_id: 0 },
-  { id: -4, year: 1950, date: "1950-01-01", title: "Family Church Founded", description: "The Davis family helped establish their community church — a cornerstone of faith and fellowship.", location: "Fort Worth, TX", type: "upload", event_type: "church", memory_id: -4, family_id: 0 },
-  { id: -5, year: 1960, date: "1960-01-01", title: "Family Reunion Photo", description: "The first documented Davis family reunion — generations gathered together in Fort Worth.", location: "Fort Worth, TX", type: "upload", event_type: "reunion", memory_id: -5, family_id: 0 },
-  { id: -6, year: 2023, date: "2023-01-01", title: "Oral History Recorded", description: "Grandma Ruth's interview was recorded and preserved — her voice will carry forward for generations.", location: "Fort Worth, TX", type: "interview", event_type: "oral_history", memory_id: -6, family_id: 0 },
-];
 
 // ── Historical context per decade ──────────────────────────────────────────
 const HISTORICAL_CONTEXT: Record<string, string> = {
@@ -175,7 +165,6 @@ export default function LegacyTimelinePage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQ, setSearchQ] = useState("");
   const [filterType, setFilterType] = useState<string | null>(null);
-  const [isDemo, setIsDemo] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [addForm, setAddForm] = useState({
     title: "", year: "", location: "", description: "", event_type: "upload",
@@ -218,16 +207,13 @@ export default function LegacyTimelinePage() {
         family_id: familyId,
       }));
       if (real.length === 0) {
-        setIsDemo(true);
-        setEvents(DEMO_EVENTS);
+        setEvents([]);
       } else {
-        setIsDemo(false);
         setEvents(real);
       }
     } catch {
-      setIsDemo(true);
-      setEvents(DEMO_EVENTS);
-      toast.error("Couldn't load timeline — showing example data");
+      setEvents([]);
+      toast.error("Couldn't load timeline — please try again");
     } finally {
       setLoading(false);
     }
@@ -273,7 +259,6 @@ export default function LegacyTimelinePage() {
           (a, b) => (a.year ?? 9999) - (b.year ?? 9999)
         )
       );
-      setIsDemo(false);
       setShowAddModal(false);
       setAddForm({ title: "", year: "", location: "", description: "", event_type: "upload" });
       toast.success("Event added to your timeline!");
@@ -331,7 +316,7 @@ export default function LegacyTimelinePage() {
               Legacy Timeline
             </h1>
             <p className="text-xs text-muted-foreground">
-              {isDemo ? "Example — add your own events below" : "Your family story through time"}
+              {"Your family story through time"}
             </p>
           </div>
           <button
@@ -386,13 +371,7 @@ export default function LegacyTimelinePage() {
               <p className="text-xl font-bold text-rose-300">{earliestDecade}</p>
               <p className="text-[10px] text-rose-400/60 font-medium">Earliest</p>
             </div>
-            {isDemo && (
-              <div className="ml-auto">
-                <span className="text-[10px] bg-rose-400/15 text-rose-400 px-2 py-1 rounded-full border border-rose-400/20">
-                  Example
-                </span>
-              </div>
-            )}
+
           </div>
         </div>
       </div>
@@ -510,7 +489,6 @@ export default function LegacyTimelinePage() {
                       const cfg = getEventConfig(e);
                       const Icon = cfg.icon;
                       const isLast = di === sortedDecades.length - 1 && ei === decEvents.length - 1;
-                      const isDemo_ = e.id < 0;
 
                       return (
                         <div key={e.id} className="flex gap-3">
@@ -523,13 +501,11 @@ export default function LegacyTimelinePage() {
                           {/* Event card */}
                           <button
                             onClick={() => {
-                              if (!isDemo_ && e.family_id > 0) {
+                              if (e.family_id > 0) {
                                 navigate(`/family/${e.family_id}/memory/${e.memory_id}`);
                               }
                             }}
-                            className={`flex-1 text-left rounded-xl border p-3 mb-3 transition-opacity ${
-                              isDemo_ ? "opacity-75 cursor-default" : "active:opacity-70"
-                            } ${cfg.bg} ${cfg.border}`}
+                            className={`flex-1 text-left rounded-xl border p-3 mb-3 transition-opacity active:opacity-70 ${cfg.bg} ${cfg.border}`}
                           >
                             <div className="flex items-start gap-2">
                               <div className={`w-7 h-7 rounded-lg ${cfg.bg} flex items-center justify-center flex-shrink-0 mt-0.5`}>
@@ -552,9 +528,7 @@ export default function LegacyTimelinePage() {
                                   </p>
                                 )}
                               </div>
-                              {!isDemo_ && (
-                                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/40 flex-shrink-0 mt-1" />
-                              )}
+                              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/40 flex-shrink-0 mt-1" />
                             </div>
                           </button>
                         </div>
@@ -564,23 +538,6 @@ export default function LegacyTimelinePage() {
                 </div>
               );
             })}
-          </div>
-        )}
-
-        {/* ── Demo explanation ─────────────────────────────────────────── */}
-        {isDemo && !loading && (
-          <div className="bg-amber-400/5 border border-amber-400/20 rounded-2xl p-4 text-center space-y-2">
-            <p className="text-xs font-medium text-amber-400">These are example events</p>
-            <p className="text-xs text-muted-foreground">
-              Add real events from your family's history using the Add button above,
-              or add memories with dates from your Family Vault.
-            </p>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="mt-2 bg-rose-500 text-white px-4 py-2 rounded-xl text-sm font-medium active:opacity-80"
-            >
-              Add Your First Event
-            </button>
           </div>
         )}
 

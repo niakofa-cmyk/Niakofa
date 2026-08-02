@@ -55,33 +55,51 @@ interface Choice {
   requiresMemoryText?: boolean;
 }
 
-const SCENE_CHOICES: Record<string, Choice[]> = {
-  narration: [
-    { text: "Continue", consequence: "The story moves forward.", action: "next" },
-  ],
-  dialogue: [
-    { text: "Listen and remember", consequence: "You absorb this moment into your family's memory.", action: "next" },
-    {
-      text: "Ask a question",
-      consequence: "A Mystery Quest has been added to your Family Vault — ask a relative to help fill this gap.",
-      action: "preserve",
-      createsMysteryQuest: true,
-    },
-    { text: "Reflect quietly", consequence: "You gain cultural wisdom from this moment.", action: "reflect" },
-  ],
-  reflection: [
-    {
-      text: "Record a memory",
-      consequence: "Your memory has been added to the Family Vault.",
-      action: "preserve",
-      requiresMemoryText: true,
-    },
-    { text: "Continue the journey", consequence: "The chapter moves forward.", action: "next" },
-  ],
-  context: [
-    { text: "Continue", consequence: "You carry this history with you.", action: "next" },
-  ],
-};
+// Choices are parameterized by scene type and enriched with vault context
+// (place names, event titles, memory descriptions) so they feel specific to
+// the family's actual history rather than generic for every family.
+function buildSceneChoices(scene: Scene, vault: SceneResponse["vaultContext"]): Choice[] {
+  const place = scene.placeId ? vault.places.find(p => p.id === scene.placeId) : null;
+  const event = scene.eventId ? vault.events.find(e => e.id === scene.eventId) : null;
+  const memory = scene.memoryId ? vault.memories.find(m => m.id === scene.memoryId) : null;
+
+  switch (scene.type) {
+    case "narration":
+      return [
+        { text: "Continue the story", consequence: "The story moves forward.", action: "next" },
+        ...(place ? [{ text: `Remember ${place.label}`, consequence: `You hold the memory of ${place.label} close.`, action: "reflect" as const }] : []),
+      ];
+    case "dialogue":
+      return [
+        { text: "Listen and remember", consequence: "You absorb this moment into your family's memory.", action: "next" },
+        {
+          text: event ? `Ask about ${event.title}` : "Ask a question",
+          consequence: "A Mystery Quest has been added to your Family Vault — ask a relative to help fill this gap.",
+          action: "preserve",
+          createsMysteryQuest: true,
+        },
+        { text: "Reflect quietly", consequence: "You gain cultural wisdom from this moment.", action: "reflect" },
+      ];
+    case "reflection":
+      return [
+        {
+          text: memory ? `Add to this memory` : "Record a memory",
+          consequence: "Your memory has been added to the Family Vault.",
+          action: "preserve",
+          requiresMemoryText: true,
+        },
+        { text: "Continue the journey", consequence: "The chapter moves forward.", action: "next" },
+        { text: "Sit with this moment", consequence: "You let the weight of this memory settle.", action: "reflect" },
+      ];
+    case "context":
+      return [
+        { text: "Continue", consequence: "You carry this history with you.", action: "next" },
+        { text: "Reflect on the times", consequence: "You consider what life was like in those days.", action: "reflect" },
+      ];
+    default:
+      return [{ text: "Continue", consequence: "The story moves forward.", action: "next" }];
+  }
+}
 
 export default function LegacyChapterPlay() {
   const params = useParams<{ chapterId: string }>();
@@ -184,7 +202,8 @@ export default function LegacyChapterPlay() {
     if (!sceneData) return;
     const scene = sceneData.scenes[currentSceneIdx];
     if (!scene) return;
-    const choice = (SCENE_CHOICES[scene.type] ?? SCENE_CHOICES.narration)[choiceIdx];
+    const choices = buildSceneChoices(scene, sceneData.vaultContext);
+    const choice = choices[choiceIdx];
 
     setSelectedChoice(choiceIdx);
     setShowConsequence(true);
@@ -233,7 +252,8 @@ export default function LegacyChapterPlay() {
     if (!sceneData || selectedChoice !== null || awaitingMemoryText) return;
     const scene = sceneData.scenes[currentSceneIdx];
     if (!scene) return;
-    const choice = (SCENE_CHOICES[scene.type] ?? SCENE_CHOICES.narration)[choiceIdx];
+    const choices = buildSceneChoices(scene, sceneData.vaultContext);
+    const choice = choices[choiceIdx];
 
     // "Record a memory" needs real player-authored text before anything is
     // saved — open the writing step instead of finalizing immediately.
@@ -424,7 +444,7 @@ export default function LegacyChapterPlay() {
   const scene = sceneData.scenes[currentSceneIdx];
   if (!scene) return null;
 
-  const choices = SCENE_CHOICES[scene.type] ?? SCENE_CHOICES.narration;
+  const choices = buildSceneChoices(scene, sceneData.vaultContext);
   const progress = ((currentSceneIdx + 1) / sceneData.scenes.length) * 100;
   const place = scene.placeId
     ? sceneData.vaultContext.places.find(p => p.id === scene.placeId)

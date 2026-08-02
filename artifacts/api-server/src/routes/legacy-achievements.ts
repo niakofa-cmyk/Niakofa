@@ -6,6 +6,7 @@ import {
   familyMemoriesTable,
   familyInterviewsTable,
   familyMemoryAssetsTable,
+  familyTreeRelationsTable,
   legacyAchievementsTable,
   legacyChaptersTable,
   legacyPlaceDiscoveriesTable,
@@ -26,6 +27,7 @@ interface AchievementDef {
 
 const CATALOG: AchievementDef[] = [
   { key: "memory_keeper", category: "vault_prompt", title: "Memory Keeper", description: "Preserve 5 family memories in the vault.", goal: 5 },
+  { key: "family_detective", category: "vault_prompt", title: "Family Detective", description: "Connect 10 family relationships in the tree.", goal: 10 },
   { key: "bridge_builder", category: "reconnection", title: "Bridge Builder", description: "Connect 3 family members in the tree.", goal: 3 },
   { key: "roots_traveler", category: "gameplay", title: "Roots Traveler", description: "Visit 10 family landmarks in person and check in.", goal: 10 },
   { key: "legacy_guardian", category: "preservation", title: "Legacy Guardian", description: "Preserve 3 family artifacts (photos, documents).", goal: 3 },
@@ -43,6 +45,7 @@ async function computeProgress(familyId: number): Promise<Record<string, number>
     [{ count: completedChapterCount }],
     [{ count: assetCount }],
     [{ count: photoAssetCount }],
+    [{ count: treeRelationCount }],
   ] = await Promise.all([
     db.select({ count: sql<number>`count(*)::int` }).from(familyMemoriesTable).where(eq(familyMemoriesTable.family_id, familyId)),
     db.select({ count: sql<number>`count(*)::int` }).from(familyInterviewsTable).where(and(eq(familyInterviewsTable.family_id, familyId), eq(familyInterviewsTable.status, "published"))),
@@ -51,9 +54,11 @@ async function computeProgress(familyId: number): Promise<Record<string, number>
     db.select({ count: sql<number>`count(*)::int` }).from(legacyChaptersTable).where(and(eq(legacyChaptersTable.family_id, familyId), eq(legacyChaptersTable.status, "completed"))),
     db.select({ count: sql<number>`count(*)::int` }).from(familyMemoryAssetsTable).innerJoin(familyMemoriesTable, eq(familyMemoryAssetsTable.memory_id, familyMemoriesTable.id)).where(eq(familyMemoriesTable.family_id, familyId)),
     db.select({ count: sql<number>`count(*)::int` }).from(familyMemoryAssetsTable).innerJoin(familyMemoriesTable, eq(familyMemoryAssetsTable.memory_id, familyMemoriesTable.id)).where(and(eq(familyMemoriesTable.family_id, familyId), eq(familyMemoryAssetsTable.asset_type, "photo"))),
+    db.select({ count: sql<number>`count(*)::int` }).from(familyTreeRelationsTable).where(eq(familyTreeRelationsTable.family_id, familyId)),
   ]);
   return {
     memory_keeper: memoryCount,
+    family_detective: treeRelationCount,
     bridge_builder: connectedMemberCount,
     legacy_guardian: assetCount,
     voice_of_elders: publishedInterviewCount,

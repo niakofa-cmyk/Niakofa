@@ -7,6 +7,9 @@
  * state are computed server-side from real per-family vault/gameplay data
  * and persisted in legacy_achievements — see
  * artifacts/api-server/src/routes/legacy-achievements.ts.
+ *
+ * Achievement keys, goals, and categories MUST match the backend CATALOG
+ * exactly — the backend is the source of truth for progress computation.
  */
 
 import { useState, useEffect } from "react";
@@ -37,6 +40,9 @@ interface BackendAchievement {
 //   preservation   — unlocked by preserving stories/interviews
 // Progress/unlock state for all 8 comes from the real backend endpoint;
 // icon/color/hint/href below are presentation-only.
+//
+// IMPORTANT: `id` must match the backend `key` in CATALOG exactly, and `goal`
+// must match the backend `goal` — otherwise the progress bar will be wrong.
 
 interface AchievementDef {
   id: string;
@@ -55,23 +61,23 @@ interface AchievementDef {
 
 const ACHIEVEMENTS: AchievementDef[] = [
   {
-    id: "story_keeper",
-    title: "The Story Keeper",
-    desc: "Record 100 family memories in the vault.",
+    id: "memory_keeper",
+    title: "Memory Keeper",
+    desc: "Preserve 5 family memories in the vault.",
     hint: "Add photos, stories, and documents to your Family Vault.",
     icon: BookOpen,
     color: "text-amber-400",
     bg: "bg-amber-400/10",
     border: "border-amber-400/25",
     dot: "bg-amber-400",
-    goal: 100,
+    goal: 5,
     href: "/diaspora/family",
     category: "vault_prompt",
   },
   {
     id: "family_detective",
     title: "Family Detective",
-    desc: "Find and add 10 ancestors to your family tree.",
+    desc: "Connect 10 family relationships in the tree.",
     hint: "Add parents, grandparents, and great-grandparents to your tree.",
     icon: Compass,
     color: "text-teal-400",
@@ -84,110 +90,116 @@ const ACHIEVEMENTS: AchievementDef[] = [
   },
   {
     id: "bridge_builder",
-    title: "The Bridge Builder",
-    desc: "Reconnect with 5 family spaces.",
-    hint: "Create or join family spaces to connect with relatives.",
+    title: "Bridge Builder",
+    desc: "Connect 3 family members in the tree.",
+    hint: "Add family members and link them with relationships.",
     icon: Users,
     color: "text-teal-400",
     bg: "bg-teal-400/10",
     border: "border-teal-400/25",
     dot: "bg-teal-400",
-    goal: 5,
+    goal: 3,
     href: "/diaspora/family",
     category: "reconnection",
   },
   {
-    id: "legacy_guardian",
-    title: "Legacy Guardian",
-    desc: "Preserve 50 family photographs and documents.",
-    hint: "Upload photos, letters, and historical documents.",
-    icon: Archive,
-    color: "text-sky-400",
-    bg: "bg-sky-400/10",
-    border: "border-sky-400/25",
-    dot: "bg-sky-400",
-    goal: 50,
-    href: "/diaspora/family",
-    category: "vault_prompt",
-  },
-  {
-    id: "voice_of_elders",
-    title: "Voice of the Elders",
-    desc: "Record 3 oral history interviews with family members.",
-    hint: "Use the Oral History recorder in your Family Vault.",
-    icon: Mic,
-    color: "text-orange-400",
-    bg: "bg-orange-400/10",
-    border: "border-orange-400/25",
-    dot: "bg-orange-400",
-    goal: 3,
-    href: "/diaspora/family",
-    category: "preservation",
-  },
-  {
     id: "roots_traveler",
     title: "Roots Traveler",
-    desc: "Discover DNA connections to 10 relatives.",
-    hint: "Import your DNA data to find cousins and relatives.",
+    desc: "Visit 10 family landmarks in person and check in.",
+    hint: "Visit family landmarks and use GPS check-in to discover them.",
     icon: MapPin,
     color: "text-green-400",
     bg: "bg-green-400/10",
     border: "border-green-400/25",
     dot: "bg-green-400",
     goal: 10,
-    href: "/diaspora/dna",
-    category: "reconnection",
+    href: "/legacy/map",
+    category: "gameplay",
+  },
+  {
+    id: "legacy_guardian",
+    title: "Legacy Guardian",
+    desc: "Preserve 3 family artifacts (photos, documents).",
+    hint: "Upload photos, letters, and historical documents.",
+    icon: Archive,
+    color: "text-sky-400",
+    bg: "bg-sky-400/10",
+    border: "border-sky-400/25",
+    dot: "bg-sky-400",
+    goal: 3,
+    href: "/diaspora/family",
+    category: "preservation",
+  },
+  {
+    id: "voice_of_elders",
+    title: "Voice of the Elders",
+    desc: "Publish 2 family interviews.",
+    hint: "Use the Oral History recorder in your Family Vault.",
+    icon: Mic,
+    color: "text-orange-400",
+    bg: "bg-orange-400/10",
+    border: "border-orange-400/25",
+    dot: "bg-orange-400",
+    goal: 2,
+    href: "/diaspora/family",
+    category: "preservation",
   },
   {
     id: "memory_restorer",
     title: "Memory Restorer",
-    desc: "Upload and preserve 25 historic family photographs.",
+    desc: "Upload 5 photos to family memories.",
     hint: "Upload old family photos to bring them back to life.",
     icon: Camera,
     color: "text-rose-400",
     bg: "bg-rose-400/10",
     border: "border-rose-400/25",
     dot: "bg-rose-400",
-    goal: 25,
+    goal: 5,
     href: "/diaspora/family",
     category: "vault_prompt",
   },
   {
     id: "ancestor_walker",
     title: "Ancestor Walker",
-    desc: "Explore 5 heritage collections from your family's origins.",
-    hint: "Explore heritage collections related to your family's culture.",
+    desc: "Complete 3 Legacy chapters.",
+    hint: "Play Legacy Mode chapters to walk in your ancestors' footsteps.",
     icon: GraduationCap,
     color: "text-emerald-400",
     bg: "bg-emerald-400/10",
     border: "border-emerald-400/25",
     dot: "bg-emerald-400",
-    goal: 5,
-    href: "/diaspora/heritage",
+    goal: 3,
+    href: "/legacy/start",
     category: "gameplay",
   },
 ];
 
 // ── Skill Tree ────────────────────────────────────────────────────────────
-const SKILL_TREE = [
-  { label: "Historian",         icon: BookOpen,       unlocked: true,  color: "text-amber-400" },
-  { label: "Explorer",          icon: Compass,        unlocked: true,  color: "text-teal-400" },
-  { label: "Story Keeper",      icon: Heart,          unlocked: false, color: "text-rose-400" },
-  { label: "Photographer",      icon: Camera,         unlocked: false, color: "text-sky-400" },
-  { label: "Interviewer",       icon: Mic,            unlocked: false, color: "text-orange-400" },
-  { label: "Archivist",         icon: Archive,        unlocked: false, color: "text-purple-400" },
-  { label: "Genealogist",       icon: TreePine,       unlocked: false, color: "text-emerald-400" },
-  { label: "Community Builder", icon: Users,          unlocked: false, color: "text-blue-400" },
+// Each skill maps to a specific achievement. A skill is unlocked when its
+// corresponding achievement is unlocked — no more hardcoded unlocks.
+const SKILL_TREE: { label: string; icon: typeof BookOpen; achievementKey: string; color: string }[] = [
+  { label: "Historian",         icon: BookOpen,       achievementKey: "memory_keeper",    color: "text-amber-400" },
+  { label: "Explorer",          icon: Compass,        achievementKey: "family_detective", color: "text-teal-400" },
+  { label: "Story Keeper",      icon: Heart,          achievementKey: "voice_of_elders",  color: "text-rose-400" },
+  { label: "Photographer",      icon: Camera,         achievementKey: "memory_restorer",  color: "text-sky-400" },
+  { label: "Interviewer",       icon: Mic,            achievementKey: "voice_of_elders",  color: "text-orange-400" },
+  { label: "Archivist",         icon: Archive,        achievementKey: "legacy_guardian",  color: "text-purple-400" },
+  { label: "Genealogist",       icon: TreePine,       achievementKey: "family_detective", color: "text-emerald-400" },
+  { label: "Community Builder", icon: Users,          achievementKey: "bridge_builder",   color: "text-blue-400" },
 ];
 
 // ── Legacy Inventory ─────────────────────────────────────────────────────
-const INVENTORY_ITEMS = [
-  { id: "old_letter",    label: "Old Letter",       icon: "📜", desc: "A letter from a family elder — record 1 story",    earned: false },
-  { id: "family_bible",  label: "Family Bible",     icon: "📖", desc: "Your family's holy book — add 5 ancestors",        earned: false },
-  { id: "photograph",    label: "Family Portrait",  icon: "🖼️", desc: "A family photograph — upload 3 photos",            earned: false },
-  { id: "recipe_book",   label: "Recipe Book",      icon: "📗", desc: "Traditional recipes — record an oral history",    earned: false },
-  { id: "birth_cert",    label: "Birth Certificate",icon: "📄", desc: "Historical document — add 3 ancestors",           earned: false },
-  { id: "migration_map", label: "Migration Map",    icon: "🗺️", desc: "A map of your family's journey — connect DNA",    earned: false },
+// Inventory items map to real backend achievement keys. When the achievement
+// is unlocked, the item shows as collected. Partial progress is shown live.
+const INVENTORY_ITEMS: { achievementKey: string; label: string; icon: string; desc: string }[] = [
+  { achievementKey: "memory_keeper",    label: "Family Storybook",     icon: "📖", desc: "A collection of preserved family memories" },
+  { achievementKey: "family_detective", label: "Family Tree Scroll",   icon: "🌳", desc: "Your mapped family relationships and lineage" },
+  { achievementKey: "bridge_builder",   label: "Reunion Quilt",        icon: "🧵", desc: "Connecting family members across distances" },
+  { achievementKey: "roots_traveler",   label: "Migration Map",        icon: "🗺️", desc: "A map of your family's journey across lands" },
+  { achievementKey: "legacy_guardian",   label: "Heritage Archive",     icon: "🗄️", desc: "Preserved photos and historical documents" },
+  { achievementKey: "voice_of_elders",   label: "Elder's Voice Recording", icon: "🎙️", desc: "Oral history interviews with family elders" },
+  { achievementKey: "memory_restorer",   label: "Restored Photograph", icon: "🖼️", desc: "Old family photos brought back to life" },
+  { achievementKey: "ancestor_walker",   label: "Ancestor's Walking Stick", icon: "🦯", desc: "Earned by completing Legacy chapters" },
 ];
 
 export default function LegacyAchievementsPage() {
@@ -219,7 +231,7 @@ export default function LegacyAchievementsPage() {
   }
 
   // Build a lookup from backend data
-  const backendMap = new Map(backendAch.map(a => [a.achievement_key, a]));
+  const backendMap: Map<string, BackendAchievement> = new Map(backendAch.map(a => [a.achievement_key, a]));
 
   const unlockedCount = ACHIEVEMENTS.filter(a => {
     const backend = backendMap.get(a.id);
@@ -375,10 +387,10 @@ export default function LegacyAchievementsPage() {
             <div className="space-y-2">
               {SKILL_TREE.map((skill, i) => {
                 const Icon = skill.icon;
-                const unlocked = skill.unlocked || (backendAch.length > 0 ? i < Math.floor(ACHIEVEMENTS.filter(a => {
-                  const backend = backendMap.get(a.id);
-                  return backend ? backend.unlocked : false;
-                }).length * 0.8) : false);
+                const backend = backendMap.get(skill.achievementKey);
+                const unlocked = backend?.unlocked ?? false;
+                const progress = backend?.progress ?? 0;
+                const goal = backend?.goal ?? 1;
                 return (
                   <div key={skill.label} className="flex items-center gap-3">
                     {/* Connector line */}
@@ -403,7 +415,9 @@ export default function LegacyAchievementsPage() {
                       </p>
                       {!unlocked && (
                         <p className="text-[10px] text-muted-foreground mt-0.5">
-                          Complete more achievements to unlock
+                          {progress > 0
+                            ? `${progress} / ${goal} progress — keep going!`
+                            : "Complete the linked achievement to unlock"}
                         </p>
                       )}
                     </div>
@@ -422,11 +436,13 @@ export default function LegacyAchievementsPage() {
             </p>
             <div className="grid grid-cols-2 gap-3">
               {INVENTORY_ITEMS.map(item => {
-                const backend = backendMap.get(item.id);
+                const backend = backendMap.get(item.achievementKey);
                 const earned = backend?.unlocked ?? false;
+                const progress = backend?.progress ?? 0;
+                const goal = backend?.goal ?? 1;
                 return (
                   <div
-                    key={item.id}
+                    key={item.achievementKey}
                     className={`p-4 rounded-xl border text-center ${
                       earned
                         ? "bg-amber-400/5 border-amber-400/20"
@@ -438,11 +454,15 @@ export default function LegacyAchievementsPage() {
                     </div>
                     <p className="text-xs font-semibold text-foreground">{item.label}</p>
                     <p className="text-[10px] text-muted-foreground mt-1 leading-tight">{item.desc}</p>
-                    {earned && (
+                    {earned ? (
                       <span className="inline-block mt-2 text-[9px] bg-amber-400 text-black px-1.5 py-0.5 rounded-full font-bold">
                         COLLECTED
                       </span>
-                    )}
+                    ) : progress > 0 ? (
+                      <span className="inline-block mt-2 text-[9px] text-muted-foreground px-1.5 py-0.5 rounded-full border border-border">
+                        {progress} / {goal}
+                      </span>
+                    ) : null}
                   </div>
                 );
               })}

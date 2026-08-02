@@ -1,34 +1,22 @@
 /**
- * Niakofa — Legacy Mode Reunion Challenge
+ * Niakofa — Legacy Mode Reunion Challenges
  *
- * legacy-home.tsx's Reunion Mode panel rendered a "Family Reunion Challenge"
- * leaderboard, but every number in it was fabricated client-side:
- *   {(5 - i) * 400 + 200} XP
- * — literally derived from the member's position in the array, not from
- * anything the family actually did. That's exactly the "multiplayer is
- * currently not multiplayer" / "leaderboard derived from the family member
- * list" gap called out in the Legacy Mode design docs.
- *
- * This is a first real slice of that gap: a single family-wide challenge
- * ("record one elder's story each") with progress and a leaderboard computed
- * directly from real family_interviews rows (status = "published", the same
- * bar legacy-achievements.ts's "Voice of the Elders" achievement uses), no
- * fabricated numbers. It does not yet build the full "multiple concurrent
- * challenges with persisted rewards" infrastructure the design docs describe
- * (legacy_reunion_challenges / contributions would need their own schema and
- * design pass) — that remains a real, larger Phase 4 gap. This endpoint
- * replaces the fake data with real data for the one challenge already shown
- * in the UI.
+ * Replaces the single hardcoded reunion challenge with a template-based
+ * system that generates multiple real challenges from family vault data.
+ * Each challenge tracks real progress from family_interviews, family_memories,
+ * family_places, and family_members — no fabricated numbers.
  *
  * Routes:
- *   GET /api/legacy/reunion/:familyId — real challenge progress + leaderboard
+ *   GET /api/legacy/reunion/:familyId — all active challenges + leaderboard
  */
 
 import { Router } from "express";
 import {
   db,
   familyMembersTable,
+  familyMemoriesTable,
   familyInterviewsTable,
+  familyPlacesTable,
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
@@ -37,12 +25,52 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
-// The one challenge currently surfaced in legacy-home.tsx's Reunion panel.
-// Goal/reward text match what was previously hardcoded in the frontend, now
-// served from the backend alongside real progress instead of being baked
-// into the component.
-const REUNION_GOAL = 5;
-const REUNION_REWARD = "The Family Migration Story";
+// ── Challenge templates ─────────────────────────────────────────────────────
+// Each template defines how a challenge's progress is computed from real DB
+// data. Templates are parameterized by family, not hardcoded to one shape.
+interface ReunionTemplate {
+  id: string;
+  title: string;
+  description: string;
+  reward: string;
+  goal: number;
+  metric: "interviews" | "memories" | "places" | "members";
+}
+
+const TEMPLATES: ReunionTemplate[] = [
+  {
+    id: "elder_stories",
+    title: "Family Reunion Event",
+    description: "Everyone must record one elder's story.",
+    reward: "The Family Migration Story",
+    goal: 5,
+    metric: "interviews",
+  },
+  {
+    id: "memory_drive",
+    title: "Memory Drive",
+    description: "Collect family photos and stories together.",
+    reward: "Family Heritage Collection",
+    goal: 10,
+    metric: "memories",
+  },
+  {
+    id: "landmark_quest",
+    title: "Landmark Quest",
+    description: "Tag family landmarks and places of significance.",
+    reward: "Family World Map Expansion",
+    goal: 5,
+    metric: "places",
+  },
+  {
+    id: "family_circle",
+    title: "Family Circle",
+    description: "Invite and connect more family members.",
+    reward: "Bridge Builder Achievement",
+    goal: 5,
+    metric: "members",
+  },
+];
 
 async function isMember(userId: number, familyId: number): Promise<boolean> {
   const [row] = await db
@@ -74,6 +102,49 @@ router.get(
     }
 
     try {
+      // Compute real counts for each metric in one pass
+      const [
+        [{ count: interviewCount }],
+        [{ count: memoryCount }],
+        [{ count: placeCount }],
+        [{ count: memberCount }],
+      ] = await Promise.all([
+        db.select({ count: sql<number>`count(*)::int` })
+          .from(familyInterviewsTable)
+          .where(and(eq(familyInterviewsTable.family_id, familyId), eq(familyInterviewsTable.status, "published"))),
+        db.select({ count: sql<number>`count(*)::int` })
+          .from(familyMemoriesTable)
+          .where(eq(familyMemoriesTable.family_id, familyId)),
+        db.select({ count: sql<number>`count(*)::int` })
+          .from(familyPlacesTable)
+          .where(eq(familyPlacesTable.family_id, familyId)),
+        db.select({ count: sql<number>`count(*)::int` })
+          .from(familyMembersTable)
+          .where(and(eq(familyMembersTable.family_id, familyId), eq(familyMembersTable.status, "active"))),
+      ]);
+
+      const metricCounts: Record<ReunionTemplate["metric"], number> = {
+        interviews: interviewCount,
+        memories: memoryCount,
+        places: placeCount,
+        members: memberCount,
+      };
+
+      // Build challenges from templates with real progress
+      const challenges = TEMPLATES.map((t) => {
+        const progress = metricCounts[t.metric];
+        return {
+          id: t.id,
+          title: t.title,
+          description: t.description,
+          goal: t.goal,
+          progress: Math.min(progress, t.goal),
+          reward: t.reward,
+          completed: progress >= t.goal,
+          metric: t.metric,
+        };
+      });
+
       // Real leaderboard: published interviews grouped by the family member
       // who recorded them (interviewer_id -> family_members.user_id, scoped
       // to this family so a member's contributions to a *different* family
@@ -107,22 +178,18 @@ router.get(
         .slice(0, 10)
         .map((r) => ({ memberId: r.memberId, name: r.name, publishedInterviews: r.count }));
 
-      const progress = rows.reduce((sum, r) => sum + r.count, 0);
+      // Primary challenge (first template) for backwards compatibility with
+      // legacy-home.tsx which reads challenge.goal / challenge.progress / etc.
+      const primary = challenges[0];
 
       return res.json({
-        challenge: {
-          title: "Family Reunion Event",
-          description: "Everyone must record one elder's story.",
-          goal: REUNION_GOAL,
-          progress: Math.min(progress, REUNION_GOAL),
-          reward: REUNION_REWARD,
-          completed: progress >= REUNION_GOAL,
-        },
+        challenge: primary,
+        challenges,
         leaderboard,
       });
     } catch (err) {
       logger.error({ err, familyId }, "legacy-reunion: failed to compute challenge state");
-      return res.status(500).json({ error: "Failed to load reunion challenge" });
+      return res.status(500).json({ error: "Failed to load reunion challenges" });
     }
   },
 );
