@@ -32,6 +32,7 @@ import {
   db,
   familyMembersTable,
   familyMemoriesTable,
+  familyMemoryAssetsTable,
   familyInterviewsTable,
   familyStoriesTable,
   familyEventsTable,
@@ -51,13 +52,14 @@ interface KnowledgeSnapshot {
   asset_ids: string[];
 }
 
-const CATEGORY_LABELS: Record<keyof Omit<KnowledgeSnapshot, "asset_ids">, string> = {
+const CATEGORY_LABELS: Record<keyof KnowledgeSnapshot, string> = {
   member_ids: "family member",
   memory_ids: "memory",
   interview_ids: "interview",
   story_ids: "story",
   place_ids: "place",
   event_ids: "event",
+  asset_ids: "photo / audio asset",
 };
 
 /** id[:updated_at] token so an edit (not just a new row) also changes the hash. */
@@ -67,7 +69,7 @@ function idToken(id: number, updatedAt: Date | string | null | undefined): strin
 }
 
 async function buildSnapshot(familyId: number): Promise<KnowledgeSnapshot> {
-  const [members, memories, interviews, stories, places, events] = await Promise.all([
+  const [members, memories, interviews, stories, places, events, assets] = await Promise.all([
     db
       .select({ id: familyMembersTable.id, updated: familyMembersTable.updated_at })
       .from(familyMembersTable)
@@ -95,6 +97,11 @@ async function buildSnapshot(familyId: number): Promise<KnowledgeSnapshot> {
       .select({ id: familyEventsTable.id, updated: familyEventsTable.updated_at })
       .from(familyEventsTable)
       .where(eq(familyEventsTable.family_id, familyId)),
+    db
+      .select({ id: familyMemoryAssetsTable.id, updated: familyMemoryAssetsTable.created_at })
+      .from(familyMemoryAssetsTable)
+      .innerJoin(familyMemoriesTable, eq(familyMemoryAssetsTable.memory_id, familyMemoriesTable.id))
+      .where(eq(familyMemoriesTable.family_id, familyId)),
   ]);
 
   return {
@@ -104,7 +111,7 @@ async function buildSnapshot(familyId: number): Promise<KnowledgeSnapshot> {
     story_ids: stories.map((s) => idToken(s.id, s.updated)),
     place_ids: places.map((p) => idToken(p.id, p.updated)),
     event_ids: events.map((e) => idToken(e.id, e.updated)),
-    asset_ids: [], // reserved for future asset-level (photo/audio) hashing
+    asset_ids: assets.map((a) => idToken(a.id, a.updated)),
   };
 }
 

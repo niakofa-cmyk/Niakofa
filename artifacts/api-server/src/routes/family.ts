@@ -919,6 +919,8 @@ router.post(
       .values({ memory_id: memoryId, ...parsed.data })
       .returning();
 
+    logWorldEvolution(familyId, "memory_added", `A ${parsed.data.asset_type} was added to a family memory`).catch(() => {});
+
     return res.status(201).json({ asset });
   },
 );
@@ -980,6 +982,7 @@ router.post(
       { familyId, memoryId, assetId: asset.id, assetType, backend: getStorageBackend() },
       "family_asset_uploaded_direct",
     );
+    logWorldEvolution(familyId, "memory_added", `A ${assetType} was uploaded to the Family Vault`).catch(() => {});
     return res.status(201).json({ asset });
   },
 );

@@ -146,7 +146,11 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
   const consentedIds = await getConsentedMemberIds(familyId);
   const consentedMembers = filterConsentedMembers(members, consentedIds);
 
-  // Latest 15 memories — include id and updated_at for strong fingerprint
+  // Latest 50 memories — expanded from 15 so larger family vaults don't
+  // lose their earliest stories from the AI's context window. The knowledge
+  // version snapshot (legacy-knowledge-version.ts) already hashes ALL
+  // memories for regeneration triggers; this limit only affects how many
+  // summaries are sent to the AI quest generator in a single prompt.
   const memories = await db
     .select({
       id:             familyMemoriesTable.id,
@@ -160,7 +164,7 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
     .from(familyMemoriesTable)
     .where(eq(familyMemoriesTable.family_id, familyId))
     .orderBy(desc(familyMemoriesTable.updated_at))
-    .limit(15);
+    .limit(50);
 
   const [{ ic }] = await db
     .select({ ic: sql<number>`count(*)::int` })

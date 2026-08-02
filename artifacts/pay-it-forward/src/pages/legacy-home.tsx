@@ -1427,36 +1427,6 @@ export default function LegacyHomePage() {
             </div>
           )}
 
-          {/* ── Today's Journey (Dynamic Start — Legacy mode only) ── */}
-          {activeMode === "legacy" && ancestor && (
-            <div className="px-4 mb-5">
-              <div className="bg-gradient-to-br from-amber-900/30 to-[#2A1A0F] border border-amber-700/30 rounded-2xl p-4 shadow-lg">
-                <div className="flex items-center gap-2 mb-3">
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  <h2 className="text-xs font-black text-amber-300 uppercase tracking-widest">Today's Journey</h2>
-                </div>
-                <p className="text-sm font-bold text-amber-100 mb-1">You awaken as {memberFirstName(ancestor)}</p>
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  <div className="bg-[#3A2A1A] rounded-lg px-3 py-2">
-                    <p className="text-xs text-amber-700">Year</p>
-                    <p className="text-sm font-bold text-amber-300">{ancestor.birth_year ?? "Unknown"}</p>
-                  </div>
-                  <div className="bg-[#3A2A1A] rounded-lg px-3 py-2">
-                    <p className="text-xs text-amber-700">Location</p>
-                    <p className="text-sm font-bold text-amber-300">{ancestor.location ?? "Unknown"}</p>
-                  </div>
-                </div>
-                <p className="text-xs text-amber-600 mb-3">Today's Goal: Preserve a family memory</p>
-                <button
-                  onClick={() => navigate("/legacy/start")}
-                  className="w-full bg-amber-500/15 border border-amber-600/30 text-amber-300 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70 flex items-center justify-center gap-2"
-                >
-                  <Play className="w-3.5 h-3.5" /> Begin Today's Journey
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* ── AI Dialogue Panel (real scene data, Legacy mode only) ── */}
           {activeMode === "legacy" && (
             <div className="px-4 mb-5">
