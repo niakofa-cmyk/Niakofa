@@ -14,15 +14,15 @@
  * for reservoir invalidation elsewhere in these routes) from every real
  * vault-mutation site: adding a member, memory, interview, or tree relation.
  *
- * Deliberately NOT wired to family_knowledge_versions yet: that table's
- * versioning/snapshot logic is owned by the fingerprint computation in
- * legacy.ts, and duplicating it here risks the two drifting out of sync.
- * knowledge_version_id is left null until a shared version-bumping utility
- * is built as its own follow-up.
+ * Wired to family_knowledge_versions via bumpKnowledgeVersionIfChanged:
+ * after logging the granular change, we recompute the family's knowledge
+ * fingerprint and, if it changed, persist a new version row plus a
+ * "world_regenerated" entry with a real diff summary.
  */
 
 import { db, legacyWorldEvolutionLogTable } from "@workspace/db";
 import { logger } from "./logger";
+import { bumpKnowledgeVersionIfChanged } from "./legacy-knowledge-version";
 
 export type LegacyChangeType =
   | "member_added"
@@ -50,5 +50,15 @@ export async function logWorldEvolution(
   } catch (err) {
     // Never let logging failures break the actual mutation that triggered it.
     logger.error({ err, familyId, changeType }, "legacy-world-evolution: log write failed");
+  }
+
+  // Recursion guard: bumpKnowledgeVersionIfChanged writes its own
+  // "world_regenerated" entry via a direct db.insert (not this function), so
+  // this branch only prevents a caller from manually passing that type in
+  // and re-triggering a check of a version that was just written.
+  if (changeType !== "world_regenerated") {
+    bumpKnowledgeVersionIfChanged(familyId).catch((err) => {
+      logger.error({ err, familyId }, "legacy-world-evolution: knowledge version bump failed");
+    });
   }
 }

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { eq, and, inArray, desc } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@workspace/db";
 import {
   familyPlacesTable,
@@ -15,10 +16,24 @@ import { logger } from "../lib/logger";
 import { getConsentedMemberIds } from "../lib/legacy-consent";
 import { distanceMeters } from "../lib/geo";
 import { syncAchievements } from "./legacy-achievements";
+import { stripTags } from "../lib/sanitize";
+import { logWorldEvolution } from "../lib/legacy-world-evolution";
+import { broadcast } from "../lib/ws-hub";
 
 const CHECKIN_RADIUS_METERS = 500;
+const CAN_WRITE_ROLES: string[] = ["owner", "curator", "contributor"];
 
 const router = Router();
+
+const CreatePlaceSchema = z.object({
+  label: z.string().min(1).max(200).transform((s) => stripTags(s)),
+  placeType: z.enum(["village", "town", "city", "school", "church", "cemetery", "business", "landmark"]).optional(),
+  country: z.string().max(100).optional().transform((s) => (s ? stripTags(s) : s)),
+  region: z.string().max(100).optional().transform((s) => (s ? stripTags(s) : s)),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+  notes: z.string().max(2000).optional().transform((s) => (s ? stripTags(s) : s)),
+});
 
 interface MapPlace {
   id: number;
@@ -284,6 +299,70 @@ router.post(
     } catch (err) {
       logger.error({ err, familyId, placeId }, "legacy-map: checkin failed");
       return res.status(500).json({ error: "Failed to check in" });
+    }
+  },
+);
+
+// POST /legacy/map/:familyId/places — tag a new family landmark
+//
+// This is the write path family_places never had: the schema, the map read
+// side (above), and even the GPS check-in flow all assumed places existed,
+// but nothing let a family actually add one. "A tagged family landmark
+// expands the exploration map" only becomes true once this exists.
+router.post(
+  "/legacy/map/:familyId/places",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const familyId = parseInt(String(req.params.familyId), 10);
+    if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const userId = req.authenticatedUserId!;
+    const [membership] = await db
+      .select({ role: familyMembersTable.role })
+      .from(familyMembersTable)
+      .where(and(
+        eq(familyMembersTable.family_id, familyId),
+        eq(familyMembersTable.user_id, userId),
+        eq(familyMembersTable.status, "active"),
+      ))
+      .limit(1);
+
+    if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
+      return res.status(403).json({ error: "Contributor access or higher required to tag a landmark" });
+    }
+
+    const parsed = CreatePlaceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+    }
+
+    const { label, placeType, country, region, lat, lng, notes } = parsed.data;
+
+    try {
+      const [place] = await db
+        .insert(familyPlacesTable)
+        .values({
+          family_id: familyId,
+          label,
+          place_type: placeType ?? null,
+          country: country ?? null,
+          region: region ?? null,
+          lat: lat ?? null,
+          lng: lng ?? null,
+          notes: notes ?? null,
+        })
+        .returning();
+
+      broadcast({ type: "family_place_created", payload: { family_id: familyId, place_id: place.id, created_by: userId } });
+
+      logger.info({ familyId, placeId: place.id, userId }, "legacy-map: place created");
+      logWorldEvolution(familyId, "place_added", `${label} was added to the family world map`).catch(() => {});
+
+      return res.status(201).json({ place });
+    } catch (err) {
+      logger.error({ err, familyId }, "legacy-map: place creation failed");
+      return res.status(500).json({ error: "Failed to tag landmark" });
     }
   },
 );

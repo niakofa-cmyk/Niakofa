@@ -50,6 +50,7 @@ import {
   familyMemoryCommentsTable,
   familyMemoryAssetsTable,
   familyInterviewsTable,
+  familyStoriesTable,
   usersTable,
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/auth";
@@ -193,6 +194,17 @@ const CreateInterviewSchema = z.object({
 const UpdateInterviewSchema = z.object({
   status:              z.enum(["scheduled", "recording", "transcribing", "review", "published"]),
   resulting_memory_id: z.number().int().positive().optional(),
+});
+
+const CreateStorySchema = z.object({
+  title:            z.string().min(1).max(200).transform((s) => stripTags(s)),
+  body:             z.string().min(1).max(50000).transform((s) => stripTags(s)),
+  category:         z.enum(["oral", "written", "tradition", "recipe", "song", "proverb", "biography"]).optional(),
+  language:         z.string().max(50).optional().transform((s) => (s ? stripTags(s) : s)),
+  teller_member_id: z.number().int().positive().optional(),
+  about_member_id:  z.number().int().positive().optional(),
+  memory_id:        z.number().int().positive().optional(),
+  tags:             z.array(z.string().max(50)).max(20).optional(),
 });
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -1308,6 +1320,72 @@ router.patch("/family/:id/interviews/:interviewId", generalApiLimiter, requireAu
   broadcast({ type: "family_interview_status_changed", payload: { family_id: familyId, interview_id: interview.id, status: interview.status } });
 
   return res.json({ interview });
+});
+
+// ─── Stories ──────────────────────────────────────────────────────────────────
+// family_stories had a schema and was read by the Legacy Engine (quest/reservoir
+// fingerprint, gameplay-generated story records) but had no user-facing write
+// path of its own — "record a story" only ever happened as a side effect of
+// playing a chapter, never as a real vault action a family could take. This is
+// the missing "Oral Story Recording" write path the Legacy Mode design docs
+// describe.
+
+// POST /family/:id/stories — record a family story
+router.post("/family/:id/stories", generalApiLimiter, requireAuth, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const familyId = Number(req.params.id);
+  if (!familyId) return res.status(400).json({ error: "Invalid family id" });
+
+  const membership = await getFamilyMembership(familyId, userId);
+  if (!membership || !CAN_WRITE_ROLES.includes(membership.role as string)) {
+    return res.status(403).json({ error: "Contributor access or higher required" });
+  }
+
+  const parsed = CreateStorySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+
+  const { title, body, category, language, teller_member_id, about_member_id, memory_id, tags } = parsed.data;
+
+  const [story] = await db
+    .insert(familyStoriesTable)
+    .values({
+      family_id: familyId,
+      title,
+      body,
+      category: category ?? null,
+      language: language ?? null,
+      teller_member_id: teller_member_id ?? null,
+      about_member_id: about_member_id ?? null,
+      memory_id: memory_id ?? null,
+      tags: tags ?? [],
+    })
+    .returning();
+
+  broadcast({ type: "family_story_created", payload: { family_id: familyId, story_id: story.id, author_id: userId } });
+
+  logger.info({ familyId, storyId: story.id, userId }, "family_story_created");
+  logWorldEvolution(familyId, "story_added", story.title ?? undefined).catch(() => {});
+  return res.status(201).json({ story });
+});
+
+// GET /family/:id/stories — list stories
+router.get("/family/:id/stories", generalApiLimiter, requireAuth, async (req, res) => {
+  const userId = req.authenticatedUserId!;
+  const familyId = Number(req.params.id);
+  if (!familyId) return res.status(400).json({ error: "Invalid family id" });
+
+  const membership = await getFamilyMembership(familyId, userId);
+  if (!membership) return res.status(403).json({ error: "Not a member of this family" });
+
+  const stories = await db
+    .select()
+    .from(familyStoriesTable)
+    .where(eq(familyStoriesTable.family_id, familyId))
+    .orderBy(desc(familyStoriesTable.created_at));
+
+  return res.json({ stories });
 });
 
 export default router;

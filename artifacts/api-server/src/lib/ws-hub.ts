@@ -88,6 +88,8 @@ export type WsEventType =
   // Diaspora Platform — Family Vault events (scoped to family members)
   | "family_memory_created"
   | "family_interview_status_changed"
+  | "family_story_created"
+  | "family_place_created"
   | "circle_participant_joined"
   | "circle_participant_left"
   | "circle_hand_raised"

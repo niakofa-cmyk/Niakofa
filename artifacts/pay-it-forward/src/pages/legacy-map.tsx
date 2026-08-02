@@ -1,10 +1,13 @@
 /**
- * Legacy World Map — real family places with GPS check-in.
+ * Legacy World Map — real family places with GPS check-in + landmark tagging.
  *
  * Shows family_places as pins on a Mapbox map (or a chronological list
  * fallback when Mapbox is unavailable). Each place can be "discovered" by
  * physically visiting it and checking in via GPS. Discovery is family-scoped
  * — the first member to check in unlocks the place for everyone.
+ *
+ * Families can also tag new landmarks directly from this page via the
+ * AddPlaceModal — the write path family_places never had before.
  *
  * Degrades gracefully: if Mapbox isn't configured, or a family's places
  * don't have coordinates yet, falls back to the same chronological list
@@ -17,7 +20,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useLocation } from "wouter";
 import MapGL, { Marker, Popup, Source, Layer } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { ArrowLeft, MapPin, Loader2, Church, School, Home, Landmark, Building2, TreePine, CheckCircle2, Navigation } from "lucide-react";
+import { ArrowLeft, MapPin, Loader2, Church, School, Home, Landmark, Building2, TreePine, CheckCircle2, Navigation, Plus, X } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 
@@ -50,6 +53,17 @@ type CheckinState =
   | { status: "locating" }
   | { status: "submitting" }
   | { status: "error"; message: string };
+
+const PLACE_TYPE_OPTIONS = [
+  { value: "village", label: "Village" },
+  { value: "town", label: "Town" },
+  { value: "city", label: "City" },
+  { value: "school", label: "School" },
+  { value: "church", label: "Church" },
+  { value: "cemetery", label: "Cemetery" },
+  { value: "business", label: "Business" },
+  { value: "landmark", label: "Landmark" },
+] as const;
 
 const PLACE_ICONS: Record<string, typeof MapPin> = {
   village: Home,
@@ -112,6 +126,132 @@ function PlaceDiscoveryControl({
   );
 }
 
+function AddPlaceModal({
+  onClose,
+  onSubmit,
+}: {
+  onClose: () => void;
+  onSubmit: (input: { label: string; placeType?: string; country?: string; region?: string; notes?: string; useCurrentLocation: boolean }) => Promise<void>;
+}) {
+  const [label, setLabel] = useState("");
+  const [placeType, setPlaceType] = useState<string>("landmark");
+  const [country, setCountry] = useState("");
+  const [region, setRegion] = useState("");
+  const [notes, setNotes] = useState("");
+  const [useCurrentLocation, setUseCurrentLocation] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (!label.trim()) {
+      setFormError("Give the place a name.");
+      return;
+    }
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      await onSubmit({ label: label.trim(), placeType, country: country.trim() || undefined, region: region.trim() || undefined, notes: notes.trim() || undefined, useCurrentLocation });
+      onClose();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Failed to tag landmark");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-md bg-[#2A1A0F] border border-amber-900/40 rounded-2xl p-5 max-h-[85vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-black text-amber-100 uppercase tracking-widest">Tag a Family Landmark</h2>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-amber-900/30">
+            <X className="w-4 h-4 text-amber-500" />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-wide text-amber-700">Name</label>
+            <input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. Grandma's Church, Cape Coast Castle"
+              style={{ fontSize: "16px" }}
+              className="mt-1 w-full rounded-lg bg-[#1A0F08] border border-amber-900/40 px-3 py-2 text-sm text-amber-50 placeholder:text-amber-800"
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-wide text-amber-700">Type</label>
+            <select
+              value={placeType}
+              onChange={(e) => setPlaceType(e.target.value)}
+              style={{ fontSize: "16px" }}
+              className="mt-1 w-full rounded-lg bg-[#1A0F08] border border-amber-900/40 px-3 py-2 text-sm text-amber-50"
+            >
+              {PLACE_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-amber-700">Region</label>
+              <input
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+                style={{ fontSize: "16px" }}
+                className="mt-1 w-full rounded-lg bg-[#1A0F08] border border-amber-900/40 px-3 py-2 text-sm text-amber-50"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wide text-amber-700">Country</label>
+              <input
+                value={country}
+                onChange={(e) => setCountry(e.target.value)}
+                style={{ fontSize: "16px" }}
+                className="mt-1 w-full rounded-lg bg-[#1A0F08] border border-amber-900/40 px-3 py-2 text-sm text-amber-50"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-wide text-amber-700">Notes</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              placeholder="What happened here?"
+              style={{ fontSize: "16px" }}
+              className="mt-1 w-full rounded-lg bg-[#1A0F08] border border-amber-900/40 px-3 py-2 text-sm text-amber-50 placeholder:text-amber-800 resize-none"
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-xs text-amber-300">
+            <input type="checkbox" checked={useCurrentLocation} onChange={(e) => setUseCurrentLocation(e.target.checked)} />
+            Use my current location for this place
+          </label>
+
+          {formError && <p className="text-xs text-red-400">{formError}</p>}
+
+          <button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="w-full flex items-center justify-center gap-2 rounded-lg bg-amber-600 text-white text-sm font-bold py-2.5 active:bg-amber-700 disabled:opacity-60"
+          >
+            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            {submitting ? "Adding..." : "Add to Family World Map"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function LegacyMapPage() {
   const { currentUser } = useAppContext();
   const [, navigate] = useLocation();
@@ -121,6 +261,18 @@ export default function LegacyMapPage() {
   const [error, setError] = useState<string | null>(null);
   const [activePlaceId, setActivePlaceId] = useState<number | null>(null);
   const [checkins, setCheckins] = useState<Record<number, CheckinState>>({});
+  const [showAddPlace, setShowAddPlace] = useState(false);
+
+  const refetchMap = useCallback(async (targetFamilyId: number) => {
+    try {
+      const res = await fetch(`/api/legacy/map/${targetFamilyId}`, { headers: authHeaders() });
+      if (!res.ok) return;
+      const body = await res.json();
+      setData(body);
+    } catch {
+      // Non-fatal — the just-added place is still saved even if the refresh fails.
+    }
+  }, []);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -149,6 +301,46 @@ export default function LegacyMapPage() {
       }
     })();
   }, [currentUser]);
+
+  const addPlace = useCallback(async (input: { label: string; placeType?: string; country?: string; region?: string; notes?: string; useCurrentLocation: boolean }) => {
+    if (!familyId) throw new Error("No family selected");
+
+    let lat: number | undefined;
+    let lng: number | undefined;
+
+    if (input.useCurrentLocation && "geolocation" in navigator) {
+      try {
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 });
+        });
+        lat = position.coords.latitude;
+        lng = position.coords.longitude;
+      } catch {
+        // Location denied/unavailable — still save the place without coordinates.
+      }
+    }
+
+    const res = await fetch(`/api/legacy/map/${familyId}/places`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: input.label,
+        placeType: input.placeType,
+        country: input.country,
+        region: input.region,
+        notes: input.notes,
+        lat,
+        lng,
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+
+    setError(null);
+    await refetchMap(familyId);
+  }, [familyId, refetchMap]);
 
   const checkIn = useCallback((placeId: number) => {
     if (!familyId) return;
@@ -227,8 +419,18 @@ export default function LegacyMapPage() {
   if (!data || data.places.length === 0) {
     return (
       <div className="min-h-screen bg-[#1A0F08] flex flex-col items-center justify-center gap-4 p-6">
-        <p className="text-amber-400 text-sm text-center">No family places yet. Add locations in the Family Vault to see your world map.</p>
+        <p className="text-amber-400 text-sm text-center">No family places yet. Tag your first landmark to start building your world map.</p>
+        <button
+          onClick={() => setShowAddPlace(true)}
+          className="flex items-center gap-2 rounded-lg bg-amber-600 text-white text-sm font-bold px-4 py-2.5 active:bg-amber-700"
+        >
+          <Plus className="w-4 h-4" />
+          Tag a Landmark
+        </button>
         <button onClick={() => navigate("/")} className="text-amber-500 text-xs underline">Back to map</button>
+        {showAddPlace && (
+          <AddPlaceModal onClose={() => setShowAddPlace(false)} onSubmit={addPlace} />
+        )}
       </div>
     );
   }
@@ -244,13 +446,26 @@ export default function LegacyMapPage() {
           <h1 className="text-sm font-black text-amber-100 uppercase tracking-widest">Family World Map</h1>
           <p className="text-xs text-amber-700">Your family's real places, in the order they were lived</p>
         </div>
-        {data.places.length > 0 && (
-          <div className="flex-shrink-0 text-right">
-            <p className="text-sm font-black text-amber-400">{data.placesDiscovered}/{data.places.length}</p>
-            <p className="text-[10px] text-amber-800 uppercase tracking-wide">Discovered</p>
-          </div>
-        )}
+        <div className="flex-shrink-0 flex items-center gap-2">
+          {data.places.length > 0 && (
+            <div className="text-right">
+              <p className="text-sm font-black text-amber-400">{data.placesDiscovered}/{data.places.length}</p>
+              <p className="text-[10px] text-amber-800 uppercase tracking-wide">Discovered</p>
+            </div>
+          )}
+          <button
+            onClick={() => setShowAddPlace(true)}
+            className="p-2 rounded-lg bg-amber-900/40 active:bg-amber-900/60"
+            aria-label="Tag a landmark"
+          >
+            <Plus className="w-4 h-4 text-amber-400" />
+          </button>
+        </div>
       </div>
+
+      {showAddPlace && (
+        <AddPlaceModal onClose={() => setShowAddPlace(false)} onSubmit={addPlace} />
+      )}
 
       {mapboxToken && placedPlaces.length > 0 ? (
         <div className="flex-1 relative">

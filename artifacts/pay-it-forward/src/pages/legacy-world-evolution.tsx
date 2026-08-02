@@ -173,18 +173,36 @@ export default function LegacyWorldEvolutionPage() {
         )}
 
         {/* Latest Version */}
-        {summary?.latestVersion && (
-          <div className="bg-amber-900/20 border border-amber-700/40 rounded-2xl p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              <span className="text-xs font-bold uppercase tracking-widest text-amber-600">Latest World Version</span>
+        {summary?.latestVersion && (() => {
+          // Find the most recent "world_regenerated" entry to show what
+          // actually changed, not just the version number — this is the
+          // "3 New Stories, 2 New Characters..." moment from the design docs.
+          const latestRegeneration = log.find((e) => e.change_type === "world_regenerated");
+          return (
+            <div className="bg-amber-900/20 border border-amber-700/40 rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold uppercase tracking-widest text-amber-600">
+                  Your Family World Has Evolved
+                </span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <p className="text-2xl font-black text-amber-200">Version {summary.latestVersion.version}</p>
+                {latestRegeneration?.previous_version != null && (
+                  <p className="text-xs text-stone-500">from v{latestRegeneration.previous_version}</p>
+                )}
+              </div>
+              {latestRegeneration?.change_description && (
+                <p className="text-sm text-amber-100/90 mt-2 leading-snug">
+                  {latestRegeneration.change_description}
+                </p>
+              )}
+              <p className="text-xs text-stone-400 mt-2">
+                Generated {new Date(summary.latestVersion.createdAt).toLocaleDateString()}
+              </p>
             </div>
-            <p className="text-2xl font-black text-amber-200">v{summary.latestVersion.version}</p>
-            <p className="text-xs text-stone-400 mt-1">
-              Generated {new Date(summary.latestVersion.createdAt).toLocaleDateString()}
-            </p>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Evolution Timeline */}
         <div>
