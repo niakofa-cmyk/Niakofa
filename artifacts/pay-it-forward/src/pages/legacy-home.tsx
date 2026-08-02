@@ -30,6 +30,7 @@ import {
   Sparkles, Shield, Zap, Target,
   Volume2, BookOpen, Lock,
   RefreshCw, ChevronLeft, Calendar, TrendingUp,
+  Search,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -1103,6 +1104,29 @@ export default function LegacyHomePage() {
             </div>
           )}
 
+          {/* ── Phase 5 Navigation: AI Director, Mysteries, Characters ── */}
+          {activeMode === "legacy" && (
+            <div className="px-4 mb-5">
+              <div className="grid grid-cols-3 gap-2">
+                <button onClick={() => navigate("/legacy/ai-director")} className="bg-[#2A1A0F] border border-amber-700/30 rounded-xl p-3 text-center active:opacity-70 transition-opacity">
+                  <Sparkles className="w-5 h-5 text-amber-400 mx-auto mb-1" />
+                  <p className="text-[10px] font-bold text-amber-300 uppercase">AI Director</p>
+                  <p className="text-[8px] text-amber-700 mt-0.5">Daily Missions</p>
+                </button>
+                <button onClick={() => navigate("/legacy/mysteries")} className="bg-[#2A1A0F] border border-amber-700/30 rounded-xl p-3 text-center active:opacity-70 transition-opacity">
+                  <Search className="w-5 h-5 text-amber-400 mx-auto mb-1" />
+                  <p className="text-[10px] font-bold text-amber-300 uppercase">Mysteries</p>
+                  <p className="text-[8px] text-amber-700 mt-0.5">Investigate</p>
+                </button>
+                <button onClick={() => navigate("/legacy/characters")} className="bg-[#2A1A0F] border border-amber-700/30 rounded-xl p-3 text-center active:opacity-70 transition-opacity">
+                  <TrendingUp className="w-5 h-5 text-amber-400 mx-auto mb-1" />
+                  <p className="text-[10px] font-bold text-amber-300 uppercase">Characters</p>
+                  <p className="text-[8px] text-amber-700 mt-0.5">Living Family</p>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ── Game Mode Selector ── */}
           <div className="px-4 mb-5">
             <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3">Game Modes</h2>
@@ -1171,6 +1195,7 @@ export default function LegacyHomePage() {
                         <StatBar label="Courage" value={Math.min(100, ancestorCandidate.completenessScore)} color="bg-emerald-500" />
                         <StatBar label="Reputation" value={Math.min(100, ancestorCandidate.photoCount * 10)} color="bg-purple-500" />
                         <StatBar label="Legacy" value={Math.min(100, ancestorCandidate.placeCount * 15)} color="bg-teal-500" />
+                        <StatBar label="Faith" value={Math.min(100, ancestorCandidate.interviewCount * 15 + ancestorCandidate.storyCount * 5)} color="bg-pink-500" />
                       </div>
                     )}
                   </div>

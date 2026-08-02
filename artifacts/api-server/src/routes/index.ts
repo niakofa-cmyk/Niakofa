@@ -47,6 +47,9 @@ import legacyChallengesRouter from "./legacy-challenges";
 import legacySeasonalEventsRouter from "./legacy-seasonal-events";
 import legacyGameMasterRouter from "./legacy-game-master";
 import legacyWorldEvolutionRouter from "./legacy-world-evolution";
+import legacyAiDirectorRouter from "./legacy-ai-director";
+import legacyMemoryMysteriesRouter from "./legacy-memory-mysteries";
+import legacyCharacterEvolutionRouter from "./legacy-character-evolution";
 
 const router: IRouter = Router();
 
@@ -98,5 +101,8 @@ router.use(legacyChallengesRouter);
 router.use(legacySeasonalEventsRouter);
 router.use(legacyGameMasterRouter);
 router.use(legacyWorldEvolutionRouter);
+router.use(legacyAiDirectorRouter);
+router.use(legacyMemoryMysteriesRouter);
+router.use(legacyCharacterEvolutionRouter);
 
 export default router;

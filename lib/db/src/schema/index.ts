@@ -55,3 +55,4 @@ export * from "./legacy-engine";
 export * from "./legacy-place-discoveries";
 export * from "./legacy-phase5";
 export * from "./legacy-family-challenges";
+export * from "./legacy-phase5-enhancements";

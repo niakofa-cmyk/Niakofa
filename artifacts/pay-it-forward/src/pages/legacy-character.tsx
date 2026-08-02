@@ -30,6 +30,7 @@ interface CharacterBio {
     courage: number;
     reputation: number;
     legacy: number;
+    faith: number;
   };
   events: Array<{ id: number; title: string; description: string | null; eventDate: string | null; category: string }>;
   stories: Array<{ id: number; title: string; excerpt: string; category: string | null }>;
