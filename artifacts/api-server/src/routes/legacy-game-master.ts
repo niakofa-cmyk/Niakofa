@@ -25,7 +25,10 @@ import {
   familyStoriesTable,
   familyPlacesTable,
   familyEventsTable,
+  familyKnowledgeVersionsTable,
   legacyGameMasterNarrationsTable,
+  legacyWorldEvolutionLogTable,
+  legacyChaptersTable,
 } from "@workspace/db";
 import { eq, and, desc, inArray, sql, asc } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
@@ -492,6 +495,277 @@ Write the introduction:`,
     } catch (err) {
       logger.error({ err, familyId }, "legacy-game-master: today's journey failed");
       return res.status(500).json({ error: "Failed to generate today's journey" });
+    }
+  },
+);
+
+// ── Daily Legacy Welcome ──────────────────────────────────────────────────────
+// Returns a "welcome back" summary: new memories since last visit, whether
+// the world has evolved, and if new chapters are available. This powers the
+// "Welcome Back — your world has changed" experience from the design docs.
+//
+//   GET /api/legacy/game-master/:familyId/daily-welcome
+
+router.get(
+  "/legacy/game-master/:familyId/daily-welcome",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const familyId = parseInt(String(req.params.familyId), 10);
+    if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, familyId))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
+
+    try {
+      // Get world version info
+      const [latestVersion] = await db
+        .select()
+        .from(familyKnowledgeVersionsTable)
+        .where(eq(familyKnowledgeVersionsTable.family_id, familyId))
+        .orderBy(desc(familyKnowledgeVersionsTable.version))
+        .limit(1);
+
+      // Get recent evolution changes (last 24h)
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const recentChanges = await db
+        .select()
+        .from(legacyWorldEvolutionLogTable)
+        .where(
+          and(
+            eq(legacyWorldEvolutionLogTable.family_id, familyId),
+            sql`${legacyWorldEvolutionLogTable.created_at} >= ${yesterday}`,
+          ),
+        )
+        .orderBy(desc(legacyWorldEvolutionLogTable.created_at))
+        .limit(10);
+
+      // Count new memories in last 24h
+      const newMemResult = await db
+        .select({ cnt: sql`count(*)::int` })
+        .from(familyMemoriesTable)
+        .where(
+          and(
+            eq(familyMemoriesTable.family_id, familyId),
+            sql`${familyMemoriesTable.created_at} >= ${yesterday}`,
+          ),
+        );
+      const newMemoryCount = Number(newMemResult[0]?.cnt ?? 0);
+
+      // Count new members in last 24h
+      const newMemberResult = await db
+        .select({ cnt: sql`count(*)::int` })
+        .from(familyMembersTable)
+        .where(
+          and(
+            eq(familyMembersTable.family_id, familyId),
+            sql`${familyMembersTable.created_at} >= ${yesterday}`,
+          ),
+        );
+      const newMemberCount = Number(newMemberResult[0]?.cnt ?? 0);
+
+      // Check for new chapters (unlocked but not yet played)
+      const newChapters = await db
+        .select()
+        .from(legacyChaptersTable)
+        .where(
+          and(
+            eq(legacyChaptersTable.family_id, familyId),
+            eq(legacyChaptersTable.status, "unlocked"),
+          ),
+        )
+        .orderBy(asc(legacyChaptersTable.chapter_number))
+        .limit(3);
+
+      // Check for upcoming emotional calendar events (next 7 days)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const weekFromNow = new Date(today);
+      weekFromNow.setDate(weekFromNow.getDate() + 7);
+
+      const upcomingEvents = await db
+        .select()
+        .from(familyEventsTable)
+        .where(
+          and(
+            eq(familyEventsTable.family_id, familyId),
+            sql`${familyEventsTable.event_date} >= ${today}`,
+            sql`${familyEventsTable.event_date} <= ${weekFromNow}`,
+          ),
+        )
+        .orderBy(asc(familyEventsTable.event_date))
+        .limit(5);
+
+      const hasChanges = recentChanges.length > 0 || newMemoryCount > 0 || newMemberCount > 0;
+
+      return res.json({
+        hasChanges,
+        worldVersion: latestVersion?.version ?? 0,
+        newMemoryCount,
+        newMemberCount,
+        recentChanges: recentChanges.map((c) => ({
+          changeType: c.change_type,
+          description: c.change_description,
+          createdAt: c.created_at,
+        })),
+        newChapters: newChapters.map((c) => ({
+          id: c.id,
+          title: c.title,
+          chapterNumber: c.chapter_number,
+        })),
+        upcomingEvents: upcomingEvents.map((e) => ({
+          id: e.id,
+          title: e.title,
+          eventDate: e.event_date,
+          category: e.category,
+        })),
+      });
+    } catch (err) {
+      logger.error({ err, familyId }, "legacy-game-master: daily welcome failed");
+      return res.status(500).json({ error: "Failed to get daily welcome" });
+    }
+  },
+);
+
+// ── Emotional Calendar ────────────────────────────────────────────────────────
+// Returns family emotional milestones: birthdays, anniversaries, migration
+// anniversaries, and memorial days. These trigger special quests and
+// remembrance activities from the design docs.
+//
+//   GET /api/legacy/game-master/:familyId/emotional-calendar
+
+router.get(
+  "/legacy/game-master/:familyId/emotional-calendar",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const familyId = parseInt(String(req.params.familyId), 10);
+    if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, familyId))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
+
+    try {
+      const consentedIds = await getConsentedMemberIds(familyId);
+
+      // Get all events for this family
+      const events = await db
+        .select({
+          id: familyEventsTable.id,
+          title: familyEventsTable.title,
+          description: familyEventsTable.description,
+          eventDate: familyEventsTable.event_date,
+          category: familyEventsTable.category,
+          memberId: familyEventsTable.member_id,
+        })
+        .from(familyEventsTable)
+        .where(eq(familyEventsTable.family_id, familyId))
+        .orderBy(asc(familyEventsTable.event_date));
+
+      // Get members for names
+      const members = await db
+        .select({
+          id: familyMembersTable.id,
+          name: familyMembersTable.display_name,
+          is_living: familyMembersTable.is_living,
+        })
+        .from(familyMembersTable)
+        .where(
+          and(
+            eq(familyMembersTable.family_id, familyId),
+            eq(familyMembersTable.status, "active"),
+          ),
+        );
+
+      const memberMap = new Map(members.map((m) => [m.id, m]));
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const currentMonth = today.getMonth();
+      const currentDay = today.getDate();
+
+      // Build emotional calendar entries
+      interface CalendarEntry {
+        id: number;
+        type: string;
+        title: string;
+        description: string | null;
+        date: string | null;
+        memberName: string | null;
+        isToday: boolean;
+        isUpcoming: boolean;
+        daysUntil: number;
+        yearsAgo: number | null;
+      }
+
+      const entries: CalendarEntry[] = [];
+
+      for (const event of events) {
+        // Only include events for consented members
+        if (event.memberId && !consentedIds.has(event.memberId)) continue;
+
+        if (!event.eventDate) continue;
+        const eventDate = new Date(event.eventDate);
+        const member = event.memberId ? memberMap.get(event.memberId) : null;
+
+        // Check if this event's anniversary is today or upcoming
+        const anniversaryThisYear = new Date(today.getFullYear(), eventDate.getMonth(), eventDate.getDate());
+        const diffTime = anniversaryThisYear.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        // Only include events within +/- 30 days
+        if (diffDays < -30 || diffDays > 30) continue;
+
+        const isToday = eventDate.getMonth() === currentMonth && eventDate.getDate() === currentDay;
+        const isUpcoming = diffDays >= 0 && diffDays <= 7;
+        const yearsAgo = today.getFullYear() - eventDate.getFullYear();
+
+        let type = "memorial";
+        let title = event.title ?? "Family Event";
+
+        if (event.category === "birth") {
+          type = "birthday";
+          title = member ? `${member.name}'s Birthday` : "Birthday";
+        } else if (event.category === "marriage" || event.category === "wedding") {
+          type = "anniversary";
+          title = member ? `${member.name}'s Anniversary` : "Anniversary";
+        } else if (event.category === "migration") {
+          type = "migration_anniversary";
+          title = member ? `${member.name}'s Migration` : "Migration Anniversary";
+        } else if (event.category === "death") {
+          type = "memorial";
+          title = member ? `In Memory of ${member.name}` : "Memorial";
+        }
+
+        entries.push({
+          id: event.id,
+          type,
+          title,
+          description: event.description,
+          date: event.eventDate ? event.eventDate.toISOString() : null,
+          memberName: member?.name ?? null,
+          isToday,
+          isUpcoming,
+          daysUntil: diffDays,
+          yearsAgo: yearsAgo > 0 ? yearsAgo : null,
+        });
+      }
+
+      // Sort by daysUntil (closest first)
+      entries.sort((a, b) => {
+        if (a.daysUntil < 0 && b.daysUntil >= 0) return 1;
+        if (a.daysUntil >= 0 && b.daysUntil < 0) return -1;
+        return Math.abs(a.daysUntil) - Math.abs(b.daysUntil);
+      });
+
+      return res.json({ calendar: entries.slice(0, 20) });
+    } catch (err) {
+      logger.error({ err, familyId }, "legacy-game-master: emotional calendar failed");
+      return res.status(500).json({ error: "Failed to get emotional calendar" });
     }
   },
 );

@@ -506,49 +506,104 @@ async function buildChapterScenes(
     country:  places[0]?.country ?? null,
   });
 
-  const scenes: ChapterScene[] = [
-    {
-      sceneNumber: 1,
-      title: "Setting",
-      type: "narration",
-      content: places[0]
-        ? `${data.era ?? "Unknown"} — ${places[0].label}${places[0].country ? `, ${places[0].country}` : ""}`
-        : `${data.era ?? "Unknown"} — ${data.location ?? "Unknown"}`,
+  // ── Build scenes from ALL available vault data, not just the first item ──
+  // Each place, event, and memory becomes its own scene when available,
+  // creating a richer, more varied chapter that uses the full family vault.
+  const scenes: ChapterScene[] = [];
+  let sceneNum = 1;
+
+  // Scene 1: Setting — time and place
+  scenes.push({
+    sceneNumber: sceneNum++,
+    title: "Setting",
+    type: "narration",
+    content: places[0]
+      ? `${data.era ?? "Unknown"} — ${places[0].label}${places[0].country ? `, ${places[0].country}` : ""}${places[0].place_type ? ` (${places[0].place_type})` : ""}`
+      : `${data.era ?? "Unknown"} — ${data.location ?? "Unknown"}`,
+    placeId: places[0]?.id ?? null,
+    historicalLayer: "verified",
+  });
+
+  // Scene 2: Historical context (if available)
+  if (historicalContext) {
+    scenes.push({
+      sceneNumber: sceneNum++,
+      title: "The World Around Them",
+      type: "context",
+      content: historicalContext.summary,
+      topics: historicalContext.topics,
       placeId: places[0]?.id ?? null,
+      eventId: null,
+      memoryId: null,
+      historicalLayer: "historical_context",
+    });
+  }
+
+  // Scenes 3..N: Each event becomes a dialogue scene
+  for (const event of events.slice(0, 4)) {
+    scenes.push({
+      sceneNumber: sceneNum++,
+      title: event.title ?? "A Moment in History",
+      type: "dialogue",
+      content: event.description ?? event.title ?? "A moment in your family's history.",
+      eventId: event.id,
+      placeId: null,
       historicalLayer: "verified",
-    },
-    ...(historicalContext
-      ? [{
-          sceneNumber: 2,
-          title: "The World Around Them",
-          type: "context",
-          content: historicalContext.summary,
-          topics: historicalContext.topics,
-          placeId: places[0]?.id ?? null,
-          eventId: null,
-          memoryId: null,
-          historicalLayer: "historical_context" as const,
-        }]
-      : []),
-    {
-      sceneNumber: historicalContext ? 3 : 2,
+    });
+  }
+
+  // If no events, add a narrative placeholder
+  if (events.length === 0) {
+    scenes.push({
+      sceneNumber: sceneNum++,
       title: "The Event",
       type: "dialogue",
-      content: events[0]?.description ?? events[0]?.title ?? "A moment in your family's history.",
-      eventId: events[0]?.id ?? null,
+      content: "A moment in your family's history, waiting to be discovered.",
+      eventId: null,
       placeId: null,
-      historicalLayer: events[0] ? "verified" : "narrative_interpretation",
-    },
-    {
-      sceneNumber: historicalContext ? 4 : 3,
+      historicalLayer: "narrative_interpretation",
+    });
+  }
+
+  // Scenes N+1..M: Each memory becomes a reflection scene
+  for (const memory of memories.slice(0, 3)) {
+    scenes.push({
+      sceneNumber: sceneNum++,
+      title: memory.title ?? "A Family Memory",
+      type: "reflection",
+      content: memory.description ?? memory.title ?? "How the family remembers this time.",
+      memoryId: memory.id,
+      placeId: null,
+      historicalLayer: "verified",
+    });
+  }
+
+  // If no memories, add a reflection placeholder
+  if (memories.length === 0) {
+    scenes.push({
+      sceneNumber: sceneNum++,
       title: "The Memory",
       type: "reflection",
-      content: memories[0]?.description ?? memories[0]?.title ?? "How the family remembers this time.",
-      memoryId: memories[0]?.id ?? null,
+      content: "How the family remembers this time — preserve a memory to enrich this scene.",
+      memoryId: null,
       placeId: null,
-      historicalLayer: memories[0] ? "verified" : "narrative_interpretation",
-    },
-  ];
+      historicalLayer: "narrative_interpretation",
+    });
+  }
+
+  // Final scene: Looking forward — additional places as discovery prompts
+  if (places.length > 1) {
+    for (const place of places.slice(1, 3)) {
+      scenes.push({
+        sceneNumber: sceneNum++,
+        title: place.label,
+        type: "narration",
+        content: `${place.label}${place.country ? `, ${place.country}` : ""}${place.place_type ? ` — ${place.place_type}` : ""}`,
+        placeId: place.id,
+        historicalLayer: "verified",
+      });
+    }
+  }
 
   return { scenes, vaultContext: { places, events, memories } };
 }

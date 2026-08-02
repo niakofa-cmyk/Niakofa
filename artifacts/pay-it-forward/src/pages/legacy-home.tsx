@@ -397,6 +397,22 @@ export default function LegacyHomePage() {
     recentChanges: Array<{ id: number; changeType: string; description: string; affectedCount: number; createdAt: string; newVersion: number | null }>;
   } | null>(null);
 
+  // ── Daily Welcome + Emotional Calendar (Phase 5: Living Family Universe) ──
+  const [dailyWelcome, setDailyWelcome] = useState<{
+    hasChanges: boolean;
+    worldVersion: number;
+    newMemoryCount: number;
+    newMemberCount: number;
+    recentChanges: Array<{ changeType: string; description: string; createdAt: string }>;
+    newChapters: Array<{ id: number; title: string; chapterNumber: number }>;
+    upcomingEvents: Array<{ id: number; title: string; eventDate: string; category: string }>;
+  } | null>(null);
+  const [emotionalCalendar, setEmotionalCalendar] = useState<Array<{
+    id: number; type: string; title: string; description: string | null;
+    date: string | null; memberName: string | null; isToday: boolean; isUpcoming: boolean;
+    daysUntil: number; yearsAgo: number | null;
+  }>>([]);
+
   // ── Load family data ──────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
@@ -483,6 +499,20 @@ export default function LegacyHomePage() {
         if (versionRes.ok) {
           const vd = await versionRes.json();
           setWorldVersion(vd);
+        }
+
+        // Load daily welcome + emotional calendar
+        const [welcomeRes, calendarRes] = await Promise.all([
+          fetch(`/api/legacy/game-master/${familyId}/daily-welcome`, { headers: authHeaders() }),
+          fetch(`/api/legacy/game-master/${familyId}/emotional-calendar`, { headers: authHeaders() }),
+        ]);
+        if (welcomeRes.ok) {
+          const wd = await welcomeRes.json();
+          setDailyWelcome(wd);
+        }
+        if (calendarRes.ok) {
+          const cd = await calendarRes.json();
+          setEmotionalCalendar(cd.calendar ?? []);
         }
       } catch {
         // Silent fail
@@ -997,6 +1027,78 @@ export default function LegacyHomePage() {
                     ))}
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Daily Welcome (Phase 5: Living Family Universe) ── */}
+          {activeMode === "legacy" && dailyWelcome && dailyWelcome.hasChanges && (
+            <div className="px-4 mb-5">
+              <div className="bg-gradient-to-r from-amber-500/10 to-amber-900/10 border border-amber-500/30 rounded-2xl p-4 shadow-lg">
+                <div className="flex items-center gap-2 mb-3">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <h2 className="text-xs font-black text-amber-400 uppercase tracking-widest">Your Family World Has Evolved</h2>
+                </div>
+                <div className="space-y-2">
+                  {dailyWelcome.newMemoryCount > 0 && (
+                    <p className="text-sm text-amber-200">{dailyWelcome.newMemoryCount} new {dailyWelcome.newMemoryCount === 1 ? "memory" : "memories"} added</p>
+                  )}
+                  {dailyWelcome.newMemberCount > 0 && (
+                    <p className="text-sm text-amber-200">{dailyWelcome.newMemberCount} new {dailyWelcome.newMemberCount === 1 ? "family member" : "family members"} connected</p>
+                  )}
+                  {dailyWelcome.newChapters.length > 0 && (
+                    <div className="pt-2 border-t border-amber-700/30">
+                      <p className="text-xs text-amber-500 uppercase tracking-wide mb-1">New Chapter Unlocked</p>
+                      {dailyWelcome.newChapters.map((ch) => (
+                        <button
+                          key={ch.id}
+                          onClick={() => navigate(`/legacy/chapter/${ch.id}`)}
+                          className="block w-full text-left text-sm text-amber-300 hover:text-amber-200 active:opacity-70 py-1"
+                        >
+                          {ch.title} →
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Emotional Calendar (Phase 5: Living Family Universe) ── */}
+          {activeMode === "legacy" && emotionalCalendar.length > 0 && (
+            <div className="px-4 mb-5">
+              <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3">Family Calendar</h2>
+              <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg space-y-3">
+                {emotionalCalendar.slice(0, 5).map((entry) => (
+                  <div key={entry.id} className="flex items-start gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                      entry.isToday
+                        ? "bg-amber-500/20 border border-amber-400/40"
+                        : entry.type === "birthday"
+                        ? "bg-rose-500/10 border border-rose-500/20"
+                        : entry.type === "anniversary"
+                        ? "bg-purple-500/10 border border-purple-500/20"
+                        : entry.type === "memorial"
+                        ? "bg-stone-500/10 border border-stone-500/20"
+                        : "bg-teal-500/10 border border-teal-500/20"
+                    }`}>
+                      <span className="text-xs font-bold text-amber-300">
+                        {entry.isToday ? "NOW" : entry.daysUntil === 0 ? "TODAY" : entry.daysUntil > 0 ? `${entry.daysUntil}d` : "PAST"}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-amber-100">{entry.title}</p>
+                      <p className="text-xs text-amber-600 mt-0.5">
+                        {entry.yearsAgo ? `${entry.yearsAgo} ${entry.yearsAgo === 1 ? "year" : "years"} ago` : ""}
+                        {entry.memberName && ` · ${entry.memberName}`}
+                      </p>
+                      {entry.description && (
+                        <p className="text-xs text-amber-700 mt-0.5 line-clamp-2">{entry.description}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
