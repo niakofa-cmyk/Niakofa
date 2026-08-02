@@ -175,14 +175,25 @@ router.post("/diaspora/dna/import", requireAuth, generalApiLimiter, async (req, 
   const schema = z.object({
     provider: z.enum(["AncestryDNA", "23andMe", "MyHeritage", "LivingDNA", "FamilyTreeDNA"]),
     sample_id: z.string().optional(),
+    file_name: z.string().optional(),
+    file_size: z.number().optional(),
   });
   const body = schema.safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: "Invalid request" });
 
+  const fileName = body.data.file_name ?? "unknown";
+  const fileSize = body.data.file_size ?? 0;
+
+  logger.info(
+    { userId: req.authenticatedUserId, provider: body.data.provider, fileName, fileSize },
+    "diaspora_dna_import_queued",
+  );
+
   return res.json({
     status: "queued",
-    message: `DNA data from ${body.data.provider} queued for processing. You'll be notified when matches are found.`,
+    message: `DNA data file "${fileName}" (${(fileSize / 1024).toFixed(0)} KB) from ${body.data.provider} queued for processing. You'll be notified when matches are found.`,
     estimated_time: "24-48 hours",
+    file_received: true,
   });
 });
 

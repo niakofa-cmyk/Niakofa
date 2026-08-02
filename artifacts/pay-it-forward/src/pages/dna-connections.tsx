@@ -105,13 +105,14 @@ export default function DnaConnectionsPage() {
     }
     setImportStep("processing");
     try {
-      const formData = new FormData();
-      formData.append("provider", selectedProvider);
-      formData.append("file", dnaFile);
       const res = await fetch("/api/diaspora/dna/import", {
         method: "POST",
-        headers: authHeaders(),
-        body: formData,
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: selectedProvider,
+          file_name: dnaFile.name,
+          file_size: dnaFile.size,
+        }),
       });
       if (!res.ok) throw new Error();
       setImportStep("done");

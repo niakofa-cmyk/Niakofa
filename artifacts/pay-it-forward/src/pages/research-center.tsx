@@ -119,6 +119,30 @@ export default function ResearchCenterPage() {
   const [, navigate] = useLocation();
   const [guides, setGuides] = useState<Guide[]>([]);
   const [loading, setLoading] = useState(true);
+  const [niaInput, setNiaInput] = useState("");
+  const [niaReply, setNiaReply] = useState("");
+  const [niaLoading, setNiaLoading] = useState(false);
+
+  async function askNia() {
+    const msg = niaInput.trim();
+    if (!msg || niaLoading) return;
+    setNiaLoading(true);
+    setNiaInput("");
+    try {
+      const res = await fetch("/api/nia/chat", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ message: msg }),
+      });
+      if (!res.ok) throw new Error("Nia is unavailable");
+      const data = await res.json() as { reply?: string; response?: string; message?: string };
+      setNiaReply(data.reply ?? data.response ?? data.message ?? "Nia didn't respond — try again.");
+    } catch {
+      setNiaReply("Nia is unavailable right now. Please try again in a moment.");
+    } finally {
+      setNiaLoading(false);
+    }
+  }
   const [searchQ, setSearchQ] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -335,12 +359,34 @@ export default function ResearchCenterPage() {
           <p className="text-xs text-muted-foreground leading-relaxed mb-3">
             Nia can help you plan a personalized research strategy, suggest which records to search first, and explain complex genealogy concepts in plain language.
           </p>
-          <button
-            onClick={() => navigate("/diaspora")}
-            className="text-xs text-primary font-medium flex items-center gap-1"
-          >
-            <Sparkles className="w-3 h-3" /> Ask Nia to help with research →
-          </button>
+          {niaReply ? (
+            <div className="bg-background/60 rounded-xl p-3 mb-3">
+              <p className="text-sm text-foreground whitespace-pre-wrap">{niaReply}</p>
+            </div>
+          ) : null}
+          {niaLoading ? (
+            <div className="flex items-center gap-2 mb-3">
+              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+              <span className="text-sm text-muted-foreground">Nia is thinking…</span>
+            </div>
+          ) : null}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={niaInput}
+              onChange={e => setNiaInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && niaInput.trim() && !niaLoading) void askNia(); }}
+              placeholder="Ask about genealogy research…"
+              className="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-sm"
+            />
+            <button
+              onClick={() => { if (niaInput.trim() && !niaLoading) void askNia(); }}
+              disabled={niaLoading}
+              className="bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-medium active:opacity-80 disabled:opacity-50"
+            >
+              Ask
+            </button>
+          </div>
         </div>
       </div>
     </div>
