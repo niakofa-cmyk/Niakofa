@@ -2792,7 +2792,7 @@ export default function AudioCircleRoomScreen() {
                   onOpenPoll={() => setShowPollModal(true)}
                   onOpenQA={() => setShowQAModal(true)}
                   onToggleScreenShare={toggleScreenShare}
-                  onOpenNotes={() => { toast({ title: "Shared notes coming soon" }); }}
+                  onOpenNotes={() => setActiveTab("chat")}
                   onToggleAutoRemove={toggleAutoRemove}
                   autoRemoveEnabled={autoRemoveEnabled}
                   activePoll={activePoll}
