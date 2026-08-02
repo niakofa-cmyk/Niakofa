@@ -415,6 +415,16 @@ export default function LegacyHomePage() {
     daysUntil: number; yearsAgo: number | null;
   }>>([]);
 
+  // ── Family Quests (cooperative, real data from /api/legacy/family-quests/:familyId) ─
+  const [familyQuests, setFamilyQuests] = useState<Array<{
+    key: string; title: string; description: string;
+    goal: number; progress: number; reward: string;
+    completed: boolean;
+    leaderboard: Array<{ memberId: number; name: string; count: number }> | null;
+  }>>([]);
+  const [familyQuestsLoading, setFamilyQuestsLoading] = useState(false);
+  const familyQuestsLoadedRef = useRef(false);
+
   // ── Reunion Challenge (real data from /api/legacy/reunion/:familyId) ──────
   const [reunionData, setReunionData] = useState<{
     challenge: {
@@ -536,6 +546,16 @@ export default function LegacyHomePage() {
         const reunionRes = await fetch(`/api/legacy/reunion/${familyId}`, { headers: authHeaders() });
         if (reunionRes.ok) {
           setReunionData(await reunionRes.json());
+        }
+        // Fetch real cooperative family quests
+        if (!familyQuestsLoadedRef.current) {
+          familyQuestsLoadedRef.current = true;
+          setFamilyQuestsLoading(true);
+          fetch(`/api/legacy/family-quests/${familyId}`, { headers: authHeaders() })
+            .then(r => r.ok ? r.json() : null)
+            .then(d => { if (d?.quests) setFamilyQuests(d.quests); })
+            .catch(() => {})
+            .finally(() => setFamilyQuestsLoading(false));
         }
         // Fetch real achievement progress for inventory items
         const achRes = await fetch(`/api/legacy/achievements/${familyId}`, { headers: authHeaders() });
@@ -1549,6 +1569,81 @@ export default function LegacyHomePage() {
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ── Cooperative Family Quests (Quests mode only) ── */}
+          {activeMode === "quests" && (
+            <div className="px-4 mb-5">
+              <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3">Family Quests</h2>
+              {familyQuestsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-5 h-5 animate-spin text-amber-700" />
+                </div>
+              ) : familyQuests.length > 0 ? (
+                <div className="space-y-3">
+                  {familyQuests.map((q) => (
+                    <div
+                      key={q.key}
+                      className={`rounded-2xl p-4 border ${
+                        q.completed
+                          ? "bg-emerald-900/15 border-emerald-700/30"
+                          : "bg-[#2A1A0F] border-amber-700/30"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3 mb-2">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                          q.completed ? "bg-emerald-500/15" : "bg-amber-500/10"
+                        }`}>
+                          {q.completed
+                            ? <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                            : <Target className={`w-4 h-4 ${q.completed ? "text-emerald-400" : "text-amber-400"}`} />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm text-amber-100">{q.title}</p>
+                          <p className="text-xs text-amber-600 mt-0.5 leading-relaxed">{q.description}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="flex-1 h-2 bg-[#3A2A1A] rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${q.completed ? "bg-emerald-500" : "bg-amber-500"}`}
+                            style={{ width: `${Math.min(100, (q.progress / q.goal) * 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-bold text-amber-400">
+                          {q.progress}/{q.goal}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-amber-700">Reward:</span>
+                        <span className="text-xs text-amber-500 font-medium">{q.reward}</span>
+                      </div>
+                      {q.leaderboard && q.leaderboard.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-amber-900/30">
+                          <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-2">Family Leaderboard</p>
+                          <div className="space-y-1">
+                            {q.leaderboard.slice(0, 3).map((p, i) => (
+                              <div key={p.memberId} className="flex items-center gap-2">
+                                <span className={`text-xs font-bold w-4 ${i === 0 ? "text-amber-400" : "text-amber-700"}`}>
+                                  {i + 1}
+                                </span>
+                                <span className="text-xs text-amber-200 flex-1 truncate">{p.name}</span>
+                                <span className="text-xs text-amber-500 font-bold">{p.count}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <Target className="w-8 h-8 text-amber-800 mx-auto mb-2" />
+                  <p className="text-xs text-amber-700">Loading family quests...</p>
+                </div>
+              )}
             </div>
           )}
 
