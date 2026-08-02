@@ -144,6 +144,30 @@ interface ScenesResponse {
   vaultContext: { places: unknown[]; events: unknown[]; memories: unknown[] };
 }
 
+interface MapPlace {
+  id: number;
+  label: string;
+  placeType: string | null;
+  country: string | null;
+  region: string | null;
+  lat: number | null;
+  lng: number | null;
+  notes: string | null;
+  year: number | null;
+  chapterNumbers: number[];
+  discovered: boolean;
+  discoveredAt: string | null;
+  discoveredBy: string | null;
+}
+
+interface MapData {
+  places: MapPlace[];
+  placesWithCoordinates: number;
+  placesWithoutCoordinates: number;
+  placesDiscovered: number;
+  route: [number, number][];
+}
+
 type GameMode     = "legacy" | "exploration" | "quests" | "reunion";
 type InventoryTab = "items" | "memories" | "artifacts";
 
@@ -332,7 +356,6 @@ export default function LegacyHomePage() {
 
   const [activeMode,    setActiveMode]    = useState<GameMode>("legacy");
   const [inventoryTab,  setInventoryTab]  = useState<InventoryTab>("memories");
-  const [currentStage,  setCurrentStage]  = useState(2);
   const [recording,     setRecording]     = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [promptIdx,     setPromptIdx]     = useState(0);
@@ -360,6 +383,7 @@ export default function LegacyHomePage() {
   const [scenes, setScenes] = useState<SceneData[]>([]);
   const [scenesLoading, setScenesLoading] = useState(false);
   const [activeChapterId, setActiveChapterId] = useState<number | null>(null);
+  const [mapData, setMapData] = useState<MapData | null>(null);
 
   // ── Load family data ──────────────────────────────────────────────────────
 
@@ -407,10 +431,11 @@ export default function LegacyHomePage() {
 
   const loadLegacyEngine = useCallback(async (familyId: number) => {
     try {
-      const [compRes, ancestorRes, chaptersRes] = await Promise.all([
+      const [compRes, ancestorRes, chaptersRes, mapRes] = await Promise.all([
         fetch(`/api/legacy/completeness/${familyId}`, { headers: authHeaders() }),
         fetch(`/api/legacy/ancestors/${familyId}`,    { headers: authHeaders() }),
         fetch(`/api/legacy/chapters/${familyId}`,      { headers: authHeaders() }),
+        fetch(`/api/legacy/map/${familyId}`,            { headers: authHeaders() }),
       ]);
 
       if (compRes.ok) {
@@ -426,6 +451,10 @@ export default function LegacyHomePage() {
         setChapters(data.chapters ?? []);
         const firstUnlocked = (data.chapters ?? []).find(c => c.status === "unlocked" || c.status === "in_progress");
         if (firstUnlocked) setActiveChapterId(firstUnlocked.id);
+      }
+      if (mapRes.ok) {
+        const data = await mapRes.json() as MapData;
+        setMapData(data);
       }
     } catch {
       // Silent fail — fallback UI will handle
@@ -930,56 +959,90 @@ export default function LegacyHomePage() {
             </div>
           )}
 
-          {/* ── World Map / Stages (Legacy mode only) ── */}
+          {/* ── World Map: Real family migration timeline (Legacy mode only) ── */}
           {activeMode === "legacy" && (
             <div className="px-4 mb-5">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">World Map</h2>
-                <button onClick={() => navigate("/diaspora/timeline")} className="text-xs text-amber-600 flex items-center gap-1">
-                  Full Map <ChevronRight className="w-3 h-3" />
-                </button>
+                <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Family World Map</h2>
+                {families[0] && (
+                  <button onClick={() => navigate(`/legacy/map/${families[0].id}`)} className="text-xs text-amber-600 flex items-center gap-1">
+                    Full Map <ChevronRight className="w-3 h-3" />
+                  </button>
+                )}
               </div>
-              <div className="overflow-x-auto pb-2">
-                <div className="flex gap-3 min-w-max px-1">
-                  {chapters.length > 0 ? chapters.map((ch, i) => {
-                    const active = activeChapterId === ch.id;
-                    const done   = ch.status === "completed";
-                    const locked = ch.status === "locked";
-                    return (
-                      <div key={ch.id} className="flex items-center gap-2">
-                        <button
-                          onClick={() => !locked && setActiveChapterId(ch.id)}
-                          className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${
-                            locked
-                              ? "bg-[#1A1008] border-amber-950/40 opacity-50 cursor-not-allowed"
-                              : active
-                                ? "bg-amber-500/20 border-amber-500 ring-2 ring-amber-500/50 shadow-lg shadow-amber-500/10"
-                                : done
-                                  ? "bg-amber-900/20 border-amber-700/40"
-                                  : "bg-[#2A1A0F] border-amber-900/30"
-                          }`}
-                          style={{ minWidth: 90 }}
-                        >
-                          {locked
-                            ? <Lock className="w-5 h-5 text-amber-900" />
-                            : done
-                              ? <CheckCircle2 className="w-5 h-5 text-amber-500" />
-                              : <Map className={`w-5 h-5 ${active ? "text-amber-400" : "text-amber-700"}`} />}
-                          <p className={`text-xs font-bold text-center leading-tight ${active ? "text-amber-200" : locked ? "text-amber-900" : "text-amber-600"}`}>
-                            {ch.title}
-                          </p>
-                          <p className={`text-xs ${active ? "text-amber-500" : "text-amber-900"}`}>Ch {ch.chapter_number}</p>
-                        </button>
-                        {i < chapters.length - 1 && (
-                          <div className={`w-6 h-0.5 flex-shrink-0 ${done ? "bg-amber-500" : "bg-amber-900/40"}`} />
-                        )}
-                      </div>
-                    );
-                  }) : (
-                    <p className="text-xs text-amber-700 px-2 py-4">Complete the readiness checklist to unlock chapters.</p>
+              {mapData && mapData.places.length > 0 ? (
+                <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg">
+                  {/* Migration summary */}
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                      <Map className="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-amber-100">Your Family's Journey</p>
+                      <p className="text-xs text-amber-600 mt-0.5">
+                        {mapData.places.length} places
+                        {mapData.placesDiscovered > 0 && <> · <span className="text-emerald-400">{mapData.placesDiscovered} discovered</span></>}
+                        {mapData.placesWithCoordinates > 0 && <> · {mapData.placesWithCoordinates} on map</>}
+                      </p>
+                    </div>
+                  </div>
+                  {/* Migration timeline — real places in chronological order */}
+                  <div className="relative pl-5">
+                    <div className="absolute left-1.5 top-1 bottom-1 w-0.5 bg-gradient-to-b from-amber-600/40 via-amber-700/30 to-amber-900/20" />
+                    {mapData.places.slice(0, 6).map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => navigate(`/legacy/map/${families[0]?.id ?? 0}`)}
+                        className="relative flex items-start gap-3 pb-4 w-full text-left active:opacity-70"
+                      >
+                        <div className={`absolute -left-[14px] w-3 h-3 rounded-full border-2 flex-shrink-0 mt-0.5 ${
+                          p.discovered
+                            ? "bg-emerald-500 border-emerald-300"
+                            : p.lat !== null
+                              ? "bg-amber-500 border-amber-300"
+                              : "bg-amber-900 border-amber-700"
+                        }`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-bold text-amber-200 truncate">{p.label}</p>
+                            {p.year && <span className="text-xs text-amber-500 font-bold flex-shrink-0">{p.year}</span>}
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {p.country && <p className="text-xs text-amber-700 truncate">{p.country}</p>}
+                            {p.discovered && (
+                              <span className="flex items-center gap-0.5 text-xs text-emerald-400 flex-shrink-0">
+                                <CheckCircle2 className="w-3 h-3" /> Visited
+                              </span>
+                            )}
+                          </div>
+                          {p.chapterNumbers.length > 0 && (
+                            <p className="text-xs text-amber-800 mt-0.5">Chapter {p.chapterNumbers.join(", ")}</p>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                  {mapData.places.length > 6 && (
+                    <button
+                      onClick={() => navigate(`/legacy/map/${families[0]?.id ?? 0}`)}
+                      className="w-full mt-1 text-xs text-amber-500 font-bold uppercase tracking-wide py-2 active:opacity-70"
+                    >
+                      View all {mapData.places.length} places
+                    </button>
                   )}
                 </div>
-              </div>
+              ) : (
+                <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 text-center">
+                  <Map className="w-8 h-8 text-amber-900 mx-auto mb-2" />
+                  <p className="text-xs text-amber-700 mb-2">No family places tagged yet</p>
+                  <button
+                    onClick={() => navigate(families[0] ? `/family/${families[0].id}` : "/diaspora/family")}
+                    className="text-xs text-amber-500 underline"
+                  >
+                    Add your first family landmark
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
