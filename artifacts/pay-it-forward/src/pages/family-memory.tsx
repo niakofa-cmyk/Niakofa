@@ -550,24 +550,41 @@ export default function FamilyMemoryPage() {
         {/* ── Action bar: Like / Download / Share ── */}
         <div className="flex items-center gap-3 bg-card border border-border rounded-2xl p-3">
           <button
-            onClick={() => { setLiked(l => !l); setLikeCount(c => liked ? c - 1 : c + 1); }}
+            onClick={() => { setLiked(l => !l); setLikeCount(c => !liked ? c + 1 : Math.max(0, c - 1)); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium transition-colors ${liked ? "bg-rose-500/10 text-rose-500" : "text-muted-foreground"}`}
           >
             <Heart className={`w-4 h-4 ${liked ? "fill-current" : ""}`} />
             {likeCount > 0 ? likeCount : "Like"}
           </button>
           <button
-            onClick={() => toast.success("Memory downloaded")}
+            onClick={() => {
+              if (!memory) return;
+              const content = `${memory.title ?? "Untitled Memory"}\n${"=".repeat(40)}\n\n${memory.description ?? ""}\n${memory.story ? `\n${memory.story}` : ""}\n\n${memory.memory_date ? `Date: ${memory.memory_date}\n` : ""}${memory.location_label ? `Location: ${memory.location_label}\n` : ""}Exported from Niakofa Family Vault`;
+              const blob = new Blob([content], { type: "text/plain" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${(memory.title ?? "memory").replace(/[^a-z0-9]/gi, "_").toLowerCase()}.txt`;
+              a.click();
+              URL.revokeObjectURL(url);
+              toast.success("Memory downloaded");
+            }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium text-muted-foreground active:opacity-70"
           >
             <Download className="w-4 h-4" /> Download
           </button>
           <button
             onClick={() => {
+              const shareData = { title: memory?.title ?? "Memory", text: memory?.description ?? "" };
               if (navigator.share) {
-                navigator.share({ title: memory?.title ?? "Memory", text: memory?.description ?? "" }).catch(() => {});
+                navigator.share(shareData).catch(() => {});
+              } else if (navigator.clipboard) {
+                navigator.clipboard.writeText(`${shareData.title}\n${shareData.text}`).then(
+                  () => toast.success("Share link copied"),
+                  () => toast.error("Couldn't copy — try again"),
+                );
               } else {
-                toast.success("Share link copied");
+                toast.error("Sharing isn't available on this device");
               }
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium text-muted-foreground active:opacity-70"
