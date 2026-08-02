@@ -110,11 +110,25 @@ router.get(
       const consentedIds = await getConsentedMemberIds(familyId);
       const consentedIdArray = Array.from(consentedIds);
 
+      // family_memories.author_id is a users.id, not a family_members.id, so we
+      // must resolve consented member IDs to their linked user IDs before using
+      // them to filter memories — comparing the two ID spaces directly would
+      // silently produce wrong (and potentially consent-violating) results.
+      const consentedUserIdRows = consentedIdArray.length > 0
+        ? await db
+            .select({ user_id: familyMembersTable.user_id })
+            .from(familyMembersTable)
+            .where(inArray(familyMembersTable.id, consentedIdArray))
+        : [];
+      const consentedUserIds = consentedUserIdRows
+        .map((r) => r.user_id)
+        .filter((id): id is number => id !== null);
+
       const [memories, stories, places, events] = await Promise.all([
-        consentedIdArray.length > 0
-          ? db.select({ content: familyMemoriesTable.content, year: familyMemoriesTable.year }).from(familyMemoriesTable).where(and(eq(familyMemoriesTable.family_id, familyId), inArray(familyMemoriesTable.author_id, consentedIdArray))).limit(10)
+        consentedUserIds.length > 0
+          ? db.select({ content: familyMemoriesTable.story, year: familyMemoriesTable.memory_date }).from(familyMemoriesTable).where(and(eq(familyMemoriesTable.family_id, familyId), inArray(familyMemoriesTable.author_id, consentedUserIds))).limit(10)
           : Promise.resolve([]),
-        db.select({ title: familyStoriesTable.title, content: familyStoriesTable.content }).from(familyStoriesTable).where(eq(familyStoriesTable.family_id, familyId)).limit(5),
+        db.select({ title: familyStoriesTable.title, content: familyStoriesTable.body }).from(familyStoriesTable).where(eq(familyStoriesTable.family_id, familyId)).limit(5),
         db.select({ label: familyPlacesTable.label, placeType: familyPlacesTable.place_type, country: familyPlacesTable.country }).from(familyPlacesTable).where(eq(familyPlacesTable.family_id, familyId)).limit(5),
         db.select({ title: familyEventsTable.title, eventDate: familyEventsTable.event_date, description: familyEventsTable.description }).from(familyEventsTable).where(eq(familyEventsTable.family_id, familyId)).limit(5),
       ]);
@@ -126,7 +140,7 @@ router.get(
         events: events.map((e) => ({ title: e.title, date: e.eventDate, description: e.description?.slice(0, 200) })),
       };
 
-      let systemPrompt = `You are Nia, the AI Game Master for Niakofa, a living family RPG built from real family history.\n\nCRITICAL RULES:\n1. NEVER fabricate family facts. Only use the provided family data.\n2. Clearly distinguish VERIFIED FAMILY HISTORY from NARRATIVE INTERPRETATION.\n3. If information is missing, note it as a mystery to discover — do not invent.\n4. Keep narration immersive but grounded in the family's real history.\n5. Respect historical context — never alter documented events.\n\nFamily data:\n${JSON.stringify(contextSummary, null, 2)}`;
+      const systemPrompt = `You are Nia, the AI Game Master for Niakofa, a living family RPG built from real family history.\n\nCRITICAL RULES:\n1. NEVER fabricate family facts. Only use the provided family data.\n2. Clearly distinguish VERIFIED FAMILY HISTORY from NARRATIVE INTERPRETATION.\n3. If information is missing, note it as a mystery to discover — do not invent.\n4. Keep narration immersive but grounded in the family's real history.\n5. Respect historical context — never alter documented events.\n\nFamily data:\n${JSON.stringify(contextSummary, null, 2)}`;
 
       let userPrompt = "";
       switch (narrationType) {

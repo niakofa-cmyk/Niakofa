@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { legacyAchievementsTable, legacyPlaceDiscoveriesTable } from "@workspace/db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
@@ -92,8 +91,8 @@ router.get(
         ORDER BY c.created_at DESC
       `);
 
-      const challengesList = challenges.rows as ChallengeRow[];
-      const contributionsList = contributions.rows as ContributionRow[];
+      const challengesList = challenges.rows as unknown as ChallengeRow[];
+      const contributionsList = contributions.rows as unknown as ContributionRow[];
 
       const result = challengesList.map((ch) => {
         const chContribs = contributionsList.filter((c) => c.challenge_id === ch.id);
@@ -191,11 +190,24 @@ router.post(
         SELECT * FROM legacy_family_challenges WHERE id = ${challengeId}::uuid
       `);
 
-      const challenge = challengeResult.rows[0] as ChallengeRow | undefined;
+      const challenge = challengeResult.rows[0] as unknown as ChallengeRow | undefined;
       if (challenge) {
-        await syncAchievements(challenge.family_id).catch((err) =>
-          logger.error({ err, familyId: challenge.family_id }, "legacy-challenges: achievement sync after contribution failed"),
-        );
+        // NOTE: family_id here comes back from raw SQL against
+        // legacy_family_challenges, whose real DDL isn't in this repo (see
+        // migration 0097's placeholder note). If that table's family_id is a
+        // genuine uuid (matching this route's `::uuid` casts) rather than the
+        // integer serial ID every other family_id column in the schema uses,
+        // this conversion will fail silently via the catch below, and this
+        // route has likely reintroduced the uuid/serial mismatch documented
+        // as BUG-H13 in CLAUDE.md. Needs verification against the live DB.
+        const familyIdNum = Number(challenge.family_id);
+        if (!Number.isNaN(familyIdNum)) {
+          await syncAchievements(familyIdNum).catch((err) =>
+            logger.error({ err, familyId: challenge.family_id }, "legacy-challenges: achievement sync after contribution failed"),
+          );
+        } else {
+          logger.warn({ familyId: challenge.family_id }, "legacy-challenges: family_id is not numeric, skipping achievement sync — possible uuid/serial schema mismatch (see BUG-H13)");
+        }
       }
 
       return res.status(201).json({
