@@ -16,7 +16,6 @@
  */
 
 import { Router } from "express";
-import Anthropic from "@anthropic-ai/sdk";
 import {
   db,
   familyMembersTable,
@@ -31,11 +30,11 @@ import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { getConsentedMemberIds } from "../lib/legacy-consent";
+import { generateLegacyAiText } from "../lib/legacy-ai-gateway";
 import { createHash } from "crypto";
 
 const router = Router();
 
-const MODEL = "claude-3-5-haiku-20241022";
 const NARRATION_TTL_MS = 86_400_000; // 24h cache
 
 async function isMember(userId: number, familyId: number): Promise<boolean> {
@@ -167,19 +166,18 @@ router.get(
       }
 
       let content: string;
-      let modelUsed = MODEL;
+      let modelUsed: string;
       let metadata: Record<string, unknown> = {};
 
       try {
-        const anthropic = new Anthropic();
-        const response = await anthropic.messages.create({
-          model: MODEL,
-          max_tokens: 400,
+        const result = await generateLegacyAiText({
           system: systemPrompt,
-          messages: [{ role: "user", content: userPrompt }],
+          prompt: userPrompt,
+          maxTokens: 400,
         });
-        content = response.content[0]?.type === "text" ? response.content[0].text : "";
-        metadata = { stop_reason: response.stop_reason, usage: response.usage };
+        content = result.text;
+        modelUsed = result.model;
+        metadata = { stop_reason: result.stopReason, usage: result.usage };
       } catch (aiErr) {
         logger.warn({ err: aiErr, familyId }, "legacy-game-master: AI call failed, using fallback");
         content = generateFallbackNarration(narrationType, ancestorName, contextSummary);

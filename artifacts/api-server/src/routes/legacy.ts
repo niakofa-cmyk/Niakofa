@@ -17,7 +17,7 @@
  */
 
 import { Router } from "express";
-import Anthropic from "@anthropic-ai/sdk";
+import { generateLegacyAiText } from "../lib/legacy-ai-gateway";
 import {
   db,
   familiesTable,
@@ -312,13 +312,10 @@ function buildFallbackQuests(r: FamilyReservoir): AiQuest[] {
 // Returns validated AiQuest[] or falls back to template quests on any error.
 
 async function generateAiQuests(r: FamilyReservoir): Promise<AiQuest[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  if (!process.env.ANTHROPIC_API_KEY) {
     logger.warn("legacy: ANTHROPIC_API_KEY not set — using fallback quests");
     return buildFallbackQuests(r);
   }
-
-  const anthropic = new Anthropic({ apiKey });
 
   const ancestorList = r.ancestorProfiles.length
     ? r.ancestorProfiles
@@ -356,17 +353,7 @@ Return ONLY a JSON array — no preamble, no explanation, no markdown fences:
 [{"title":"...","description":"...","xp":100,"category":"record","actionPath":"/family/${r.familyId}","ancestorName":"..."}]`;
 
   try {
-    const response = await anthropic.messages.create({
-      model:      "claude-3-5-haiku-20241022",
-      max_tokens: 650,
-      messages:   [{ role: "user", content: prompt }],
-    });
-
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map(b => b.text)
-      .join("")
-      .trim();
+    const { text } = await generateLegacyAiText({ prompt, maxTokens: 650 });
 
     // Extract JSON array — strip any accidental markdown wrapping
     const match = text.replace(/```(?:json)?|```/g, "").match(/\[[\s\S]*\]/);
