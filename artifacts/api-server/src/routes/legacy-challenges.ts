@@ -24,7 +24,7 @@ import {
   legacyFamilyChallengesTable,
   legacyChallengeContributionsTable,
 } from "@workspace/db";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
@@ -33,6 +33,7 @@ import { syncAchievements } from "./legacy-achievements";
 const router = Router();
 
 const CONTRIBUTION_TYPES = ["interview", "photo", "story", "location", "document", "checkin"] as const;
+const CHALLENGE_TYPES = ["story_collection", "preservation", "exploration", "reunion"] as const;
 
 const CHALLENGE_TEMPLATES = [
   {
@@ -143,7 +144,7 @@ router.post(
       return res.status(403).json({ error: "Not a member of this family" });
     }
 
-    const { templateIndex, customTitle, customDescription, customGoal } = req.body ?? {};
+    const { templateIndex, customTitle, customDescription, customGoal, customType } = req.body ?? {};
 
     let title: string;
     let description: string;
@@ -164,7 +165,7 @@ router.post(
       title = String(customTitle);
       description = String(customDescription);
       goal = typeof customGoal === "number" && customGoal > 0 ? customGoal : 5;
-      challengeType = "reunion";
+      challengeType = CHALLENGE_TYPES.includes(customType) ? customType : "reunion";
     } else {
       return res.status(400).json({ error: "Provide templateIndex or customTitle + customDescription" });
     }
@@ -222,6 +223,22 @@ router.post(
         return res.status(403).json({ error: "Not a member of this family" });
       }
 
+      // Prevent duplicate contributions from the same user to the same challenge
+      const [existing] = await db
+        .select({ id: legacyChallengeContributionsTable.id })
+        .from(legacyChallengeContributionsTable)
+        .where(
+          and(
+            eq(legacyChallengeContributionsTable.challenge_id, challengeId),
+            eq(legacyChallengeContributionsTable.member_id, typeof memberId === "number" ? memberId : userId),
+          ),
+        )
+        .limit(1);
+
+      if (existing) {
+        return res.status(409).json({ error: "You have already contributed to this challenge." });
+      }
+
       const [contribution] = await db
         .insert(legacyChallengeContributionsTable)
         .values({
@@ -233,8 +250,24 @@ router.post(
         })
         .returning();
 
+      // Application-level auto-completion fallback (in case the DB trigger is missing)
+      const [{ contribCount }] = await db
+        .select({ contribCount: sql<number>`count(*)::int` })
+        .from(legacyChallengeContributionsTable)
+        .where(eq(legacyChallengeContributionsTable.challenge_id, challengeId));
+
+      let challengeCompleted = false;
+      if (Number(contribCount) >= challengeBefore.goal && challengeBefore.status !== "completed") {
+        await db
+          .update(legacyFamilyChallengesTable)
+          .set({ status: "completed", completed_at: new Date() })
+          .where(eq(legacyFamilyChallengesTable.id, challengeId));
+        challengeCompleted = true;
+        logger.info({ challengeId, familyId: challengeBefore.family_id }, "legacy-challenges: challenge auto-completed");
+      }
+
       // Re-read the challenge — the DB trigger (fn_check_challenge_complete)
-      // may have just flipped it to 'completed'.
+      // or the app-level fallback above may have just flipped it to 'completed'.
       const [challengeAfter] = await db
         .select()
         .from(legacyFamilyChallengesTable)
@@ -248,6 +281,7 @@ router.post(
       return res.status(201).json({
         contribution,
         challenge: challengeAfter ?? challengeBefore,
+        challengeCompleted,
       });
     } catch (err) {
       logger.error({ err, challengeId }, "legacy-challenges: contribute failed");

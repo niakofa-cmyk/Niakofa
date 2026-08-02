@@ -74,6 +74,11 @@ router.get(
       return res.status(400).json({ error: "Invalid family ID" });
     }
 
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, familyId))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
+
     try {
       const consentedIdSet = await getConsentedMemberIds(familyId);
       const consentedIds = Array.from(consentedIdSet);

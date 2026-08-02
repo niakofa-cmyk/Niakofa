@@ -85,7 +85,7 @@ interface ChapterSeed {
   chapterData: Record<string, unknown>;
 }
 
-async function generateChapterSeeds(familyId: number): Promise<ChapterSeed[]> {
+async function generateChapterSeeds(familyId: number, preferredAncestorMemberId?: number): Promise<ChapterSeed[]> {
   // Gather real vault data to build chapters from
   const members = await db
     .select({
@@ -159,9 +159,11 @@ async function generateChapterSeeds(familyId: number): Promise<ChapterSeed[]> {
   const earliestMemory = memories[0];
 
   if (earliestEvent || earliestPlace || earliestMemory) {
-    const ancestor = earliestEvent?.memberId
-      ? consentedMembers.find(m => m.id === earliestEvent.memberId)
-      : consentedMembers[0];
+    const ancestor = preferredAncestorMemberId
+      ? consentedMembers.find(m => m.id === preferredAncestorMemberId)
+      : earliestEvent?.memberId
+        ? consentedMembers.find(m => m.id === earliestEvent.memberId)
+        : consentedMembers[0];
 
     seeds.push({
       chapterNumber: 1,
@@ -276,6 +278,7 @@ router.post(
     const familyId = parseInt(String(req.params.familyId), 10);
     if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
 
+    const { preferredAncestorMemberId } = req.body as { preferredAncestorMemberId?: number };
     const userId = req.authenticatedUserId!;
     if (!(await isMember(userId, familyId))) {
       return res.status(403).json({ error: "Not a member of this family" });
@@ -328,7 +331,7 @@ router.post(
       }
 
       // Generate chapter seeds from real vault data
-      const seeds = await generateChapterSeeds(familyId);
+      const seeds = await generateChapterSeeds(familyId, preferredAncestorMemberId);
 
       if (seeds.length === 0) {
         return res.status(400).json({

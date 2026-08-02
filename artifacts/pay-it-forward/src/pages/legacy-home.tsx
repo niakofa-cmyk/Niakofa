@@ -443,8 +443,8 @@ export default function LegacyHomePage() {
         setCompleteness(data);
       }
       if (ancestorRes.ok) {
-        const data = await ancestorRes.json() as { candidate: AncestorCandidate | null };
-        setAncestorCandidate(data.candidate);
+        const data = await ancestorRes.json() as { ancestors: AncestorCandidate[] };
+        setAncestorCandidate(data.ancestors?.[0] ?? null);
       }
       if (chaptersRes.ok) {
         const data = await chaptersRes.json() as { chapters: LegacyChapter[] };

@@ -80,7 +80,7 @@ export default function LegacyWorldEvolutionPage() {
     if (!currentUser) return;
     (async () => {
       try {
-        const famRes = await fetch("/api/families", { headers: authHeaders() });
+        const famRes = await fetch("/api/family/mine", { headers: authHeaders() });
         const famBody = await famRes.json().catch(() => ({}));
         const famId = famBody?.families?.[0]?.id;
         if (!famId) {
@@ -177,7 +177,7 @@ export default function LegacyWorldEvolutionPage() {
           // Find the most recent "world_regenerated" entry to show what
           // actually changed, not just the version number — this is the
           // "3 New Stories, 2 New Characters..." moment from the design docs.
-          const latestRegeneration = log.find((e) => e.change_type === "world_regenerated");
+          const latestRegeneration = [...log].reverse().find((e) => e.change_type === "world_regenerated");
           return (
             <div className="bg-amber-900/20 border border-amber-700/40 rounded-2xl p-5">
               <div className="flex items-center gap-2 mb-2">

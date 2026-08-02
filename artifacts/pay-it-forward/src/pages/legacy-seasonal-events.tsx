@@ -85,13 +85,13 @@ export default function LegacySeasonalEventsPage() {
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [participating, setParticipating] = useState<number | null>(null);
-  const [contribType, setContribType] = useState<string>("story");
+  const [contribTypes, setContribTypes] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!currentUser) return;
     (async () => {
       try {
-        const famRes = await fetch("/api/families", { headers: authHeaders() });
+        const famRes = await fetch("/api/family/mine", { headers: authHeaders() });
         const famBody = await famRes.json().catch(() => ({}));
         const famId = famBody?.families?.[0]?.id;
         if (!famId) {
@@ -142,7 +142,7 @@ export default function LegacySeasonalEventsPage() {
       const res = await fetch(`/api/legacy/seasonal-events/${eventId}/participate`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ contributionType: contribType }),
+        body: JSON.stringify({ contributionType: contribTypes[eventId] || "story" }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -168,7 +168,7 @@ export default function LegacySeasonalEventsPage() {
     } finally {
       setParticipating(null);
     }
-  }, [contribType]);
+  }, [contribTypes]);
 
   const deleteEvent = useCallback(async (eventId: number) => {
     try {
@@ -312,8 +312,8 @@ export default function LegacySeasonalEventsPage() {
               {!event.isComplete && (
                 <div className="flex items-center gap-2">
                   <select
-                    value={contribType}
-                    onChange={(e) => setContribType(e.target.value)}
+                    value={contribTypes[event.id] || "story"}
+                    onChange={(ev2) => setContribTypes(prev => ({ ...prev, [event.id]: ev2.target.value }))}
                     className="flex-1 bg-stone-700 text-stone-200 text-sm rounded-lg px-3 py-2 border border-stone-600"
                   >
                     {Object.entries(CONTRIBUTION_LABELS).map(([key, label]) => (

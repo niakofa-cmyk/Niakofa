@@ -278,7 +278,7 @@ export default function LegacyMapPage() {
     if (!currentUser) return;
     (async () => {
       try {
-        const famRes = await fetch("/api/families", { headers: authHeaders() });
+        const famRes = await fetch("/api/family/mine", { headers: authHeaders() });
         const famBody = await famRes.json().catch(() => ({}));
         const primaryFamilyId = famBody?.families?.[0]?.id;
         if (!primaryFamilyId) {
@@ -411,7 +411,7 @@ export default function LegacyMapPage() {
     return (
       <div className="min-h-screen bg-[#1A0F08] flex flex-col items-center justify-center gap-4 p-6">
         <p className="text-amber-400 text-sm text-center">{error}</p>
-        <button onClick={() => navigate("/")} className="text-amber-500 text-xs underline">Back to map</button>
+        <button onClick={() => navigate("/legacy")} className="text-amber-500 text-xs underline">Back to map</button>
       </div>
     );
   }
@@ -427,7 +427,7 @@ export default function LegacyMapPage() {
           <Plus className="w-4 h-4" />
           Tag a Landmark
         </button>
-        <button onClick={() => navigate("/")} className="text-amber-500 text-xs underline">Back to map</button>
+        <button onClick={() => navigate("/legacy")} className="text-amber-500 text-xs underline">Back to map</button>
         {showAddPlace && (
           <AddPlaceModal onClose={() => setShowAddPlace(false)} onSubmit={addPlace} />
         )}
@@ -438,7 +438,7 @@ export default function LegacyMapPage() {
   return (
     <div className="min-h-screen bg-[#1A0F08] flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-amber-900/30">
-        <button onClick={() => navigate("/")} className="flex items-center gap-1 text-amber-500 text-xs font-semibold">
+        <button onClick={() => navigate("/legacy")} className="flex items-center gap-1 text-amber-500 text-xs font-semibold">
           <ArrowLeft className="w-4 h-4" />
           Back
         </button>

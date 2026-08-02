@@ -200,7 +200,7 @@ export default function LegacyAchievementsPage() {
   useEffect(() => {
     if (!currentUser) return;
     Promise.all([
-      fetch("/api/families", { headers: authHeaders() })
+      fetch("/api/family/mine", { headers: authHeaders() })
         .then(r => r.ok ? r.json() : Promise.reject())
         .then(d => d?.families?.[0]?.id)
         .then(famId => famId ? fetch(`/api/legacy/achievements/${famId}`, { headers: authHeaders() }) : Promise.reject())

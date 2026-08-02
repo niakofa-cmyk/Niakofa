@@ -20,7 +20,7 @@ import {
   legacySeasonalEventsTable,
   legacySeasonalEventParticipationsTable,
 } from "@workspace/db";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
@@ -227,6 +227,22 @@ router.post(
         return res.status(403).json({ error: "Not a member of this family" });
       }
 
+      // Prevent duplicate contributions from the same user to the same event
+      const [existing] = await db
+        .select({ id: legacySeasonalEventParticipationsTable.id })
+        .from(legacySeasonalEventParticipationsTable)
+        .where(
+          and(
+            eq(legacySeasonalEventParticipationsTable.event_id, eventId),
+            eq(legacySeasonalEventParticipationsTable.user_id, userId),
+          ),
+        )
+        .limit(1);
+
+      if (existing) {
+        return res.status(409).json({ error: "You have already contributed to this event." });
+      }
+
       const [participation] = await db
         .insert(legacySeasonalEventParticipationsTable)
         .values({
@@ -238,6 +254,22 @@ router.post(
         })
         .returning();
 
+      // Auto-complete the event when the goal is met
+      const [{ participationCount }] = await db
+        .select({ participationCount: sql<number>`count(*)::int` })
+        .from(legacySeasonalEventParticipationsTable)
+        .where(eq(legacySeasonalEventParticipationsTable.event_id, eventId));
+
+      let eventCompleted = false;
+      if (Number(participationCount) >= event.goal && event.status !== "completed") {
+        await db
+          .update(legacySeasonalEventsTable)
+          .set({ status: "completed", completed_at: new Date(), updated_at: new Date() })
+          .where(eq(legacySeasonalEventsTable.id, eventId));
+        eventCompleted = true;
+        logger.info({ eventId, familyId: event.family_id }, "legacy-seasonal-events: event auto-completed");
+      }
+
       await syncAchievements(event.family_id).catch((err) =>
         logger.error({ err, familyId: event.family_id }, "legacy-seasonal-events: achievement sync failed"),
       );
@@ -248,7 +280,7 @@ router.post(
         .where(eq(legacySeasonalEventsTable.id, eventId))
         .limit(1);
 
-      return res.status(201).json({ participation, event: updatedEvent });
+      return res.status(201).json({ participation, event: updatedEvent, eventCompleted });
     } catch (err) {
       logger.error({ err, eventId }, "legacy-seasonal-events: participate failed");
       return res.status(500).json({ error: "Failed to record participation" });

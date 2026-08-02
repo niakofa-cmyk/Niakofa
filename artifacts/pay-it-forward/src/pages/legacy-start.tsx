@@ -59,7 +59,7 @@ export default function LegacyStartPage() {
     setLoading(true);
     try {
       // First get the user's families
-      const famRes = await fetch("/api/family", { headers: authHeaders() });
+      const famRes = await fetch("/api/family/mine", { headers: authHeaders() });
       if (!famRes.ok) { setLoading(false); return; }
       const famData = await famRes.json() as { families?: { id: number }[] };
       if (!famData.families?.length) { setLoading(false); return; }
@@ -96,6 +96,7 @@ export default function LegacyStartPage() {
       const res = await fetch(`/api/legacy/chapters/${familyId}/init`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ preferredAncestorMemberId: selectedId }),
       });
 
       if (!res.ok) {

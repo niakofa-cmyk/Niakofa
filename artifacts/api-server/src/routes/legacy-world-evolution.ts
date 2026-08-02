@@ -81,7 +81,13 @@ router.get(
       ]);
 
       const latestVersion = knowledgeVersions[0] ?? null;
-      const totalChanges = logEntries.length;
+
+      // Count total changes with a separate query (not capped by the LIMIT 100 on logEntries)
+      const [{ totalChanges }] = await db
+        .select({ totalChanges: sql<number>`count(*)::int` })
+        .from(legacyWorldEvolutionLogTable)
+        .where(eq(legacyWorldEvolutionLogTable.family_id, familyId));
+
       const changesByType: Record<string, number> = {};
       for (const entry of logEntries) {
         changesByType[entry.change_type] = (changesByType[entry.change_type] ?? 0) + 1;

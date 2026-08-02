@@ -81,13 +81,13 @@ export default function LegacyChallengesPage() {
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [contributing, setContributing] = useState<string | null>(null);
-  const [contribType, setContribType] = useState<string>("interview");
+  const [contribTypes, setContribTypes] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!currentUser) return;
     (async () => {
       try {
-        const famRes = await fetch("/api/families", { headers: authHeaders() });
+        const famRes = await fetch("/api/family/mine", { headers: authHeaders() });
         const famBody = await famRes.json().catch(() => ({}));
         const famId = famBody?.families?.[0]?.id;
         if (!famId) {
@@ -138,7 +138,7 @@ export default function LegacyChallengesPage() {
       const res = await fetch(`/api/legacy/challenges/${challengeId}/contribute`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ contributionType: contribType }),
+        body: JSON.stringify({ contributionType: contribTypes[challengeId] || "story" }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -167,7 +167,7 @@ export default function LegacyChallengesPage() {
       setError(err instanceof Error ? err.message : "Failed to contribute");
       setContributing(null);
     }
-  }, [contribType]);
+  }, [contribTypes]);
 
   if (loading) {
     return (
@@ -277,8 +277,8 @@ export default function LegacyChallengesPage() {
 
                     <div className="flex items-center gap-2">
                       <select
-                        value={contribType}
-                        onChange={(e) => setContribType(e.target.value)}
+                        value={contribTypes[ch.id] || "story"}
+                        onChange={(e) => setContribTypes(prev => ({ ...prev, [ch.id]: e.target.value }))}
                         className="bg-amber-950 text-amber-300 text-xs rounded-md px-2 py-1.5 border border-amber-900/50 flex-1"
                       >
                         <option value="interview">Record Interview</option>
