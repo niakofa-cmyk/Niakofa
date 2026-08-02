@@ -68,6 +68,15 @@ export default function LegacyMemoryMysteriesPage() {
   const [error, setError] = useState<string | null>(null);
   const [solvingId, setSolvingId] = useState<number | null>(null);
   const [resolutionText, setResolutionText] = useState("");
+  const [generating, setGenerating] = useState(false);
+
+  const loadMysteries = useCallback(async (famId: number) => {
+    const res = await fetch(`/api/legacy/memory-mysteries/${famId}`, { headers: authHeaders() });
+    if (res.ok) {
+      const data = await res.json();
+      setMysteries(data.mysteries ?? []);
+    }
+  }, []);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -81,21 +90,37 @@ export default function LegacyMemoryMysteriesPage() {
           return;
         }
         setFamilyId(famId);
-
-        const res = await fetch(`/api/legacy/memory-mysteries/${famId}`, { headers: authHeaders() });
-        if (!res.ok) {
-          setError("Failed to load mysteries.");
-          return;
-        }
-        const data = await res.json();
-        setMysteries(data.mysteries ?? []);
+        await loadMysteries(famId);
       } catch {
         setError("Failed to load mysteries.");
       } finally {
         setLoading(false);
       }
     })();
-  }, [currentUser]);
+  }, [currentUser, loadMysteries]);
+
+  const generateMysteries = useCallback(async () => {
+    if (!familyId) return;
+    setGenerating(true);
+    try {
+      const res = await fetch(`/api/legacy/ai-director/${familyId}/generate`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+      });
+      if (!res.ok) throw new Error("Failed to generate");
+      const data = await res.json();
+      await loadMysteries(familyId);
+      if (data.gapsFound > 0) {
+        toast.success(`Scanned vault — ${data.gapsFound} gap${data.gapsFound === 1 ? "" : "s"} found, mysteries updated!`);
+      } else {
+        toast.info(data.message || "No new mysteries found — your vault is looking complete!");
+      }
+    } catch {
+      toast.error("Failed to generate mysteries");
+    } finally {
+      setGenerating(false);
+    }
+  }, [familyId, loadMysteries]);
 
   const solveMystery = useCallback(async (mysteryId: number) => {
     if (!resolutionText.trim()) {
@@ -153,7 +178,14 @@ export default function LegacyMemoryMysteriesPage() {
           <h1 className="text-sm font-black text-amber-100 uppercase tracking-widest">Mysteries</h1>
           <p className="text-[10px] text-amber-700">{openMysteries.length} Open · {solvedMysteries.length} Solved</p>
         </div>
-        <div className="w-12" />
+        <button
+          onClick={generateMysteries}
+          disabled={generating}
+          className="flex items-center gap-1 text-amber-500 text-xs font-semibold disabled:opacity-40"
+        >
+          {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+          Scan
+        </button>
       </div>
 
       {/* Intro */}
