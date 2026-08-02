@@ -300,6 +300,44 @@ export default function LegacyStartPage() {
                     <p className="text-sm font-bold text-amber-400">{selected.memoryCount}</p>
                   </div>
                 </div>
+                {/* RPG Stats */}
+                <div className="space-y-1.5 mb-4">
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-sky-400">Knowledge</span>
+                    <span className="text-sky-400">{Math.min(100, (selected.storyCount * 10) + (selected.memoryCount * 5))}</span>
+                  </div>
+                  <div className="h-1.5 bg-[#3A2A1A] rounded-full overflow-hidden">
+                    <div className="h-full bg-sky-500 rounded-full" style={{ width: `${Math.min(100, (selected.storyCount * 10) + (selected.memoryCount * 5))}%` }} />
+                  </div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-rose-400">Relationships</span>
+                    <span className="text-rose-400">{Math.min(100, selected.eventCount * 15)}</span>
+                  </div>
+                  <div className="h-1.5 bg-[#3A2A1A] rounded-full overflow-hidden">
+                    <div className="h-full bg-rose-500 rounded-full" style={{ width: `${Math.min(100, selected.eventCount * 15)}%` }} />
+                  </div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-amber-400">Cultural Wisdom</span>
+                    <span className="text-amber-400">{Math.min(100, selected.interviewCount * 25)}</span>
+                  </div>
+                  <div className="h-1.5 bg-[#3A2A1A] rounded-full overflow-hidden">
+                    <div className="h-full bg-amber-500 rounded-full" style={{ width: `${Math.min(100, selected.interviewCount * 25)}%` }} />
+                  </div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-emerald-400">Courage</span>
+                    <span className="text-emerald-400">{Math.min(100, selected.completenessScore)}</span>
+                  </div>
+                  <div className="h-1.5 bg-[#3A2A1A] rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(100, selected.completenessScore)}%` }} />
+                  </div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-teal-400">Legacy</span>
+                    <span className="text-teal-400">{Math.min(100, selected.placeCount * 15)}</span>
+                  </div>
+                  <div className="h-1.5 bg-[#3A2A1A] rounded-full overflow-hidden">
+                    <div className="h-full bg-teal-500 rounded-full" style={{ width: `${Math.min(100, selected.placeCount * 15)}%` }} />
+                  </div>
+                </div>
                 <p className="text-xs text-amber-600 text-center italic mb-4">
                   {ready
                     ? "Chapter I is ready. Your journey begins now."

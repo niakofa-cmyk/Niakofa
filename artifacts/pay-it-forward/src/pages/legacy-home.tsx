@@ -1136,9 +1136,16 @@ export default function LegacyHomePage() {
             <div className="px-4 mb-5">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Your Ancestor</h2>
-                <button onClick={() => navigate("/diaspora/tree")} className="text-xs text-amber-600 flex items-center gap-1">
-                  Change <ChevronRight className="w-3 h-3" />
-                </button>
+                <div className="flex items-center gap-3">
+                  {ancestorCandidate && (
+                    <button onClick={() => navigate(`/legacy/character/${ancestorCandidate.memberId}`)} className="text-xs text-amber-500 flex items-center gap-1">
+                      Bio <ChevronRight className="w-3 h-3" />
+                    </button>
+                  )}
+                  <button onClick={() => navigate("/diaspora/tree")} className="text-xs text-amber-600 flex items-center gap-1">
+                    Change <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
               <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg">
                 <div className="flex items-start gap-4">

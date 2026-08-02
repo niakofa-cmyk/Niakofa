@@ -25,6 +25,8 @@ import {
   familyStoriesTable,
   familyPlacesTable,
   familyEventsTable,
+  familyInterviewsTable,
+  familyTreeRelationsTable,
   familyKnowledgeVersionsTable,
   legacyGameMasterNarrationsTable,
   legacyWorldEvolutionLogTable,
@@ -766,6 +768,209 @@ router.get(
     } catch (err) {
       logger.error({ err, familyId }, "legacy-game-master: emotional calendar failed");
       return res.status(500).json({ error: "Failed to get emotional calendar" });
+    }
+  },
+);
+
+// ── Character Biography ───────────────────────────────────────────────────────
+// Returns a rich character profile for a family member: their stories,
+// events, places, memories, interviews, photos, and relationships —
+// everything the game needs to render a living character instead of a
+// static profile.
+//
+//   GET /api/legacy/game-master/:familyId/character/:memberId
+
+router.get(
+  "/legacy/game-master/:familyId/character/:memberId",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const familyId = parseInt(String(req.params.familyId), 10);
+    const memberId = parseInt(String(req.params.memberId), 10);
+    if (isNaN(familyId) || isNaN(memberId)) return res.status(400).json({ error: "Invalid IDs" });
+
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, familyId))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
+
+    try {
+      const consentedIds = await getConsentedMemberIds(familyId);
+      if (!consentedIds.has(memberId)) {
+        return res.status(403).json({ error: "This family member has not consented to storytelling" });
+      }
+
+      // Get member info
+      const [member] = await db
+        .select({
+          id: familyMembersTable.id,
+          name: familyMembersTable.display_name,
+          role: familyMembersTable.role,
+          relation: familyMembersTable.relation_note,
+          is_living: familyMembersTable.is_living,
+        })
+        .from(familyMembersTable)
+        .where(and(eq(familyMembersTable.id, memberId), eq(familyMembersTable.family_id, familyId)))
+        .limit(1);
+
+      if (!member) return res.status(404).json({ error: "Family member not found" });
+
+      // Get events for this member
+      const events = await db
+        .select({
+          id: familyEventsTable.id,
+          title: familyEventsTable.title,
+          description: familyEventsTable.description,
+          eventDate: familyEventsTable.event_date,
+          category: familyEventsTable.category,
+        })
+        .from(familyEventsTable)
+        .where(eq(familyEventsTable.member_id, memberId))
+        .orderBy(asc(familyEventsTable.event_date));
+
+      // Get stories about this member
+      const stories = await db
+        .select({
+          id: familyStoriesTable.id,
+          title: familyStoriesTable.title,
+          body: familyStoriesTable.body,
+          category: familyStoriesTable.category,
+          createdAt: familyStoriesTable.created_at,
+        })
+        .from(familyStoriesTable)
+        .where(eq(familyStoriesTable.about_member_id, memberId))
+        .orderBy(desc(familyStoriesTable.created_at))
+        .limit(10);
+
+      // Get memories mentioning this member
+      const memoryPeople = await db
+        .select({ memoryId: familyMemoryPeopleTable.memory_id })
+        .from(familyMemoryPeopleTable)
+        .where(eq(familyMemoryPeopleTable.member_id, memberId));
+
+      const memoryIds = memoryPeople.map((mp) => mp.memoryId);
+      const memories = memoryIds.length > 0
+        ? await db
+            .select({
+              id: familyMemoriesTable.id,
+              title: familyMemoriesTable.title,
+              description: familyMemoriesTable.description,
+              memoryDate: familyMemoriesTable.memory_date,
+              locationLabel: familyMemoriesTable.location_label,
+            })
+            .from(familyMemoriesTable)
+            .where(inArray(familyMemoriesTable.id, memoryIds))
+            .orderBy(desc(familyMemoriesTable.memory_date))
+            .limit(10)
+        : [];
+
+      // Get interviews with this member
+      const interviews = await db
+        .select({
+          id: familyInterviewsTable.id,
+          status: familyInterviewsTable.status,
+          createdAt: familyInterviewsTable.created_at,
+        })
+        .from(familyInterviewsTable)
+        .where(eq(familyInterviewsTable.subject_member_id, memberId))
+        .orderBy(desc(familyInterviewsTable.created_at))
+        .limit(5);
+
+      // Get places from events
+      const placeIds = events.map((e) => e.id).slice(0, 5);
+      const places = placeIds.length > 0
+        ? await db
+            .select({
+              id: familyPlacesTable.id,
+              label: familyPlacesTable.label,
+              placeType: familyPlacesTable.place_type,
+              country: familyPlacesTable.country,
+            })
+            .from(familyPlacesTable)
+            .where(inArray(familyPlacesTable.id, placeIds))
+            .limit(5)
+        : [];
+
+      // Get relationships
+      const relations = await db
+        .select()
+        .from(familyTreeRelationsTable)
+        .where(
+          and(
+            eq(familyTreeRelationsTable.family_id, familyId),
+            sql`${familyTreeRelationsTable.from_member_id} = ${memberId} OR ${familyTreeRelationsTable.to_member_id} = ${memberId}`,
+          ),
+        )
+        .limit(20);
+
+      // Build character profile
+      const birthEvent = events.find((e) => e.category === "birth");
+      const deathEvent = events.find((e) => e.category === "death");
+      const birthYear = birthEvent?.eventDate ? new Date(birthEvent.eventDate).getFullYear() : null;
+      const deathYear = deathEvent?.eventDate ? new Date(deathEvent.eventDate).getFullYear() : null;
+
+      // RPG stats derived from real vault data
+      const stats = {
+        knowledge: Math.min(100, (stories.length * 10) + (memories.length * 5)),
+        relationships: Math.min(100, events.length * 15),
+        culturalWisdom: Math.min(100, interviews.length * 25),
+        courage: Math.min(100, (stories.length * 5) + (events.length * 5) + (memories.length * 5)),
+        reputation: Math.min(100, events.filter((e) => e.category !== "birth" && e.category !== "death").length * 20),
+        legacy: Math.min(100, places.length * 15),
+      };
+
+      return res.json({
+        character: {
+          memberId: member.id,
+          name: member.name,
+          role: member.role,
+          relation: member.relation,
+          isLiving: member.is_living,
+          birthYear,
+          deathYear,
+          stats,
+          events: events.map((e) => ({
+            id: e.id,
+            title: e.title,
+            description: e.description,
+            eventDate: e.eventDate ? e.eventDate.toISOString() : null,
+            category: e.category,
+          })),
+          stories: stories.map((s) => ({
+            id: s.id,
+            title: s.title,
+            excerpt: s.body?.slice(0, 200) ?? "",
+            category: s.category,
+          })),
+          memories: memories.map((m) => ({
+            id: m.id,
+            title: m.title,
+            description: m.description,
+            memoryDate: m.memoryDate ? m.memoryDate.toISOString() : null,
+            locationLabel: m.locationLabel,
+          })),
+          interviews: interviews.map((i) => ({
+            id: i.id,
+            title: `Interview #${i.id}`,
+            status: i.status,
+          })),
+          places: places.map((p) => ({
+            id: p.id,
+            label: p.label,
+            placeType: p.placeType,
+            country: p.country,
+          })),
+          relationships: relations.map((r) => ({
+            id: r.id,
+            fromMemberId: r.from_member_id,
+            toMemberId: r.to_member_id,
+            relationType: r.relation_type,
+          })),
+        },
+      });
+    } catch (err) {
+      logger.error({ err, familyId, memberId }, "legacy-game-master: character bio failed");
+      return res.status(500).json({ error: "Failed to get character biography" });
     }
   },
 );
