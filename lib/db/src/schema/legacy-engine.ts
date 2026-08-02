@@ -1,5 +1,5 @@
 import {
-  pgTable, serial, integer, text, timestamp, jsonb, pgEnum, index, boolean,
+  pgTable, serial, integer, text, timestamp, jsonb, pgEnum, index, boolean, uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { familiesTable, familyMembersTable } from "./families";
 import { familyKnowledgeVersionsTable } from "./family-knowledge-versions";
@@ -107,6 +107,34 @@ export const legacyAchievementsTable = pgTable("legacy_achievements", {
   index("idx_legacy_achievements_unlocked").on(t.family_id, t.unlocked),
 ]);
 
+// ─── Quest Progress ─────────────────────────────────────────────────────────
+// AI-generated quests (legacy.ts) are cached by family+fingerprint and never
+// persisted as rows of their own — a quest's id is only stable for the
+// lifetime of that cache entry. This table durably records THAT a given
+// quest id (scoped to the fingerprint it was generated under) was completed
+// by a given user, so:
+//   1. the same quest can't be "completed" over and over for repeat XP/credit
+//   2. a family can see its own history of completed quests, independent of
+//      the quest cache expiring or the fingerprint changing
+export const legacyQuestProgressTable = pgTable("legacy_quest_progress", {
+  id:          serial("id").primaryKey(),
+  family_id:   integer("family_id").notNull().references(() => familiesTable.id, { onDelete: "cascade" }),
+  user_id:     integer("user_id").notNull(),
+  quest_id:    text("quest_id").notNull(),       // AiQuest.id from legacy.ts (stable per fingerprint)
+  fingerprint: text("fingerprint").notNull(),    // reservoir fingerprint the quest was generated under
+  quest_title: text("quest_title").notNull(),    // snapshot — quest cache can expire independently
+  quest_category: text("quest_category").notNull(),
+  xp_awarded:  integer("xp_awarded").notNull().default(0),
+  completed_at: timestamp("completed_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("idx_legacy_quest_progress_family").on(t.family_id),
+  index("idx_legacy_quest_progress_user").on(t.family_id, t.user_id),
+  // One completion per (family, user, quest_id, fingerprint) — enforced at
+  // the DB level so re-completing the identical quest can only ever be a
+  // no-op, never a duplicate XP/credit, even under concurrent requests.
+  uniqueIndex("idx_legacy_quest_progress_uidx").on(t.family_id, t.user_id, t.quest_id, t.fingerprint),
+]);
+
 export type LegacyWorld = typeof legacyWorldsTable.$inferSelect;
 export type InsertLegacyWorld = typeof legacyWorldsTable.$inferInsert;
 export type LegacyChapter = typeof legacyChaptersTable.$inferSelect;
@@ -115,3 +143,5 @@ export type LegacySession = typeof legacySessionsTable.$inferSelect;
 export type InsertLegacySession = typeof legacySessionsTable.$inferInsert;
 export type LegacyAchievement = typeof legacyAchievementsTable.$inferSelect;
 export type InsertLegacyAchievement = typeof legacyAchievementsTable.$inferInsert;
+export type LegacyQuestProgress = typeof legacyQuestProgressTable.$inferSelect;
+export type InsertLegacyQuestProgress = typeof legacyQuestProgressTable.$inferInsert;

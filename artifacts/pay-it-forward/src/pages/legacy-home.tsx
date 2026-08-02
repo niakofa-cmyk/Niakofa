@@ -348,6 +348,9 @@ export default function LegacyHomePage() {
   const [questsRefreshing, setQuestsRefreshing] = useState(false);
   const [activeQuestIdx,  setActiveQuestIdx]  = useState(0);
   const [isAiEnabled,     setIsAiEnabled]     = useState(false);
+  const [questFingerprint, setQuestFingerprint] = useState<string | null>(null);
+  const [completedQuestIds, setCompletedQuestIds] = useState<Set<string>>(new Set());
+  const [completingQuestId, setCompletingQuestId] = useState<string | null>(null);
   const questsLoadedRef = useRef(false);
 
   // ── Legacy Engine state (real API data) ──────────────────────────────────
@@ -535,9 +538,10 @@ export default function LegacyHomePage() {
     try {
       const res = await fetch(`/api/legacy/quests/${familyId}`, { headers: authHeaders() });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as { quests: AiQuest[]; isAiEnabled?: boolean };
+      const data = await res.json() as { quests: AiQuest[]; fingerprint?: string; isAiEnabled?: boolean };
       setAiQuests(data.quests ?? []);
       setIsAiEnabled(Boolean(data.isAiEnabled));
+      setQuestFingerprint(data.fingerprint ?? null);
     } catch {
       setAiQuests([]);
     } finally {
@@ -545,12 +549,27 @@ export default function LegacyHomePage() {
     }
   }, []);
 
+  // Load this user's real quest-completion history so already-completed
+  // quests render correctly on page load, not just after a fresh completion
+  // in the current session.
+  const loadQuestHistory = useCallback(async (familyId: number) => {
+    try {
+      const res = await fetch(`/api/legacy/quests/${familyId}/history`, { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json() as { completions?: { quest_id: string }[] };
+      setCompletedQuestIds(new Set((data.completions ?? []).map(c => c.quest_id)));
+    } catch {
+      // Non-critical — completed-state just won't be pre-populated this load.
+    }
+  }, []);
+
   useEffect(() => {
     const { loading, families } = legacyState;
     if (!loading && families.length > 0) {
       loadAiQuests(families[0].id);
+      loadQuestHistory(families[0].id);
     }
-  }, [legacyState.loading, legacyState.families, loadAiQuests]);
+  }, [legacyState.loading, legacyState.families, loadAiQuests, loadQuestHistory]);
 
   // ── Force-refresh AI quests ───────────────────────────────────────────────
 
@@ -561,12 +580,13 @@ export default function LegacyHomePage() {
         method: "POST",
         headers: authHeaders(),
       });
-      const data = await res.json() as { quests?: AiQuest[]; error?: string };
+      const data = await res.json() as { quests?: AiQuest[]; fingerprint?: string; error?: string };
       if (!res.ok) {
         toast.error(data.error ?? "Quest refresh failed");
         return;
       }
       setAiQuests(data.quests ?? []);
+      setQuestFingerprint(data.fingerprint ?? null);
       setActiveQuestIdx(0);
       toast.success("Nia has crafted new quests from your family's stories!");
     } catch {
@@ -575,6 +595,44 @@ export default function LegacyHomePage() {
       setQuestsRefreshing(false);
     }
   }, []);
+
+  // ── Complete a quest ──────────────────────────────────────────────────────
+  // Persists completion server-side (legacy_quest_progress) and awards XP.
+  // Idempotent: completing the same quest twice under the same fingerprint
+  // is a no-op server-side, so this is safe to fire even on a double-tap.
+  const handleCompleteQuest = useCallback(async (familyId: number, quest: AiQuest) => {
+    if (completedQuestIds.has(quest.id) || completingQuestId) return;
+    setCompletingQuestId(quest.id);
+    try {
+      const res = await fetch(`/api/legacy/quests/${familyId}/${quest.id}/complete`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fingerprint: questFingerprint,
+          questTitle: quest.title,
+          questCategory: quest.category,
+          xp: quest.xp,
+        }),
+      });
+      const data = await res.json() as {
+        completed?: boolean; alreadyCompleted?: boolean; xpAwarded?: number; error?: string;
+      };
+      if (!res.ok) {
+        toast.error(data.error ?? "Couldn't complete quest");
+        return;
+      }
+      setCompletedQuestIds(prev => new Set(prev).add(quest.id));
+      if (data.alreadyCompleted) {
+        toast.message("You've already completed this quest.");
+      } else {
+        toast.success(`Quest complete! +${data.xpAwarded ?? quest.xp} XP`);
+      }
+    } catch {
+      toast.error("Couldn't complete quest right now");
+    } finally {
+      setCompletingQuestId(null);
+    }
+  }, [completedQuestIds, completingQuestId, questFingerprint]);
 
   // ── Recording timer ───────────────────────────────────────────────────────
 
@@ -1212,12 +1270,30 @@ export default function LegacyHomePage() {
                         </div>
                       </div>
                     </div>
-                    <button
-                      onClick={() => navigate(activeQuest.actionPath || (families[0] ? `/family/${families[0].id}` : "/diaspora/family"))}
-                      className="mt-3 w-full bg-amber-500/15 border border-amber-600/30 text-amber-300 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70 flex items-center justify-center gap-2"
-                    >
-                      <Target className="w-3.5 h-3.5" /> Start Quest
-                    </button>
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        onClick={() => navigate(activeQuest.actionPath || (families[0] ? `/family/${families[0].id}` : "/diaspora/family"))}
+                        className="flex-1 bg-amber-500/15 border border-amber-600/30 text-amber-300 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70 flex items-center justify-center gap-2"
+                      >
+                        <Target className="w-3.5 h-3.5" /> Start Quest
+                      </button>
+                      <button
+                        onClick={() => families[0] && handleCompleteQuest(families[0].id, activeQuest)}
+                        disabled={completedQuestIds.has(activeQuest.id) || completingQuestId === activeQuest.id}
+                        className={`flex-1 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl flex items-center justify-center gap-2 border transition-colors ${
+                          completedQuestIds.has(activeQuest.id)
+                            ? "bg-emerald-500/15 border-emerald-600/30 text-emerald-300"
+                            : "bg-amber-500/15 border-amber-600/30 text-amber-300 active:opacity-70"
+                        }`}
+                      >
+                        {completingQuestId === activeQuest.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        )}
+                        {completedQuestIds.has(activeQuest.id) ? "Completed" : "Mark Complete"}
+                      </button>
+                    </div>
                   </>
                 ) : null}
               </div>

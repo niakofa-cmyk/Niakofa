@@ -30,6 +30,7 @@ import {
   familyTreeRelationsTable,
   familyMemoryAssetsTable,
   familyMemoryPeopleTable,
+  legacyQuestProgressTable,
 } from "@workspace/db";
 import { syncAchievements } from "./legacy-achievements";
 import { requireAuth } from "../middlewares/auth";
@@ -709,15 +710,33 @@ router.get(
 // ── Quest Completion Tracking ─────────────────────────────────────────────────
 // POST /api/legacy/quests/:familyId/:questId/complete — mark a quest as completed
 // Awards XP and updates achievement progress for the family.
+//
+// Previously this endpoint only busted caches and re-synced achievement
+// *counts* — nothing recorded that THIS quest id was completed BY this
+// user, so the same quest could be "completed" repeatedly with no durable
+// record (see legacy_quest_progress migration 0100 for the full writeup).
+// Quest title/category/xp are accepted from the client because AI-generated
+// quests are ephemeral, server-generated content the client is already
+// displaying verbatim — this is a completion *log*, not a vault write, so
+// there's no fabrication risk in snapshotting what was shown.
+
+const VALID_QUEST_CATEGORIES = new Set(["record", "document", "connect", "explore", "discover"]);
 
 router.post(
-  "/quests/:familyId/:questId/complete",
+  "/legacy/quests/:familyId/:questId/complete",
   generalApiLimiter,
   requireAuth,
   async (req, res) => {
     const familyId = parseInt(String(req.params.familyId), 10);
     const questId = String(req.params.questId);
     if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const { fingerprint, questTitle, questCategory, xp } = req.body as {
+      fingerprint?: string;
+      questTitle?: string;
+      questCategory?: string;
+      xp?: number;
+    };
 
     const userId = req.authenticatedUserId!;
     const [member] = await db
@@ -742,22 +761,95 @@ router.post(
       // Invalidate quest cache with the CORRECT key format (includes fingerprint)
       await cacheDel(questKey(familyId, reservoir.fingerprint));
 
+      // Sanitize the client-supplied quest snapshot the same way generateAiQuests
+      // sanitizes model output — never trust length/enum bounds from the client.
+      const effectiveFingerprint = (fingerprint && fingerprint.length > 0) ? fingerprint : reservoir.fingerprint;
+      const title = typeof questTitle === "string" && questTitle.trim().length > 0
+        ? questTitle.trim().slice(0, 80)
+        : "Family Quest";
+      const category = VALID_QUEST_CATEGORIES.has(String(questCategory)) ? String(questCategory) : "discover";
+      const xpAwarded = Math.min(200, Math.max(0, Number.isFinite(Number(xp)) ? Number(xp) : 0));
+
+      let alreadyCompleted = false;
+      try {
+        await db.insert(legacyQuestProgressTable).values({
+          family_id:      familyId,
+          user_id:        userId,
+          quest_id:       questId,
+          fingerprint:    effectiveFingerprint,
+          quest_title:    title,
+          quest_category: category,
+          xp_awarded:     xpAwarded,
+        });
+      } catch (insertErr) {
+        // Postgres unique_violation (23505) on the (family, user, quest, fingerprint)
+        // index — this exact quest was already completed. Not an error condition,
+        // just means no new credit should be awarded.
+        const code = (insertErr as { code?: string })?.code;
+        if (code === "23505") {
+          alreadyCompleted = true;
+        } else {
+          throw insertErr;
+        }
+      }
+
       // Sync achievements so quest completion counts toward gameplay achievements
       await syncAchievements(familyId).catch((err) =>
         logger.error({ err, familyId }, "legacy: achievement sync after quest completion failed"),
       );
 
-      logger.info({ familyId, userId, questId }, "legacy: quest completed");
+      logger.info({ familyId, userId, questId, alreadyCompleted }, "legacy: quest completed");
 
       return res.json({
         completed: true,
+        alreadyCompleted,
         questId,
         familyId,
-        message: "Quest completed. Your family's journey has been updated.",
+        xpAwarded: alreadyCompleted ? 0 : xpAwarded,
+        message: alreadyCompleted
+          ? "You've already completed this quest."
+          : "Quest completed. Your family's journey has been updated.",
       });
     } catch (err) {
       logger.error({ err, familyId, questId }, "legacy: quest completion failed");
       return res.status(500).json({ error: "Failed to complete quest" });
+    }
+  },
+);
+
+// GET /api/legacy/quests/:familyId/history — a user's durable quest completion log
+router.get(
+  "/legacy/quests/:familyId/history",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const familyId = parseInt(String(req.params.familyId), 10);
+    if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, familyId))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
+
+    try {
+      const rows = await db
+        .select()
+        .from(legacyQuestProgressTable)
+        .where(
+          and(
+            eq(legacyQuestProgressTable.family_id, familyId),
+            eq(legacyQuestProgressTable.user_id, userId),
+          ),
+        )
+        .orderBy(desc(legacyQuestProgressTable.completed_at))
+        .limit(100);
+
+      const totalXp = rows.reduce((sum, r) => sum + r.xp_awarded, 0);
+
+      return res.json({ completions: rows, totalXp, count: rows.length });
+    } catch (err) {
+      logger.error({ err, familyId }, "legacy: quest history failed");
+      return res.status(500).json({ error: "Failed to load quest history" });
     }
   },
 );

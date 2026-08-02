@@ -68,9 +68,20 @@ export async function syncAchievements(familyId: number): Promise<void> {
   for (const def of CATALOG) {
     const current = progress[def.key] ?? 0;
     const unlocked = current >= def.goal;
-    const [existing] = await db.select({ id: legacyAchievementsTable.id }).from(legacyAchievementsTable).where(and(eq(legacyAchievementsTable.family_id, familyId), eq(legacyAchievementsTable.achievement_key, def.key))).limit(1);
+    const [existing] = await db.select({ id: legacyAchievementsTable.id, unlocked: legacyAchievementsTable.unlocked, unlocked_at: legacyAchievementsTable.unlocked_at }).from(legacyAchievementsTable).where(and(eq(legacyAchievementsTable.family_id, familyId), eq(legacyAchievementsTable.achievement_key, def.key))).limit(1);
     if (existing) {
-      await db.update(legacyAchievementsTable).set({ progress: current, unlocked, unlocked_at: unlocked && !existing ? new Date() : null, updated_at: new Date() }).where(eq(legacyAchievementsTable.id, existing.id));
+      // Only set unlocked_at the moment an achievement transitions from
+      // locked -> unlocked. Once set, never clear it on subsequent syncs —
+      // previously this always evaluated `!existing` inside the `if
+      // (existing)` branch, which is always false, so unlocked_at was
+      // silently wiped back to null on every single sync.
+      const newlyUnlocked = unlocked && !existing.unlocked;
+      await db.update(legacyAchievementsTable).set({
+        progress: current,
+        unlocked,
+        unlocked_at: newlyUnlocked ? new Date() : existing.unlocked_at,
+        updated_at: new Date(),
+      }).where(eq(legacyAchievementsTable.id, existing.id));
     } else {
       await db.insert(legacyAchievementsTable).values({ family_id: familyId, achievement_key: def.key, category: def.category, title: def.title, description: def.description, progress: current, goal: def.goal, unlocked, unlocked_at: unlocked ? new Date() : null });
     }
