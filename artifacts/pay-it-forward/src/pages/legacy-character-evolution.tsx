@@ -58,6 +58,19 @@ interface Character {
   } | null;
 }
 
+interface EvolutionEntry {
+  id: number;
+  member_id: number;
+  knowledge_version_id: number | null;
+  stats: Record<string, number>;
+  evolution_summary: string | null;
+  new_dialogue_count: number;
+  new_journal_count: number;
+  new_quest_count: number;
+  new_memory_count: number;
+  created_at: string;
+}
+
 const STAT_CONFIG = [
   { key: "knowledge" as const,      label: "Knowledge",        icon: Brain,   color: "bg-sky-500",   text: "text-sky-400" },
   { key: "relationships" as const, label: "Relationships",    icon: Heart,   color: "bg-rose-500",  text: "text-rose-400" },
@@ -91,6 +104,9 @@ export default function LegacyCharacterEvolutionPage() {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedMember, setSelectedMember] = useState<number | null>(null);
+  const [evolutionHistory, setEvolutionHistory] = useState<EvolutionEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -111,6 +127,7 @@ export default function LegacyCharacterEvolutionPage() {
         }
         const data = await res.json();
         setCharacters(data.characters ?? []);
+        setFamilyId(famId);
       } catch {
         setError("Failed to load characters.");
       } finally {
@@ -118,6 +135,26 @@ export default function LegacyCharacterEvolutionPage() {
       }
     })();
   }, [currentUser]);
+
+  const [familyId, setFamilyId] = useState<number | null>(null);
+
+  const loadEvolutionHistory = async (memberId: number) => {
+    if (!familyId) return;
+    setSelectedMember(memberId);
+    setHistoryLoading(true);
+    setEvolutionHistory([]);
+    try {
+      const res = await fetch(`/api/legacy/character-evolution/${familyId}/${memberId}`, { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setEvolutionHistory(data.evolution ?? []);
+      }
+    } catch {
+      // silently fail — modal will show empty state
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -270,8 +307,86 @@ export default function LegacyCharacterEvolutionPage() {
                   )}
                 </div>
               )}
+              <button
+                onClick={() => loadEvolutionHistory(char.memberId)}
+                className="w-full mt-3 text-xs font-bold text-amber-500/80 hover:text-amber-400 border border-amber-700/30 hover:border-amber-600/50 rounded-lg py-2 transition-colors flex items-center justify-center gap-1.5"
+              >
+                <TrendingUp className="w-3 h-3" /> View Evolution History
+              </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Evolution History Modal */}
+      {selectedMember !== null && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setSelectedMember(null)}
+        >
+          <div
+            className="bg-[#1F1410] border border-amber-800/40 rounded-2xl p-5 max-w-md w-full max-h-[80vh] overflow-y-auto shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-amber-200">Evolution Timeline</h3>
+              <button
+                onClick={() => setSelectedMember(null)}
+                className="text-amber-600 hover:text-amber-400"
+              >
+                <ArrowLeft className="w-4 h-4 rotate-180" />
+              </button>
+            </div>
+
+            {historyLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 text-amber-500 animate-spin" />
+              </div>
+            ) : evolutionHistory.length === 0 ? (
+              <p className="text-xs text-amber-700 text-center py-8 italic">
+                No evolution history yet. This character will evolve as your family preserves more stories and memories.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {evolutionHistory.map((entry, idx) => (
+                  <div key={entry.id} className="relative pl-6">
+                    {idx < evolutionHistory.length - 1 && (
+                      <div className="absolute left-2 top-3 bottom-0 w-px bg-amber-800/30" />
+                    )}
+                    <div className="absolute left-0 top-1.5 w-4 h-4 rounded-full bg-amber-700/40 border-2 border-amber-600/50" />
+                    <div className="bg-[#2A1A0F] border border-amber-800/20 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Sparkles className="w-3 h-3 text-amber-500" />
+                        <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">
+                          {new Date(entry.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                        </span>
+                        {entry.knowledge_version_id && (
+                          <span className="text-[10px] text-amber-700 ml-auto">v{entry.knowledge_version_id}</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-amber-300/90">{entry.evolution_summary || "Character evolved"}</p>
+                      {(entry.new_dialogue_count > 0 || entry.new_memory_count > 0 || entry.new_quest_count > 0 || entry.new_journal_count > 0) && (
+                        <div className="flex gap-1.5 flex-wrap mt-2">
+                          {entry.new_dialogue_count > 0 && (
+                            <span className="text-[10px] text-sky-400 bg-sky-900/20 px-1.5 py-0.5 rounded-full">+{entry.new_dialogue_count} dialogue</span>
+                          )}
+                          {entry.new_journal_count > 0 && (
+                            <span className="text-[10px] text-purple-400 bg-purple-900/20 px-1.5 py-0.5 rounded-full">+{entry.new_journal_count} journal</span>
+                          )}
+                          {entry.new_memory_count > 0 && (
+                            <span className="text-[10px] text-amber-400 bg-amber-900/20 px-1.5 py-0.5 rounded-full">+{entry.new_memory_count} memories</span>
+                          )}
+                          {entry.new_quest_count > 0 && (
+                            <span className="text-[10px] text-emerald-400 bg-emerald-900/20 px-1.5 py-0.5 rounded-full">+{entry.new_quest_count} quests</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
