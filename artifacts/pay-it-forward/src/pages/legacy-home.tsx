@@ -415,6 +415,15 @@ export default function LegacyHomePage() {
     daysUntil: number; yearsAgo: number | null;
   }>>([]);
 
+  // ── Reunion Challenge (real data from /api/legacy/reunion/:familyId) ──────
+  const [reunionData, setReunionData] = useState<{
+    challenge: {
+      title: string; description: string; goal: number; progress: number;
+      reward: string; completed: boolean;
+    };
+    leaderboard: Array<{ memberId: number; name: string; publishedInterviews: number }>;
+  } | null>(null);
+
   // ── Load family data ──────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
@@ -515,6 +524,11 @@ export default function LegacyHomePage() {
         if (calendarRes.ok) {
           const cd = await calendarRes.json();
           setEmotionalCalendar(cd.calendar ?? []);
+        }
+        // Fetch real reunion challenge data
+        const reunionRes = await fetch(`/api/legacy/reunion/${familyId}`, { headers: authHeaders() });
+        if (reunionRes.ok) {
+          setReunionData(await reunionRes.json());
         }
       } catch {
         // Silent fail
@@ -1900,9 +1914,22 @@ export default function LegacyHomePage() {
                   <div className="absolute inset-0 rounded-xl overflow-hidden bg-gradient-to-b from-amber-900/20 to-amber-950/40">
                     <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-amber-900/30 to-transparent" />
                     <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
-                      {[3, 5, 2, 6, 4, 7, 3].map((h, i) => (
-                        <div key={i} className="w-4 rounded-sm bg-amber-800/40" style={{ height: h * 4 }} />
-                      ))}
+                      {(() => {
+                        const now = Date.now();
+                        const days = Array.from({ length: 7 }, (_, i) => {
+                          const dayStart = new Date(now - (6 - i) * 86400000);
+                          dayStart.setHours(0, 0, 0, 0);
+                          const dayEnd = dayStart.getTime() + 86400000;
+                          return memories.filter((m) => {
+                            const ts = new Date(m.created_at).getTime();
+                            return ts >= dayStart.getTime() && ts < dayEnd;
+                          }).length;
+                        });
+                        const maxVal = Math.max(...days, 1);
+                        return days.map((h, i) => (
+                          <div key={i} className="w-4 rounded-sm bg-amber-800/40 transition-all duration-300" style={{ height: (h / maxVal) * 24 + 4 }} />
+                        ));
+                      })()}
                     </div>
                   </div>
                   <div className="absolute inset-0 flex items-center justify-center">
@@ -1943,17 +1970,72 @@ export default function LegacyHomePage() {
                 <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Living Family Universe</h2>
               </div>
 
-              {/* Collaborative Challenges */}
+              {/* Family Reunion Challenge — real progress + leaderboard */}
               <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg mb-3">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center">
                     <Trophy className="w-5 h-5 text-rose-400" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm font-bold text-amber-100">Collaborative Challenges</p>
-                    <p className="text-xs text-amber-600 mt-0.5">Work together on preservation missions and unlock new chapters.</p>
+                    <p className="text-sm font-bold text-amber-100">
+                      {reunionData?.challenge.title ?? "Family Reunion Event"}
+                    </p>
+                    <p className="text-xs text-amber-600 mt-0.5">
+                      {reunionData?.challenge.description ?? "Everyone must record one elder's story."}
+                    </p>
                   </div>
                 </div>
+
+                {/* Progress bar */}
+                {reunionData && (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs text-amber-700">Progress</span>
+                      <span className="text-xs font-bold text-amber-300">
+                        {reunionData.challenge.progress} / {reunionData.challenge.goal}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-[#3A2A1A] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-rose-500 to-amber-500 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, (reunionData.challenge.progress / reunionData.challenge.goal) * 100)}%` }}
+                      />
+                    </div>
+                    {reunionData.challenge.completed && (
+                      <p className="text-xs text-emerald-400 mt-2 flex items-center gap-1">
+                        <Star className="w-3 h-3" /> Challenge complete! Reward: {reunionData.challenge.reward}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Leaderboard */}
+                {reunionData && reunionData.leaderboard.length > 0 && (
+                  <div className="mb-4 space-y-2">
+                    <p className="text-xs font-bold text-amber-700 uppercase tracking-wide">Leaderboard</p>
+                    {reunionData.leaderboard.map((entry, i) => (
+                      <div key={entry.memberId} className="flex items-center gap-3 bg-[#3A2A1A] rounded-xl p-2.5">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                          i === 0 ? "bg-amber-500/20 text-amber-300" :
+                          i === 1 ? "bg-gray-400/20 text-gray-300" :
+                          i === 2 ? "bg-orange-700/20 text-orange-400" :
+                          "bg-[#2A1A0F] text-amber-700"
+                        }`}>
+                          {i + 1}
+                        </div>
+                        <span className="text-sm text-amber-100 flex-1 truncate">{entry.name}</span>
+                        <span className="text-xs font-bold text-rose-400">{entry.publishedInterviews}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {reunionData && reunionData.leaderboard.length === 0 && (
+                  <p className="text-xs text-amber-700 text-center italic mb-4">
+                    No interviews published yet. Be the first to record an elder's story!
+                  </p>
+                )}
+
                 <button
                   onClick={() => navigate("/legacy/challenges")}
                   className="w-full bg-rose-500/15 border border-rose-600/30 text-rose-300 font-bold text-xs uppercase tracking-wide py-3 rounded-xl active:opacity-70 flex items-center justify-center gap-2"
