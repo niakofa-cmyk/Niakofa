@@ -27,7 +27,7 @@ import {
   familyEventsTable,
   legacyGameMasterNarrationsTable,
 } from "@workspace/db";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql, asc } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
@@ -291,3 +291,207 @@ function generateFallbackNarration(
 }
 
 export default router;
+
+// ── Today's Journey ──────────────────────────────────────────────────────────
+// Daily ancestor selection — deterministic per family per day so the same
+// ancestor shows all day (not random per refresh). Picks the ancestor with the
+// richest vault data who hasn't been featured recently, then generates a
+// short "today's goal" narration.
+//
+//   GET /api/legacy/game-master/:familyId/today — today's journey
+
+router.get(
+  "/legacy/game-master/:familyId/today",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const familyId = parseInt(String(req.params.familyId), 10);
+    if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, familyId))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
+
+    try {
+      const consentedIds = await getConsentedMemberIds(familyId);
+
+      // Fetch members with consent
+      const members = (await db
+        .select({
+          id: familyMembersTable.id,
+          name: familyMembersTable.display_name,
+          role: familyMembersTable.role,
+          relation: familyMembersTable.relation_note,
+          is_living: familyMembersTable.is_living,
+          user_id: familyMembersTable.user_id,
+        })
+        .from(familyMembersTable)
+        .where(
+          and(
+            eq(familyMembersTable.family_id, familyId),
+            eq(familyMembersTable.status, "active"),
+          ),
+        )).filter((m) => consentedIds.has(m.id));
+
+      if (members.length === 0) {
+        return res.json({ journey: null, message: "Add family members to begin your journey." });
+      }
+
+      // Score each member by data richness
+      const scored: Array<{ member: typeof members[0]; score: number; storyCount: number; eventCount: number; placeCount: number }> = [];
+      for (const member of members) {
+        const [{ sc }] = await db.select({ sc: sql`count(*)::int` }).from(familyStoriesTable).where(eq(familyStoriesTable.about_member_id, member.id));
+        const [{ ec }] = await db.select({ ec: sql`count(*)::int` }).from(familyEventsTable).where(eq(familyEventsTable.member_id, member.id));
+        const [{ pc }] = await db.select({ pc: sql`count(DISTINCT ${familyEventsTable.place_id})::int` }).from(familyEventsTable).where(and(eq(familyEventsTable.member_id, member.id), sql`${familyEventsTable.place_id} IS NOT NULL`));
+        const score = Number(sc) * 3 + Number(ec) * 2 + Number(pc) * 2;
+        scored.push({ member, score, storyCount: Number(sc), eventCount: Number(ec), placeCount: Number(pc) });
+      }
+
+      // Deterministic daily pick: hash the date + familyId to pick from sorted candidates
+      const today = new Date().toISOString().slice(0, 10);
+      const dayHash = createHash("sha256").update(`${familyId}:${today}`).digest("hex");
+      const hashNum = parseInt(dayHash.slice(0, 8), 16);
+      // Sort by score descending, then pick by hash
+      scored.sort((a, b) => b.score - a.score);
+      const topCandidates = scored.filter((s) => s.score > 0).length > 0
+        ? scored.filter((s) => s.score > 0)
+        : scored;
+      const picked = topCandidates[hashNum % topCandidates.length];
+
+      if (!picked) {
+        return res.json({ journey: null, message: "No ancestors with enough data yet." });
+      }
+
+      // Get birth year
+      const [birthEvent] = await db
+        .select({ eventDate: familyEventsTable.event_date })
+        .from(familyEventsTable)
+        .where(and(eq(familyEventsTable.member_id, picked.member.id), eq(familyEventsTable.category, "birth")))
+        .orderBy(asc(familyEventsTable.event_date))
+        .limit(1);
+
+      const birthYear = birthEvent?.eventDate ? new Date(birthEvent.eventDate).getFullYear() : null;
+
+      // Generate a short "today's goal" narration
+      const narrationType = "scene_intro" as const;
+      const promptInput = JSON.stringify({ familyId, narrationType, ancestorName: picked.member.name, sceneContext: "daily journey introduction", date: today });
+      const promptHash = hashPrompt(promptInput);
+
+      // Check cache (daily — same narration all day)
+      const [cached] = await db
+        .select()
+        .from(legacyGameMasterNarrationsTable)
+        .where(
+          and(
+            eq(legacyGameMasterNarrationsTable.family_id, familyId),
+            eq(legacyGameMasterNarrationsTable.prompt_hash, promptHash),
+          ),
+        )
+        .limit(1);
+
+      let narration: string;
+      let narrationId: number | null = null;
+      let cachedFlag = false;
+
+      if (cached && Date.now() - new Date(cached.created_at).getTime() < NARRATION_TTL_MS) {
+        narration = cached.content;
+        narrationId = cached.id;
+        cachedFlag = true;
+      } else {
+        // Fetch context
+        const [memories, places] = await Promise.all([
+          db.select({ story: familyMemoriesTable.story, memoryDate: familyMemoriesTable.memory_date })
+            .from(familyMemoriesTable)
+            .where(eq(familyMemoriesTable.family_id, familyId))
+            .orderBy(desc(familyMemoriesTable.memory_date))
+            .limit(5),
+          db.select({ label: familyPlacesTable.label, country: familyPlacesTable.country })
+            .from(familyPlacesTable)
+            .where(eq(familyPlacesTable.family_id, familyId))
+            .limit(3),
+        ]);
+
+        const contextSummary = {
+          ancestorName: picked.member.name,
+          ancestorRole: picked.member.role,
+          birthYear,
+          memories: memories.map((m) => ({ content: m.story?.slice(0, 150), year: m.memoryDate ? new Date(m.memoryDate).getFullYear() : null })),
+          places: places.map((p) => ({ label: p.label, country: p.country })),
+        };
+
+        const apiKey = process.env.ANTHROPIC_API_KEY;
+        if (apiKey) {
+          try {
+            const anthropic = new Anthropic({ apiKey });
+            const response = await anthropic.messages.create({
+              model: MODEL,
+              max_tokens: 200,
+              messages: [{
+                role: "user",
+                content: `You are Nia, the AI Game Master for Niakofa. Write a brief, evocative "Today's Journey" introduction for the player.
+
+Family data:
+${JSON.stringify(contextSummary, null, 2)}
+
+Rules:
+- Under 80 words
+- Address the player directly ("You awaken as...")
+- Use ONLY real family data — never fabricate
+- If birth year is known, mention it; if not, skip it
+- End with a sense of purpose for today
+
+Write the introduction:`,
+              }],
+            });
+            narration = response.content
+              .filter((b): b is Anthropic.TextBlock => b.type === "text")
+              .map((b) => b.text)
+              .join("")
+              .trim();
+          } catch {
+            narration = `You awaken as ${picked.member.name}${birthYear ? `, born ${birthYear}` : ""}. ${picked.member.role ? `Their role: ${picked.member.role}.` : ""} Today, your family's stories await discovery.`;
+          }
+        } else {
+          narration = `You awaken as ${picked.member.name}${birthYear ? `, born ${birthYear}` : ""}. ${picked.member.role ? `Their role: ${picked.member.role}.` : ""} Today, your family's stories await discovery.`;
+        }
+
+        // Persist narration
+        const [inserted] = await db
+          .insert(legacyGameMasterNarrationsTable)
+          .values({
+            family_id: familyId,
+            narration_type: narrationType,
+            prompt_hash: promptHash,
+            content: narration,
+            model_used: MODEL,
+            content_metadata: contextSummary,
+          })
+          .returning();
+        narrationId = inserted?.id ?? null;
+      }
+
+      return res.json({
+        journey: {
+          ancestor: {
+            memberId: picked.member.id,
+            name: picked.member.name,
+            role: picked.member.role,
+            relation: picked.member.relation,
+            birthYear,
+          },
+          storyCount: picked.storyCount,
+          eventCount: picked.eventCount,
+          placeCount: picked.placeCount,
+          narration,
+          narrationId,
+          date: today,
+        },
+        cached: cachedFlag,
+      });
+    } catch (err) {
+      logger.error({ err, familyId }, "legacy-game-master: today's journey failed");
+      return res.status(500).json({ error: "Failed to generate today's journey" });
+    }
+  },
+);

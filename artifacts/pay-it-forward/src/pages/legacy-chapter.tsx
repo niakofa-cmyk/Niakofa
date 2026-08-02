@@ -34,6 +34,7 @@ interface Scene {
 
 interface SceneResponse {
   chapterId: number;
+  familyId?: number;
   chapterTitle: string;
   chapterStatus: string;
   scenes: Scene[];
@@ -111,6 +112,10 @@ export default function LegacyChapterPlay() {
   >("idle");
   const [memoryError, setMemoryError] = useState<string | null>(null);
 
+  // AI Game Master narration for the current scene
+  const [aiNarration, setAiNarration] = useState<string | null>(null);
+  const [narrationLoading, setNarrationLoading] = useState(false);
+
   const chapterId = parseInt(params.chapterId, 10);
 
   const loadScenes = useCallback(async () => {
@@ -145,6 +150,35 @@ export default function LegacyChapterPlay() {
   useEffect(() => {
     if (!isNaN(chapterId)) loadScenes();
   }, [chapterId, loadScenes]);
+
+  // Fetch AI narration for the current scene
+  useEffect(() => {
+    if (!sceneData || !sceneData.scenes[currentSceneIdx]) return;
+    const scene = sceneData.scenes[currentSceneIdx];
+    setAiNarration(null);
+    setNarrationLoading(true);
+
+    const familyId = sceneData.familyId;
+    const params = new URLSearchParams({
+      type: scene.type === "dialogue" ? "dialogue" : "scene_intro",
+      chapterId: String(chapterId),
+      sceneContext: `${scene.title}: ${scene.content.slice(0, 200)}`,
+    });
+
+    if (!familyId) { setNarrationLoading(false); return; }
+
+    fetch(`/api/legacy/game-master/${familyId}/narration?${params}`, {
+      headers: authHeaders(),
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.narration?.content) {
+          setAiNarration(data.narration.content);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setNarrationLoading(false));
+  }, [sceneData, currentSceneIdx, chapterId]);
 
   const finalizeChoice = async (choiceIdx: number) => {
     if (!sceneData) return;
@@ -434,11 +468,29 @@ export default function LegacyChapterPlay() {
         <h2 className="text-2xl font-black text-stone-100 mb-4">{scene.title}</h2>
 
         {/* Scene content */}
-        <div className="prose prose-invert max-w-none mb-8">
+        <div className="prose prose-invert max-w-none mb-6">
           <p className="text-stone-300 leading-relaxed text-base whitespace-pre-line">
             {scene.content}
           </p>
         </div>
+
+        {/* AI Game Master Narration */}
+        {narrationLoading ? (
+          <div className="flex items-center gap-2 mb-6 text-amber-500/60">
+            <Sparkles className="w-4 h-4 animate-pulse" />
+            <span className="text-xs italic">Nia is narrating...</span>
+          </div>
+        ) : aiNarration ? (
+          <div className="bg-gradient-to-r from-amber-900/20 to-transparent border-l-2 border-amber-500/40 rounded-r-xl p-4 mb-6">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span className="text-xs font-bold text-amber-400 uppercase tracking-wide">Nia Narrates</span>
+            </div>
+            <p className="text-sm text-amber-200/80 leading-relaxed italic whitespace-pre-line">
+              {aiNarration}
+            </p>
+          </div>
+        ) : null}
 
         {/* Historical context topic tags — only present on "context" scenes */}
         {scene.topics && scene.topics.length > 0 && (

@@ -223,3 +223,66 @@ router.post(
 );
 
 export default router;
+
+// ── World Version Summary ────────────────────────────────────────────────────
+// Returns the family's current world version number and recent evolution stats
+// for display on the Legacy home screen.
+//
+//   GET /api/legacy/world-evolution/:familyId/version-summary
+
+router.get(
+  "/legacy/world-evolution/:familyId/version-summary",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const familyId = parseInt(String(req.params.familyId), 10);
+    if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, familyId))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
+
+    try {
+      // Get latest knowledge version
+      const [latestVersion] = await db
+        .select()
+        .from(familyKnowledgeVersionsTable)
+        .where(eq(familyKnowledgeVersionsTable.family_id, familyId))
+        .orderBy(desc(familyKnowledgeVersionsTable.version))
+        .limit(1);
+
+      // Get recent evolution log entries (last 7)
+      const recentChanges = await db
+        .select()
+        .from(legacyWorldEvolutionLogTable)
+        .where(eq(legacyWorldEvolutionLogTable.family_id, familyId))
+        .orderBy(desc(legacyWorldEvolutionLogTable.created_at))
+        .limit(7);
+
+      // Count changes by type
+      const [{ totalChanges }] = await db
+        .select({ totalChanges: sql`count(*)::int` })
+        .from(legacyWorldEvolutionLogTable)
+        .where(eq(legacyWorldEvolutionLogTable.family_id, familyId));
+
+      return res.json({
+        currentVersion: latestVersion?.version ?? 0,
+        versionCreatedAt: latestVersion?.created_at ?? null,
+        totalChanges,
+        recentChanges: recentChanges.map((c) => ({
+          id: c.id,
+          changeType: c.change_type,
+          description: c.change_description,
+          affectedCount: c.affected_count,
+          createdAt: c.created_at,
+          previousVersion: c.previous_version,
+          newVersion: c.new_version,
+        })),
+      });
+    } catch (err) {
+      logger.error({ err, familyId }, "legacy-world-evolution: version summary failed");
+      return res.status(500).json({ error: "Failed to get version summary" });
+    }
+  },
+);

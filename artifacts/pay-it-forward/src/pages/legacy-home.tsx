@@ -385,6 +385,18 @@ export default function LegacyHomePage() {
   const [activeChapterId, setActiveChapterId] = useState<number | null>(null);
   const [mapData, setMapData] = useState<MapData | null>(null);
 
+  // ── Today's Journey + World Version (Phase 5) ─────────────────────────────
+  const [todaysJourney, setTodaysJourney] = useState<{
+    ancestor: { memberId: number; name: string; role: string; relation: string | null; birthYear: number | null };
+    storyCount: number; eventCount: number; placeCount: number;
+    narration: string; narrationId: number | null; date: string;
+  } | null>(null);
+  const [journeyLoading, setJourneyLoading] = useState(false);
+  const [worldVersion, setWorldVersion] = useState<{
+    currentVersion: number; versionCreatedAt: string | null; totalChanges: number;
+    recentChanges: Array<{ id: number; changeType: string; description: string; affectedCount: number; createdAt: string; newVersion: number | null }>;
+  } | null>(null);
+
   // ── Load family data ──────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
@@ -455,6 +467,27 @@ export default function LegacyHomePage() {
       if (mapRes.ok) {
         const data = await mapRes.json() as MapData;
         setMapData(data);
+      }
+
+      // Load Today's Journey + World Version (Phase 5)
+      setJourneyLoading(true);
+      try {
+        const [journeyRes, versionRes] = await Promise.all([
+          fetch(`/api/legacy/game-master/${familyId}/today`, { headers: authHeaders() }),
+          fetch(`/api/legacy/world-evolution/${familyId}/version-summary`, { headers: authHeaders() }),
+        ]);
+        if (journeyRes.ok) {
+          const jd = await journeyRes.json();
+          if (jd.journey) setTodaysJourney(jd.journey);
+        }
+        if (versionRes.ok) {
+          const vd = await versionRes.json();
+          setWorldVersion(vd);
+        }
+      } catch {
+        // Silent fail
+      } finally {
+        setJourneyLoading(false);
       }
     } catch {
       // Silent fail — fallback UI will handle
@@ -836,6 +869,9 @@ export default function LegacyHomePage() {
                   <p className="text-xs text-amber-700 uppercase tracking-widest">Your Family World</p>
                   <p className="text-3xl font-black text-amber-400">{progress}%</p>
                   <p className="text-xs text-amber-600">Legacy Complete</p>
+                  {worldVersion && worldVersion.currentVersion > 0 && (
+                    <p className="text-xs text-amber-500/80 mt-0.5">World v{worldVersion.currentVersion}</p>
+                  )}
                 </div>
                 <div className="w-20 h-20 relative">
                   <svg viewBox="0 0 80 80" className="w-full h-full -rotate-90">
@@ -885,6 +921,85 @@ export default function LegacyHomePage() {
               </div>
             </div>
           </div>
+
+          {/* ── Today's Journey (Phase 5: Living Family Universe) ── */}
+          {activeMode === "legacy" && (
+            <div className="px-4 mb-5">
+              <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3">Today's Journey</h2>
+              {journeyLoading ? (
+                <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 flex items-center justify-center">
+                  <Loader2 className="w-5 h-5 text-amber-500 animate-spin" />
+                </div>
+              ) : todaysJourney ? (
+                <div className="bg-gradient-to-b from-amber-900/20 to-[#2A1A0F] border border-amber-700/30 rounded-2xl p-4 shadow-lg">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-600/30 flex items-center justify-center flex-shrink-0">
+                      <Sparkles className="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-amber-100">{todaysJourney.ancestor.name}</p>
+                      <p className="text-xs text-amber-500 mt-0.5">
+                        {todaysJourney.ancestor.role && <span className="capitalize">{todaysJourney.ancestor.role}</span>}
+                        {todaysJourney.ancestor.birthYear && ` · Born ${todaysJourney.ancestor.birthYear}`}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-amber-300/80 leading-relaxed italic mb-3">"{todaysJourney.narration}"</p>
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-xs text-amber-600 bg-amber-900/30 px-2 py-0.5 rounded-full">{todaysJourney.storyCount} stories</span>
+                    <span className="text-xs text-amber-600 bg-amber-900/30 px-2 py-0.5 rounded-full">{todaysJourney.eventCount} events</span>
+                    <span className="text-xs text-amber-600 bg-amber-900/30 px-2 py-0.5 rounded-full">{todaysJourney.placeCount} places</span>
+                  </div>
+                  <button
+                    onClick={() => navigate("/legacy/start")}
+                    className="w-full bg-amber-500 text-amber-950 font-black text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-80 flex items-center justify-center gap-1.5"
+                  >
+                    <Play className="w-3.5 h-3.5" /> Begin Journey
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4">
+                  <p className="text-xs text-amber-600">Add more family members and stories to unlock your daily journey.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── World Evolution (Phase 5: Living Family Universe) ── */}
+          {activeMode === "legacy" && worldVersion && worldVersion.currentVersion > 0 && (
+            <div className="px-4 mb-5">
+              <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3">Family World Evolution</h2>
+              <div className="bg-[#2A1A0F] border border-amber-900/30 rounded-2xl p-4 shadow-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-2xl font-black text-amber-400">Version {worldVersion.currentVersion}</p>
+                    <p className="text-xs text-amber-600">{worldVersion.totalChanges} total changes</p>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                    <Sparkles className="w-5 h-5 text-amber-400" />
+                  </div>
+                </div>
+                {worldVersion.recentChanges.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-amber-900/30">
+                    {worldVersion.recentChanges.slice(0, 3).map((change) => (
+                      <div key={change.id} className="flex items-start gap-2">
+                        <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${
+                          change.changeType === "world_regenerated" ? "bg-purple-400" :
+                          change.changeType === "member_added" ? "bg-emerald-400" :
+                          change.changeType === "memory_added" ? "bg-amber-400" :
+                          change.changeType === "story_added" ? "bg-sky-400" :
+                          change.changeType === "interview_added" ? "bg-rose-400" :
+                          change.changeType === "place_added" ? "bg-teal-400" :
+                          "bg-amber-600"
+                        }`} />
+                        <p className="text-xs text-amber-400/70 leading-tight">{change.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* ── Game Mode Selector ── */}
           <div className="px-4 mb-5">
@@ -939,11 +1054,14 @@ export default function LegacyHomePage() {
                     {ancestorCandidate && (
                       <p className="text-xs text-purple-400/70 mt-1.5 italic">{ancestorCandidate.selectionReason}</p>
                     )}
-                    {completeness && (
+                    {completeness && ancestorCandidate && (
                       <div className="mt-2 space-y-1.5">
-                        {completeness.dimensions.slice(0, 4).map(dim => (
-                          <StatBar key={dim.key} label={dim.label} value={Math.round((dim.score / dim.max) * 100)} color="bg-amber-500" />
-                        ))}
+                        <StatBar label="Knowledge" value={Math.min(100, (ancestorCandidate.storyCount * 10) + (ancestorCandidate.memoryCount * 5))} color="bg-sky-500" />
+                        <StatBar label="Relationships" value={Math.min(100, ancestorCandidate.eventCount * 15)} color="bg-rose-500" />
+                        <StatBar label="Cultural Wisdom" value={Math.min(100, ancestorCandidate.interviewCount * 25)} color="bg-amber-500" />
+                        <StatBar label="Courage" value={Math.min(100, ancestorCandidate.completenessScore)} color="bg-emerald-500" />
+                        <StatBar label="Reputation" value={Math.min(100, ancestorCandidate.photoCount * 10)} color="bg-purple-500" />
+                        <StatBar label="Legacy" value={Math.min(100, ancestorCandidate.placeCount * 15)} color="bg-teal-500" />
                       </div>
                     )}
                   </div>
