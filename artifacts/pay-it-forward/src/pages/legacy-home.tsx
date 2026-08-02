@@ -428,6 +428,9 @@ export default function LegacyHomePage() {
     leaderboard: Array<{ memberId: number; name: string; publishedInterviews: number }>;
   } | null>(null);
 
+  // ── Achievement progress (real data from /api/legacy/achievements/:familyId) ─
+  const [achievementMap, setAchievementMap] = useState<Map<string, { progress: number; goal: number; unlocked: boolean }>>(new Map());
+
   // ── Load family data ──────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
@@ -533,6 +536,16 @@ export default function LegacyHomePage() {
         const reunionRes = await fetch(`/api/legacy/reunion/${familyId}`, { headers: authHeaders() });
         if (reunionRes.ok) {
           setReunionData(await reunionRes.json());
+        }
+        // Fetch real achievement progress for inventory items
+        const achRes = await fetch(`/api/legacy/achievements/${familyId}`, { headers: authHeaders() });
+        if (achRes.ok) {
+          const achData = await achRes.json() as { achievements: Array<{ achievement_key: string; progress: number; goal: number; unlocked: boolean }> };
+          const map = new Map<string, { progress: number; goal: number; unlocked: boolean }>();
+          for (const a of achData.achievements ?? []) {
+            map.set(a.achievement_key, { progress: a.progress, goal: a.goal, unlocked: a.unlocked });
+          }
+          setAchievementMap(map);
         }
       } catch {
         // Silent fail
@@ -1767,13 +1780,14 @@ export default function LegacyHomePage() {
                   {inventoryTab === "items" && (
                     <div className="space-y-2">
                       {(() => {
+                        const ach = (k: string) => achievementMap.get(k);
                         const items = [
-                          { icon: FileText, label: "Old Letter",      source: "Family Vault",     earned: memories.some(m => m.source === "upload"),     provenance: memories.find(m => m.source === "upload") ? `Uploaded ${new Date(memories.find(m => m.source === "upload")!.created_at).toLocaleDateString()}` : null },
-                          { icon: Camera,   label: "Family Photo",    source: "Family Vault",     earned: memories.some(m => m.source === "upload"),     provenance: memories.find(m => m.source === "upload") ? `From ${memories.find(m => m.source === "upload")!.title ?? "vault"}` : null },
-                          { icon: Mic,      label: "Voice Recording", source: "Oral History",    earned: interviewCount > 0,                             provenance: interviewCount > 0 ? `${interviewCount} interview${interviewCount === 1 ? "" : "s"} recorded` : null },
-                          { icon: BookOpen, label: "Family Bible",    source: "Preserve Cards",   earned: members.length >= 3,                           provenance: members.length >= 3 ? `${members.length} family members` : null },
-                          { icon: Star,     label: "Gold Medal",      source: "Achievements",     earned: members.length >= 5,                           provenance: members.length >= 5 ? `Unlocked at 5 members` : null },
-                          { icon: Globe2,   label: "Passport",        source: "World Map",        earned: completeness?.dimensions.find(d => d.key === "places")?.count ?? 0 >= 2, provenance: (completeness?.dimensions.find(d => d.key === "places")?.count ?? 0) >= 2 ? `${completeness?.dimensions.find(d => d.key === "places")?.count} places tagged` : null },
+                          { icon: FileText, label: "Family Storybook",     source: "Memory Keeper",     earned: ach("memory_keeper")?.unlocked ?? false,  provenance: ach("memory_keeper") ? `${ach("memory_keeper")!.progress} / ${ach("memory_keeper")!.goal} memories` : null },
+                          { icon: Camera,   label: "Restored Photograph",   source: "Memory Restorer",   earned: ach("memory_restorer")?.unlocked ?? false,  provenance: ach("memory_restorer") ? `${ach("memory_restorer")!.progress} / ${ach("memory_restorer")!.goal} photos` : null },
+                          { icon: Mic,      label: "Elder's Voice",        source: "Voice of Elders",   earned: ach("voice_of_elders")?.unlocked ?? false,  provenance: ach("voice_of_elders") ? `${ach("voice_of_elders")!.progress} / ${ach("voice_of_elders")!.goal} interviews` : null },
+                          { icon: BookOpen, label: "Heritage Archive",      source: "Legacy Guardian",   earned: ach("legacy_guardian")?.unlocked ?? false,  provenance: ach("legacy_guardian") ? `${ach("legacy_guardian")!.progress} / ${ach("legacy_guardian")!.goal} artifacts` : null },
+                          { icon: Star,     label: "Reunion Quilt",        source: "Bridge Builder",    earned: ach("bridge_builder")?.unlocked ?? false,   provenance: ach("bridge_builder") ? `${ach("bridge_builder")!.progress} / ${ach("bridge_builder")!.goal} connections` : null },
+                          { icon: Globe2,   label: "Migration Map",        source: "Roots Traveler",    earned: ach("roots_traveler")?.unlocked ?? false,   provenance: ach("roots_traveler") ? `${ach("roots_traveler")!.progress} / ${ach("roots_traveler")!.goal} landmarks` : null },
                         ];
                         return items.map(({ icon: Icon, label, source, earned, provenance }, i) => (
                           <div key={i} className={`flex items-center gap-3 p-3 rounded-xl border ${earned ? "border-amber-600/40 bg-amber-900/20" : "border-amber-950/40 bg-[#1A1008] opacity-50"}`}>
@@ -1793,11 +1807,12 @@ export default function LegacyHomePage() {
                   {inventoryTab === "artifacts" && (
                     <div className="space-y-2">
                       {(() => {
+                        const ach = (k: string) => achievementMap.get(k);
                         const artifacts = [
-                          { label: "Ancestral Necklace",  desc: "Passed down through generations",  earned: members.length >= 3,   source: members.length >= 3 ? `${members.length} relatives in tree` : null },
-                          { label: "Mission School Book",  desc: "Knowledge from the old ways",       earned: (completeness?.dimensions.find(d => d.key === "events")?.count ?? 0) >= 2, source: (completeness?.dimensions.find(d => d.key === "events")?.count ?? 0) >= 2 ? `${completeness?.dimensions.find(d => d.key === "events")?.count} life events` : null },
-                          { label: "Traditional Drum",     desc: "The heartbeat of the village",      earned: interviewCount >= 1,   source: interviewCount >= 1 ? `From oral history` : null },
-                          { label: "Diary Page",           desc: "A window into another time",        earned: memories.length >= 2,  source: memories.length >= 2 ? `${memories.length} memories preserved` : null },
+                          { label: "Family Tree Scroll",     desc: "Your mapped family lineage",          earned: ach("family_detective")?.unlocked ?? false,  source: ach("family_detective") ? `${ach("family_detective")!.progress} / ${ach("family_detective")!.goal} relations` : null },
+                          { label: "Ancestor's Walking Stick", desc: "Earned by completing Legacy chapters", earned: ach("ancestor_walker")?.unlocked ?? false,    source: ach("ancestor_walker") ? `${ach("ancestor_walker")!.progress} / ${ach("ancestor_walker")!.goal} chapters` : null },
+                          { label: "Traditional Drum",     desc: "The heartbeat of the village",      earned: ach("voice_of_elders")?.unlocked ?? false,  source: ach("voice_of_elders") ? `From oral history` : null },
+                          { label: "Diary Page",           desc: "A window into another time",        earned: ach("memory_keeper")?.unlocked ?? false,    source: ach("memory_keeper") ? `${ach("memory_keeper")!.progress} memories preserved` : null },
                           { label: "Family Recipe",        desc: "A taste of home, preserved",        earned: memories.some(m => m.title?.toLowerCase().includes("recipe") || m.description?.toLowerCase().includes("recipe")), source: "From family memories" },
                           { label: "Military Medal",       desc: "Service remembered",                earned: memories.some(m => m.title?.toLowerCase().includes("military") || m.description?.toLowerCase().includes("military") || m.title?.toLowerCase().includes("service")), source: "From family stories" },
                         ];
@@ -1835,10 +1850,10 @@ export default function LegacyHomePage() {
                 </button>
               </div>
               <div className="space-y-2.5">
-                <AchievementBadge icon={BookHeart} label="Story Keeper"     current={memories.length}       total={100} color="bg-amber-500" />
-                <AchievementBadge icon={Globe2}    label="Roots Explorer"   current={families.length}       total={10}  color="bg-teal-500" />
-                <AchievementBadge icon={Users}     label="Family Connector" current={members.length}        total={5}   color="bg-rose-500" />
-                <AchievementBadge icon={Trophy}    label="Legacy Builder"   current={Math.min(50, memories.length * 2 + members.length * 3)} total={50} color="bg-purple-500" />
+                <AchievementBadge icon={BookHeart}  label="Memory Keeper"   current={achievementMap.get("memory_keeper")?.progress ?? memories.length}    total={achievementMap.get("memory_keeper")?.goal ?? 5}   color="bg-amber-500" />
+                <AchievementBadge icon={Globe2}     label="Roots Traveler"  current={achievementMap.get("roots_traveler")?.progress ?? 0}                 total={achievementMap.get("roots_traveler")?.goal ?? 10}  color="bg-teal-500" />
+                <AchievementBadge icon={Users}      label="Bridge Builder"  current={achievementMap.get("bridge_builder")?.progress ?? members.length}   total={achievementMap.get("bridge_builder")?.goal ?? 3}   color="bg-rose-500" />
+                <AchievementBadge icon={Trophy}     label="Ancestor Walker" current={achievementMap.get("ancestor_walker")?.progress ?? 0}                total={achievementMap.get("ancestor_walker")?.goal ?? 3}   color="bg-purple-500" />
               </div>
             </div>
           )}
