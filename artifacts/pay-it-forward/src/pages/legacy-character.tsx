@@ -47,6 +47,7 @@ const STAT_CONFIG = [
   { key: "courage", label: "Courage", color: "bg-emerald-500", text: "text-emerald-400" },
   { key: "reputation", label: "Reputation", color: "bg-purple-500", text: "text-purple-400" },
   { key: "legacy", label: "Legacy", color: "bg-teal-500", text: "text-teal-400" },
+  { key: "faith", label: "Faith", color: "bg-orange-500", text: "text-orange-400" },
 ] as const;
 
 const CATEGORY_ICONS: Record<string, typeof Calendar> = {

@@ -421,6 +421,10 @@ export default function LegacyHomePage() {
       title: string; description: string; goal: number; progress: number;
       reward: string; completed: boolean;
     };
+    challenges: Array<{
+      id: string; title: string; description: string; goal: number;
+      progress: number; reward: string; completed: boolean; metric: string;
+    }>;
     leaderboard: Array<{ memberId: number; name: string; publishedInterviews: number }>;
   } | null>(null);
 
@@ -1970,38 +1974,58 @@ export default function LegacyHomePage() {
                 <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Living Family Universe</h2>
               </div>
 
-              {/* Family Reunion Challenge — real progress + leaderboard */}
+              {/* Family Reunion Challenges — real progress from live DB data */}
               <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-lg mb-3">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center">
                     <Trophy className="w-5 h-5 text-rose-400" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm font-bold text-amber-100">
-                      {reunionData?.challenge.title ?? "Family Reunion Event"}
-                    </p>
-                    <p className="text-xs text-amber-600 mt-0.5">
-                      {reunionData?.challenge.description ?? "Everyone must record one elder's story."}
-                    </p>
+                    <p className="text-sm font-bold text-amber-100">Family Challenges</p>
+                    <p className="text-xs text-amber-600 mt-0.5">Complete challenges together to unlock family stories.</p>
                   </div>
                 </div>
 
-                {/* Progress bar */}
-                {reunionData && (
+                {/* Challenge cards */}
+                {reunionData?.challenges?.length ? (
+                  <div className="space-y-3 mb-4">
+                    {reunionData.challenges.map((ch) => (
+                      <div key={ch.id} className={`rounded-xl border p-3 ${ch.completed ? "bg-emerald-500/5 border-emerald-600/20" : "bg-[#3A2A1A] border-amber-900/20"}`}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <p className="text-xs font-bold text-amber-200">{ch.title}</p>
+                          <span className="text-xs font-bold text-amber-400">{ch.progress} / {ch.goal}</span>
+                        </div>
+                        <p className="text-[10px] text-amber-600 mb-2">{ch.description}</p>
+                        <div className="h-1.5 bg-[#2A1A0F] rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${ch.completed ? "bg-emerald-500" : "bg-gradient-to-r from-rose-500 to-amber-500"}`}
+                            style={{ width: `${Math.min(100, (ch.progress / ch.goal) * 100)}%` }}
+                          />
+                        </div>
+                        {ch.completed && (
+                          <p className="text-[10px] text-emerald-400 mt-1.5 flex items-center gap-1">
+                            <Star className="w-3 h-3" /> Complete! Reward: {ch.reward}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  /* Backwards-compatible single challenge fallback */
                   <div className="mb-4">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs text-amber-700">Progress</span>
                       <span className="text-xs font-bold text-amber-300">
-                        {reunionData.challenge.progress} / {reunionData.challenge.goal}
+                        {reunionData?.challenge.progress} / {reunionData?.challenge.goal}
                       </span>
                     </div>
                     <div className="h-2 bg-[#3A2A1A] rounded-full overflow-hidden">
                       <div
                         className="h-full bg-gradient-to-r from-rose-500 to-amber-500 rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(100, (reunionData.challenge.progress / reunionData.challenge.goal) * 100)}%` }}
+                        style={{ width: `${Math.min(100, ((reunionData?.challenge.progress ?? 0) / (reunionData?.challenge.goal ?? 1)) * 100)}%` }}
                       />
                     </div>
-                    {reunionData.challenge.completed && (
+                    {reunionData?.challenge.completed && (
                       <p className="text-xs text-emerald-400 mt-2 flex items-center gap-1">
                         <Star className="w-3 h-3" /> Challenge complete! Reward: {reunionData.challenge.reward}
                       </p>
