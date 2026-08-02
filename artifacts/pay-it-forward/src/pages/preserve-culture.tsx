@@ -296,13 +296,13 @@ export default function PreserveCulturePage() {
             {/* Action buttons */}
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => navigate("/diaspora/family")}
+                onClick={() => navigate("/diaspora/family?action=record&prompt=" + encodeURIComponent(cards[currentIdx]?.title ?? ""))}
                 className="flex items-center justify-center gap-2 bg-red-500 text-white rounded-xl py-3 text-sm font-semibold active:opacity-80"
               >
                 <Mic className="w-4 h-4" /> Record Story
               </button>
               <button
-                onClick={() => navigate("/diaspora/family")}
+                onClick={() => navigate("/diaspora/vault")}
                 className="flex items-center justify-center gap-2 border border-orange-500/30 text-orange-400 rounded-xl py-3 text-sm font-semibold active:opacity-70"
               >
                 <BookHeart className="w-4 h-4" /> Add to Vault

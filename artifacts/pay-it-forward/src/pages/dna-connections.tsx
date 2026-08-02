@@ -99,12 +99,19 @@ export default function DnaConnectionsPage() {
 
   async function handleImport() {
     if (!selectedProvider) return;
+    if (!dnaFile) {
+      toast.error("Please select a DNA data file first");
+      return;
+    }
     setImportStep("processing");
     try {
+      const formData = new FormData();
+      formData.append("provider", selectedProvider);
+      formData.append("file", dnaFile);
       const res = await fetch("/api/diaspora/dna/import", {
         method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: selectedProvider }),
+        headers: authHeaders(),
+        body: formData,
       });
       if (!res.ok) throw new Error();
       setImportStep("done");
@@ -112,11 +119,12 @@ export default function DnaConnectionsPage() {
         setShowImport(false);
         setImportStep("select");
         setSelectedProvider(null);
+        setDnaFile(null);
         loadData();
       }, 2000);
     } catch {
       toast.error("Import failed — please try again");
-      setImportStep("select");
+      setImportStep("upload");
     }
   }
 
@@ -322,9 +330,27 @@ export default function DnaConnectionsPage() {
                 <p className="text-sm text-muted-foreground mb-4 max-w-xs mx-auto">
                   Download your raw DNA data from {PROVIDERS.find(p => p.id === selectedProvider)?.label}, then upload the CSV file here.
                 </p>
-                <div className="border-2 border-dashed border-border rounded-2xl py-8 px-4 mb-4">
-                  <p className="text-sm text-muted-foreground">Tap to select or drag your CSV file</p>
-                </div>
+                <label className="block border-2 border-dashed border-border rounded-2xl py-8 px-4 mb-4 cursor-pointer active:bg-muted/50">
+                  <input
+                    type="file"
+                    accept=".csv,.txt,.json"
+                    className="hidden"
+                    onChange={e => {
+                      const f = e.target.files?.[0] ?? null;
+                      setDnaFile(f);
+                      if (f) toast.success(`Selected: ${f.name}`);
+                    }}
+                  />
+                  {dnaFile ? (
+                    <div>
+                      <CheckCircle2 className="w-6 h-6 text-green-500 mx-auto mb-1" />
+                      <p className="text-sm font-medium text-foreground">{dnaFile.name}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{(dnaFile.size / 1024).toFixed(0)} KB — tap to change</p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Tap to select your CSV file</p>
+                  )}
+                </label>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setImportStep("select")}
@@ -334,7 +360,8 @@ export default function DnaConnectionsPage() {
                   </button>
                   <button
                     onClick={handleImport}
-                    className="flex-1 bg-primary text-primary-foreground rounded-xl py-2.5 text-sm font-bold active:opacity-80"
+                    disabled={!dnaFile}
+                    className="flex-1 bg-primary text-primary-foreground rounded-xl py-2.5 text-sm font-bold active:opacity-80 disabled:opacity-40"
                   >
                     Process DNA
                   </button>
