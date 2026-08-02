@@ -1,7 +1,30 @@
+/**
+ * Niakofa — Legacy Mode: Family Challenges (Phase 4 — cooperative missions)
+ *
+ * Rewritten to use real, migrated tables (see migration
+ * 0099_legacy_family_challenges_real.sql) instead of raw ::uuid-cast SQL
+ * against tables that were never actually created on the Railway Postgres
+ * DB the app runs against — every call previously 500'd in production.
+ *
+ * Family IDs and member IDs are integers everywhere else in this schema
+ * (families.id, family_members.id are both serial integers); this route
+ * now matches that convention instead of assuming uuid.
+ *
+ * Routes:
+ *   GET    /api/legacy/challenges/:familyId              — list + templates
+ *   POST   /api/legacy/challenges/:familyId               — create from template or custom
+ *   POST   /api/legacy/challenges/:challengeId/contribute — record a contribution
+ *   DELETE /api/legacy/challenges/:challengeId             — remove a challenge
+ */
+
 import { Router } from "express";
-import { db } from "@workspace/db";
-import { legacyAchievementsTable, legacyPlaceDiscoveriesTable } from "@workspace/db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import {
+  db,
+  familyMembersTable,
+  legacyFamilyChallengesTable,
+  legacyChallengeContributionsTable,
+} from "@workspace/db";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
@@ -9,35 +32,11 @@ import { syncAchievements } from "./legacy-achievements";
 
 const router = Router();
 
-interface ChallengeRow {
-  id: string;
-  family_id: string;
-  challenge_type: string;
-  title: string;
-  description: string;
-  goal: number;
-  reward_title: string | null;
-  reward_description: string | null;
-  status: string;
-  deadline: string | null;
-  created_by_member_id: string | null;
-  completed_at: string | null;
-  created_at: string;
-}
-
-interface ContributionRow {
-  id: string;
-  challenge_id: string;
-  member_id: string | null;
-  contribution_type: string;
-  vault_item_ref: string | null;
-  contribution_note: string | null;
-  created_at: string;
-}
+const CONTRIBUTION_TYPES = ["interview", "photo", "story", "location", "document", "checkin"] as const;
 
 const CHALLENGE_TEMPLATES = [
   {
-    challenge_type: "story_collection",
+    challenge_type: "story_collection" as const,
     title: "Elder Stories Preservation",
     description: "Work together as a family to record oral histories from your elders. Each interview preserves a voice that might otherwise be lost.",
     goal: 5,
@@ -45,7 +44,7 @@ const CHALLENGE_TEMPLATES = [
     reward_description: "Unlock the Family Oral History Archive — a curated collection of your family's recorded stories.",
   },
   {
-    challenge_type: "preservation",
+    challenge_type: "preservation" as const,
     title: "Family Photo Rescue",
     description: "Digitize old family photographs before they fade. Upload photos from different relatives to build a shared visual history.",
     goal: 10,
@@ -53,7 +52,7 @@ const CHALLENGE_TEMPLATES = [
     reward_description: "Unlock the Heritage Collection — a visual timeline of your family through the decades.",
   },
   {
-    challenge_type: "exploration",
+    challenge_type: "exploration" as const,
     title: "Roots Expedition",
     description: "Visit family landmarks together — churches, schools, homes, cemeteries. Check in at each location to discover your family's world.",
     goal: 5,
@@ -61,7 +60,7 @@ const CHALLENGE_TEMPLATES = [
     reward_description: "Unlock the Family World Map with all discovered landmarks and migration routes.",
   },
   {
-    challenge_type: "reunion",
+    challenge_type: "reunion" as const,
     title: "Family Reunion Challenge",
     description: "Connect with living relatives. Each family member you reach out to and invite strengthens your family network.",
     goal: 3,
@@ -70,33 +69,51 @@ const CHALLENGE_TEMPLATES = [
   },
 ];
 
+async function isMember(userId: number, familyId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ id: familyMembersTable.id })
+    .from(familyMembersTable)
+    .where(
+      and(
+        eq(familyMembersTable.family_id, familyId),
+        eq(familyMembersTable.user_id, userId),
+        inArray(familyMembersTable.status, ["active", "invited"]),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
 router.get(
   "/legacy/challenges/:familyId",
   generalApiLimiter,
   requireAuth,
   async (req, res) => {
-    const familyId = String(req.params.familyId);
-    if (!familyId) return res.status(400).json({ error: "Invalid family ID" });
+    const familyId = Number(req.params.familyId);
+    if (!Number.isInteger(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, familyId))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
 
     try {
-      const challenges = await db.execute(sql`
-        SELECT * FROM legacy_family_challenges
-        WHERE family_id = ${familyId}::uuid
-        ORDER BY created_at DESC
-      `);
+      const challenges = await db
+        .select()
+        .from(legacyFamilyChallengesTable)
+        .where(eq(legacyFamilyChallengesTable.family_id, familyId))
+        .orderBy(desc(legacyFamilyChallengesTable.created_at));
 
-      const contributions = await db.execute(sql`
-        SELECT c.* FROM legacy_challenge_contributions c
-        JOIN legacy_family_challenges ch ON c.challenge_id = ch.id
-        WHERE ch.family_id = ${familyId}::uuid
-        ORDER BY c.created_at DESC
-      `);
+      const contributions = challenges.length > 0
+        ? await db
+            .select()
+            .from(legacyChallengeContributionsTable)
+            .where(inArray(legacyChallengeContributionsTable.challenge_id, challenges.map((c) => c.id)))
+            .orderBy(desc(legacyChallengeContributionsTable.created_at))
+        : [];
 
-      const challengesList = challenges.rows as ChallengeRow[];
-      const contributionsList = contributions.rows as ContributionRow[];
-
-      const result = challengesList.map((ch) => {
-        const chContribs = contributionsList.filter((c) => c.challenge_id === ch.id);
+      const result = challenges.map((ch) => {
+        const chContribs = contributions.filter((c) => c.challenge_id === ch.id);
         return {
           ...ch,
           contributions: chContribs,
@@ -118,15 +135,20 @@ router.post(
   generalApiLimiter,
   requireAuth,
   async (req, res) => {
-    const familyId = String(req.params.familyId);
-    if (!familyId) return res.status(400).json({ error: "Invalid family ID" });
+    const familyId = Number(req.params.familyId);
+    if (!Number.isInteger(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, familyId))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
 
     const { templateIndex, customTitle, customDescription, customGoal } = req.body ?? {};
 
     let title: string;
     let description: string;
     let goal: number;
-    let challengeType: string;
+    let challengeType: (typeof CHALLENGE_TEMPLATES)[number]["challenge_type"];
     let rewardTitle: string | null = null;
     let rewardDescription: string | null = null;
 
@@ -148,15 +170,21 @@ router.post(
     }
 
     try {
-      const result = await db.execute(sql`
-        INSERT INTO legacy_family_challenges
-          (family_id, challenge_type, title, description, goal, reward_title, reward_description, status)
-        VALUES
-          (${familyId}::uuid, ${challengeType}::legacy_challenge_type, ${title}, ${description}, ${goal}, ${rewardTitle}, ${rewardDescription}, 'active')
-        RETURNING *
-      `);
+      const [challenge] = await db
+        .insert(legacyFamilyChallengesTable)
+        .values({
+          family_id: familyId,
+          challenge_type: challengeType,
+          title,
+          description,
+          goal,
+          reward_title: rewardTitle,
+          reward_description: rewardDescription,
+          status: "active",
+        })
+        .returning();
 
-      return res.status(201).json({ challenge: result.rows[0] });
+      return res.status(201).json({ challenge });
     } catch (err) {
       logger.error({ err, familyId }, "legacy-challenges: create failed");
       return res.status(500).json({ error: "Failed to create challenge" });
@@ -169,38 +197,57 @@ router.post(
   generalApiLimiter,
   requireAuth,
   async (req, res) => {
-    const challengeId = String(req.params.challengeId);
-    if (!challengeId) return res.status(400).json({ error: "Invalid challenge ID" });
+    const challengeId = Number(req.params.challengeId);
+    if (!Number.isInteger(challengeId)) return res.status(400).json({ error: "Invalid challenge ID" });
 
     const { contributionType, memberId, vaultItemRef, note } = req.body ?? {};
 
-    if (!contributionType || !["interview", "photo", "story", "location", "document", "checkin"].includes(contributionType)) {
+    if (!contributionType || !CONTRIBUTION_TYPES.includes(contributionType)) {
       return res.status(400).json({ error: "Valid contributionType is required" });
     }
 
     try {
-      const result = await db.execute(sql`
-        INSERT INTO legacy_challenge_contributions
-          (challenge_id, member_id, contribution_type, vault_item_ref, contribution_note)
-        VALUES
-          (${challengeId}::uuid, ${memberId ? memberId + "::uuid" : null}, ${contributionType}::legacy_contribution_type, ${vaultItemRef || null}, ${note || null})
-        RETURNING *
-      `);
+      const [challengeBefore] = await db
+        .select()
+        .from(legacyFamilyChallengesTable)
+        .where(eq(legacyFamilyChallengesTable.id, challengeId))
+        .limit(1);
 
-      const challengeResult = await db.execute(sql`
-        SELECT * FROM legacy_family_challenges WHERE id = ${challengeId}::uuid
-      `);
-
-      const challenge = challengeResult.rows[0] as ChallengeRow | undefined;
-      if (challenge) {
-        await syncAchievements(challenge.family_id).catch((err) =>
-          logger.error({ err, familyId: challenge.family_id }, "legacy-challenges: achievement sync after contribution failed"),
-        );
+      if (!challengeBefore) {
+        return res.status(404).json({ error: "Challenge not found" });
       }
 
+      const userId = req.authenticatedUserId!;
+      if (!(await isMember(userId, challengeBefore.family_id))) {
+        return res.status(403).json({ error: "Not a member of this family" });
+      }
+
+      const [contribution] = await db
+        .insert(legacyChallengeContributionsTable)
+        .values({
+          challenge_id: challengeId,
+          member_id: typeof memberId === "number" ? memberId : null,
+          contribution_type: contributionType,
+          vault_item_ref: vaultItemRef || null,
+          contribution_note: note || null,
+        })
+        .returning();
+
+      // Re-read the challenge — the DB trigger (fn_check_challenge_complete)
+      // may have just flipped it to 'completed'.
+      const [challengeAfter] = await db
+        .select()
+        .from(legacyFamilyChallengesTable)
+        .where(eq(legacyFamilyChallengesTable.id, challengeId))
+        .limit(1);
+
+      await syncAchievements(challengeBefore.family_id).catch((err) =>
+        logger.error({ err, familyId: challengeBefore.family_id }, "legacy-challenges: achievement sync after contribution failed"),
+      );
+
       return res.status(201).json({
-        contribution: result.rows[0],
-        challenge: challenge,
+        contribution,
+        challenge: challengeAfter ?? challengeBefore,
       });
     } catch (err) {
       logger.error({ err, challengeId }, "legacy-challenges: contribute failed");
@@ -214,13 +261,26 @@ router.delete(
   generalApiLimiter,
   requireAuth,
   async (req, res) => {
-    const challengeId = String(req.params.challengeId);
-    if (!challengeId) return res.status(400).json({ error: "Invalid challenge ID" });
+    const challengeId = Number(req.params.challengeId);
+    if (!Number.isInteger(challengeId)) return res.status(400).json({ error: "Invalid challenge ID" });
 
     try {
-      await db.execute(sql`
-        DELETE FROM legacy_family_challenges WHERE id = ${challengeId}::uuid
-      `);
+      const [challenge] = await db
+        .select()
+        .from(legacyFamilyChallengesTable)
+        .where(eq(legacyFamilyChallengesTable.id, challengeId))
+        .limit(1);
+
+      if (!challenge) {
+        return res.status(404).json({ error: "Challenge not found" });
+      }
+
+      const userId = req.authenticatedUserId!;
+      if (!(await isMember(userId, challenge.family_id))) {
+        return res.status(403).json({ error: "Not a member of this family" });
+      }
+
+      await db.delete(legacyFamilyChallengesTable).where(eq(legacyFamilyChallengesTable.id, challengeId));
       return res.json({ deleted: true });
     } catch (err) {
       logger.error({ err, challengeId }, "legacy-challenges: delete failed");
