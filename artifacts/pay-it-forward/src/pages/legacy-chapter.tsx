@@ -359,9 +359,41 @@ export default function LegacyChapterPlay() {
             <CheckCircle2 className="w-8 h-8 text-amber-400" />
           </div>
           <h2 className="text-xl font-black text-stone-100 mb-2">Chapter Complete</h2>
-          <p className="text-sm text-stone-400 mb-6">
-            You've walked through "{sceneData?.chapterTitle}". Your family's story continues.
+          <p className="text-sm text-stone-400 mb-4">
+            You've walked through "{sceneData?.chapterTitle}".
           </p>
+          {/* Narrator message */}
+          <div className="bg-amber-400/5 border border-amber-400/20 rounded-xl p-4 mb-6">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">Nia</span>
+            </div>
+            <p className="text-sm text-stone-300 italic leading-relaxed">
+              "Today you uncovered another chapter of your family's journey.
+              {completedScenes.size > 3
+                ? " You listened, reflected, and preserved memories that will last for generations."
+                : " Each step you take brings your ancestors' world to life."}
+              Your family would be proud."
+            </p>
+          </div>
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-2 mb-6">
+            <div className="bg-stone-800/40 border border-stone-700/50 rounded-xl p-3 text-center">
+              <BookOpen className="w-4 h-4 text-amber-400 mx-auto mb-1" />
+              <p className="text-sm font-bold text-stone-200">{completedScenes.size}</p>
+              <p className="text-[10px] text-stone-500 uppercase">Scenes</p>
+            </div>
+            <div className="bg-stone-800/40 border border-stone-700/50 rounded-xl p-3 text-center">
+              <Sparkles className="w-4 h-4 text-purple-400 mx-auto mb-1" />
+              <p className="text-sm font-bold text-stone-200">{sceneData?.scenes.length ?? 0}</p>
+              <p className="text-[10px] text-stone-500 uppercase">Total</p>
+            </div>
+            <div className="bg-stone-800/40 border border-stone-700/50 rounded-xl p-3 text-center">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 mx-auto mb-1" />
+              <p className="text-sm font-bold text-stone-200">1</p>
+              <p className="text-[10px] text-stone-500 uppercase">Chapter</p>
+            </div>
+          </div>
           <div className="flex flex-col gap-2">
             <button
               onClick={() => navigate("/legacy")}
@@ -374,6 +406,12 @@ export default function LegacyChapterPlay() {
               className="text-stone-400 font-medium rounded-xl px-6 py-3 text-sm border border-stone-700"
             >
               Begin a New Journey
+            </button>
+            <button
+              onClick={() => navigate("/legacy/journal")}
+              className="text-amber-400 font-medium rounded-xl px-6 py-3 text-sm border border-amber-700/30"
+            >
+              Read Your Journal
             </button>
           </div>
         </div>

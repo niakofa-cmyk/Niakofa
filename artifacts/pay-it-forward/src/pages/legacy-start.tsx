@@ -288,16 +288,21 @@ export default function LegacyStartPage() {
                     </p>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="grid grid-cols-3 gap-2 mb-4">
                   <div className="bg-[#3A2A1A] rounded-xl p-3 text-center">
                     <BookOpen className="w-4 h-4 text-amber-500 mx-auto mb-1" />
-                    <p className="text-xs text-amber-700">Stories</p>
+                    <p className="text-[10px] text-amber-700">Stories</p>
                     <p className="text-sm font-bold text-amber-400">{selected.storyCount}</p>
                   </div>
                   <div className="bg-[#3A2A1A] rounded-xl p-3 text-center">
-                    <MapPin className="w-4 h-4 text-amber-500 mx-auto mb-1" />
-                    <p className="text-xs text-amber-700">Memories</p>
+                    <Camera className="w-4 h-4 text-amber-500 mx-auto mb-1" />
+                    <p className="text-[10px] text-amber-700">Memories</p>
                     <p className="text-sm font-bold text-amber-400">{selected.memoryCount}</p>
+                  </div>
+                  <div className="bg-[#3A2A1A] rounded-xl p-3 text-center">
+                    <MapPin className="w-4 h-4 text-amber-500 mx-auto mb-1" />
+                    <p className="text-[10px] text-amber-700">Places</p>
+                    <p className="text-sm font-bold text-amber-400">{selected.placeCount}</p>
                   </div>
                 </div>
                 {/* RPG Stats */}
@@ -337,6 +342,22 @@ export default function LegacyStartPage() {
                   <div className="h-1.5 bg-[#3A2A1A] rounded-full overflow-hidden">
                     <div className="h-full bg-teal-500 rounded-full" style={{ width: `${Math.min(100, selected.placeCount * 15)}%` }} />
                   </div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-pink-400">Faith</span>
+                    <span className="text-pink-400">{Math.min(100, selected.interviewCount * 15 + selected.storyCount * 5)}</span>
+                  </div>
+                  <div className="h-1.5 bg-[#3A2A1A] rounded-full overflow-hidden">
+                    <div className="h-full bg-pink-500 rounded-full" style={{ width: `${Math.min(100, selected.interviewCount * 15 + selected.storyCount * 5)}%` }} />
+                  </div>
+                </div>
+                {/* Chapter Preview */}
+                <div className="bg-[#1A1008] border border-amber-900/30 rounded-xl p-3 mb-4">
+                  <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-1">Chapter I</p>
+                  <p className="text-xs text-amber-400/80 leading-relaxed">
+                    {selected.storyCount > 0
+                      ? `Your family remembers ${selected.name}. ${selected.selectionReason}. Walk in their footsteps and discover the world they knew.`
+                      : `${selected.name} is waiting to be discovered. Add stories and memories to bring their world to life.`}
+                  </p>
                 </div>
                 <p className="text-xs text-amber-600 text-center italic mb-4">
                   {ready
