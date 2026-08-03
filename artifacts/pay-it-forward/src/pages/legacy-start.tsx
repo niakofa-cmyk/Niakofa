@@ -163,6 +163,21 @@ export default function LegacyStartPage() {
           headers: { ...authHeaders(), "Content-Type": "application/json" },
           body: JSON.stringify({ status: "in_progress" }),
         });
+
+        // Create a play session so the chapter page can restore stats and
+        // save progress from the very first scene, not just when the first
+        // choice is made.
+        await fetch(`/api/legacy/sessions`, {
+          method: "POST",
+          headers: { ...authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({
+            familyId,
+            worldId: data.worldId,
+            ancestorMemberId: selectedId,
+            chapterId: firstChapter.id,
+          }),
+        }).catch(() => { /* non-fatal — session will be created on first progress save */ });
+
         // Hold the cinematic transition for 2.5s before navigating
         setTimeout(() => {
           navigate(`/legacy/chapter/${firstChapter.id}`);

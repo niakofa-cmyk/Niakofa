@@ -393,6 +393,7 @@ export default function LegacyHomePage() {
   const [scenesLoading, setScenesLoading] = useState(false);
   const [activeChapterId, setActiveChapterId] = useState<number | null>(null);
   const [mapData, setMapData] = useState<MapData | null>(null);
+  const [activeSession, setActiveSession] = useState<{ id: number; currentChapterId: number | null; ancestorMemberId: number | null } | null>(null);
 
   // ── Today's Journey + World Version (Phase 5) ─────────────────────────────
   const [todaysJourney, setTodaysJourney] = useState<{
@@ -535,6 +536,7 @@ export default function LegacyHomePage() {
       const [
         journeyRes, versionRes, welcomeRes, calendarRes,
         reunionRes, questsRes, missionsRes, mysteriesRes, challengesRes, achRes,
+        sessionRes,
       ] = await Promise.all([
         fetch(`/api/legacy/game-master/${familyId}/today`, { headers: authHeaders() }).catch(() => null),
         fetch(`/api/legacy/world-evolution/${familyId}/version-summary`, { headers: authHeaders() }).catch(() => null),
@@ -548,11 +550,22 @@ export default function LegacyHomePage() {
         fetch(`/api/legacy/memory-mysteries/${familyId}`, { headers: authHeaders() }).catch(() => null),
         fetch(`/api/legacy/challenges/${familyId}`, { headers: authHeaders() }).catch(() => null),
         fetch(`/api/legacy/achievements/${familyId}`, { headers: authHeaders() }).catch(() => null),
+        fetch(`/api/legacy/sessions/active/${familyId}`, { headers: authHeaders() }).catch(() => null),
       ]);
 
       if (familyQuestsLoadedRef.current === false) familyQuestsLoadedRef.current = true;
 
       if (journeyRes?.ok) { const jd = await journeyRes.json(); if (jd.journey) setTodaysJourney(jd.journey); }
+      if (sessionRes?.ok) {
+        const sd = await sessionRes.json();
+        if (sd?.session?.id) {
+          setActiveSession({
+            id: sd.session.id,
+            currentChapterId: sd.session.current_chapter_id ?? null,
+            ancestorMemberId: sd.session.ancestor_member_id ?? null,
+          });
+        }
+      }
       if (versionRes?.ok) { setWorldVersion(await versionRes.json()); }
       if (welcomeRes?.ok) { setDailyWelcome(await welcomeRes.json()); }
       if (calendarRes?.ok) { const cd = await calendarRes.json(); setEmotionalCalendar(cd.calendar ?? []); }
@@ -1010,12 +1023,9 @@ export default function LegacyHomePage() {
                 </button>
               </div>
               <div className="flex gap-2 mt-4">
-                {chapters.some(c => c.status === "in_progress") && (
+                {activeSession?.currentChapterId && (
                   <button
-                    onClick={() => {
-                      const inProgress = chapters.find(c => c.status === "in_progress");
-                      if (inProgress) navigate(`/legacy/chapter/${inProgress.id}`);
-                    }}
+                    onClick={() => navigate(`/legacy/chapter/${activeSession.currentChapterId}`)}
                     className="flex-1 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70 flex items-center justify-center gap-1.5"
                   >
                     <BookOpen className="w-3.5 h-3.5" /> Resume Chapter
@@ -1023,9 +1033,9 @@ export default function LegacyHomePage() {
                 )}
                 <button
                   onClick={() => navigate("/legacy/start")}
-                  className={`flex-1 ${chapters.some(c => c.status === "in_progress") ? "bg-amber-900/40 border border-amber-700/30 text-amber-400" : "bg-amber-500 text-amber-950"} font-black text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-80 flex items-center justify-center gap-1.5 transition-opacity`}
+                  className={`flex-1 ${activeSession?.currentChapterId ? "bg-amber-900/40 border border-amber-700/30 text-amber-400" : "bg-amber-500 text-amber-950"} font-black text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-80 flex items-center justify-center gap-1.5 transition-opacity`}
                 >
-                  <Play className="w-3.5 h-3.5" /> {chapters.some(c => c.status === "in_progress") ? "New Journey" : "Continue Journey"}
+                  <Play className="w-3.5 h-3.5" /> {activeSession?.currentChapterId ? "New Journey" : "Continue Journey"}
                 </button>
                 <button
                   onClick={() => navigate("/diaspora/family")}
@@ -1215,10 +1225,17 @@ export default function LegacyHomePage() {
                   </div>
                 )}
                 <button
-                  onClick={() => { setWorldEvolvedDismissed(true); navigate("/legacy/start"); }}
+                  onClick={() => {
+                    setWorldEvolvedDismissed(true);
+                    if (activeSession?.currentChapterId) {
+                      navigate(`/legacy/chapter/${activeSession.currentChapterId}`);
+                    } else {
+                      navigate("/legacy/start");
+                    }
+                  }}
                   className="w-full bg-amber-500 text-amber-950 font-black text-xs uppercase tracking-wide py-3 rounded-xl active:opacity-80 flex items-center justify-center gap-1.5"
                 >
-                  <Play className="w-3.5 h-3.5" /> Continue Journey
+                  <Play className="w-3.5 h-3.5" /> {activeSession?.currentChapterId ? "Resume Journey" : "Continue Journey"}
                 </button>
               </div>
             </div>
