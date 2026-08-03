@@ -143,27 +143,25 @@ export default function LegacyAiDirectorPage() {
             // Non-fatal — user can manually generate later
           }
         }
-      } catch {
-        setError("Failed to load missions.");
-      } finally {
-        setLoading(false);
-      }
 
-      // Fetch today's journey and vault gaps in parallel
-      if (familyId) {
+        // Fetch today's journey and vault gaps in parallel
         setTodayLoading(true);
-        fetch(`/api/legacy/game-master/${familyId}/today`, { headers: authHeaders() })
+        fetch(`/api/legacy/game-master/${famId}/today`, { headers: authHeaders() })
           .then((r) => r.ok ? r.json() : null)
           .then((data) => { if (data) setTodayJourney(data); })
           .catch(() => {})
           .finally(() => setTodayLoading(false));
 
         setGapsLoading(true);
-        fetch(`/api/legacy/ai-director/${familyId}/gaps`, { headers: authHeaders() })
+        fetch(`/api/legacy/ai-director/${famId}/gaps`, { headers: authHeaders() })
           .then((r) => r.ok ? r.json() : null)
           .then((data) => { if (data?.gaps) setGaps(data.gaps); })
           .catch(() => {})
           .finally(() => setGapsLoading(false));
+      } catch {
+        setError("Failed to load missions.");
+      } finally {
+        setLoading(false);
       }
     })();
   }, [currentUser]);

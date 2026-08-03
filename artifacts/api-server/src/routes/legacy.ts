@@ -679,7 +679,7 @@ async function selectAncestors(familyId: number): Promise<AncestorCandidate[]> {
 
 // GET /api/legacy/ancestors/:familyId — get ancestor candidates for selection
 router.get(
-  "/ancestors/:familyId",
+  "/legacy/ancestors/:familyId",
   generalApiLimiter,
   requireAuth,
   async (req, res) => {
