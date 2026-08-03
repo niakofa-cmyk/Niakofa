@@ -13,13 +13,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import {
-  ArrowLeft, Loader2, MapPin, Calendar, BookOpen,
+  ArrowLeft, Loader2, Calendar, BookOpen,
   CheckCircle2, ChevronRight, Sparkles, AlertCircle,
   Sunrise, MessageSquare, Compass, Map as MapIcon,
-  Moon, BookMarked, Save, Sun, Stars, Church,
-  Footprints, BookHeart,
+  Moon, BookMarked, Save,
+  Footprints,
 } from "lucide-react";
-import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 
 // Ambient background gradient shifts based on the day-cycle position.
@@ -103,16 +102,6 @@ const STAT_LABELS: Record<keyof SessionStats, string> = {
   faith: "Faith",
 };
 
-const STAT_ICONS: Record<keyof SessionStats, string> = {
-  knowledge: "BookOpen",
-  relationships: "Heart",
-  culturalWisdom: "Sparkles",
-  courage: "Sword",
-  reputation: "Star",
-  legacy: "Crown",
-  faith: "Church",
-};
-
 // Choices are parameterized by scene type and enriched with vault context
 // (place names, event titles, memory descriptions) so they feel specific to
 // the family's actual history rather than generic for every family.
@@ -164,7 +153,6 @@ function buildSceneChoices(scene: Scene, vault: SceneResponse["vaultContext"]): 
 export default function LegacyChapterPlay() {
   const params = useParams<{ chapterId: string }>();
   const [, navigate] = useLocation();
-  const { currentUser } = useAppContext();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
