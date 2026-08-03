@@ -48,6 +48,7 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    sourcemap: false,
     // mapbox-gl is ~1.8 MB (minified, gzipped ~600 KB) — that is its fixed
     // library size and cannot be reduced. All other per-route chunks are
     // well under 600 KB after the lazy-loading split in App.tsx.

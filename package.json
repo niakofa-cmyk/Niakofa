@@ -8,7 +8,7 @@
   "scripts": {
     "preinstall": "echo ok",
     "postinstall": "node node_modules/esbuild/install.js 2>/dev/null || true && (test -e artifacts/api-server/node_modules/esbuild || ln -sf \"$PWD/node_modules/esbuild\" artifacts/api-server/node_modules/esbuild) 2>/dev/null || true",
-    "build": "pnpm run typecheck && pnpm -r --workspace-concurrency=1 --filter \"!@workspace/mockup-sandbox\" --if-present run build",
+    "build": "pnpm run typecheck && pnpm -r --workspace-concurrency=1 --filter \"@workspace/pay-it-forward\" --if-present run build && pnpm -r --workspace-concurrency=1 --filter \"!@workspace/mockup-sandbox\" --filter \"!@workspace/circles-visual-reference\" --filter \"!@workspace/pay-it-forward\" --if-present run build",
     "lint": "npx eslint .",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --workspace-concurrency=1 --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
