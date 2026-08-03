@@ -202,6 +202,10 @@ router.post(
       return res.status(400).json({ error: "Valid changeType is required" });
     }
 
+    if (description && typeof description === "string" && description.length > 500) {
+      return res.status(400).json({ error: "Description too long (max 500 chars)" });
+    }
+
     try {
       const [entry] = await db
         .insert(legacyWorldEvolutionLogTable)

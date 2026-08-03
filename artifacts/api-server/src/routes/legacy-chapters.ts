@@ -1435,7 +1435,7 @@ router.post(
           : null;
 
       // Accumulate RPG stats across all choices in this session
-      const STAT_KEYS = ["knowledge", "relationships", "culturalWisdom", "courage", "reputation", "legacy"] as const;
+      const STAT_KEYS = ["knowledge", "relationships", "culturalWisdom", "courage", "reputation", "legacy", "faith"] as const;
       type StatKey = typeof STAT_KEYS[number];
       type SessionStats = Record<StatKey, number>;
 
@@ -1483,7 +1483,7 @@ router.post(
         if (newDecision) decisions[decisionKey] = newDecision;
 
         // Accumulate stat changes from this choice into session stats
-        const currentStats: SessionStats = currentState.stats ?? { knowledge: 0, relationships: 0, culturalWisdom: 0, courage: 0, reputation: 0, legacy: 0 };
+        const currentStats: SessionStats = currentState.stats ?? { knowledge: 0, relationships: 0, culturalWisdom: 0, courage: 0, reputation: 0, legacy: 0, faith: 0 };
         const updatedStats: SessionStats = { ...currentStats };
         if (statChanges) {
           for (const k of STAT_KEYS) {
@@ -1618,8 +1618,13 @@ router.post(
     if (isNaN(chapterId)) return res.status(400).json({ error: "Invalid chapter ID" });
 
     const { question, sceneNumber } = req.body as { question?: string; sceneNumber?: number };
-    if (!question || question.trim().length < 5) {
-      return res.status(400).json({ error: "A question (min 5 chars) is required" });
+    // If no question provided but sceneNumber is, generate one from the chapter context
+    let finalQuestion = question;
+    if (!finalQuestion || finalQuestion.trim().length < 5) {
+      if (sceneNumber === undefined) {
+        return res.status(400).json({ error: "Either a question (min 5 chars) or a sceneNumber is required" });
+      }
+      finalQuestion = `What more can our family discover about scene ${sceneNumber} of this chapter?`;
     }
 
     try {

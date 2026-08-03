@@ -266,7 +266,12 @@ export default function LegacyChapterPlay() {
   }, [chapterId]);
 
   useEffect(() => {
-    if (!isNaN(chapterId)) loadScenes();
+    if (isNaN(chapterId)) {
+      setError("Invalid chapter ID");
+      setLoading(false);
+      return;
+    }
+    loadScenes();
   }, [chapterId, loadScenes]);
 
   // Fetch AI narration for the current scene
@@ -359,7 +364,7 @@ export default function LegacyChapterPlay() {
         const res = await fetch(`/api/legacy/chapters/${chapterId}/mystery-quest`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeaders() },
-          body: JSON.stringify({ sceneNumber: scene.sceneNumber }),
+          body: JSON.stringify({ sceneNumber: scene.sceneNumber, question: `What more can our family discover about this moment in scene ${scene.sceneNumber}?` }),
         });
         setMysteryQuestState(res.ok ? "saved" : "error");
       } catch {

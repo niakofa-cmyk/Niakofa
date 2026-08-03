@@ -969,6 +969,7 @@ router.get(
         courage: Math.min(100, (stories.length * 5) + (events.length * 5) + (memories.length * 5)),
         reputation: Math.min(100, events.filter((e) => e.category !== "birth" && e.category !== "death").length * 20),
         legacy: Math.min(100, places.length * 15),
+        faith: Math.min(100, (memories.length * 5) + (stories.length * 7)),
       };
 
       return res.json({

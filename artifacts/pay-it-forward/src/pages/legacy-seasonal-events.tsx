@@ -120,8 +120,8 @@ export default function LegacySeasonalEventsPage() {
             });
             if (autoRes.ok) {
               const autoBody = await autoRes.json();
-              if (autoBody.events?.length > 0) {
-                setEvents(autoBody.events);
+              if (autoBody.created?.length > 0) {
+                setEvents(autoBody.created);
               }
             }
           } catch {

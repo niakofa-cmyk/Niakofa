@@ -58,6 +58,7 @@ const STAT_CONFIG: Record<string, { label: string; color: string; icon: string }
   courage: { label: "Courage", color: "text-orange-400", icon: "CG" },
   reputation: { label: "Reputation", color: "text-teal-400", icon: "RP" },
   legacy: { label: "Legacy", color: "text-purple-400", icon: "LG" },
+  faith: { label: "Faith", color: "text-pink-400", icon: "FA" },
 };
 
 export default function LegacyJournalPage() {
