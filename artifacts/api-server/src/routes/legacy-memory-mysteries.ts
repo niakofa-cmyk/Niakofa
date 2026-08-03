@@ -117,8 +117,12 @@ router.post(
       suggestedActions?: string[];
     };
 
+    const VALID_MYSTERY_TYPES = ["unknown_person", "unknown_place", "unknown_date", "unknown_document", "unknown_event", "missing_interview"] as const;
     if (!mysteryType || !title) {
       return res.status(400).json({ error: "mysteryType and title are required" });
+    }
+    if (!VALID_MYSTERY_TYPES.includes(mysteryType as typeof VALID_MYSTERY_TYPES[number])) {
+      return res.status(400).json({ error: "Invalid mysteryType" });
     }
 
     try {
@@ -126,7 +130,7 @@ router.post(
         .insert(legacyMemoryMysteriesTable)
         .values({
           family_id: familyId,
-          mystery_type: mysteryType as "unknown_person" | "unknown_place" | "unknown_date" | "unknown_document" | "unknown_event" | "missing_interview",
+          mystery_type: mysteryType as typeof VALID_MYSTERY_TYPES[number],
           status: "open",
           title,
           description: description ?? null,
@@ -168,21 +172,36 @@ router.post(
         return res.status(403).json({ error: "Not a member of this family" });
       }
 
-      const { resolution, resolvedBy } = req.body as {
+      const { resolution } = req.body as {
         resolution: string;
-        resolvedBy?: number;
       };
 
-      if (!resolution) {
-        return res.status(400).json({ error: "resolution is required" });
+      if (!resolution || resolution.trim().length < 3) {
+        return res.status(400).json({ error: "resolution is required (min 3 characters)" });
       }
+      if (resolution.length > 4000) {
+        return res.status(400).json({ error: "resolution is too long (max 4000 characters)" });
+      }
+
+      // resolved_by FK references family_members.id, not users.id — resolve
+      // the authenticated user's family member ID in this family.
+      const [memberRow] = await db
+        .select({ id: familyMembersTable.id })
+        .from(familyMembersTable)
+        .where(
+          and(
+            eq(familyMembersTable.family_id, mystery.family_id),
+            eq(familyMembersTable.user_id, req.authenticatedUserId!),
+          ),
+        )
+        .limit(1);
 
       const [updated] = await db
         .update(legacyMemoryMysteriesTable)
         .set({
           status: "solved",
           resolution,
-          resolved_by: resolvedBy ?? req.authenticatedUserId ?? null,
+          resolved_by: memberRow?.id ?? null,
           resolved_at: new Date(),
         })
         .where(eq(legacyMemoryMysteriesTable.id, mysteryId))

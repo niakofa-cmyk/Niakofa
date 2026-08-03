@@ -114,7 +114,7 @@ router.get(
           .where(and(eq(familyInterviewsTable.family_id, familyId), eq(familyInterviewsTable.status, "published"))),
         db.select({ count: sql<number>`count(*)::int` })
           .from(familyMemoriesTable)
-          .where(eq(familyMemoriesTable.family_id, familyId)),
+          .where(and(eq(familyMemoriesTable.family_id, familyId), inArray(familyMemoriesTable.visibility, ["family", "branch"]))),
         db.select({ count: sql<number>`count(*)::int` })
           .from(familyPlacesTable)
           .where(eq(familyPlacesTable.family_id, familyId)),

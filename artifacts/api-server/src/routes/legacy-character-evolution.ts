@@ -194,7 +194,7 @@ router.get(
                 newJournal: latestSnapshot.new_journal_count,
                 newQuests: latestSnapshot.new_quest_count,
                 newMemories: latestSnapshot.new_memory_count,
-                version: latestSnapshot.knowledge_version_id,
+                knowledgeVersionId: latestSnapshot.knowledge_version_id,
                 createdAt: latestSnapshot.created_at,
               }
             : null,

@@ -84,12 +84,12 @@ async function analyzeVaultGaps(familyId: number): Promise<VaultGap[]> {
     db.select().from(familyMembersTable).where(
       and(eq(familyMembersTable.family_id, familyId), eq(familyMembersTable.status, "active")),
     ),
-    db.select().from(familyMemoriesTable).where(eq(familyMemoriesTable.family_id, familyId)),
-    db.select().from(familyInterviewsTable).where(eq(familyInterviewsTable.family_id, familyId)),
-    db.select().from(familyStoriesTable).where(eq(familyStoriesTable.family_id, familyId)),
-    db.select().from(familyPlacesTable).where(eq(familyPlacesTable.family_id, familyId)),
-    db.select().from(familyEventsTable).where(eq(familyEventsTable.family_id, familyId)),
-    db.select().from(familyTreeRelationsTable).where(eq(familyTreeRelationsTable.family_id, familyId)),
+    db.select().from(familyMemoriesTable).where(eq(familyMemoriesTable.family_id, familyId)).limit(200),
+    db.select().from(familyInterviewsTable).where(eq(familyInterviewsTable.family_id, familyId)).limit(50),
+    db.select().from(familyStoriesTable).where(eq(familyStoriesTable.family_id, familyId)).limit(200),
+    db.select().from(familyPlacesTable).where(eq(familyPlacesTable.family_id, familyId)).limit(100),
+    db.select().from(familyEventsTable).where(eq(familyEventsTable.family_id, familyId)).limit(200),
+    db.select().from(familyTreeRelationsTable).where(eq(familyTreeRelationsTable.family_id, familyId)).limit(200),
   ]);
 
   // Gap 1: Members without any stories or memories
@@ -580,12 +580,25 @@ router.post(
         return res.status(403).json({ error: "Not a member of this family" });
       }
 
+      // Resolve the family member ID for this user — completed_by FK references
+      // family_members.id, NOT users.id.
+      const [memberRow] = await db
+        .select({ id: familyMembersTable.id })
+        .from(familyMembersTable)
+        .where(
+          and(
+            eq(familyMembersTable.family_id, mission.family_id),
+            eq(familyMembersTable.user_id, req.authenticatedUserId!),
+          ),
+        )
+        .limit(1);
+
       const [updated] = await db
         .update(legacyAiDirectorMissionsTable)
         .set({
           status: "completed",
           completed_at: new Date(),
-          completed_by: req.authenticatedUserId ?? null,
+          completed_by: memberRow?.id ?? null,
         })
         .where(eq(legacyAiDirectorMissionsTable.id, missionId))
         .returning();

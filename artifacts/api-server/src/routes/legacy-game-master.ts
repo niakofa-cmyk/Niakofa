@@ -100,7 +100,12 @@ router.get(
       return res.status(403).json({ error: "Not a member of this family" });
     }
 
-    const narrationType = String(req.query.type ?? "scene_intro") as NarrationRequest["narrationType"];
+    const VALID_NARRATION_TYPES = ["scene_intro", "dialogue", "quest_prompt", "chapter_summary", "historical_context", "ancestor_introduction"] as const;
+    const rawType = String(req.query.type ?? "scene_intro");
+    if (!VALID_NARRATION_TYPES.includes(rawType as typeof VALID_NARRATION_TYPES[number])) {
+      return res.status(400).json({ error: "Invalid narration type" });
+    }
+    const narrationType = rawType as NarrationRequest["narrationType"];
     const sessionId = req.query.sessionId ? parseInt(String(req.query.sessionId), 10) : undefined;
     const chapterId = req.query.chapterId ? parseInt(String(req.query.chapterId), 10) : undefined;
     const ancestorName = req.query.ancestorName ? String(req.query.ancestorName) : undefined;
@@ -641,7 +646,7 @@ router.get(
         );
       const newCharacterCount = Number(newCharacterResult[0]?.cnt ?? 0);
 
-      const hasChanges = recentChanges.length > 0 || newMemoryCount > 0 || newMemberCount > 0 || newPlaceCount > 0;
+      const hasChanges = recentChanges.length > 0 || newMemoryCount > 0 || newMemberCount > 0 || newPlaceCount > 0 || newCharacterCount > 0;
 
       return res.json({
         hasChanges,
@@ -765,7 +770,7 @@ router.get(
         // Only include events within +/- 30 days
         if (diffDays < -30 || diffDays > 30) continue;
 
-        const isToday = eventDate.getMonth() === currentMonth && eventDate.getDate() === currentDay;
+        const isToday = anniversaryThisYear.getMonth() === currentMonth && anniversaryThisYear.getDate() === currentDay;
         const isUpcoming = diffDays >= 0 && diffDays <= 7;
         const yearsAgo = today.getFullYear() - eventDate.getFullYear();
 

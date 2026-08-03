@@ -893,7 +893,7 @@ router.post(
     if (isNaN(chapterId)) return res.status(400).json({ error: "Invalid chapter ID" });
 
     const { sceneNumber } = req.body as { sceneNumber?: number };
-    if (!sceneNumber || sceneNumber < 1 || sceneNumber > 10) {
+    if (!sceneNumber || sceneNumber < 1 || sceneNumber > 20) {
       return res.status(400).json({ error: "Valid sceneNumber is required" });
     }
 
@@ -1014,7 +1014,7 @@ router.post(
       title?: string;
       body?: string;
     };
-    if (!sceneNumber || sceneNumber < 1 || sceneNumber > 10) {
+    if (!sceneNumber || sceneNumber < 1 || sceneNumber > 20) {
       return res.status(400).json({ error: "Valid sceneNumber is required" });
     }
     const trimmedBody = typeof body === "string" ? body.trim() : "";

@@ -129,7 +129,7 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
       name:      familyMembersTable.display_name,
       role:      familyMembersTable.role,
       relation:  familyMembersTable.relation_note,
-      updated:   familyMembersTable.created_at,
+      updated:   familyMembersTable.updated_at,
       is_living: familyMembersTable.is_living,
       user_id:   familyMembersTable.user_id,
     })

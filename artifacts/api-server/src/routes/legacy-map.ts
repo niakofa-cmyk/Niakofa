@@ -84,21 +84,31 @@ router.get(
       const consentedIds = Array.from(consentedIdSet);
 
       const [places, events, chapters, discoveries] = await Promise.all([
-        db
-          .select({
-            id:        familyPlacesTable.id,
-            label:     familyPlacesTable.label,
-            placeType: familyPlacesTable.place_type,
-            country:   familyPlacesTable.country,
-            region:    familyPlacesTable.region,
-            lat:       familyPlacesTable.lat,
-            lng:       familyPlacesTable.lng,
-            notes:     familyPlacesTable.notes,
-            createdAt: familyPlacesTable.created_at,
-          })
-          .from(familyPlacesTable)
-          .where(eq(familyPlacesTable.family_id, familyId))
-          .orderBy(desc(familyPlacesTable.created_at)),
+        consentedIds.length > 0
+          ? db
+            .select({
+              id:        familyPlacesTable.id,
+              label:     familyPlacesTable.label,
+              placeType: familyPlacesTable.place_type,
+              country:   familyPlacesTable.country,
+              region:    familyPlacesTable.region,
+              lat:       familyPlacesTable.lat,
+              lng:       familyPlacesTable.lng,
+              notes:     familyPlacesTable.notes,
+              createdAt: familyPlacesTable.created_at,
+            })
+            .from(familyPlacesTable)
+            .innerJoin(
+              familyEventsTable,
+              and(
+                eq(familyEventsTable.place_id, familyPlacesTable.id),
+                eq(familyEventsTable.family_id, familyId),
+                inArray(familyEventsTable.member_id, consentedIds),
+              ),
+            )
+            .where(eq(familyPlacesTable.family_id, familyId))
+            .orderBy(desc(familyPlacesTable.created_at))
+          : Promise.resolve([]),
         consentedIds.length > 0
           ? db
             .select({

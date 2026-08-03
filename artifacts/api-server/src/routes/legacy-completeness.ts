@@ -43,13 +43,14 @@ const router = Router();
 // ── Readiness score weights ──────────────────────────────────────────────────
 // Each dimension contributes up to its max points. Total = 100.
 const WEIGHTS = {
-  people:     18,  // members + tree relations
-  relations:  12,  // parent/spouse edges
-  events:     18,  // dated life events
-  stories:    18,  // memories + stories
-  places:     14,  // geographic locations
-  consent:    10,  // storytelling consent flags
-  discovery:  10,  // GPS check-ins at family landmarks
+  people:      16,  // members + tree relations
+  relations:   10,  // parent/spouse edges
+  events:      16,  // dated life events
+  stories:     16,  // memories + stories
+  interviews:  10,  // oral history interviews
+  places:      12,  // geographic locations
+  consent:     10,  // storytelling consent flags
+  discovery:   10,  // GPS check-ins at family landmarks
 } as const;
 
 // ── Phase 1 chapter unlock threshold ─────────────────────────────────────────
@@ -165,6 +166,7 @@ export async function calculateCompleteness(familyId: number): Promise<Completen
     : 0;
   const eventsScore = Math.min(WEIGHTS.events, Math.round((eventCount / 3) * WEIGHTS.events));
   const storiesScore = Math.min(WEIGHTS.stories, Math.round(((memoryCount + storyCount) / 5) * WEIGHTS.stories));
+  const interviewsScore = Math.min(WEIGHTS.interviews, Math.round((interviewCount / 2) * WEIGHTS.interviews));
   const placesScore = Math.min(WEIGHTS.places, Math.round((placeCount / 2) * WEIGHTS.places));
   const consentScore = Math.min(WEIGHTS.consent, Math.round((consentCount / 2) * WEIGHTS.consent));
   const discoveryScore = Math.min(WEIGHTS.discovery, Math.round((discoveryCount / 3) * WEIGHTS.discovery));
@@ -178,6 +180,8 @@ export async function calculateCompleteness(familyId: number): Promise<Completen
       hint: eventCount < 3 ? "Add life events (births, migrations, marriages)." : "Life timeline is forming." },
     { key: "stories", label: "Stories", score: storiesScore, max: WEIGHTS.stories, count: memoryCount + storyCount,
       hint: memoryCount + storyCount < 5 ? "Record stories and memories in the vault." : "Rich narrative material." },
+    { key: "interviews", label: "Interviews", score: interviewsScore, max: WEIGHTS.interviews, count: interviewCount,
+      hint: interviewCount < 2 ? "Record oral history interviews to enrich the narrative." : "Voices of the elders captured." },
     { key: "places", label: "Places", score: placesScore, max: WEIGHTS.places, count: placeCount,
       hint: placeCount < 2 ? "Add locations your family lived in or migrated through." : "Geographic context available." },
     { key: "consent", label: "Consent", score: consentScore, max: WEIGHTS.consent, count: consentCount,

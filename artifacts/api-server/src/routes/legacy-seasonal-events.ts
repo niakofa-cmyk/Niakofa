@@ -318,8 +318,19 @@ router.delete(
       if (!event) return res.status(404).json({ error: "Event not found" });
 
       const userId = req.authenticatedUserId!;
-      if (!(await isMember(userId, event.family_id))) {
-        return res.status(403).json({ error: "Not a member of this family" });
+      const [memberRow] = await db
+        .select({ id: familyMembersTable.id, role: familyMembersTable.role })
+        .from(familyMembersTable)
+        .where(
+          and(
+            eq(familyMembersTable.family_id, event.family_id),
+            eq(familyMembersTable.user_id, userId),
+          ),
+        )
+        .limit(1);
+
+      if (!memberRow || !["owner", "curator", "editor"].includes(memberRow.role)) {
+        return res.status(403).json({ error: "Only family editors or above can delete events" });
       }
 
       await db.delete(legacySeasonalEventsTable).where(eq(legacySeasonalEventsTable.id, eventId));
@@ -378,19 +389,21 @@ router.post(
       const created: (typeof legacySeasonalEventsTable.$inferSelect)[] = [];
 
       for (const member of members) {
-        // Birthday events — any member with a birth date gets one
-        // Check if member has any birth event (family_members has no birth_year column)
-        const hasBirthEvent = await db.select({ id: familyEventsTable.id }).from(familyEventsTable).where(and(eq(familyEventsTable.member_id, member.id), eq(familyEventsTable.category, "birth"))).limit(1);
-        if (hasBirthEvent.length > 0) {
-          // Use birth_month and birth_day if available, otherwise default
-          // to a generic "birthday" event without a specific date
-          const birthMonth = (member as { birth_month?: number | null }).birth_month;
-          const birthDay = (member as { birth_day?: number | null }).birth_day;
-          const triggerDate = birthMonth && birthDay
-            ? `${now.getFullYear()}-${String(birthMonth).padStart(2, "0")}-${String(birthDay).padStart(2, "0")}`
-            : null;
+        // Birthday events — derive the date from the member's birth event
+        // (family_members has no birth_month/birth_day columns).
+        const [birthEvent] = await db
+          .select({ date: familyEventsTable.event_date })
+          .from(familyEventsTable)
+          .where(and(eq(familyEventsTable.member_id, member.id), eq(familyEventsTable.category, "birth")))
+          .limit(1);
 
-          const key = `birthday:${member.id}:${triggerDate ?? "null"}`;
+        if (birthEvent?.date) {
+          const birthDate = new Date(birthEvent.date);
+          const birthMonth = birthDate.getMonth() + 1; // JS months are 0-indexed
+          const birthDay = birthDate.getDate();
+          const triggerDate = `${now.getFullYear()}-${String(birthMonth).padStart(2, "0")}-${String(birthDay).padStart(2, "0")}`;
+
+          const key = `birthday:${member.id}`;
           if (!existingKeys.has(key)) {
             const [event] = await db
               .insert(legacySeasonalEventsTable)
@@ -403,7 +416,7 @@ router.post(
                 reward_title: "Birthday Tribute",
                 reward_description: `A personalized memory album for ${member.display_name}.`,
                 status: "active",
-                trigger_type: triggerDate ? "recurring_annual" : "recurring_annual",
+                trigger_type: "recurring_annual",
                 trigger_date: triggerDate,
                 target_member_id: member.id,
               })
