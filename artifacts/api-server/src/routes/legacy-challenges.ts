@@ -268,6 +268,13 @@ router.post(
           .where(eq(legacyFamilyChallengesTable.id, challengeId));
         challengeCompleted = true;
         logger.info({ challengeId, familyId: challengeBefore.family_id }, "legacy-challenges: challenge auto-completed");
+
+        const { logWorldEvolution } = await import("../lib/legacy-world-evolution");
+        logWorldEvolution(
+          challengeBefore.family_id,
+          "story_added",
+          `Family challenge completed: "${challengeBefore.title}" (${contribCount} contributions)`,
+        ).catch(() => {});
       }
 
       // Re-read the challenge — the DB trigger (fn_check_challenge_complete)

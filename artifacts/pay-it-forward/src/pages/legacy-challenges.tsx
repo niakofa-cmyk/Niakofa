@@ -7,6 +7,7 @@
  *   - Create new challenges from templates
  *   - Contribute to challenges (interviews, photos, stories, locations, etc.)
  *   - See completed challenges and unlocked rewards
+ *   - Delete challenges they no longer want
  *
  * The auto-complete trigger in the DB marks challenges as "completed" when
  * the contribution count reaches the goal.
@@ -14,7 +15,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, Loader2, Users, Trophy, Plus, CheckCircle2, Gift, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Loader2, Users, Trophy, Plus, CheckCircle2, Gift, Sparkles, X, Trash2 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 
@@ -131,6 +132,19 @@ export default function LegacyChallengesPage() {
       setError(err instanceof Error ? err.message : "Failed to create challenge");
     }
   }, [familyId]);
+
+  const deleteChallenge = useCallback(async (challengeId: number) => {
+    try {
+      const res = await fetch(`/api/legacy/challenges/${challengeId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to delete challenge");
+      setChallenges((cs) => cs.filter((c) => c.id !== challengeId));
+    } catch {
+      setError("Failed to delete challenge");
+    }
+  }, []);
 
   const contribute = useCallback(async (challengeId: number) => {
     setContributing(challengeId);
@@ -295,6 +309,13 @@ export default function LegacyChallengesPage() {
                       >
                         {contributing === ch.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
                         Contribute
+                      </button>
+                      <button
+                        onClick={() => deleteChallenge(ch.id)}
+                        className="text-amber-800 hover:text-red-500 p-1.5 transition-colors"
+                        aria-label="Delete challenge"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
