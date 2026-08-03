@@ -115,6 +115,8 @@ export default function LegacyChapterPlay() {
   const [showConsequence, setShowConsequence] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
   const [chapterCompleted, setChapterCompleted] = useState(false);
+  const [completionNarration, setCompletionNarration] = useState<string | null>(null);
+  const [completionNarrationLoading, setCompletionNarrationLoading] = useState(false);
   const [mysteryQuestState, setMysteryQuestState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
@@ -328,6 +330,25 @@ export default function LegacyChapterPlay() {
           body: JSON.stringify({ status: "completed" }),
         });
         setChapterCompleted(true);
+
+        // Fetch AI-generated chapter summary narration for the completion screen
+        if (sceneData?.familyId) {
+          setCompletionNarrationLoading(true);
+          const params = new URLSearchParams({
+            type: "chapter_summary",
+            chapterId: String(chapterId),
+            sceneContext: `Completed "${sceneData.chapterTitle}" with ${completedScenes.size} scenes explored.`,
+          });
+          fetch(`/api/legacy/game-master/${sceneData.familyId}/narration?${params}`, {
+            headers: authHeaders(),
+          })
+            .then((r) => r.ok ? r.json() : null)
+            .then((data) => {
+              if (data?.narration?.content) setCompletionNarration(data.narration.content);
+            })
+            .catch(() => {})
+            .finally(() => setCompletionNarrationLoading(false));
+        }
       } catch {
         // Still show completion UI even if API fails
         setChapterCompleted(true);
@@ -388,13 +409,23 @@ export default function LegacyChapterPlay() {
               <Sparkles className="w-4 h-4 text-amber-400" />
               <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">Nia</span>
             </div>
-            <p className="text-sm text-stone-300 italic leading-relaxed">
-              "Today you uncovered another chapter of your family's journey.
-              {completedScenes.size > 3
-                ? " You listened, reflected, and preserved memories that will last for generations."
-                : " Each step you take brings your ancestors' world to life."}
-              Your family would be proud."
-            </p>
+            {completionNarrationLoading ? (
+              <p className="text-sm text-stone-500 italic leading-relaxed">
+                Nia is reflecting on your journey...
+              </p>
+            ) : completionNarration ? (
+              <p className="text-sm text-stone-300 italic leading-relaxed">
+                {completionNarration}
+              </p>
+            ) : (
+              <p className="text-sm text-stone-300 italic leading-relaxed">
+                "Today you uncovered another chapter of your family's journey.
+                {completedScenes.size > 3
+                  ? " You listened, reflected, and preserved memories that will last for generations."
+                  : " Each step you take brings your ancestors' world to life."}
+                Your family would be proud."
+              </p>
+            )}
           </div>
           {/* Stats */}
           <div className="grid grid-cols-3 gap-2 mb-6">

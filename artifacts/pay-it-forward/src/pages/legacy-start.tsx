@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowLeft, Play, Crown, MapPin, BookOpen, Mic,
-  Camera, Users, Star, Loader2, Sparkles,
+  Camera, Users, Star, Loader2, Sparkles, Gift,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -53,6 +53,15 @@ export default function LegacyStartPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [initializing, setInitializing] = useState(false);
   const [familyId, setFamilyId] = useState<number | null>(null);
+  const [welcomeData, setWelcomeData] = useState<{
+    hasChanges: boolean;
+    worldVersion: number;
+    newMemoryCount: number;
+    newMemberCount: number;
+    recentChanges: { changeType: string; description: string | null; createdAt: string }[];
+    newChapters: { id: number; title: string; chapterNumber: number }[];
+    upcomingEvents: { title: string; eventType: string; triggerDate: string | null }[];
+  } | null>(null);
 
   const loadData = useCallback(async () => {
     if (!currentUser) { setLoading(false); return; }
@@ -66,9 +75,10 @@ export default function LegacyStartPage() {
       const fid = famData.families[0].id;
       setFamilyId(fid);
 
-      const [ancRes, compRes] = await Promise.all([
+      const [ancRes, compRes, welcomeRes] = await Promise.all([
         fetch(`/api/legacy/ancestors/${fid}`, { headers: authHeaders() }),
         fetch(`/api/legacy/completeness/${fid}`, { headers: authHeaders() }),
+        fetch(`/api/legacy/game-master/${fid}/daily-welcome`, { headers: authHeaders() }).catch(() => null),
       ]);
 
       if (ancRes.ok) {
@@ -78,6 +88,9 @@ export default function LegacyStartPage() {
       }
       if (compRes.ok) {
         setCompleteness(await compRes.json() as CompletenessResponse);
+      }
+      if (welcomeRes && welcomeRes.ok) {
+        setWelcomeData(await welcomeRes.json());
       }
     } catch {
       toast.error("Failed to load ancestor data");
@@ -158,6 +171,50 @@ export default function LegacyStartPage() {
           Tonight, you will walk in the footsteps of someone who came before you.
         </p>
       </div>
+
+      {/* Welcome Back — daily summary of world changes */}
+      {welcomeData && welcomeData.hasChanges && (
+        <div className="px-4 mb-6">
+          <div className="bg-gradient-to-b from-[#2A1A0F] to-[#1A1008] border border-amber-600/30 rounded-2xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Gift className="w-4 h-4 text-amber-400" />
+              <h3 className="text-xs font-black text-amber-400 uppercase tracking-widest">Welcome Back</h3>
+            </div>
+            <div className="space-y-2">
+              {welcomeData.worldVersion > 0 && (
+                <p className="text-xs text-amber-300">
+                  Your family world is at Version {welcomeData.worldVersion}.
+                </p>
+              )}
+              {welcomeData.newMemoryCount > 0 && (
+                <p className="text-xs text-amber-200">
+                  {welcomeData.newMemoryCount} new {welcomeData.newMemoryCount === 1 ? "memory" : "memories"} added since your last visit.
+                </p>
+              )}
+              {welcomeData.newMemberCount > 0 && (
+                <p className="text-xs text-amber-200">
+                  {welcomeData.newMemberCount} new {welcomeData.newMemberCount === 1 ? "family member" : "family members"} added.
+                </p>
+              )}
+              {welcomeData.newChapters.length > 0 && (
+                <p className="text-xs text-emerald-300">
+                  {welcomeData.newChapters.length} new {welcomeData.newChapters.length === 1 ? "chapter" : "chapters"} unlocked!
+                </p>
+              )}
+              {welcomeData.recentChanges.slice(0, 3).map((c, i) => (
+                <div key={i} className="text-xs text-amber-500/70 italic border-l border-amber-700/30 pl-2">
+                  {c.description ?? c.changeType.replace(/_/g, " ")}
+                </div>
+              ))}
+              {welcomeData.upcomingEvents.length > 0 && (
+                <p className="text-xs text-rose-300 pt-1">
+                  Upcoming: {welcomeData.upcomingEvents[0].title}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Readiness score */}
       {completeness && (
