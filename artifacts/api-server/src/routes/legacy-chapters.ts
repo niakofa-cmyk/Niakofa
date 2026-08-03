@@ -668,7 +668,24 @@ router.patch(
         }
       }
 
-      return res.json({ chapter: updated });
+      // If completed, return the next chapter ID so the frontend can offer
+      // a "Continue to Next Chapter" button without an extra round-trip.
+      let nextChapterId: number | null = null;
+      if (newStatus === "completed") {
+        const [nextCh] = await db
+          .select({ id: legacyChaptersTable.id })
+          .from(legacyChaptersTable)
+          .where(
+            and(
+              eq(legacyChaptersTable.world_id, chapter.world_id),
+              eq(legacyChaptersTable.chapter_number, chapter.chapter_number + 1),
+            ),
+          )
+          .limit(1);
+        nextChapterId = nextCh?.id ?? null;
+      }
+
+      return res.json({ chapter: updated, nextChapterId });
     } catch (err) {
       logger.error({ err, chapterId }, "legacy-chapters: status transition failed");
       return res.status(500).json({ error: "Failed to transition chapter status" });
