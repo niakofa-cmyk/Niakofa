@@ -16,10 +16,33 @@ import {
   ArrowLeft, Loader2, MapPin, Calendar, BookOpen,
   CheckCircle2, ChevronRight, Sparkles, AlertCircle,
   Sunrise, MessageSquare, Compass, Map as MapIcon,
-  Moon, BookMarked, Save, Sun,
+  Moon, BookMarked, Save, Sun, Stars,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
+
+// Ambient background gradient shifts based on the day-cycle position.
+// Morning → warm amber, midday → bright gold, evening → deep amber, night → dark with stars.
+function ambientGradient(sceneIdx: number, totalScenes: number): string {
+  const pct = totalScenes > 1 ? sceneIdx / (totalScenes - 1) : 0;
+  if (pct < 0.25) return "radial-gradient(ellipse at top, #1a1308 0%, #0e1111 70%)";
+  if (pct < 0.5)  return "radial-gradient(ellipse at top, #1f1a0e 0%, #0e1111 70%)";
+  if (pct < 0.75) return "radial-gradient(ellipse at top, #1a1208 0%, #0e1111 70%)";
+  return "radial-gradient(ellipse at top, #0e0e14 0%, #0e1111 70%)";
+}
+
+// Scene transition: fade overlay that plays on scene change.
+function useSceneTransition() {
+  const [transitioning, setTransitioning] = useState(false);
+  const trigger = useCallback((onComplete: () => void) => {
+    setTransitioning(true);
+    setTimeout(() => {
+      onComplete();
+      setTimeout(() => setTransitioning(false), 50);
+    }, 400);
+  }, []);
+  return { transitioning, trigger };
+}
 
 interface Scene {
   sceneNumber: number;
@@ -173,6 +196,8 @@ export default function LegacyChapterPlay() {
   });
   const [autosaveState, setAutosaveState] = useState<"idle" | "saving" | "saved">("idle");
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [sceneFadeKey, setSceneFadeKey] = useState(0);
+  const { transitioning: sceneTransitioning, trigger: triggerSceneTransition } = useSceneTransition();
 
   const chapterId = parseInt(params.chapterId, 10);
 
@@ -445,7 +470,11 @@ export default function LegacyChapterPlay() {
         setTransitioning(false);
       }
     } else {
-      setCurrentSceneIdx(currentSceneIdx + 1);
+      // Cinematic scene transition: fade out, change scene, fade in
+      triggerSceneTransition(() => {
+        setCurrentSceneIdx(currentSceneIdx + 1);
+        setSceneFadeKey(k => k + 1);
+      });
     }
   };
 
@@ -577,7 +606,34 @@ export default function LegacyChapterPlay() {
     : null;
 
   return (
-    <div className="min-h-[100dvh] bg-[#0e1111] text-stone-100 flex flex-col">
+    <div
+      className="min-h-[100dvh] text-stone-100 flex flex-col transition-all duration-700"
+      style={{ background: ambientGradient(currentSceneIdx, sceneData.scenes.length) }}
+    >
+      {/* Scene transition overlay */}
+      {sceneTransitioning && (
+        <div className="fixed inset-0 z-50 bg-black animate-[fadeIn_0.4s_ease-out] pointer-events-none" />
+      )}
+
+      {/* Ambient particles for night scenes */}
+      {currentSceneIdx / Math.max(sceneData.scenes.length - 1, 1) >= 0.75 && (
+        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+          {Array.from({ length: 15 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute rounded-full bg-amber-400/10"
+              style={{
+                width: `${1 + (i % 2)}px`,
+                height: `${1 + (i % 2)}px`,
+                top: `${(i * 41) % 100}%`,
+                left: `${(i * 67) % 100}%`,
+                animation: `pulse ${3 + (i % 3)}s ease-in-out ${i * 0.3}s infinite`,
+              }}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-stone-800/50">
         <button
@@ -680,7 +736,10 @@ export default function LegacyChapterPlay() {
       </div>
 
       {/* Scene content */}
-      <div className="flex-1 overflow-y-auto px-5 py-6">
+      <div
+        key={sceneFadeKey}
+        className="flex-1 overflow-y-auto px-5 py-6 animate-[fadeIn_0.6s_ease-out]"
+      >
         {/* Scene type badge */}
         <div className="flex items-center gap-2 mb-4">
           <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full ${

@@ -1,17 +1,28 @@
 /**
- * Legacy Start — Ancestor Selection & Journey Begin
+ * Legacy Start — Cinematic Ancestor Selection & Journey Begin
  * Route: /legacy/start
  *
- * This is the "Start Journey" experience described in the design doc.
- * It shows ancestor candidates with their completeness scores and
- * lets the player choose who to walk in the footsteps of.
+ * The "Start Journey" experience. Instead of immediately showing a dashboard,
+ * the player enters a cinematic onboarding:
+ *
+ *   "You awaken..."
+ *     Year · Village · Name · Age · Occupation
+ *     Known family memories · Recorded stories · Known locations
+ *   Chapter I — Before the Journey
+ *     "Your family remembers that..."
+ *   BEGIN
+ *
+ * When the player taps Begin, a full-screen cinematic transition plays
+ * (fade to black, ancestor name materializes, chapter title fades in)
+ * before navigating to the first playable scene.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowLeft, Play, Crown, MapPin, BookOpen, Mic,
   Camera, Users, Star, Loader2, Sparkles, Gift,
+  Sunrise, Moon, Heart,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -44,6 +55,8 @@ interface CompletenessResponse {
   suggestions: string[];
 }
 
+type CinematicPhase = "idle" | "awakening" | "chapter" | "transitioning";
+
 export default function LegacyStartPage() {
   const [, navigate] = useLocation();
   const { currentUser } = useAppContext();
@@ -63,11 +76,15 @@ export default function LegacyStartPage() {
     upcomingEvents: { title: string; eventType: string; triggerDate: string | null }[];
   } | null>(null);
 
+  // Cinematic onboarding state
+  const [cinematicPhase, setCinematicPhase] = useState<CinematicPhase>("idle");
+  const [revealStep, setRevealStep] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
   const loadData = useCallback(async () => {
     if (!currentUser) { setLoading(false); return; }
     setLoading(true);
     try {
-      // First get the user's families
       const famRes = await fetch("/api/family/mine", { headers: authHeaders() });
       if (!famRes.ok) { setLoading(false); return; }
       const famData = await famRes.json() as { families?: { id: number }[] };
@@ -97,15 +114,29 @@ export default function LegacyStartPage() {
     } finally {
       setLoading(false);
     }
-  }, [familyId]);
+  }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // ── Cinematic reveal sequence ──────────────────────────────────────────────
+  // When the player selects an ancestor and taps "Enter Their World", we play
+  // a staged reveal: year → location → name → age → occupation → family stats
+  // → chapter preview → BEGIN button. Each step fades in with a slight delay.
+  useEffect(() => {
+    if (cinematicPhase !== "awakening") return;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const stepDelay = 700;
+    for (let i = 1; i <= 7; i++) {
+      timers.push(setTimeout(() => setRevealStep(i), i * stepDelay));
+    }
+    return () => timers.forEach(clearTimeout);
+  }, [cinematicPhase]);
+
   const handleBegin = useCallback(async () => {
     if (!familyId || !selectedId) return;
+    setCinematicPhase("transitioning");
     setInitializing(true);
     try {
-      // Initialize chapters for this family
       const res = await fetch(`/api/legacy/chapters/${familyId}/init`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
@@ -119,6 +150,7 @@ export default function LegacyStartPage() {
           toast.info(err.suggestions[0], { duration: 6000 });
         }
         setInitializing(false);
+        setCinematicPhase("idle");
         return;
       }
 
@@ -126,27 +158,33 @@ export default function LegacyStartPage() {
       const firstChapter = data.chapters.find(c => c.status === "unlocked") ?? data.chapters[0];
 
       if (firstChapter) {
-        // Transition first chapter to in_progress
         await fetch(`/api/legacy/chapters/${firstChapter.id}/status`, {
           method: "PATCH",
           headers: { ...authHeaders(), "Content-Type": "application/json" },
           body: JSON.stringify({ status: "in_progress" }),
         });
-        navigate(`/legacy/chapter/${firstChapter.id}`);
+        // Hold the cinematic transition for 2.5s before navigating
+        setTimeout(() => {
+          navigate(`/legacy/chapter/${firstChapter.id}`);
+        }, 2500);
       } else {
-        navigate("/legacy");
+        setTimeout(() => navigate("/legacy"), 2000);
       }
     } catch {
       toast.error("Failed to start journey");
-    } finally {
       setInitializing(false);
+      setCinematicPhase("idle");
     }
   }, [familyId, selectedId, navigate]);
 
+  // ── Loading state ──────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="min-h-screen bg-[#1A1008] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-amber-500 mx-auto mb-3" />
+          <p className="text-xs text-amber-700 uppercase tracking-widest">Consulting the ancestors…</p>
+        </div>
       </div>
     );
   }
@@ -154,6 +192,181 @@ export default function LegacyStartPage() {
   const selected = ancestors.find(a => a.memberId === selectedId);
   const ready = completeness?.chapterUnlockReady ?? false;
 
+  // ── Cinematic transition overlay ───────────────────────────────────────────
+  if (cinematicPhase === "transitioning") {
+    return (
+      <div className="fixed inset-0 z-50 bg-black flex items-center justify-center animate-[fadeIn_0.5s_ease-out]">
+        <div className="text-center px-6">
+          {/* Ancestor name materializes */}
+          <div className="animate-[fadeIn_1.2s_ease-out_0.3s_both]">
+            <p className="text-xs text-amber-700 uppercase tracking-[0.3em] mb-4">You awaken as</p>
+            <h1 className="text-4xl font-black text-amber-300 mb-2 tracking-wide">
+              {selected?.name ?? "Your Ancestor"}
+            </h1>
+            {selected?.birthYear && (
+              <p className="text-sm text-amber-600 mb-6">
+                {selected.birthYear}
+                {selected.role ? ` · ${selected.role}` : ""}
+              </p>
+            )}
+          </div>
+          {/* Chapter title fades in */}
+          <div className="animate-[fadeIn_1s_ease-out_1.2s_both]">
+            <div className="w-16 h-px bg-amber-700/40 mx-auto mb-4" />
+            <p className="text-xs text-amber-700 uppercase tracking-[0.3em] mb-2">Chapter I</p>
+            <p className="text-lg font-bold text-amber-200/80 italic">Before the Journey</p>
+          </div>
+          {/* Loading spinner */}
+          <div className="mt-8 animate-[fadeIn_0.8s_ease-out_2s_both]">
+            <Loader2 className="w-5 h-5 animate-spin text-amber-600 mx-auto" />
+            <p className="text-xs text-amber-800 mt-2 uppercase tracking-widest">Entering the world…</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Cinematic "You awaken..." onboarding ─────────────────────────────────────
+  if (cinematicPhase === "awakening" && selected) {
+    const birthYear = selected.birthYear ? parseInt(selected.birthYear) : null;
+    const age = birthYear ? Math.max(0, new Date().getFullYear() - birthYear) : null;
+    const revealItems = [
+      { label: "Year",      value: selected.birthYear ?? "Unknown",     icon: BookOpen },
+      { label: "Location", value: selected.relation ?? "The Homeland", icon: MapPin },
+      { label: "Name",      value: selected.name,                        icon: Crown },
+      { label: "Age",       value: age ? String(age) : "Unknown",        icon: Sunrise },
+      { label: "Occupation",value: selected.role ?? "Unknown",          icon: Star },
+    ];
+
+    return (
+      <div className="fixed inset-0 z-40 bg-[#0A0604] flex flex-col animate-[fadeIn_0.8s_ease-out]">
+        {/* Ambient starlight particles */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          {Array.from({ length: 20 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute rounded-full bg-amber-400/20"
+              style={{
+                width: `${1 + (i % 3)}px`,
+                height: `${1 + (i % 3)}px`,
+                top: `${(i * 37) % 100}%`,
+                left: `${(i * 53) % 100}%`,
+                animation: `pulse ${2 + (i % 4)}s ease-in-out ${i * 0.2}s infinite`,
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Back button */}
+        <button
+          onClick={() => { setCinematicPhase("idle"); setRevealStep(0); }}
+          className="absolute top-4 left-4 z-10 text-amber-700 active:opacity-70 p-2"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+
+        {/* Main content */}
+        <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10">
+          {/* "You awaken..." */}
+          <div className={`transition-all duration-1000 ${revealStep >= 1 ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
+            <p className="text-center text-amber-500/60 text-sm uppercase tracking-[0.3em] mb-8">
+              You awaken…
+            </p>
+          </div>
+
+          {/* Reveal items one by one */}
+          <div className="space-y-4 mb-8 max-w-sm w-full">
+            {revealItems.map((item, i) => {
+              const visible = revealStep > i;
+              const Icon = item.icon;
+              return (
+                <div
+                  key={item.label}
+                  className={`flex items-center gap-4 transition-all duration-700 ${
+                    visible ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-4"
+                  }`}
+                  style={{ transitionDelay: `${i * 100}ms` }}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-700/20 flex items-center justify-center flex-shrink-0">
+                    <Icon className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs text-amber-700 uppercase tracking-widest">{item.label}</p>
+                    <p className="text-base font-bold text-amber-200">{item.value}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Family stats */}
+          <div className={`transition-all duration-1000 ${revealStep >= 6 ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
+            <div className="flex gap-6 mb-8">
+              <div className="text-center">
+                <BookOpen className="w-4 h-4 text-amber-500 mx-auto mb-1" />
+                <p className="text-lg font-black text-amber-300">{selected.storyCount}</p>
+                <p className="text-xs text-amber-700 uppercase">Stories</p>
+              </div>
+              <div className="text-center">
+                <Camera className="w-4 h-4 text-amber-500 mx-auto mb-1" />
+                <p className="text-lg font-black text-amber-300">{selected.memoryCount}</p>
+                <p className="text-xs text-amber-700 uppercase">Memories</p>
+              </div>
+              <div className="text-center">
+                <MapPin className="w-4 h-4 text-amber-500 mx-auto mb-1" />
+                <p className="text-lg font-black text-amber-300">{selected.placeCount}</p>
+                <p className="text-xs text-amber-700 uppercase">Places</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Chapter preview */}
+          {revealStep >= 7 && (
+            <div className="max-w-sm w-full animate-[fadeIn_1s_ease-out]">
+              <div className="bg-amber-900/10 border border-amber-700/20 rounded-2xl p-5 mb-6">
+                <p className="text-xs font-bold text-amber-500 uppercase tracking-[0.2em] mb-2">Chapter I</p>
+                <p className="text-sm font-bold text-amber-200 mb-2">Before the Journey</p>
+                <p className="text-xs text-amber-400/70 leading-relaxed italic">
+                  {selected.storyCount > 0
+                    ? `Your family remembers ${selected.name}. ${selected.selectionReason}. Walk in their footsteps and discover the world they knew.`
+                    : `${selected.name} is waiting to be discovered. Add stories and memories to bring their world to life.`}
+                </p>
+              </div>
+              <button
+                onClick={handleBegin}
+                disabled={!ready || initializing}
+                className={`w-full font-black text-sm uppercase tracking-[0.2em] py-4 rounded-xl transition-all flex items-center justify-center gap-2 ${
+                  ready && !initializing
+                    ? "bg-amber-500 text-amber-950 active:opacity-80 shadow-lg shadow-amber-500/20"
+                    : "bg-amber-900/30 text-amber-700 cursor-not-allowed"
+                }`}
+              >
+                {initializing ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Generating chapters…</>
+                ) : (
+                  <><Play className="w-4 h-4" /> Begin</>
+                )}
+              </button>
+              {!ready && (
+                <p className="text-xs text-amber-700 text-center mt-3 italic">
+                  Readiness at {completeness?.readinessScore ?? 0}%. Add more vault data to unlock chapters.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Day/night cycle indicator at bottom */}
+        <div className="px-6 pb-8 flex items-center justify-center gap-2 relative z-10">
+          <Sunrise className={`w-4 h-4 transition-opacity duration-1000 ${revealStep >= 1 ? "text-amber-400" : "text-amber-900"}`} />
+          <div className="w-16 h-px bg-gradient-to-r from-amber-700/20 via-amber-500/40 to-amber-700/20" />
+          <Moon className={`w-4 h-4 transition-opacity duration-1000 ${revealStep >= 7 ? "text-amber-400" : "text-amber-900"}`} />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main selection screen ───────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#1A1008] text-amber-100 pb-8 animate-[fadeIn_0.6s_ease-out]">
       {/* Header */}
@@ -332,7 +545,7 @@ export default function LegacyStartPage() {
             </div>
           </div>
 
-          {/* Selected ancestor preview */}
+          {/* Selected ancestor preview + Enter Their World button */}
           {selected && (
             <div className="px-4 mb-6">
               <div className="bg-[#2A1A0F] border border-amber-700/30 rounded-2xl p-5">
@@ -421,20 +634,17 @@ export default function LegacyStartPage() {
                     ? "Chapter I is ready. Your journey begins now."
                     : `Readiness at ${completeness?.readinessScore ?? 0}%. Add more vault data to unlock chapters.`}
                 </p>
+                {/* Enter Their World — triggers cinematic onboarding */}
                 <button
-                  onClick={handleBegin}
-                  disabled={!ready || initializing}
-                  className={`w-full font-black text-sm uppercase tracking-wide py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 ${
-                    ready && !initializing
-                      ? "bg-amber-500 text-amber-950 active:opacity-80"
+                  onClick={() => { setRevealStep(0); setCinematicPhase("awakening"); }}
+                  disabled={!ready}
+                  className={`w-full font-black text-sm uppercase tracking-[0.2em] py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 ${
+                    ready
+                      ? "bg-gradient-to-r from-amber-600 to-amber-500 text-amber-950 active:opacity-80 shadow-lg shadow-amber-500/20"
                       : "bg-amber-900/30 text-amber-700 cursor-not-allowed"
                   }`}
                 >
-                  {initializing ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> Generating chapters...</>
-                  ) : (
-                    <><Play className="w-4 h-4" /> Begin Journey</>
-                  )}
+                  <Sparkles className="w-4 h-4" /> Enter Their World
                 </button>
                 {!ready && (
                   <button

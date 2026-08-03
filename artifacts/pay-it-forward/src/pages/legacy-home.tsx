@@ -1116,19 +1116,23 @@ export default function LegacyHomePage() {
             </div>
           )}
 
-          {/* ── Daily Welcome (Phase 5: Living Family Universe) ── */}
+          {/* ── World Evolution Celebration (Phase 5: Living Family Universe) ── */}
           {activeMode === "legacy" && dailyWelcome && dailyWelcome.hasChanges && !worldEvolvedDismissed && (
             <div className="px-4 mb-5">
-              <div className="bg-gradient-to-br from-amber-500/15 via-amber-900/10 to-[#2A1A0F] border border-amber-500/40 rounded-2xl p-5 shadow-xl animate-in fade-in duration-500">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
-                      <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+              <div className="bg-gradient-to-br from-amber-500/15 via-amber-900/10 to-[#2A1A0F] border border-amber-500/40 rounded-2xl p-5 shadow-xl animate-[fadeIn_0.6s_ease-out] relative overflow-hidden">
+                {/* Ambient shimmer */}
+                <div className="absolute inset-0 pointer-events-none">
+                  <div className="absolute -top-px left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent animate-pulse" />
+                </div>
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center">
+                      <Sparkles className="w-5 h-5 text-amber-400 animate-pulse" />
                     </div>
                     <div>
                       <h2 className="text-sm font-black text-amber-300 uppercase tracking-widest">Your Family World Has Evolved</h2>
                       {dailyWelcome.worldVersion > 0 && (
-                        <p className="text-[10px] text-amber-600">World Version {dailyWelcome.worldVersion}</p>
+                        <p className="text-xs text-amber-500 font-bold mt-0.5">Version {dailyWelcome.worldVersion}</p>
                       )}
                     </div>
                   </div>
@@ -1139,30 +1143,57 @@ export default function LegacyHomePage() {
                     <X className="w-4 h-4" />
                   </button>
                 </div>
-                <div className="space-y-2 mb-3">
+                {/* Evolution stats grid */}
+                <div className="grid grid-cols-2 gap-2 mb-4">
                   {dailyWelcome.newMemoryCount > 0 && (
-                    <div className="flex items-center gap-2">
-                      <Camera className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                      <p className="text-sm text-amber-200">{dailyWelcome.newMemoryCount} new {dailyWelcome.newMemoryCount === 1 ? "memory" : "memories"} added</p>
+                    <div className="bg-amber-500/10 border border-amber-600/20 rounded-xl p-3 text-center">
+                      <Camera className="w-4 h-4 text-amber-400 mx-auto mb-1" />
+                      <p className="text-lg font-black text-amber-300">{dailyWelcome.newMemoryCount}</p>
+                      <p className="text-[10px] text-amber-600 uppercase">New Memories</p>
                     </div>
                   )}
                   {dailyWelcome.newMemberCount > 0 && (
-                    <div className="flex items-center gap-2">
-                      <Users className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                      <p className="text-sm text-amber-200">{dailyWelcome.newMemberCount} new {dailyWelcome.newMemberCount === 1 ? "family member" : "family members"} connected</p>
+                    <div className="bg-emerald-500/10 border border-emerald-600/20 rounded-xl p-3 text-center">
+                      <Users className="w-4 h-4 text-emerald-400 mx-auto mb-1" />
+                      <p className="text-lg font-black text-emerald-300">{dailyWelcome.newMemberCount}</p>
+                      <p className="text-[10px] text-emerald-600 uppercase">New Characters</p>
                     </div>
                   )}
-                  {dailyWelcome.recentChanges.length > 0 && dailyWelcome.newMemoryCount === 0 && dailyWelcome.newMemberCount === 0 && (
-                    <div className="space-y-1">
-                      {dailyWelcome.recentChanges.slice(0, 3).map((change, i) => (
-                        <div key={i} className="flex items-start gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 flex-shrink-0" />
-                          <p className="text-xs text-amber-400/80">{change.description}</p>
-                        </div>
-                      ))}
+                  {dailyWelcome.newChapters.length > 0 && (
+                    <div className="bg-purple-500/10 border border-purple-600/20 rounded-xl p-3 text-center">
+                      <BookOpen className="w-4 h-4 text-purple-400 mx-auto mb-1" />
+                      <p className="text-lg font-black text-purple-300">{dailyWelcome.newChapters.length}</p>
+                      <p className="text-[10px] text-purple-600 uppercase">New Chapters</p>
+                    </div>
+                  )}
+                  {dailyWelcome.recentChanges.length > 0 && (
+                    <div className="bg-teal-500/10 border border-teal-600/20 rounded-xl p-3 text-center">
+                      <TrendingUp className="w-4 h-4 text-teal-400 mx-auto mb-1" />
+                      <p className="text-lg font-black text-teal-300">{dailyWelcome.recentChanges.length}</p>
+                      <p className="text-[10px] text-teal-600 uppercase">World Changes</p>
                     </div>
                   )}
                 </div>
+                {/* Recent changes list */}
+                {dailyWelcome.recentChanges.length > 0 && (
+                  <div className="space-y-1.5 mb-3">
+                    {dailyWelcome.recentChanges.slice(0, 3).map((change, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${
+                          change.changeType === "world_regenerated" ? "bg-purple-400" :
+                          change.changeType === "member_added" ? "bg-emerald-400" :
+                          change.changeType === "memory_added" ? "bg-amber-400" :
+                          change.changeType === "story_added" ? "bg-sky-400" :
+                          change.changeType === "interview_added" ? "bg-rose-400" :
+                          change.changeType === "place_added" ? "bg-teal-400" :
+                          "bg-amber-600"
+                        }`} />
+                        <p className="text-xs text-amber-400/80">{change.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* New chapters */}
                 {dailyWelcome.newChapters.length > 0 && (
                   <div className="pt-3 border-t border-amber-700/30 mb-3">
                     <p className="text-xs text-amber-500 uppercase tracking-wide mb-2 flex items-center gap-1">
