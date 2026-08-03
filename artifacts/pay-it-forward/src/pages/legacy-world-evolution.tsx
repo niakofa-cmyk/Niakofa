@@ -11,7 +11,7 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowLeft, Loader2, Users, Camera, BookOpen, Mic, MapPin,
-  Calendar, GitBranch, Sparkles, TrendingUp,
+  Calendar, GitBranch, Sparkles, TrendingUp, Heart, Cake, Plane, Flower,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -45,6 +45,26 @@ interface EvolutionSummary {
   recentVersions: { version: number; createdAt: string }[];
 }
 
+interface CalendarEntry {
+  id: number;
+  type: string;
+  title: string;
+  description: string | null;
+  date: string | null;
+  memberName: string | null;
+  isToday: boolean;
+  isUpcoming: boolean;
+  daysUntil: number;
+  yearsAgo: number | null;
+}
+
+const CALENDAR_ICONS: Record<string, typeof Heart> = {
+  birthday: Cake,
+  anniversary: Heart,
+  migration_anniversary: Plane,
+  memorial: Flower,
+};
+
 const CHANGE_ICONS: Record<string, typeof Users> = {
   member_added: Users,
   memory_added: Camera,
@@ -75,6 +95,7 @@ export default function LegacyWorldEvolutionPage() {
   const [log, setLog] = useState<EvolutionEntry[]>([]);
   const [summary, setSummary] = useState<EvolutionSummary | null>(null);
   const [vaultStats, setVaultStats] = useState<VaultStats | null>(null);
+  const [calendar, setCalendar] = useState<CalendarEntry[]>([]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -89,9 +110,10 @@ export default function LegacyWorldEvolutionPage() {
           return;
         }
 
-        const [evoRes, sumRes] = await Promise.all([
+        const [evoRes, sumRes, calRes] = await Promise.all([
           fetch(`/api/legacy/world-evolution/${famId}`, { headers: authHeaders() }),
           fetch(`/api/legacy/world-evolution/${famId}/summary`, { headers: authHeaders() }),
+          fetch(`/api/legacy/game-master/${famId}/emotional-calendar`, { headers: authHeaders() }).catch(() => null),
         ]);
 
         if (!evoRes.ok || !sumRes.ok) {
@@ -106,6 +128,10 @@ export default function LegacyWorldEvolutionPage() {
         setLog(evoBody.log ?? []);
         setSummary(evoBody.summary ?? null);
         setVaultStats(sumBody.vaultStats ?? null);
+        if (calRes && calRes.ok) {
+          const calBody = await calRes.json().catch(() => ({}));
+          setCalendar(calBody.calendar ?? []);
+        }
       } catch {
         setError("Failed to load world evolution.");
       } finally {
@@ -203,6 +229,53 @@ export default function LegacyWorldEvolutionPage() {
             </div>
           );
         })()}
+
+        {/* Emotional Calendar */}
+        {calendar.length > 0 && (
+          <div>
+            <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3">Emotional Calendar</h2>
+            <p className="text-xs text-stone-500 mb-3">Birthdays, anniversaries, and memorials — the emotional rhythm of your family.</p>
+            <div className="space-y-2">
+              {calendar.slice(0, 8).map((entry) => {
+                const Icon = CALENDAR_ICONS[entry.type] ?? Calendar;
+                return (
+                  <div
+                    key={entry.id}
+                    className={`flex items-start gap-3 rounded-xl p-3 border ${
+                      entry.isToday
+                        ? "bg-amber-900/30 border-amber-600/50"
+                        : "bg-stone-800/40 border-stone-700/50"
+                    }`}
+                  >
+                    <div className={`p-2 rounded-lg flex-shrink-0 ${entry.isToday ? "bg-amber-500/20" : "bg-stone-700/60"}`}>
+                      <Icon className={`w-4 h-4 ${entry.isToday ? "text-amber-300" : "text-amber-400"}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-stone-200">
+                        {entry.title}
+                        {entry.yearsAgo != null && (
+                          <span className="text-xs text-stone-500 ml-1.5">{entry.yearsAgo} year{entry.yearsAgo === 1 ? "" : "s"}</span>
+                        )}
+                      </p>
+                      {entry.description && (
+                        <p className="text-xs text-stone-400 mt-0.5 line-clamp-2">{entry.description}</p>
+                      )}
+                      <p className="text-xs text-stone-600 mt-1">
+                        {entry.isToday
+                          ? "Today"
+                          : entry.daysUntil === 0
+                            ? "Today"
+                            : entry.daysUntil > 0
+                              ? `In ${entry.daysUntil} day${entry.daysUntil === 1 ? "" : "s"}`
+                              : `${Math.abs(entry.daysUntil)} day${Math.abs(entry.daysUntil) === 1 ? "" : "s"} ago`}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Evolution Timeline */}
         <div>

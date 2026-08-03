@@ -19,6 +19,7 @@ import {
   ArrowLeft, Loader2, Sparkles, Target, Gift, CheckCircle2,
   SkipForward, RefreshCw, AlertCircle, Zap, Mic, Camera,
   MapPin, Users, Calendar, FileText, BookOpen, Heart,
+  Compass, Search, ChevronRight,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -45,6 +46,16 @@ interface MissionResponse {
   todayMissions: Mission[];
   recentCompleted: Mission[];
   totalActive: number;
+}
+
+interface VaultGap {
+  type: string;
+  description: string;
+  suggestedMission: string;
+  missionType: string;
+  targetMemberId: number | null;
+  rewardXp: number;
+  rewardDescription: string;
 }
 
 const MISSION_ICONS: Record<string, typeof Mic> = {
@@ -81,6 +92,17 @@ export default function LegacyAiDirectorPage() {
   const [generating, setGenerating] = useState(false);
   const [completing, setCompleting] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [gaps, setGaps] = useState<VaultGap[]>([]);
+  const [gapsLoading, setGapsLoading] = useState(false);
+  const [todayJourney, setTodayJourney] = useState<{
+    journey: {
+      ancestor: { memberId: number; name: string; role: string | null; relation: string | null; birthYear: number | null };
+      storyCount: number; eventCount: number; placeCount: number;
+      narration: string; narrationId: number | null; date: string;
+    } | null;
+    message?: string;
+  } | null>(null);
+  const [todayLoading, setTodayLoading] = useState(false);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -107,6 +129,23 @@ export default function LegacyAiDirectorPage() {
         setError("Failed to load missions.");
       } finally {
         setLoading(false);
+      }
+
+      // Fetch today's journey and vault gaps in parallel
+      if (famId) {
+        setTodayLoading(true);
+        fetch(`/api/legacy/game-master/${famId}/today`, { headers: authHeaders() })
+          .then((r) => r.ok ? r.json() : null)
+          .then((data) => { if (data) setTodayJourney(data); })
+          .catch(() => {})
+          .finally(() => setTodayLoading(false));
+
+        setGapsLoading(true);
+        fetch(`/api/legacy/ai-director/${famId}/gaps`, { headers: authHeaders() })
+          .then((r) => r.ok ? r.json() : null)
+          .then((data) => { if (data?.gaps) setGaps(data.gaps); })
+          .catch(() => {})
+          .finally(() => setGapsLoading(false));
       }
     })();
   }, [currentUser]);
@@ -228,6 +267,74 @@ export default function LegacyAiDirectorPage() {
           </div>
         </div>
       </div>
+
+      {/* Today's Journey */}
+      {todayLoading && (
+        <div className="px-4 mt-4">
+          <div className="bg-gradient-to-br from-amber-900/20 to-[#2A1A0F] border border-amber-700/30 rounded-2xl p-4 flex items-center gap-3">
+            <Loader2 className="w-5 h-5 text-amber-400 animate-spin" />
+            <p className="text-xs text-amber-600">Nia is choosing today's ancestor...</p>
+          </div>
+        </div>
+      )}
+      {!todayLoading && todayJourney?.journey && (
+        <div className="px-4 mt-4">
+          <div className="bg-gradient-to-br from-amber-900/20 to-[#2A1A0F] border border-amber-700/30 rounded-2xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Compass className="w-4 h-4 text-amber-400" />
+              <h3 className="text-xs font-black text-amber-400 uppercase tracking-widest">Today's Journey</h3>
+            </div>
+            <p className="text-sm text-amber-200 italic leading-relaxed mb-3">{todayJourney.journey.narration}</p>
+            <div className="flex gap-3 text-[10px] text-amber-700">
+              <span>{todayJourney.journey.storyCount} stories</span>
+              <span>{todayJourney.journey.eventCount} events</span>
+              <span>{todayJourney.journey.placeCount} places</span>
+            </div>
+            <button
+              onClick={() => navigate(`/legacy/character/${todayJourney.journey!.ancestor.memberId}`)}
+              className="mt-3 text-xs text-amber-400 font-semibold flex items-center gap-1 hover:text-amber-300 transition-colors"
+            >
+              Walk as {todayJourney.journey.ancestor.name} <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+      )}
+      {!todayLoading && todayJourney && !todayJourney.journey && todayJourney.message && (
+        <div className="px-4 mt-4">
+          <div className="bg-[#2A1A0F] border border-amber-900/20 rounded-2xl p-4 text-center">
+            <p className="text-xs text-amber-600">{todayJourney.message}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Vault Gaps */}
+      {(gapsLoading || gaps.length > 0) && (
+        <div className="px-4 mt-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Search className="w-3.5 h-3.5 text-amber-700" />
+            <h2 className="text-xs font-black text-amber-700 uppercase tracking-widest">Vault Gaps</h2>
+          </div>
+          {gapsLoading ? (
+            <div className="flex items-center gap-2 py-3">
+              <Loader2 className="w-4 h-4 text-amber-600 animate-spin" />
+              <p className="text-xs text-amber-700">Analyzing your vault...</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {gaps.slice(0, 5).map((gap, i) => (
+                <div key={i} className="bg-[#2A1A0F]/70 border border-amber-900/20 rounded-xl p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">{gap.type.replace(/_/g, " ")}</span>
+                    <span className="text-[10px] text-amber-600 bg-amber-900/30 px-1.5 py-0.5 rounded-full">+{gap.rewardXp} XP</span>
+                  </div>
+                  <p className="text-xs text-amber-500 leading-relaxed">{gap.description}</p>
+                  <p className="text-[10px] text-amber-600 mt-1">Suggested: {gap.suggestedMission}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Today's Missions */}
       <div className="px-4 mt-4">
