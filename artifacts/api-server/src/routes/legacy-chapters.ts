@@ -596,9 +596,10 @@ router.patch(
       logger.info({ chapterId, from: chapter.status, to: newStatus }, "legacy-chapters: status transition");
 
       // If completed, unlock the next chapter and record character evolution
+      let nextChapter: { id: number; status: string } | null = null;
       if (newStatus === "completed") {
-        const [nextChapter] = await db
-          .select()
+        [nextChapter] = await db
+          .select({ id: legacyChaptersTable.id, status: legacyChaptersTable.status })
           .from(legacyChaptersTable)
           .where(
             and(
@@ -668,22 +669,11 @@ router.patch(
         }
       }
 
-      // If completed, return the next chapter ID so the frontend can offer
-      // a "Continue to Next Chapter" button without an extra round-trip.
-      let nextChapterId: number | null = null;
-      if (newStatus === "completed") {
-        const [nextCh] = await db
-          .select({ id: legacyChaptersTable.id })
-          .from(legacyChaptersTable)
-          .where(
-            and(
-              eq(legacyChaptersTable.world_id, chapter.world_id),
-              eq(legacyChaptersTable.chapter_number, chapter.chapter_number + 1),
-            ),
-          )
-          .limit(1);
-        nextChapterId = nextCh?.id ?? null;
-      }
+      // Reuse the nextChapter already fetched above to return the next chapter
+      // ID without a redundant query.
+      const nextChapterId = (newStatus === "completed" && nextChapter)
+        ? nextChapter.id
+        : null;
 
       return res.json({ chapter: updated, nextChapterId });
     } catch (err) {
