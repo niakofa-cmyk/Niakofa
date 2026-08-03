@@ -53,7 +53,36 @@ interface Choice {
   createsMysteryQuest?: boolean;
   /** True only for the choice that should prompt the player to write and save a real memory. */
   requiresMemoryText?: boolean;
+  /** RPG stat changes applied when this choice is selected. */
+  statChanges?: Partial<SessionStats>;
 }
+
+interface SessionStats {
+  knowledge: number;
+  relationships: number;
+  culturalWisdom: number;
+  courage: number;
+  reputation: number;
+  legacy: number;
+}
+
+const STAT_LABELS: Record<keyof SessionStats, string> = {
+  knowledge: "Knowledge",
+  relationships: "Relationships",
+  culturalWisdom: "Cultural Wisdom",
+  courage: "Courage",
+  reputation: "Reputation",
+  legacy: "Legacy",
+};
+
+const STAT_ICONS: Record<keyof SessionStats, string> = {
+  knowledge: "BookOpen",
+  relationships: "Heart",
+  culturalWisdom: "Sparkles",
+  courage: "Sword",
+  reputation: "Star",
+  legacy: "Crown",
+};
 
 // Choices are parameterized by scene type and enriched with vault context
 // (place names, event titles, memory descriptions) so they feel specific to
@@ -66,19 +95,20 @@ function buildSceneChoices(scene: Scene, vault: SceneResponse["vaultContext"]): 
   switch (scene.type) {
     case "narration":
       return [
-        { text: "Continue the story", consequence: "The story moves forward.", action: "next" },
-        ...(place ? [{ text: `Remember ${place.label}`, consequence: `You hold the memory of ${place.label} close.`, action: "reflect" as const }] : []),
+        { text: "Continue the story", consequence: "The story moves forward.", action: "next", statChanges: { knowledge: 2 } },
+        ...(place ? [{ text: `Remember ${place.label}`, consequence: `You hold the memory of ${place.label} close.`, action: "reflect" as const, statChanges: { legacy: 5, knowledge: 1 } }] : []),
       ];
     case "dialogue":
       return [
-        { text: "Listen and remember", consequence: "You absorb this moment into your family's memory.", action: "next" },
+        { text: "Listen and remember", consequence: "You absorb this moment into your family's memory.", action: "next", statChanges: { relationships: 5, culturalWisdom: 3 } },
         {
           text: event ? `Ask about ${event.title}` : "Ask a question",
           consequence: "A Mystery Quest has been added to your Family Vault — ask a relative to help fill this gap.",
           action: "preserve",
           createsMysteryQuest: true,
+          statChanges: { knowledge: 8, courage: 3 },
         },
-        { text: "Reflect quietly", consequence: "You gain cultural wisdom from this moment.", action: "reflect" },
+        { text: "Reflect quietly", consequence: "You gain cultural wisdom from this moment.", action: "reflect", statChanges: { culturalWisdom: 6, reputation: 2 } },
       ];
     case "reflection":
       return [
@@ -87,17 +117,18 @@ function buildSceneChoices(scene: Scene, vault: SceneResponse["vaultContext"]): 
           consequence: "Your memory has been added to the Family Vault.",
           action: "preserve",
           requiresMemoryText: true,
+          statChanges: { legacy: 10, knowledge: 5, relationships: 3 },
         },
-        { text: "Continue the journey", consequence: "The chapter moves forward.", action: "next" },
-        { text: "Sit with this moment", consequence: "You let the weight of this memory settle.", action: "reflect" },
+        { text: "Continue the journey", consequence: "The chapter moves forward.", action: "next", statChanges: { courage: 3 } },
+        { text: "Sit with this moment", consequence: "You let the weight of this memory settle.", action: "reflect", statChanges: { culturalWisdom: 4, reputation: 2 } },
       ];
     case "context":
       return [
-        { text: "Continue", consequence: "You carry this history with you.", action: "next" },
-        { text: "Reflect on the times", consequence: "You consider what life was like in those days.", action: "reflect" },
+        { text: "Continue", consequence: "You carry this history with you.", action: "next", statChanges: { knowledge: 3 } },
+        { text: "Reflect on the times", consequence: "You consider what life was like in those days.", action: "reflect", statChanges: { culturalWisdom: 5, knowledge: 2 } },
       ];
     default:
-      return [{ text: "Continue", consequence: "The story moves forward.", action: "next" }];
+      return [{ text: "Continue", consequence: "The story moves forward.", action: "next", statChanges: { knowledge: 1 } }];
   }
 }
 
@@ -135,6 +166,9 @@ export default function LegacyChapterPlay() {
   // AI Game Master narration for the current scene
   const [aiNarration, setAiNarration] = useState<string | null>(null);
   const [narrationLoading, setNarrationLoading] = useState(false);
+  const [sessionStats, setSessionStats] = useState<SessionStats>({
+    knowledge: 0, relationships: 0, culturalWisdom: 0, courage: 0, reputation: 0, legacy: 0,
+  });
 
   const chapterId = parseInt(params.chapterId, 10);
 
@@ -218,7 +252,18 @@ export default function LegacyChapterPlay() {
 
     // Save progress + which choice was made to server (durable decision memory)
     try {
-      await fetch(`/api/legacy/sessions/progress`, {
+      // Accumulate RPG stats from this choice
+    if (choice?.statChanges) {
+      setSessionStats((prev) => {
+        const next = { ...prev };
+        for (const [k, delta] of Object.entries(choice.statChanges!)) {
+          next[k as keyof SessionStats] = Math.max(0, Math.min(100, next[k as keyof SessionStats] + (delta ?? 0)));
+        }
+        return next;
+      });
+    }
+
+    await fetch(`/api/legacy/sessions/progress`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
@@ -227,6 +272,7 @@ export default function LegacyChapterPlay() {
           completed: true,
           choiceAction: choice?.action,
           choiceText: choice?.text,
+          statChanges: choice?.statChanges,
         }),
       });
     } catch {
@@ -513,6 +559,20 @@ export default function LegacyChapterPlay() {
         />
       </div>
 
+      {/* RPG Stats HUD */}
+      <div className="px-4 py-2.5 border-b border-stone-800/30 bg-stone-900/30">
+        <div className="flex items-center justify-between gap-2">
+          {(Object.keys(sessionStats) as (keyof SessionStats)[]).map((statKey) => (
+            <div key={statKey} className="flex flex-col items-center gap-0.5">
+              <span className="text-[9px] font-bold uppercase tracking-wide text-stone-500">{STAT_LABELS[statKey]}</span>
+              <span className={`text-sm font-black ${sessionStats[statKey] > 0 ? "text-amber-400" : "text-stone-600"}`}>
+                {sessionStats[statKey]}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Scene content */}
       <div className="flex-1 overflow-y-auto px-5 py-6">
         {/* Scene type badge */}
@@ -666,6 +726,22 @@ export default function LegacyChapterPlay() {
                   <span className="text-sm font-medium text-stone-200">{choice.text}</span>
                   <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-amber-400 transition-colors" />
                 </div>
+                {choice.statChanges && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {Object.entries(choice.statChanges).map(([stat, delta]) => (
+                      <span
+                        key={stat}
+                        className={`text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 ${
+                          delta > 0
+                            ? "bg-emerald-400/10 text-emerald-400 border border-emerald-400/20"
+                            : "bg-red-400/10 text-red-400 border border-red-400/20"
+                        }`}
+                      >
+                        {STAT_LABELS[stat as keyof SessionStats] ?? stat} {delta > 0 ? "+" : ""}{delta}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </button>
             ))}
           </div>

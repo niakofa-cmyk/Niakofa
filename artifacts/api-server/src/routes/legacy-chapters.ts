@@ -1138,9 +1138,10 @@ router.post(
   generalApiLimiter,
   requireAuth,
   async (req, res) => {
-    const { chapterId, sceneNumber, completed, choiceAction, choiceText } = req.body as {
+    const { chapterId, sceneNumber, completed, choiceAction, choiceText, statChanges } = req.body as {
       chapterId: number; sceneNumber: number; completed: boolean;
       choiceAction?: string; choiceText?: string;
+      statChanges?: Record<string, number>;
     };
 
     if (!chapterId || sceneNumber === undefined) {
@@ -1183,10 +1184,29 @@ router.post(
       const decisionKey = `${chapterId}:${sceneNumber}`;
       const newDecision =
         choiceAction && choiceText
-          ? { action: choiceAction, text: choiceText, decidedAt: new Date().toISOString() }
+          ? { action: choiceAction, text: choiceText, decidedAt: new Date().toISOString(), statChanges: statChanges ?? {} }
           : null;
 
+      // Accumulate RPG stats across all choices in this session
+      const STAT_KEYS = ["knowledge", "relationships", "culturalWisdom", "courage", "reputation", "legacy"] as const;
+      type StatKey = typeof STAT_KEYS[number];
+      type SessionStats = Record<StatKey, number>;
+
+      function clampStats(stats: SessionStats): SessionStats {
+        const result: SessionStats = { ...stats };
+        for (const k of STAT_KEYS) {
+          result[k] = Math.max(0, Math.min(100, result[k]));
+        }
+        return result;
+      }
+
       if (!session) {
+        const initialStats: SessionStats = clampStats(
+          STAT_KEYS.reduce((acc, k) => {
+            acc[k] = statChanges?.[k] ?? 0;
+            return acc;
+          }, {} as SessionStats),
+        );
         const [newSession] = await db
           .insert(legacySessionsTable)
           .values({
@@ -1198,26 +1218,40 @@ router.post(
             session_state: {
               completedScenes: [sceneNumber],
               decisions: newDecision ? { [decisionKey]: newDecision } : {},
+              stats: initialStats,
             },
           })
           .returning();
         session = newSession;
       } else {
-        // Update session state with completed scene + this scene's decision
+        // Update session state with completed scene + this scene's decision + accumulated stats
         const currentState = session.session_state as {
           completedScenes?: number[];
-          decisions?: Record<string, { action: string; text: string; decidedAt: string }>;
+          decisions?: Record<string, { action: string; text: string; decidedAt: string; statChanges?: Record<string, number> }>;
+          stats?: SessionStats;
         };
         const completedScenes = new Set(currentState.completedScenes ?? []);
         if (completed) completedScenes.add(sceneNumber);
         const decisions = { ...(currentState.decisions ?? {}) };
         if (newDecision) decisions[decisionKey] = newDecision;
 
+        // Accumulate stat changes from this choice into session stats
+        const currentStats: SessionStats = currentState.stats ?? { knowledge: 0, relationships: 0, culturalWisdom: 0, courage: 0, reputation: 0, legacy: 0 };
+        const updatedStats: SessionStats = { ...currentStats };
+        if (statChanges) {
+          for (const k of STAT_KEYS) {
+            const delta = statChanges[k];
+            if (typeof delta === "number") {
+              updatedStats[k] = currentStats[k] + delta;
+            }
+          }
+        }
+
         const [updated] = await db
           .update(legacySessionsTable)
           .set({
             current_chapter_id: chapterId,
-            session_state: { completedScenes: Array.from(completedScenes), decisions },
+            session_state: { completedScenes: Array.from(completedScenes), decisions, stats: clampStats(updatedStats) },
             updated_at: new Date(),
           })
           .where(eq(legacySessionsTable.id, session.id))
