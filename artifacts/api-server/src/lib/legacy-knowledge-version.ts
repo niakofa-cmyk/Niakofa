@@ -75,6 +75,7 @@ async function autoEvolveCharacters(familyId: number, knowledgeVersionId: number
         courage: Math.min(100, storyCount * 5),
         reputation: Math.min(100, memoryCount * 4 + storyCount * 6),
         legacy: Math.min(100, memoryCount * 7 + storyCount * 9),
+        faith: Math.min(100, memoryCount * 5 + storyCount * 7),
       };
 
       await db.insert(legacyCharacterEvolutionTable).values({
