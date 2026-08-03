@@ -186,6 +186,37 @@ export default function LegacyChapterPlay() {
       const data: SceneResponse = await res.json();
       setSceneData(data);
 
+      // Restore accumulated RPG stats from any existing session for this chapter
+      if (data.familyId) {
+        try {
+          const sessRes = await fetch(`/api/legacy/sessions/active/${data.familyId}?chapterId=${chapterId}`, { headers: authHeaders() });
+          if (sessRes.ok) {
+            const sessData = await sessRes.json();
+            const sessStats = sessData?.session?.session_state?.stats;
+            if (sessStats && typeof sessStats === "object") {
+              setSessionStats({
+                knowledge: sessStats.knowledge ?? 0,
+                relationships: sessStats.relationships ?? 0,
+                culturalWisdom: sessStats.culturalWisdom ?? 0,
+                courage: sessStats.courage ?? 0,
+                reputation: sessStats.reputation ?? 0,
+                legacy: sessStats.legacy ?? 0,
+              });
+            }
+            // Also restore completed scenes so the player resumes where they left off
+            const sessCompleted = sessData?.session?.session_state?.completedScenes;
+            if (Array.isArray(sessCompleted) && sessCompleted.length > 0) {
+              setCompletedScenes(new Set(sessCompleted));
+              // Advance to the first uncompleted scene
+              const firstUncompleted = data.scenes.findIndex((s: { sceneNumber: number }) => !sessCompleted.includes(s.sceneNumber));
+              if (firstUncompleted > 0) setCurrentSceneIdx(firstUncompleted);
+            }
+          }
+        } catch {
+          // Non-fatal — fresh session starts with zero stats
+        }
+      }
+
       // Transition chapter to in_progress if it's unlocked
       if (data.chapterStatus === "unlocked") {
         await fetch(`/api/legacy/chapters/${chapterId}/status`, {

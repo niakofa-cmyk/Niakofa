@@ -234,6 +234,97 @@ async function generateChapterSeeds(familyId: number, preferredAncestorMemberId?
     });
   }
 
+  // Chapter IV: "Traditions & Culture" — built from family stories about
+  // traditions, cultural practices, and wisdom passed down through generations.
+  const traditionStories = stories.filter(s => s.category === "tradition" || s.category === "cultural");
+  const traditionMemories = memories.slice(6, 12);
+  if (traditionStories.length > 0 || traditionMemories.length > 0 || stories.length >= 3) {
+    const traditionAncestor = traditionStories[0]?.aboutMemberId
+      ?? consentedMembers.find(m => m.is_living === false)?.id
+      ?? consentedMembers[0]?.id
+      ?? null;
+
+    seeds.push({
+      chapterNumber: 4,
+      title: "Traditions & Culture",
+      synopsis: traditionStories[0]?.title
+        ? `The traditions your family holds dear, starting with "${traditionStories[0].title}".`
+        : "The customs, recipes, songs, and wisdom passed down through your family.",
+      ancestorMemberId: traditionAncestor,
+      chapterData: {
+        historicalLayer: "verified",
+        storyIds: (traditionStories.length > 0 ? traditionStories : stories.slice(0, 3)).map(s => s.id),
+        memoryIds: traditionMemories.map(m => m.id),
+        placeIds: places.slice(0, 2).map(p => p.id),
+        era: traditionMemories[0]?.memoryDate
+          ? new Date(traditionMemories[0].memoryDate).getFullYear().toString()
+          : "Unknown",
+        location: places[0]?.label ?? "Unknown",
+        theme: "cultural_preservation",
+      },
+    });
+  }
+
+  // Chapter V: "Diaspora Connections" — built from migration events and
+  // multi-country places, exploring how the family spread across the world.
+  const diasporaPlaces = places.filter(p => p.country !== null);
+  const diasporaEvents = events.filter(e => e.category === "migration" || e.category === "marriage");
+  if (diasporaPlaces.length >= 2 || diasporaEvents.length >= 2) {
+    const diasporaAncestor = diasporaEvents[1]?.memberId
+      ?? diasporaEvents[0]?.memberId
+      ?? consentedMembers[1]?.id
+      ?? consentedMembers[0]?.id
+      ?? null;
+
+    seeds.push({
+      chapterNumber: 5,
+      title: "Diaspora Connections",
+      synopsis: diasporaPlaces.length >= 2
+        ? `From ${diasporaPlaces[0].label} to ${diasporaPlaces[1].label} — how your family spread across the world.`
+        : "The branches of your family tree that reached across oceans and borders.",
+      ancestorMemberId: diasporaAncestor,
+      chapterData: {
+        historicalLayer: "verified",
+        eventIds: diasporaEvents.slice(0, 5).map(e => e.id),
+        placeIds: diasporaPlaces.slice(0, 4).map(p => p.id),
+        memoryIds: memories.slice(6, 10).map(m => m.id),
+        era: diasporaEvents[0]?.eventDate
+          ? new Date(diasporaEvents[0].eventDate).getFullYear().toString()
+          : "Unknown",
+        location: diasporaPlaces[1]?.label ?? diasporaPlaces[0]?.label ?? "Unknown",
+        theme: "diaspora_connections",
+      },
+    });
+  }
+
+  // Chapter VI: "Living Memory" — built from recent memories and living members,
+  // connecting the player's own experiences to the family's ongoing story.
+  const recentMemories = memories.slice(-5).reverse(); // most recent first
+  const livingMembers = consentedMembers.filter(m => m.is_living !== false);
+  if (recentMemories.length > 0 || livingMembers.length > 0) {
+    const livingAncestor = livingMembers[0]?.id ?? consentedMembers[0]?.id ?? null;
+
+    seeds.push({
+      chapterNumber: 6,
+      title: "Living Memory",
+      synopsis: recentMemories[0]?.title
+        ? `From "${recentMemories[0].title}" to today — your family's story is still being written.`
+        : "The stories that connect your past to your present — and your role in carrying them forward.",
+      ancestorMemberId: livingAncestor,
+      chapterData: {
+        historicalLayer: "verified",
+        memoryIds: recentMemories.map(m => m.id),
+        eventIds: events.slice(-3).map(e => e.id),
+        placeIds: places.slice(-2).map(p => p.id),
+        era: recentMemories[0]?.memoryDate
+          ? new Date(recentMemories[0].memoryDate).getFullYear().toString()
+          : new Date().getFullYear().toString(),
+        location: recentMemories[0]?.locationLabel ?? places[0]?.label ?? "Unknown",
+        theme: "living_memory",
+      },
+    });
+  }
+
   return seeds;
 }
 
@@ -473,11 +564,27 @@ router.patch(
               .orderBy(desc(familyKnowledgeVersionsTable.version))
               .limit(1);
 
+            // Pull the player's accumulated RPG stats from their active session
+            // so the evolution snapshot reflects actual gameplay progression.
+            const [playerSession] = await db
+              .select()
+              .from(legacySessionsTable)
+              .where(
+                and(
+                  eq(legacySessionsTable.family_id, chapter.family_id),
+                  eq(legacySessionsTable.current_chapter_id, chapterId),
+                ),
+              )
+              .orderBy(desc(legacySessionsTable.updated_at))
+              .limit(1);
+
+            const sessionStats = (playerSession?.session_state as { stats?: Record<string, number> })?.stats ?? {};
+
             await db.insert(legacyCharacterEvolutionTable).values({
               family_id: chapter.family_id,
               member_id: chapter.ancestor_member_id,
               knowledge_version_id: latestVersion?.id ?? null,
-              stats: {},
+              stats: sessionStats,
               evolution_summary: `Completed Chapter ${chapter.chapter_number}: "${chapter.title}"`,
               new_quest_count: 1,
             });
@@ -1098,20 +1205,41 @@ router.post(
 );
 
 // GET /api/legacy/sessions/active/:familyId — get the user's active session
+// Also supports ?chapterId= query param to find session by chapter instead of family
 router.get(
   "/legacy/sessions/active/:familyId",
   generalApiLimiter,
   requireAuth,
   async (req, res) => {
     const familyId = parseInt(String(req.params.familyId), 10);
-    if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+    const chapterId = req.query.chapterId ? parseInt(String(req.query.chapterId), 10) : null;
 
     const userId = req.authenticatedUserId!;
-    if (!(await isMember(userId, familyId))) {
-      return res.status(403).json({ error: "Not a member of this family" });
-    }
 
     try {
+      if (chapterId) {
+        // Look up session by chapter ID
+        const [session] = await db
+          .select()
+          .from(legacySessionsTable)
+          .where(
+            and(
+              eq(legacySessionsTable.current_chapter_id, chapterId),
+              eq(legacySessionsTable.user_id, userId),
+              eq(legacySessionsTable.status, "active"),
+            ),
+          )
+          .orderBy(desc(legacySessionsTable.updated_at))
+          .limit(1);
+
+        return res.json({ session: session ?? null });
+      }
+
+      if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+      if (!(await isMember(userId, familyId))) {
+        return res.status(403).json({ error: "Not a member of this family" });
+      }
+
       const [session] = await db
         .select()
         .from(legacySessionsTable)
