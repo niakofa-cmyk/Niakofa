@@ -79,7 +79,7 @@ async function analyzeVaultGaps(familyId: number): Promise<VaultGap[]> {
   const gaps: VaultGap[] = [];
 
   const consentedIds = await getConsentedMemberIds(familyId);
-  if (consentedIds.length === 0) return gaps;
+  if (consentedIds.size === 0) return gaps;
 
   const [members, memories, interviews, stories, places, events, relations] = await Promise.all([
     db.select().from(familyMembersTable).where(
@@ -220,8 +220,9 @@ async function analyzeVaultGaps(familyId: number): Promise<VaultGap[]> {
     });
   }
 
-  // Gap 8: Members without events
-  for (const member of members.slice(0, 5)) {
+  // Gap 8: Members without events — check ALL consented members, not just
+  // the first 5, so every ancestor with a gap can generate a mission.
+  for (const member of members) {
     if (!consentCheck(consentedIds, member.id)) continue;
     const memberEvents = events.filter((e) => e.member_id === member.id);
     if (memberEvents.length === 0) {
@@ -246,8 +247,8 @@ async function analyzeVaultGaps(familyId: number): Promise<VaultGap[]> {
   return gaps;
 }
 
-function consentCheck(consentedIds: number[], memberId: number): boolean {
-  return consentedIds.includes(memberId);
+function consentCheck(consentedIds: Set<number>, memberId: number): boolean {
+  return consentedIds.has(memberId);
 }
 
 // GET /api/legacy/ai-director/:familyId/missions
@@ -488,6 +489,15 @@ router.post(
         })
         .where(eq(legacyAiDirectorMissionsTable.id, missionId))
         .returning();
+
+      // Log to world evolution so the family sees the AI Director's
+      // contribution to the living world timeline.
+      const { logWorldEvolution } = await import("../lib/legacy-world-evolution");
+      logWorldEvolution(
+        mission.family_id,
+        "story_added",
+        `AI Director mission completed: ${mission.title} (+${mission.reward_xp} XP)`,
+      ).catch(() => {});
 
       return res.json({ mission: updated });
     } catch (err) {

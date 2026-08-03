@@ -193,6 +193,16 @@ router.post(
         .where(eq(legacyMemoryMysteriesTable.id, mysteryId))
         .returning();
 
+      // Solving a mystery adds real knowledge to the vault — log it so the
+      // world evolution timeline reflects the family's collaborative
+      // investigation and triggers a knowledge version bump.
+      const { logWorldEvolution } = await import("../lib/legacy-world-evolution");
+      logWorldEvolution(
+        mystery.family_id,
+        "story_added",
+        `Mystery solved: "${mystery.title}" — ${resolution.slice(0, 80)}`,
+      ).catch(() => {});
+
       return res.json({ mystery: updated });
     } catch (err) {
       logger.error({ err, mysteryId }, "legacy-memory-mysteries: solve failed");

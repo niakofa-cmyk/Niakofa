@@ -86,6 +86,7 @@ export default function LegacySeasonalEventsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [participating, setParticipating] = useState<number | null>(null);
   const [contribTypes, setContribTypes] = useState<Record<string, string>>({});
+  const [autoGenerating, setAutoGenerating] = useState(false);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -183,6 +184,34 @@ export default function LegacySeasonalEventsPage() {
     }
   }, []);
 
+  const autoGenerate = useCallback(async () => {
+    if (!familyId) return;
+    setAutoGenerating(true);
+    try {
+      const res = await fetch(`/api/legacy/seasonal-events/${familyId}/auto-generate`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+      });
+      if (!res.ok) throw new Error("Failed to generate events");
+      const data = await res.json();
+      if (data.totalCreated > 0) {
+        toast.success(`${data.totalCreated} new event${data.totalCreated === 1 ? "" : "s"} created from your family calendar!`);
+        // Reload events
+        const eventsRes = await fetch(`/api/legacy/seasonal-events/${familyId}`, { headers: authHeaders() });
+        if (eventsRes.ok) {
+          const eventsData = await eventsRes.json();
+          setEvents(eventsData.events ?? []);
+        }
+      } else {
+        toast.info("Your family calendar events are already up to date.");
+      }
+    } catch {
+      toast.error("Failed to generate calendar events");
+    } finally {
+      setAutoGenerating(false);
+    }
+  }, [familyId]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-stone-900">
@@ -206,6 +235,18 @@ export default function LegacySeasonalEventsPage() {
             <h1 className="text-lg font-bold text-amber-100">Seasonal Events</h1>
             <p className="text-xs text-stone-400">Shared family missions & celebrations</p>
           </div>
+          <button
+            onClick={autoGenerate}
+            disabled={autoGenerating}
+            title="Auto-generate events from your family calendar"
+            className="p-2 rounded-lg bg-stone-700 hover:bg-stone-600 transition-colors disabled:opacity-50"
+          >
+            {autoGenerating ? (
+              <Loader2 className="w-5 h-5 text-amber-300 animate-spin" />
+            ) : (
+              <Calendar className="w-5 h-5 text-amber-300" />
+            )}
+          </button>
           <button
             onClick={() => setShowCreate(true)}
             className="p-2 rounded-lg bg-amber-600 hover:bg-amber-500 transition-colors"

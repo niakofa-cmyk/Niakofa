@@ -269,6 +269,15 @@ router.post(
           .where(eq(legacySeasonalEventsTable.id, eventId));
         eventCompleted = true;
         logger.info({ eventId, familyId: event.family_id }, "legacy-seasonal-events: event auto-completed");
+
+        // Log to world evolution so the family sees the completed event
+        // in their living world timeline.
+        const { logWorldEvolution } = await import("../lib/legacy-world-evolution");
+        logWorldEvolution(
+          event.family_id,
+          "story_added",
+          `Family event completed: "${event.title}" (${participationCount} contributions)`,
+        ).catch(() => {});
       }
 
       await syncAchievements(event.family_id).catch((err) =>
@@ -317,6 +326,146 @@ router.delete(
     } catch (err) {
       logger.error({ err, eventId }, "legacy-seasonal-events: delete failed");
       return res.status(500).json({ error: "Failed to delete event" });
+    }
+  },
+);
+
+// POST /api/legacy/seasonal-events/:familyId/auto-generate
+// Scans the family tree for birthdays, anniversaries, and migration dates,
+// then creates seasonal events for any that don't already exist. This makes
+// the "Living Calendar" from the design docs real — the family's own calendar
+// drives gameplay without manual setup.
+router.post(
+  "/legacy/seasonal-events/:familyId/auto-generate",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const familyId = parseInt(String(req.params.familyId), 10);
+    if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, familyId))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
+
+    try {
+      const members = await db
+        .select()
+        .from(familyMembersTable)
+        .where(
+          and(
+            eq(familyMembersTable.family_id, familyId),
+            eq(familyMembersTable.status, "active"),
+          ),
+        );
+
+      const existingEvents = await db
+        .select()
+        .from(legacySeasonalEventsTable)
+        .where(eq(legacySeasonalEventsTable.family_id, familyId));
+
+      // Dedup key: type + target_member_id + trigger_date
+      const existingKeys = new Set(
+        existingEvents.map((e) =>
+          `${e.event_type}:${e.target_member_id ?? "null"}:${e.trigger_date ?? "null"}`,
+        ),
+      );
+
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1; // JS months are 0-indexed
+      const currentDay = now.getDate();
+      const created: (typeof legacySeasonalEventsTable.$inferSelect)[] = [];
+
+      for (const member of members) {
+        // Birthday events — any member with a birth date gets one
+        if (member.birth_year) {
+          // Use birth_month and birth_day if available, otherwise default
+          // to a generic "birthday" event without a specific date
+          const birthMonth = (member as { birth_month?: number | null }).birth_month;
+          const birthDay = (member as { birth_day?: number | null }).birth_day;
+          const triggerDate = birthMonth && birthDay
+            ? `${now.getFullYear()}-${String(birthMonth).padStart(2, "0")}-${String(birthDay).padStart(2, "0")}`
+            : null;
+
+          const key = `birthday:${member.id}:${triggerDate ?? "null"}`;
+          if (!existingKeys.has(key)) {
+            const [event] = await db
+              .insert(legacySeasonalEventsTable)
+              .values({
+                family_id: familyId,
+                event_type: "birthday",
+                title: `${member.display_name}'s Birthday Tribute`,
+                description: `Add a memory, photo, or story about ${member.display_name} to celebrate their birthday.`,
+                goal: 3,
+                reward_title: "Birthday Tribute",
+                reward_description: `A personalized memory album for ${member.display_name}.`,
+                status: "active",
+                trigger_type: triggerDate ? "recurring_annual" : "recurring_annual",
+                trigger_date: triggerDate,
+                target_member_id: member.id,
+              })
+              .returning();
+            created.push(event);
+            existingKeys.add(key);
+          }
+        }
+      }
+
+      // Create a monthly "Family Story Drive" if none exists this month
+      const monthKey = `reunion:null:${now.getFullYear()}-${String(currentMonth).padStart(2, "0")}`;
+      if (!existingKeys.has(monthKey)) {
+        const [event] = await db
+          .insert(legacySeasonalEventsTable)
+          .values({
+            family_id: familyId,
+            event_type: "reunion",
+            title: "Monthly Family Story Drive",
+            description: "Everyone records one elder's story this month.",
+            goal: 5,
+            reward_title: "Family Chronicle",
+            reward_description: "A dedicated chapter preserving stories from this month.",
+            status: "active",
+            trigger_type: "recurring_monthly",
+          })
+          .returning();
+        created.push(event);
+        existingKeys.add(monthKey);
+      }
+
+      // Cultural holiday events for current month (Juneteenth, Kwanzaa, etc.)
+      const culturalHolidays: Record<number, { title: string; description: string }> = {
+        1: { title: "New Year Heritage Drive", description: "Share family resolutions and traditions for the new year." },
+        6: { title: "Juneteenth Remembrance", description: "Preserve stories, photos, and traditions connected to emancipation." },
+        12: { title: "Kwanzaa Preservation", description: "Share the seven principles through family stories and photos." },
+      };
+      const holiday = culturalHolidays[currentMonth];
+      if (holiday) {
+        const holidayKey = `cultural_holiday:null:${now.getFullYear()}-${String(currentMonth).padStart(2, "0")}`;
+        if (!existingKeys.has(holidayKey)) {
+          const [event] = await db
+            .insert(legacySeasonalEventsTable)
+            .values({
+              family_id: familyId,
+              event_type: "cultural_holiday",
+              title: holiday.title,
+              description: holiday.description,
+              goal: 8,
+              reward_title: "Tradition Keeper",
+              reward_description: "A curated collection of your family's holiday traditions.",
+              status: "active",
+              trigger_type: "recurring_annual",
+            })
+            .returning();
+          created.push(event);
+          existingKeys.add(holidayKey);
+        }
+      }
+
+      logger.info({ familyId, createdCount: created.length }, "legacy-seasonal-events: auto-generated");
+      return res.json({ created, totalCreated: created.length });
+    } catch (err) {
+      logger.error({ err, familyId }, "legacy-seasonal-events: auto-generate failed");
+      return res.status(500).json({ error: "Failed to auto-generate events" });
     }
   },
 );

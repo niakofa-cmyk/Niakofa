@@ -222,8 +222,6 @@ router.post(
   },
 );
 
-export default router;
-
 // ── World Version Summary ────────────────────────────────────────────────────
 // Returns the family's current world version number and recent evolution stats
 // for display on the Legacy home screen.
@@ -286,3 +284,5 @@ router.get(
     }
   },
 );
+
+export default router;

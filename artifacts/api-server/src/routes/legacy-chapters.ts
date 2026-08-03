@@ -430,7 +430,7 @@ router.patch(
 
       logger.info({ chapterId, from: chapter.status, to: newStatus }, "legacy-chapters: status transition");
 
-      // If completed, unlock the next chapter
+      // If completed, unlock the next chapter and record character evolution
       if (newStatus === "completed") {
         const [nextChapter] = await db
           .select()
@@ -450,6 +450,40 @@ router.patch(
             .where(eq(legacyChaptersTable.id, nextChapter.id));
 
           logger.info({ nextChapterId: nextChapter.id }, "legacy-chapters: next chapter unlocked");
+        }
+
+        // Log chapter completion to the world evolution timeline so the
+        // family sees gameplay activity alongside vault changes.
+        const { logWorldEvolution } = await import("../lib/legacy-world-evolution");
+        logWorldEvolution(
+          chapter.family_id,
+          "story_added",
+          `Chapter completed: "${chapter.title}"`,
+        ).catch(() => {});
+
+        // Record a character evolution snapshot for the ancestor so their
+        // biography grows as the family plays through their life chapters.
+        if (chapter.ancestor_member_id) {
+          try {
+            const { legacyCharacterEvolutionTable, familyKnowledgeVersionsTable } = await import("@workspace/db");
+            const [latestVersion] = await db
+              .select()
+              .from(familyKnowledgeVersionsTable)
+              .where(eq(familyKnowledgeVersionsTable.family_id, chapter.family_id))
+              .orderBy(desc(familyKnowledgeVersionsTable.version))
+              .limit(1);
+
+            await db.insert(legacyCharacterEvolutionTable).values({
+              family_id: chapter.family_id,
+              member_id: chapter.ancestor_member_id,
+              knowledge_version_id: latestVersion?.id ?? null,
+              stats: {},
+              evolution_summary: `Completed Chapter ${chapter.chapter_number}: "${chapter.title}"`,
+              new_quest_count: 1,
+            });
+          } catch (evoErr) {
+            logger.error({ err: evoErr, chapterId }, "legacy-chapters: evolution snapshot failed");
+          }
         }
       }
 
@@ -864,6 +898,15 @@ router.post(
         { chapterId, sceneNumber, familyId: chapter.family_id, memoryId: inserted.id },
         "legacy-chapters: memory recorded from reflection scene",
       );
+
+      // Log to world evolution so the family sees this new memory in the
+      // living world timeline and the knowledge version bumps.
+      const { logWorldEvolution } = await import("../lib/legacy-world-evolution");
+      logWorldEvolution(
+        chapter.family_id,
+        "memory_added",
+        `New memory recorded during "${chapter.title}": ${trimmedTitle || "Untitled"}`,
+      ).catch(() => {});
 
       return res.status(201).json({ memory: inserted, created: true });
     } catch (err) {
