@@ -617,7 +617,31 @@ router.get(
         .orderBy(asc(familyEventsTable.event_date))
         .limit(5);
 
-      const hasChanges = recentChanges.length > 0 || newMemoryCount > 0 || newMemberCount > 0;
+      // Count new places in last 24h
+      const newPlaceResult = await db
+        .select({ cnt: sql`count(*)::int` })
+        .from(familyPlacesTable)
+        .where(
+          and(
+            eq(familyPlacesTable.family_id, familyId),
+            sql`${familyPlacesTable.created_at} >= ${yesterday}`,
+          ),
+        );
+      const newPlaceCount = Number(newPlaceResult[0]?.cnt ?? 0);
+
+      // Count new character evolution snapshots in last 24h
+      const newCharacterResult = await db
+        .select({ cnt: sql`count(*)::int` })
+        .from(legacyCharacterEvolutionTable)
+        .where(
+          and(
+            eq(legacyCharacterEvolutionTable.family_id, familyId),
+            sql`${legacyCharacterEvolutionTable.created_at} >= ${yesterday}`,
+          ),
+        );
+      const newCharacterCount = Number(newCharacterResult[0]?.cnt ?? 0);
+
+      const hasChanges = recentChanges.length > 0 || newMemoryCount > 0 || newMemberCount > 0 || newPlaceCount > 0;
 
       return res.json({
         hasChanges,

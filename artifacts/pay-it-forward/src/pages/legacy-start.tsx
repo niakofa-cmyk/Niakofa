@@ -155,7 +155,7 @@ export default function LegacyStartPage() {
   const ready = completeness?.chapterUnlockReady ?? false;
 
   return (
-    <div className="min-h-screen bg-[#1A1008] text-amber-100 pb-8">
+    <div className="min-h-screen bg-[#1A1008] text-amber-100 pb-8 animate-[fadeIn_0.6s_ease-out]">
       {/* Header */}
       <div className="sticky top-0 z-20 bg-[#1A1008]/95 backdrop-blur border-b border-amber-900/30 px-4 py-3 flex items-center gap-3">
         <button onClick={() => navigate("/legacy")} className="text-amber-500 active:opacity-70">
@@ -165,8 +165,8 @@ export default function LegacyStartPage() {
       </div>
 
       {/* Hero text */}
-      <div className="px-6 pt-8 pb-6 text-center">
-        <Sparkles className="w-6 h-6 text-amber-500 mx-auto mb-3" />
+      <div className="px-6 pt-8 pb-6 text-center animate-[fadeIn_0.8s_ease-out_0.2s_both]">
+        <Sparkles className="w-6 h-6 text-amber-500 mx-auto mb-3 animate-pulse" />
         <p className="text-lg font-bold text-amber-200 leading-relaxed">
           Tonight, you will walk in the footsteps of someone who came before you.
         </p>

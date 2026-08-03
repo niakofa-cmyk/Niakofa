@@ -325,8 +325,80 @@ async function generateChapterSeeds(familyId: number, preferredAncestorMemberId?
     });
   }
 
-  return seeds;
+  // ── AI-Enhanced Synopsis ─────────────────────────────────────────────────────
+  // After building data-driven chapter seeds, optionally enrich each synopsis
+  // with AI-generated narrative text. The AI is given the verified vault data
+  // as context and instructed to write immersive narration WITHOUT fabricating
+  // family facts. If the AI call fails, the original data-driven synopsis is
+  // kept as fallback. This makes chapters feel dynamic and alive while keeping
+  // documented family facts immutable and clearly separated from narrative
+  // interpretation.
+  const enrichedSeeds = await enrichChapterSynopses(seeds, {
+    members: consentedMembers,
+    events: events.map(e => ({ title: e.title, description: e.description, date: e.eventDate, category: e.category })),
+    places: places.map(p => ({ label: p.label, type: p.placeType })),
+    stories: stories.map(s => ({ title: s.title, category: s.category })),
+    memories: memories.map(m => ({ title: m.title, date: m.memoryDate, location: m.locationLabel })),
+  });
+
+  return enrichedSeeds;
 }
+
+async function enrichChapterSynopses(
+  seeds: ChapterSeed[],
+  vaultContext: Record<string, unknown>,
+): Promise<ChapterSeed[]> {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return seeds;
+
+    const Anthropic = (await import("@anthropic-ai/sdk")).default;
+    const anthropic = new Anthropic();
+
+    const systemPrompt = `You are Nia, the AI Game Master for Niakofa, a living family RPG built from real family history.
+
+CRITICAL RULES:
+1. NEVER fabricate family facts. Only use the provided family data.
+2. Write immersive narrative synopsis text for each chapter.
+3. Clearly distinguish VERIFIED FAMILY HISTORY from NARRATIVE INTERPRETATION.
+4. If information is missing, note it as a mystery to discover — do not invent.
+5. Keep each synopsis under 200 words.
+6. Make it feel like the beginning of a story, not a data report.
+
+Family vault data:
+${JSON.stringify(vaultContext, null, 2)}`;
+
+    const userPrompt = `Write an immersive synopsis for each of these ${seeds.length} chapters. Return a JSON array of strings, one synopsis per chapter, in order. Each synopsis should feel like a narrator setting the scene for a chapter in a family history RPG.
+
+Chapters:
+${JSON.stringify(seeds.map(s => ({ number: s.chapterNumber, title: s.title, data: s.chapterData })), null, 2)}
+
+Return ONLY a JSON array of ${seeds.length} strings, no other text.`;
+
+    const response = await anthropic.messages.create({
+      model: "claude-3-5-haiku-20241022",
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
+    });
+
+    const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+    const match = text.match(/\[[\s\S]*\]/);
+    if (match) {
+      const synopses = JSON.parse(match[0]) as string[];
+      if (Array.isArray(synopses) && synopses.length === seeds.length) {
+        return seeds.map((seed, i) => ({
+          ...seed,
+          synopsis: synopses[i] || seed.synopsis,
+          chapterData: { ...seed.chapterData, ai_enriched: true },
+        }));
+      }
+    }
+    return seeds;
+  } catch (err) {
+    logger.warn({ err }, "legacy-chapters: AI synopsis enrichment failed, using data-driven fallback");
+    return seeds;
+  }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 

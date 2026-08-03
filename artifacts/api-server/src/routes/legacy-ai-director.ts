@@ -94,11 +94,27 @@ async function analyzeVaultGaps(familyId: number): Promise<VaultGap[]> {
   ]);
 
   // Gap 1: Members without any stories or memories
+  // Memories are linked to members via the family_memory_people junction,
+  // not a direct about_member_id column.
+  const familyMemoryIds = memories.map((m) => m.id);
+  const memoryPeople = familyMemoryIds.length > 0
+    ? await db
+        .select({ memory_id: familyMemoryPeopleTable.memory_id, member_id: familyMemoryPeopleTable.member_id })
+        .from(familyMemoryPeopleTable)
+        .where(inArray(familyMemoryPeopleTable.memory_id, familyMemoryIds))
+    : [];
+  const memoriesByMember = new Map<number, number>();
+  for (const mp of memoryPeople) {
+    if (mp.member_id !== null) {
+      memoriesByMember.set(mp.member_id, (memoriesByMember.get(mp.member_id) ?? 0) + 1);
+    }
+  }
+
   for (const member of members) {
     if (!consentCheck(consentedIds, member.id)) continue;
-    const memberMemories = memories.filter((m) => m.about_member_id === member.id);
+    const memberMemoryCount = memoriesByMember.get(member.id) ?? 0;
     const memberStories = stories.filter((s) => s.about_member_id === member.id);
-    if (memberMemories.length === 0 && memberStories.length === 0) {
+    if (memberMemoryCount === 0 && memberStories.length === 0) {
       gaps.push({
         type: "missing_stories",
         description: `${member.display_name} has no recorded stories or memories yet.`,
@@ -117,7 +133,7 @@ async function analyzeVaultGaps(familyId: number): Promise<VaultGap[]> {
   for (const member of members) {
     if (member.is_living === false) continue;
     if (!consentCheck(consentedIds, member.id)) continue;
-    const memberInterviews = interviews.filter((i) => i.member_id === member.id);
+    const memberInterviews = interviews.filter((i) => i.subject_member_id === member.id);
     if (memberInterviews.length === 0) {
       gaps.push({
         type: "missing_interview",
@@ -134,9 +150,18 @@ async function analyzeVaultGaps(familyId: number): Promise<VaultGap[]> {
   }
 
   // Gap 3: Members without birth/death dates
+  // family_members has no birth_year column — derive from events.
+  const birthEvents = events.filter((e) => e.event_type === 'birth' && e.member_id !== null);
+  const birthYearByMember = new Map<number, number>();
+  for (const ev of birthEvents) {
+    if (ev.member_id !== null && ev.event_date) {
+      birthYearByMember.set(ev.member_id, new Date(ev.event_date).getFullYear());
+    }
+  }
+
   for (const member of members) {
     if (!consentCheck(consentedIds, member.id)) continue;
-    if (!member.birth_year) {
+    if (!birthYearByMember.has(member.id)) {
       gaps.push({
         type: "missing_birth_date",
         description: `${member.display_name}'s birth date is unknown.`,
@@ -152,10 +177,20 @@ async function analyzeVaultGaps(familyId: number): Promise<VaultGap[]> {
   }
 
   // Gap 4: Members without locations
+  // Places are linked to members via events (place_id), not a direct member_id.
+  const memberPlaceIds = new Map<number, Set<number>>();
+  for (const ev of events) {
+    if (ev.member_id !== null && ev.place_id !== null) {
+      const set = memberPlaceIds.get(ev.member_id) ?? new Set<number>();
+      set.add(ev.place_id);
+      memberPlaceIds.set(ev.member_id, set);
+    }
+  }
+
   for (const member of members) {
     if (!consentCheck(consentedIds, member.id)) continue;
-    const memberPlaces = places.filter((p) => p.member_id === member.id);
-    if (memberPlaces.length === 0) {
+    const memberPlaceCount = memberPlaceIds.get(member.id)?.size ?? 0;
+    if (memberPlaceCount === 0) {
       gaps.push({
         type: "missing_location",
         description: `No locations tagged for ${member.display_name}.`,
@@ -171,15 +206,7 @@ async function analyzeVaultGaps(familyId: number): Promise<VaultGap[]> {
   }
 
   // Gap 5: Memories without people tagged
-  // Scope to this family's memory IDs only — the table has no family_id column,
-  // so an unfiltered read scans every family's memory-people rows.
-  const familyMemoryIds = memories.map((m) => m.id);
-  const memoryPeople = familyMemoryIds.length > 0
-    ? await db
-        .select({ memory_id: familyMemoryPeopleTable.memory_id })
-        .from(familyMemoryPeopleTable)
-        .where(inArray(familyMemoryPeopleTable.memory_id, familyMemoryIds))
-    : [];
+  // Reuse memoryPeople from Gap 1 (already queried with full family scope).
   const taggedMemoryIds = new Set(memoryPeople.map((mp) => mp.memory_id));
   const untagged = memories.filter((m) => !taggedMemoryIds.has(m.id));
   if (untagged.length > 0) {
@@ -270,7 +297,7 @@ router.get(
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const missions = await db
+      let missions = await db
         .select()
         .from(legacyAiDirectorMissionsTable)
         .where(
@@ -282,6 +309,80 @@ router.get(
         )
         .orderBy(desc(legacyAiDirectorMissionsTable.generated_at))
         .limit(10);
+
+      // AUTO-GENERATE: If no missions exist for today, the AI Director "wakes up"
+      // and generates them automatically. This makes the AI Director feel alive —
+      // every morning it scans the vault, finds gaps, and creates missions without
+      // the user having to press a button. This is the "every morning the AI asks"
+      // behavior from the design document.
+      if (missions.length === 0) {
+        const gaps = await analyzeVaultGaps(familyId);
+
+        const [latestVersion] = await db
+          .select()
+          .from(familyKnowledgeVersionsTable)
+          .where(eq(familyKnowledgeVersionsTable.family_id, familyId))
+          .orderBy(desc(familyKnowledgeVersionsTable.version))
+          .limit(1);
+
+        const topGaps = gaps.slice(0, 5);
+        const missionsToCreate = topGaps.map((gap) => ({
+          family_id: familyId,
+          mission_type: gap.missionType,
+          status: "active" as const,
+          title: gap.suggestedMission,
+          description: gap.description,
+          gap_description: gap.description,
+          target_member_id: gap.targetMemberId ?? null,
+          target_vault_item: null,
+          reward_xp: gap.rewardXp,
+          reward_description: gap.rewardDescription,
+          knowledge_version_id: latestVersion?.id ?? null,
+          generated_at: new Date(),
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        }));
+
+        if (missionsToCreate.length > 0) {
+          const inserted = await db
+            .insert(legacyAiDirectorMissionsTable)
+            .values(missionsToCreate)
+            .returning();
+          missions = inserted;
+
+          // Also create Memory Mysteries for unidentified content
+          const mysteryGaps = gaps.filter((g) => g.type === "unidentified_people" || g.type === "missing_stories");
+          for (const gap of mysteryGaps.slice(0, 3)) {
+            const mysteryType = gap.type === "unidentified_people" ? "unknown_person" : "missing_interview";
+            const existingMystery = await db
+              .select()
+              .from(legacyMemoryMysteriesTable)
+              .where(
+                and(
+                  eq(legacyMemoryMysteriesTable.family_id, familyId),
+                  eq(legacyMemoryMysteriesTable.status, "open"),
+                  eq(legacyMemoryMysteriesTable.mystery_type, mysteryType),
+                ),
+              )
+              .limit(1);
+
+            if (existingMystery.length === 0) {
+              await db.insert(legacyMemoryMysteriesTable).values({
+                family_id: familyId,
+                mystery_type: mysteryType,
+                status: "open",
+                title: gap.suggestedMission,
+                description: gap.description,
+                ai_hint: gap.description,
+                suggested_actions: [
+                  "Ask a relative who might know",
+                  "Upload a photo or document",
+                  "Record an interview",
+                ],
+              });
+            }
+          }
+        }
+      }
 
       // Get recently completed missions (last 7 days)
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);

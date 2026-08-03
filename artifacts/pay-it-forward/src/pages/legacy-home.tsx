@@ -64,6 +64,7 @@ interface FamilyMemory {
   location_label: string | null;
   source: string;
   asset_count?: number;
+  created_at?: string;
 }
 
 interface LegacyState {
@@ -382,6 +383,7 @@ export default function LegacyHomePage() {
   const [ancestorCandidate, setAncestorCandidate] = useState<AncestorCandidate | null>(null);
   const [chapters, setChapters] = useState<LegacyChapter[]>([]);
   const [scenes, setScenes] = useState<SceneData[]>([]);
+  const [activeSceneIdx, setActiveSceneIdx] = useState(0);
   const [scenesLoading, setScenesLoading] = useState(false);
   const [activeChapterId, setActiveChapterId] = useState<number | null>(null);
   const [mapData, setMapData] = useState<MapData | null>(null);
@@ -1529,11 +1531,17 @@ export default function LegacyHomePage() {
                       Enter Scene
                     </button>
                     <button
-                      onClick={() => setActiveChapterId(prev => {
-                        const idx = chapters.findIndex(c => c.id === prev);
-                        const next = chapters[idx + 1] ?? chapters[0];
-                        return next?.id ?? prev;
-                      })}
+                      onClick={() => {
+                        if (scenes.length > 1) {
+                          setActiveSceneIdx(prev => (prev + 1) % scenes.length);
+                        } else {
+                          setActiveChapterId(prev => {
+                            const idx = chapters.findIndex(c => c.id === prev);
+                            const next = chapters[idx + 1] ?? chapters[0];
+                            return next?.id ?? prev;
+                          });
+                        }
+                      }}
                       className="flex-1 bg-[#3A2A1A] border border-amber-900/30 text-amber-700 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70"
                     >
                       Next Scene

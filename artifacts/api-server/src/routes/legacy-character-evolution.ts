@@ -27,6 +27,7 @@ import {
   familyEventsTable,
   familyPlacesTable,
   familyTreeRelationsTable,
+  familyMemoryPeopleTable,
   legacyCharacterEvolutionTable,
   familyKnowledgeVersionsTable,
 } from "@workspace/db";
@@ -89,7 +90,7 @@ router.get(
 
     try {
       const consentedIds = await getConsentedMemberIds(familyId);
-      if (consentedIds.length === 0) return res.json({ characters: [] });
+      if (consentedIds.size === 0) return res.json({ characters: [] });
 
       const members = await db
         .select()
@@ -98,7 +99,7 @@ router.get(
           and(
             eq(familyMembersTable.family_id, familyId),
             eq(familyMembersTable.status, "active"),
-            inArray(familyMembersTable.id, consentedIds),
+            inArray(familyMembersTable.id, Array.from(consentedIds)),
           ),
         );
 
@@ -110,6 +111,23 @@ router.get(
         db.select().from(familyPlacesTable).where(eq(familyPlacesTable.family_id, familyId)),
         db.select().from(familyTreeRelationsTable).where(eq(familyTreeRelationsTable.family_id, familyId)),
       ]);
+
+      // Query memory-people junction to link memories to members
+      const familyMemoryIds = memories.map((m) => m.id);
+      const memoryPeople = familyMemoryIds.length > 0
+        ? await db
+            .select({ memory_id: familyMemoryPeopleTable.memory_id, member_id: familyMemoryPeopleTable.member_id })
+            .from(familyMemoryPeopleTable)
+            .where(inArray(familyMemoryPeopleTable.memory_id, familyMemoryIds))
+        : [];
+
+      // Derive birth years from events (family_members has no birth_year column)
+      const birthYearByMember = new Map<number, number>();
+      for (const ev of events) {
+        if (ev.event_type === 'birth' && ev.member_id !== null && ev.event_date) {
+          birthYearByMember.set(ev.member_id, new Date(ev.event_date).getFullYear());
+        }
+      }
 
       // Get latest evolution snapshot for each member
       const evolutionSnapshots = await db
@@ -127,10 +145,18 @@ router.get(
 
       const characters = members.map((member) => {
         const memberStories = stories.filter((s) => s.about_member_id === member.id);
-        const memberMemories = memories.filter((m) => m.about_member_id === member.id);
-        const memberInterviews = interviews.filter((i) => i.member_id === member.id);
+        const memberMemories = memories.filter((m) => {
+          // Memories are linked via family_memory_people junction, not a direct column
+          return memoryPeople.some((mp) => mp.memory_id === m.id && mp.member_id === member.id);
+        });
+        const memberInterviews = interviews.filter((i) => i.subject_member_id === member.id);
         const memberEvents = events.filter((e) => e.member_id === member.id);
-        const memberPlaces = places.filter((p) => p.member_id === member.id);
+        // Places are linked via events (place_id), not a direct member_id
+        const memberPlaceIds = new Set<number>();
+        for (const ev of memberEvents) {
+          if (ev.place_id !== null) memberPlaceIds.add(ev.place_id);
+        }
+        const memberPlaces = places.filter((p) => memberPlaceIds.has(p.id));
         const memberRelations = relations.filter(
           (r) => r.from_member_id === member.id || r.to_member_id === member.id,
         );
@@ -151,7 +177,7 @@ router.get(
           name: member.display_name,
           role: member.role,
           isLiving: member.is_living ?? true,
-          birthYear: member.birth_year ?? null,
+          birthYear: birthYearByMember.get(member.id) ?? null,
           stats,
           contentCounts: {
             stories: memberStories.length,
