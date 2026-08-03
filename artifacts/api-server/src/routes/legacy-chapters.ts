@@ -676,6 +676,48 @@ router.patch(
   },
 );
 
+// PATCH /api/legacy/sessions/:sessionId — update session status (pause/resume/abandon)
+router.patch(
+  "/legacy/sessions/:sessionId",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const sessionId = parseInt(String(req.params.sessionId), 10);
+    if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid session ID" });
+
+    const { status } = req.body as { status: string };
+    if (!["active", "paused", "completed", "abandoned"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status" });
+    }
+
+    try {
+      const [session] = await db
+        .select()
+        .from(legacySessionsTable)
+        .where(eq(legacySessionsTable.id, sessionId))
+        .limit(1);
+
+      if (!session) return res.status(404).json({ error: "Session not found" });
+
+      const userId = req.authenticatedUserId!;
+      if (!(await isMember(userId, session.family_id))) {
+        return res.status(403).json({ error: "Not a member of this family" });
+      }
+
+      const [updated] = await db
+        .update(legacySessionsTable)
+        .set({ status, updated_at: new Date() })
+        .where(eq(legacySessionsTable.id, sessionId))
+        .returning();
+
+      return res.json({ session: updated });
+    } catch (err) {
+      logger.error({ err, sessionId }, "legacy-chapters: session update failed");
+      return res.status(500).json({ error: "Failed to update session" });
+    }
+  },
+);
+
 // Builds the scene list for a chapter from its chapter_data + real vault
 // data. Extracted so both GET /scenes and GET /journal produce identical
 // scene titles/content — the journal must describe exactly what the player
@@ -893,7 +935,7 @@ router.post(
     if (isNaN(chapterId)) return res.status(400).json({ error: "Invalid chapter ID" });
 
     const { sceneNumber } = req.body as { sceneNumber?: number };
-    if (!sceneNumber || sceneNumber < 1 || sceneNumber > 20) {
+    if (!sceneNumber || sceneNumber < 1 || sceneNumber > 50) {
       return res.status(400).json({ error: "Valid sceneNumber is required" });
     }
 
@@ -1014,7 +1056,7 @@ router.post(
       title?: string;
       body?: string;
     };
-    if (!sceneNumber || sceneNumber < 1 || sceneNumber > 20) {
+    if (!sceneNumber || sceneNumber < 1 || sceneNumber > 50) {
       return res.status(400).json({ error: "Valid sceneNumber is required" });
     }
     const trimmedBody = typeof body === "string" ? body.trim() : "";

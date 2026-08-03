@@ -361,7 +361,13 @@ export default function LegacyHomePage() {
   const [recording,     setRecording]     = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [promptIdx,     setPromptIdx]     = useState(0);
-  const [setupDone,     setSetupDone]     = useState(false);
+  const [setupDone,     setSetupDone]     = useState(() => {
+    try { return localStorage.getItem("legacy:setupDone") === "1"; } catch { return false; }
+  });
+  const persistSetupDone = useCallback((v: boolean) => {
+    setSetupDone(v);
+    try { localStorage.setItem("legacy:setupDone", v ? "1" : "0"); } catch {}
+  }, []);
 
   // Real audio recording state
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -412,7 +418,9 @@ export default function LegacyHomePage() {
     newChapters: Array<{ id: number; title: string; chapterNumber: number }>;
     upcomingEvents: Array<{ id: number; title: string; eventDate: string; category: string }>;
   } | null>(null);
-  const [worldEvolvedDismissed, setWorldEvolvedDismissed] = useState(false);
+  const [worldEvolvedDismissed, setWorldEvolvedDismissed] = useState(() => {
+    try { return localStorage.getItem("legacy:worldEvolvedDismissed") === "1"; } catch { return false; }
+  });
   const [emotionalCalendar, setEmotionalCalendar] = useState<Array<{
     id: number; type: string; title: string; description: string | null;
     date: string | null; memberName: string | null; isToday: boolean; isUpcoming: boolean;
@@ -493,7 +501,9 @@ export default function LegacyHomePage() {
   // ── Load Legacy Engine data (completeness, ancestor, chapters) ──────────────
 
   const loadLegacyEngine = useCallback(async (familyId: number) => {
+    let hadError = false;
     try {
+      // Batch 1: core data (completeness, ancestors, chapters, map)
       const [compRes, ancestorRes, chaptersRes, mapRes] = await Promise.all([
         fetch(`/api/legacy/completeness/${familyId}`, { headers: authHeaders() }),
         fetch(`/api/legacy/ancestors/${familyId}`,    { headers: authHeaders() }),
@@ -504,107 +514,84 @@ export default function LegacyHomePage() {
       if (compRes.ok) {
         const data = await compRes.json() as CompletenessResponse;
         setCompleteness(data);
-      }
+      } else { hadError = true; }
       if (ancestorRes.ok) {
         const data = await ancestorRes.json() as { ancestors: AncestorCandidate[] };
         setAncestorCandidate(data.ancestors?.[0] ?? null);
-      }
+      } else { hadError = true; }
       if (chaptersRes.ok) {
         const data = await chaptersRes.json() as { chapters: LegacyChapter[] };
         setChapters(data.chapters ?? []);
         const firstUnlocked = (data.chapters ?? []).find(c => c.status === "unlocked" || c.status === "in_progress");
         if (firstUnlocked) setActiveChapterId(firstUnlocked.id);
-      }
+      } else { hadError = true; }
       if (mapRes.ok) {
         const data = await mapRes.json() as MapData;
         setMapData(data);
       }
 
-      // Load Today's Journey + World Version (Phase 5)
+      // Batch 2: all remaining Phase 5 data in parallel
       setJourneyLoading(true);
-      try {
-        const [journeyRes, versionRes] = await Promise.all([
-          fetch(`/api/legacy/game-master/${familyId}/today`, { headers: authHeaders() }),
-          fetch(`/api/legacy/world-evolution/${familyId}/version-summary`, { headers: authHeaders() }),
-        ]);
-        if (journeyRes.ok) {
-          const jd = await journeyRes.json();
-          if (jd.journey) setTodaysJourney(jd.journey);
-        }
-        if (versionRes.ok) {
-          const vd = await versionRes.json();
-          setWorldVersion(vd);
-        }
+      const [
+        journeyRes, versionRes, welcomeRes, calendarRes,
+        reunionRes, questsRes, missionsRes, mysteriesRes, challengesRes, achRes,
+      ] = await Promise.all([
+        fetch(`/api/legacy/game-master/${familyId}/today`, { headers: authHeaders() }).catch(() => null),
+        fetch(`/api/legacy/world-evolution/${familyId}/version-summary`, { headers: authHeaders() }).catch(() => null),
+        fetch(`/api/legacy/game-master/${familyId}/daily-welcome`, { headers: authHeaders() }).catch(() => null),
+        fetch(`/api/legacy/game-master/${familyId}/emotional-calendar`, { headers: authHeaders() }).catch(() => null),
+        fetch(`/api/legacy/reunion/${familyId}`, { headers: authHeaders() }).catch(() => null),
+        !familyQuestsLoadedRef.current
+          ? fetch(`/api/legacy/family-quests/${familyId}`, { headers: authHeaders() }).catch(() => null)
+          : Promise.resolve(null),
+        fetch(`/api/legacy/ai-director/${familyId}/missions`, { headers: authHeaders() }).catch(() => null),
+        fetch(`/api/legacy/memory-mysteries/${familyId}`, { headers: authHeaders() }).catch(() => null),
+        fetch(`/api/legacy/challenges/${familyId}`, { headers: authHeaders() }).catch(() => null),
+        fetch(`/api/legacy/achievements/${familyId}`, { headers: authHeaders() }).catch(() => null),
+      ]);
 
-        // Load daily welcome + emotional calendar
-        const [welcomeRes, calendarRes] = await Promise.all([
-          fetch(`/api/legacy/game-master/${familyId}/daily-welcome`, { headers: authHeaders() }),
-          fetch(`/api/legacy/game-master/${familyId}/emotional-calendar`, { headers: authHeaders() }),
-        ]);
-        if (welcomeRes.ok) {
-          const wd = await welcomeRes.json();
-          setDailyWelcome(wd);
-        }
-        if (calendarRes.ok) {
-          const cd = await calendarRes.json();
-          setEmotionalCalendar(cd.calendar ?? []);
-        }
-        // Fetch real reunion challenge data
-        const reunionRes = await fetch(`/api/legacy/reunion/${familyId}`, { headers: authHeaders() });
-        if (reunionRes.ok) {
-          setReunionData(await reunionRes.json());
-        }
-        // Fetch real cooperative family quests
-        if (!familyQuestsLoadedRef.current) {
-          familyQuestsLoadedRef.current = true;
-          setFamilyQuestsLoading(true);
-          fetch(`/api/legacy/family-quests/${familyId}`, { headers: authHeaders() })
-            .then(r => r.ok ? r.json() : null)
-            .then(d => { if (d?.quests) setFamilyQuests(d.quests); })
-            .catch(() => {})
-            .finally(() => setFamilyQuestsLoading(false));
-        }
-        // Fetch live counts for Phase 5 hub cards
-        Promise.all([
-          fetch(`/api/legacy/ai-director/${familyId}/missions`, { headers: authHeaders() }).then(r => r.ok ? r.json() : null).catch(() => null),
-          fetch(`/api/legacy/memory-mysteries/${familyId}`, { headers: authHeaders() }).then(r => r.ok ? r.json() : null).catch(() => null),
-          fetch(`/api/legacy/challenges/${familyId}`, { headers: authHeaders() }).then(r => r.ok ? r.json() : null).catch(() => null),
-        ]).then(([missionsData, mysteriesData, challengesData]) => {
-          if (missionsData?.totalActive !== undefined) setMissionCount(missionsData.totalActive);
-          if (mysteriesData?.mysteries) setMysteryCount(mysteriesData.mysteries.filter((m: { status: string }) => m.status === "open").length);
-          if (challengesData?.challenges) setChallengeCount(challengesData.challenges.filter((c: { status: string }) => c.status === "active").length);
-        }).catch(() => {});
+      if (familyQuestsLoadedRef.current === false) familyQuestsLoadedRef.current = true;
 
-        // Fetch real achievement progress for inventory items
-        const achRes = await fetch(`/api/legacy/achievements/${familyId}`, { headers: authHeaders() });
-        if (achRes.ok) {
-          const achData = await achRes.json() as { achievements: Array<{ achievement_key: string; progress: number; goal: number; unlocked: boolean }> };
-          const map = new globalThis.Map() as globalThis.Map<string, { progress: number; goal: number; unlocked: boolean }>;
-          for (const a of achData.achievements ?? []) {
-            map.set(a.achievement_key, { progress: a.progress, goal: a.goal, unlocked: a.unlocked });
-          }
-          setAchievementMap(map);
+      if (journeyRes?.ok) { const jd = await journeyRes.json(); if (jd.journey) setTodaysJourney(jd.journey); }
+      if (versionRes?.ok) { setWorldVersion(await versionRes.json()); }
+      if (welcomeRes?.ok) { setDailyWelcome(await welcomeRes.json()); }
+      if (calendarRes?.ok) { const cd = await calendarRes.json(); setEmotionalCalendar(cd.calendar ?? []); }
+      if (reunionRes?.ok) { setReunionData(await reunionRes.json()); }
+      if (questsRes?.ok) {
+        setFamilyQuestsLoading(true);
+        const qd = await questsRes.json();
+        if (qd?.quests) setFamilyQuests(qd.quests);
+        setFamilyQuestsLoading(false);
+      }
+      if (missionsRes?.ok) { const md = await missionsRes.json(); if (md?.totalActive !== undefined) setMissionCount(md.totalActive); }
+      if (mysteriesRes?.ok) { const md = await mysteriesRes.json(); if (md?.mysteries) setMysteryCount(md.mysteries.filter((m: { status: string }) => m.status === "open").length); }
+      if (challengesRes?.ok) { const cd = await challengesRes.json(); if (cd?.challenges) setChallengeCount(cd.challenges.filter((c: { status: string }) => c.status === "active").length); }
+      if (achRes?.ok) {
+        const achData = await achRes.json() as { achievements: Array<{ achievement_key: string; progress: number; goal: number; unlocked: boolean }> };
+        const map = new globalThis.Map() as globalThis.Map<string, { progress: number; goal: number; unlocked: boolean }>;
+        for (const a of achData.achievements ?? []) {
+          map.set(a.achievement_key, { progress: a.progress, goal: a.goal, unlocked: a.unlocked });
         }
-      } catch {
-        // Silent fail
-      } finally {
-        setJourneyLoading(false);
+        setAchievementMap(map);
       }
     } catch {
-      // Silent fail — fallback UI will handle
+      hadError = true;
+    } finally {
+      setJourneyLoading(false);
+      if (hadError) toast.error("Some legacy data couldn't be loaded. Try refreshing the page.");
     }
   }, []);
 
+  const primaryFamilyId = legacyState.families[0]?.id;
   useEffect(() => {
-    if (!legacyState.loading && legacyState.families.length > 0) {
-      loadLegacyEngine(legacyState.families[0].id);
+    if (!legacyState.loading && primaryFamilyId) {
+      loadLegacyEngine(primaryFamilyId);
     }
-  }, [legacyState.loading, legacyState.families, loadLegacyEngine]);
+  }, [legacyState.loading, primaryFamilyId, loadLegacyEngine]);
 
   // ── Load scenes for active chapter ──────────────────────────────────────────
 
   const loadScenes = useCallback(async (chapterId: number) => {
-    if (!legacyState.families.length) return;
     setScenesLoading(true);
     try {
       const res = await fetch(`/api/legacy/chapters/${chapterId}/scenes`, { headers: authHeaders() });
@@ -617,7 +604,7 @@ export default function LegacyHomePage() {
     } finally {
       setScenesLoading(false);
     }
-  }, [legacyState.families]);
+  }, []);
 
   useEffect(() => {
     if (activeChapterId) loadScenes(activeChapterId);
@@ -727,12 +714,11 @@ export default function LegacyHomePage() {
   }, []);
 
   useEffect(() => {
-    const { loading, families } = legacyState;
-    if (!loading && families.length > 0) {
-      loadAiQuests(families[0].id);
-      loadQuestHistory(families[0].id);
+    if (!legacyState.loading && primaryFamilyId) {
+      loadAiQuests(primaryFamilyId);
+      loadQuestHistory(primaryFamilyId);
     }
-  }, [legacyState.loading, legacyState.families, loadAiQuests, loadQuestHistory]);
+  }, [legacyState.loading, primaryFamilyId, loadAiQuests, loadQuestHistory]);
 
   // ── Force-refresh AI quests ───────────────────────────────────────────────
 
@@ -771,7 +757,7 @@ export default function LegacyHomePage() {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
-          fingerprint: questFingerprint,
+          fingerprint: questFingerprint ?? "none",
           questTitle: quest.title,
           questCategory: quest.category,
           xp: quest.xp,
@@ -804,6 +790,14 @@ export default function LegacyHomePage() {
     const t = setInterval(() => setRecordSeconds(s => s + 1), 1000);
     return () => clearInterval(t);
   }, [recording]);
+
+  // Stop MediaRecorder on unmount to prevent orphaned audio capture
+  useEffect(() => {
+    return () => {
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+    };
+  }, []);
 
   // ── Auth guard ────────────────────────────────────────────────────────────
 
@@ -841,7 +835,7 @@ export default function LegacyHomePage() {
   // ── Setup check (first-time experience) ────────────────────────────────────
 
   if (!loading && ready && !setupDone) {
-    return <SetupCheck state={legacyState} onComplete={() => setSetupDone(true)} />;
+    return <SetupCheck state={legacyState} onComplete={() => persistSetupDone(true)} />;
   }
 
   // ── Readiness check screen ────────────────────────────────────────────────

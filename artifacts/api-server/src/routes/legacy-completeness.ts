@@ -43,14 +43,14 @@ const router = Router();
 // ── Readiness score weights ──────────────────────────────────────────────────
 // Each dimension contributes up to its max points. Total = 100.
 const WEIGHTS = {
-  people:      16,  // members + tree relations
+  people:      15,  // members + tree relations
   relations:   10,  // parent/spouse edges
-  events:      16,  // dated life events
-  stories:     16,  // memories + stories
+  events:      15,  // dated life events
+  stories:     15,  // memories + stories
   interviews:  10,  // oral history interviews
-  places:      12,  // geographic locations
+  places:      10,  // geographic locations
   consent:     10,  // storytelling consent flags
-  discovery:   10,  // GPS check-ins at family landmarks
+  discovery:   15,  // GPS check-ins at family landmarks
 } as const;
 
 // ── Phase 1 chapter unlock threshold ─────────────────────────────────────────
