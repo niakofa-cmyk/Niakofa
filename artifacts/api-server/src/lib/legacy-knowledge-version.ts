@@ -39,8 +39,58 @@ import {
   familyPlacesTable,
   familyKnowledgeVersionsTable,
   legacyWorldEvolutionLogTable,
+  legacyCharacterEvolutionTable,
+  familyMemoryPeopleTable,
 } from "@workspace/db";
 import { logger } from "./logger";
+
+async function autoEvolveCharacters(familyId: number, knowledgeVersionId: number): Promise<void> {
+  try {
+    const members = await db
+      .select({
+        id: familyMembersTable.id,
+        name: familyMembersTable.display_name,
+      })
+      .from(familyMembersTable)
+      .where(eq(familyMembersTable.family_id, familyId));
+
+    for (const member of members) {
+      const [memories, stories] = await Promise.all([
+        db.select({ id: familyMemoryPeopleTable.id })
+          .from(familyMemoryPeopleTable)
+          .where(eq(familyMemoryPeopleTable.member_id, member.id)),
+        db.select({ id: familyStoriesTable.id })
+          .from(familyStoriesTable)
+          .where(eq(familyStoriesTable.about_member_id, member.id)),
+      ]);
+
+      const memoryCount = memories.length;
+      const storyCount = stories.length;
+      if (memoryCount === 0 && storyCount === 0) continue;
+
+      const stats = {
+        knowledge: Math.min(100, memoryCount * 8 + storyCount * 10),
+        relationships: Math.min(100, storyCount * 12),
+        culturalWisdom: Math.min(100, memoryCount * 6 + storyCount * 8),
+        courage: Math.min(100, storyCount * 5),
+        reputation: Math.min(100, memoryCount * 4 + storyCount * 6),
+        legacy: Math.min(100, memoryCount * 7 + storyCount * 9),
+      };
+
+      await db.insert(legacyCharacterEvolutionTable).values({
+        family_id: familyId,
+        member_id: member.id,
+        knowledge_version_id: knowledgeVersionId,
+        stats,
+        new_memory_count: memoryCount,
+        new_journal_count: storyCount,
+        evolution_summary: `World v${knowledgeVersionId}: ${memoryCount} memories, ${storyCount} stories`,
+      });
+    }
+  } catch (err) {
+    logger.error({ err, familyId }, "legacy-knowledge-version: character evolution failed");
+  }
+}
 
 interface KnowledgeSnapshot {
   member_ids: string[];
@@ -209,6 +259,9 @@ export async function bumpKnowledgeVersionIfChanged(familyId: number): Promise<v
       previous_version: latest?.version ?? null,
       new_version: nextVersion,
     });
+
+    // Auto-trigger character evolution for all family members
+    await autoEvolveCharacters(familyId, inserted.id);
 
     logger.info(
       { familyId, previousVersion: latest?.version ?? null, newVersion: nextVersion },

@@ -31,6 +31,7 @@ import {
   legacyGameMasterNarrationsTable,
   legacyWorldEvolutionLogTable,
   legacyChaptersTable,
+  legacyCharacterEvolutionTable,
 } from "@workspace/db";
 import { eq, and, desc, inArray, sql, asc } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
@@ -63,6 +64,20 @@ function hashPrompt(input: string): string {
   return createHash("sha256").update(input).digest("hex").slice(0, 32);
 }
 
+async function getKnowledgeVersion(familyId: number): Promise<number> {
+  try {
+    const [latest] = await db
+      .select({ version: familyKnowledgeVersionsTable.version })
+      .from(familyKnowledgeVersionsTable)
+      .where(eq(familyKnowledgeVersionsTable.family_id, familyId))
+      .orderBy(desc(familyKnowledgeVersionsTable.version))
+      .limit(1);
+    return latest?.version ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 interface NarrationRequest {
   narrationType: "scene_intro" | "dialogue" | "quest_prompt" | "chapter_summary" | "historical_context" | "ancestor_introduction";
   sessionId?: number;
@@ -91,7 +106,8 @@ router.get(
     const ancestorName = req.query.ancestorName ? String(req.query.ancestorName) : undefined;
     const sceneContext = req.query.sceneContext ? String(req.query.sceneContext) : undefined;
 
-    const promptInput = JSON.stringify({ familyId, narrationType, sessionId, chapterId, ancestorName, sceneContext });
+    const knowledgeVersion = await getKnowledgeVersion(familyId);
+    const promptInput = JSON.stringify({ familyId, narrationType, sessionId, chapterId, ancestorName, sceneContext, knowledgeVersion });
     const promptHash = hashPrompt(promptInput);
 
     try {
@@ -380,7 +396,8 @@ router.get(
 
       // Generate a short "today's goal" narration
       const narrationType = "scene_intro" as const;
-      const promptInput = JSON.stringify({ familyId, narrationType, ancestorName: picked.member.name, sceneContext: "daily journey introduction", date: today });
+      const knowledgeVersion = await getKnowledgeVersion(familyId);
+      const promptInput = JSON.stringify({ familyId, narrationType, ancestorName: picked.member.name, sceneContext: "daily journey introduction", date: today, knowledgeVersion });
       const promptHash = hashPrompt(promptInput);
 
       // Check cache (daily — same narration all day)
@@ -607,6 +624,8 @@ router.get(
         worldVersion: latestVersion?.version ?? 0,
         newMemoryCount,
         newMemberCount,
+        newPlaceCount,
+        newCharacterCount,
         recentChanges: recentChanges.map((c) => ({
           changeType: c.change_type,
           description: c.change_description,

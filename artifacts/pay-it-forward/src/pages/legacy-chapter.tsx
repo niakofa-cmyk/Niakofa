@@ -10,11 +10,13 @@
  * 5. Transitions chapter to completed when all scenes are done
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation, useParams } from "wouter";
 import {
   ArrowLeft, Loader2, MapPin, Calendar, BookOpen,
   CheckCircle2, ChevronRight, Sparkles, AlertCircle,
+  Sunrise, MessageSquare, Compass, Map as MapIcon,
+  Moon, BookMarked, Save, Sun,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -169,6 +171,8 @@ export default function LegacyChapterPlay() {
   const [sessionStats, setSessionStats] = useState<SessionStats>({
     knowledge: 0, relationships: 0, culturalWisdom: 0, courage: 0, reputation: 0, legacy: 0,
   });
+  const [autosaveState, setAutosaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const chapterId = parseInt(params.chapterId, 10);
 
@@ -306,6 +310,14 @@ export default function LegacyChapterPlay() {
           statChanges: choice?.statChanges,
         }),
       });
+
+      // Autosave indicator
+      setAutosaveState("saving");
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+      autosaveTimer.current = setTimeout(() => {
+        setAutosaveState("saved");
+        setTimeout(() => setAutosaveState("idle"), 2000);
+      }, 600);
     } catch {
       // Non-fatal — progress is tracked client-side too
     }
@@ -601,6 +613,69 @@ export default function LegacyChapterPlay() {
               </span>
             </div>
           ))}
+          {/* Autosave indicator */}
+          <div className="flex items-center gap-1 ml-2">
+            {autosaveState === "saving" && (
+              <span className="flex items-center gap-1 text-[9px] text-amber-400 animate-pulse">
+                <Save className="w-3 h-3" /> Saving...
+              </span>
+            )}
+            {autosaveState === "saved" && (
+              <span className="flex items-center gap-1 text-[9px] text-emerald-400">
+                <CheckCircle2 className="w-3 h-3" /> Saved
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Day-Cycle Progression Bar — Living Game Session */}
+      <div className="px-4 py-2 border-b border-stone-800/30 bg-stone-900/20">
+        <div className="flex items-center justify-between gap-1">
+          {(() => {
+            const totalScenes = sceneData.scenes.length;
+            const currentSceneNum = currentSceneIdx + 1;
+            const cycleSteps = [
+              { icon: Sunrise, label: "Morning", scene: 1 },
+              { icon: MessageSquare, label: "Dialogue", scene: 2 },
+              { icon: Compass, label: "Choice", scene: 3 },
+              { icon: MapIcon, label: "Travel", scene: 4 },
+              { icon: Sparkles, label: "Discovery", scene: 5 },
+              { icon: BookOpen, label: "Quest", scene: 6 },
+              { icon: Moon, label: "Evening", scene: 7 },
+              { icon: BookMarked, label: "Journal", scene: 8 },
+              { icon: Save, label: "Autosave", scene: 9 },
+            ];
+            const activeStepIdx = Math.min(
+              Math.floor((currentSceneNum / Math.max(totalScenes, 1)) * cycleSteps.length),
+              cycleSteps.length - 1
+            );
+            return cycleSteps.map((step, idx) => {
+              const Icon = step.icon;
+              const isActive = idx === activeStepIdx;
+              const isPast = idx < activeStepIdx;
+              return (
+                <div key={idx} className="flex flex-col items-center gap-0.5 flex-1">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all duration-500 ${
+                    isActive ? "bg-amber-500/20 border border-amber-400/50 scale-110" :
+                    isPast ? "bg-emerald-500/10 border border-emerald-400/20" :
+                    "bg-stone-800/40 border border-stone-700/30"
+                  }`}>
+                    <Icon className={`w-3.5 h-3.5 ${
+                      isActive ? "text-amber-400" :
+                      isPast ? "text-emerald-400" :
+                      "text-stone-600"
+                    }`} />
+                  </div>
+                  <span className={`text-[7px] font-bold uppercase tracking-wide ${
+                    isActive ? "text-amber-400" :
+                    isPast ? "text-emerald-400/70" :
+                    "text-stone-600"
+                  }`}>{step.label}</span>
+                </div>
+              );
+            });
+          })()}
         </div>
       </div>
 

@@ -30,7 +30,7 @@ import {
   Sparkles, Shield, Zap, Target,
   Volume2, BookOpen, Lock,
   RefreshCw, ChevronLeft, Calendar, TrendingUp,
-  Search, X,
+  Search, X, MapPin,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -404,6 +404,8 @@ export default function LegacyHomePage() {
     worldVersion: number;
     newMemoryCount: number;
     newMemberCount: number;
+    newPlaceCount: number;
+    newCharacterCount: number;
     recentChanges: Array<{ changeType: string; description: string; createdAt: string }>;
     newChapters: Array<{ id: number; title: string; chapterNumber: number }>;
     upcomingEvents: Array<{ id: number; title: string; eventDate: string; category: string }>;
