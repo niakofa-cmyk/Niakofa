@@ -8,10 +8,10 @@
   "scripts": {
     "preinstall": "echo ok",
     "postinstall": "node node_modules/esbuild/install.js 2>/dev/null || true && (test -e artifacts/api-server/node_modules/esbuild || ln -sf \"$PWD/node_modules/esbuild\" artifacts/api-server/node_modules/esbuild) 2>/dev/null || true",
-    "build": "pnpm run typecheck && pnpm -r --filter \"!@workspace/mockup-sandbox\" --if-present run build",
+    "build": "pnpm run typecheck && pnpm -r --workspace-concurrency=1 --filter \"!@workspace/mockup-sandbox\" --if-present run build",
     "lint": "npx eslint .",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --workspace-concurrency=1 --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "boundary-check": "node scripts/src/check-app-ai-boundary.js",
     "release-validate": "node scripts/src/release-validate.js"
   },

@@ -686,7 +686,8 @@ router.patch(
     if (isNaN(sessionId)) return res.status(400).json({ error: "Invalid session ID" });
 
     const { status } = req.body as { status: string };
-    if (!["active", "paused", "completed", "abandoned"].includes(status)) {
+    const validStatuses = ["active", "paused", "completed", "abandoned"] as const;
+    if (!validStatuses.includes(status as typeof validStatuses[number])) {
       return res.status(400).json({ error: "Invalid status" });
     }
 
@@ -706,7 +707,7 @@ router.patch(
 
       const [updated] = await db
         .update(legacySessionsTable)
-        .set({ status, updated_at: new Date() })
+        .set({ status: status as typeof validStatuses[number], updated_at: new Date() })
         .where(eq(legacySessionsTable.id, sessionId))
         .returning();
 
