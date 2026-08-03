@@ -1063,7 +1063,7 @@ router.get(
       // Merge decisions across all of this user's sessions for this family,
       // keeping the most recent decision if a scene was somehow replayed
       // across separate sessions.
-      type Decision = { action: string; text: string; decidedAt: string };
+      type Decision = { action: string; text: string; decidedAt: string; statChanges?: Record<string, number> };
       const merged = new Map<string, Decision>(); // "chapterId:sceneNumber" -> decision
       for (const session of sessions) {
         const state = session.session_state as { decisions?: Record<string, Decision> };
@@ -1107,6 +1107,7 @@ router.get(
         historicalLayer: string;
         choiceText: string;
         decidedAt: string;
+        statChanges: Record<string, number>;
       }> = [];
 
       for (const chapter of chapters) {
@@ -1128,6 +1129,7 @@ router.get(
             historicalLayer: scene?.historicalLayer ?? "narrative_interpretation",
             choiceText: decision.text,
             decidedAt: decision.decidedAt,
+            statChanges: decision.statChanges ?? {},
           });
         }
       }

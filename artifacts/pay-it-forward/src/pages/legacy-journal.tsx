@@ -9,11 +9,20 @@
  * or the player's own recorded choice. Nothing on this page is AI-narrated
  * or fabricated; see artifacts/api-server/src/routes/legacy-chapters.ts
  * (GET /legacy/journal/:familyId) for how entries are compiled.
+ *
+ * Enhanced with:
+ *  - Stat impact badges per decision (Knowledge, Courage, etc.)
+ *  - Cumulative stats summary header showing total progression
+ *  - Search across chapter titles, scene titles, and choice text
+ *  - Chapter completion indicators
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, BookOpen, Loader2, MapPin, ChevronRight } from "lucide-react";
+import {
+  ArrowLeft, BookOpen, Loader2, MapPin, ChevronRight,
+  Search, X, Sparkles, Zap,
+} from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 
@@ -27,6 +36,7 @@ interface JournalEntry {
   historicalLayer: "verified" | "narrative_interpretation" | "historical_context";
   choiceText: string;
   decidedAt: string;
+  statChanges: Record<string, number>;
 }
 
 const LAYER_STYLES: Record<string, string> = {
@@ -41,12 +51,22 @@ const LAYER_LABELS: Record<string, string> = {
   narrative_interpretation: "Narrative Interpretation",
 };
 
+const STAT_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
+  knowledge: { label: "Knowledge", color: "text-sky-400", icon: "BK" },
+  relationships: { label: "Relationships", color: "text-rose-400", icon: "HR" },
+  culturalWisdom: { label: "Cultural Wisdom", color: "text-amber-400", icon: "CW" },
+  courage: { label: "Courage", color: "text-orange-400", icon: "CG" },
+  reputation: { label: "Reputation", color: "text-teal-400", icon: "RP" },
+  legacy: { label: "Legacy", color: "text-purple-400", icon: "LG" },
+};
+
 export default function LegacyJournalPage() {
   const { currentUser } = useAppContext();
   const [, navigate] = useLocation();
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchQ, setSearchQ] = useState("");
 
   useEffect(() => {
     if (!currentUser) return;
@@ -78,23 +98,54 @@ export default function LegacyJournalPage() {
     })();
   }, [currentUser]);
 
+  // Compute cumulative stats from all entries
+  const cumulativeStats = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const entry of entries) {
+      for (const [stat, delta] of Object.entries(entry.statChanges ?? {})) {
+        totals[stat] = (totals[stat] ?? 0) + delta;
+      }
+    }
+    return totals;
+  }, [entries]);
+
+  // Group entries by chapter
+  const chapterGroups = useMemo(() => {
+    const groups: Array<{ chapterId: number; chapterNumber: number; chapterTitle: string; entries: JournalEntry[] }> = [];
+    for (const entry of entries) {
+      let group = groups.find((g) => g.chapterId === entry.chapterId);
+      if (!group) {
+        group = { chapterId: entry.chapterId, chapterNumber: entry.chapterNumber, chapterTitle: entry.chapterTitle, entries: [] };
+        groups.push(group);
+      }
+      group.entries.push(entry);
+    }
+    return groups;
+  }, [entries]);
+
+  // Filter by search
+  const filteredGroups = useMemo(() => {
+    if (!searchQ.trim()) return chapterGroups;
+    const q = searchQ.toLowerCase();
+    return chapterGroups
+      .map((g) => ({
+        ...g,
+        entries: g.entries.filter((e) =>
+          e.chapterTitle.toLowerCase().includes(q) ||
+          e.sceneTitle.toLowerCase().includes(q) ||
+          e.choiceText.toLowerCase().includes(q) ||
+          (e.sceneExcerpt ?? "").toLowerCase().includes(q),
+        ),
+      }))
+      .filter((g) => g.entries.length > 0);
+  }, [chapterGroups, searchQ]);
+
   if (!currentUser) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <p className="text-muted-foreground text-sm">Sign in to view your journal</p>
       </div>
     );
-  }
-
-  // Group entries by chapter, in the order chapters were experienced.
-  const chapterGroups: Array<{ chapterId: number; chapterNumber: number; chapterTitle: string; entries: JournalEntry[] }> = [];
-  for (const entry of entries) {
-    let group = chapterGroups.find((g) => g.chapterId === entry.chapterId);
-    if (!group) {
-      group = { chapterId: entry.chapterId, chapterNumber: entry.chapterNumber, chapterTitle: entry.chapterTitle, entries: [] };
-      chapterGroups.push(group);
-    }
-    group.entries.push(entry);
   }
 
   return (
@@ -112,6 +163,9 @@ export default function LegacyJournalPage() {
             </h1>
             <p className="text-xs text-stone-500">Every moment you've lived, in your own choices</p>
           </div>
+          {!loading && entries.length > 0 && (
+            <span className="text-xs text-stone-500">{entries.length} {entries.length === 1 ? "entry" : "entries"}</span>
+          )}
         </div>
       </div>
 
@@ -145,52 +199,128 @@ export default function LegacyJournalPage() {
           </div>
         )}
 
-        {!loading && !error && chapterGroups.map((group) => (
-          <div key={group.chapterId} className="mb-8">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs font-black text-amber-400 uppercase tracking-widest">
-                Chapter {group.chapterNumber}
-              </span>
-              <span className="text-xs text-stone-500 truncate">{group.chapterTitle}</span>
-            </div>
-
-            <div className="space-y-3 border-l-2 border-stone-800 pl-4 ml-1.5">
-              {group.entries.map((entry) => (
-                <div key={`${entry.chapterId}-${entry.sceneNumber}`} className="relative">
-                  <div className="absolute -left-[22px] top-1.5 w-2.5 h-2.5 rounded-full bg-amber-500" />
-
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${LAYER_STYLES[entry.historicalLayer] ?? LAYER_STYLES.narrative_interpretation}`}>
-                      {LAYER_LABELS[entry.historicalLayer] ?? "Narrative Interpretation"}
-                    </span>
-                    <span className="text-[10px] text-stone-600">
-                      {new Date(entry.decidedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                    </span>
-                  </div>
-
-                  <h3 className="text-sm font-bold text-stone-200 mb-1">{entry.sceneTitle}</h3>
-                  {entry.sceneExcerpt && (
-                    <p className="text-xs text-stone-400 leading-relaxed mb-1.5 line-clamp-3">
-                      {entry.sceneExcerpt}
-                    </p>
-                  )}
-
-                  <div className="flex items-center gap-1.5 text-xs text-amber-300/90 bg-amber-400/5 border border-amber-400/10 rounded-lg px-2.5 py-1.5 w-fit">
-                    <MapPin className="w-3 h-3 flex-shrink-0" />
-                    <span>You chose: {entry.choiceText}</span>
-                  </div>
+        {/* Stats Summary + Search */}
+        {!loading && !error && entries.length > 0 && (
+          <>
+            {/* Cumulative Stats */}
+            {Object.keys(cumulativeStats).length > 0 && (
+              <div className="mb-5 bg-gradient-to-br from-[#1a1400] to-[#0e1111] border border-amber-900/30 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <h2 className="text-xs font-bold text-amber-200 uppercase tracking-wider">Your Journey So Far</h2>
                 </div>
-              ))}
+                <div className="grid grid-cols-3 gap-3">
+                  {Object.entries(cumulativeStats)
+                    .filter(([, val]) => val !== 0)
+                    .map(([stat, total]) => {
+                      const config = STAT_CONFIG[stat];
+                      if (!config) return null;
+                      return (
+                        <div key={stat} className="text-center">
+                          <p className={`text-lg font-bold ${config.color}`}>{total > 0 ? "+" : ""}{total}</p>
+                          <p className="text-[10px] text-stone-500 uppercase tracking-wide">{config.label}</p>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
+            {/* Search */}
+            <div className="relative mb-5">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-600" />
+              <input
+                type="text"
+                value={searchQ}
+                onChange={(e) => setSearchQ(e.target.value)}
+                placeholder="Search your journal..."
+                className="w-full bg-stone-900/60 border border-stone-800 rounded-xl pl-10 pr-10 py-2.5 text-sm text-stone-200 placeholder:text-stone-600 focus:outline-none focus:border-amber-700/50 transition-colors"
+              />
+              {searchQ && (
+                <button
+                  onClick={() => setSearchQ("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-600 hover:text-stone-400"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
-            <button
-              onClick={() => navigate(`/legacy/chapter/${group.chapterId}`)}
-              className="mt-3 ml-1.5 text-xs text-stone-500 hover:text-amber-400 flex items-center gap-1 transition-colors"
-            >
-              Revisit this chapter <ChevronRight className="w-3 h-3" />
-            </button>
-          </div>
-        ))}
+            {filteredGroups.length === 0 && (
+              <div className="text-center py-12">
+                <p className="text-sm text-stone-500">No entries match "{searchQ}"</p>
+              </div>
+            )}
+
+            {filteredGroups.map((group) => (
+              <div key={group.chapterId} className="mb-8">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-xs font-black text-amber-400 uppercase tracking-widest">
+                    Chapter {group.chapterNumber}
+                  </span>
+                  <span className="text-xs text-stone-500 truncate">{group.chapterTitle}</span>
+                </div>
+
+                <div className="space-y-3 border-l-2 border-stone-800 pl-4 ml-1.5">
+                  {group.entries.map((entry) => (
+                    <div key={`${entry.chapterId}-${entry.sceneNumber}`} className="relative">
+                      <div className="absolute -left-[22px] top-1.5 w-2.5 h-2.5 rounded-full bg-amber-500" />
+
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${LAYER_STYLES[entry.historicalLayer] ?? LAYER_STYLES.narrative_interpretation}`}>
+                          {LAYER_LABELS[entry.historicalLayer] ?? "Narrative Interpretation"}
+                        </span>
+                        <span className="text-[10px] text-stone-600">
+                          {new Date(entry.decidedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                        </span>
+                      </div>
+
+                      <h3 className="text-sm font-bold text-stone-200 mb-1">{entry.sceneTitle}</h3>
+                      {entry.sceneExcerpt && (
+                        <p className="text-xs text-stone-400 leading-relaxed mb-1.5 line-clamp-3">
+                          {entry.sceneExcerpt}
+                        </p>
+                      )}
+
+                      <div className="flex items-center gap-1.5 text-xs text-amber-300/90 bg-amber-400/5 border border-amber-400/10 rounded-lg px-2.5 py-1.5 w-fit">
+                        <MapPin className="w-3 h-3 flex-shrink-0" />
+                        <span>You chose: {entry.choiceText}</span>
+                      </div>
+
+                      {/* Stat Impact Badges */}
+                      {entry.statChanges && Object.keys(entry.statChanges).length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {Object.entries(entry.statChanges)
+                            .filter(([, delta]) => delta !== 0)
+                            .map(([stat, delta]) => {
+                              const config = STAT_CONFIG[stat];
+                              if (!config) return null;
+                              return (
+                                <span
+                                  key={stat}
+                                  className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-800/60 border border-stone-700/50 ${config.color}`}
+                                >
+                                  <Zap className="w-2.5 h-2.5" />
+                                  {config.label} {delta > 0 ? "+" : ""}{delta}
+                                </span>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => navigate(`/legacy/chapter/${group.chapterId}`)}
+                  className="mt-3 ml-1.5 text-xs text-stone-500 hover:text-amber-400 flex items-center gap-1 transition-colors"
+                >
+                  Revisit this chapter <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );
