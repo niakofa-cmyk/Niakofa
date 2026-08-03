@@ -426,6 +426,9 @@ export default function LegacyHomePage() {
   }>>([]);
   const [familyQuestsLoading, setFamilyQuestsLoading] = useState(false);
   const familyQuestsLoadedRef = useRef(false);
+  const [missionCount, setMissionCount] = useState(0);
+  const [mysteryCount, setMysteryCount] = useState(0);
+  const [challengeCount, setChallengeCount] = useState(0);
 
   // ── Reunion Challenge (real data from /api/legacy/reunion/:familyId) ──────
   const [reunionData, setReunionData] = useState<{
@@ -559,6 +562,17 @@ export default function LegacyHomePage() {
             .catch(() => {})
             .finally(() => setFamilyQuestsLoading(false));
         }
+        // Fetch live counts for Phase 5 hub cards
+        Promise.all([
+          fetch(`/api/legacy/ai-director/${familyId}/missions`, { headers: authHeaders() }).then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch(`/api/legacy/memory-mysteries/${familyId}`, { headers: authHeaders() }).then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch(`/api/legacy/challenges/${familyId}`, { headers: authHeaders() }).then(r => r.ok ? r.json() : null).catch(() => null),
+        ]).then(([missionsData, mysteriesData, challengesData]) => {
+          if (missionsData?.totalActive !== undefined) setMissionCount(missionsData.totalActive);
+          if (mysteriesData?.mysteries) setMysteryCount(mysteriesData.mysteries.filter((m: { status: string }) => m.status === "open").length);
+          if (challengesData?.challenges) setChallengeCount(challengesData.challenges.filter((c: { status: string }) => c.status === "active").length);
+        }).catch(() => {});
+
         // Fetch real achievement progress for inventory items
         const achRes = await fetch(`/api/legacy/achievements/${familyId}`, { headers: authHeaders() });
         if (achRes.ok) {
@@ -1224,15 +1238,25 @@ export default function LegacyHomePage() {
           {activeMode === "legacy" && (
             <div className="px-4 mb-5">
               <div className="grid grid-cols-3 gap-2">
-                <button onClick={() => navigate("/legacy/ai-director")} className="bg-[#2A1A0F] border border-amber-700/30 rounded-xl p-3 text-center active:opacity-70 transition-opacity">
+                <button onClick={() => navigate("/legacy/ai-director")} className="bg-[#2A1A0F] border border-amber-700/30 rounded-xl p-3 text-center active:opacity-70 transition-opacity relative">
                   <Sparkles className="w-5 h-5 text-amber-400 mx-auto mb-1" />
                   <p className="text-[10px] font-bold text-amber-300 uppercase">AI Director</p>
                   <p className="text-[8px] text-amber-700 mt-0.5">Daily Missions</p>
+                  {missionCount > 0 && (
+                    <span className="absolute top-1.5 right-1.5 bg-amber-500 text-amber-950 text-[9px] font-black rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+                      {missionCount}
+                    </span>
+                  )}
                 </button>
-                <button onClick={() => navigate("/legacy/mysteries")} className="bg-[#2A1A0F] border border-amber-700/30 rounded-xl p-3 text-center active:opacity-70 transition-opacity">
+                <button onClick={() => navigate("/legacy/mysteries")} className="bg-[#2A1A0F] border border-amber-700/30 rounded-xl p-3 text-center active:opacity-70 transition-opacity relative">
                   <Search className="w-5 h-5 text-amber-400 mx-auto mb-1" />
                   <p className="text-[10px] font-bold text-amber-300 uppercase">Mysteries</p>
                   <p className="text-[8px] text-amber-700 mt-0.5">Investigate</p>
+                  {mysteryCount > 0 && (
+                    <span className="absolute top-1.5 right-1.5 bg-rose-500 text-white text-[9px] font-black rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+                      {mysteryCount}
+                    </span>
+                  )}
                 </button>
                 <button onClick={() => navigate("/legacy/characters")} className="bg-[#2A1A0F] border border-amber-700/30 rounded-xl p-3 text-center active:opacity-70 transition-opacity">
                   <TrendingUp className="w-5 h-5 text-amber-400 mx-auto mb-1" />
@@ -2161,6 +2185,11 @@ export default function LegacyHomePage() {
                   className="w-full bg-rose-500/15 border border-rose-600/30 text-rose-300 font-bold text-xs uppercase tracking-wide py-3 rounded-xl active:opacity-70 flex items-center justify-center gap-2"
                 >
                   <Trophy className="w-4 h-4" /> Open Family Challenges
+                  {challengeCount > 0 && (
+                    <span className="bg-rose-500 text-white text-[10px] font-black rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                      {challengeCount}
+                    </span>
+                  )}
                 </button>
               </div>
 

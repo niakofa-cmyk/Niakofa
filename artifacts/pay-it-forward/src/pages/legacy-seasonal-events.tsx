@@ -109,6 +109,24 @@ export default function LegacySeasonalEventsPage() {
         const body = await res.json();
         setEvents(body.events || []);
         setTemplates(body.templates || []);
+
+        // Auto-generate events from family calendar if none exist
+        if ((body.events || []).length === 0) {
+          try {
+            const autoRes = await fetch(`/api/legacy/seasonal-events/${famId}/auto-generate`, {
+              method: "POST",
+              headers: authHeaders(),
+            });
+            if (autoRes.ok) {
+              const autoBody = await autoRes.json();
+              if (autoBody.events?.length > 0) {
+                setEvents(autoBody.events);
+              }
+            }
+          } catch {
+            // Non-fatal — user can manually generate later
+          }
+        }
       } catch {
         setError("Failed to load seasonal events.");
       } finally {

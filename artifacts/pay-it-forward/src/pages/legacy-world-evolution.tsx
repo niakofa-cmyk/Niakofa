@@ -11,7 +11,7 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowLeft, Loader2, Users, Camera, BookOpen, Mic, MapPin,
-  Calendar, GitBranch, Sparkles, TrendingUp, Heart, Cake, Plane, Flower,
+  Calendar, GitBranch, Sparkles, TrendingUp, Heart, Cake, Plane, Flower, Plus,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -285,6 +285,12 @@ export default function LegacyWorldEvolutionPage() {
               <TrendingUp className="w-10 h-10 text-stone-600 mx-auto mb-3" />
               <p className="text-stone-400 text-sm">No changes logged yet.</p>
               <p className="text-stone-500 text-xs mt-1">Add memories, stories, or family members to start building your world.</p>
+              <button
+                onClick={() => navigate("/diaspora/family")}
+                className="mt-4 bg-amber-500 text-amber-950 font-bold text-xs uppercase tracking-wide px-4 py-2.5 rounded-xl active:opacity-80 inline-flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add to Family Vault
+              </button>
             </div>
           ) : (
             <div className="space-y-2">
