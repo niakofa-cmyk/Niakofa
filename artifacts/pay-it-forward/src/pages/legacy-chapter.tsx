@@ -16,7 +16,7 @@ import {
   ArrowLeft, Loader2, MapPin, Calendar, BookOpen,
   CheckCircle2, ChevronRight, Sparkles, AlertCircle,
   Sunrise, MessageSquare, Compass, Map as MapIcon,
-  Moon, BookMarked, Save, Sun, Stars,
+  Moon, BookMarked, Save, Sun, Stars, Church,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -89,6 +89,7 @@ interface SessionStats {
   courage: number;
   reputation: number;
   legacy: number;
+  faith: number;
 }
 
 const STAT_LABELS: Record<keyof SessionStats, string> = {
@@ -98,6 +99,7 @@ const STAT_LABELS: Record<keyof SessionStats, string> = {
   courage: "Courage",
   reputation: "Reputation",
   legacy: "Legacy",
+  faith: "Faith",
 };
 
 const STAT_ICONS: Record<keyof SessionStats, string> = {
@@ -107,6 +109,7 @@ const STAT_ICONS: Record<keyof SessionStats, string> = {
   courage: "Sword",
   reputation: "Star",
   legacy: "Crown",
+  faith: "Church",
 };
 
 // Choices are parameterized by scene type and enriched with vault context
@@ -125,7 +128,7 @@ function buildSceneChoices(scene: Scene, vault: SceneResponse["vaultContext"]): 
       ];
     case "dialogue":
       return [
-        { text: "Listen and remember", consequence: "You absorb this moment into your family's memory.", action: "next", statChanges: { relationships: 5, culturalWisdom: 3 } },
+        { text: "Listen and remember", consequence: "You absorb this moment into your family's memory.", action: "next", statChanges: { relationships: 5, culturalWisdom: 3, faith: 2 } },
         {
           text: event ? `Ask about ${event.title}` : "Ask a question",
           consequence: "A Mystery Quest has been added to your Family Vault — ask a relative to help fill this gap.",
@@ -133,7 +136,7 @@ function buildSceneChoices(scene: Scene, vault: SceneResponse["vaultContext"]): 
           createsMysteryQuest: true,
           statChanges: { knowledge: 8, courage: 3 },
         },
-        { text: "Reflect quietly", consequence: "You gain cultural wisdom from this moment.", action: "reflect", statChanges: { culturalWisdom: 6, reputation: 2 } },
+        { text: "Reflect quietly", consequence: "You gain cultural wisdom from this moment.", action: "reflect", statChanges: { culturalWisdom: 6, reputation: 2, faith: 3 } },
       ];
     case "reflection":
       return [
@@ -145,7 +148,7 @@ function buildSceneChoices(scene: Scene, vault: SceneResponse["vaultContext"]): 
           statChanges: { legacy: 10, knowledge: 5, relationships: 3 },
         },
         { text: "Continue the journey", consequence: "The chapter moves forward.", action: "next", statChanges: { courage: 3 } },
-        { text: "Sit with this moment", consequence: "You let the weight of this memory settle.", action: "reflect", statChanges: { culturalWisdom: 4, reputation: 2 } },
+        { text: "Sit with this moment", consequence: "You let the weight of this memory settle.", action: "reflect", statChanges: { culturalWisdom: 4, reputation: 2, faith: 4 } },
       ];
     case "context":
       return [
@@ -192,7 +195,7 @@ export default function LegacyChapterPlay() {
   const [aiNarration, setAiNarration] = useState<string | null>(null);
   const [narrationLoading, setNarrationLoading] = useState(false);
   const [sessionStats, setSessionStats] = useState<SessionStats>({
-    knowledge: 0, relationships: 0, culturalWisdom: 0, courage: 0, reputation: 0, legacy: 0,
+    knowledge: 0, relationships: 0, culturalWisdom: 0, courage: 0, reputation: 0, legacy: 0, faith: 0,
   });
   const [autosaveState, setAutosaveState] = useState<"idle" | "saving" | "saved">("idle");
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -230,6 +233,7 @@ export default function LegacyChapterPlay() {
                 courage: sessStats.courage ?? 0,
                 reputation: sessStats.reputation ?? 0,
                 legacy: sessStats.legacy ?? 0,
+                faith: sessStats.faith ?? 0,
               });
             }
             // Also restore completed scenes so the player resumes where they left off

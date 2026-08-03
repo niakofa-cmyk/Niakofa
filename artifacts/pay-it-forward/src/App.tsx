@@ -276,6 +276,7 @@ function AppShell() {
             <Route path="/legacy/characters" component={LegacyCharacterEvolutionPage} />
             <Route path="/legacy/map/:familyId" component={LegacyMapPage} />
             <Route path="/legacy/map" component={LegacyMapPage} />
+            <Route path="/legacy/play/:sessionId" component={LegacyHomePage} />
             <Route path="/legacy/play" component={LegacyHomePage} />
             <Route path="/legacy" component={LegacyHomePage} />
             <Route path="/diaspora" component={DiasporaDashboardPage} />

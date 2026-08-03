@@ -820,7 +820,16 @@ export default function LegacyHomePage() {
         birth_year: ancestorCandidate.birthYear ? parseInt(ancestorCandidate.birthYear) : null,
         location: null as string | null,
       } as MinimalMember
-    : (members[0] as MinimalMember | undefined) ?? null;
+    : (() => {
+        // Smart fallback: prefer members with birth years, then with relation notes,
+        // rather than blindly picking members[0]
+        if (members.length === 0) return null;
+        const withBirth = members.filter(m => m.birth_year);
+        if (withBirth.length > 0) return withBirth[0] as MinimalMember;
+        const withRelation = members.filter(m => m.relation_note);
+        if (withRelation.length > 0) return withRelation[0] as MinimalMember;
+        return members[0] as MinimalMember;
+      })();
   const mm       = Math.floor(recordSeconds / 60);
   const ss       = recordSeconds % 60;
 
