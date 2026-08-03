@@ -125,6 +125,24 @@ export default function LegacyAiDirectorPage() {
         const data = (await res.json()) as MissionResponse;
         setMissions(data.todayMissions ?? []);
         setRecentCompleted(data.recentCompleted ?? []);
+
+        // Auto-generate missions if none exist for today
+        if ((data.todayMissions ?? []).length === 0) {
+          try {
+            const genRes = await fetch(`/api/legacy/ai-director/${famId}/generate`, {
+              method: "POST",
+              headers: authHeaders(),
+            });
+            if (genRes.ok) {
+              const genData = await genRes.json();
+              if (genData.missions?.length > 0) {
+                setMissions(genData.missions);
+              }
+            }
+          } catch {
+            // Non-fatal — user can manually generate later
+          }
+        }
       } catch {
         setError("Failed to load missions.");
       } finally {

@@ -70,12 +70,15 @@ export default function LegacyMemoryMysteriesPage() {
   const [resolutionText, setResolutionText] = useState("");
   const [generating, setGenerating] = useState(false);
 
-  const loadMysteries = useCallback(async (famId: number) => {
+  const loadMysteries = useCallback(async (famId: number): Promise<Mystery[]> => {
     const res = await fetch(`/api/legacy/memory-mysteries/${famId}`, { headers: authHeaders() });
     if (res.ok) {
       const data = await res.json();
-      setMysteries(data.mysteries ?? []);
+      const loaded = data.mysteries ?? [];
+      setMysteries(loaded);
+      return loaded;
     }
+    return [];
   }, []);
 
   useEffect(() => {
@@ -90,7 +93,23 @@ export default function LegacyMemoryMysteriesPage() {
           return;
         }
         setFamilyId(famId);
-        await loadMysteries(famId);
+        const loaded = await loadMysteries(famId);
+
+        // Auto-generate mysteries if none exist
+        const openMysteries = loaded.filter((m: Mystery) => m.status === "open");
+        if (openMysteries.length === 0) {
+          try {
+            const genRes = await fetch(`/api/legacy/ai-director/${famId}/generate`, {
+              method: "POST",
+              headers: authHeaders(),
+            });
+            if (genRes.ok) {
+              await loadMysteries(famId);
+            }
+          } catch {
+            // Non-fatal — user can manually generate later
+          }
+        }
       } catch {
         setError("Failed to load mysteries.");
       } finally {

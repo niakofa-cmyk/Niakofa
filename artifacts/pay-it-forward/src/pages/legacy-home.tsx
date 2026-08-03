@@ -991,11 +991,22 @@ export default function LegacyHomePage() {
                 </button>
               </div>
               <div className="flex gap-2 mt-4">
+                {chapters.some(c => c.status === "in_progress") && (
+                  <button
+                    onClick={() => {
+                      const inProgress = chapters.find(c => c.status === "in_progress");
+                      if (inProgress) navigate(`/legacy/chapter/${inProgress.id}`);
+                    }}
+                    className="flex-1 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70 flex items-center justify-center gap-1.5"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" /> Resume Chapter
+                  </button>
+                )}
                 <button
                   onClick={() => navigate("/legacy/start")}
-                  className="flex-1 bg-amber-500 text-amber-950 font-black text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-80 flex items-center justify-center gap-1.5 transition-opacity"
+                  className={`flex-1 ${chapters.some(c => c.status === "in_progress") ? "bg-amber-900/40 border border-amber-700/30 text-amber-400" : "bg-amber-500 text-amber-950"} font-black text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-80 flex items-center justify-center gap-1.5 transition-opacity`}
                 >
-                  <Play className="w-3.5 h-3.5" /> Continue Journey
+                  <Play className="w-3.5 h-3.5" /> {chapters.some(c => c.status === "in_progress") ? "New Journey" : "Continue Journey"}
                 </button>
                 <button
                   onClick={() => navigate("/diaspora/family")}
@@ -1030,10 +1041,13 @@ export default function LegacyHomePage() {
                     </div>
                   </div>
                   <p className="text-xs text-amber-300/80 leading-relaxed italic mb-3">"{todaysJourney.narration}"</p>
-                  <div className="flex items-center gap-3 mb-3">
+                  <div className="flex items-center gap-3 mb-3 flex-wrap">
                     <span className="text-xs text-amber-600 bg-amber-900/30 px-2 py-0.5 rounded-full">{todaysJourney.storyCount} stories</span>
                     <span className="text-xs text-amber-600 bg-amber-900/30 px-2 py-0.5 rounded-full">{todaysJourney.eventCount} events</span>
                     <span className="text-xs text-amber-600 bg-amber-900/30 px-2 py-0.5 rounded-full">{todaysJourney.placeCount} places</span>
+                    <span className="text-xs text-amber-500 bg-amber-800/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Clock className="w-3 h-3" /> ~{Math.max(5, Math.min(20, (todaysJourney.storyCount + todaysJourney.eventCount) * 2))} min
+                    </span>
                   </div>
                   <button
                     onClick={() => navigate("/legacy/start")}
