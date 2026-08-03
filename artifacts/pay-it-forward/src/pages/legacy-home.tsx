@@ -446,7 +446,7 @@ export default function LegacyHomePage() {
   } | null>(null);
 
   // ── Achievement progress (real data from /api/legacy/achievements/:familyId) ─
-  const [achievementMap, setAchievementMap] = useState<Map<string, { progress: number; goal: number; unlocked: boolean }>>(new Map());
+  const [achievementMap, setAchievementMap] = useState<globalThis.Map<string, { progress: number; goal: number; unlocked: boolean }>>(new globalThis.Map());
 
   // ── Load family data ──────────────────────────────────────────────────────
 
@@ -579,7 +579,7 @@ export default function LegacyHomePage() {
         const achRes = await fetch(`/api/legacy/achievements/${familyId}`, { headers: authHeaders() });
         if (achRes.ok) {
           const achData = await achRes.json() as { achievements: Array<{ achievement_key: string; progress: number; goal: number; unlocked: boolean }> };
-          const map = new Map<string, { progress: number; goal: number; unlocked: boolean }>();
+          const map = new globalThis.Map() as globalThis.Map<string, { progress: number; goal: number; unlocked: boolean }>;
           for (const a of achData.achievements ?? []) {
             map.set(a.achievement_key, { progress: a.progress, goal: a.goal, unlocked: a.unlocked });
           }
@@ -2084,7 +2084,7 @@ export default function LegacyHomePage() {
                           dayStart.setHours(0, 0, 0, 0);
                           const dayEnd = dayStart.getTime() + 86400000;
                           return memories.filter((m) => {
-                            const ts = new Date(m.created_at).getTime();
+                            const ts = new Date(m.created_at ?? Date.now()).getTime();
                             return ts >= dayStart.getTime() && ts < dayEnd;
                           }).length;
                         });

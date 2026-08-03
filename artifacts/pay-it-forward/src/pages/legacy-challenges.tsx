@@ -74,13 +74,13 @@ const CONTRIBUTION_LABELS: Record<string, string> = {
 export default function LegacyChallengesPage() {
   const { currentUser } = useAppContext();
   const [, navigate] = useLocation();
-  const [familyId, setFamilyId] = useState<string | null>(null);
+  const [familyId, setFamilyId] = useState<number | null>(null);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [contributing, setContributing] = useState<string | null>(null);
+  const [contributing, setContributing] = useState<number | null>(null);
   const [contribTypes, setContribTypes] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -94,7 +94,7 @@ export default function LegacyChallengesPage() {
           setError("Join or create a family to see challenges.");
           return;
         }
-        setFamilyId(famId);
+        setFamilyId(Number(famId));
 
         const res = await fetch(`/api/legacy/challenges/${famId}`, { headers: authHeaders() });
         if (!res.ok) {

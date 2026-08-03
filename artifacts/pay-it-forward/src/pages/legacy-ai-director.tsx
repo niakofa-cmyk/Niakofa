@@ -150,16 +150,16 @@ export default function LegacyAiDirectorPage() {
       }
 
       // Fetch today's journey and vault gaps in parallel
-      if (famId) {
+      if (familyId) {
         setTodayLoading(true);
-        fetch(`/api/legacy/game-master/${famId}/today`, { headers: authHeaders() })
+        fetch(`/api/legacy/game-master/${familyId}/today`, { headers: authHeaders() })
           .then((r) => r.ok ? r.json() : null)
           .then((data) => { if (data) setTodayJourney(data); })
           .catch(() => {})
           .finally(() => setTodayLoading(false));
 
         setGapsLoading(true);
-        fetch(`/api/legacy/ai-director/${famId}/gaps`, { headers: authHeaders() })
+        fetch(`/api/legacy/ai-director/${familyId}/gaps`, { headers: authHeaders() })
           .then((r) => r.ok ? r.json() : null)
           .then((data) => { if (data?.gaps) setGaps(data.gaps); })
           .catch(() => {})

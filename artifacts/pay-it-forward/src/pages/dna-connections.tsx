@@ -73,6 +73,7 @@ export default function DnaConnectionsPage() {
   const [matches, setMatches] = useState<DnaMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
+  const [dnaFile, setDnaFile] = useState<File | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [importStep, setImportStep] = useState<"select" | "upload" | "processing" | "done">("select");
 
