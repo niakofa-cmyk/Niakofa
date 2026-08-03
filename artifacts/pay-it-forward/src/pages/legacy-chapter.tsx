@@ -17,6 +17,7 @@ import {
   CheckCircle2, ChevronRight, Sparkles, AlertCircle,
   Sunrise, MessageSquare, Compass, Map as MapIcon,
   Moon, BookMarked, Save, Sun, Stars, Church,
+  Footprints, BookHeart,
 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
@@ -176,6 +177,8 @@ export default function LegacyChapterPlay() {
   const [chapterCompleted, setChapterCompleted] = useState(false);
   const [completionNarration, setCompletionNarration] = useState<string | null>(null);
   const [completionNarrationLoading, setCompletionNarrationLoading] = useState(false);
+  const [nextChapterId, setNextChapterId] = useState<number | null>(null);
+  const [journalSaved, setJournalSaved] = useState(false);
   const [mysteryQuestState, setMysteryQuestState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
@@ -333,17 +336,17 @@ export default function LegacyChapterPlay() {
     }
 
     await fetch(`/api/legacy/sessions/progress`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
-          chapterId,
-          sceneNumber: scene.sceneNumber,
-          completed: true,
-          choiceAction: choice?.action,
-          choiceText: choice?.text,
-          statChanges: choice?.statChanges,
-        }),
-      });
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({
+        chapterId,
+        sceneNumber: scene.sceneNumber,
+        completed: true,
+        choiceAction: choice?.action,
+        choiceText: choice?.text,
+        statChanges: choice?.statChanges,
+      }),
+    });
 
       // Autosave indicator
       setAutosaveState("saving");
@@ -364,7 +367,7 @@ export default function LegacyChapterPlay() {
         const res = await fetch(`/api/legacy/chapters/${chapterId}/mystery-quest`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeaders() },
-          body: JSON.stringify({ sceneNumber: scene.sceneNumber, question: `What more can our family discover about this moment in scene ${scene.sceneNumber}?` }),
+          body: JSON.stringify({ sceneNumber: scene.sceneNumber, question: `What more can our family discover about "${scene.title}" — ${scene.content.slice(0, 120)}?` }),
         });
         setMysteryQuestState(res.ok ? "saved" : "error");
       } catch {
@@ -445,14 +448,32 @@ export default function LegacyChapterPlay() {
 
     if (currentSceneIdx + 1 >= sceneData.scenes.length) {
       // All scenes done — complete the chapter
+      const totalScenesCompleted = completedScenes.size + 1;
       setTransitioning(true);
       try {
-        await fetch(`/api/legacy/chapters/${chapterId}/status`, {
+        const completeRes = await fetch(`/api/legacy/chapters/${chapterId}/status`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify({ status: "completed" }),
         });
+
+        // The backend returns the updated chapter; it also unlocks the next
+        // chapter and logs world evolution. We check the response for the next
+        // chapter ID so we can offer a "Continue to Next Chapter" button.
+        if (completeRes.ok) {
+          const completeData = await completeRes.json().catch(() => ({}));
+          if (completeData?.nextChapterId) {
+            setNextChapterId(completeData.nextChapterId);
+          }
+        }
+
         setChapterCompleted(true);
+
+        // The journal is auto-built from session decisions (GET /journal),
+        // so every choice the player made during this chapter is already
+        // persisted. We just flag it so the completion screen can confirm
+        // to the player that their journey was recorded.
+        setJournalSaved(true);
 
         // Fetch AI-generated chapter summary narration for the completion screen
         if (sceneData?.familyId) {
@@ -460,7 +481,7 @@ export default function LegacyChapterPlay() {
           const params = new URLSearchParams({
             type: "chapter_summary",
             chapterId: String(chapterId),
-            sceneContext: `Completed "${sceneData.chapterTitle}" with ${completedScenes.size} scenes explored.`,
+            sceneContext: `Completed "${sceneData.chapterTitle}" with ${totalScenesCompleted} scenes explored.`,
           });
           fetch(`/api/legacy/game-master/${sceneData.familyId}/narration?${params}`, {
             headers: authHeaders(),
@@ -572,10 +593,30 @@ export default function LegacyChapterPlay() {
               <p className="text-[10px] text-stone-500 uppercase">Chapter</p>
             </div>
           </div>
+          {/* Journal save indicator */}
+          {journalSaved && (
+            <div className="flex items-center justify-center gap-1.5 mb-4 text-xs text-emerald-400">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>A journal entry has been written for this session.</span>
+            </div>
+          )}
+
           <div className="flex flex-col gap-2">
+            {nextChapterId && (
+              <button
+                onClick={() => navigate(`/legacy/chapter/${nextChapterId}`)}
+                className="bg-amber-500 text-stone-900 font-bold rounded-xl px-6 py-3 text-sm flex items-center justify-center gap-2"
+              >
+                Continue to Next Chapter
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={() => navigate("/legacy")}
-              className="bg-amber-500 text-stone-900 font-bold rounded-xl px-6 py-3 text-sm"
+              className={nextChapterId
+                ? "text-stone-400 font-medium rounded-xl px-6 py-3 text-sm border border-stone-700"
+                : "bg-amber-500 text-stone-900 font-bold rounded-xl px-6 py-3 text-sm"
+              }
             >
               Return to Legacy Hub
             </button>
@@ -773,10 +814,13 @@ export default function LegacyChapterPlay() {
         {(place || event) && (
           <div className="flex flex-wrap gap-2 mb-5">
             {place && (
-              <div className="flex items-center gap-1.5 text-xs text-stone-400 bg-stone-800/30 rounded-lg px-3 py-1.5">
-                <MapPin className="w-3.5 h-3.5" />
+              <button
+                onClick={() => navigate(`/legacy/map?place=${place.id}`)}
+                className="flex items-center gap-1.5 text-xs text-stone-400 bg-stone-800/30 rounded-lg px-3 py-1.5 hover:bg-stone-800/50 hover:text-amber-400 transition-colors"
+              >
+                <Footprints className="w-3.5 h-3.5" />
                 {place.label}{place.country ? `, ${place.country}` : ""}
-              </div>
+              </button>
             )}
             {event && (
               <div className="flex items-center gap-1.5 text-xs text-stone-400 bg-stone-800/30 rounded-lg px-3 py-1.5">
