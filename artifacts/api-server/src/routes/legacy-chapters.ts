@@ -1656,7 +1656,7 @@ router.post(
         );
 
       const duplicate = allMysteries.find(
-        (m) => m.body?.includes(dedupeTag) || m.title === question.slice(0, 120),
+        (m) => m.body?.includes(dedupeTag) || m.title === finalQuestion.slice(0, 120),
       );
 
       if (duplicate) {
@@ -1668,8 +1668,8 @@ router.post(
         .insert(familyStoriesTable)
         .values({
           family_id: chapter.family_id,
-          title: question.slice(0, 200),
-          body: `${dedupeTag}\n\n${question}`,
+          title: finalQuestion.slice(0, 200),
+          body: `${dedupeTag}\n\n${finalQuestion}`,
           category: "mystery_quest",
           teller_member_id: null,
           about_member_id: chapter.ancestor_member_id,
@@ -1678,7 +1678,7 @@ router.post(
 
       // Log to world evolution
       const { logWorldEvolution } = await import("../lib/legacy-world-evolution");
-      logWorldEvolution(chapter.family_id, "story_added", `New mystery quest: ${question.slice(0, 80)}`).catch(() => {});
+      logWorldEvolution(chapter.family_id, "story_added", `New mystery quest: ${finalQuestion.slice(0, 80)}`).catch(() => {});
 
       return res.json({ mystery: inserted, created: true });
     } catch (err) {
