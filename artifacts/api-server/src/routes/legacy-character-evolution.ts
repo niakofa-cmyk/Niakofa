@@ -124,7 +124,7 @@ router.get(
       // Derive birth years from events (family_members has no birth_year column)
       const birthYearByMember = new Map<number, number>();
       for (const ev of events) {
-        if (ev.event_type === 'birth' && ev.member_id !== null && ev.event_date) {
+        if (ev.category === 'birth' && ev.member_id !== null && ev.event_date) {
           birthYearByMember.set(ev.member_id, new Date(ev.event_date).getFullYear());
         }
       }

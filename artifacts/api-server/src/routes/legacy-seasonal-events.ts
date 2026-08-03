@@ -17,6 +17,7 @@ import { Router } from "express";
 import {
   db,
   familyMembersTable,
+  familyEventsTable,
   legacySeasonalEventsTable,
   legacySeasonalEventParticipationsTable,
 } from "@workspace/db";
@@ -373,12 +374,14 @@ router.post(
 
       const now = new Date();
       const currentMonth = now.getMonth() + 1; // JS months are 0-indexed
-      const currentDay = now.getDate();
+      // currentDay removed — not used
       const created: (typeof legacySeasonalEventsTable.$inferSelect)[] = [];
 
       for (const member of members) {
         // Birthday events — any member with a birth date gets one
-        if (member.birth_year) {
+        // Check if member has any birth event (family_members has no birth_year column)
+        const hasBirthEvent = await db.select({ id: familyEventsTable.id }).from(familyEventsTable).where(and(eq(familyEventsTable.member_id, member.id), eq(familyEventsTable.category, "birth"))).limit(1);
+        if (hasBirthEvent.length > 0) {
           // Use birth_month and birth_day if available, otherwise default
           // to a generic "birthday" event without a specific date
           const birthMonth = (member as { birth_month?: number | null }).birth_month;

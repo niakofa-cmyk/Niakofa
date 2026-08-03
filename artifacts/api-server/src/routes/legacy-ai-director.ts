@@ -22,7 +22,6 @@
 import { Router } from "express";
 import {
   db,
-  familiesTable,
   familyMembersTable,
   familyMemoriesTable,
   familyInterviewsTable,
@@ -151,7 +150,7 @@ async function analyzeVaultGaps(familyId: number): Promise<VaultGap[]> {
 
   // Gap 3: Members without birth/death dates
   // family_members has no birth_year column — derive from events.
-  const birthEvents = events.filter((e) => e.event_type === 'birth' && e.member_id !== null);
+  const birthEvents = events.filter((e) => e.category === 'birth' && e.member_id !== null);
   const birthYearByMember = new Map<number, number>();
   for (const ev of birthEvents) {
     if (ev.member_id !== null && ev.event_date) {

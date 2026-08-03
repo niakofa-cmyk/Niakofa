@@ -2,7 +2,6 @@ import {
   pgTable, serial, integer, text, timestamp, jsonb, pgEnum, index,
 } from "drizzle-orm/pg-core";
 import { familiesTable, familyMembersTable } from "./families";
-import { familyKnowledgeVersionsTable } from "./family-knowledge-versions";
 
 // ─── Phase 5 Enhancements: AI Director, Memory Mysteries, Character Evolution ─
 

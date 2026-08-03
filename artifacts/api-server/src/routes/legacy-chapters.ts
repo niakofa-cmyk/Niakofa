@@ -136,6 +136,7 @@ async function generateChapterSeeds(familyId: number, preferredAncestorMemberId?
       id: familyPlacesTable.id,
       label: familyPlacesTable.label,
       placeType: familyPlacesTable.place_type,
+      country: familyPlacesTable.country,
     })
     .from(familyPlacesTable)
     .where(eq(familyPlacesTable.family_id, familyId));
@@ -399,6 +400,7 @@ Return ONLY a JSON array of ${seeds.length} strings, no other text.`;
     logger.warn({ err }, "legacy-chapters: AI synopsis enrichment failed, using data-driven fallback");
     return seeds;
   }
+}
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 

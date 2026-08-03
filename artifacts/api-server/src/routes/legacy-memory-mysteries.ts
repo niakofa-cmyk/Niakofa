@@ -23,17 +23,12 @@ import { Router } from "express";
 import {
   db,
   familyMembersTable,
-  familyMemoriesTable,
-  familyMemoryPeopleTable,
-  familyPlacesTable,
-  familyEventsTable,
   legacyMemoryMysteriesTable,
 } from "@workspace/db";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
-import { getConsentedMemberIds } from "../lib/legacy-consent";
 
 const router = Router();
 
