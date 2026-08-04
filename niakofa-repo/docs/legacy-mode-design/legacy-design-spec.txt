@@ -1,0 +1,28 @@
+Source: attached_assets/Pasted--The-Living-Family-Legacy-Experience-The-gameplay-becom_1785441473335.txt
+Copied here for permanent reference alongside ui-reference.png.
+
+The Living Family Legacy Experience
+The gameplay becomes the motivation to preserve culture.
+The preservation becomes the content.
+The family becomes the world.
+The stories become the quests.
+The ancestors become the heroes.
+
+[Full spec content: see attached_assets/Pasted--The-Living-Family-Legacy-Experience-The-gameplay-becom_1785441473335.txt]
+
+Key points:
+- Every story added becomes playable
+- Every new family member changes the game
+- Every interview unlocks quests
+- Every migration changes the map
+- Every photograph creates locations
+- Every birthday unlocks memories
+- Every grave location becomes somewhere to visit
+- Every family achievement becomes something to discover
+
+5 Development Phases:
+Phase 1 – Foundation: Family Tree, Family Vault, Oral Story Recording, Cards, Timeline
+Phase 2 – Story Intelligence: AI story extraction, historical timeline, quest generation
+Phase 3 – Personal RPG: Random ancestor selection, life chapters, historical context
+Phase 4 – World Exploration: Interactive maps, family landmarks, GPS discoveries
+Phase 5 – Living Family Universe: Cooperative missions, AI Game Master
