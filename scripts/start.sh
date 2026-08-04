@@ -3,8 +3,11 @@ set -euo pipefail
 
 # ── Niakofa Railway Start Script ──────────────────────────────────────────────
 # 1. Runs database migrations (blocks deploy on failure).
-# 2. Starts nia-service on port 3001 with a bounded restart supervisor
-#    (max 5 crashes before giving up; clean exit / SIGTERM never restarts).
+# 2. Starts nia-service on port 3001 with a bounded restart supervisor.
+#    The supervisor IS the process that spawns nia-service so that `wait`
+#    operates on a direct child — avoids the bash cross-subshell wait bug
+#    where wait on a non-child PID returns 127 immediately, causing the
+#    supervisor to mis-classify every startup as a crash and spin-restart.
 # 3. Starts api-server in the foreground (primary process).
 # 4. SIGTERM/SIGINT cleanly kills both child processes.
 #
@@ -18,19 +21,6 @@ trap 'rm -f "$NIA_PID_FILE"' EXIT
 echo "[start] running database migrations..."
 pnpm --filter @workspace/db run migrate
 echo "[start] migrations complete"
-
-# ── nia-service supervisor ────────────────────────────────────────────────────
-NIA_RESTART_MAX=5
-NIA_RESTART_COUNT=0
-
-start_nia_service() {
-  PORT=3001 node --enable-source-maps artifacts/nia-service/dist/index.js &
-  local pid=$!
-  echo "$pid" > "$NIA_PID_FILE"
-  echo "[start] nia-service started (pid $pid)"
-}
-
-start_nia_service
 
 # ── Signal handler — forward SIGTERM/SIGINT to current nia-service PID ────────
 cleanup() {
@@ -46,10 +36,25 @@ cleanup() {
 trap cleanup TERM INT
 
 # ── Supervisor loop (background subshell) ─────────────────────────────────────
+# IMPORTANT: nia-service is spawned INSIDE this subshell so that `wait` on
+# its PID is valid (bash wait only works reliably on direct children).
+# The prior design spawned nia-service in the parent and tried to wait in
+# the subshell — bash returned 127 immediately, triggering constant false
+# crash-restart loops under Railway.
+NIA_RESTART_MAX=5
+
 (
+  NIA_RESTART_COUNT=0
+
   while true; do
-    nia_pid="$(cat "$NIA_PID_FILE" 2>/dev/null || true)"
-    [ -n "$nia_pid" ] && wait "$nia_pid" 2>/dev/null
+    # Spawn nia-service as a child of THIS subshell
+    PORT=3001 node --enable-source-maps artifacts/nia-service/dist/index.js &
+    NIA_PID=$!
+    echo "$NIA_PID" > "$NIA_PID_FILE"
+    echo "[supervisor] nia-service started (pid $NIA_PID)"
+
+    # wait is valid here — NIA_PID is a direct child of this subshell
+    wait "$NIA_PID" 2>/dev/null || true
     EXIT_CODE=$?
 
     # 0 = clean exit, 143 = SIGTERM — don't restart
@@ -66,7 +71,6 @@ trap cleanup TERM INT
 
     echo "[supervisor] nia-service crashed (rc=$EXIT_CODE) — restart $NIA_RESTART_COUNT/$NIA_RESTART_MAX in 5s"
     sleep 5
-    start_nia_service
   done
 ) &
 SUPERVISOR_PID=$!
@@ -78,8 +82,10 @@ API_EXIT=$?
 
 # api-server exited — tear down supervisor and nia-service
 kill -TERM "$SUPERVISOR_PID" 2>/dev/null || true
+wait "$SUPERVISOR_PID" 2>/dev/null || true
 nia_pid="$(cat "$NIA_PID_FILE" 2>/dev/null || true)"
 if [ -n "$nia_pid" ]; then
   kill -TERM "$nia_pid" 2>/dev/null || true
+  wait "$nia_pid" 2>/dev/null || true
 fi
 exit "$API_EXIT"

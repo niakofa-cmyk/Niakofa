@@ -53,7 +53,7 @@ container, supervised by `scripts/start.sh`.
 
 - **Database**: single Postgres instance (Railway service `compassionate-education`,
   PostGIS-flavored image — not a typo, the `geography` columns need PostGIS).
-  Migrations live in `lib/db/migrations/*.sql` (currently highest: `0103_legacy_quests_persistent`),
+  Migrations live in `lib/db/migrations/*.sql` (currently highest: `0104_legacy_indexes`),
   tracked via drizzle-kit's journal (`lib/db/migrations/meta/_journal.json`).
   Schema source of truth is `lib/db/src/schema/*.ts`.
 

@@ -227,7 +227,19 @@ DECLARE
   ];
 BEGIN
   FOREACH tbl IN ARRAY legacy_tables LOOP
-    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
+    -- Guard: only enable RLS if the table actually exists.
+    -- Tables created in earlier migrations (0097-0101) are expected to be
+    -- present, but if any migration was skipped or failed, this loop must
+    -- not abort the entire 0102 run — log a notice and continue.
+    IF EXISTS (
+      SELECT 1 FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relname = tbl AND c.relkind = 'r' AND n.nspname = 'public'
+    ) THEN
+      EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
+    ELSE
+      RAISE NOTICE 'migration 0102: skipping RLS for % — table does not exist yet', tbl;
+    END IF;
   END LOOP;
 END $$;
 
