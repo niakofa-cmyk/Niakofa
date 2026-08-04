@@ -103,6 +103,11 @@ async function buildAll() {
       "electron",
     ],
     sourcemap: process.env.NODE_ENV !== "production" ? "linked" : false,
+    // Bake GIT_COMMIT into the bundle so process.env.GIT_COMMIT is available
+    // at runtime without requiring the env var to be set in Railway.
+    define: {
+      "process.env.GIT_COMMIT": JSON.stringify(process.env.GIT_COMMIT ?? "unknown"),
+    },
     plugins: [
       // pino relies on workers to handle logging, instead of externalizing it we use a plugin to handle it
       esbuildPluginPino({ transports: ["pino-pretty"] })
