@@ -591,6 +591,19 @@ export default function LegacyChapterPlay() {
             </div>
           )}
 
+          {/* World Regeneration indicator — makes the flywheel visible */}
+          {journalSaved && (
+            <div className="bg-gradient-to-r from-teal-900/20 to-transparent border border-teal-400/20 rounded-xl p-4 mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-4 h-4 text-teal-400" />
+                <span className="text-xs font-bold text-teal-400 uppercase tracking-wider">World Regenerated</span>
+              </div>
+              <p className="text-xs text-stone-400 leading-relaxed">
+                Your journey has been preserved. New dialogue, quests, and memories may now appear in your family's world.
+              </p>
+            </div>
+          )}
+
           <div className="flex flex-col gap-2">
             {nextChapterId && (
               <button
@@ -800,16 +813,17 @@ export default function LegacyChapterPlay() {
           </span>
         </div>
 
-        {/* Context tags */}
+        {/* Context tags — "Walk Here" is prominent for place-based scenes */}
         {(place || event) && (
           <div className="flex flex-wrap gap-2 mb-5">
             {place && (
               <button
                 onClick={() => navigate(`/legacy/map?place=${place.id}`)}
-                className="flex items-center gap-1.5 text-xs text-stone-400 bg-stone-800/30 rounded-lg px-3 py-1.5 hover:bg-stone-800/50 hover:text-amber-400 transition-colors"
+                className="flex items-center gap-2 text-sm text-amber-300 bg-amber-400/10 border border-amber-400/20 rounded-xl px-4 py-2.5 hover:bg-amber-400/20 hover:border-amber-400/40 transition-all active:scale-95 group"
               >
-                <Footprints className="w-3.5 h-3.5" />
-                {place.label}{place.country ? `, ${place.country}` : ""}
+                <Footprints className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
+                <span className="font-bold">Walk to {place.label}</span>
+                {place.country && <span className="text-xs text-stone-500">{place.country}</span>}
               </button>
             )}
             {event && (

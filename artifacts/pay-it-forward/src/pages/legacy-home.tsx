@@ -999,70 +999,184 @@ export default function LegacyHomePage() {
       {!loading && ready && setupDone && (
         <div className="max-w-lg mx-auto">
 
-          {/* ── Progress Hero ── */}
+          {/* ── Continue Journey Hero — the dominant first thing the player sees ── */}
           <div className="px-4 py-5" style={{ background: "linear-gradient(to bottom, #0A0604, #1A0F08)" }}>
-            <div className="bg-[#2A1A0F] border border-amber-800/30 rounded-2xl p-4 shadow-xl">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="text-xs text-amber-700 uppercase tracking-widest">Your Family World</p>
-                  <p className="text-3xl font-black text-amber-400">{progress}%</p>
-                  <p className="text-xs text-amber-600">Legacy Complete</p>
-                  {worldVersion && worldVersion.currentVersion > 0 && (
-                    <p className="text-xs text-amber-500/80 mt-0.5">World v{worldVersion.currentVersion}</p>
+            <div
+              className="rounded-2xl shadow-xl overflow-hidden relative"
+              style={{ background: "linear-gradient(135deg, #2A1A0F 0%, #1A0F08 60%, #0A0604 100%)", border: "1px solid rgba(180,120,40,0.25)" }}
+            >
+              {/* Ambient shimmer line at top */}
+              <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-400/40 to-transparent" />
+
+              {/* If there's an active session with a chapter, show "Continue Journey" as a cinematic entry point */}
+              {activeSession?.currentChapterId ? (
+                <div className="p-5">
+                  {/* Chapter context */}
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
+                      <BookOpen className="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-amber-700 uppercase tracking-widest">Continue Journey</p>
+                      {chapters.find(c => c.id === activeSession.currentChapterId) && (
+                        <p className="text-sm font-black text-amber-200 truncate">
+                          {chapters.find(c => c.id === activeSession.currentChapterId)?.title ?? "Chapter"}
+                        </p>
+                      )}
+                    </div>
+                    {worldVersion && worldVersion.currentVersion > 0 && (
+                      <span className="text-[10px] font-bold text-amber-600 bg-amber-900/30 px-2 py-1 rounded-full">
+                        v{worldVersion.currentVersion}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Emotional narration line */}
+                  {todaysJourney && (
+                    <p className="text-xs text-amber-300/70 leading-relaxed italic mb-4 line-clamp-2">
+                      "{todaysJourney.narration}"
+                    </p>
                   )}
-                </div>
-                <div className="w-20 h-20 relative">
-                  <svg viewBox="0 0 80 80" className="w-full h-full -rotate-90">
-                    <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(180,100,20,0.2)" strokeWidth="6" />
-                    <circle cx="40" cy="40" r="34" fill="none" stroke="#F59E0B"
-                      strokeWidth="6" strokeLinecap="round"
-                      strokeDasharray={`${2 * Math.PI * 34}`}
-                      strokeDashoffset={`${2 * Math.PI * 34 * (1 - progress / 100)}`}
-                      style={{ transition: "stroke-dashoffset 0.8s ease" }}
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Flame className="w-6 h-6 text-amber-400" />
+
+                  {/* Time estimate */}
+                  <div className="flex items-center gap-3 mb-4 flex-wrap">
+                    {todaysJourney && (
+                      <span className="text-xs text-amber-500 bg-amber-800/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> ~{Math.max(5, Math.min(20, (todaysJourney.storyCount + todaysJourney.eventCount) * 2))} min
+                      </span>
+                    )}
+                    {dailyWelcome?.newMemoryCount ? (
+                      <span className="text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                        {dailyWelcome.newMemoryCount} new {dailyWelcome.newMemoryCount === 1 ? "memory" : "memories"}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {/* Dominant Continue button */}
+                  <button
+                    onClick={() => navigate(`/legacy/chapter/${activeSession.currentChapterId}`)}
+                    className="w-full bg-amber-500 text-amber-950 font-black text-sm uppercase tracking-widest py-4 rounded-xl active:opacity-80 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition-all hover:shadow-amber-500/30"
+                  >
+                    <Play className="w-4 h-4" /> Continue
+                  </button>
+
+                  {/* Secondary actions */}
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => navigate("/legacy/start")}
+                      className="flex-1 bg-amber-900/40 border border-amber-700/30 text-amber-400 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70 flex items-center justify-center gap-1.5"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" /> New Journey
+                    </button>
+                    <button
+                      onClick={() => navigate("/diaspora/family")}
+                      className="bg-amber-900/40 border border-amber-700/30 text-amber-500 font-bold text-xs uppercase tracking-wide px-3 py-2.5 rounded-xl active:opacity-70 flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add
+                    </button>
                   </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-3 gap-2 pt-3 border-t border-amber-900/30">
+              ) : todaysJourney ? (
+                /* No active session but today's journey exists — show it as the entry point */
+                <div className="p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
+                      <Sparkles className="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-amber-700 uppercase tracking-widest">Today's Journey</p>
+                      <p className="text-sm font-black text-amber-200 truncate">{todaysJourney.ancestor.name}</p>
+                    </div>
+                    {worldVersion && worldVersion.currentVersion > 0 && (
+                      <span className="text-[10px] font-bold text-amber-600 bg-amber-900/30 px-2 py-1 rounded-full">
+                        v{worldVersion.currentVersion}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-amber-300/70 leading-relaxed italic mb-4 line-clamp-2">
+                    "{todaysJourney.narration}"
+                  </p>
+                  <div className="flex items-center gap-3 mb-4 flex-wrap">
+                    <span className="text-xs text-amber-600 bg-amber-900/30 px-2 py-0.5 rounded-full">{todaysJourney.storyCount} stories</span>
+                    <span className="text-xs text-amber-500 bg-amber-800/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Clock className="w-3 h-3" /> ~{Math.max(5, Math.min(20, (todaysJourney.storyCount + todaysJourney.eventCount) * 2))} min
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => navigate("/legacy/start")}
+                    className="w-full bg-amber-500 text-amber-950 font-black text-sm uppercase tracking-widest py-4 rounded-xl active:opacity-80 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition-all hover:shadow-amber-500/30"
+                  >
+                    <Play className="w-4 h-4" /> Begin Journey
+                  </button>
+                  <button
+                    onClick={() => navigate("/diaspora/family")}
+                    className="mt-3 w-full text-xs text-amber-600 py-2"
+                  >
+                    Add more family stories →
+                  </button>
+                </div>
+              ) : (
+                /* No journey yet — emotional completeness messaging instead of percentage */
+                <div className="p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
+                      <BookHeart className="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-amber-700 uppercase tracking-widest">Your Family World</p>
+                      <p className="text-sm font-black text-amber-200">A story waiting to be lived</p>
+                    </div>
+                  </div>
+                  {/* Emotional completeness instead of percentage */}
+                  <p className="text-xs text-amber-400/80 leading-relaxed mb-4">
+                    {completeness && completeness.missingData.length > 0
+                      ? `Your family's story is growing. ${completeness.missingData.length} ${completeness.missingData.length === 1 ? "mystery remains" : "mysteries remain"} to uncover.`
+                      : "Your family's story is rich and ready. A new chapter awaits."}
+                  </p>
+                  {/* Subtle progress indicator — not the dominant element */}
+                  <div className="h-1.5 rounded-full bg-amber-950/60 overflow-hidden mb-4">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-amber-700 to-amber-500 transition-all duration-1000"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <button
+                    onClick={() => navigate("/legacy/start")}
+                    className={`w-full font-black text-sm uppercase tracking-widest py-4 rounded-xl flex items-center justify-center gap-2 transition-all ${
+                      completeness?.chapterUnlockReady
+                        ? "bg-amber-500 text-amber-950 active:opacity-80 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30"
+                        : "bg-amber-900/40 border border-amber-700/30 text-amber-500"
+                    }`}
+                  >
+                    <Play className="w-4 h-4" /> {completeness?.chapterUnlockReady ? "Begin Journey" : "Start Building"}
+                  </button>
+                  {!completeness?.chapterUnlockReady && (
+                    <button
+                      onClick={() => navigate("/diaspora/family")}
+                      className="mt-3 w-full text-xs text-amber-600 py-2"
+                    >
+                      Add more family stories to unlock →
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Compact stats footer — secondary, not the hero */}
+              <div className="grid grid-cols-3 gap-2 px-5 pb-4 pt-2 border-t border-amber-900/20">
                 <button onClick={() => navigate("/diaspora/family")} className="text-center text-xs active:opacity-70">
-                  <p className="text-lg font-black text-amber-300">{families.length}</p>
+                  <p className="text-base font-black text-amber-400">{families.length}</p>
                   <p className="text-amber-700">Families</p>
                 </button>
                 <button onClick={() => navigate("/diaspora/tree")} className="text-center text-xs active:opacity-70">
-                  <p className="text-lg font-black text-amber-300">{members.length}</p>
+                  <p className="text-base font-black text-amber-400">{members.length}</p>
                   <p className="text-amber-700">Ancestors</p>
                 </button>
                 <button
                   onClick={() => navigate(families[0] ? `/family/${families[0].id}` : "/diaspora/family")}
                   className="text-center text-xs active:opacity-70"
                 >
-                  <p className="text-lg font-black text-amber-300">{memories.length}</p>
+                  <p className="text-base font-black text-amber-400">{memories.length}</p>
                   <p className="text-amber-700">Stories</p>
-                </button>
-              </div>
-              <div className="flex gap-2 mt-4">
-                {activeSession?.currentChapterId && (
-                  <button
-                    onClick={() => navigate(`/legacy/chapter/${activeSession.currentChapterId}`)}
-                    className="flex-1 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-bold text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-70 flex items-center justify-center gap-1.5"
-                  >
-                    <BookOpen className="w-3.5 h-3.5" /> Resume Chapter
-                  </button>
-                )}
-                <button
-                  onClick={() => navigate("/legacy/start")}
-                  className={`flex-1 ${activeSession?.currentChapterId ? "bg-amber-900/40 border border-amber-700/30 text-amber-400" : "bg-amber-500 text-amber-950"} font-black text-xs uppercase tracking-wide py-2.5 rounded-xl active:opacity-80 flex items-center justify-center gap-1.5 transition-opacity`}
-                >
-                  <Play className="w-3.5 h-3.5" /> {activeSession?.currentChapterId ? "New Journey" : "Continue Journey"}
-                </button>
-                <button
-                  onClick={() => navigate("/diaspora/family")}
-                  className="bg-amber-900/40 border border-amber-700/30 text-amber-400 font-bold text-xs uppercase tracking-wide px-3 py-2.5 rounded-xl active:opacity-70 flex items-center gap-1"
-                >
-                  <Plus className="w-3.5 h-3.5" /> New
                 </button>
               </div>
             </div>

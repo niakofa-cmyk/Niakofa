@@ -91,9 +91,9 @@ All legacy tables have RLS enabled with family-membership-scoped policies (migra
 The `legacy_is_family_member(fam_id)` SECURITY DEFINER helper checks membership.
 
 ## Gameplay Routes
-- `/legacy` — Game hub (mode selector, ancestor preview, readiness score, daily welcome)
+- `/legacy` — Game hub with dominant "Continue Journey" hero (shows active chapter context, today's narration, time estimate; emotional completeness messaging replaces percentage when no active session)
 - `/legacy/start` — Cinematic ancestor selection & journey begin
-- `/legacy/chapter/:chapterId` — Interactive scene viewer with dialogue, choices, autosave
+- `/legacy/chapter/:chapterId` — Interactive scene viewer with dialogue, choices, autosave, "Walk to [Place]" navigation, world regeneration indicator on completion
 - `/legacy/map` — Family world map (migration routes from real places)
 - `/legacy/character/:memberId` — Character biography / playable history
 - `/legacy/achievements` — Progression tracking
@@ -161,3 +161,11 @@ All accents `text-amber-*` / `bg-amber-*`. Stats: rose (Health), blue (Knowledge
 
 ## Reference docs
 `docs/legacy-mode-design/` — README.md, ARCHITECTURE.md, ui-reference.png, legacy-design-spec.txt, ai-story-extraction-design.md
+
+## Improvement Log
+
+### Session 2026-08-04 — Production Readiness Pass
+- **Legacy Home hero redesign**: Replaced the dashboard-style "65% Legacy Complete" progress hero with a dominant "Continue Journey" cinematic hero. When an active session exists, shows chapter title, today's narration, time estimate, and a large Continue button. When no session but today's journey exists, shows the ancestor and narration. When neither exists, shows emotional completeness messaging ("Your family's story is growing. N mysteries remain.") instead of a raw percentage. The progress bar is now a subtle secondary element, not the hero.
+- **Legacy Chapter "Walk Here"**: Upgraded the place context tag from a small text link to a prominent "Walk to [Place Name]" button with amber styling and active scale animation, making the Map → Chapter Bridge central to the gameplay experience.
+- **World Regeneration indicator on chapter completion**: Added a visible "World Regenerated" panel on the chapter completion screen that confirms to the player their journey has been preserved and the world may have evolved — making the flywheel (play → contribute → world changes) visible at the moment of completion.
+- **Memory doc updated**: Gameplay routes section now reflects the improved hero, Walk Here navigation, and world regeneration indicator.
