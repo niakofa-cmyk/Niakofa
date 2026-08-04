@@ -70,6 +70,7 @@ const LegacyCharacterPage     = lazy(() => import("@/pages/legacy-character"));
 const LegacyAiDirectorPage     = lazy(() => import("@/pages/legacy-ai-director"));
 const LegacyMemoryMysteriesPage = lazy(() => import("@/pages/legacy-memory-mysteries"));
 const LegacyCharacterEvolutionPage = lazy(() => import("@/pages/legacy-character-evolution"));
+const LegacyOnboardingPage      = lazy(() => import("@/pages/legacy-onboarding"));
 
 function PageFallback() {
   return (
@@ -262,6 +263,7 @@ function AppShell() {
             <Route path="/diaspora/research" component={ResearchCenterPage} />
             <Route path="/diaspora/preserve" component={PreserveCulturePage} />
             <Route path="/diaspora/timeline" component={LegacyTimelinePage} />
+            <Route path="/legacy/onboarding" component={LegacyOnboardingPage} />
             <Route path="/legacy/achievements" component={LegacyAchievementsPage} />
             <Route path="/legacy/start" component={LegacyStartPage} />
             <Route path="/legacy/chapter/:chapterId" component={LegacyChapterPage} />

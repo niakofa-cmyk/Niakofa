@@ -875,10 +875,13 @@ export default function LegacyHomePage() {
       }));
   const activeQuest = displayQuests[activeQuestIdx] ?? displayQuests[0];
 
-  // ── Setup check (first-time experience) ────────────────────────────────────
+  // ── Setup check / onboarding (first-time experience) ──────────────────────
+  // If the player has never completed onboarding, send them to Chapter 0.
 
   if (!loading && ready && !setupDone) {
-    return <SetupCheck state={legacyState} onComplete={() => persistSetupDone(true)} />;
+    // Redirect to the full Chapter 0 onboarding experience
+    navigate("/legacy/onboarding");
+    return null;
   }
 
   // ── Readiness check screen ────────────────────────────────────────────────

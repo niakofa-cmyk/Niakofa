@@ -711,31 +711,49 @@ export default function LegacyChapterPlay() {
         />
       </div>
 
-      {/* RPG Stats HUD */}
-      <div className="px-4 py-2.5 border-b border-stone-800/30 bg-stone-900/30">
-        <div className="flex items-center justify-between gap-2">
-          {(Object.keys(sessionStats) as (keyof SessionStats)[]).map((statKey) => (
-            <div key={statKey} className="flex flex-col items-center gap-0.5">
-              <span className="text-[9px] font-bold uppercase tracking-wide text-stone-500">{STAT_LABELS[statKey]}</span>
-              <span className={`text-sm font-black ${sessionStats[statKey] > 0 ? "text-amber-400" : "text-stone-600"}`}>
-                {sessionStats[statKey]}
-              </span>
-            </div>
-          ))}
-          {/* Autosave indicator */}
-          <div className="flex items-center gap-1 ml-2">
+      {/* RPG Stats HUD — colored progress bars matching reference design */}
+      <div className="px-3 py-2 border-b border-stone-800/30 bg-stone-900/40">
+        <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
+          {[
+            { key: "relationships" as const, label: "Health",    color: "bg-emerald-500",  max: 100 },
+            { key: "knowledge"     as const, label: "Knowledge", color: "bg-sky-400",      max: 100 },
+            { key: "courage"       as const, label: "Courage",   color: "bg-orange-400",   max: 100 },
+            { key: "faith"         as const, label: "Faith",     color: "bg-violet-400",   max: 100 },
+            { key: "reputation"    as const, label: "Reputation",color: "bg-cyan-400",     max: 100 },
+            { key: "legacy"        as const, label: "Legacy",    color: "bg-amber-400",    max: 100 },
+          ].map(({ key, label, color, max }) => {
+            const val = Math.min(max, sessionStats[key]);
+            return (
+              <div key={key}>
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="text-[8px] font-bold uppercase tracking-wide text-stone-500">{label}</span>
+                  <span className="text-[8px] font-black text-stone-400">{val}</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-stone-800/60 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${color}`}
+                    style={{ width: `${Math.max(2, val)}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {/* Autosave indicator */}
+        {(autosaveState === "saving" || autosaveState === "saved") && (
+          <div className="flex justify-end mt-1">
             {autosaveState === "saving" && (
               <span className="flex items-center gap-1 text-[9px] text-amber-400 animate-pulse">
-                <Save className="w-3 h-3" /> Saving...
+                <Save className="w-2.5 h-2.5" /> Saving...
               </span>
             )}
             {autosaveState === "saved" && (
               <span className="flex items-center gap-1 text-[9px] text-emerald-400">
-                <CheckCircle2 className="w-3 h-3" /> Saved
+                <CheckCircle2 className="w-2.5 h-2.5" /> Saved
               </span>
             )}
           </div>
-        </div>
+        )}
       </div>
 
       {/* Day-Cycle Progression Bar — Living Game Session */}
@@ -838,12 +856,45 @@ export default function LegacyChapterPlay() {
         {/* Scene title */}
         <h2 className="text-2xl font-black text-stone-100 mb-4">{scene.title}</h2>
 
-        {/* Scene content */}
-        <div className="prose prose-invert max-w-none mb-6">
-          <p className="text-stone-300 leading-relaxed text-base whitespace-pre-line">
-            {scene.content}
-          </p>
-        </div>
+        {/* Dialogue scenes: NPC portrait + speech bubble layout */}
+        {scene.type === "dialogue" ? (
+          <div className="mb-6">
+            {/* NPC portrait card */}
+            <div className="flex items-start gap-4 mb-4">
+              <div className="flex-shrink-0">
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-black text-amber-300 border border-amber-500/40 shadow-lg shadow-amber-500/10"
+                  style={{ background: "linear-gradient(135deg, #2A1A0F 0%, #1A0F08 100%)" }}
+                >
+                  {sceneData.chapterTitle?.charAt(0) ?? "A"}
+                </div>
+                <p className="text-[8px] text-amber-700 text-center mt-1 uppercase tracking-wide font-bold truncate w-14">
+                  Ancestor
+                </p>
+              </div>
+              {/* Speech bubble */}
+              <div className="flex-1 relative">
+                <div
+                  className="rounded-2xl rounded-tl-sm p-4"
+                  style={{ background: "linear-gradient(135deg, #1f1a0e 0%, #141108 100%)", border: "1px solid rgba(180,120,40,0.25)" }}
+                >
+                  <p className="text-sm text-amber-100/90 leading-relaxed whitespace-pre-line italic">
+                    "{scene.content}"
+                  </p>
+                </div>
+                {/* Bubble tail */}
+                <div className="absolute top-3 -left-2 w-0 h-0 border-t-[6px] border-t-transparent border-r-[8px] border-r-amber-900/60 border-b-[6px] border-b-transparent" />
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Non-dialogue: standard narration / reflection / context text */
+          <div className="prose prose-invert max-w-none mb-6">
+            <p className="text-stone-300 leading-relaxed text-base whitespace-pre-line">
+              {scene.content}
+            </p>
+          </div>
+        )}
 
         {/* AI Game Master Narration */}
         {narrationLoading ? (
@@ -1023,20 +1074,41 @@ export default function LegacyChapterPlay() {
         )}
       </div>
 
-      {/* Scene dots */}
-      <div className="flex items-center justify-center gap-1.5 px-4 py-3 border-t border-stone-800/50">
-        {sceneData.scenes.map((s, i) => (
-          <div
-            key={s.sceneNumber}
-            className={`h-1.5 rounded-full transition-all duration-300 ${
-              i === currentSceneIdx
-                ? "w-6 bg-amber-400"
-                : completedScenes.has(s.sceneNumber)
-                  ? "w-1.5 bg-emerald-400"
-                  : "w-1.5 bg-stone-700"
-            }`}
-          />
-        ))}
+      {/* Scene dots + floating action buttons */}
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-stone-800/50">
+        {/* Journal button */}
+        <button
+          onClick={() => navigate("/legacy/journal")}
+          className="flex items-center gap-1.5 text-xs font-bold text-stone-400 bg-stone-800/60 border border-stone-700/50 rounded-xl px-3 py-2 active:opacity-70 hover:border-amber-500/30 hover:text-amber-400 transition-all"
+        >
+          <BookOpen className="w-3.5 h-3.5" /> Journal
+        </button>
+
+        {/* Scene progress dots */}
+        <div className="flex items-center gap-1.5 flex-1 justify-center">
+          {sceneData.scenes.map((s, i) => (
+            <div
+              key={s.sceneNumber}
+              className={`h-1.5 rounded-full transition-all duration-300 ${
+                i === currentSceneIdx
+                  ? "w-6 bg-amber-400"
+                  : completedScenes.has(s.sceneNumber)
+                    ? "w-1.5 bg-emerald-400"
+                    : "w-1.5 bg-stone-700"
+              }`}
+            />
+          ))}
+        </div>
+
+        {/* Map button */}
+        <button
+          onClick={() => sceneData.familyId
+            ? navigate(`/legacy/map/${sceneData.familyId}`)
+            : navigate("/legacy/map")}
+          className="flex items-center gap-1.5 text-xs font-bold text-stone-400 bg-stone-800/60 border border-stone-700/50 rounded-xl px-3 py-2 active:opacity-70 hover:border-amber-500/30 hover:text-amber-400 transition-all"
+        >
+          <MapIcon className="w-3.5 h-3.5" /> Map
+        </button>
       </div>
     </div>
   );
