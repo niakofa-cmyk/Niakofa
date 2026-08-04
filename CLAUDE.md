@@ -53,7 +53,7 @@ container, supervised by `scripts/start.sh`.
 
 - **Database**: single Postgres instance (Railway service `compassionate-education`,
   PostGIS-flavored image — not a typo, the `geography` columns need PostGIS).
-  Migrations live in `lib/db/migrations/*.sql` (currently highest: `0093_legacy_engine_schema_reconcile`),
+  Migrations live in `lib/db/migrations/*.sql` (currently highest: `0103_legacy_quests_persistent`),
   tracked via drizzle-kit's journal (`lib/db/migrations/meta/_journal.json`).
   Schema source of truth is `lib/db/src/schema/*.ts`.
 
@@ -723,3 +723,39 @@ The Bolt prototype migration (`0092_legacy_engine_core.sql`) was generated with 
 - `stripe.ts` refund status update (Incident #23) — still open
 - Real email delivery — still a stub
 - `businesses_enabled` seed — still not applied to prod
+
+---
+
+## Session Note — Aug 4 2026 (Railway deploy-failure audit)
+
+### What was audited
+
+Evaluated the Railway service (`zesty-ambition-production-f6a1.up.railway.app`) and the full git history to identify all failing/at-risk commits. The app was live (HTTP 200) on the current `main`, but the migration runner had a critical gap that caused Railway deploys to silently skip the 0093–0103 migration era on pre-existing databases.
+
+### Root cause
+
+`lib/db/scripts/run-migrations.mjs` had RECOVERY_CHECKS only for migrations 0018–0021. Migrations 0092–0103 (the entire Legacy Engine schema) had NO recovery checks. On the live Railway DB (which pre-dated 0092), these migrations were either:
+- Baseline-marked without executing (old BASELINE_CUTOFF behavior), OR
+- Partially executed (e.g. 0092 ran with uuid PKs, 0093 ran and recreated tables, but tracker row from a prior crash was left), OR
+- Recorded as applied after a partial run that died mid-transaction
+
+This caused downstream migrations 0096, 0097, 0098, 0099, 0100, 0101, 0102, 0103 to run against a stale schema — missing `family_places`, `family_events`, `legacy_worlds` with correct integer PKs — causing every Legacy Mode API call to 500 in production.
+
+### Fix applied
+
+Added 6 new RECOVERY_CHECKS to `run-migrations.mjs`:
+- `0093_legacy_engine_schema_reconcile.sql` — detected via `family_knowledge_versions.id` being integer (not uuid), `legacy_worlds` existence, `family_places` existence, `family_events` existence
+- `0102_legacy_phase5_missing_tables_and_rls.sql` — detected via `legacy_scenes` existence
+- `0103_legacy_quests_persistent.sql` — detected via `legacy_quests` existence
+
+Each check: if the table/column is absent but the migration is recorded as applied, the tracker row is deleted so the migration re-runs on next boot (all 0093–0103 migrations are idempotent — IF NOT EXISTS throughout).
+
+Also corrected the stale "currently highest: 0093" comment in CLAUDE.md — actual highest is now `0103_legacy_quests_persistent`.
+
+### Rules to prevent recurrence
+
+1. Every time a new migration is added (especially ones that DROP + recreate tables), add a corresponding RECOVERY_CHECK in `run-migrations.mjs` for the key table or column it creates. Recovery checks are cheap and idempotent.
+
+2. When the "currently highest migration" comment in CLAUDE.md is outdated, update it immediately — it's the first thing an agent reads to understand schema state.
+
+3. Current migration count: 104 files (0000–0103). `healthcheckTimeout` is 120s — still sufficient. Bump to 180s if count exceeds 115.
