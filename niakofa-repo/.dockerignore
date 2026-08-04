@@ -1,0 +1,47 @@
+# Root-level .dockerignore — used by the nia-service Dockerfile (COPY . .)
+# Keeps the Docker build context lean by excluding large directories that
+# are not needed inside the image.
+
+# Git history (largest single contributor to context size)
+.git
+.gitignore
+
+# Local dev artifacts
+node_modules
+**/node_modules
+
+# Replit / agent workspace state
+.local
+.agents
+attached_assets
+screenshots
+exports
+
+# Build outputs (rebuilt inside the image)
+dist
+**/dist
+build
+**/build
+
+# Test / CI artifacts
+coverage
+**/__tests__
+**/*.test.ts
+**/*.spec.ts
+
+# Secrets / env files — must never land in an image layer
+.env
+.env.*
+*.env
+
+# Editor / OS noise
+.DS_Store
+*.swp
+*.swo
+Thumbs.db
+
+# Documentation that doesn't affect the build
+*.md
+CLAUDE.md
+GRANDFATHER_COWORKER.md
+SECRETS_REQUIRED.md
