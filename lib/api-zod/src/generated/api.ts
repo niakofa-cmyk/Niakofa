@@ -1348,7 +1348,7 @@ export const GetUserSettingsResponse = zod.object({
   "max_travel_miles": zod.number().nullish(),
   "specialties": zod.string().nullish(),
   "preferred_language": zod.enum(['en', 'sw', 'zu', 'tw', 'yo', 'ha', 'am', 'so', 'pcm', 'lg']),
-  "spirit_animal": zod.enum(['sankofa_bird', 'black_panther']).describe('Map avatar \/ navigation companion selected by the user'),
+  "spirit_animal": zod.enum(['sankofa_bird', 'black_panther', 'elephant', 'lion', 'fish_eagle']).describe('Map avatar \/ navigation companion selected by the user'),
   "updated_at": zod.coerce.date()
 })
 
@@ -1375,7 +1375,7 @@ export const UpdateUserSettingsBody = zod.object({
   "max_travel_miles": zod.number().optional(),
   "specialties": zod.string().optional(),
   "preferred_language": zod.enum(['en', 'sw', 'zu', 'tw', 'yo', 'ha', 'am', 'so', 'pcm', 'lg']).optional(),
-  "spirit_animal": zod.enum(['sankofa_bird', 'black_panther']).optional()
+  "spirit_animal": zod.enum(['sankofa_bird', 'black_panther', 'elephant', 'lion', 'fish_eagle']).optional()
 }).describe('All fields optional — only provided keys are persisted (upsert)')
 
 export const UpdateUserSettingsResponse = zod.object({
@@ -1395,7 +1395,7 @@ export const UpdateUserSettingsResponse = zod.object({
   "max_travel_miles": zod.number().nullish(),
   "specialties": zod.string().nullish(),
   "preferred_language": zod.enum(['en', 'sw', 'zu', 'tw', 'yo', 'ha', 'am', 'so', 'pcm', 'lg']),
-  "spirit_animal": zod.enum(['sankofa_bird', 'black_panther']).describe('Map avatar \/ navigation companion selected by the user'),
+  "spirit_animal": zod.enum(['sankofa_bird', 'black_panther', 'elephant', 'lion', 'fish_eagle']).describe('Map avatar \/ navigation companion selected by the user'),
   "updated_at": zod.coerce.date()
 })
 

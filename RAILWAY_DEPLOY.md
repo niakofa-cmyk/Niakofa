@@ -115,7 +115,18 @@ Railway's Postgres plugin auto-sets `DATABASE_URL`. The migration script:
 - Fresh DB: runs all migrations from 0000
 - Existing DB: runs only new files (baseline-marks 0000–0017, applies 0018+)
 
-Migration files live in `lib/db/migrations/` and are numbered sequentially (0000–0092).
+Migration files live in `lib/db/migrations/` and are numbered sequentially (0000–0104). The runner also has RECOVERY_CHECKs for migrations 0018, 0020–0022, 0092–0104 — these re-apply any migration whose effect (a table, column, or index) is absent even if the file was already recorded as applied (baseline-mark issue).
+
+### Two-database setup (PostGIS vs. plain PostgreSQL)
+
+Railway offers both a plain **PostgreSQL** plugin and a **PostGIS** plugin. Niakofa uses PostGIS `geography(Point, 4326)` columns on `help_requests`, `helpers`, and related tables. **`DATABASE_URL` must point to the PostGIS instance**, not the plain PostgreSQL one:
+
+| Service name | External proxy | Internal hostname |
+|---|---|---|
+| **PostGIS** ✅ (use this) | `reseau.proxy.rlwy.net:46078` | `postgis.railway.internal` |
+| Plain PostgreSQL ❌ | `ballast.proxy.rlwy.net:48530` | `postgres.railway.internal` |
+
+The migration runner auto-creates the `postgis` extension when it's available. If `DATABASE_URL` points to the plain PostgreSQL service, geography inserts will silently produce wrong data or fail.
 
 ---
 
@@ -123,12 +134,12 @@ Migration files live in `lib/db/migrations/` and are numbered sequentially (0000
 
 | Endpoint | Auth | Description |
 |---|---|---|
+| `GET /api/healthz` | None | Lightweight DB connectivity check — **Railway deploy probe** |
 | `GET /api/status` | None | Public status page — DB ping, Nia AI state, map key |
-| `GET /api/healthz` | None | Lightweight DB connectivity check (used by Railway probe) |
 | `GET /api/admin/worker-health` | Admin token | BullMQ/cron worker statuses |
 | `GET /api/admin/global-ops` | Admin token | GPS health, region buckets, config status |
 
-Railway health check is set to `GET /api/status` (accepts 200 or 503).
+Railway health check (`railway.toml`: `healthcheckPath`) is set to `GET /api/healthz` — this is a lightweight DB ping that always returns 200 when the server and database are up. `/api/status` is the richer status page used by the frontend; it returns 200 even when optional features (Nia AI, Mapbox) are degraded so it does **not** block deploys.
 
 ---
 
@@ -164,6 +175,13 @@ The nia-service runs on port 3001 inside the same container. If it crashes:
 ### Frontend shows blank page or 404
 **Cause**: `SERVE_FRONTEND` not set to `true`.
 **Fix**: Set `SERVE_FRONTEND=true` in Railway variables.
+
+### `/api/status` shows `nia_ai: false` on first deploy
+**Cause**: Nia AI is **disabled by default** (`system_settings.nia_enabled = 'false'`). This is intentional fail-closed behavior — the server starts safely without an AI key. The `/api/status` endpoint will show `"nia_ai": false` and `"status": "degraded"` until Nia is explicitly enabled. This does **not** block deploys (`/api/healthz` is the Railway probe, not `/api/status`).
+**Fix — after first successful deploy**:
+1. Set `ANTHROPIC_API_KEY` in Railway → Service → Variables.
+2. Call the admin toggle: `POST https://<your-app>.up.railway.app/api/admin/nia-toggle` with header `x-admin-token: <ADMIN_SECRET>` and body `{ "enabled": true }`.
+3. Verify: `GET /api/status` should now show `"nia_ai": true`.
 
 ### Nia returns 503 on all chat requests
 **Cause**: Either `ANTHROPIC_API_KEY` is missing, or Nia was admin-disabled.

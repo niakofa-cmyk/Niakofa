@@ -386,6 +386,9 @@ export type UserSettingsSpiritAnimal = typeof UserSettingsSpiritAnimal[keyof typ
 export const UserSettingsSpiritAnimal = {
   sankofa_bird: 'sankofa_bird',
   black_panther: 'black_panther',
+  elephant: 'elephant',
+  lion: 'lion',
+  fish_eagle: 'fish_eagle',
 } as const;
 
 export interface UserSettings {
@@ -434,6 +437,9 @@ export type UserSettingsUpdateSpiritAnimal = typeof UserSettingsUpdateSpiritAnim
 export const UserSettingsUpdateSpiritAnimal = {
   sankofa_bird: 'sankofa_bird',
   black_panther: 'black_panther',
+  elephant: 'elephant',
+  lion: 'lion',
+  fish_eagle: 'fish_eagle',
 } as const;
 
 /**
