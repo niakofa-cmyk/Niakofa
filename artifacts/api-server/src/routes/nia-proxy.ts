@@ -46,6 +46,30 @@ export async function isNiaEnabled(): Promise<boolean> {
   }
 }
 
+// ── Legacy-specific Nia enabled check ────────────────────────────────────────
+// Nia AI is always available within Legacy game mode for narrative/quest
+// generation, even when the global toggle is off (global toggle only controls
+// the Nia chat drawer visible to the rest of the app).
+//
+// Admin can independently gate Legacy Nia via `legacy_nia_enabled` setting.
+// If the row is absent, Legacy Nia defaults to ENABLED (opt-out rather than
+// opt-in, because Legacy game AI is core to the experience).
+export async function isNiaEnabledForLegacy(): Promise<boolean> {
+  try {
+    const [row] = await db
+      .select({ value: systemSettingsTable.value })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, "legacy_nia_enabled"))
+      .limit(1);
+    // If the setting doesn't exist yet, default to enabled for Legacy
+    if (!row) return true;
+    // Explicit "false" disables Legacy Nia; anything else (including "true") enables
+    return row.value !== "false";
+  } catch {
+    return true; // fail-open for Legacy: AI is core to gameplay, not safety-critical
+  }
+}
+
 // ── Sanitize message input ────────────────────────────────────────────────────
 const MAX_MESSAGE_LENGTH = 2000;
 const SESSION_ID_PATTERN = /^[\w-]{6,200}$/;
@@ -432,6 +456,130 @@ router.post("/nia/share-story", requireAuth, async (req: Request, res: Response)
     return res.status(500).json({ error: "Failed to craft story" });
   }
 });
+
+// ── POST /api/nia/legacy-chat ────────────────────────────────────────────────
+// Nia AI chat endpoint scoped exclusively to Legacy game mode.
+// Uses the Legacy-specific kill-switch (`legacy_nia_enabled`), which:
+//   - defaults to ENABLED when the row is absent
+//   - is NOT blocked by the global `nia_enabled` toggle
+//   - can be independently disabled by admins via PATCH /admin/legacy-nia-toggle
+//
+// This allows Nia to power narrative generation, quest hints, character dialogue,
+// and world regeneration narration inside Legacy even when the Nia chat drawer
+// visible to the rest of the app is toggled off.
+router.post(
+  "/nia/legacy-chat",
+  requireAuth,
+  crisisAwareChatLimiter,
+  async (req: Request, res: Response) => {
+    if (!(await isNiaEnabledForLegacy())) {
+      return res.status(503).json({ error: "Nia Legacy AI is temporarily unavailable." });
+    }
+
+    const body = req.body as Record<string, unknown>;
+
+    const message = sanitizeMessage(body.message);
+    if (!message) {
+      return res.status(400).json({ error: "message is required and must be under 2000 characters" });
+    }
+
+    const sessionId = sanitizeSessionId(body.sessionId);
+    if (!sessionId) {
+      return res.status(400).json({ error: "sessionId is required (6–128 alphanumeric/dash characters)" });
+    }
+
+    const userId = req.authenticatedUserId ?? null;
+    const acceptLanguage = req.headers["accept-language"] ?? null;
+    const resolvedLanguage = parsePrimaryLanguage(acceptLanguage);
+
+    const upstreamBody = JSON.stringify({
+      message,
+      sessionId,
+      userId,
+      userName:       typeof body.userName       === "string" ? body.userName.slice(0, 100)       : null,
+      accountType:    typeof body.accountType     === "string" ? body.accountType                  : null,
+      helperModeActive: false, // Legacy game context — not a helper session
+      language:       resolvedLanguage,
+      liveContext:    typeof body.liveContext === "object" && body.liveContext !== null ? body.liveContext : null,
+      legacyMode:     true, // Signal to nia-service that this is a Legacy game request
+      ancestorName:   typeof body.ancestorName === "string" ? body.ancestorName.slice(0, 100) : null,
+      chapterContext: typeof body.chapterContext === "string" ? body.chapterContext.slice(0, 500) : null,
+    });
+
+    try {
+      const abortCtrl = new AbortController();
+      const abortTimer = setTimeout(() => abortCtrl.abort(), 30_000);
+      let upstream: globalThis.Response;
+      try {
+        upstream = await fetch(`${getNiaUrl()}/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type":    "application/json",
+            "x-internal-secret": process.env["INTERNAL_SECRET"] ?? "",
+            "Accept-Language": acceptLanguage ?? "en",
+          },
+          body: upstreamBody,
+          signal: abortCtrl.signal,
+        });
+      } finally {
+        clearTimeout(abortTimer);
+      }
+
+      if (!upstream.ok) {
+        const errBody = await upstream.json().catch(() => ({}));
+        return res.status(upstream.status).json(errBody);
+      }
+
+      const data = await upstream.json();
+      return res.json(data);
+    } catch (err) {
+      logger.error({ err }, "nia-proxy: legacy-chat upstream failed");
+      return res.status(503).json({ error: "Nia Legacy AI is temporarily unavailable." });
+    }
+  }
+);
+
+// ── PATCH /api/admin/legacy-nia-toggle ───────────────────────────────────────
+// Independently enables/disables Nia AI for Legacy game mode.
+// Does NOT affect the global Nia toggle (nia_enabled).
+router.patch(
+  "/admin/legacy-nia-toggle",
+  requireAuth,
+  requireAdmin(),
+  adminLimiter,
+  async (req: Request, res: Response) => {
+    const { enabled } = req.body as { enabled?: unknown };
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ error: "enabled must be a boolean" });
+    }
+    try {
+      await db.execute(
+        sql`INSERT INTO system_settings (key, value, updated_at)
+            VALUES ('legacy_nia_enabled', ${enabled ? "true" : "false"}, NOW())
+            ON CONFLICT (key) DO UPDATE
+              SET value = EXCLUDED.value, updated_at = NOW()`
+      );
+      logger.info({ enabled }, "nia-proxy: admin toggled Legacy Nia AI");
+      // Broadcast WS event so connected admin panels refresh
+      sendNiaEventToUser("system", { type: "legacy_nia_status", enabled });
+      return res.json({ success: true, legacy_nia_enabled: enabled });
+    } catch (err) {
+      logger.error({ err }, "nia-proxy: legacy-nia-toggle DB update failed");
+      return res.status(500).json({ error: "Failed to update Legacy Nia setting" });
+    }
+  }
+);
+
+// ── GET /api/admin/legacy-nia-status ─────────────────────────────────────────
+router.get(
+  "/admin/legacy-nia-status",
+  requireAuth,
+  requireAdmin(),
+  async (_req: Request, res: Response) => {
+    const enabled = await isNiaEnabledForLegacy();
+    return res.json({ legacy_nia_enabled: enabled });
+  }
+);
 
 // ── POST /api/nia/knowledge-refresh (admin only) ──────────────────────────────
 // Triggers an immediate Nia learning cycle on the nia-service.

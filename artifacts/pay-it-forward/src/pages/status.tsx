@@ -13,6 +13,7 @@ interface Check {
   name: string;
   ok: boolean;
   latency_ms?: number;
+  disabled?: boolean; // intentionally toggled off — not a system error
 }
 
 interface StatusResponse {
@@ -35,24 +36,44 @@ const SERVICE_META: Record<string, { label: string; icon: React.ElementType; des
 function ServiceRow({ check }: { check: Check }) {
   const meta = SERVICE_META[check.name] ?? { label: check.name, icon: Database, description: "" };
   const Icon = meta.icon;
+
+  // Three display states: Online (ok), Disabled (ok but intentionally off), Offline (error)
+  const isDisabled = !check.ok && check.disabled === true;
+  const colorClass = check.ok
+    ? "text-emerald-400"
+    : isDisabled
+      ? "text-amber-400"
+      : "text-red-400";
+  const bgClass = check.ok
+    ? "bg-emerald-500/10"
+    : isDisabled
+      ? "bg-amber-500/10"
+      : "bg-red-500/10";
+  const statusLabel = check.ok ? "Online" : isDisabled ? "Disabled" : "Offline";
+
   return (
     <div className="flex items-center gap-4 py-4 border-b border-border last:border-0">
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${check.ok ? "bg-emerald-500/10" : "bg-red-500/10"}`}>
-        <Icon className={`w-5 h-5 ${check.ok ? "text-emerald-400" : "text-red-400"}`} />
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${bgClass}`}>
+        <Icon className={`w-5 h-5 ${colorClass}`} />
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-bold text-foreground">{meta.label}</p>
         {meta.description && (
           <p className="text-xs text-muted-foreground mt-0.5">{meta.description}</p>
         )}
+        {isDisabled && check.name === "nia_ai" && (
+          <p className="text-xs text-amber-400/70 mt-0.5">Available in Legacy game mode</p>
+        )}
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {check.ok
           ? <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-          : <AlertCircle  className="w-5 h-5 text-red-400" />
+          : isDisabled
+            ? <AlertCircle  className="w-5 h-5 text-amber-400" />
+            : <AlertCircle  className="w-5 h-5 text-red-400" />
         }
-        <span className={`text-xs font-black ${check.ok ? "text-emerald-400" : "text-red-400"}`}>
-          {check.ok ? "Online" : "Offline"}
+        <span className={`text-xs font-black ${colorClass}`}>
+          {statusLabel}
         </span>
       </div>
     </div>

@@ -263,13 +263,26 @@ router.get("/status", async (_req, res) => {
   checks.push({ name: "database", ok: dbOk, latency_ms: Date.now() - dbStart });
 
   // 2. Nia AI — check kill-switch setting via db-helpers (no external API call)
+  // We distinguish three states:
+  //   enabled  → ok: true,  disabled: false  (Nia is live)
+  //   disabled → ok: true,  disabled: true   (intentionally off — NOT a system error)
+  //   error    → ok: false, disabled: false  (DB failure reading the setting)
   let niaEnabled = false;
+  let niaDisabled = false; // intentionally toggled off by admin (not a failure)
   try {
-    const val = await getSystemSetting("nia_enabled");
-    // fail-closed: only an explicit "true" counts as enabled, matching every other Nia gate
-    niaEnabled = dbOk && val === "true";
-  } catch { /* fall through */ }
-  checks.push({ name: "nia_ai", ok: niaEnabled });
+    if (dbOk) {
+      const val = await getSystemSetting("nia_enabled");
+      if (val === "true") {
+        niaEnabled = true;
+      } else {
+        // Any value other than "true" is intentional-off, not broken
+        niaEnabled = false;
+        niaDisabled = true;
+      }
+    }
+  } catch { /* fall through — dbOk already false, niaDisabled stays false */ }
+  // Mark ok=true when DB is healthy (disabled intentionally = not a system fault)
+  checks.push({ name: "nia_ai", ok: dbOk ? true : false, ...(niaEnabled ? {} : { disabled: niaDisabled }) } as { name: string; ok: boolean; latency_ms?: number; disabled?: boolean });
 
   // 3. Map / Geolocation — check env key presence (no external call)
   const mapOk = !!(process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN);
