@@ -2430,6 +2430,22 @@ export default function LegacyHomePage() {
                     ))}
                   </div>
                 )}
+                {coopReady && coopReady.coopReady && activeChapterId && (
+                  <button
+                    onClick={() => navigate(`/legacy/chapter/${activeChapterId}`)}
+                    className="w-full mt-1 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-xs uppercase tracking-wide py-3 rounded-xl active:opacity-70 flex items-center justify-center gap-2"
+                  >
+                    <Play className="w-4 h-4" /> Start Co-op Chapter Together
+                  </button>
+                )}
+                {coopReady && coopReady.coopReady && !activeChapterId && chapters.length > 0 && (
+                  <button
+                    onClick={() => navigate(`/legacy/chapter/${chapters.find(c => c.status === "unlocked" || c.status === "in_progress")?.id ?? chapters[0].id}`)}
+                    className="w-full mt-1 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-xs uppercase tracking-wide py-3 rounded-xl active:opacity-70 flex items-center justify-center gap-2"
+                  >
+                    <Play className="w-4 h-4" /> Start Co-op Chapter Together
+                  </button>
+                )}
                 {coopReady && !coopReady.coopReady && (
                   <p className="text-xs text-amber-600 italic text-center">
                     Invite family members to join Niakofa, then play together when {coopReady.minRequired} or more are online.

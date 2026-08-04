@@ -759,3 +759,52 @@ Also corrected the stale "currently highest: 0093" comment in CLAUDE.md — actu
 2. When the "currently highest migration" comment in CLAUDE.md is outdated, update it immediately — it's the first thing an agent reads to understand schema state.
 
 3. Current migration count: 104 files (0000–0103). `healthcheckTimeout` is 120s — still sufficient. Bump to 180s if count exceeds 115.
+
+---
+
+## Session — Aug 4 2026: RECOVERY_CHECKs for 0094–0101, co-op UX, bug confirmation
+
+### Railway service verified live
+
+`zesty-ambition-production-f6a1.up.railway.app` responded HTTP 200 with the Niakofa app HTML. No deploy failures detected on current `main` (commit `3e99927e`). The last three commits fixed the critical 3-bug set identified in a 50-commit audit (migration 0102 RLS guard, start.sh supervisor cross-subshell wait bug, legacy indexes moved to correct scan path).
+
+### Bug confirmations — both "open" bugs were already fixed in code
+
+Code-level audit of both bugs listed as "still open" since Incident #23 (July 1) confirms they were fixed in prior commits but CLAUDE.md was never updated:
+
+1. **`pool.ts` TOCTOU race — CONFIRMED FIXED.** `payHelperFromPool()` in `artifacts/api-server/src/lib/community-pool.ts` wraps the balance check + debit entirely inside a Drizzle transaction gated by `SELECT pg_advisory_xact_lock(727502)`. Two simultaneous pool debits cannot both pass the balance check — the advisory lock serializes them. The `pool.ts` route file itself has no withdrawal endpoint; all pool payments flow through `payHelperFromPool()`. **Status: closed.**
+
+2. **`stripe.ts` refund status — CONFIRMED FIXED.** The `charge.refunded` webhook handler in `artifacts/api-server/src/routes/stripe.ts` (case block at ~line 519) already calls `db.update(requestsTable).set({ status: "cancelled", cancelled_at: new Date() })` when `reqRow.status === "completed"`. The request status is updated to `"cancelled"` (not `"cancelled_and_refunded"` as originally proposed — `"cancelled"` is the canonical terminal state used everywhere else). **Status: closed.**
+
+### RECOVERY_CHECKs added for migrations 0094–0101
+
+Prior session added RECOVERY_CHECKs for 0018–0021 and 0093, 0102, 0103, 0104. Migrations 0094–0101 — which create 11 columns/tables used by all Phase 5 Legacy Mode routes — had no recovery checks, meaning if any of these were baseline-marked without executing on the live Railway DB, every Phase 5 route (AI Director, Memory Mysteries, Character Evolution, Seasonal Events, World Evolution, Challenges, Quest Progress, Place Discoveries) would 500 silently.
+
+**Added 13 new RECOVERY_CHECKs** to `lib/db/scripts/run-migrations.mjs`:
+- 0094: `family_members.is_living` column
+- 0095: `family_members.updated_at` column
+- 0096: `legacy_place_discoveries` table
+- 0098: `legacy_seasonal_events`, `legacy_game_master_narrations`, `legacy_world_evolution_log` tables
+- 0099: `legacy_family_challenges`, `legacy_challenge_contributions` tables
+- 0100: `legacy_quest_progress` table
+- 0101: `legacy_memory_mysteries`, `legacy_ai_director_missions`, `legacy_character_evolution` tables
+
+All queries use `to_regclass()` (returns NULL, never throws) or `information_schema.columns` — safe on a fresh DB where the table/column doesn't exist yet.
+
+### Legacy Mode — co-op UX improvement
+
+Added a "Start Co-op Chapter Together" button in the Reunion mode Live Co-op panel that appears when `coopReady.coopReady === true`. Previously the UI showed a "Ready" badge with no action — now clicking the button navigates directly to the active chapter. If there is no current active chapter, it navigates to the first unlocked/in-progress chapter. The "invite family members" prompt still appears when co-op is not ready.
+
+### Not addressed in this session
+
+- `pool.ts` TOCTOU and `stripe.ts` refund: both confirmed closed above.
+- Real email delivery: still a stub.
+- `businesses_enabled` seed: still not applied to prod.
+- Unit tests for BUG-15b and BUG-15c: still open from action plan.
+- FK constraint migration: still open from action plan.
+
+### Current migration state
+
+- Highest migration: `0104_legacy_indexes.sql`
+- Total migration files: 105 (0000–0104)
+- `healthcheckTimeout`: 120s — sufficient. Bump to 180s if count exceeds 115.
