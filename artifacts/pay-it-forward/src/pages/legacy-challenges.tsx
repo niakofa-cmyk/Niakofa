@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, Loader2, Users, Trophy, Plus, CheckCircle2, Gift, Sparkles, X, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Users, Trophy, Plus, CheckCircle2, Gift, Sparkles, X, Trash2, Lock, Camera, Mic, BookOpen, MapPin, FileText, Wifi } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 
@@ -72,6 +72,23 @@ const CONTRIBUTION_LABELS: Record<string, string> = {
   checkin: "Place Visited",
 };
 
+const CONTRIBUTION_ICONS: Record<string, typeof Users> = {
+  interview: Mic,
+  photo: Camera,
+  story: BookOpen,
+  location: MapPin,
+  document: FileText,
+  checkin: MapPin,
+};
+
+// Multi-step quest tasks for cooperative challenges
+const COOP_TASKS = [
+  { id: "photo", label: "Find & upload the photograph", icon: Camera, description: "Search family albums for the lost photograph" },
+  { id: "interview", label: "Interview an elder about the photo", icon: Mic, description: "Record a 30s+ interview about the photo's story" },
+  { id: "story", label: "Write the story behind the photo", icon: BookOpen, description: "Document who is in the photo and why it matters" },
+  { id: "location", label: "Pin where the photo was taken", icon: MapPin, description: "Tag the location where the photo was captured" },
+];
+
 export default function LegacyChallengesPage() {
   const { currentUser } = useAppContext();
   const [, navigate] = useLocation();
@@ -83,6 +100,21 @@ export default function LegacyChallengesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [contributing, setContributing] = useState<number | null>(null);
   const [contribTypes, setContribTypes] = useState<Record<string, string>>({});
+  const [onlineMembers, setOnlineMembers] = useState<number>(0);
+  const [totalMembers, setTotalMembers] = useState<number>(0);
+  const [completedTasks, setCompletedTasks] = useState<Record<number, Set<string>>>({});
+
+  // Simulate live presence — in production this would be a WebSocket subscription
+  useEffect(() => {
+    if (!familyId) return;
+    const interval = setInterval(() => {
+      setOnlineMembers((prev) => {
+        const next = Math.max(1, prev + (Math.random() > 0.5 ? 1 : -1)));
+        return Math.min(next, totalMembers || 3);
+      });
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [familyId, totalMembers]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -105,6 +137,19 @@ export default function LegacyChallengesPage() {
         const body = await res.json();
         setChallenges(body.challenges || []);
         setTemplates(body.templates || []);
+        setTotalMembers(famBody?.families?.[0]?.member_count ?? 3);
+        setOnlineMembers(Math.min(2, famBody?.families?.[0]?.member_count ?? 3));
+
+        // Compute completed tasks per challenge from existing contributions
+        const taskMap: Record<number, Set<string>> = {};
+        for (const ch of (body.challenges || []) as Challenge[]) {
+          const tasks = new Set<string>();
+          for (const c of ch.contributions) {
+            tasks.add(c.contribution_type);
+          }
+          taskMap[ch.id] = tasks;
+        }
+        setCompletedTasks(taskMap);
       } catch {
         setError("Failed to load challenges.");
       } finally {
@@ -176,6 +221,14 @@ export default function LegacyChallengesPage() {
           return c;
         }),
       );
+      // Mark the task as completed in the co-op task tracker
+      setCompletedTasks((prev) => {
+        const next = { ...prev };
+        const set = new Set(next[challengeId] ?? []);
+        set.add(contribTypes[challengeId] || "story");
+        next[challengeId] = set;
+        return next;
+      });
       setContributing(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to contribute");
@@ -240,6 +293,9 @@ export default function LegacyChallengesPage() {
               {activeChallenges.map((ch) => {
                 const Icon = TYPE_ICONS[ch.challenge_type] ?? Users;
                 const pct = Math.min(100, Math.round((ch.progress / ch.goal) * 100));
+                const tasks = completedTasks[ch.id] ?? new Set<string>();
+                const allTasksDone = COOP_TASKS.every(t => tasks.has(t.id));
+                const isCoopQuest = ch.challenge_type === "story_collection" || ch.challenge_type === "preservation";
                 return (
                   <div key={ch.id} className="bg-[#2A1A0F] border border-amber-900/40 rounded-xl p-4">
                     <div className="flex items-start gap-3 mb-3">
@@ -250,7 +306,43 @@ export default function LegacyChallengesPage() {
                         <h3 className="font-bold text-amber-200 text-sm">{ch.title}</h3>
                         <p className="text-xs text-amber-700 mt-0.5 line-clamp-2">{ch.description}</p>
                       </div>
+                      {isCoopQuest && (
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                          </span>
+                          <span className="text-[10px] text-emerald-400 font-bold">{onlineMembers} online</span>
+                        </div>
+                      )}
                     </div>
+
+                    {/* Co-op multi-step task list */}
+                    {isCoopQuest && (
+                      <div className="mb-3 space-y-1.5">
+                        {COOP_TASKS.map((task) => {
+                          const done = tasks.has(task.id);
+                          const TaskIcon = task.icon;
+                          return (
+                            <div key={task.id} className={`flex items-center gap-2 rounded-lg px-2.5 py-2 ${done ? "bg-emerald-950/30" : "bg-amber-950/30"}`}>
+                              <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${done ? "bg-emerald-500/20" : "bg-amber-900/40"}`}>
+                                {done ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <TaskIcon className="w-3 h-3 text-amber-600" />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-[11px] font-bold ${done ? "text-emerald-300" : "text-amber-300"}`}>{task.label}</p>
+                                <p className="text-[9px] text-amber-700 line-clamp-1">{task.description}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {!allTasksDone && onlineMembers < 2 && (
+                          <div className="flex items-center gap-1.5 text-[10px] text-amber-600 italic mt-1">
+                            <Lock className="w-3 h-3" />
+                            Requires at least 2 family members online to unlock
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <div className="mb-3">
                       <div className="flex items-center justify-between mb-1">
@@ -264,13 +356,16 @@ export default function LegacyChallengesPage() {
 
                     {ch.contributions.length > 0 && (
                       <div className="mb-3 space-y-1">
-                        {ch.contributions.slice(0, 3).map((c) => (
-                          <div key={c.id} className="flex items-center gap-2 text-[11px] text-amber-700">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            <span>{CONTRIBUTION_LABELS[c.contribution_type] || c.contribution_type}</span>
-                            <span className="text-amber-900">· {new Date(c.created_at).toLocaleDateString()}</span>
-                          </div>
-                        ))}
+                        {ch.contributions.slice(0, 3).map((c) => {
+                          const ContribIcon = CONTRIBUTION_ICONS[c.contribution_type] ?? CheckCircle2;
+                          return (
+                            <div key={c.id} className="flex items-center gap-2 text-[11px] text-amber-700">
+                              <ContribIcon className="w-3 h-3 text-emerald-600" />
+                              <span>{CONTRIBUTION_LABELS[c.contribution_type] || c.contribution_type}</span>
+                              <span className="text-amber-900">· {new Date(c.created_at).toLocaleDateString()}</span>
+                            </div>
+                          );
+                        })}
                         {ch.contributions.length > 3 && (
                           <p className="text-[10px] text-amber-800 pl-5">+{ch.contributions.length - 3} more</p>
                         )}

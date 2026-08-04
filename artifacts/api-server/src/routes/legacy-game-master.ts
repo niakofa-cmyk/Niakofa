@@ -16,7 +16,6 @@
  */
 
 import { Router } from "express";
-import Anthropic from "@anthropic-ai/sdk";
 import {
   db,
   familyMembersTable,
@@ -38,11 +37,11 @@ import { requireAuth } from "../middlewares/auth";
 import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { getConsentedMemberIds } from "../lib/legacy-consent";
+import { legacyAI } from "../lib/legacy-ai-gateway";
 import { createHash } from "crypto";
 
 const router = Router();
 
-const MODEL = "claude-3-5-haiku-20241022";
 const NARRATION_TTL_MS = 86_400_000; // 24h cache
 
 async function isMember(userId: number, familyId: number): Promise<boolean> {
@@ -216,24 +215,16 @@ router.get(
           userPrompt = "Generate a brief narration for the family RPG.";
       }
 
+      const aiResult = await legacyAI.generate({ system: systemPrompt, userPrompt, maxTokens: 400 });
       let content: string;
-      let modelUsed = MODEL;
-      let metadata: Record<string, unknown> = {};
+      let modelUsed = aiResult.model;
+      let metadata: Record<string, unknown> = aiResult.metadata;
 
-      try {
-        const anthropic = new Anthropic();
-        const response = await anthropic.messages.create({
-          model: MODEL,
-          max_tokens: 400,
-          system: systemPrompt,
-          messages: [{ role: "user", content: userPrompt }],
-        });
-        content = response.content[0]?.type === "text" ? response.content[0].text : "";
-        metadata = { stop_reason: response.stop_reason, usage: response.usage };
-      } catch (aiErr) {
-        logger.warn({ err: aiErr, familyId }, "legacy-game-master: AI call failed, using fallback");
+      if (aiResult.model === "fallback" || !aiResult.content) {
         content = generateFallbackNarration(narrationType, ancestorName, contextSummary);
         modelUsed = "fallback";
+      } else {
+        content = aiResult.content;
       }
 
       const [narration] = await db
@@ -447,16 +438,9 @@ router.get(
           places: places.map((p) => ({ label: p.label, country: p.country })),
         };
 
-        const apiKey = process.env.ANTHROPIC_API_KEY;
-        if (apiKey) {
-          try {
-            const anthropic = new Anthropic({ apiKey });
-            const response = await anthropic.messages.create({
-              model: MODEL,
-              max_tokens: 200,
-              messages: [{
-                role: "user",
-                content: `You are Nia, the AI Game Master for Niakofa. Write a brief, evocative "Today's Journey" introduction for the player.
+        const aiResult2 = await legacyAI.generate({
+          system: "You are Nia, the AI Game Master for Niakofa.",
+          userPrompt: `Write a brief, evocative "Today's Journey" introduction for the player.
 
 Family data:
 ${JSON.stringify(contextSummary, null, 2)}
@@ -469,19 +453,9 @@ Rules:
 - End with a sense of purpose for today
 
 Write the introduction:`,
-              }],
-            });
-            narration = response.content
-              .filter((b): b is Anthropic.TextBlock => b.type === "text")
-              .map((b) => b.text)
-              .join("")
-              .trim();
-          } catch {
-            narration = `You awaken as ${picked.member.name}${birthYear ? `, born ${birthYear}` : ""}. ${picked.member.role ? `Their role: ${picked.member.role}.` : ""} Today, your family's stories await discovery.`;
-          }
-        } else {
-          narration = `You awaken as ${picked.member.name}${birthYear ? `, born ${birthYear}` : ""}. ${picked.member.role ? `Their role: ${picked.member.role}.` : ""} Today, your family's stories await discovery.`;
-        }
+          maxTokens: 200,
+        });
+        narration = aiResult2.content.trim() || `You awaken as ${picked.member.name}${birthYear ? `, born ${birthYear}` : ""}. ${picked.member.role ? `Their role: ${picked.member.role}.` : ""} Today, your family's stories await discovery.`;
 
         // Persist narration
         const [inserted] = await db
@@ -491,7 +465,7 @@ Write the introduction:`,
             narration_type: narrationType,
             prompt_hash: promptHash,
             content: narration,
-            model_used: MODEL,
+            model_used: aiResult2.model,
             content_metadata: contextSummary,
           })
           .returning();

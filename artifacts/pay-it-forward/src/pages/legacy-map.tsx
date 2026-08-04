@@ -20,7 +20,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useLocation } from "wouter";
 import MapGL, { Marker, Popup, Source, Layer } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { ArrowLeft, MapPin, Loader2, Church, School, Home, Landmark, Building2, TreePine, CheckCircle2, Navigation, Plus, X } from "lucide-react";
+import { ArrowLeft, MapPin, Loader2, Church, School, Home, Landmark, Building2, TreePine, CheckCircle2, Navigation, Plus, X, BookOpen, Camera, Star, Compass } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 
@@ -467,6 +467,34 @@ export default function LegacyMapPage() {
         <AddPlaceModal onClose={() => setShowAddPlace(false)} onSubmit={addPlace} />
       )}
 
+      {/* Journey Progress sidebar */}
+      <div className="px-4 py-3 bg-[#1A0F08] border-b border-amber-900/20">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <Compass className="w-3.5 h-3.5 text-amber-500" />
+            <span className="text-[10px] text-amber-700 uppercase tracking-wide">Places</span>
+            <span className="text-xs font-bold text-amber-400">{data.placesDiscovered}/{data.places.length}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <BookOpen className="w-3.5 h-3.5 text-amber-500" />
+            <span className="text-[10px] text-amber-700 uppercase tracking-wide">Stories</span>
+            <span className="text-xs font-bold text-amber-400">{data.places.filter(p => p.discovered).length}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Camera className="w-3.5 h-3.5 text-amber-500" />
+            <span className="text-[10px] text-amber-700 uppercase tracking-wide">Memories</span>
+            <span className="text-xs font-bold text-amber-400">{data.places.filter(p => p.discovered && p.chapterNumbers.length > 0).length}</span>
+          </div>
+          {data.route.length > 0 && (
+            <div className="flex items-center gap-1.5 ml-auto">
+              <Navigation className="w-3.5 h-3.5 text-amber-500" />
+              <span className="text-[10px] text-amber-700 uppercase tracking-wide">Route</span>
+              <span className="text-xs font-bold text-amber-400">{data.route.length} stops</span>
+            </div>
+          )}
+        </div>
+      </div>
+
       {mapboxToken && placedPlaces.length > 0 ? (
         <div className="flex-1 relative">
           <MapGL
@@ -535,8 +563,21 @@ export default function LegacyMapPage() {
                 },
               }}>
                 <Layer id="route-line" type="line" layout={{ "line-join": "round", "line-cap": "round" }} paint={{ "line-color": "#f59e0b", "line-width": 2, "line-opacity": 0.5 }} />
+                <Layer id="route-dots" type="circle" paint={{ "circle-radius": 3, "circle-color": "#f59e0b", "circle-opacity": 0.7 }} />
               </Source>
             )}
+
+            {/* Year labels on migration route stops */}
+            {placedPlaces.length > 1 && placedPlaces.map((p, i) => {
+              if (!p.lng || !p.lat || !p.year) return null;
+              return (
+                <Marker key={`year-${p.id}`} longitude={p.lng} latitude={p.lat + 0.5} anchor="bottom">
+                  <div className="text-[9px] text-amber-400/80 font-bold bg-[#1A0F08]/80 px-1.5 py-0.5 rounded whitespace-nowrap">
+                    {p.year}
+                  </div>
+                </Marker>
+              );
+            })}
           </MapGL>
         </div>
       ) : (

@@ -17,7 +17,6 @@
  */
 
 import { Router } from "express";
-import Anthropic from "@anthropic-ai/sdk";
 import {
   db,
   familiesTable,
@@ -39,6 +38,7 @@ import { cacheGet, cacheSet, cacheDel } from "../lib/cache";
 import { eq, and, desc, sql, inArray, asc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { getConsentedMemberIds, filterConsentedMembers } from "../lib/legacy-consent";
+import { legacyAI } from "../lib/legacy-ai-gateway";
 
 const router = Router();
 
@@ -331,8 +331,6 @@ async function generateAiQuests(r: FamilyReservoir): Promise<AiQuest[]> {
     return buildFallbackQuests(r);
   }
 
-  const anthropic = new Anthropic({ apiKey });
-
   const ancestorList = r.ancestorProfiles.length
     ? r.ancestorProfiles
         .slice(0, 8)
@@ -369,21 +367,17 @@ Return ONLY a JSON array — no preamble, no explanation, no markdown fences:
 [{"title":"...","description":"...","xp":100,"category":"record","actionPath":"/family/${r.familyId}","ancestorName":"..."}]`;
 
   try {
-    const response = await anthropic.messages.create({
-      model:      "claude-3-5-haiku-20241022",
-      max_tokens: 650,
-      messages:   [{ role: "user", content: prompt }],
+    const aiResult = await legacyAI.generate({
+      system: "You are the AI Game Master for Niakofa Legacy Mode — a living family history RPG.",
+      userPrompt: prompt,
+      maxTokens: 650,
     });
 
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map(b => b.text)
-      .join("")
-      .trim();
+    const text = aiResult.content.trim();
 
     // Extract JSON array — strip any accidental markdown wrapping
     const match = text.replace(/```(?:json)?|```/g, "").match(/\[[\s\S]*\]/);
-    if (!match) throw new Error("No JSON array found in Claude response");
+    if (!match) throw new Error("No JSON array found in AI response");
 
     const raw = JSON.parse(match[0]) as Array<Record<string, unknown>>;
     const VALID_CATS = new Set(["record","document","connect","explore","discover"]);
