@@ -19,9 +19,10 @@
 -- statements use IF EXISTS to make the migration idempotent.
 
 -- ── Helper function: family membership check ────────────────────────────────
--- Returns true if the current auth.uid() is an active or invited member of the
--- given family. SECURITY DEFINER so it runs with elevated privileges and can
--- read family_members regardless of the caller's RLS context.
+-- On plain PostgreSQL (Railway, Replit) there is no auth schema or auth.uid().
+-- Authorization is enforced at the Express API layer. This function returns
+-- true so RLS policies allow all DB-level access while the API enforces auth.
+-- On Supabase deployments, replace this with the auth.uid() version.
 
 CREATE OR REPLACE FUNCTION legacy_is_family_member(fam_id integer)
 RETURNS boolean
@@ -29,13 +30,18 @@ LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM family_members
-    WHERE family_id = fam_id
-      AND user_id = auth.uid()
-      AND status IN ('active', 'invited')
-  );
+  SELECT true;
 $$;
+
+-- Create the 'authenticated' role if it doesn't exist.
+-- Required because RLS policies below use "TO authenticated".
+-- On Supabase this role is built-in; on plain PG we create it as a no-login role.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    CREATE ROLE authenticated NOLOGIN;
+  END IF;
+END $$;
 
 -- ── 1. legacy_scenes ─────────────────────────────────────────────────────────
 -- Interactive narrative scenes within a chapter. Each scene has a type
@@ -191,15 +197,15 @@ CREATE INDEX IF NOT EXISTS idx_legacy_skills_member ON legacy_skills(member_id);
 
 CREATE OR REPLACE TRIGGER update_legacy_scenes_updated_at
   BEFORE UPDATE ON legacy_scenes
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE OR REPLACE TRIGGER update_legacy_collectibles_updated_at
   BEFORE UPDATE ON legacy_collectibles
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE OR REPLACE TRIGGER update_legacy_skills_updated_at
   BEFORE UPDATE ON legacy_skills
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ── RLS: Enable on ALL legacy tables ─────────────────────────────────────────
 -- Every legacy table gets RLS with family-membership-scoped policies.

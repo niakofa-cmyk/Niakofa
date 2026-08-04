@@ -27,19 +27,23 @@
 -- ── Step 1: Drop uuid-based legacy engine tables (bottom-up to respect FKs) ──
 -- Order matters: drop tables with FKs before the tables they reference.
 
-DROP TABLE IF EXISTS legacy_quest_progress;
-DROP TABLE IF EXISTS legacy_quests;
-DROP TABLE IF EXISTS legacy_user_achievements;
-DROP TABLE IF EXISTS legacy_achievements;
-DROP TABLE IF EXISTS legacy_sessions;
-DROP TABLE IF EXISTS legacy_choices;
-DROP TABLE IF EXISTS legacy_dialogues;
-DROP TABLE IF EXISTS legacy_scenes;
-DROP TABLE IF EXISTS legacy_chapters;
-DROP TABLE IF EXISTS legacy_worlds;
+DROP TABLE IF EXISTS legacy_quest_progress CASCADE;
+DROP TABLE IF EXISTS legacy_quests CASCADE;
+DROP TABLE IF EXISTS legacy_user_achievements CASCADE;
+DROP TABLE IF EXISTS legacy_achievements CASCADE;
+DROP TABLE IF EXISTS legacy_sessions CASCADE;
+DROP TABLE IF EXISTS legacy_choices CASCADE;
+DROP TABLE IF EXISTS legacy_dialogues CASCADE;
+DROP TABLE IF EXISTS legacy_scenes CASCADE;
+DROP TABLE IF EXISTS legacy_chapters CASCADE;
+DROP TABLE IF EXISTS legacy_worlds CASCADE;
+-- Also drop uuid-PK tables that 0092 created but whose FK constraints were
+-- only removed (not the tables themselves) when dependent tables were dropped.
+-- 0102 needs to recreate these with integer PKs + family_id columns.
+DROP TABLE IF EXISTS legacy_world_versions CASCADE;
 
 -- family_knowledge_versions: uuid-based from 0092 — drop and recreate
-DROP TABLE IF EXISTS family_knowledge_versions;
+DROP TABLE IF EXISTS family_knowledge_versions CASCADE;
 
 -- ── Step 2: Enum types for legacy engine ──────────────────────────────────────
 -- These were created in 0092. They use correct values so we keep them.
@@ -211,6 +215,28 @@ CREATE TABLE IF NOT EXISTS family_stories (
 
 CREATE INDEX IF NOT EXISTS idx_family_stories_family ON family_stories (family_id);
 CREATE INDEX IF NOT EXISTS idx_family_stories_about  ON family_stories (about_member_id);
+
+-- ── Step 4b: family_artifacts ─────────────────────────────────────────────────
+-- family_artifacts was in 0092 with uuid PK but is now skipped there.
+-- Create it here with the correct serial integer PK.
+
+CREATE TABLE IF NOT EXISTS family_artifacts (
+  id               SERIAL PRIMARY KEY,
+  family_id        INTEGER NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+  contributed_by   INTEGER REFERENCES family_members(id) ON DELETE SET NULL,
+  name             TEXT NOT NULL,
+  description      TEXT,
+  artifact_type    TEXT DEFAULT 'object',
+  media_url        TEXT,
+  date_origin      TEXT,
+  location_label   TEXT,
+  story            TEXT,
+  tags             JSONB DEFAULT '[]',
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_family_artifacts_family ON family_artifacts (family_id);
 
 -- ── Step 5: family_member_consent ─────────────────────────────────────────────
 -- This table exists in the Drizzle schema but was never added to any migration.
