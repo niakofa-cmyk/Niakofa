@@ -612,6 +612,15 @@ router.post(
         `AI Director mission completed: ${mission.title} (+${mission.reward_xp} XP)`,
       ).catch(() => {});
 
+      // Re-sync achievements so mission completion has real progression
+      // impact — syncAchievements recomputes all progress from vault data.
+      try {
+        const { syncAchievements } = await import("./legacy-achievements");
+        await syncAchievements(mission.family_id);
+      } catch (e) {
+        logger.warn({ err: e, missionId }, "legacy-ai-director: syncAchievements failed (non-fatal)");
+      }
+
       return res.json({ mission: updated });
     } catch (err) {
       logger.error({ err, missionId }, "legacy-ai-director: complete failed");

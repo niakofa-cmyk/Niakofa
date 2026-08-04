@@ -375,7 +375,7 @@ export default function LegacyMapPage() {
             if (!d) return d;
             const places = d.places.map((p) =>
               p.id === placeId && !p.discovered
-                ? { ...p, discovered: true, discoveredAt: body.discoveredAt ?? new Date().toISOString(), discoveredBy: p.discoveredBy }
+                ? { ...p, discovered: true, discoveredAt: body.discoveredAt ?? new Date().toISOString(), discoveredBy: body.discoveredBy ?? p.discoveredBy }
                 : p,
             );
             return { ...d, places, placesDiscovered: places.filter((p) => p.discovered).length };
@@ -531,7 +531,7 @@ export default function LegacyMapPage() {
                 properties: {},
                 geometry: {
                   type: "LineString",
-                  coordinates: placedPlaces.map((p) => [p.lng!, p.lat!]),
+                  coordinates: (data?.route && data.route.length > 0 ? data.route : placedPlaces.map(p => [p.lng!, p.lat!] as [number, number])) as [number, number][],
                 },
               }}>
                 <Layer id="route-line" type="line" layout={{ "line-join": "round", "line-cap": "round" }} paint={{ "line-color": "#f59e0b", "line-width": 2, "line-opacity": 0.5 }} />

@@ -198,6 +198,9 @@ router.post(
 
     const { changeType, description, affectedCount, knowledgeVersionId } = req.body ?? {};
 
+    // When a world_regenerated event is logged, invalidate the quest
+    // reservoir cache so the next read triggers fresh quest generation.
+
     if (!changeType || !["member_added", "memory_added", "story_added", "interview_added", "place_added", "event_added", "relation_added", "world_regenerated"].includes(changeType)) {
       return res.status(400).json({ error: "Valid changeType is required" });
     }
@@ -217,6 +220,14 @@ router.post(
           affected_count: typeof affectedCount === "number" ? affectedCount : 1,
         })
         .returning();
+
+      // Invalidate quest reservoir cache so new data triggers regeneration
+      if (changeType === "world_regenerated" || changeType === "memory_added" || changeType === "story_added" || changeType === "member_added") {
+        try {
+          const { cacheDel } = await import("../lib/cache");
+          await cacheDel(`legacy:reservoir:${familyId}`);
+        } catch { /* non-fatal */ }
+      }
 
       return res.status(201).json({ entry });
     } catch (err) {

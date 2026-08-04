@@ -419,9 +419,19 @@ export default function LegacyHomePage() {
     newChapters: Array<{ id: number; title: string; chapterNumber: number }>;
     upcomingEvents: Array<{ id: number; title: string; eventDate: string; category: string }>;
   } | null>(null);
-  const [worldEvolvedDismissed, setWorldEvolvedDismissed] = useState(() => {
-    try { return localStorage.getItem("legacy:worldEvolvedDismissed") === "1"; } catch { return false; }
-  });
+  const [worldEvolvedDismissed, setWorldEvolvedDismissed] = useState(false);
+  const dismissedVersionRef = useRef<number | null>(null);
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("legacy:worldEvolvedDismissedVersion");
+      if (stored !== null) dismissedVersionRef.current = Number(stored);
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    if (dailyWelcome?.worldVersion && dailyWelcome.worldVersion !== dismissedVersionRef.current) {
+      setWorldEvolvedDismissed(false);
+    }
+  }, [dailyWelcome?.worldVersion]);
   const [emotionalCalendar, setEmotionalCalendar] = useState<Array<{
     id: number; type: string; title: string; description: string | null;
     date: string | null; memberName: string | null; isToday: boolean; isUpcoming: boolean;
@@ -1150,7 +1160,14 @@ export default function LegacyHomePage() {
                     </div>
                   </div>
                   <button
-                    onClick={() => setWorldEvolvedDismissed(true)}
+                    onClick={() => {
+                    setWorldEvolvedDismissed(true);
+                    try {
+                      const v = dailyWelcome?.worldVersion ?? 0;
+                      localStorage.setItem("legacy:worldEvolvedDismissedVersion", String(v));
+                      dismissedVersionRef.current = v;
+                    } catch { /* ignore */ }
+                  }}
                     className="text-amber-700 active:opacity-50"
                   >
                     <X className="w-4 h-4" />
@@ -1227,6 +1244,11 @@ export default function LegacyHomePage() {
                 <button
                   onClick={() => {
                     setWorldEvolvedDismissed(true);
+                    try {
+                      const v = dailyWelcome?.worldVersion ?? 0;
+                      localStorage.setItem("legacy:worldEvolvedDismissedVersion", String(v));
+                      dismissedVersionRef.current = v;
+                    } catch { /* ignore */ }
                     if (activeSession?.currentChapterId) {
                       navigate(`/legacy/chapter/${activeSession.currentChapterId}`);
                     } else {
@@ -1565,12 +1587,12 @@ export default function LegacyHomePage() {
                       <Users className="w-5 h-5 text-amber-500" />
                     </div>
                     <div className="flex-1">
-                      <p className="text-xs font-bold text-amber-200">{scenes[0].title}</p>
+                      <p className="text-xs font-bold text-amber-200">{scenes[activeSceneIdx]?.title ?? scenes[0].title}</p>
                       <p className="text-xs text-amber-600 mt-1 leading-relaxed italic">
-                        "{scenes[0].content.slice(0, 180)}{scenes[0].content.length > 180 ? "…" : ""}"
+                        "{(scenes[activeSceneIdx]?.content ?? scenes[0].content).slice(0, 180)}{(scenes[activeSceneIdx]?.content ?? scenes[0].content).length > 180 ? "…" : ""}"
                       </p>
                       <p className="text-xs text-purple-400/60 mt-1.5">
-                        {scenes[0].historicalLayer === "verified" ? "Verified History" : "Narrative Interpretation"}
+                        {(scenes[activeSceneIdx]?.historicalLayer ?? scenes[0].historicalLayer) === "verified" ? "Verified History" : "Narrative Interpretation"}
                       </p>
                     </div>
                   </div>

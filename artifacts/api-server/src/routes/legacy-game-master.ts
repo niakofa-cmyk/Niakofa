@@ -961,15 +961,16 @@ router.get(
       const birthYear = birthEvent?.eventDate ? new Date(birthEvent.eventDate).getFullYear() : null;
       const deathYear = deathEvent?.eventDate ? new Date(deathEvent.eventDate).getFullYear() : null;
 
-      // RPG stats derived from real vault data
+      // RPG stats derived from real vault data — uses the same formula as
+      // legacy-character-evolution.ts computeStats() so both endpoints agree.
       const stats = {
         knowledge: Math.min(100, (stories.length * 10) + (memories.length * 5)),
-        relationships: Math.min(100, events.length * 15),
+        relationships: Math.min(100, relations.length * 15 + events.length * 5),
         culturalWisdom: Math.min(100, interviews.length * 25),
-        courage: Math.min(100, (stories.length * 5) + (events.length * 5) + (memories.length * 5)),
-        reputation: Math.min(100, events.filter((e) => e.category !== "birth" && e.category !== "death").length * 20),
-        legacy: Math.min(100, places.length * 15),
-        faith: Math.min(100, (memories.length * 5) + (stories.length * 7)),
+        courage: Math.min(100, events.length * 10),
+        reputation: Math.min(100, memories.length * 8),
+        legacy: Math.min(100, places.length * 15 + stories.length * 5),
+        faith: Math.min(100, interviews.length * 15 + stories.length * 5),
       };
 
       return res.json({

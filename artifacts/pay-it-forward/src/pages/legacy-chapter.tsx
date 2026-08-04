@@ -431,11 +431,13 @@ export default function LegacyChapterPlay() {
 
   const handleNext = async () => {
     if (!sceneData) return;
+    if (transitioning) return;
     setShowConsequence(false);
     setSelectedChoice(null);
 
     if (currentSceneIdx + 1 >= sceneData.scenes.length) {
       // All scenes done — complete the chapter
+      if (chapterCompleted) return;
       const totalScenesCompleted = completedScenes.size + 1;
       setTransitioning(true);
       try {

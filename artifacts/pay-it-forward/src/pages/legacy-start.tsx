@@ -79,7 +79,7 @@ export default function LegacyStartPage() {
   // Cinematic onboarding state
   const [cinematicPhase, setCinematicPhase] = useState<CinematicPhase>("idle");
   const [revealStep, setRevealStep] = useState(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+
 
   const loadData = useCallback(async () => {
     if (!currentUser) { setLoading(false); return; }
@@ -244,10 +244,12 @@ export default function LegacyStartPage() {
   // ── Cinematic "You awaken..." onboarding ─────────────────────────────────────
   if (cinematicPhase === "awakening" && selected) {
     const birthYear = selected.birthYear ? parseInt(selected.birthYear) : null;
-    const age = birthYear ? Math.max(0, new Date().getFullYear() - birthYear) : null;
+    const deathYear = selected.deathYear ? parseInt(selected.deathYear) : null;
+    const refYear = deathYear ?? new Date().getFullYear();
+    const age = birthYear ? Math.max(0, refYear - birthYear) : null;
     const revealItems = [
       { label: "Year",      value: selected.birthYear ?? "Unknown",     icon: BookOpen },
-      { label: "Location", value: selected.relation ?? "The Homeland", icon: MapPin },
+      { label: "Location", value: selected.role ?? "The Homeland",     icon: MapPin },
       { label: "Name",      value: selected.name,                        icon: Crown },
       { label: "Age",       value: age ? String(age) : "Unknown",        icon: Sunrise },
       { label: "Occupation",value: selected.role ?? "Unknown",          icon: Star },

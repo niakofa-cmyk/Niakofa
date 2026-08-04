@@ -1147,7 +1147,6 @@ router.post(
   },
 );
 
-export default router;
 export { VALID_TRANSITIONS, generateChapterSeeds };
 
 // GET /api/legacy/journal/:familyId — the Dynamic Journal
@@ -1571,7 +1570,7 @@ router.patch(
 // The answer then becomes part of the family world.
 //
 //   GET /api/legacy/chapters/:chapterId/mystery-quests — list mystery quests
-//   POST /api/legacy/chapters/:chapterId/mystery-quests — create a mystery quest
+//   (POST mystery-quests removed — singular /mystery-quest is canonical)
 
 router.get(
   "/legacy/chapters/:chapterId/mystery-quests",
@@ -1616,81 +1615,4 @@ router.get(
   },
 );
 
-router.post(
-  "/legacy/chapters/:chapterId/mystery-quests",
-  generalApiLimiter,
-  requireAuth,
-  async (req, res) => {
-    const chapterId = parseInt(String(req.params.chapterId), 10);
-    if (isNaN(chapterId)) return res.status(400).json({ error: "Invalid chapter ID" });
-
-    const { question, sceneNumber } = req.body as { question?: string; sceneNumber?: number };
-    // If no question provided but sceneNumber is, generate one from the chapter context
-    let finalQuestion = question;
-    if (!finalQuestion || finalQuestion.trim().length < 5) {
-      if (sceneNumber === undefined) {
-        return res.status(400).json({ error: "Either a question (min 5 chars) or a sceneNumber is required" });
-      }
-      finalQuestion = `What more can our family discover about scene ${sceneNumber} of this chapter?`;
-    }
-
-    try {
-      const [chapter] = await db
-        .select()
-        .from(legacyChaptersTable)
-        .where(eq(legacyChaptersTable.id, chapterId))
-        .limit(1);
-
-      if (!chapter) return res.status(404).json({ error: "Chapter not found" });
-
-      const userId = req.authenticatedUserId!;
-      if (!(await isMember(userId, chapter.family_id))) {
-        return res.status(403).json({ error: "Not a member of this family" });
-      }
-
-      // Idempotent: don't create duplicate mystery quests for the same chapter+scene
-      const dedupeTag = `mystery:chapter:${chapterId}:scene:${sceneNumber ?? 0}`;
-
-      // Check if this question already exists (simple text match)
-      const allMysteries = await db
-        .select()
-        .from(familyStoriesTable)
-        .where(
-          and(
-            eq(familyStoriesTable.family_id, chapter.family_id),
-            eq(familyStoriesTable.category, "mystery_quest"),
-          ),
-        );
-
-      const duplicate = allMysteries.find(
-        (m) => m.body?.includes(dedupeTag) || m.title === finalQuestion.slice(0, 120),
-      );
-
-      if (duplicate) {
-        return res.json({ mystery: duplicate, alreadyExists: true });
-      }
-
-      // Create the mystery quest as a family story
-      const [inserted] = await db
-        .insert(familyStoriesTable)
-        .values({
-          family_id: chapter.family_id,
-          title: finalQuestion.slice(0, 200),
-          body: `${dedupeTag}\n\n${finalQuestion}`,
-          category: "mystery_quest",
-          teller_member_id: null,
-          about_member_id: chapter.ancestor_member_id,
-        })
-        .returning();
-
-      // Log to world evolution
-      const { logWorldEvolution } = await import("../lib/legacy-world-evolution");
-      logWorldEvolution(chapter.family_id, "story_added", `New mystery quest: ${finalQuestion.slice(0, 80)}`).catch(() => {});
-
-      return res.json({ mystery: inserted, created: true });
-    } catch (err) {
-      logger.error({ err, chapterId }, "legacy-chapters: create mystery quest failed");
-      return res.status(500).json({ error: "Failed to create mystery quest" });
-    }
-  },
-);
+export default router;

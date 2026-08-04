@@ -172,21 +172,6 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
     .where(eq(familyInterviewsTable.family_id, familyId));
 
   // Fetch additional vault data for strong fingerprint
-  const [{ storyCount }] = await db
-    .select({ storyCount: sql<number>`count(*)::int` })
-    .from(familyStoriesTable)
-    .where(eq(familyStoriesTable.family_id, familyId));
-
-  const [{ eventCount }] = await db
-    .select({ eventCount: sql<number>`count(*)::int` })
-    .from(familyEventsTable)
-    .where(eq(familyEventsTable.family_id, familyId));
-
-  const [{ placeCount }] = await db
-    .select({ placeCount: sql<number>`count(*)::int` })
-    .from(familyPlacesTable)
-    .where(eq(familyPlacesTable.family_id, familyId));
-
   const [{ relationCount }] = await db
     .select({ relationCount: sql<number>`count(*)::int` })
     .from(familyTreeRelationsTable)
@@ -206,13 +191,36 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
   // fingerprint changes when ANY underlying data changes (not just counts).
   // e.g. editing Grandma's story from "We moved" to "We moved to Detroit in 1957"
   // changes the memory's updated_at, which changes the fingerprint.
+  // Fetch timestamps for stories, events, and places so edits (not just
+  // count changes) invalidate the fingerprint and trigger regeneration.
+  const storyRows = await db
+    .select({ id: familyStoriesTable.id, updated: familyStoriesTable.updated_at })
+    .from(familyStoriesTable)
+    .where(eq(familyStoriesTable.family_id, familyId))
+    .orderBy(desc(familyStoriesTable.updated_at))
+    .limit(50);
+
+  const eventRows = await db
+    .select({ id: familyEventsTable.id, updated: familyEventsTable.updated_at })
+    .from(familyEventsTable)
+    .where(eq(familyEventsTable.family_id, familyId))
+    .orderBy(desc(familyEventsTable.updated_at))
+    .limit(50);
+
+  const placeRows = await db
+    .select({ id: familyPlacesTable.id, updated: familyPlacesTable.updated_at })
+    .from(familyPlacesTable)
+    .where(eq(familyPlacesTable.family_id, familyId))
+    .orderBy(desc(familyPlacesTable.updated_at))
+    .limit(50);
+
   const canonicalData = JSON.stringify({
     m: consentedMembers.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`),
     mem: memories.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`),
     i: interviewCount,
-    s: storyCount,
-    e: eventCount,
-    p: placeCount,
+    s: storyRows.map(s => `${s.id}:${s.updated?.toISOString() ?? ""}`),
+    e: eventRows.map(e => `${e.id}:${e.updated?.toISOString() ?? ""}`),
+    p: placeRows.map(p => `${p.id}:${p.updated?.toISOString() ?? ""}`),
     r: relationCount,
     a: assetCount,
   });
