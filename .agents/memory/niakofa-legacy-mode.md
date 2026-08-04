@@ -18,8 +18,6 @@ A "Living Family RPG" at `/legacy`. Transforms family vault data into quests, ch
 
 **appNavItems:** Legacy `href` changed from `/diaspora/timeline` to `/legacy`; isActive also matches `/diaspora/timeline`.
 
-**Why:** Design spec ("Community | Map | Diaspora | Circles | LEGACY") and reference image (docs/legacy-mode-design/ui-reference.png) both require Legacy as the 5th tab.
-
 ## Architecture: full-stack game engine
 
 Backend routes in `artifacts/api-server/src/routes/`:
@@ -43,11 +41,52 @@ Backend libs in `artifacts/api-server/src/lib/`:
 - `legacy-world-evolution.ts` — fire-and-forget evolution logging, triggers knowledge version check
 - `legacy-consent.ts` — consented member ID filtering for privacy
 
-Database tables (in `lib/db/schema.ts`):
-- `legacy_worlds`, `legacy_chapters`, `legacy_sessions`, `legacy_game_master_narrations`
-- `legacy_ai_director_missions`, `legacy_memory_mysteries`, `legacy_world_evolution_log`
-- `legacy_character_evolution`, `legacy_world_artifacts`
+## Database tables
+
+### Core Legacy Engine (migration 0093, serial integer PKs)
+- `legacy_worlds` — family game world, linked to a knowledge version
+- `legacy_chapters` — life chapters with state machine (locked/unlocked/in_progress/completed/skipped)
+- `legacy_sessions` — play sessions with autosave state (RPG stats, completed scenes)
+- `legacy_achievements` — per-family achievement progress (achievement_key + progress/goal)
+- `legacy_quest_progress` — durable record of quest completions (family_id + user_id + quest_id + fingerprint, unique)
+
+### Phase 5 Game Engine (migration 0102, recreated from 0092 design)
+- `legacy_scenes` — interactive narrative scenes within chapters (narration/dialogue/reflection/quest/transition)
+- `legacy_dialogues` — AI-generated or verified dialogue lines within scenes
+- `legacy_choices` — player choices within scenes with consequences and stat changes
+- `legacy_world_versions` — world version history linked to knowledge versions
+- `legacy_collectibles` — collectible items from vault data (photos, letters, artifacts)
+- `legacy_skills` — RPG skill tree (historian, explorer, story_keeper, etc.)
+
+### Persistent Quests (migration 0103)
+- `legacy_quests` — durable AI-generated quest storage (replaces in-memory cache)
+  - Scoped to family + fingerprint, with quest_type and status enums
+  - Unique on (family_id, quest_id_text, fingerprint) to prevent duplicates
+
+### Family Vault (migrations 0093 + earlier)
+- `family_places` — real family locations with lat/lng
+- `family_events` — life events with dates and member/place links
+- `family_stories` — oral stories with teller/about member links
+- `family_member_consent` — consent tracking (storytelling/reconnection/publication)
 - `family_knowledge_versions` — versioned family knowledge hashes with change diffs
+  - Unique constraint on (family_id, version) added in migration 0103
+
+### Phase 5 Enhancements (migration 0101)
+- `legacy_ai_director_missions` — daily AI-generated missions
+- `legacy_memory_mysteries` — collaborative investigations for vault gaps
+- `legacy_world_evolution_log` — evolution change log
+- `legacy_character_evolution` — character growth tracking
+- `legacy_world_artifacts` — world artifacts
+
+### Family Challenges (migrations 0097 + 0099)
+- `legacy_family_challenges` — family challenge definitions and progress
+
+### Place Discoveries (migration 0096)
+- `legacy_place_discoveries` — GPS check-ins at family landmarks
+
+## RLS
+All legacy tables have RLS enabled with family-membership-scoped policies (migration 0102).
+The `legacy_is_family_member(fam_id)` SECURITY DEFINER helper checks membership.
 
 ## Gameplay Routes
 - `/legacy` — Game hub (mode selector, ancestor preview, readiness score, daily welcome)
@@ -101,6 +140,14 @@ The family knowledge hash is computed from:
 - Artifact IDs + created_at timestamps
 
 When the hash changes, a new knowledge version is recorded with a real diff (new members/memories/stories/places/events since the previous version), and a "world_regenerated" evolution log entry is created.
+
+## Audio Recording
+The legacy-home page uses the MediaRecorder API for real audio capture:
+- `navigator.mediaDevices.getUserMedia({ audio: true })` for mic access
+- Creates a memory record via `POST /api/family/:id/memories`
+- Uploads audio as base64 data URL via `POST /api/family/:id/memories/:memId/assets/upload-direct`
+- Invalidates the quest reservoir after upload
+- Handles permission errors, upload failures, and cleanup
 
 ## Color palette
 Dark warm brown `#1A0F08` bg, `#2A1A0F` cards, `#3A2A1A` inner cards.

@@ -149,5 +149,48 @@ export type LegacyWorldVersion = typeof legacyWorldVersionsTable.$inferSelect;
 export type InsertLegacyWorldVersion = typeof legacyWorldVersionsTable.$inferInsert;
 export type LegacyCollectible = typeof legacyCollectiblesTable.$inferSelect;
 export type InsertLegacyCollectible = typeof legacyCollectiblesTable.$inferInsert;
+
+// ── legacy_quests ─────────────────────────────────────────────────────────────
+// Persistent storage for AI-generated quests. Previously quests were cached
+// in-memory by family+fingerprint (legacy.ts reservoir), which meant they
+// were lost on server restart and couldn't be queried historically. This
+// table makes quests durable while still respecting the fingerprint-based
+// invalidation pattern.
+export const legacyQuestTypeEnum = pgEnum("legacy_quest_type", [
+  "mystery", "preservation", "reconnection", "exploration", "cultural",
+]);
+
+export const legacyQuestStatusEnum = pgEnum("legacy_quest_status", [
+  "available", "in_progress", "completed", "expired",
+]);
+
+export const legacyQuestsTable = pgTable("legacy_quests", {
+  id:                    serial("id").primaryKey(),
+  family_id:             integer("family_id").notNull().references(() => familiesTable.id, { onDelete: "cascade" }),
+  world_id:              integer("world_id").references(() => legacyWorldsTable.id, { onDelete: "set null" }),
+  quest_id_text:         text("quest_id_text").notNull(),
+  fingerprint:           text("fingerprint").notNull(),
+  title:                 text("title").notNull(),
+  description:           text("description"),
+  quest_type:            legacyQuestTypeEnum("quest_type").notNull().default("mystery"),
+  status:                legacyQuestStatusEnum("status").notNull().default("available"),
+  xp_reward:             integer("xp_reward").notNull().default(100),
+  category:              text("category").notNull().default("record"),
+  action_path:           text("action_path"),
+  ancestor_name:         text("ancestor_name"),
+  is_ai_generated:       boolean("is_ai_generated").notNull().default(false),
+  steps:                 jsonb("steps").$type<unknown[]>().default([]),
+  completion_condition:  jsonb("completion_condition").$type<Record<string, unknown>>().default({}),
+  expires_at:            timestamp("expires_at", { withTimezone: true }),
+  created_at:            timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updated_at:            timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("idx_legacy_quests_family").on(t.family_id),
+  index("idx_legacy_quests_fingerprint").on(t.family_id, t.fingerprint),
+  index("idx_legacy_quests_status").on(t.family_id, t.status),
+]);
+
+export type LegacyQuest = typeof legacyQuestsTable.$inferSelect;
+export type InsertLegacyQuest = typeof legacyQuestsTable.$inferInsert;
 export type LegacySkill = typeof legacySkillsTable.$inferSelect;
 export type InsertLegacySkill = typeof legacySkillsTable.$inferInsert;
