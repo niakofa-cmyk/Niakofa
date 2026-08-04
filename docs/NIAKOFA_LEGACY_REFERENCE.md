@@ -263,9 +263,11 @@ Stored in `docs/legacy-mode-design/reference-images/`:
 - Reunion challenges
 - Seasonal events
 
+### ✅ Completed Aug 4, 2026
+- **Geocoding for family places** — `artifacts/api-server/src/lib/geocode.ts` (Nominatim OSM + country centroid fallback for ~80 diaspora-relevant countries). Geocodes on save (non-blocking) + backfill endpoint `POST /api/legacy/map/:familyId/places/geocode-missing`. Frontend auto-triggers backfill on load when `placesWithoutCoordinates > 0`; shows "Locating places…" spinner.
+- **Audio playback in RPG scenes** — `legacy-chapters.ts` now fetches audio assets from `family_memory_assets` and resolves presigned URLs; `legacy-chapter.tsx` shows a Play/Pause button with waveform animation for memory scenes with real recordings. Audio pauses automatically on scene navigation.
+
 ### 🔄 In Progress / Needs Verification
-- Audio playback of recorded memories in chapter scenes
-- Map coordinate population (most places pinned without lat/lng)
 - Chapter 5+ generation (AI-generated from deeper vault data)
 - Live video interview as a first-class Legacy quest (Phase 4)
 
@@ -278,4 +280,11 @@ Stored in `docs/legacy-mode-design/reference-images/`:
 
 ---
 
-_Last updated: 2026-08-04 — legacy-play.tsx created, /legacy/play routes properly into RPG scene engine, reference images stored_
+## Reference Images (Aug 4, 2026)
+
+Stored in `docs/legacy-mode-design/reference-images/`:
+- `legacy-12-screen-overview-aug3.png` — 12-screen onboarding + gameplay overview (Chapter 0, legacy start, RPG scene, co-op, world map, Sunday dinner)
+- `legacy-full-dashboard-aug3.png` — Full Legacy Mode dashboard: character card, family vault, RPG scene, dynamic world map, co-op quests, achievements, live video, journal, timeline
+- `legacy-game-modes-overview-aug2.png` — Game modes (Legacy/Exploration/Family Quests/Reunion), characters (Ama Serwaa, Kofi Mensah, Abena Mensah, Nana Kwame), inventory, oral story recording, settings, progress dashboard, multiplayer reunion
+
+_Last updated: 2026-08-04 — geocoding pipeline, audio playback in RPG scenes, new reference images added_
