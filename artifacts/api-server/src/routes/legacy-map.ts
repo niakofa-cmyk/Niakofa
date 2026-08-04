@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, and, inArray, desc } from "drizzle-orm";
+import { eq, and, inArray, desc, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
@@ -15,6 +15,7 @@ import { generalApiLimiter } from "../middlewares/rate-limit";
 import { logger } from "../lib/logger";
 import { getConsentedMemberIds } from "../lib/legacy-consent";
 import { distanceMeters } from "../lib/geo";
+import { geocodePlace } from "../lib/geocode";
 import { syncAchievements } from "./legacy-achievements";
 import { stripTags } from "../lib/sanitize";
 import { logWorldEvolution } from "../lib/legacy-world-evolution";
@@ -374,10 +375,85 @@ router.post(
       logger.info({ familyId, placeId: place.id, userId }, "legacy-map: place created");
       logWorldEvolution(familyId, "place_added", `${label} was added to the family world map`).catch(() => {});
 
+      // If no coordinates were provided, geocode asynchronously so the place
+      // appears on the map without blocking the response.
+      if (place.lat === null || place.lng === null) {
+        geocodePlace(label, country ?? null)
+          .then(async (coords) => {
+            if (!coords) return;
+            await db
+              .update(familyPlacesTable)
+              .set({ lat: coords.lat, lng: coords.lng })
+              .where(eq(familyPlacesTable.id, place.id));
+            logger.info({ placeId: place.id, ...coords }, "legacy-map: geocoded place");
+          })
+          .catch((err) => logger.warn({ err, placeId: place.id }, "legacy-map: geocoding failed (non-fatal)"));
+      }
+
       return res.status(201).json({ place });
     } catch (err) {
       logger.error({ err, familyId }, "legacy-map: place creation failed");
       return res.status(500).json({ error: "Failed to tag landmark" });
+    }
+  },
+);
+
+// POST /legacy/map/:familyId/places/geocode-missing
+// Backfills coordinates for all places in this family that have no lat/lng.
+// Called by the frontend map page on load when placesWithoutCoordinates > 0.
+// Non-blocking for the HTTP request — it processes synchronously here but
+// callers can fire and forget; the map page re-fetches after it resolves.
+router.post(
+  "/legacy/map/:familyId/places/geocode-missing",
+  generalApiLimiter,
+  requireAuth,
+  async (req, res) => {
+    const familyId = parseInt(String(req.params.familyId), 10);
+    if (isNaN(familyId)) return res.status(400).json({ error: "Invalid family ID" });
+
+    const userId = req.authenticatedUserId!;
+    if (!(await isMember(userId, familyId))) {
+      return res.status(403).json({ error: "Not a member of this family" });
+    }
+
+    try {
+      // Fetch all places without coordinates for this family
+      const missingPlaces = await db
+        .select({
+          id:      familyPlacesTable.id,
+          label:   familyPlacesTable.label,
+          country: familyPlacesTable.country,
+        })
+        .from(familyPlacesTable)
+        .where(
+          and(
+            eq(familyPlacesTable.family_id, familyId),
+            or(isNull(familyPlacesTable.lat), isNull(familyPlacesTable.lng)),
+          ),
+        );
+
+      if (missingPlaces.length === 0) {
+        return res.json({ updated: 0, message: "All places already have coordinates" });
+      }
+
+      let updated = 0;
+      for (const p of missingPlaces) {
+        // Small delay between Nominatim requests to respect 1 req/s rate limit
+        if (updated > 0) await new Promise((r) => setTimeout(r, 1_100));
+        const coords = await geocodePlace(p.label, p.country ?? null).catch(() => null);
+        if (!coords) continue;
+        await db
+          .update(familyPlacesTable)
+          .set({ lat: coords.lat, lng: coords.lng })
+          .where(eq(familyPlacesTable.id, p.id));
+        updated++;
+        logger.info({ placeId: p.id, label: p.label, ...coords }, "legacy-map: backfill geocoded place");
+      }
+
+      return res.json({ updated, total: missingPlaces.length });
+    } catch (err) {
+      logger.error({ err, familyId }, "legacy-map: geocode-missing failed");
+      return res.status(500).json({ error: "Geocoding failed" });
     }
   },
 );

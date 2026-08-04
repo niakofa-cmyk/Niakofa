@@ -193,6 +193,22 @@ export default function LegacyChapterPlay() {
   const [sceneFadeKey, setSceneFadeKey] = useState(0);
   const { transitioning: sceneTransitioning, trigger: triggerSceneTransition } = useSceneTransition();
 
+  // Audio playback state for memory scenes
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+
+  // Stop audio when navigating between scenes
+  useEffect(() => {
+    const el = audioRef.current;
+    if (el && !el.paused) {
+      el.pause();
+      el.currentTime = 0;
+    }
+    setAudioPlaying(false);
+    setAudioError(null);
+  }, [currentSceneIdx]);
+
   const chapterId = parseInt(params.chapterId, 10);
 
   const loadScenes = useCallback(async () => {
@@ -968,16 +984,74 @@ export default function LegacyChapterPlay() {
           </div>
         )}
 
-        {/* Memory reference */}
+        {/* Memory reference with audio playback */}
         {memory && (
           <div className="bg-stone-800/30 border border-stone-700/50 rounded-xl p-4 mb-6">
             <div className="flex items-center gap-2 mb-2">
               <BookOpen className="w-4 h-4 text-amber-400" />
               <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">From the Vault</span>
             </div>
-            <p className="text-sm text-stone-300">
-              {memory.description || memory.title || "A preserved family memory."}
+            <p className="text-sm text-stone-300 mb-3">
+              {(memory as { description?: string; title?: string; audioUrl?: string }).description ||
+               (memory as { title?: string }).title ||
+               "A preserved family memory."}
             </p>
+            {/* Audio playback — only shown when the vault has a real audio recording */}
+            {(memory as { audioUrl?: string }).audioUrl && (
+              <div className="mt-2">
+                <audio
+                  ref={audioRef}
+                  src={(memory as { audioUrl?: string }).audioUrl}
+                  preload="none"
+                  onPlay={() => { setAudioPlaying(true); setAudioError(null); }}
+                  onPause={() => setAudioPlaying(false)}
+                  onEnded={() => setAudioPlaying(false)}
+                  onError={() => { setAudioPlaying(false); setAudioError("Could not play recording"); }}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => {
+                    const el = audioRef.current;
+                    if (!el) return;
+                    if (audioPlaying) {
+                      el.pause();
+                    } else {
+                      el.play().catch(() => setAudioError("Could not play recording"));
+                    }
+                  }}
+                  className={`flex items-center gap-2 text-xs font-bold rounded-xl px-3 py-2 transition-all active:scale-95 ${
+                    audioPlaying
+                      ? "bg-amber-500/20 border border-amber-500/50 text-amber-300"
+                      : "bg-stone-800/60 border border-stone-600/50 text-stone-300 hover:border-amber-500/40 hover:text-amber-300"
+                  }`}
+                >
+                  {audioPlaying ? (
+                    <>
+                      <span className="flex gap-[2px] items-end h-3">
+                        {[1,2,3,4].map(i => (
+                          <span
+                            key={i}
+                            className="w-[3px] rounded-full bg-amber-400"
+                            style={{ height: `${6 + (i % 3) * 4}px`, animation: `pulse 0.${6+i}s ease-in-out infinite` }}
+                          />
+                        ))}
+                      </span>
+                      Pause Recording
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+                        <path d="M2 1l9 5-9 5z" />
+                      </svg>
+                      Play Family Recording
+                    </>
+                  )}
+                </button>
+                {audioError && (
+                  <p className="text-[10px] text-red-400 mt-1">{audioError}</p>
+                )}
+              </div>
+            )}
           </div>
         )}
 

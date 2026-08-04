@@ -16,7 +16,7 @@
  * show a clear message rather than a silently broken button.
  */
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import MapGL, { Marker, Popup, Source, Layer } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -262,6 +262,8 @@ export default function LegacyMapPage() {
   const [activePlaceId, setActivePlaceId] = useState<number | null>(null);
   const [checkins, setCheckins] = useState<Record<number, CheckinState>>({});
   const [showAddPlace, setShowAddPlace] = useState(false);
+  const [geocodingInProgress, setGeocodingInProgress] = useState(false);
+  const backfillFiredRef = useRef(false);
 
   const refetchMap = useCallback(async (targetFamilyId: number) => {
     try {
@@ -292,15 +294,40 @@ export default function LegacyMapPage() {
           setError("Failed to load map data.");
           return;
         }
-        const body = await res.json();
+        const body = await res.json() as MapResponse;
         setData(body);
+
+        // Auto-trigger geocoding backfill if any places lack coordinates.
+        // Only fire once per mount so navigating away and back doesn't re-trigger.
+        if (
+          body.placesWithoutCoordinates > 0 &&
+          !backfillFiredRef.current
+        ) {
+          backfillFiredRef.current = true;
+          setGeocodingInProgress(true);
+          fetch(`/api/legacy/map/${primaryFamilyId}/places/geocode-missing`, {
+            method: "POST",
+            headers: authHeaders(),
+          })
+            .then(async (r) => {
+              if (r.ok) {
+                const result = await r.json() as { updated: number };
+                if (result.updated > 0) {
+                  // Re-fetch so newly geocoded places appear on the map
+                  await refetchMap(primaryFamilyId);
+                }
+              }
+            })
+            .catch(() => {/* non-fatal */})
+            .finally(() => setGeocodingInProgress(false));
+        }
       } catch {
         setError("Failed to load map data.");
       } finally {
         setLoading(false);
       }
     })();
-  }, [currentUser]);
+  }, [currentUser, refetchMap]);
 
   const addPlace = useCallback(async (input: { label: string; placeType?: string; country?: string; region?: string; notes?: string; useCurrentLocation: boolean }) => {
     if (!familyId) throw new Error("No family selected");
@@ -485,7 +512,13 @@ export default function LegacyMapPage() {
             <span className="text-[10px] text-amber-700 uppercase tracking-wide">Memories</span>
             <span className="text-xs font-bold text-amber-400">{data.places.filter(p => p.discovered && p.chapterNumbers.length > 0).length}</span>
           </div>
-          {data.route.length > 0 && (
+          {geocodingInProgress && (
+            <div className="flex items-center gap-1.5 ml-auto animate-pulse">
+              <Loader2 className="w-3 h-3 text-amber-600 animate-spin" />
+              <span className="text-[10px] text-amber-700 uppercase tracking-wide">Locating places…</span>
+            </div>
+          )}
+          {data.route.length > 0 && !geocodingInProgress && (
             <div className="flex items-center gap-1.5 ml-auto">
               <Navigation className="w-3.5 h-3.5 text-amber-500" />
               <span className="text-[10px] text-amber-700 uppercase tracking-wide">Route</span>
@@ -612,7 +645,9 @@ export default function LegacyMapPage() {
                           <p className="text-[10px] text-amber-600 mt-1">Chapter {p.chapterNumbers.join(", ")}</p>
                         )}
                         {p.lat === null && (
-                          <p className="text-xs text-amber-900 mt-1 italic">No coordinates yet</p>
+                          <p className="text-xs text-amber-800 mt-1 italic">
+                            {geocodingInProgress ? "Locating…" : "Coordinates pending"}
+                          </p>
                         )}
                         {p.lat !== null && (
                           <PlaceDiscoveryControl place={p} checkinState={checkins[p.id]} onCheckIn={checkIn} variant="list" />

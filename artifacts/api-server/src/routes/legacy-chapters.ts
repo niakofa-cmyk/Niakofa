@@ -28,6 +28,7 @@ import {
   familyMemoriesTable,
   familyMemoryTagsTable,
   familyMemoryPeopleTable,
+  familyMemoryAssetsTable,
   familyEventsTable,
   familyStoriesTable,
   familyPlacesTable,
@@ -43,6 +44,7 @@ import { calculateCompleteness, CHAPTER_UNLOCK_THRESHOLD } from "./legacy-comple
 import { getConsentedMemberIds, filterConsentedMembers } from "../lib/legacy-consent";
 import { getHistoricalContext } from "../lib/historical-context";
 import { legacyAI } from "../lib/legacy-ai-gateway";
+import { getAssetUrl } from "../lib/storage";
 
 const router = Router();
 
@@ -745,7 +747,7 @@ async function buildChapterScenes(
   const placeIds = (data.placeIds as number[]) ?? [];
   const memoryIds = (data.memoryIds as number[]) ?? [];
 
-  const [places, events, memories] = await Promise.all([
+  const [places, events, memories, audioAssets] = await Promise.all([
     placeIds.length > 0
       ? db.select().from(familyPlacesTable).where(inArray(familyPlacesTable.id, placeIds))
       : Promise.resolve([]),
@@ -755,7 +757,47 @@ async function buildChapterScenes(
     memoryIds.length > 0
       ? db.select().from(familyMemoriesTable).where(inArray(familyMemoriesTable.id, memoryIds))
       : Promise.resolve([]),
+    // Fetch audio assets for any memories linked to this chapter so they can
+    // play back inside RPG scenes. We only need one audio asset per memory.
+    memoryIds.length > 0
+      ? db
+          .select({
+            id:          familyMemoryAssetsTable.id,
+            memory_id:   familyMemoryAssetsTable.memory_id,
+            storage_key: familyMemoryAssetsTable.storage_key,
+            mime_type:   familyMemoryAssetsTable.mime_type,
+            asset_type:  familyMemoryAssetsTable.asset_type,
+          })
+          .from(familyMemoryAssetsTable)
+          .where(
+            and(
+              inArray(familyMemoryAssetsTable.memory_id, memoryIds),
+              eq(familyMemoryAssetsTable.asset_type, "audio"),
+              eq(familyMemoryAssetsTable.processing_status, "ready"),
+            ),
+          )
+      : Promise.resolve([]),
   ]);
+
+  // Resolve presigned / CDN URLs for audio assets — errors are non-fatal
+  const audioUrlsByMemoryId: Record<number, string> = {};
+  await Promise.all(
+    audioAssets.map(async (a) => {
+      if (audioUrlsByMemoryId[a.memory_id]) return; // already have one for this memory
+      try {
+        const url = await getAssetUrl(a.storage_key);
+        audioUrlsByMemoryId[a.memory_id] = url;
+      } catch {
+        // Non-fatal — the scene still renders; audio just won't be available
+      }
+    }),
+  );
+
+  // Attach audioUrl to each memory row
+  const memoriesWithAudio = memories.map((m) => ({
+    ...m,
+    audioUrl: audioUrlsByMemoryId[m.id] ?? null,
+  }));
 
   const historicalContext = await getHistoricalContext({
     location: (data.location as string | undefined) ?? places[0]?.label ?? "Unknown",
@@ -823,7 +865,7 @@ async function buildChapterScenes(
   }
 
   // Scenes N+1..M: Each memory becomes a reflection scene
-  for (const memory of memories.slice(0, 3)) {
+  for (const memory of memoriesWithAudio.slice(0, 3)) {
     scenes.push({
       sceneNumber: sceneNum++,
       title: memory.title ?? "A Family Memory",
@@ -836,7 +878,7 @@ async function buildChapterScenes(
   }
 
   // If no memories, add a reflection placeholder
-  if (memories.length === 0) {
+  if (memoriesWithAudio.length === 0) {
     scenes.push({
       sceneNumber: sceneNum++,
       title: "The Memory",
@@ -862,7 +904,7 @@ async function buildChapterScenes(
     }
   }
 
-  return { scenes, vaultContext: { places, events, memories } };
+  return { scenes, vaultContext: { places, events, memories: memoriesWithAudio } };
 }
 
 // GET /api/legacy/chapters/:chapterId/scenes — get scenes for a chapter
