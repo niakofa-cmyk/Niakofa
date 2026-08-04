@@ -85,7 +85,7 @@ async function autoEvolveCharacters(familyId: number, knowledgeVersionId: number
         knowledge_version_id: knowledgeVersionId,
         stats,
         new_memory_count: memoryCount,
-        new_story_count: storyCount,
+        new_journal_count: storyCount,
         evolution_summary: `World v${knowledgeVersionId}: ${memoryCount} memories, ${storyCount} stories`,
       });
     }

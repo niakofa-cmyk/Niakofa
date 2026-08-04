@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
-import { ArrowLeft, Loader2, Users, Trophy, Plus, CheckCircle2, Gift, Sparkles, X, Trash2, Lock, Camera, Mic, BookOpen, MapPin, FileText, Wifi } from "lucide-react";
+import { ArrowLeft, Loader2, Users, Trophy, Plus, CheckCircle2, Gift, Sparkles, X, Trash2, Lock, Camera, Mic, BookOpen, MapPin, FileText } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 
@@ -109,7 +109,7 @@ export default function LegacyChallengesPage() {
     if (!familyId) return;
     const interval = setInterval(() => {
       setOnlineMembers((prev) => {
-        const next = Math.max(1, prev + (Math.random() > 0.5 ? 1 : -1)));
+        const next = Math.max(1, prev + (Math.random() > 0.5 ? 1 : -1));
         return Math.min(next, totalMembers || 3);
       });
     }, 5000);
