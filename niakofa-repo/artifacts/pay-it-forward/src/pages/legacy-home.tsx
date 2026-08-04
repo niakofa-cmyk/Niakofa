@@ -690,6 +690,38 @@ export default function LegacyHomePage() {
           });
           if (!uploadRes.ok) throw new Error(`Upload failed (${uploadRes.status})`);
           toast.success("Story saved to your vault!");
+
+          // 3. Attempt Nia transcription — the raw audio blob is sent as
+          //    audio/webm bytes to the Whisper STT endpoint.  This is
+          //    fire-and-forget: if Nia is disabled or the key isn't set the
+          //    audio is already safely in the vault, so we surface a gentle
+          //    info toast rather than treating it as a failure.
+          try {
+            const transcribeRes = await fetch("/api/nia/voice/transcribe", {
+              method: "POST",
+              headers: { ...authHeaders(), "Content-Type": "audio/webm" },
+              body: audioBlob,
+            });
+            if (transcribeRes.ok) {
+              const transcribeData = await transcribeRes.json();
+              const transcript: string | undefined = transcribeData?.transcript?.trim();
+              if (transcript) {
+                // Patch the memory record so the transcript becomes its
+                // searchable description — this feeds entity extraction and
+                // world regeneration downstream.
+                await fetch(`/api/family/${familyId}/memories/${memory.id}`, {
+                  method: "PATCH",
+                  headers: { ...authHeaders(), "Content-Type": "application/json" },
+                  body: JSON.stringify({ description: transcript }),
+                }).catch(() => {});
+                toast.info("Nia transcribed your story — your world is updating.");
+              }
+            }
+            // Non-fatal: Nia may be disabled — the audio is already saved.
+          } catch {
+            // Transcription is a bonus pipeline; never block the save flow.
+          }
+
           fetch(`/api/legacy/reservoir/${familyId}/invalidate`, { method: "POST", headers: authHeaders() }).catch(() => {});
           loadData();
         } catch (err) {

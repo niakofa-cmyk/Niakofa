@@ -80,6 +80,14 @@ interface Choice {
   requiresMemoryText?: boolean;
   /** RPG stat changes applied when this choice is selected. */
   statChanges?: Partial<SessionStats>;
+  /**
+   * Minimum stat values required to unlock this choice.
+   * If the player's current session stats don't meet these thresholds the
+   * choice renders locked and cannot be selected.  This makes stats
+   * actually shape the narrative experience rather than just decorating
+   * the HUD.
+   */
+  requiredStats?: Partial<SessionStats>;
 }
 
 interface SessionStats {
@@ -105,6 +113,15 @@ const STAT_LABELS: Record<keyof SessionStats, string> = {
 // Choices are parameterized by scene type and enriched with vault context
 // (place names, event titles, memory descriptions) so they feel specific to
 // the family's actual history rather than generic for every family.
+//
+// Some choices have `requiredStats` — minimum stat thresholds that the player
+// must meet before the choice can be selected.  This makes the RPG HUD stats
+// actively shape the narrative instead of just being decorative numbers:
+//   • High Courage unlocks confrontational / investigative options
+//   • High Knowledge reveals historical clue paths
+//   • High Cultural Wisdom unlocks tradition-honouring choices
+//   • High Legacy unlocks memoir / preservation choices
+//   • High Relationships unlocks community connection options
 function buildSceneChoices(scene: Scene, vault: SceneResponse["vaultContext"]): Choice[] {
   const place = scene.placeId ? vault.places.find(p => p.id === scene.placeId) : null;
   const event = scene.eventId ? vault.events.find(e => e.id === scene.eventId) : null;
@@ -114,40 +131,100 @@ function buildSceneChoices(scene: Scene, vault: SceneResponse["vaultContext"]): 
     case "narration":
       return [
         { text: "Continue the story", consequence: "The story moves forward.", action: "next", statChanges: { knowledge: 2 } },
-        ...(place ? [{ text: `Remember ${place.label}`, consequence: `You hold the memory of ${place.label} close.`, action: "reflect" as const, statChanges: { legacy: 5, knowledge: 1 } }] : []),
+        // Requires Knowledge ≥ 10 — only players who have been paying attention
+        // can surface hidden historical context in narration scenes.
+        ...(place ? [{
+          text: `Remember ${place.label}`,
+          consequence: `You hold the memory of ${place.label} close. New details emerge from what you've learned.`,
+          action: "reflect" as const,
+          statChanges: { legacy: 5, knowledge: 1 },
+          requiredStats: { knowledge: 10 },
+        }] : []),
+        // Courage ≥ 20 unlocks "Dig deeper" — investigates uncomfortable history
+        { text: "Dig deeper into this moment",
+          consequence: "Your courage reveals a side of the story most would overlook.",
+          action: "reflect",
+          statChanges: { knowledge: 5, courage: 2, culturalWisdom: 3 },
+          requiredStats: { courage: 20 },
+        },
       ];
     case "dialogue":
       return [
         { text: "Listen and remember", consequence: "You absorb this moment into your family's memory.", action: "next", statChanges: { relationships: 5, culturalWisdom: 3, faith: 2 } },
         {
-          text: event ? `Ask about ${event.title}` : "Ask a question",
+          // Courage ≥ 15 required to ask difficult questions and create a mystery quest
+          text: event ? `Ask about ${event.title}` : "Ask a hard question",
           consequence: "A Mystery Quest has been added to your Family Vault — ask a relative to help fill this gap.",
           action: "preserve",
           createsMysteryQuest: true,
           statChanges: { knowledge: 8, courage: 3 },
+          requiredStats: { courage: 15 },
         },
         { text: "Reflect quietly", consequence: "You gain cultural wisdom from this moment.", action: "reflect", statChanges: { culturalWisdom: 6, reputation: 2, faith: 3 } },
+        // Cultural Wisdom ≥ 25 unlocks a tradition-rooted response
+        { text: "Share a family saying",
+          consequence: "You connect this moment to a tradition your family holds dear.",
+          action: "reflect",
+          statChanges: { culturalWisdom: 8, faith: 5, reputation: 3 },
+          requiredStats: { culturalWisdom: 25 },
+        },
       ];
     case "reflection":
       return [
         {
+          // Legacy ≥ 5 required — player must have earned some legacy before
+          // they can contribute a meaningful memory to the Family Vault
           text: memory ? `Add to this memory` : "Record a memory",
           consequence: "Your memory has been added to the Family Vault.",
           action: "preserve",
           requiresMemoryText: true,
           statChanges: { legacy: 10, knowledge: 5, relationships: 3 },
+          requiredStats: { legacy: 5 },
         },
         { text: "Continue the journey", consequence: "The chapter moves forward.", action: "next", statChanges: { courage: 3 } },
         { text: "Sit with this moment", consequence: "You let the weight of this memory settle.", action: "reflect", statChanges: { culturalWisdom: 4, reputation: 2, faith: 4 } },
+        // Relationships ≥ 20 unlocks reaching out to living relatives
+        { text: "Tell a living relative about this",
+          consequence: "You reach out to share this discovery with someone who carries the same legacy.",
+          action: "preserve",
+          statChanges: { relationships: 12, legacy: 5, reputation: 4 },
+          requiredStats: { relationships: 20 },
+        },
       ];
     case "context":
       return [
         { text: "Continue", consequence: "You carry this history with you.", action: "next", statChanges: { knowledge: 3 } },
         { text: "Reflect on the times", consequence: "You consider what life was like in those days.", action: "reflect", statChanges: { culturalWisdom: 5, knowledge: 2 } },
+        // Knowledge ≥ 30 unlocks connecting historical context to personal family data
+        { text: "Connect this to our family's story",
+          consequence: "You see a direct link between this history and your family's documented journey.",
+          action: "reflect",
+          statChanges: { knowledge: 10, culturalWisdom: 6, legacy: 4 },
+          requiredStats: { knowledge: 30 },
+        },
       ];
     default:
       return [{ text: "Continue", consequence: "The story moves forward.", action: "next", statChanges: { knowledge: 1 } }];
   }
+}
+
+/** Returns true when the player's current stats don't meet the choice's requirements. */
+function isChoiceLocked(choice: Choice, stats: SessionStats): boolean {
+  if (!choice.requiredStats) return false;
+  return Object.entries(choice.requiredStats).some(
+    ([k, threshold]) => (stats[k as keyof SessionStats] ?? 0) < (threshold ?? 0),
+  );
+}
+
+/** Describes the first unmet stat requirement as a short label, e.g. "Courage 15". */
+function lockedRequirement(choice: Choice, stats: SessionStats): string | null {
+  if (!choice.requiredStats) return null;
+  for (const [k, threshold] of Object.entries(choice.requiredStats)) {
+    if ((stats[k as keyof SessionStats] ?? 0) < (threshold ?? 0)) {
+      return `${STAT_LABELS[k as keyof SessionStats] ?? k} ${threshold}`;
+    }
+  }
+  return null;
 }
 
 export default function LegacyChapterPlay() {
@@ -273,10 +350,26 @@ export default function LegacyChapterPlay() {
     setNarrationLoading(true);
 
     const familyId = sceneData.familyId;
+
+    // Include current RPG stats in the scene context so the AI game master
+    // can tailor its narration to this specific character's level.  A high-
+    // Courage player hears more assertive, investigating prose; a high-Faith
+    // player gets spiritual reflection woven in — the stats shape the story.
+    const statsHint = [
+      sessionStats.knowledge > 0 && `Knowledge ${sessionStats.knowledge}`,
+      sessionStats.courage > 0 && `Courage ${sessionStats.courage}`,
+      sessionStats.culturalWisdom > 0 && `Cultural Wisdom ${sessionStats.culturalWisdom}`,
+      sessionStats.faith > 0 && `Faith ${sessionStats.faith}`,
+      sessionStats.legacy > 0 && `Legacy ${sessionStats.legacy}`,
+      sessionStats.relationships > 0 && `Relationships ${sessionStats.relationships}`,
+    ].filter(Boolean).join(", ");
+
     const params = new URLSearchParams({
       type: scene.type === "dialogue" ? "dialogue" : "scene_intro",
       chapterId: String(chapterId),
-      sceneContext: `${scene.title}: ${scene.content.slice(0, 200)}`,
+      sceneContext: statsHint
+        ? `${scene.title}: ${scene.content.slice(0, 180)} [Character: ${statsHint}]`
+        : `${scene.title}: ${scene.content.slice(0, 200)}`,
     });
 
     if (!familyId) { setNarrationLoading(false); return; }
@@ -370,6 +463,14 @@ export default function LegacyChapterPlay() {
     if (!scene) return;
     const choices = buildSceneChoices(scene, sceneData.vaultContext);
     const choice = choices[choiceIdx];
+
+    // Gate: check if this choice requires stats the player hasn't earned yet.
+    // isChoiceLocked() compares choice.requiredStats against the live sessionStats.
+    if (choice && isChoiceLocked(choice, sessionStats)) {
+      // Don't fire — the UI already shows the lock; this is a safety guard
+      // in case the button is tapped anyway.
+      return;
+    }
 
     // "Record a memory" needs real player-authored text before anything is
     // saved — open the writing step instead of finalizing immediately.
@@ -938,34 +1039,64 @@ export default function LegacyChapterPlay() {
         {/* Choices */}
         {!showConsequence && !awaitingMemoryText && (
           <div className="space-y-3">
-            {choices.map((choice, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleChoice(idx)}
-                className="w-full text-left bg-stone-800/40 border border-stone-700/50 rounded-xl px-4 py-3.5 hover:border-amber-400/30 hover:bg-stone-800/60 transition-all duration-200 group"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-stone-200">{choice.text}</span>
-                  <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-amber-400 transition-colors" />
-                </div>
-                {choice.statChanges && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {Object.entries(choice.statChanges).map(([stat, delta]) => (
-                      <span
-                        key={stat}
-                        className={`text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 ${
-                          delta > 0
-                            ? "bg-emerald-400/10 text-emerald-400 border border-emerald-400/20"
-                            : "bg-red-400/10 text-red-400 border border-red-400/20"
-                        }`}
-                      >
-                        {STAT_LABELS[stat as keyof SessionStats] ?? stat} {delta > 0 ? "+" : ""}{delta}
+            {choices.map((choice, idx) => {
+              const locked = isChoiceLocked(choice, sessionStats);
+              const lockLabel = lockedRequirement(choice, sessionStats);
+              return (
+                <button
+                  key={idx}
+                  onClick={() => handleChoice(idx)}
+                  disabled={locked}
+                  aria-disabled={locked}
+                  className={`w-full text-left rounded-xl px-4 py-3.5 transition-all duration-200 group relative ${
+                    locked
+                      ? "bg-stone-900/60 border border-stone-700/30 opacity-60 cursor-not-allowed"
+                      : "bg-stone-800/40 border border-stone-700/50 hover:border-amber-400/30 hover:bg-stone-800/60 cursor-pointer"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className={`text-sm font-medium ${locked ? "text-stone-500" : "text-stone-200"}`}>
+                      {choice.text}
+                    </span>
+                    {locked ? (
+                      /* Lock icon + required stat label */
+                      <span className="flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-900/30 border border-amber-700/30 rounded-full px-2 py-0.5 flex-shrink-0 ml-2">
+                        <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
+                        </svg>
+                        {lockLabel}
                       </span>
-                    ))}
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-stone-500 group-hover:text-amber-400 transition-colors" />
+                    )}
                   </div>
-                )}
-              </button>
-            ))}
+                  {/* Stat change badges — only shown on unlocked choices to avoid
+                      tempting the player to grind for a locked option directly */}
+                  {!locked && choice.statChanges && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {Object.entries(choice.statChanges).map(([stat, delta]) => (
+                        <span
+                          key={stat}
+                          className={`text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 ${
+                            delta > 0
+                              ? "bg-emerald-400/10 text-emerald-400 border border-emerald-400/20"
+                              : "bg-red-400/10 text-red-400 border border-red-400/20"
+                          }`}
+                        >
+                          {STAT_LABELS[stat as keyof SessionStats] ?? stat} {delta > 0 ? "+" : ""}{delta}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {/* Tooltip for locked choice — describes what stat is needed */}
+                  {locked && lockLabel && (
+                    <p className="text-[10px] text-stone-500 mt-1.5">
+                      Requires {lockLabel} — keep playing to unlock this path.
+                    </p>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
 
