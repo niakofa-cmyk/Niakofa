@@ -21,10 +21,10 @@ A "Living Family RPG" at `/legacy`. Transforms family vault data into quests, ch
 ## Architecture: full-stack game engine
 
 Backend routes in `artifacts/api-server/src/routes/`:
-- `legacy.ts` — quest reservoir, AI-generated quests (Claude 3.5 Haiku), content-hash fingerprint cache
+- `legacy.ts` — quest reservoir, AI-generated quests via `legacyAI` gateway, content-hash fingerprint (member IDs + updated_at, memories, stories, events, places, interviews, assets), ancestor selection engine with real scoring
 - `legacy-completeness.ts` — readiness score, chapter unlock threshold, dimension breakdowns
-- `legacy-chapters.ts` — chapter state machine (locked→unlocked→in_progress→completed/skipped), scene generation from vault data, session CRUD, progress saving with RPG stat accumulation
-- `legacy-game-master.ts` — AI narration (scene intros, dialogue, chapter summaries), cached by prompt hash
+- `legacy-chapters.ts` — chapter state machine (locked→unlocked→in_progress→completed/skipped), scene generation from vault data, session CRUD, progress saving with RPG stat accumulation, AI synopsis enrichment via `legacyAI` gateway, mystery-quest creation, record-memory from scenes
+- `legacy-game-master.ts` — AI narration (scene intros, dialogue, chapter summaries, historical context, ancestor intros), cached by prompt hash, uses `legacyAI` gateway
 - `legacy-ai-director.ts` — daily missions from vault gap analysis, mission generation/completion/skip
 - `legacy-world-evolution.ts` — evolution log, change summary, knowledge version history
 - `legacy-map.ts` — family world map with migration routes from real places
@@ -38,6 +38,7 @@ Backend routes in `artifacts/api-server/src/routes/`:
 - `legacy-coop.ts` — live co-op readiness check (which family members are online via WebSocket presence, min 2 for co-op)
 
 Backend libs in `artifacts/api-server/src/lib/`:
+- `legacy-ai-gateway.ts` — single choke point for ALL Legacy AI calls. `legacyAI.generate({ system, userPrompt, maxTokens })`. Model configurable via `LEGACY_AI_MODEL` env var (default: `claude-3-5-haiku-20241022`). Returns `{ content, model, metadata }` with graceful fallback on failure.
 - `legacy-world-evolution.ts` — logWorldEvolution() helper, called fire-and-forget from every vault mutation site
 - `legacy-knowledge-version.ts` — bumpKnowledgeVersionIfChanged(), computes content-hash fingerprint, persists new version row with real diff, invalidates quest reservoir cache, auto-evolves characters
 - `legacy-consent.ts` — getConsentedMemberIds(), filterConsentedMembers() for consent-aware queries

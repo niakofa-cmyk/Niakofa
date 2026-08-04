@@ -42,6 +42,7 @@ import { logger } from "../lib/logger";
 import { calculateCompleteness, CHAPTER_UNLOCK_THRESHOLD } from "./legacy-completeness";
 import { getConsentedMemberIds, filterConsentedMembers } from "../lib/legacy-consent";
 import { getHistoricalContext } from "../lib/historical-context";
+import { legacyAI } from "../lib/legacy-ai-gateway";
 
 const router = Router();
 
@@ -350,12 +351,6 @@ async function enrichChapterSynopses(
   vaultContext: Record<string, unknown>,
 ): Promise<ChapterSeed[]> {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return seeds;
-
-    const Anthropic = (await import("@anthropic-ai/sdk")).default;
-    const anthropic = new Anthropic();
-
     const systemPrompt = `You are Nia, the AI Game Master for Niakofa, a living family RPG built from real family history.
 
 CRITICAL RULES:
@@ -376,14 +371,11 @@ ${JSON.stringify(seeds.map(s => ({ number: s.chapterNumber, title: s.title, data
 
 Return ONLY a JSON array of ${seeds.length} strings, no other text.`;
 
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-haiku-20241022",
-      max_tokens: 1000,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-    });
+    const aiResult = await legacyAI.generate({ system: systemPrompt, userPrompt, maxTokens: 1000 });
 
-    const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+    if (aiResult.model === "fallback" || !aiResult.content) return seeds;
+
+    const text = aiResult.content;
     const match = text.match(/\[[\s\S]*\]/);
     if (match) {
       const synopses = JSON.parse(match[0]) as string[];
