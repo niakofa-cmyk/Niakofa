@@ -57,6 +57,11 @@ export default function LegacyPlayPage() {
     try {
       // Step 1: Get user's family
       const famRes = await fetch("/api/family/mine", { headers: authHeaders() });
+      // 401/403 means the user isn't authenticated — send them to sign-in, not onboarding
+      if (famRes.status === 401 || famRes.status === 403) {
+        navigate("/login");
+        return;
+      }
       if (!famRes.ok) { navigate("/legacy/onboarding"); return; }
       const famData = await famRes.json() as { families?: { id: number }[] };
       const families = famData.families ?? [];

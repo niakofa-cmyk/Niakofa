@@ -641,10 +641,50 @@ export default function LegacyChapterPlay() {
     );
   }
 
+  // sceneData loaded but scenes array is empty — show a recoverable error, not a blank screen
+  if (sceneData && sceneData.scenes.length === 0) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-[#0e1111] px-6">
+        <div className="text-center max-w-sm">
+          <AlertCircle className="w-10 h-10 text-amber-500 mx-auto mb-4" />
+          <h2 className="text-lg font-black text-stone-100 mb-2">Chapter Not Ready</h2>
+          <p className="text-sm text-stone-400 mb-2">
+            Your family's chapter exists but scenes haven't been generated yet.
+          </p>
+          <p className="text-xs text-stone-500 mb-6">
+            This usually means the world is still building. Try refreshing or add more family
+            memories to unlock scene content.
+          </p>
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => { setSceneData(null); loadScenes(); }}
+              className="bg-amber-500 text-stone-900 font-bold rounded-xl px-6 py-2.5 text-sm"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => navigate("/legacy")}
+              className="text-amber-400 font-medium rounded-xl px-6 py-2.5 text-sm border border-amber-700/30"
+            >
+              Back to Legacy Hub
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!sceneData) return null;
 
   const scene = sceneData.scenes[currentSceneIdx];
-  if (!scene) return null;
+  // sceneData present but currentSceneIdx is out of bounds — reset to first scene
+  if (!scene) {
+    if (sceneData.scenes.length > 0) {
+      setCurrentSceneIdx(0);
+      return null;
+    }
+    return null;
+  }
 
   const choices = buildSceneChoices(scene, sceneData.vaultContext);
   const progress = ((currentSceneIdx + 1) / sceneData.scenes.length) * 100;

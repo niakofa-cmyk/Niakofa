@@ -486,38 +486,53 @@ export default function LegacyOnboardingPage() {
         body: JSON.stringify({ preferredAncestorMemberId: ancestorMemberId }),
       });
 
-      if (initRes.ok) {
-        const data = await initRes.json() as { worldId: number; chapters: { id: number; status: string }[] };
-        const firstChapter = data.chapters.find(c => c.status === "unlocked") ?? data.chapters[0];
-        if (firstChapter) {
-          // Mark in progress
-          await fetch(`/api/legacy/chapters/${firstChapter.id}/status`, {
-            method: "PATCH",
-            headers: { ...authHeaders(), "Content-Type": "application/json" },
-            body: JSON.stringify({ status: "in_progress" }),
-          }).catch(() => {});
-          // Create session
-          await fetch("/api/legacy/sessions", {
-            method: "POST",
-            headers: { ...authHeaders(), "Content-Type": "application/json" },
-            body: JSON.stringify({
-              familyId,
-              worldId: data.worldId,
-              ancestorMemberId: ancestorMemberId ?? null,
-              chapterId: firstChapter.id,
-            }),
-          }).catch(() => {});
-          // Mark onboarding complete
-          try { localStorage.setItem("legacy:setupDone", "1"); } catch {}
-          setTimeout(() => navigate(`/legacy/chapter/${firstChapter.id}`), 1000);
-          return;
-        }
+      if (!initRes.ok) {
+        const errData = await initRes.json().catch(() => ({ error: `Server error (${initRes.status})` }));
+        const msg = (errData as { error?: string }).error ?? `Chapter init failed (${initRes.status})`;
+        toast.error(`Could not build your world: ${msg}. You can try starting your journey manually.`);
+        try { localStorage.setItem("legacy:setupDone", "1"); } catch {}
+        setTimeout(() => navigate("/legacy/start"), 1200);
+        return;
       }
-    } catch {
-      // Fallback — send to legacy home
+
+      const data = await initRes.json() as { worldId: number; chapters: { id: number; status: string }[] };
+      const firstChapter = data.chapters.find(c => c.status === "unlocked") ?? data.chapters[0];
+
+      if (!firstChapter) {
+        // World created but no chapters returned — go to start to try ancestor selection
+        toast("Your world is being built. Choose an ancestor to begin.", { icon: "✨" });
+        try { localStorage.setItem("legacy:setupDone", "1"); } catch {}
+        setTimeout(() => navigate("/legacy/start"), 1000);
+        return;
+      }
+
+      // Mark in progress
+      await fetch(`/api/legacy/chapters/${firstChapter.id}/status`, {
+        method: "PATCH",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "in_progress" }),
+      }).catch(() => {});
+      // Create session
+      await fetch("/api/legacy/sessions", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          familyId,
+          worldId: data.worldId,
+          ancestorMemberId: ancestorMemberId ?? null,
+          chapterId: firstChapter.id,
+        }),
+      }).catch(() => {});
+      // Mark onboarding complete
+      try { localStorage.setItem("legacy:setupDone", "1"); } catch {}
+      setTimeout(() => navigate(`/legacy/chapter/${firstChapter.id}`), 1000);
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      toast.error(`Could not launch your legacy: ${msg}`);
     }
     try { localStorage.setItem("legacy:setupDone", "1"); } catch {}
-    navigate("/legacy");
+    navigate("/legacy/start");
   }, [familyId, q1MemberId, navigate]);
 
   // ── Auth guard ────────────────────────────────────────────────────────────
