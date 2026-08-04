@@ -20,7 +20,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import MapGL, { Marker, Popup, Source, Layer } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { ArrowLeft, MapPin, Loader2, Church, School, Home, Landmark, Building2, TreePine, CheckCircle2, Navigation, Plus, X, BookOpen, Camera, Star, Compass } from "lucide-react";
+import { ArrowLeft, MapPin, Loader2, Church, School, Home, Landmark, Building2, TreePine, CheckCircle2, Navigation, Plus, X, BookOpen, Camera, Star, Compass, Globe2 } from "lucide-react";
 import { useAppContext } from "@/lib/AppContext";
 import { authHeaders } from "@/lib/auth";
 
@@ -443,24 +443,10 @@ export default function LegacyMapPage() {
     );
   }
 
-  if (!data || data.places.length === 0) {
-    return (
-      <div className="min-h-screen bg-[#1A0F08] flex flex-col items-center justify-center gap-4 p-6">
-        <p className="text-amber-400 text-sm text-center">No family places yet. Tag your first landmark to start building your world map.</p>
-        <button
-          onClick={() => setShowAddPlace(true)}
-          className="flex items-center gap-2 rounded-lg bg-amber-600 text-white text-sm font-bold px-4 py-2.5 active:bg-amber-700"
-        >
-          <Plus className="w-4 h-4" />
-          Tag a Landmark
-        </button>
-        <button onClick={() => navigate("/legacy")} className="text-amber-500 text-xs underline">Back to map</button>
-        {showAddPlace && (
-          <AddPlaceModal onClose={() => setShowAddPlace(false)} onSubmit={addPlace} />
-        )}
-      </div>
-    );
-  }
+  // Note: we no longer bail out when places.length === 0 — instead we render
+  // the full map shell with an "empty world" state so the user can always tag
+  // their first landmark without needing to navigate elsewhere.  The map is
+  // never empty; it always gives the user something to do.
 
   return (
     <div className="min-h-screen bg-[#1A0F08] flex flex-col">
@@ -527,6 +513,35 @@ export default function LegacyMapPage() {
           )}
         </div>
       </div>
+
+      {/* Empty-world state — visible when no places exist yet. Shows inside the
+          full page shell (header + progress bar) so the user is never stuck. */}
+      {(!data || data.places.length === 0) && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-5 px-6 py-10">
+          <div className="w-16 h-16 rounded-2xl bg-amber-900/20 border border-amber-900/30 flex items-center justify-center">
+            <Globe2 className="w-8 h-8 text-amber-600" />
+          </div>
+          <div className="text-center">
+            <p className="text-amber-200 font-bold mb-1">Your world awaits</p>
+            <p className="text-amber-700 text-sm leading-relaxed">
+              Tag your first family landmark to start building your living world map. Every place your family lived, worshipped, or worked becomes a pin on this map.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowAddPlace(true)}
+            className="flex items-center gap-2 rounded-xl bg-amber-600 text-amber-950 font-black text-sm px-5 py-3 active:opacity-80 shadow-lg shadow-amber-600/20"
+          >
+            <Plus className="w-4 h-4" />
+            Tag Your First Landmark
+          </button>
+          {geocodingInProgress && (
+            <div className="flex items-center gap-2 text-amber-700 text-xs animate-pulse">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Locating family places…
+            </div>
+          )}
+        </div>
+      )}
 
       {mapboxToken && placedPlaces.length > 0 ? (
         <div className="flex-1 relative">

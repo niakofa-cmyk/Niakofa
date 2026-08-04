@@ -23,6 +23,7 @@
 import { db, legacyWorldEvolutionLogTable } from "@workspace/db";
 import { logger } from "./logger";
 import { bumpKnowledgeVersionIfChanged } from "./legacy-knowledge-version";
+import { cacheDel } from "./cache";
 
 export type LegacyChangeType =
   | "member_added"
@@ -52,11 +53,16 @@ export async function logWorldEvolution(
     logger.error({ err, familyId, changeType }, "legacy-world-evolution: log write failed");
   }
 
-  // Recursion guard: bumpKnowledgeVersionIfChanged writes its own
-  // "world_regenerated" entry via a direct db.insert (not this function), so
-  // this branch only prevents a caller from manually passing that type in
-  // and re-triggering a check of a version that was just written.
+  // Always bust the reservoir cache on any vault mutation so the next read
+  // returns fresh data — even when the fingerprint calculation itself hasn't
+  // changed yet (e.g. an edit where updated_at wasn't bumped by the ORM).
+  // This prevents stories from "disappearing" because the AI was reading a
+  // stale 24h cached reservoir that predated the mutation.
   if (changeType !== "world_regenerated") {
+    cacheDel(`legacy:reservoir:${familyId}`).catch(() => { /* non-fatal */ });
+
+    // Recursion guard: bumpKnowledgeVersionIfChanged writes its own
+    // "world_regenerated" entry via a direct db.insert (not this function).
     bumpKnowledgeVersionIfChanged(familyId).catch((err) => {
       logger.error({ err, familyId }, "legacy-world-evolution: knowledge version bump failed");
     });

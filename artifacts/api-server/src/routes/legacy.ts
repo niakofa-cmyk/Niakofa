@@ -214,15 +214,25 @@ async function buildReservoir(familyId: number): Promise<FamilyReservoir> {
     .orderBy(desc(familyPlacesTable.updated_at))
     .limit(50);
 
+  // Include content hashes of memory titles/descriptions so edits to story
+  // content change the fingerprint even when updated_at isn't re-stamped by
+  // the ORM (e.g. direct DB patches, migration back-fills). This closes the
+  // "stories disappear" gap where a content edit went undetected and the AI
+  // kept serving quests based on the old version for up to 24h.
   const canonicalData = JSON.stringify({
     m: consentedMembers.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`),
-    mem: memories.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}`),
+    mem: memories.map(m => `${m.id}:${m.updated?.toISOString() ?? ""}:${(m.title ?? "").slice(0, 40)}:${(m.description ?? "").slice(0, 60)}`),
     i: interviewCount,
     s: storyRows.map(s => `${s.id}:${s.updated?.toISOString() ?? ""}`),
     e: eventRows.map(e => `${e.id}:${e.updated?.toISOString() ?? ""}`),
     p: placeRows.map(p => `${p.id}:${p.updated?.toISOString() ?? ""}`),
     r: relationCount,
     a: assetCount,
+    // Total counts catch additions the limit(50) window might miss
+    totalMem: memories.length,
+    totalStory: storyRows.length,
+    totalEvent: eventRows.length,
+    totalPlace: placeRows.length,
   });
   const fingerprint = Buffer.from(canonicalData).toString("base64url").slice(0, 64);
 
