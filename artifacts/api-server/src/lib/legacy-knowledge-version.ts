@@ -43,6 +43,7 @@ import {
   familyMemoryPeopleTable,
 } from "@workspace/db";
 import { logger } from "./logger";
+import { cacheDel } from "./cache";
 
 async function autoEvolveCharacters(familyId: number, knowledgeVersionId: number): Promise<void> {
   try {
@@ -84,7 +85,7 @@ async function autoEvolveCharacters(familyId: number, knowledgeVersionId: number
         knowledge_version_id: knowledgeVersionId,
         stats,
         new_memory_count: memoryCount,
-        new_journal_count: storyCount,
+        new_story_count: storyCount,
         evolution_summary: `World v${knowledgeVersionId}: ${memoryCount} memories, ${storyCount} stories`,
       });
     }
@@ -260,6 +261,14 @@ export async function bumpKnowledgeVersionIfChanged(familyId: number): Promise<v
       previous_version: latest?.version ?? null,
       new_version: nextVersion,
     });
+
+    // Invalidate quest reservoir cache so the next read triggers fresh
+    // AI generation from the new vault data. This is the critical link in
+    // the world-regeneration loop: without it, the quest reservoir stays
+    // stale for up to 24h even though the knowledge version bumped.
+    try {
+      await cacheDel(`legacy:reservoir:${familyId}`);
+    } catch { /* non-fatal */ }
 
     // Auto-trigger character evolution for all family members
     await autoEvolveCharacters(familyId, inserted.id);
